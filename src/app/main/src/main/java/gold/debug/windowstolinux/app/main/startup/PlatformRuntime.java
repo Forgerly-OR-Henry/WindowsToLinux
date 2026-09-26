@@ -61,6 +61,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Original restart-intent management and request reviews. / 原重启意图管理及请求审阅。 */
     private gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents;
 
+    /** Original automatic CLASS graph and its reverse cleanup ownership. / 原自动 CLASS 图及其逆序清理归属。 */
+    private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator modCoordinator;
+
     /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
     private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
 
@@ -250,19 +253,45 @@ public final class PlatformRuntime implements AutoCloseable {
         if (stopping || closed)
             throw new IllegalStateException("Mod intent management is closing");
         if (modIntents == null) {
-            var properties = new java.util.Properties();
-            try (var input = gold.debug.windowstolinux.appapi.mod.ModContext.class
-                    .getResourceAsStream("/gold/debug/windowstolinux/appapi/build.properties")) {
-                if (input == null)
-                    throw new java.io.IOException("Public API build identity is missing");
-                properties.load(input);
-            }
-            var api = gold.debug.windowstolinux.app.mod.version.SemanticVersion
-                    .parse(properties.getProperty("platform.api.version"));
             modIntents = new gold.debug.windowstolinux.app.service.mod.PlatformModIntents(persistence.database(),
-                    security, api);
+                    security, readApiVersion());
         }
         return modIntents;
+    }
+
+    /** Starts the one automatic graph without holding the runtime monitor across author code. / 启动唯一自动图，不跨作者代码持有运行时监视器。
+     * @param workspace explicit validated CLASS workspace / 明示已验证 CLASS 工作区
+     * @param pages actual visible window page registry / 实际可见窗口页面登记
+     * @return original graph's startup facts / 原图启动事实
+     * @throws Exception if ownership or build identity prevents composition / 归属或构建身份阻止装配时 */
+    public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startDevelopmentMods(Path workspace,
+            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            if (stopping || closed || modCoordinator != null || !modContexts.isEmpty() || !modSessions.isEmpty())
+                throw new IllegalStateException("Mod startup already has an owner or the platform is closing");
+            coordinator = new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator(this, workspace, pages,
+                    readApiVersion());
+            modCoordinator = coordinator;
+        }
+        return coordinator.start();
+    }
+
+    /** Reads the actual compiled appapi identity for both management and startup. / 为管理与启动读取实际编译 appapi 身份。
+     * @return exact public API release / 精确公开 API 版本
+     * @throws java.io.IOException if identity is unavailable / 身份不可用时 */
+    private static gold.debug.windowstolinux.app.mod.version.SemanticVersion readApiVersion()
+            throws java.io.IOException {
+        var properties = new java.util.Properties();
+        try (var input = gold.debug.windowstolinux.appapi.mod.ModContext.class
+                .getResourceAsStream("/gold/debug/windowstolinux/appapi/build.properties")) {
+            if (input == null)
+                throw new java.io.IOException("Public API build identity is missing");
+            properties.load(input);
+        }
+        return gold.debug.windowstolinux.app.mod.version.SemanticVersion
+                .parse(properties.getProperty("platform.api.version"));
     }
 
     /** Releases host session bookkeeping after physical and durable cleanup. / 在物理及持久清理后释放宿主会话登记。
@@ -618,7 +647,31 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if tasks, credentials or physical connections remain / 仍有任务、凭据操作或物理连接时
      */
     @Override
-    public synchronized void close() throws Exception {
+    public void close() throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            if (closed)
+                return;
+            coordinator = modCoordinator;
+        }
+        boolean wasSealed = tasks.seal(true);
+        try {
+            if (coordinator != null)
+                coordinator.close();
+            closePlatform();
+        } catch (Exception | Error failure) {
+            synchronized (this) {
+                if (!stopping && !closed)
+                    tasks.seal(wasSealed);
+            }
+            throw failure;
+        }
+    }
+
+    /** Closes platform services only after the automatic graph released its actual ownership. / 仅在自动图释放实际归属后关闭平台服务。
+     * @throws Exception if original resources or final acknowledgements remain / 原资源或最终确认仍残留时 */
+    private synchronized void closePlatform() throws Exception {
         requireWorker();
         if (closed)
             return;

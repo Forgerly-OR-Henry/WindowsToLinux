@@ -95,37 +95,37 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 
 ```json
 {
-  "formatVersion": 1,
-  "id": "gold.debug.windowstolinux.mod.backup",
-  "name": "备份",
-  "version": "1.5.0",
-  "description": "提供应用备份、恢复和服务器间迁移。",
-  "authors": ["示例作者"],
-  "homepage": "https://example.com/backup",
-  "platformApiRange": "[1.0.0,2.0.0)",
-  "minJavaVersion": 21,
-  "mainJar": "main/backup.jar",
-  "entryClass": "gold.debug.windowstolinux.mod.backup.Mod",
-  "dependencies": [
-    {
-      "id": "gold.debug.windowstolinux.mod.deployment",
-      "versionRange": "[1.3.0,2.0.0)"
-    }
-  ],
-  "exports": ["gold.debug.windowstolinux.mod.backup.api"],
-  "schemaVersion": "3",
-  "migrations": [
-    {
-      "from": "1",
-      "to": "2",
-      "class": "gold.debug.windowstolinux.mod.backup.db.Migrate1To2"
-    },
-    {
-      "from": "2",
-      "to": "3",
-      "class": "gold.debug.windowstolinux.mod.backup.db.Migrate2To3"
-    }
-  ]
+    "formatVersion": 1,
+    "id": "gold.debug.windowstolinux.mod.backup",
+    "name": "备份",
+    "version": "1.5.0",
+    "description": "提供应用备份、恢复和服务器间迁移。",
+    "authors": ["示例作者"],
+    "homepage": "https://example.com/backup",
+    "platformApiRange": "[1.0.0,2.0.0)",
+    "minJavaVersion": 21,
+    "mainJar": "main/backup.jar",
+    "entryClass": "gold.debug.windowstolinux.mod.backup.Mod",
+    "dependencies": [
+        {
+            "id": "gold.debug.windowstolinux.mod.deployment",
+            "versionRange": "[1.3.0,2.0.0)"
+        }
+    ],
+    "exports": ["gold.debug.windowstolinux.mod.backup.api"],
+    "schemaVersion": "3",
+    "migrations": [
+        {
+            "from": "1",
+            "to": "2",
+            "class": "gold.debug.windowstolinux.mod.backup.db.Migrate1To2"
+        },
+        {
+            "from": "2",
+            "to": "3",
+            "class": "gold.debug.windowstolinux.mod.backup.db.Migrate2To3"
+        }
+    ]
 }
 ```
 
@@ -163,7 +163,7 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 
 ## 4. 运行模式与 Mod 加载来源
 
-以下是 1.1 已确认的目标行为。当前工程已有 CLASS/JAR/APP 模式识别、CLASS 描述生成/校验及工作区发现基础，并经真实加载器和完整上下文验收；默认启动的自动发现/启用协调、构建自动生成接线、商店下载和解压安装仍未完成。不能以模式枚举或独立发现器已经存在代替默认启动验收。
+以下是 1.1 已确认的目标行为。当前工程已有 CLASS/JAR/APP 模式识别、CLASS 描述生成/校验及工作区发现基础，并经真实加载器和完整上下文验收；默认 CLASS 启动已接当前构建登记、原已启用选择、依赖启动、原意图归档和逆序停止，限无数据或已有 READY 数据；新发现默认关闭。构建自动生成、管理页面、物理数据准备、商店下载及解压安装仍未完成，不把已准备的 CLASS 启停视为全部三种模式完成。
 
 | 运行模式 | Mod 来源与定位依据                                                                                       | 新增 Mod 的操作                                                                               |
 | -------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -501,8 +501,8 @@ Mod 程序安装位置另见[加载来源](#loading-modes)及 [APP.md](APP.md)�
 
 ```json
 {
-  "version": "1.5.0",
-  "schemaVersion": "2"
+    "version": "1.5.0",
+    "schemaVersion": "2"
 }
 ```
 
@@ -596,7 +596,7 @@ H2 的部分结构变更（包括 `CREATE SCHEMA`、`DROP SCHEMA`）会提交当
 
 当前持久后端 `PlatformModIntents` 已由 Runtime 工厂提供：在解锁后的后台线程审阅目标及连带范围，提交时重新比较目录、意图修订、运行事实和数据代次；拒绝请求不写意图。接纳后的 WAIT_RESTART 请求保存原/目标选择、请求组、影响范围及数据准备依据；兼容切换不关闭依赖者开关，但同样封闭其新任务。撤销整组未执行请求按当前依赖重新校验，不回滚其他独立请求；摘要写入、旧操作移除和选择恢复在同一平台事务提交。数据库失败时整个请求不确认，原审阅不自动重放，需重新读取已存事实。已有 READY 数据直接复用；首次初始化只登记目标；已有数据需明确确认精确来源代次及唯一声明路径。
 
-`ModRestartLedger` 处理无数据或精确 READY 复用的已准备请求：新 boot 核验原修订、旧运行已关闭和原占用已释放后进入 APPLYING；实际会话的本次 RUNNING/已关闭 FAILED 才能分别形成成功/失败摘要。关闭意图必须本次从未加载且无残留，停用确认与固定 ID 摘要、执行行移除原子提交。归档失败保留原操作，重试只核对实际状态与补归档；执行行已移除不因日志被保留策略清除而重建旧摘要。跨启动中断的 APPLYING 保持 UNKNOWN，不能再当未执行请求取消或自动重跑。真实 CLASS 生命周期已与该账本组合验证；默认自动协调、管理页面、物理初始化/迁移和其他维护操作归档仍待实现，不能把请求接纳或账本验证作为完整管理功能验收。
+`ModRestartLedger` 处理无数据或精确 READY 复用的已准备请求：新 boot 核验原修订、旧运行已关闭和原占用已释放后进入 APPLYING；实际会话的本次 RUNNING/已关闭 FAILED 才能分别形成成功/失败摘要。关闭意图必须本次从未加载且无残留，停用确认与固定 ID 摘要、执行行移除原子提交。归档失败保留原操作，重试只核对实际状态与补归档；执行行已移除不因日志被保留策略清除而重建旧摘要。跨启动中断的 APPLYING 保持 UNKNOWN，不能再当未执行请求取消或自动重跑。默认 CLASS 协调已将真实生命周期与该账本连接；管理页面、物理初始化/迁移和其他维护操作归档仍待实现，不能把已准备意图的执行视为完整管理功能验收。
 
 | 操作或状态             | 已确认规则                                                                                                                                                                                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -823,13 +823,18 @@ H2 的部分结构变更（包括 `CREATE SCHEMA`、`DROP SCHEMA`）会提交当
 
 ```json
 {
-  "formatVersion": 1,
-  "manifestPath": "I:/workspace/src/mod/example/mod.json",
-  "mainOutput": "I:/workspace/src/mod/example/target/classes",
-  "authorOutputs": [],
-  "buildInputs": ["I:/workspace/pom.xml", "I:/workspace/src/mod/example/pom.xml"],
-  "libraries": ["I:/maven/repository/example/example-lib/1.0.0/example-lib-1.0.0.jar"],
-  "inputDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+    "formatVersion": 1,
+    "manifestPath": "I:/workspace/src/mod/example/mod.json",
+    "mainOutput": "I:/workspace/src/mod/example/target/classes",
+    "authorOutputs": [],
+    "buildInputs": [
+        "I:/workspace/pom.xml",
+        "I:/workspace/src/mod/example/pom.xml"
+    ],
+    "libraries": [
+        "I:/maven/repository/example/example-lib/1.0.0/example-lib-1.0.0.jar"
+    ],
+    "inputDigest": "0000000000000000000000000000000000000000000000000000000000000000"
 }
 ```
 
@@ -837,7 +842,7 @@ H2 的部分结构变更（包括 `CREATE SCHEMA`、`DROP SCHEMA`）会提交当
 
 主输出必须属于已验证工作区的 `src/mod`；作者从模块输出必须属于该工作区中声明的 Maven 依赖模块。第三方库允许位于 Maven 本地仓库，但必须由构建解析出的精确依赖清单提供，不能遍历任意外部目录。资源已处理进各 `target/classes`，不另扫 `src/main/resources`。工作区根由启动参数 `-Dwtl.workspace=<绝对路径>` 明确给出，验证根 POM、`src/app` 与 `src/mod`；不从当前工作目录向上猜测。JAR/APP 忽略该参数并只加载安装根。
 
-当前 `app/mod/development` 已实现同一算法的生成器、严格读取器和发现器。描述最多 1 MiB、每个路径数组最多 4,096 项；校验根/Mod 聚合/主模块 POM 输入、从模块输出及其 POM、主入口 `.class`、普通依赖 JAR 和编译标记。工作区路径不经链接重定向，跳过归档与 target 树；一个来源未编译也不能消除同 ID 多来源歧义。发现只返回候选或带原来源的安全 Problem，不执行静态初始化、不启动 Mod、不猜测迁移源。构建必须向生成器提供真实解析结果，默认启动仍需接依赖、持久意图及 Schema 协调；当前集成测试已从生成描述经发现、类加载到完整上下文运行和停止，尚不等同于自动启用完成。
+当前 `app/mod/development` 已实现同一算法的生成器、严格读取器和发现器。描述最多 1 MiB、每个路径数组最多 4,096 项；校验根/Mod 聚合/主模块 POM 输入、从模块输出及其 POM、主入口 `.class`、普通依赖 JAR 和编译标记。工作区路径不经链接重定向，跳过归档与 target 树；一个来源未编译也不能消除同 ID 多来源歧义。发现只返回候选或带原来源的安全 Problem，不执行静态初始化、不启动 Mod、不猜测迁移源。构建必须向生成器提供真实解析结果，Maven 自动生成接线仍待完成。默认 CLASS 入口已在实际窗口建立后，使用原启动工作线程协调依赖和已准备意图；明示工作区必须与真实 APP/DB 布局一致，缺失或不匹配时显示问题并保留平台外壳，不从 cwd 推断。
 
 当前 `PlatformModCatalog` 将有效候选逐来源原子登记到 `mod_registry`/`mod_version`，首次保持未启用且初始化单选；之后的新版本、重新编译或同一工作区内唯一来源的位置调整不改变已有开关、单选、修订及运行诊断。版本选择曾明确清空时不会重新套用首次默认。CLASS 构建可以更新，但旧运行、未决操作、原任务或跨 Mod 占用未收尾时禁止替换相关登记依据；发行来源的同版本登记不能被 CLASS 接管。不同来源独立处理，数据库异常不自动重试，也不假设未提交。未发现的旧版本登记为保留选择/恢复证据，不代表其输出仍然可用；加载必须使用本次无歧义候选并再次核验，不能仅凭旧 READY 行回退到旧输出。
 
@@ -1367,11 +1372,11 @@ public interface ModContext {
 
 当前 `PlatformRuntime.modSession` / `PlatformModContext` 已将上述全部能力、加载器和 H2 实际状态装配到原生命周期会话。准备期间任务准入封闭；作者构造前提交 STARTING，与精确 READY Schema 的 `ever_used` 同事务记录；作者 `start` 和页面/服务发布成功后才提交 RUNNING。兼容检查、作者或发布失败保留安全诊断，原资源实际关闭后记录 FAILED；普通停止记录 STOPPED。整个过程不修改用户启用开关、选择版本、修订或重启停用确认，同一 boot 不重放普通启用。
 
-停止先封闭任务准入并检查原任务和跨 Mod 资源，再关闭作者入口、能力、页面和加载器。准备失败只撤销本次取得的资源；清理失败保留原上下文，最终状态写入失败仍保留原会话，平台不能越过它关闭数据库。重试只补未完成步骤，已成功的作者停止及物理关闭不重复执行。恢复上下文不替换普通运行状态。无 Schema 的 Mod 获得明确返回 `MOD_NO_SCHEMA` 的数据库能力，不创建空 Schema；上下文关闭后旧 JDBC 能力拒绝新调用，但已有连接仍须实际关闭。默认平台窗口中的 CLASS 验收已运行页面按钮→任务→JDBC/Source/秘密/日志→结果显示→停止；自动启动、安装、意图重启应用与已执行操作归档、Schema 管理及完整恢复界面仍属后续装配。
+停止先封闭任务准入并检查原任务和跨 Mod 资源，再关闭作者入口、能力、页面和加载器。准备失败只撤销本次取得的资源；清理失败保留原上下文，最终状态写入失败仍保留原会话，平台不能越过它关闭数据库。重试只补未完成步骤，已成功的作者停止及物理关闭不重复执行。恢复上下文不替换普通运行状态。无 Schema 的 Mod 获得明确返回 `MOD_NO_SCHEMA` 的数据库能力，不创建空 Schema；上下文关闭后旧 JDBC 能力拒绝新调用，但已有连接仍须实际关闭。默认平台窗口中的 CLASS 验收已运行页面按钮→任务→JDBC/Source/秘密/日志→结果显示→停止；默认 CLASS 已接无数据/READY 版本的自动启动、原意图归档和逆序停止；安装、物理 Schema 准备、管理及完整恢复界面仍属后续装配。
 
 `register` 只接受本 Mod 已导出包中的公开接口。`require` 校验必需依赖声明、实际运行版本、接口完整名与共享 Class 身份；取得句柄不立即占用提供方业务资源，每次 `call` 原子检查双方准入并为原任务取得提供方 Mod/Schema 占用。调用完成前不得把提供方对象、JDBC、闭包或未结束的异步操作泄漏到调用外；跨边界返回不可变快照或已登记的业务操作 ID。任务必须在调用内完成对应同步工作，后续操作凭 ID 再调用，不重入创建同服务器竞争任务。句柄只作发现入口，关闭后不可再调用。
 
-当前 `PlatformModServices` 已提供真实注册、启动后发布、依赖发现和同步调用，接入默认 Runtime 工厂；完整 ModContext 已装配，自动生命周期总装仍待完成。注册实现须属于提供方实际加载器，回调得到的代理只在原线程、原调用内有效。提供方可在该作用域使用自己的 JDBC、服务器等能力，但服务器集合、凭据和当前流程授权仍来自原任务；不得借调用提交新的竞争任务。平台内部 SSH 信任、SFTP 冲突/进度/检查点回调显式传递原作用域，作者自建线程不继承它，调用结束后宿主回调也失效。
+当前 `PlatformModServices` 已提供真实注册、启动后发布、依赖发现和同步调用，接入默认 Runtime 工厂；完整 ModContext 及 CLASS 自动启停已装配。注册实现须属于提供方实际加载器，回调得到的代理只在原线程、原调用内有效。提供方可在该作用域使用自己的 JDBC、服务器等能力，但服务器集合、凭据和当前流程授权仍来自原任务；不得借调用提交新的竞争任务。平台内部 SSH 信任、SFTP 冲突/进度/检查点回调显式传递原作用域，作者自建线程不继承它，调用结束后宿主回调也失效。
 
 跨边界值复制支持明确的不可变 JDK 标量、默认文件系统 Path、公开导出或 appapi 的枚举/record，以及递归复制后的 List/Set/Map/Optional；集合不接受 null 元素，不支持数组、JDBC、流、闭包、Future 或任意实例。每次复制最多 4096 个节点、64 层和 1 MiB 标量 UTF-8 文本，调用嵌套最多 64 层且拒绝提供方循环。这是可信本地 Mod 的协作契约与容量限制，不是恶意作者代码沙箱；自定义 record 构造器和访问器也须保持值语义。
 
@@ -1379,19 +1384,19 @@ public interface ModContext {
 
 ### 8.10 辅助进程消息协议
 
-当前 `ProcessProtocol`/`ProcessChannel`、`PlatformProcessService` 和默认 Runtime 工厂已实现下述通信与原任务归属基础，使用本机真实 Java 子进程验证。完整 ModContext 已装配，Mod 自动停止协调器及恢复界面仍待接入；不能把工厂验证视为全部插件生命周期验收。
+当前 `ProcessProtocol`/`ProcessChannel`、`PlatformProcessService` 和默认 Runtime 工厂已实现下述通信与原任务归属基础，使用本机真实 Java 子进程验证。完整 ModContext 及 CLASS 逆序停止已接实际资源检查，恢复界面仍待接入；不能把当前已准备版本的启停视为全部插件生命周期验收。
 
 进程采用 UTF-8 JSON Lines，无 BOM，每帧最多 1 MiB（含 LF），每个方向由一个写入队列串行输出；业务对象必须是 JSON object。封套固定如下，字段全部必填，未知/重复字段拒绝：
 
 ```json
 {
-  "protocolVersion": 1,
-  "processId": "00000000-0000-0000-0000-000000000001",
-  "taskId": "00000000-0000-0000-0000-000000000002",
-  "requestId": "00000000-0000-0000-0000-000000000003",
-  "kind": "REQUEST",
-  "type": "example.inspect",
-  "payload": {}
+    "protocolVersion": 1,
+    "processId": "00000000-0000-0000-0000-000000000001",
+    "taskId": "00000000-0000-0000-0000-000000000002",
+    "requestId": "00000000-0000-0000-0000-000000000003",
+    "kind": "REQUEST",
+    "type": "example.inspect",
+    "payload": {}
 }
 ```
 

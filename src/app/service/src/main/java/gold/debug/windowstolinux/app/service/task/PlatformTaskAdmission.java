@@ -70,18 +70,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             }
         } else {
             requireNoPendingIntent(connection, ownerId);
-            try (var statement = connection.prepareStatement(
-                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
-                statement.setString(1, version);
-                statement.setString(2, ownerId);
-                try (var rows = statement.executeQuery()) {
-                    if (!rows.next() || !rows.getBoolean(1) || !version.equals(rows.getString(2))
-                            || !version.equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
-                            || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
-                        throw unavailable("MOD_NOT_RUNNING", "The bound Mod release is not running in this boot");
-                    schemaVersion = rows.getString(7);
-                }
-            }
+            schemaVersion = requireRunningGraph(connection, ownerId, version);
         }
         var claims = new ArrayList<TaskResource>();
         claims.add(new TaskResource("MOD", ownerId, ownerId, false));
@@ -115,6 +104,74 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             }
         }
         return List.copyOf(claims);
+    }
+
+    /** Rechecks every declared provider's actual state before accepting new consumer work. / 接纳使用方新工作前重新检查每个声明提供方的实际状态。
+     * @param connection original admission transaction / 原准入事务
+     * @param owner original consumer / 原使用方
+     * @param version exact loaded consumer release / 精确已加载使用方版本
+     * @return the consumer's declared data version / 使用方声明数据版本
+     * @throws SQLException if the graph cannot be read / 无法读取图时
+     * @throws ApiException if any original provider is unavailable or incompatible / 任一原提供方不可用或不兼容时 */
+    private String requireRunningGraph(Connection connection, String owner, String version)
+            throws SQLException, ApiException {
+        var remaining = new ArrayDeque<Map.Entry<String, String>>();
+        remaining.add(Map.entry(owner, version));
+        var visited = new HashSet<String>();
+        String schema = null;
+        while (!remaining.isEmpty()) {
+            var selected = remaining.removeFirst();
+            if (!visited.add(selected.getKey()))
+                continue;
+            gold.debug.windowstolinux.app.mod.manifest.ModManifest manifest;
+            try (var statement = connection.prepareStatement(
+                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version,v.manifest_json FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                statement.setString(1, selected.getValue());
+                statement.setString(2, selected.getKey());
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next() || !rows.getBoolean(1) || !selected.getValue().equals(rows.getString(2))
+                            || !selected.getValue().equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
+                            || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
+                        throw unavailable(
+                                selected.getKey().equals(owner) ? "MOD_NOT_RUNNING" : "MOD_PROVIDER_NOT_RUNNING",
+                                "The consumer or a required original provider is not running in this boot");
+                    try {
+                        manifest = gold.debug.windowstolinux.app.mod.manifest.ManifestReader
+                                .read(rows.getString(8).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        if (!manifest.id().equals(selected.getKey())
+                                || !manifest.version().toString().equals(selected.getValue())
+                                || !manifest.schemaVersion().equals(Optional.ofNullable(rows.getString(7))))
+                            throw new IllegalArgumentException("Original declaration identity changed");
+                    } catch (java.io.IOException | IllegalArgumentException malformed) {
+                        throw unavailable("MOD_RUNNING_GRAPH_UNVERIFIED",
+                                "The original running dependency graph cannot be verified");
+                    }
+                    if (selected.getKey().equals(owner))
+                        schema = rows.getString(7);
+                }
+            }
+            for (var dependency : manifest.dependencies()) {
+                try (var p = connection.prepareStatement("SELECT actual_version FROM mod_registry WHERE mod_id=?")) {
+                    p.setString(1, dependency.id());
+                    try (var r = p.executeQuery()) {
+                        if (!r.next() || r.getString(1) == null)
+                            throw unavailable("MOD_PROVIDER_NOT_RUNNING",
+                                    "A required original provider is unavailable");
+                        String actual = r.getString(1);
+                        try {
+                            if (!dependency.versionRange()
+                                    .contains(gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(actual)))
+                                throw new IllegalArgumentException("Provider release is outside its declared range");
+                        } catch (IllegalArgumentException incompatible) {
+                            throw unavailable("MOD_PROVIDER_INCOMPATIBLE",
+                                    "A required original provider does not match its declared release range");
+                        }
+                        remaining.add(Map.entry(dependency.id(), actual));
+                    }
+                }
+            }
+        }
+        return schema;
     }
 
     /** Rejects new work in any retained restart-request scope without changing accepted tasks. / 拒绝保留重启请求范围内的新工作，不改变已接纳任务。

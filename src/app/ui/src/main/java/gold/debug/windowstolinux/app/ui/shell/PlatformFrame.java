@@ -52,6 +52,15 @@ public final class PlatformFrame extends JFrame {
     /** Visible non-recursive diagnostic persistence feedback. / 可见非递归诊断持久化反馈。 */
     private final JLabel logIssue = new JLabel();
 
+    /** Non-secret startup counts independent of the selected page. / 独立于所选页面的不含秘密启动数量。 */
+    private final JLabel modStatus = new JLabel();
+
+    /** Safe failure viewer, unavailable while the desktop is locked. / 安全失败查看器，桌面锁定时不可用。 */
+    private final JButton modIssues = new JButton();
+
+    /** Original bounded startup evidence for this boot. / 本次启动的原有界启动证据。 */
+    private java.util.List<gold.debug.windowstolinux.appapi.task.Problem> modProblems = java.util.List.of();
+
     /** Actual feedback subscription owned by this window. / 此窗口持有的实际反馈订阅。 */
     private AutoCloseable logSubscription;
 
@@ -93,10 +102,22 @@ public final class PlatformFrame extends JFrame {
         getContentPane().add(sidebar, BorderLayout.WEST);
         getContentPane().add(content, BorderLayout.CENTER);
         logIssue.setName("platform.logIssue");
-        getContentPane().add(logIssue, BorderLayout.SOUTH);
+        modStatus.setName("platform.modStatus");
+        modIssues.setName("platform.modProblems");
+        modIssues.setText(catalog.text("platform.modProblems"));
+        modIssues.setVisible(false);
+        modIssues.addActionListener(event -> showModProblems());
+        var footer = new JPanel(new java.awt.GridLayout(0, 1));
+        var modLine = new JPanel(new BorderLayout());
+        modLine.add(modStatus, BorderLayout.CENTER);
+        modLine.add(modIssues, BorderLayout.EAST);
+        footer.add(logIssue);
+        footer.add(modLine);
+        getContentPane().add(footer, BorderLayout.SOUTH);
         lock = DesktopLockController.attach(this, security, catalog, reports, sidebar, components, false,
                 () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
+            modIssues.setEnabled(!locked);
             if (servers != null)
                 servers.setLocked(locked);
             if (models != null)
@@ -122,6 +143,41 @@ public final class PlatformFrame extends JFrame {
      * @return actual page registry / 实际页面登记 */
     public ModPageRegistry pages() {
         return pages;
+    }
+
+    /** Shows actual startup counts while retaining safe failure details behind the lock boundary. / 展示实际启动数量，将安全失败详情保留在锁定边界之后。
+     * @param running actually running Mod count / 实际运行 Mod 数量
+     * @param problems original safe startup issues / 原安全启动问题 */
+    public void showModStartup(int running, java.util.List<gold.debug.windowstolinux.appapi.task.Problem> problems) {
+        if (!SwingUtilities.isEventDispatchThread())
+            throw new IllegalStateException("Mod startup feedback requires the EDT");
+        modProblems = java.util.List.copyOf(problems);
+        modStatus.setText(
+                messages.text("platform.modSummary", java.util.Map.of("running", running, "issues", problems.size())));
+        modIssues.setVisible(!problems.isEmpty());
+        modIssues.setEnabled(security.securityState().unlocked());
+    }
+
+    /** Presents only safe host-formatted failures, bounded before opening the owned dialog. / 打开从属窗口前仅呈现有界的宿主安全格式化失败。
+     */
+    private void showModProblems() {
+        if (!security.securityState().unlocked())
+            return;
+        var text = new StringBuilder();
+        for (var problem : modProblems) {
+            String owner = problem.context().getOrDefault("ownerId", "");
+            text.append(owner).append(owner.isEmpty() ? "" : ": ").append(messages.safe(problem)).append('\n');
+            if (text.length() > 32768) {
+                text.setLength(32768);
+                break;
+            }
+        }
+        var details = new JTextArea(text.toString(), 16, 76);
+        details.setEditable(false);
+        details.setLineWrap(true);
+        details.setWrapStyleWord(true);
+        JOptionPane.showMessageDialog(this, new JScrollPane(details), messages.text("platform.modProblems"),
+                JOptionPane.WARNING_MESSAGE);
     }
 
     /**

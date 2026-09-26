@@ -130,6 +130,12 @@ public final class DesktopMain {
                 created.setVisible(true);
                 return null;
             });
+            var modReport = startMods(runtime, layout, System.getProperty("wtl.workspace"), created.pages());
+            onEdt(() -> {
+                if (created.isDisplayable())
+                    created.showModStartup(modReport.running().size(), modReport.problems());
+                return null;
+            });
         } catch (Exception failure) {
             if (frame != null) {
                 PlatformFrame created = frame;
@@ -150,6 +156,39 @@ public final class DesktopMain {
             showStartupFailure(reports, initialMessages,
                     DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
                             "The platform desktop could not be initialized", failure));
+        }
+    }
+
+    /** Applies default CLASS startup only to the explicit workspace matching the verified program layout. / 仅对与已验证程序布局匹配的明示工作区应用默认 CLASS 启动。
+     * @param runtime original platform runtime / 原平台运行时
+     * @param layout verified executable and data anchors / 已验证程序及数据锚点
+     * @param declared literal wtl.workspace value / 原样 wtl.workspace 值
+     * @param pages actual desktop page registry / 实际桌面页面登记
+     * @return safe startup facts without making the platform shell unavailable / 安全启动事实，不使平台外壳不可用 */
+    static gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(PlatformRuntime runtime,
+            RunModeResolver.RuntimeLayout layout, String declared,
+            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) {
+        if (layout.mode() != RunModeResolver.RunMode.RUN_CLASS)
+            return new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report(java.util.Set.of(),
+                    java.util.List.of());
+        try {
+            if (declared == null || declared.isBlank())
+                throw new java.io.IOException("Explicit CLASS workspace is missing");
+            Path root = gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor
+                    .workspace(Path.of(declared));
+            if (!root.equals(layout.applicationHome().toRealPath())
+                    || !runtime.persistence().database().root().equals(layout.dataDirectory().toRealPath()))
+                throw new java.io.IOException("Explicit workspace does not match the running platform");
+            return runtime.startDevelopmentMods(root, pages);
+        } catch (Exception | LinkageError | AssertionError failure) {
+            var problem = failure instanceof gold.debug.windowstolinux.appapi.task.ApiException api
+                    ? api.problem()
+                    : new gold.debug.windowstolinux.appapi.task.Problem(
+                            gold.debug.windowstolinux.appapi.task.ProblemCode.UNAVAILABLE, "MOD_WORKSPACE_UNAVAILABLE",
+                            "Mod startup is unavailable; verify the explicit workspace and original lifecycle state",
+                            java.util.Map.of(), java.util.Optional.of(java.util.UUID.randomUUID()));
+            return new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report(java.util.Set.of(),
+                    java.util.List.of(problem));
         }
     }
 

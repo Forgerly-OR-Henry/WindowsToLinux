@@ -64,8 +64,9 @@ class PlatformTaskAdmissionIntegrationTest {
 
     static void register(PlatformDatabase db, String schemaVersion) throws Exception {
         sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,1)", OWNER);
-        sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,?, ?,?,'{}','CLASS',1,'READY')",
-                OWNER, VERSION, "fixture-only", "0".repeat(64), schemaVersion);
+        sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,?, ?,?,?,'CLASS',1,'READY')",
+                OWNER, VERSION, "fixture-only", "0".repeat(64), schemaVersion,
+                PlatformModIntentsTest.manifest(OWNER, VERSION, Map.of(), schemaVersion, List.of()));
         sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version=?,selection_initialized=TRUE,actual_version=?,last_runtime_state='RUNNING',last_boot_id=? WHERE mod_id=?",
                 VERSION, VERSION, db.bootId(), OWNER);
     }

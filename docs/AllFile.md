@@ -1635,6 +1635,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SftpTransfer.java`：普通文件的临时传输、摘要与容量核对、校验后发布及回读，保留不确定结果及未释放资源。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
+- `app/main/mod/PlatformModCoordinator.java`：按真实开发构建装配已选依赖图，保留原启用失败和归档义务，并按依赖逆序关闭实际会话。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。

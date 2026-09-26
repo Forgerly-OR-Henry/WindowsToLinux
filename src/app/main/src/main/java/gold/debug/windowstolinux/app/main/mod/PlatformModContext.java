@@ -128,6 +128,13 @@ public final class PlatformModContext implements ContextLease {
         return lease.context();
     }
 
+    /** Checks exact loader ownership for host cleanup of failed preparation. / 为宿主清理失败准备检查精确加载器归属。
+     * @param candidate original allocated loader / 原已分配加载器
+     * @return whether this is the same physical loader / 是否为同一个物理加载器 */
+    boolean ownsLoader(ModClassLoader candidate) {
+        return loader == candidate;
+    }
+
     /** Binds normal activation persistence; recovery contexts never replace ordinary runtime state. / 绑定普通启用持久化；恢复上下文不替换普通运行状态。
      * @param finalized removes the original session only after durable final acknowledgement / 仅在最终持久确认后移除原会话
      * @return original host lifecycle journal / 原宿主生命周期记录器 */
