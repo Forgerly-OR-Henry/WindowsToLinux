@@ -7,11 +7,12 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.Playwright;
 import org.junit.jupiter.api.Test;
 
 class BrowserCleanupTest {
-    static Object field(PlaywrightTerminalSession browser, String name) throws Exception {
-        var field = PlaywrightTerminalSession.class.getDeclaredField(name);
+    static Object field(Object browser, String name) throws Exception {
+        var field = browser.getClass().getDeclaredField(name);
         field.setAccessible(true);
         return field.get(browser);
     }
@@ -19,6 +20,52 @@ class BrowserCleanupTest {
     static PlaywrightTerminalSession browser(AutoCloseable registration) {
         return new PlaywrightTerminalSession(true, "data:text/html,<pre data-wtl-terminal>cleanup fixture</pre>",
                 listener -> registration);
+    }
+
+    @Test
+    void successfulLibraryCloseCannotReleaseALiveOriginalDriverAndRetryOnlyObservesExit() throws Exception {
+        var removed = new AtomicBoolean();
+        var browser = browser(() -> removed.set(true));
+        Playwright original = null;
+        ExecutorService worker = null;
+        try {
+            browser.open();
+            var owner = field(browser, "driver");
+            original = (Playwright) field(owner, "connection");
+            var process = (Process) field(owner, "process");
+            assertTrue(process.isAlive());
+            assertEquals(ProcessHandle.current().pid(), process.toHandle().parent().orElseThrow().pid());
+            worker = (ExecutorService) field(browser, "worker");
+            var calls = new AtomicInteger();
+            var wrapped = (Playwright) Proxy.newProxyInstance(Playwright.class.getClassLoader(),
+                    new Class<?>[]{Playwright.class}, (proxy, method, args) -> {
+                        assertEquals("close", method.getName());
+                        calls.incrementAndGet();
+                        return null;
+                    });
+            var connection = owner.getClass().getDeclaredField("connection");
+            connection.setAccessible(true);
+            connection.set(owner, wrapped);
+            assertThrows(BrowserRecoveryException.class, browser::close);
+            assertTrue(browser.processes().stream().noneMatch(BrowserProcess::alive));
+            assertTrue(process.isAlive());
+            assertSame(owner, field(browser, "driver"));
+            assertSame(process, field(owner, "process"));
+            assertFalse(browser.resourcesClosed());
+            assertFalse(removed.get());
+            assertEquals(1, calls.get());
+            assertThrows(BrowserRecoveryException.class, browser::open);
+            worker.submit(original::close).get(15, TimeUnit.SECONDS);
+            browser.close();
+            assertEquals(1, calls.get());
+            assertFalse(process.isAlive());
+            assertTrue(browser.resourcesClosed());
+            assertTrue(removed.get());
+        } finally {
+            if (original != null && worker != null && !worker.isShutdown())
+                worker.submit(original::close).get(15, TimeUnit.SECONDS);
+            browser.close();
+        }
     }
 
     @Test

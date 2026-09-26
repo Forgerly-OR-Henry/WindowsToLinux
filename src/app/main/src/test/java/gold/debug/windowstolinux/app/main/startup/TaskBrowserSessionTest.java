@@ -37,6 +37,56 @@ class TaskBrowserSessionTest {
     }
 
     @Test
+    void nativeDriverStillAliveKeepsTheOriginalDurableClaimAfterLibraryCloseReturns() throws Exception {
+        try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            var owned = new AtomicReference<TaskBrowserSession>();
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                var browser = create(runtime, task, runtime.security()::observeLock);
+                owned.set(browser);
+                browser.open();
+                return success(null);
+            });
+            com.microsoft.playwright.Playwright original = null;
+            ExecutorService worker = null;
+            try {
+                state(handle, TaskState.FINISHING);
+                var browser = actual(owned.get());
+                var driver = PlatformRecoveryServiceTest.field(browser, "driver");
+                original = (com.microsoft.playwright.Playwright) PlatformRecoveryServiceTest.field(driver,
+                        "connection");
+                var process = (Process) PlatformRecoveryServiceTest.field(driver, "process");
+                worker = (ExecutorService) PlatformRecoveryServiceTest.field(browser, "worker");
+                var connection = driver.getClass().getDeclaredField("connection");
+                connection.setAccessible(true);
+                connection.set(driver,
+                        java.lang.reflect.Proxy.newProxyInstance(
+                                com.microsoft.playwright.Playwright.class.getClassLoader(),
+                                new Class<?>[]{com.microsoft.playwright.Playwright.class}, (proxy, method, args) -> {
+                                    assertEquals("close", method.getName());
+                                    return null;
+                                }));
+                assertThrows(BrowserRecoveryException.class, owned.get()::close);
+                assertTrue(process.isAlive());
+                assertEquals(1, claims(runtime));
+                assertEquals(TaskState.FINISHING, handle.snapshot().state());
+                assertFalse(handle.completion().toCompletableFuture().isDone());
+                worker.submit(original::close).get(15, TimeUnit.SECONDS);
+                owned.get().close();
+                assertFalse(process.isAlive());
+                assertEquals(Outcome.SUCCEEDED,
+                        handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
+                assertEquals(0, claims(runtime));
+            } finally {
+                if (original != null && worker != null && !worker.isShutdown())
+                    worker.submit(original::close).get(15, TimeUnit.SECONDS);
+                if (owned.get() != null)
+                    owned.get().close();
+            }
+        }
+    }
+
+    @Test
     void actualBrowserRetainsOriginalTaskUntilPhysicalAndDurableRelease() throws Exception {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
