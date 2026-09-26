@@ -72,7 +72,7 @@ public final class ModActivationLedger {
             }
             requireDrained(connection);
             try (var query = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED' AND NOT COALESCE(operation_type IN ('ENABLE','SWITCH') AND state='RUNNING' AND outcome IS NULL AND phase='APPLYING' AND target_version=?,FALSE)")) {
+                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED' AND NOT COALESCE(operation_type IN ('ENABLE','SWITCH') AND state='RUNNING' AND outcome IS NULL AND phase='APPLYING' AND target_version=? AND accepted_revision=(SELECT revision FROM mod_registry WHERE mod_id=mod_operation.mod_id),FALSE)")) {
                 query.setString(1, owner);
                 query.setString(2, version);
                 try (var row = query.executeQuery()) {

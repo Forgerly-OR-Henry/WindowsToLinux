@@ -69,6 +69,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                     throw unavailable("PLATFORM_NOT_RUNNING", "The platform has not completed startup");
             }
         } else {
+            requireNoPendingIntent(connection, ownerId);
             try (var statement = connection.prepareStatement(
                     "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
                 statement.setString(1, version);
@@ -114,6 +115,45 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             }
         }
         return List.copyOf(claims);
+    }
+
+    /** Rejects new work in any retained restart-request scope without changing accepted tasks. / 拒绝保留重启请求范围内的新工作，不改变已接纳任务。
+     * @param connection original platform admission transaction / 原平台准入事务
+     * @param owner exact new task owner / 精确新任务所有者
+     * @throws SQLException if stored evidence cannot be read / 无法读取已存证据时
+     * @throws ApiException if the owner is affected or scope cannot be verified / 所有者受影响或范围无法核验时 */
+    private static void requireNoPendingIntent(Connection connection, String owner) throws SQLException, ApiException {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper()
+                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        try (var statement = connection.prepareStatement(
+                "SELECT mod_id,request_json FROM mod_operation WHERE operation_type IN ('ENABLE','DISABLE','SWITCH') AND state<>'ENDED'");
+                var rows = statement.executeQuery()) {
+            while (rows.next()) {
+                String stored = rows.getString(2);
+                try {
+                    if (stored == null || stored.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1024 * 1024)
+                        throw new IllegalArgumentException();
+                    var request = json.readTree(stored);
+                    if (!request.path("formatVersion").isInt() || request.path("formatVersion").intValue() != 1
+                            || !rows.getString(1).equals(request.path("ownerId").asText())
+                            || !request.path("affected").isArray())
+                        throw new IllegalArgumentException();
+                    var affected = new HashSet<String>();
+                    for (var item : request.path("affected"))
+                        if (!item.isTextual() || item.textValue().isBlank() || item.textValue().length() > 512
+                                || !affected.add(item.textValue()))
+                            throw new IllegalArgumentException();
+                    if (!affected.contains(rows.getString(1)))
+                        throw new IllegalArgumentException();
+                    if (affected.contains(owner))
+                        throw unavailable("MOD_RESTART_PENDING", "This Mod is affected by a retained restart request");
+                } catch (java.io.IOException | IllegalArgumentException invalid) {
+                    throw unavailable("MOD_INTENT_UNVERIFIED",
+                            "The retained restart admission scope cannot be verified");
+                }
+            }
+        }
     }
 
     /**
