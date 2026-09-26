@@ -66,6 +66,156 @@ public final class PlatformModIntents implements AutoCloseable {
         preparations = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(database);
     }
 
+    /** Registered release displayed independently of selection and runtime. / 独立于选择和运行展示的登记发布。
+     * @param manifest original validated declaration / 原已验证声明
+     * @param state current installation state / 当前安装状态 */
+    public record ReleaseView(ModManifest manifest, String state) {
+    }
+
+    /** Retained data available for explicit source review. / 供明确来源审阅的保留数据。
+     * @param identity exact registered generation / 精确登记代次
+     * @param state actual preparation state / 实际准备状态
+     * @param retryable whether never validated or handed to business / 是否从未验证或交付业务 */
+    public record DataView(SchemaIdentity identity, String state, boolean retryable) {
+    }
+
+    /** Retained operation identity for explicit cancellation or reconciliation. / 供明确撤销或核对的保留操作身份。
+     * @param id original operation / 原操作
+     * @param type original operation type / 原操作类型
+     * @param state actual operation state / 实际操作状态
+     * @param phase actual operation phase / 实际操作阶段
+     * @param request cancellable original request group / 可撤销原请求组 */
+    public record OperationView(UUID id, String type, String state, String phase, Optional<UUID> request) {
+    }
+
+    /** Immutable host-only management facts, without SQL or recovery payloads. / 不含 SQL 或恢复载荷的不可变宿主管理事实。
+     * @param owner stable Mod identity / 稳定 Mod 身份
+     * @param choice saved user choice / 已存用户选择
+     * @param runtime actual runtime state / 实际运行状态
+     * @param actual actual loaded release / 实际加载发布
+     * @param failure original safe diagnostic / 原安全诊断
+     * @param versions registered releases in descending semantic order / 按语义版本降序的登记发布
+     * @param data retained exact data generations / 保留的精确数据代次
+     * @param operations unfinished original operations / 未结束原操作 */
+    public record ModView(String owner, Choice choice, String runtime, Optional<String> actual,
+            Optional<Problem> failure, List<ReleaseView> versions, List<DataView> data,
+            List<OperationView> operations) {
+        /** Copies the management collections without granting mutation authority. / 复制管理集合，不授予修改权限。
+         * @param owner stable identity / 稳定身份
+         * @param choice saved choice / 已存选择
+         * @param runtime actual runtime / 实际运行
+         * @param actual loaded release / 加载发布
+         * @param failure original diagnostic / 原诊断
+         * @param versions registered releases / 登记发布
+         * @param data retained data / 保留数据
+         * @param operations retained operations / 保留操作 */
+        public ModView {
+            versions = List.copyOf(versions);
+            data = List.copyOf(data);
+            operations = List.copyOf(operations);
+        }
+    }
+
+    /** Reads current management facts using the same serialized decision snapshot. / 使用同一串行决策快照读取当前管理事实。
+     * @return immutable saved choices, runtime and retained data / 不可变已存选择、运行与保留数据
+     * @throws ApiException if locked, closed or durable state is unavailable / 锁定、关闭或持久状态不可用时 */
+    public synchronized List<ModView> list() throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var state = read(c);
+                var failures = new HashMap<String, Problem>();
+                try (var s = c.createStatement();
+                        var r = s.executeQuery(
+                                "SELECT mod_id,failure_code,failure_detail FROM mod_registry WHERE failure_code IS NOT NULL")) {
+                    while (r.next())
+                        failures.put(r.getString(1), diagnostic(r.getString(2), r.getString(3)));
+                }
+                var operations = new HashMap<String, List<OperationView>>();
+                try (var s = c.createStatement();
+                        var r = s.executeQuery(
+                                "SELECT operation_id,mod_id,operation_type,state,phase FROM mod_operation WHERE state<>'ENDED' ORDER BY created_at,operation_id")) {
+                    while (r.next()) {
+                        UUID id = r.getObject(1, UUID.class);
+                        var pending = state.pending().get(r.getString(2));
+                        operations.computeIfAbsent(r.getString(2), k -> new ArrayList<>())
+                                .add(new OperationView(id, r.getString(3), r.getString(4), r.getString(5),
+                                        pending != null && pending.id().equals(id)
+                                                ? Optional.of(pending.requestId())
+                                                : Optional.empty()));
+                    }
+                }
+                var result = new ArrayList<ModView>();
+                for (var entry : new TreeMap<>(state.owners()).entrySet()) {
+                    String owner = entry.getKey();
+                    var saved = entry.getValue();
+                    var versions = new ArrayList<ReleaseView>();
+                    for (var release : state.releases().getOrDefault(owner, Map.of()).entrySet()) {
+                        try {
+                            var manifest = ManifestReader
+                                    .read(release.getValue().json().getBytes(StandardCharsets.UTF_8));
+                            if (!owner.equals(manifest.id()) || !release.getKey().equals(manifest.version().toString())
+                                    || !manifest.schemaVersion()
+                                            .equals(Optional.ofNullable(release.getValue().schema())))
+                                throw new IllegalArgumentException("Registered release identity changed");
+                            versions.add(new ReleaseView(manifest, release.getValue().state()));
+                        } catch (java.io.IOException | IllegalArgumentException invalid) {
+                            throw rejected("MOD_MANIFEST_INVALID", "Registered release cannot be displayed safely");
+                        }
+                    }
+                    versions.sort(Comparator.comparing((ReleaseView v) -> v.manifest().version()).reversed());
+                    var data = new ArrayList<DataView>();
+                    for (var item : new TreeMap<>(state.schemas().getOrDefault(owner, Map.of())).entrySet()) {
+                        var value = item.getValue();
+                        data.add(new DataView(new SchemaIdentity(owner, item.getKey(), value.generation()),
+                                value.state(), "FAILED".equals(value.state()) && !value.used()
+                                        && value.validatedAt() == null && value.validationDigest() == null));
+                    }
+                    result.add(new ModView(owner, saved.choice(), saved.runtime(), Optional.ofNullable(saved.actual()),
+                            Optional.ofNullable(failures.get(owner)), versions, data,
+                            operations.getOrDefault(owner, List.of())));
+                }
+                return List.copyOf(result);
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Decodes only the original bounded public diagnostic, never arbitrary database text. / 仅解码原有界公开诊断，不展示任意数据库正文。
+     * @param event original registered event / 原登记事件
+     * @param detail original public evidence, if present / 原公开证据，可不存在
+     * @return safe original diagnostic / 安全原诊断
+     * @throws SQLException if retained diagnostic is malformed / 保留诊断格式错误时 */
+    private static Problem diagnostic(String event, String detail) throws SQLException {
+        if (detail == null)
+            return new Problem(ProblemCode.UNAVAILABLE, event, "Mod requires attention before business can run",
+                    Map.of(), Optional.empty());
+        try {
+            if (detail.length() > 65536)
+                throw new IllegalArgumentException("Oversized diagnostic");
+            var node = JSON.readTree(detail);
+            if (node.path("formatVersion").asInt() != 1 || !event.equals(node.path("eventCode").textValue())
+                    || !node.path("context").isObject())
+                throw new IllegalArgumentException("Diagnostic identity changed");
+            var context = new TreeMap<String, String>();
+            var fields = node.path("context").fields();
+            while (fields.hasNext()) {
+                var field = fields.next();
+                if (!field.getValue().isTextual())
+                    throw new IllegalArgumentException("Invalid diagnostic context");
+                context.put(field.getKey(), field.getValue().textValue());
+            }
+            return new Problem(ProblemCode.valueOf(node.path("code").asText()), event, node.path("message").textValue(),
+                    context,
+                    node.has("diagnosticId")
+                            ? Optional.of(UUID.fromString(node.path("diagnosticId").asText()))
+                            : Optional.empty());
+        } catch (java.io.IOException | IllegalArgumentException invalid) {
+            throw rejected("MOD_DIAGNOSTIC_INVALID", "The retained Mod diagnostic cannot be verified");
+        }
+    }
+
     /** Whole-Mod choice; an enabled choice always names one installed release. / 整个 Mod 的选择，启用选择始终指向一个已安装版本。
      * @param enabled desired whole-Mod switch / 期望的整个 Mod 开关
      * @param version desired selected release, possibly absent while disabled / 期望单选版本，禁用时可以为空 */
