@@ -14,9 +14,10 @@ import javax.swing.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.main.mod.PlatformModContext;
+import gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.development.DevelopmentModDiscovery;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
@@ -94,9 +95,15 @@ class PlatformModContextTest {
             """;
 
     ModClassLoader loader(boolean schema) throws Exception {
-        var code = root.resolve("code-" + UUID.randomUUID());
-        var classes = code.resolve("classes");
+        var workspace = root.toRealPath().resolve("workspace-" + UUID.randomUUID());
+        var code = workspace.resolve("src/mod/fixture");
+        var classes = code.resolve("target/classes");
         Files.createDirectories(classes);
+        for (var pom : List.of(workspace.resolve("pom.xml"), workspace.resolve("src/app/pom.xml"),
+                workspace.resolve("src/mod/pom.xml"), code.resolve("pom.xml"))) {
+            Files.createDirectories(pom.getParent());
+            Files.writeString(pom, "<project/>\n");
+        }
         var entry = code.resolve("Mod.java");
         Files.writeString(entry, SOURCE);
         var contract = code.resolve("Echo.java");
@@ -109,8 +116,18 @@ class PlatformModContextTest {
                 {"formatVersion":1,"id":"example.admission","name":"Fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.admission.Mod","exports":["example.admission.api"]%s}
                 """
                 .formatted(schema ? ",\"schemaVersion\":\"1\"" : "");
-        return new ModClassLoader(ManifestReader.read(json.getBytes(StandardCharsets.UTF_8)),
-                List.of(classes.toUri().toURL()), Map.of());
+        Files.writeString(code.resolve("mod.json"), json, StandardCharsets.UTF_8);
+        DevelopmentDescriptor.generate(workspace, code.resolve("mod.json"), classes, List.of(),
+                List.of(workspace.resolve("pom.xml"), workspace.resolve("src/mod/pom.xml"), code.resolve("pom.xml")),
+                List.of());
+        var discovered = DevelopmentModDiscovery.scan(workspace);
+        assertTrue(discovered.rejections().isEmpty(), discovered.rejections().toString());
+        assertEquals(1, discovered.candidates().size());
+        var candidate = discovered.candidates().getFirst();
+        var sources = new ArrayList<java.net.URL>();
+        for (Path source : candidate.descriptor().sources())
+            sources.add(source.toUri().toURL());
+        return new ModClassLoader(candidate.manifest(), sources, Map.of());
     }
 
     static final class Host implements ModPageRegistry.PageHost {
