@@ -142,7 +142,7 @@ public final class TaskLedger {
      * @return immutable ordered claims / 不可变有序申请
      * @throws SQLException if a resource appears twice / 同一资源重复出现时
      */
-    private List<TaskResource> orderedClaims(List<TaskResource> claims) throws SQLException {
+    private static List<TaskResource> orderedClaims(List<TaskResource> claims) throws SQLException {
         var keys = new HashSet<String>();
         for (var r : claims)
             if (!keys.add(r.kind() + "\0" + r.id()))
@@ -298,6 +298,159 @@ public final class TaskLedger {
         return id;
     }
 
+    /** Acquires the whole provider resource set in one transaction before author code runs. / 作者代码运行前在同一事务取得完整提供方资源集合。
+     * @param taskId original accepted task / 原已接纳任务
+     * @param recovery exact provider and call identity / 精确提供方及调用身份
+     * @param resolver actual provider admission under the platform lock / 平台锁下的实际提供方准入
+     * @return independently owned lease IDs for this call / 此调用独立持有的占用 ID
+     * @throws SQLException if validation, conflict or persistence prevents admission / 校验、冲突或持久化阻止准入时 */
+    public List<UUID> retainDependency(UUID taskId, DependencyRecovery recovery, InitialClaims resolver)
+            throws SQLException {
+        if (!recovery.boot().equals(bootId))
+            throw new SQLException("Dependency call belongs to another boot");
+        return locked(() -> {
+            try (var c = connections.open()) {
+                if (!Set.of("RUNNING", "CANCEL_REQUESTED", "UNKNOWN").contains(state(c, taskId)))
+                    throw new SQLException("Original task is not executing");
+                var claims = orderedClaims(resolver.resolve(c));
+                if (!claims.equals(orderedClaims(recovery.claims())))
+                    throw new SQLException("Provider admission differs from its loaded generation");
+                for (var claim : claims)
+                    if (conflicts(c, taskId, claim))
+                        throw new DependencyBusyException();
+                var ids = new ArrayList<UUID>();
+                for (var claim : claims)
+                    ids.add(insertLease(c, taskId, claim, recovery.encode().encode()));
+                return List.copyOf(ids);
+            }
+        });
+    }
+
+    /** Known rejection before any dependency claim is inserted. / 任一依赖申请插入前的已知拒绝。 */
+    public static final class DependencyBusyException extends SQLException {
+        /** Stable exception serialization identity. / 稳定异常序列化身份。 */
+        private static final long serialVersionUID = 1L;
+        /** Reports occupied provider resources without implying unknown side effects. / 报告提供方资源被占用，不暗示未知副作用。 */
+        private DependencyBusyException() {
+            super("Provider resource is busy");
+        }
+    }
+
+    /** Releases one original call's complete claims atomically, never another concurrent call. / 原子释放一次原调用的完整申请，不释放另一并发调用。
+     * @param taskId owning task / 所属任务
+     * @param recovery original call facts / 原调用事实
+     * @param leases exact originally acquired lease IDs / 精确原取得占用 ID
+     * @throws SQLException if identity or the complete commit cannot be confirmed / 身份或完整提交无法确认时 */
+    public void releaseDependency(UUID taskId, DependencyRecovery recovery, List<UUID> leases) throws SQLException {
+        if (leases.size() != recovery.claims().size() || Set.copyOf(leases).size() != leases.size())
+            throw new SQLException("Incomplete dependency lease set");
+        locked(() -> {
+            try (var c = connections.open()) {
+                var observed = new ArrayList<TaskResource>();
+                for (var id : leases) {
+                    try (var p = c.prepareStatement(
+                            "SELECT resource_kind,resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND lease_id=?")) {
+                        p.setObject(1, taskId);
+                        p.setObject(2, id);
+                        try (var rows = p.executeQuery()) {
+                            if (!rows.next() || !recovery.encode().equals(ResourceRecovery.decode(rows.getString(5))))
+                                throw new SQLException("Dependency release identity differs");
+                            observed.add(new TaskResource(rows.getString(1), rows.getString(2), rows.getString(3),
+                                    rows.getString(4).equals("EXCLUSIVE")));
+                        }
+                    }
+                }
+                if (!orderedClaims(observed).equals(orderedClaims(recovery.claims())))
+                    throw new SQLException("Dependency release claims differ");
+                for (var id : leases)
+                    try (var p = c.prepareStatement(
+                            "UPDATE platform_task_resource SET released_at=COALESCE(released_at,?) WHERE task_id=? AND lease_id=?")) {
+                        p.setLong(1, System.currentTimeMillis());
+                        p.setObject(2, taskId);
+                        p.setObject(3, id);
+                        if (p.executeUpdate() != 1)
+                            throw new SQLException("Dependency release was not confirmed");
+                    }
+            }
+            return null;
+        });
+    }
+
+    /** Loads retained dependency groups without interpreting other resource protocols. / 加载保留依赖组，不解释其他资源协议。
+     * @param taskId original task / 原任务
+     * @return original call identities and complete lease sets / 原调用身份及完整占用集合
+     * @throws SQLException if any recognized call is inconsistent / 任一识别的调用不一致时 */
+    public Map<DependencyRecovery, List<UUID>> dependencies(UUID taskId) throws SQLException {
+        return locked(() -> {
+            try (var c = connections.open()) {
+                return readDependencies(c, taskId);
+            }
+        });
+    }
+
+    /** Reads complete dependency groups using the caller's existing transaction. / 使用调用方已有事务读取完整依赖组。
+     * @param connection existing platform transaction / 已有平台事务
+     * @param taskId original task / 原任务
+     * @return validated original groups / 已校验原依赖组
+     * @throws SQLException if persisted claims or identities differ / 持久申请或身份不符时 */
+    public static Map<DependencyRecovery, List<UUID>> readDependencies(Connection connection, UUID taskId)
+            throws SQLException {
+        var groups = new LinkedHashMap<DependencyRecovery, List<UUID>>();
+        var resources = new HashMap<DependencyRecovery, List<TaskResource>>();
+        try (var p = connection.prepareStatement(
+                "SELECT lease_id,recovery_json,resource_kind,resource_id,owner_id,access_mode FROM platform_task_resource WHERE task_id=? AND resource_kind IN ('MOD','SCHEMA') AND released_at IS NULL")) {
+            p.setObject(1, taskId);
+            try (var rows = p.executeQuery()) {
+                while (rows.next()) {
+                    String value = rows.getString(2);
+                    if (ResourceRecovery.TASK_END.equals(value) || ResourceRecovery.EXPLICIT.equals(value))
+                        continue;
+                    var decoded = ResourceRecovery.decode(value);
+                    if (!decoded.protocol().equals("service.v1"))
+                        continue;
+                    DependencyRecovery identity;
+                    try {
+                        identity = DependencyRecovery.decode(decoded);
+                    } catch (RuntimeException invalid) {
+                        throw new SQLException("Invalid dependency recovery identity");
+                    }
+                    groups.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(rows.getObject(1, UUID.class));
+                    resources.computeIfAbsent(identity, ignored -> new ArrayList<>())
+                            .add(new TaskResource(rows.getString(3), rows.getString(4), rows.getString(5),
+                                    rows.getString(6).equals("EXCLUSIVE")));
+                }
+            }
+        }
+        var result = new LinkedHashMap<DependencyRecovery, List<UUID>>();
+        for (var entry : groups.entrySet()) {
+            if (entry.getValue().size() != entry.getKey().claims().size())
+                throw new SQLException("Incomplete dependency claim group");
+            if (!orderedClaims(resources.get(entry.getKey())).equals(orderedClaims(entry.getKey().claims())))
+                throw new SQLException("Dependency claim identity differs");
+            result.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+        return Map.copyOf(result);
+    }
+
+    /** Checks physical claims of retained service providers before releasing their code/data ownership. / 释放代码及数据归属前检查保留服务提供方的物理申请。
+     * @param taskId original task / 原任务
+     * @param providers original provider identities / 原提供方身份
+     * @return whether any provider resource remains active / 是否仍有提供方资源活动
+     * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
+    public boolean hasDependencyResources(UUID taskId, Set<String> providers) throws SQLException {
+        try (var c = connections.open();
+                var p = c.prepareStatement(
+                        "SELECT owner_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND resource_kind NOT IN ('MOD','SCHEMA')")) {
+            p.setObject(1, taskId);
+            try (var rows = p.executeQuery()) {
+                while (rows.next())
+                    if (providers.contains(rows.getString(1)))
+                        return true;
+            }
+            return false;
+        }
+    }
+
     /** Records the first actual PID and start time before any process HELLO is sent. / 发送任何进程 HELLO 前记录首个实际 PID 及启动时间。
      * @param taskId original task / 原任务
      * @param resource exact retained process / 精确保留进程
@@ -418,7 +571,11 @@ public final class TaskLedger {
                         "SELECT boot_id,owner_id,owner_version,state FROM platform_task WHERE task_id=?")) {
                     p.setObject(1, taskId);
                     try (var row = p.executeQuery()) {
-                        if (!row.next() || !owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
+                        if (!row.next())
+                            throw new SQLException("Original SSH recovery owner differs");
+                        if ((!owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
+                                && readDependencies(c, taskId).keySet().stream().noneMatch(
+                                        call -> call.provider().equals(owner) && call.version().equals(version)))
                             throw new SQLException("Original SSH recovery owner differs");
                         if (bootId.equals(row.getObject(1, UUID.class)))
                             return null;
@@ -433,10 +590,10 @@ public final class TaskLedger {
                     try (var rows = p.executeQuery()) {
                         while (rows.next()) {
                             String id = rows.getString(2);
-                            if (!id.startsWith("ssh-"))
+                            if (!id.startsWith("ssh-") || !owner.equals(rows.getString(3)))
                                 continue;
                             var facts = ResourceRecovery.decode(rows.getString(4));
-                            if (!owner.equals(rows.getString(3)) || !facts.protocol().equals("ssh.v1")
+                            if (!facts.protocol().equals("ssh.v1")
                                     || !facts.fields().keySet().equals(Set.of("bootId", "serverId"))
                                     || facts.fields().get("serverId").isBlank())
                                 throw new SQLException("Unknown SSH connection ownership");

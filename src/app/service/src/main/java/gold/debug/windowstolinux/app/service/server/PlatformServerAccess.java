@@ -67,7 +67,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
             throw error(ProblemCode.INVALID_INPUT, "SERVER_PAGE", "Invalid server page request");
         return access(task, false, false, () -> {
             String after = cursor.isEmpty() ? null : decodeCursor(cursor.orElseThrow(), task.id());
-            var values = repository.list(task.id(), owner, after, limit + 1);
+            var values = repository.list(task.id(), tasks.requireContext(task).ownerId(), after, limit + 1);
             boolean more = values.size() > limit;
             var page = more ? values.subList(0, limit) : values;
             return new PageSlice<>(page,
@@ -209,7 +209,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if this server was not initially admitted / 此服务器未初始准入时
      */
     private void requireServer(TaskContext task, String id) throws SQLException, ApiException {
-        if (!ledger.holds(task.id(), new TaskResource("SERVER", id, owner, true)))
+        if (!ledger.holds(task.id(), new TaskResource("SERVER", id, tasks.requireContext(task).ownerId(), true)))
             throw error(ProblemCode.ACCESS_DENIED, "SERVER_NOT_ADMITTED", "The server was not admitted with this task");
     }
 

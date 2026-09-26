@@ -1717,3 +1717,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/process/ProcessChannel.java`：实际子进程的有界双向管道、握手、请求、取消、停止及独立 stderr 消费。
 - `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间。
 - `app/service/task/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
+
+- `app/mod/service/ServiceSnapshot.java`：跨 Mod 同步调用的有界值复制，拒绝活动句柄、闭包及异步对象。
+- `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。
+- `app/service/mod/PlatformModServices.java`：真实加载器身份的服务登记、启动发布、依赖发现和原任务同步调用。

@@ -125,24 +125,29 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                             "SERVER_CREDENTIAL_MISSING", "The saved server credential is unavailable"));
                 }
             });
-            session.connection = session.connector.connect(endpoint, password, (target, fingerprint) -> {
-                if (expected.isPresent()) {
-                    var trusted = expected.orElseThrow();
-                    return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
-                            && trusted.hostKeySha256().equals(fingerprint);
-                }
-                var intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(), "first-use",
-                        "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
-                                + "\nSSH wire-key fingerprint=" + fingerprint,
-                        "Trust this exact SSH host key for the selected saved server after successful authentication.");
-                var decision = interaction.approve(intent, task);
-                if (decision.outcome() == Outcome.CANCELLED)
-                    throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED", "SSH host trust review was cancelled");
-                if (decision.outcome() != Outcome.SUCCEEDED)
-                    return false;
-                interaction.consume(decision.value().orElseThrow(), intent, task);
-                return true;
-            }, connectTimeout, tasks.operationCancellation(task));
+            var trust = tasks.<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
+                    (target, fingerprint) -> {
+                        if (expected.isPresent()) {
+                            var trusted = expected.orElseThrow();
+                            return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
+                                    && trusted.hostKeySha256().equals(fingerprint);
+                        }
+                        var intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(),
+                                "first-use",
+                                "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
+                                        + "\nSSH wire-key fingerprint=" + fingerprint,
+                                "Trust this exact SSH host key for the selected saved server after successful authentication.");
+                        var decision = interaction.approve(intent, task);
+                        if (decision.outcome() == Outcome.CANCELLED)
+                            throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED",
+                                    "SSH host trust review was cancelled");
+                        if (decision.outcome() != Outcome.SUCCEEDED)
+                            return false;
+                        interaction.consume(decision.value().orElseThrow(), intent, task);
+                        return true;
+                    });
+            session.connection = session.connector.connect(endpoint, password, trust::apply, connectTimeout,
+                    tasks.operationCancellation(task));
             tasks.requireServer(task, owner, version, server.id());
             servers.saveAuthenticatedServer(
                     new ServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
@@ -219,9 +224,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      */
     public void closeTaskResources(TaskContext task) throws ApiException {
         worker();
-        var snapshot = tasks.requireContext(task);
-        if (!snapshot.ownerId().equals(owner) || !snapshot.ownerVersion().equals(version))
-            throw error(ProblemCode.ACCESS_DENIED, "SSH_TASK_OWNER", "The task belongs to another Linux capability");
+        tasks.requireCleanup(task, owner, version);
         closeSessions(task);
         tasks.releasePreviousSshConnections(task, owner, version);
     }
@@ -511,13 +514,33 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 var transferTimeout = thresholds.idleTimeout();
                 var cancellation = tasks.operationCancellation(task);
                 String fingerprint = connection.fingerprint();
+                var prepare = tasks.<TransferPlan, Void, ResourceLease>hostCallback(task, owner, version,
+                        (prepared, ignored) -> {
+                            try {
+                                return prepare(prepared);
+                            } catch (ApiException failure) {
+                                throw failure;
+                            } catch (Exception failure) {
+                                tasks.reportUncertainEffect(task);
+                                throw error(ProblemCode.IO_FAILURE, "SFTP_JOURNAL_CALLBACK",
+                                        "Original transfer ownership could not be recorded");
+                            }
+                        });
+                var choose = tasks.<TransferConflict, Void, TransferConflictChoice>hostCallback(task, owner, version,
+                        (conflict, ignored) -> interaction.transferConflict(conflict, server, task));
+                var observe = tasks.<TransferProgress, Void, Void>hostCallback(task, owner, version,
+                        (progress, ignored) -> {
+                            progress(progress);
+                            return null;
+                        });
+                TransferJournal ownedJournal = prepared -> prepare.apply(prepared, null);
                 while (true) {
                     var result = plan == null
                             ? connection.transfer(request, digest, upload, transferTimeout, cancellation,
-                                    this::progress, conflict -> interaction.transferConflict(conflict, server, task),
-                                    this)
-                            : connection.recoverTransfer(plan, discard, transferTimeout, cancellation, this::progress,
-                                    this);
+                                    progress -> observe.apply(progress, null), conflict -> choose.apply(conflict, null),
+                                    ownedJournal)
+                            : connection.recoverTransfer(plan, discard, transferTimeout, cancellation,
+                                    progress -> observe.apply(progress, null), ownedJournal);
                     if (result.problem().isEmpty()
                             || !result.problem().orElseThrow().eventCode().equals("SFTP_STALLED"))
                         return result;
