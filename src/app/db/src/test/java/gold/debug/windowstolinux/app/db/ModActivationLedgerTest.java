@@ -174,6 +174,12 @@ class ModActivationLedgerTest {
             sql(db, "UPDATE mod_operation SET accepted_revision=3");
             assertThrows(SQLException.class, ledger(db)::starting);
             sql(db, "UPDATE mod_operation SET accepted_revision=4");
+            assertThrows(SQLException.class, ledger(db)::starting);
+            sql(db, "UPDATE mod_operation SET recovery_json=?",
+                    "{\"formatVersion\":1,\"applicationBootId\":\"" + UUID.randomUUID() + "\"}");
+            assertThrows(SQLException.class, ledger(db)::starting);
+            sql(db, "UPDATE mod_operation SET recovery_json=?",
+                    "{\"formatVersion\":1,\"applicationBootId\":\"" + db.bootId() + "\"}");
             journal.starting();
             journal.closed(Optional.empty());
             assertEquals("RUNNING", value(db, "SELECT state FROM mod_operation"));
@@ -202,6 +208,24 @@ class ModActivationLedgerTest {
             assertTrue(tasks.cancel(queued));
             journal.closed(Optional.empty());
             state(db, "STOPPED", null);
+        }
+    }
+
+    @Test
+    void priorRuntimeResidueCannotBeOverwrittenByAnUnrequestedFreshActivation() throws Exception {
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            register(db, null);
+            for (var state : List.of("STARTING", "RUNNING", "STOPPING", "UNKNOWN")) {
+                sql(db, "UPDATE mod_registry SET last_boot_id=?,last_runtime_state=?,actual_version=?",
+                        UUID.randomUUID(), state, VERSION);
+                assertThrows(SQLException.class, ledger(db)::starting);
+                assertEquals(state, value(db, "SELECT last_runtime_state FROM mod_registry"));
+                assertEquals(VERSION, value(db, "SELECT actual_version FROM mod_registry"));
+            }
+            sql(db, "UPDATE mod_registry SET last_runtime_state='STOPPED',actual_version=NULL");
+            var accepted = ledger(db);
+            accepted.starting();
+            accepted.closed(Optional.empty());
         }
     }
 }

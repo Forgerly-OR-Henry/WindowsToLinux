@@ -35,7 +35,9 @@ public final class ModActivationLedger {
     private boolean claimed;
 
     /** Safe diagnostic encoding, independent of author exception messages. / 独立于作者异常消息的安全诊断编码。 */
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper()
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds one original activation before any lifecycle callback. / 在任一生命周期回调前绑定一次原启用。
      * @param database current platform engine / 当前平台引擎
@@ -59,12 +61,13 @@ public final class ModActivationLedger {
         attempted = true;
         locked(connection -> {
             try (var query = connection.prepareStatement(
-                    "SELECT r.enabled,r.selected_version,r.last_boot_id,v.state,v.schema_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                    "SELECT r.enabled,r.selected_version,r.last_boot_id,v.state,v.schema_version,r.last_runtime_state,r.actual_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
                 query.setString(1, version);
                 query.setString(2, owner);
                 try (var row = query.executeQuery()) {
                     if (!row.next() || !row.getBoolean(1) || !version.equals(row.getString(2))
                             || boot.equals(row.getObject(3, UUID.class)) || !"READY".equals(row.getString(4))
+                            || !Set.of("STOPPED", "FAILED").contains(row.getString(6)) || row.getString(7) != null
                             || !Objects.equals(schema.map(SchemaIdentity::schemaVersion).orElse(null),
                                     row.getString(5)))
                         throw new SQLException("Selected Mod is not eligible for a new boot activation");
@@ -81,6 +84,7 @@ public final class ModActivationLedger {
                         throw new SQLException("Mod intent or maintenance has not reached startup application");
                 }
             }
+            requireApplicationBoot(connection);
             if (schema.isPresent()) {
                 var identity = schema.get();
                 var coordinates = new SchemaCoordinates(identity);
@@ -98,6 +102,32 @@ public final class ModActivationLedger {
             claimed = true;
             write(connection, "STARTING", version, null);
         });
+    }
+
+    /** Requires the restart exception to belong to this exact executing boot. / 要求重启例外属于本次精确执行启动。
+     * @param connection locked platform transaction / 已锁定平台事务
+     * @throws SQLException if retained application ownership is absent, duplicated or stale / 保留应用归属缺失、重复或过期时 */
+    private void requireApplicationBoot(Connection connection) throws SQLException {
+        try (var query = connection
+                .prepareStatement("SELECT recovery_json FROM mod_operation WHERE mod_id=? AND state<>'ENDED'")) {
+            query.setString(1, owner);
+            try (var rows = query.executeQuery()) {
+                if (!rows.next())
+                    return;
+                String encoded = rows.getString(1);
+                if (encoded == null || encoded.length() > 1024 * 1024)
+                    throw new SQLException("Invalid restart application evidence");
+                try {
+                    var evidence = JSON.readTree(encoded);
+                    if (evidence == null || !evidence.isObject() || evidence.size() != 2
+                            || !evidence.path("formatVersion").isInt() || evidence.path("formatVersion").intValue() != 1
+                            || !boot.toString().equals(evidence.path("applicationBootId").textValue()) || rows.next())
+                        throw new SQLException("Restart application does not belong to this boot");
+                } catch (JsonProcessingException invalid) {
+                    throw new SQLException("Invalid restart application evidence", invalid);
+                }
+            }
+        }
     }
 
     /** Confirms publication while preserving independently changed intent. / 确认发布，同时保留独立变更的意图。
