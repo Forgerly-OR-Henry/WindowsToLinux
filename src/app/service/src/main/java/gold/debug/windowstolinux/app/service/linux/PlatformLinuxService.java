@@ -6,14 +6,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.linux.*;
-import gold.debug.windowstolinux.api.server.ServerRef;
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.linux.ssh.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 
 /** Adapts saved servers and reviewed effects to actual task-owned SSH resources. / 将已保存服务器及已审核副作用接入真实任务所属 SSH 资源。 */

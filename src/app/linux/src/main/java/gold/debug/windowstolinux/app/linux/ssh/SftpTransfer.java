@@ -10,8 +10,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.api.linux.*;
-import gold.debug.windowstolinux.api.task.*;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.task.*;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.sftp.client.*;
 import org.apache.sshd.sftp.common.*;

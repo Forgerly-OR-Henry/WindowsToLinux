@@ -4,10 +4,10 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Runs caller-bound author work after durable admission and preserves unfinished ownership. / 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属。 */
 public final class PlatformTaskRuntime implements AutoCloseable {
@@ -286,7 +286,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @throws ApiException if the task lacks either required claim / 任务缺少任一必需占用时
      */
     public synchronized ResourceLease retainSchemaConnection(TaskContext context,
-            gold.debug.windowstolinux.api.db.SchemaIdentity identity) throws ApiException {
+            gold.debug.windowstolinux.appapi.db.SchemaIdentity identity) throws ApiException {
         requireContext(context);
         try {
             if (!ledger.holds(context.id(), new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))

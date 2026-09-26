@@ -5,9 +5,9 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.api.db.SchemaAccess;
-import gold.debug.windowstolinux.api.db.SchemaIdentity;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
 /** Owns preparation connections and optional SELECT-only validation credentials. / 持有准备阶段连接及可选的只读验证凭据。 */
 public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {

@@ -11,11 +11,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.ui.UiEnvironment;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.*;
+import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -163,7 +163,7 @@ class PlatformServersWindowTest {
                         && ((JComboBox<?>) named(frame, "servers.checks")).getItemCount() == 0);
                 var snapshot = new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
                         .snapshot(task);
-                assertEquals(gold.debug.windowstolinux.api.task.TaskState.ENDED, snapshot.state());
+                assertEquals(gold.debug.windowstolinux.appapi.task.TaskState.ENDED, snapshot.state());
                 assertEquals("0.0.1-original", snapshot.ownerVersion());
             } finally {
                 onEdt(() -> {

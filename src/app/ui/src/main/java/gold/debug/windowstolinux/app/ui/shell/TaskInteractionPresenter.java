@@ -5,9 +5,9 @@ import java.util.concurrent.FutureTask;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Presents full task review in dialogs owned by the platform privacy window. / 在平台隐私窗口所属对话框内呈现完整任务审核。 */
 public final class TaskInteractionPresenter implements PlatformInteractionService.Prompts {

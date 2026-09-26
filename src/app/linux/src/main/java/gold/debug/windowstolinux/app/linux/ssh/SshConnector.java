@@ -6,11 +6,11 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.linux.CommandRequest;
-import gold.debug.windowstolinux.api.linux.CommandResult;
-import gold.debug.windowstolinux.api.linux.TransferRequest;
-import gold.debug.windowstolinux.api.linux.TransferResult;
-import gold.debug.windowstolinux.api.task.*;
+import gold.debug.windowstolinux.appapi.linux.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.TransferResult;
+import gold.debug.windowstolinux.appapi.task.*;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
 import org.apache.sshd.client.auth.keyboard.UserInteraction;

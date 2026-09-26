@@ -10,7 +10,6 @@ import java.util.concurrent.FutureTask;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.ui.UiEnvironment;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.main.diagnostic.*;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
@@ -20,6 +19,7 @@ import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.PlatformFrame;
 import gold.debug.windowstolinux.app.windows.security.CurrentUserDataProtection;
+import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 
 /** Production platform bootstrap using fixed paths, current-user protection and H2. / 使用固定路径、当前用户保护及 H2 的生产平台引导。 */
 public final class DesktopMain {

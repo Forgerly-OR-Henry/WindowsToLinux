@@ -11,11 +11,11 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.api.linux.*;
-import gold.debug.windowstolinux.api.server.ServerRef;
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.server.channel.ChannelSession;

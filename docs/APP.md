@@ -1,6 +1,6 @@
 # WindowsToLinux 发布与安装布局
 
-- 状态：本文描述 **1.1 已确认目标，当前发行与平台改造尚未实施**。
+- 状态：本文描述 **1.1 已确认发布目标**；平台源码正在改造。按 2026-09-26 用户决定，本次完成源码迁移和 CLASS 本机验收，S7 暂缓，JAR/APP/SDK 发行打包待源码稳定后进行。
 - 职责：维护 APP/JAR 交付物、发布目录、启动配置、更新边界和官网服务范围；源码模块、包和命名由 [File.md](File.md) 维护，三种模式的 Mod 加载规则见 [Mod 文档](Mod.md#loading-modes)。
 - 产品方向：WindowsToLinux 是在 Windows 上操作 Linux 的开放 APP 平台，主体提供界面、连接、AI、任务、安全和 Mod 管理；部署与备份由官方 Mod 提供。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [Mod 包格式](Mod.md)
@@ -17,7 +17,7 @@ WindowsToLinux/                            # 安装根目录
 ├─ app/                                   # 平台自身的程序及启动配置
 │  ├─ WindowsToLinux.cfg                   # 启动类、classpath 和 JVM 参数等配置
 │  ├─ main.jar                            # 软件主程序；文件名为示意
-│  └─ app-api.jar                         # APP 公开 API；文件名为示意
+│  └─ appapi.jar                         # APP 公开 API；文件名为示意
 ├─ lib/                                   # 仅存放平台主体使用的第三方依赖
 │  ├─ dependency-a.jar                    # 主体依赖示例
 │  └─ dependency-b.jar                    # 主体依赖示例
@@ -48,7 +48,7 @@ JAR 模式以**主程序 JAR 所在目录**为程序根目录，平台 `lib/`、
 ```text
 WindowsToLinux/                            # 主程序 JAR 所在目录
 ├─ main.jar                               # 主程序 JAR；文件名为示意
-├─ app-api.jar                            # APP 公开 API；文件名为示意
+├─ appapi.jar                            # APP 公开 API；文件名为示意
 ├─ lib/                                   # 平台主体第三方依赖
 │  ├─ dependency-a.jar                    # 主体依赖示例
 │  └─ dependency-b.jar                    # 主体依赖示例
@@ -72,7 +72,7 @@ WindowsToLinux/                            # 主程序 JAR 所在目录
 ```ini
 [Application]
 app.classpath=$APPDIR\main.jar
-app.classpath=$APPDIR\app-api.jar
+app.classpath=$APPDIR\appapi.jar
 app.classpath=$ROOTDIR\lib\dependency-a.jar
 app.classpath=$ROOTDIR\lib\dependency-b.jar
 app.mainclass=example.Main
@@ -107,7 +107,7 @@ app.mainclass=example.Main
 - 投稿经人工审核后上架，邮箱仅后台可见；拒绝或撤回的投稿在 90 天后清理邮箱，已上架项目维护期间保留。下载无需登录不代表后台可匿名管理。
 - 商店使用官方 HTTPS 服务，提供 Mod 列表、版本信息和包下载，目录附带包摘要并进行官方签名，由 APP 验证。下载不要求账号；不自动下载缺失依赖，也不自动升级或切换用户已经安装的版本。下载后的本地行为只维护在 [Mod 获取与解压流程](Mod.md#package-acquisition)。
 
-0.6 期的多用户执行服务台、生产账号与工作区规划已由本方向取代。网站不是未来第三方插件的执行环境；第三方包在 APP 使用。投稿收集意味着网站可能需要接收服务，因此不把“纯静态网站”或某种后端技术栈提前定为要求。
+  0.6 期的多用户执行服务台、生产账号与工作区规划已由本方向取代。网站不是未来第三方插件的执行环境；第三方包在 APP 使用。投稿收集意味着网站可能需要接收服务，因此不把“纯静态网站”或某种后端技术栈提前定为要求。
 
 <a id="build-contract"></a>
 
@@ -117,18 +117,18 @@ app.mainclass=example.Main
 
 根构建沿用 `gold.debug.windowstolinux` groupId，工程开发版本为 `1.1.0-SNAPSHOT`，不是公开版本承诺。平台 API 开发契约版本为 `1.0.0-dev.1`，独立于 Maven 工程版本；两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。后续受控修改同步更新这些声明和测试，不能由字符串相似推断兼容。
 
-| 构建项 | artifactId / 最终文件 | 装配关系 |
-| --- | --- | --- |
-| API | `windowstolinux-api` / `api.jar` | 单独的公开契约叶子模块，仅依赖所需 JDK 模块。 |
-| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar` | ai、db、linux、main、mod、secret、service、source、ui、windows；依赖方向由 File 维护。 |
-| 官方 Mod | `windowstolinux-mod-deployment` / `deployment.jar`；`windowstolinux-mod-backup` / `backup.jar` | 各自独立主 JAR；平台 API 为 provided，备份对部署的编译依赖为 provided，只引用导出 API。 |
-| 聚合模块 | 根、app、mod 的 POM | 不生成运行 JAR，不把后置 Web 加入新活动根构建。 |
+| 构建项         | artifactId / 最终文件                                                                          | 装配关系                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| API            | `windowstolinux-appapi` / `appapi.jar`                                                         | 单独的公开契约叶子模块，仅依赖所需 JDK 模块。                                           |
+| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar`                                                 | ai、db、linux、main、mod、secret、service、source、ui、windows；依赖方向由 File 维护。  |
+| 官方 Mod       | `windowstolinux-mod-deployment` / `deployment.jar`；`windowstolinux-mod-backup` / `backup.jar` | 各自独立主 JAR；平台 API 为 provided，备份对部署的编译依赖为 provided，只引用导出 API。 |
+| 聚合模块       | 根、app、mod 的 POM                                                                            | 不生成运行 JAR，不把后置 Web 加入新活动根构建。                                         |
 
 平台入口固定 `gold.debug.windowstolinux.app.main.AppMain`。APP 的平台自有 JAR 全部放 `app/`，JAR 发行物的平台自有 JAR 全部与 main.jar 并列；平台第三方依赖都在根 `lib/`。主程序按普通 classpath 运行，不使用 fat JAR 或 JPMS 启动。独立模块自身带资源，救援脚本等静态资源在 linux.jar；需要可执行浏览器文件的救援运行依赖由构建准备到 `app/recovery/`（JAR 发行物为 `recovery/`），使用构建锁定的 Playwright 配套 Chromium，不依赖用户首次救援时下载。
 
 构建生成固定顺序的主体 classpath 清单、依赖坐标与 SHA-256 清单，不手工改启动配置。JAR 的 Manifest 指定 Main-Class 和相对 Class-Path，路径按 JAR 规范 URL 编码；APP 生成配置逐项引用 `$APPDIR` 自有 JAR 和 `$ROOTDIR/lib` 依赖。运行时 API 与主体依赖只各加载一份，官方 Mod 不进入主体 classpath。两个官方包预先经过校验并展开到 `mod/<id>/<version>`，初始开关仍为关闭；发行包不带运行数据库或替用户建立配置。
 
-前面的 `app-api.jar`、`dependency-a.jar` 图示只说明目录关系，实际文件以本节 `api.jar` 和构建依赖清单为准。JAR 的 data 始终以 db.jar 所在目录为锚点，APP 的 data 按 EXE 目录；所有路径在不同工作目录及含空格目录启动时复验。
+前面的 `appapi.jar`、`dependency-a.jar` 图示只说明目录关系，实际文件以本节 `appapi.jar` 和构建依赖清单为准。JAR 的 data 始终以 db.jar 所在目录为锚点，APP 的 data 按 EXE 目录；所有路径在不同工作目录及含空格目录启动时复验。
 
 ### 8.2 作者构建和校验工具
 

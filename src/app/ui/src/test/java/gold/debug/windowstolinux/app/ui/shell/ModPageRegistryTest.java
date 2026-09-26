@@ -10,9 +10,9 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.task.ApiException;
-import gold.debug.windowstolinux.api.ui.*;
 import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.*;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.ui.*;
 import org.junit.jupiter.api.Test;
 
 class ModPageRegistryTest {

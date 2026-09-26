@@ -6,8 +6,8 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.api.db.SchemaIdentity;
 import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
