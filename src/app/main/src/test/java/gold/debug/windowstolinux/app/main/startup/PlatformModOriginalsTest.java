@@ -206,6 +206,107 @@ class PlatformModOriginalsTest {
     }
 
     @Test
+    void cancellationConfirmsActualPartialScopeAndPreservesOriginalAndInstalledDraft() throws Exception {
+        var first = fixture.original("first.wtlmod", "1.0.0", "first");
+        assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(first)).outcome());
+        var original = fixture.original("second.wtlmod", "2.0.0", "second");
+        PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
+        var installation = installer.review(original);
+        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        PlatformModInstallationTest.untrap(runtime);
+        var stage = root.resolve(".mod-staging").resolve(installation.id().toString());
+        Files.delete(stage.resolve("program/LICENSE"));
+        window(false);
+        onEdt(() -> {
+            ((JCheckBox) named(frame, "mods.enabled")).doClick(0);
+            return null;
+        });
+        click("originals.cancelInstall");
+        var confirmation = dialog();
+        String text = onEdt(() -> ((JTextArea) named(confirmation, "originals.confirmation")).getText());
+        assertTrue(text.contains(stage.resolve("program/README.md").toString()));
+        assertTrue(text.contains("不完整的暂存"));
+        assertTrue(text.contains("不能恢复安装"));
+        onEdt(() -> {
+            capture(confirmation, "platform-originals-cancel-confirmation.png");
+            return null;
+        });
+        answer(confirmation, false);
+        assertTrue(Files.exists(stage.resolve("program/README.md")));
+        click("originals.cancelInstall");
+        answer(dialog(), true);
+        assertTrue(status().contains("安装已撤销"));
+        assertTrue(Files.exists(original));
+        assertFalse(Files.exists(stage));
+        assertFalse(Files.exists(fixture.target("2.0.0")));
+        assertEquals("first", Files.readString(fixture.target("1.0.0").resolve("README.md")));
+        assertTrue(onEdt(() -> ((JCheckBox) named(frame, "mods.enabled")).isSelected()));
+        assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
+        assertEquals(0, onEdt(() -> ((JComboBox<?>) named(frame, "originals.pending")).getItemCount()));
+    }
+
+    @Test
+    void cancellationConfirmationCannotSurviveLockOrFileChanges() throws Exception {
+        var original = fixture.original("original.wtlmod", "1.0.0", "one");
+        PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
+        var installation = installer.review(original);
+        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        PlatformModInstallationTest.untrap(runtime);
+        Path readme = root.resolve(".mod-staging").resolve(installation.id().toString()).resolve("program/README.md");
+        window(false);
+        click("originals.cancelInstall");
+        var confirmation = dialog();
+        runtime.security().lock();
+        await(() -> !confirmation.isShowing());
+        assertTrue(Files.exists(readme));
+        runtime.security().unlock(PASSWORD.toCharArray());
+        await(() -> named(frame, "originals.cancelInstall").isEnabled());
+        idle();
+        click("originals.cancelInstall");
+        var changed = dialog();
+        Files.writeString(readme, "two");
+        answer(changed, true);
+        assertEquals("two", Files.readString(readme));
+        assertEquals("VALIDATED", PlatformModInstallationTest.phase(runtime));
+        click("originals.cancelInstall");
+        answer(dialog(), true);
+        assertFalse(Files.exists(readme));
+        assertTrue(Files.exists(original));
+    }
+
+    @Test
+    void acceptedCancellationUsesOriginalCleanupReconciliationAndNeverRestartsInstallation() throws Exception {
+        var original = fixture.original("original.wtlmod", "1.0.0", "one");
+        PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
+        var installation = installer.review(original);
+        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        PlatformModInstallationTest.untrap(runtime);
+        sql(runtime.persistence().database(),
+                "ALTER TABLE runtime_log ADD CONSTRAINT ui_cancel_archive_trap CHECK(event_code <> 'MOD_INSTALL_CANCELLED')");
+        window(false);
+        click("originals.cancelInstall");
+        answer(dialog(), true);
+        assertTrue(status().contains("撤销尚未确认完成"));
+        assertEquals("CANCELLING", PlatformModInstallationTest.phase(runtime));
+        assertFalse(onEdt(() -> named(frame, "originals.cancelInstall").isEnabled()));
+        assertTrue(onEdt(() -> named(frame, "originals.reconcile").isEnabled()));
+        onEdt(() -> {
+            capture(frame, "platform-originals-cancelling.png");
+            return null;
+        });
+        sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT ui_cancel_archive_trap");
+        click("originals.reconcile");
+        var confirmation = dialog();
+        assertTrue(
+                onEdt(() -> ((JTextArea) named(confirmation, "originals.confirmation")).getText()).contains("不会重新安装"));
+        answer(confirmation, true);
+        assertTrue(status().contains("安装已撤销"));
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+        assertTrue(Files.exists(original));
+    }
+
+    @Test
     void installationAndDeletionEachRequireTheirOwnConcreteConfirmation() throws Exception {
         var original = fixture.original("original.wtlmod", "1.0.0", "one");
         window(false);

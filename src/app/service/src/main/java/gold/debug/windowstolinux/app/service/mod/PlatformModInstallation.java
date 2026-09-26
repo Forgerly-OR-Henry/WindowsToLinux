@@ -476,7 +476,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             if (json.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024)
                 throw new IOException("Installation evidence exceeds limit");
             var pending = new Pending(review.id, current, request, json, "VALIDATED", new Checkpoint(null, null, null),
-                    UUID.randomUUID(), System.currentTimeMillis());
+                    UUID.randomUUID(), System.currentTimeMillis(), null);
             try {
                 locked(c -> {
                     available(c, current);
@@ -511,6 +511,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                 return success(completed);
             Pending pending = locked(c -> {
                 var original = load(c, operation);
+                if (original.cancellation() != null)
+                    throw new SQLException("Cancellation must continue through its original cleanup action");
                 if (execute(c,
                         "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
                         System.currentTimeMillis(), operation) != 1)
@@ -519,6 +521,265 @@ public final class PlatformModInstallation implements AutoCloseable {
             });
             return advance(pending);
         }
+    }
+
+    /** Exact one-use cancellation review bound to this service and original checkpoint. / 绑定此服务及原检查点的精确单次撤销审阅。 */
+    public final class CancelReview {
+        /** Owning service instance. / 所属服务实例。 */
+        private final PlatformModInstallation owner = PlatformModInstallation.this;
+
+        /** Original working state. / 原工作状态。 */
+        private final Pending pending;
+
+        /** Original observed deletion scope. / 原观察删除范围。 */
+        private final Cancellation cancellation;
+
+        /** Whether this review has been consumed. / 此审阅是否已消费。 */
+        private boolean used;
+        /** Captures immutable original evidence. / 捕获不可变原依据。
+         * @param pending original operation / 原操作
+         * @param cancellation reviewed file set / 审阅文件集合 */
+        private CancelReview(Pending pending, Cancellation cancellation) {
+            this.pending = pending;
+            this.cancellation = cancellation;
+        }
+
+        /** Returns the original operation identity. / 返回原操作身份。
+         * @return original identity / 原身份 */
+        public UUID id() {
+            return pending.id();
+        }
+
+        /** Returns the original Mod identity. / 返回原 Mod 身份。
+         * @return Mod identity / Mod 身份 */
+        public String modId() {
+            return pending.inspection().manifest().id();
+        }
+
+        /** Returns the original target version. / 返回原目标版本。
+         * @return target version / 目标版本 */
+        public String version() {
+            return pending.inspection().manifest().version().toString();
+        }
+
+        /** Returns every exact reviewed path, including directories. / 返回每个精确审阅路径，包括目录。
+         * @return immutable reviewed paths / 不可变审阅路径 */
+        public List<Path> paths() {
+            return cancellation.entries().stream().map(entry -> Path.of(entry.path())).toList();
+        }
+
+        /** Returns total currently observed file bytes. / 返回当前观察文件字节总量。
+         * @return observed bytes / 观察字节 */
+        public long bytes() {
+            return cancellation.entries().stream().mapToLong(ModInstallationCleanup.Entry::size).sum();
+        }
+    }
+
+    /** Retained proof of original installation cancellation, not a new installation result. / 原安装撤销的保留凭据，不是新安装结果。
+     * @param operationId original operation / 原操作
+     * @param owner original Mod / 原 Mod
+     * @param version cancelled target version / 已撤销目标版本 */
+    public record CancellationReceipt(UUID operationId, String owner, String version) {
+    }
+
+    /** Reviews only unregistered interrupted installations and their exact remaining files. / 仅审阅尚未登记的中断安装及精确剩余文件。
+     * @param operation original operation identity / 原操作身份
+     * @return single-use explicit cleanup review / 单次明确清理审阅
+     * @throws IOException if files or ownership cannot be reviewed / 无法审阅文件或归属时
+     * @throws SQLException if the original cannot be cancelled / 原操作不可撤销时 */
+    public synchronized CancelReview reviewCancellation(UUID operation) throws IOException, SQLException {
+        requireOpen();
+        try (var ignored = security.enterOperation()) {
+            var pending = locked(c -> {
+                var original = load(c, operation);
+                requireCancellation(c, original);
+                if (original.cancellation() != null)
+                    throw new SQLException("Cancellation already has an accepted scope");
+                requireUnknown(c, operation);
+                return original;
+            });
+            var entries = cancellationFiles(pending);
+            return new CancelReview(pending, new Cancellation(pending.phase(), pending.checkpoint(), entries));
+        }
+    }
+
+    /** Persists the confirmed scope before deleting any exact reviewed file. / 删除任何精确审阅文件前持久保存确认范围。
+     * @param review original one-use confirmation / 原单次确认
+     * @return cancelled receipt or retained uncertainty / 撤销凭据或保留不确定性
+     * @throws IOException if files changed before acceptance / 接纳前文件变化时
+     * @throws SQLException if admission cannot be confirmed / 无法确认准入时 */
+    public synchronized OperationResult<CancellationReceipt> cancel(CancelReview review)
+            throws IOException, SQLException {
+        requireOpen();
+        if (review == null || review.owner != this || review.used)
+            throw new IllegalArgumentException("Cancellation requires an unused original review");
+        try (var ignored = security.enterOperation()) {
+            if (!review.cancellation.entries().equals(cancellationFiles(review.pending)))
+                throw new IOException("Cancellation scope changed after review");
+            review.used = true;
+            Pending pending;
+            try {
+                pending = locked(c -> {
+                    requirePending(c, review.pending);
+                    requireCancellation(c, review.pending);
+                    requireUnknown(c, review.id());
+                    String recovery;
+                    try {
+                        recovery = JSON.writeValueAsString(review.cancellation);
+                    } catch (IOException invalid) {
+                        throw new SQLException("Cannot retain cancellation scope", invalid);
+                    }
+                    if (recovery.getBytes(StandardCharsets.UTF_8).length > 8 * 1024 * 1024)
+                        throw new SQLException("Cancellation scope exceeds limit");
+                    if (execute(c,
+                            "UPDATE mod_operation SET state='RUNNING',phase='CANCELLING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
+                            recovery, System.currentTimeMillis(), review.id()) != 1)
+                        throw new SQLException("Cancellation admission changed");
+                    var original = review.pending;
+                    return new Pending(original.id(), original.inspection(), original.request(), original.json(),
+                            "CANCELLING", original.checkpoint(), original.archive(), original.created(),
+                            review.cancellation);
+                });
+            } catch (SQLException failure) {
+                try {
+                    retain(review.pending, "Cancellation admission could not be confirmed");
+                } catch (SQLException unavailable) {
+                    failure.addSuppressed(unavailable);
+                }
+                throw failure;
+            }
+            return cancelFiles(pending);
+        }
+    }
+
+    /** Continues an already accepted cancellation without approving a wider file set. / 继续已接纳撤销，不批准更大文件集合。
+     * @param operation original operation identity / 原操作身份
+     * @return original cancelled receipt or uncertainty / 原撤销凭据或不确定性
+     * @throws SQLException if no accepted original cancellation exists / 不存在已接纳原撤销时 */
+    public synchronized OperationResult<CancellationReceipt> reconcileCancellation(UUID operation) throws SQLException {
+        requireOpen();
+        try (var ignored = security.enterOperation()) {
+            var completed = cancelled(operation);
+            if (completed != null)
+                return new OperationResult<>(Outcome.CANCELLED, Optional.of(completed), Optional.empty());
+            var pending = locked(c -> {
+                var original = load(c, operation);
+                requireCancellation(c, original);
+                if (original.cancellation() == null)
+                    throw new SQLException("No original cancellation scope exists");
+                requireUnknown(c, operation);
+                if (execute(c,
+                        "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
+                        System.currentTimeMillis(), operation) != 1)
+                    throw new SQLException("Cancellation reconciliation admission changed");
+                return original;
+            });
+            return cancelFiles(pending);
+        }
+    }
+
+    /** Captures bounded files from this operation's original locations. / 从此操作原位置捕获有界文件。
+     * @param pending original checkpoint / 原检查点
+     * @return current exact observations / 当前精确观察
+     * @throws IOException if unavailable or outside the package scope / 不可用或超出包范围时 */
+    private List<ModInstallationCleanup.Entry> cancellationFiles(Pending pending) throws IOException {
+        return ModInstallationCleanup.inspect(home.resolve(".mod-staging").resolve(pending.id().toString()),
+                pending.checkpoint().root(), target(pending.inspection()), pending.checkpoint().program(),
+                pending.inspection().files());
+    }
+
+    /** Rejects registered versions and phases whose installation has already completed. / 拒绝已登记版本及安装已完成的阶段。
+     * @param c original locked transaction / 原已锁事务
+     * @param pending original operation / 原操作
+     * @throws SQLException if cancellation would remove an installed version / 撤销会移除已安装版本时 */
+    private void requireCancellation(Connection c, Pending pending) throws SQLException {
+        String phase = pending.cancellation() == null ? pending.phase() : pending.cancellation().phase();
+        if (!Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(phase))
+            throw new SQLException("Registered installations cannot be cancelled");
+        try (var query = c.prepareStatement("SELECT 1 FROM mod_version WHERE mod_id=? AND version=?")) {
+            query.setString(1, pending.inspection().manifest().id());
+            query.setString(2, pending.inspection().manifest().version().toString());
+            try (var result = query.executeQuery()) {
+                if (result.next())
+                    throw new SQLException("Installed versions require explicit version deletion");
+            }
+        }
+    }
+
+    /** Requires an original unknown operation before taking exclusive cleanup ownership. / 取得独占清理归属前要求原操作未知。
+     * @param c original transaction / 原事务
+     * @param operation original identity / 原身份
+     * @throws SQLException if another execution owns the operation / 另一执行持有操作时 */
+    private static void requireUnknown(Connection c, UUID operation) throws SQLException {
+        try (var query = c.prepareStatement("SELECT state FROM mod_operation WHERE operation_id=?")) {
+            query.setObject(1, operation);
+            try (var result = query.executeQuery()) {
+                if (!result.next() || !result.getString(1).equals("UNKNOWN"))
+                    throw new SQLException("Original operation is not available for cancellation");
+            }
+        }
+    }
+
+    /** Deletes the persisted original subset, then archives cancellation in the same original identity. / 删除已持久原子集，再按同一原身份归档撤销。
+     * @param pending original accepted cancellation / 原已接纳撤销
+     * @return actual cancellation or retained uncertainty / 实际撤销或保留不确定性 */
+    private OperationResult<CancellationReceipt> cancelFiles(Pending pending) {
+        try {
+            ModInstallationCleanup.remove(pending.cancellation().entries(),
+                    home.resolve(".mod-staging").resolve(pending.id().toString()), pending.checkpoint().root(),
+                    target(pending.inspection()), pending.checkpoint().program(), pending.inspection().files());
+            var receipt = new CancellationReceipt(pending.id(), pending.inspection().manifest().id(),
+                    pending.inspection().manifest().version().toString());
+            locked(c -> {
+                requirePending(c, pending);
+                requireCancellation(c, pending);
+                String details = JSON.createObjectNode().put("originalPhase", pending.cancellation().phase())
+                        .put("reviewedEntries", pending.cancellation().entries().size())
+                        .put("reviewedBytes", pending.cancellation().entries().stream()
+                                .mapToLong(ModInstallationCleanup.Entry::size).sum())
+                        .put("originalArchive", "UNTOUCHED").toString();
+                logs.store(c, archive,
+                        List.of(new LogRecordCodec.Record(pending.archive(), pending.created(), "app", "mod_operation",
+                                LogLevel.INFO, "MOD_INSTALL_CANCELLED",
+                                "Reviewed installation cancelled; original archive untouched", details, receipt.owner(),
+                                receipt.version(), null, pending.id(), Outcome.CANCELLED, false)),
+                        100);
+                execute(c, "DELETE FROM mod_operation WHERE operation_id=?", pending.id());
+                return null;
+            });
+            return new OperationResult<>(Outcome.CANCELLED, Optional.of(receipt), Optional.empty());
+        } catch (Exception failure) {
+            try {
+                retain(pending,
+                        "CANCELLING: " + (failure instanceof IOException
+                                ? bounded(failure.getMessage())
+                                : "Cancellation persistence could not be confirmed"));
+            } catch (SQLException unavailable) {
+                failure.addSuppressed(unavailable);
+            }
+            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_INSTALL_CANCEL_UNCONFIRMED",
+                            "Installation cancellation requires reconciliation using its original file scope",
+                            Map.of("operationId", pending.id().toString()), Optional.empty())));
+        }
+    }
+
+    /** Reads the original cancellation receipt without replaying physical cleanup. / 读取原撤销凭据，不重放物理清理。
+     * @param operation original identity / 原身份
+     * @return retained receipt or absent / 保留凭据或缺省
+     * @throws SQLException if retained results cannot be read / 无法读取保留结果时 */
+    private CancellationReceipt cancelled(UUID operation) throws SQLException {
+        return locked(c -> {
+            try (var query = c.prepareStatement(
+                    "SELECT subject_mod_id,mod_version FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code='MOD_INSTALL_CANCELLED' AND outcome='CANCELLED'")) {
+                query.setObject(1, operation);
+                try (var result = query.executeQuery()) {
+                    return result.next()
+                            ? new CancellationReceipt(operation, result.getString(1), result.getString(2))
+                            : null;
+                }
+            }
+        });
     }
 
     /** Advances durable phases with full filesystem reinspection before each irreversible boundary. / 在每个不可逆边界前完整复查文件系统，推进持久阶段。
@@ -805,10 +1066,16 @@ public final class PlatformModInstallation implements AutoCloseable {
                     throw new SQLException("Original installation evidence is absent");
                 try {
                     String json = r.getString("request_json"), recovery = r.getString("recovery_json");
-                    if (json.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024 || recovery.length() > 4096)
+                    String phase = r.getString("phase");
+                    boolean cancelling = phase.equals("CANCELLING");
+                    if (json.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024
+                            || recovery.getBytes(StandardCharsets.UTF_8).length > (cancelling ? 8 * 1024 * 1024 : 4096))
                         throw new IOException("Retained installation evidence exceeds limits");
                     var request = JSON.readValue(json, Request.class);
-                    var checkpoint = JSON.readValue(recovery, Checkpoint.class);
+                    var cancellation = cancelling ? JSON.readValue(recovery, Cancellation.class) : null;
+                    var checkpoint = cancelling
+                            ? cancellation.checkpoint()
+                            : JSON.readValue(recovery, Checkpoint.class);
                     var manifest = ManifestReader.read(request.manifest().getBytes(StandardCharsets.UTF_8));
                     if (request.format() != 1 || !request.home().equals(home.toString())
                             || !UUID.fromString(request.boot()).toString().equals(request.boot())
@@ -826,17 +1093,24 @@ public final class PlatformModInstallation implements AutoCloseable {
                     var inspection = new ModPackageReader.Inspection(path, manifest, request.archiveHash(),
                             request.contentHash(), request.files(), List.of(), Map.of());
                     target(inspection);
-                    String phase = r.getString("phase");
-                    if (!Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED", "REGISTERED", "CLEANUP").contains(phase)
+                    String originalPhase = cancelling ? cancellation.phase() : phase;
+                    if (!Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED", "REGISTERED", "CLEANUP")
+                            .contains(originalPhase)
+                            || cancelling && !Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(originalPhase)
                             || checkpoint.root() != null && !checkpoint.root().matches("[0-9a-f]{48}")
                             || checkpoint.program() != null && !checkpoint.program().matches("[0-9a-f]{48}")
-                            || !phase.equals("VALIDATED") && (checkpoint.root() == null || checkpoint.program() == null)
+                            || !originalPhase.equals("VALIDATED")
+                                    && (checkpoint.root() == null || checkpoint.program() == null)
                             || phase.equals("CLEANUP")
                                     && !Set.of("RETAINED", "DELETED", "ABSENT", "RETAINED_UNCONFIRMED")
                                             .contains(checkpoint.cleanup()))
                         throw new IOException("Invalid retained installation phase");
+                    if (cancelling)
+                        ModInstallationCleanup.validate(cancellation.entries(),
+                                home.resolve(".mod-staging").resolve(operation.toString()), checkpoint.root(),
+                                target(inspection), checkpoint.program(), inspection.files());
                     return new Pending(operation, inspection, request, json, phase, checkpoint,
-                            UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"));
+                            UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"), cancellation);
                 } catch (IOException | RuntimeException invalid) {
                     throw new SQLException("Retained installation cannot be validated", invalid);
                 }
@@ -853,6 +1127,8 @@ public final class PlatformModInstallation implements AutoCloseable {
         if (!actual.json().equals(pending.json()) || !actual.phase().equals(pending.phase())
                 || !actual.checkpoint().equals(pending.checkpoint()) || !actual.archive().equals(pending.archive()))
             throw new SQLException("Original installation checkpoint changed");
+        if (!Objects.equals(actual.cancellation(), pending.cancellation()))
+            throw new SQLException("Original cancellation scope changed");
     }
 
     /** Commits a checkpoint without repeating filesystem effects on uncertainty. / 提交检查点，不在不确定时重复文件系统效果。
@@ -879,7 +1155,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                 phase, encode(checkpoint), System.currentTimeMillis(), pending.id()) != 1)
             throw new SQLException("Installation no longer owns its original phase");
         return new Pending(pending.id(), pending.inspection(), pending.request(), pending.json(), phase, checkpoint,
-                pending.archive(), pending.created());
+                pending.archive(), pending.created(), pending.cancellation());
     }
 
     /** Serializes short platform transactions, never holding the row lock while hashing files. / 串行化短平台事务，摘要文件时绝不持有行锁。
@@ -988,7 +1264,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param path explicit path / 明示路径
      * @param directory whether the leaf is a directory / 叶是否目录
      * @throws IOException if any path component is invalid / 任何路径段无效时 */
-    private static void ordinary(Path path, boolean directory) throws IOException {
+    static void ordinary(Path path, boolean directory) throws IOException {
         if (path == null || !path.isAbsolute() || !path.equals(path.normalize()))
             throw new IOException("Explicit canonical path required");
         for (Path part = path; part != null; part = part.getParent()) {
@@ -1003,7 +1279,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param path observed path / 观察路径
      * @return whether an entry exists / 是否存在条目
      * @throws IOException if state cannot be read / 无法读取状态时 */
-    private static boolean exists(Path path) throws IOException {
+    static boolean exists(Path path) throws IOException {
         try {
             Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             return true;
@@ -1016,7 +1292,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param path observed file or directory / 观察文件或目录
      * @param expected retained native identity / 保留原生身份
      * @throws IOException if redirected or replaced / 重定向或被替代时 */
-    private static void identity(Path path, String expected) throws IOException {
+    static void identity(Path path, String expected) throws IOException {
         var attrs = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         ordinary(path, attrs.isDirectory());
         if (expected == null || !expected.equals(WindowsFileIdentity.read(path)))
@@ -1122,6 +1398,20 @@ public final class PlatformModInstallation implements AutoCloseable {
     private record Checkpoint(String root, String program, String cleanup) {
     }
 
+    /** Persisted original cleanup authority, separate from normal installation checkpoints. / 持久原清理授权，与正常安装检查点分开。
+     * @param phase original pre-registration phase / 原登记前阶段
+     * @param checkpoint original physical checkpoint / 原物理检查点
+     * @param entries exact reviewed files and directories / 精确审阅文件及目录 */
+    private record Cancellation(String phase, Checkpoint checkpoint, List<ModInstallationCleanup.Entry> entries) {
+        /** Copies the exact accepted scope. / 复制精确接纳范围。
+         * @param phase original phase / 原阶段
+         * @param checkpoint original physical evidence / 原物理依据
+         * @param entries original reviewed entries / 原审阅条目 */
+        private Cancellation {
+            entries = List.copyOf(entries);
+        }
+    }
+
     /** Retained working operation. / 保留工作操作。
      * @param id operation identity / 操作身份
      * @param inspection original content facts / 原内容事实
@@ -1130,8 +1420,9 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param phase proven durable phase / 已证明持久阶段
      * @param checkpoint physical evidence / 物理依据
      * @param archive fixed archive identity / 固定归档身份
-     * @param created original timestamp / 原时间戳 */
+     * @param created original timestamp / 原时间戳
+     * @param cancellation accepted cancellation scope or absent / 已接纳撤销范围或缺省 */
     private record Pending(UUID id, ModPackageReader.Inspection inspection, Request request, String json, String phase,
-            Checkpoint checkpoint, UUID archive, long created) {
+            Checkpoint checkpoint, UUID archive, long created, Cancellation cancellation) {
     }
 }

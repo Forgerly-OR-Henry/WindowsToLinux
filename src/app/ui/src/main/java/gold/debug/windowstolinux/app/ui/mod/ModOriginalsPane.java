@@ -51,7 +51,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private final JTextArea operationDetails = new JTextArea(2, 40);
 
     /** Explicit original-file and operation actions. / 明确原文件及操作动作。 */
-    private final JButton refresh, install, delete, reconcile, logs;
+    private final JButton refresh, install, delete, reconcile, cancelInstall, logs;
 
     /** Persistent operation feedback across a read-only refresh. / 跨只读刷新的操作反馈。 */
     private final JLabel status = new JLabel();
@@ -150,6 +150,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         install = button(components, "install", this::reviewInstall);
         delete = button(components, "delete", this::reviewDelete);
         reconcile = button(components, "reconcile", this::reconcile);
+        cancelInstall = button(components, "cancelInstall", this::reviewCancellation);
         logs = button(components, "logs", showLogs);
         pending.setName("originals.pending");
         pending.setRenderer((list, value, index, selected, focused) -> {
@@ -164,7 +165,10 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         var retained = new JPanel(new BorderLayout(8, 0));
         retained.setBorder(BorderFactory.createTitledBorder(messages.text("originals.pending")));
         retained.add(pending);
-        retained.add(reconcile, BorderLayout.EAST);
+        var maintenanceActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        maintenanceActions.add(reconcile);
+        maintenanceActions.add(cancelInstall);
+        retained.add(maintenanceActions, BorderLayout.EAST);
         operationDetails.setName("originals.operationDetails");
         operationDetails.setEditable(false);
         operationDetails.setLineWrap(true);
@@ -313,6 +317,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         delete.setEnabled(available && current && selected != null && selected.deletable());
         reconcile.setEnabled(available && current && operation != null && operation.type().equals("INSTALL")
                 && operation.state().equals("UNKNOWN"));
+        cancelInstall.setEnabled(available && current && operation != null && operation.type().equals("INSTALL")
+                && operation.state().equals("UNKNOWN")
+                && Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(operation.phase()));
     }
 
     /** Persists only the selected preference and reloads uncertain saves without replay. / 仅持久选定偏好，保存不确定时重读而非重放。 */
@@ -359,9 +366,38 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     /** Reconciles the selected original operation independently of current file selection. / 独立于当前文件选择核对选定原操作。 */
     private void reconcile() {
         var operation = (PendingView) pending.getSelectedItem();
-        if (confirm(messages.text("originals.confirmReconcile", Map.of("owner", operation.owner(), "version",
-                operation.version(), "id", operation.id().toString(), "phase", state(operation.phase())))))
-            run(() -> service.reconcile(operation.id()), this::outcome, true);
+        boolean cancellation = operation.phase().equals("CANCELLING");
+        if (confirm(messages.text(cancellation ? "originals.confirmCancelContinue" : "originals.confirmReconcile",
+                Map.of("owner", operation.owner(), "version", operation.version(), "id", operation.id().toString(),
+                        "phase", state(operation.phase()))))) {
+            if (cancellation)
+                run(() -> service.reconcileCancellation(operation.id()), this::cancelOutcome, true);
+            else
+                run(() -> service.reconcile(operation.id()), this::outcome, true);
+        }
+    }
+
+    /** Reviews every original cleanup path before requesting explicit destructive confirmation. / 请求明确删除确认前审阅每个原清理路径。 */
+    private void reviewCancellation() {
+        var operation = (PendingView) pending.getSelectedItem();
+        run(() -> service.reviewCancellation(operation.id()), review -> {
+            String paths = review.paths().isEmpty()
+                    ? messages.text("originals.cancelEmpty")
+                    : String.join("\n", review.paths().stream().map(Object::toString).toList());
+            if (confirm(messages.text("originals.confirmCancel",
+                    Map.of("owner", review.modId(), "version", review.version(), "id", review.id().toString(), "bytes",
+                            Long.toString(review.bytes()), "paths", paths))))
+                run(() -> service.cancel(review), this::cancelOutcome, true);
+        }, true);
+    }
+
+    /** Reports cancellation independently of installation success and preserves installed-view drafts. / 独立于安装成功报告撤销，并保留已安装页草稿。
+     * @param result original cancellation observation / 原撤销观察 */
+    private void cancelOutcome(OperationResult<CancellationReceipt> result) {
+        status.setText(result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.CANCELLED
+                ? messages.text("originals.cancelled")
+                : messages.text("originals.cancelUnconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
+        refresh();
     }
 
     /** Reports actual installation and original cleanup separately. / 分别报告实际安装及原包清理。
