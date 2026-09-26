@@ -10,7 +10,10 @@ import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Presents full task review in dialogs owned by the platform privacy window. / 在平台隐私窗口所属对话框内呈现完整任务审核。 */
-public final class TaskInteractionPresenter implements PlatformInteractionService.Prompts {
+public final class TaskInteractionPresenter
+        implements
+            PlatformInteractionService.Prompts,
+            gold.debug.windowstolinux.app.service.source.PlatformSourceAccess.DirectoryPicker {
     /** Actual owner whose lock controller covers these dialogs. / 锁定控制器遮挡这些对话框的实际所有者。 */
     private final JFrame owner;
 
@@ -25,6 +28,30 @@ public final class TaskInteractionPresenter implements PlatformInteractionServic
     public TaskInteractionPresenter(JFrame owner, MessageCatalog messages) {
         this.owner = java.util.Objects.requireNonNull(owner);
         this.messages = java.util.Objects.requireNonNull(messages);
+    }
+
+    /** Confirms a local directory in the platform-owned cancellable modal window. / 在平台所属可取消模态窗口确认本地目录。
+     * @param title author-supplied title / 作者提供标题
+     * @param task original task identity / 原任务身份
+     * @param cancellation cooperative cancellation / 协作取消
+     * @return selected directory or null after cancellation / 选定目录或取消后的 null */
+    @Override
+    public java.nio.file.Path select(String title, TaskSnapshot task, CancellationToken cancellation) {
+        return onEdt(() -> {
+            var chooser = new JFileChooser();
+            chooser.setName("source.directory");
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            chooser.setMultiSelectionEnabled(false);
+            chooser.setControlButtonsAreShown(false);
+            var pane = new JOptionPane(
+                    new Object[]{task.ownerId() + " @ " + task.ownerVersion(),
+                            messages.text("task.review.task") + ": " + task.id(), chooser},
+                    JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+            if (!Integer.valueOf(JOptionPane.OK_OPTION).equals(show(pane, title, cancellation)))
+                return null;
+            var selected = chooser.getSelectedFile();
+            return (selected == null ? chooser.getCurrentDirectory() : selected).toPath();
+        });
     }
 
     /**
