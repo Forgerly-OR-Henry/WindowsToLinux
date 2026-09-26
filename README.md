@@ -2,7 +2,7 @@
 
 WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，正在改造为 APP 与 Mod 平台。
 
-**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、服务器配置、普通 SSH 认证检查及独立网页终端救援、模型清单/能力验证/用途配置、连接与传输阈值设置、独立平台授权偏好及任务范围授权、日志查看与清理、任务所属辅助进程及跨 Mod 同步服务底层能力、Mod 页面外壳，以及任务绑定的目录选择与 Source 快照底层能力；完整 ModContext 已装配并通过真实 CLASS 页面任务验收；Mod 自动启用、救援跨启动完整资源核验、插件安装和业务迁移仍待完成。保存服务器不会自动连接，SSH 检查单独触发且不探测或修改远端环境。独立救援由服务器页启动，使用原中央任务、逐项命令批准及固定只读 SSH 复核；未确认命令不会重放。模型验证成功才保存配置和明确输出上限，用途需要单独选择；中断未知可从模型页核对，不自动重发。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
+**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、服务器配置、普通 SSH 认证检查及独立网页终端救援、模型清单/能力验证/用途配置、连接与传输阈值设置、独立平台授权偏好及任务范围授权、日志查看与清理、任务所属辅助进程及跨 Mod 同步服务底层能力、Mod 页面外壳，以及任务绑定的目录选择与 Source 快照底层能力。CLASS 默认入口已接已选 Mod 的依赖顺序启动、原意图归档和逆序退出；新发现的 Mod 默认关闭，当前只执行无数据或已有 READY 数据的启动。Mod 管理界面、构建描述自动生成、数据初始化/迁移、插件安装和业务迁移仍待完成。保存服务器不会自动连接，SSH 检查单独触发且不探测或修改远端环境。独立救援由服务器页启动，使用原中央任务、逐项命令批准及固定只读 SSH 复核；未确认命令不会重放。模型验证成功才保存配置和明确输出上限，用途需要单独选择；中断未知可从模型页核对，不自动重发。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
 
 > [!IMPORTANT]
 > 项目仍在开发中，尚未提供正式安装包。改造前的 0.x 标准部署与自主 Agent 结构及 helper v10 已通过当时本地验证；此前 helper v9 在 Ubuntu 24 上的八个多语言原生项目通过了代表性部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他平台及备份迁移矩阵仍待验证。helper v7 的代表性部署和历史 helper v5 基线见[0.4 期验收](docs/development/PHASE-0.4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
@@ -111,7 +111,10 @@ npm.cmd run test:e2e
 2. 创建 **Application** 运行配置；
 3. 主类选择 `gold.debug.windowstolinux.app.main.AppMain`；
 4. 模块选择 `windowstolinux-app-main`；
-5. 启动后，CLASS 模式的数据会写入 DB 模块下的 `src/app/db/data/`。
+5. VM 参数添加 `-Dwtl.workspace=<本仓库绝对路径>`；路径含空格时将整项放在双引号内。该参数用于核验开发 Mod 的来源，必须与实际 APP 及 DB 模块所在工作区一致；缺失或不匹配时，平台仍打开并显示 Mod 启动问题。
+6. 启动后，CLASS 模式的数据会写入 DB 模块下的 `src/app/db/data/`。
+
+CLASS 启动仅加载已保存为启用且选定版本、当前构建仍可核验的 Mod；发现本身不会启用新 Mod。窗口底部显示启动结果，解锁后可查看详细问题。构建描述自动生成及用户管理页面仍在开发，现阶段不能仅把源码目录放入 `src/mod` 就认为可以启用；开发描述规范见 [Mod CLASS 加载](docs/Mod.md#loading-modes)。
 
 为避免日常启动触发全项目测试和打包，可把 `APP` 配置为“先增量编译，再直接启动”：
 
@@ -140,14 +143,14 @@ mvn.cmd -pl src/web/main -am package -DskipTests
 
 ```yaml
 server:
-  address: 127.0.0.1
-  port: 8765
+    address: 127.0.0.1
+    port: 8765
 w2l:
-  mode: internal-test
-  storage:
-    root: db.data
-  secrets:
-    directory: ${user.home}/.windowstolinux-web-test-keys
+    mode: internal-test
+    storage:
+        root: db.data
+    secrets:
+        directory: ${user.home}/.windowstolinux-web-test-keys
 ```
 
 `db.data` 在 CLASS 模式表示 `src/web/db/data`；在 JAR 模式表示实际加载的 Web DB JAR 同级 `data`。`db.data/abc` 表示其下 `abc`，也支持绝对路径。解析以 DB 模块固定类的代码来源为准，不依赖启动工作目录；不支持 `db/data`、APP 模式或嵌套 DB JAR。只配置数据根，主库固定为 `windowstolinuxweb.db`，上传文件和备份分别位于固定的 `files/`、`backups/`，不能单独配置。

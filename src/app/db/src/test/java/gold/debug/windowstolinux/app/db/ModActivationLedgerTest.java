@@ -228,4 +228,22 @@ class ModActivationLedgerTest {
             accepted.closed(Optional.empty());
         }
     }
+
+    @Test
+    void rejectionBeforeAuthorDeliveryDoesNotMarkReadyDataUsedOrChangeIntent() throws Exception {
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            register(db, "1");
+            var identity = new SchemaIdentity(OWNER, "1", UUID.randomUUID());
+            var names = new SchemaCoordinates(identity);
+            sql(db, "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES(?,'1',?,?,?,'READY',1,1)",
+                    OWNER, identity.generation(), names.physicalName(), names.databaseUser());
+            var journal = new ModActivationLedger(db, OWNER, VERSION, Optional.empty());
+            journal.rejectedBeforeStart(failure());
+            state(db, "FAILED", null);
+            assertEquals(false, value(db, "SELECT ever_used FROM mod_schema"));
+            assertEquals(true, value(db, "SELECT enabled FROM mod_registry"));
+            assertEquals(4L, value(db, "SELECT revision FROM mod_registry"));
+            assertThrows(SQLException.class, journal::starting);
+        }
+    }
 }

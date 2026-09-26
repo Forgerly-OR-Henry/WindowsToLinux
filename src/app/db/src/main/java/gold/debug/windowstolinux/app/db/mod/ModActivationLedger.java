@@ -56,6 +56,20 @@ public final class ModActivationLedger {
     /** Persists STARTING before handing the context to author code. / 向作者代码交付上下文前持久化 STARTING。
      * @throws SQLException if intent, data, retained work or persistence prevents startup / 意图、数据、保留工作或持久化阻止启动时 */
     public synchronized void starting() throws SQLException {
+        acquire(null);
+    }
+
+    /** Records a rejected boot before allocating author resources or using its data. / 在分配作者资源或使用数据前记录被拒启动。
+     * @param failure original host validation failure / 原宿主校验失败
+     * @throws SQLException if original intent or retained work prevents recording / 原意图或保留工作阻止记录时 */
+    public synchronized void rejectedBeforeStart(Problem failure) throws SQLException {
+        acquire(Objects.requireNonNull(failure));
+    }
+
+    /** Acquires one empty activation slot for delivery or a proven pre-author rejection. / 为交付或已证明的作者执行前拒绝取得一个空启用位置。
+     * @param rejection failure before author delivery, otherwise null / 作者交付前失败，否则为空
+     * @throws SQLException if the original slot cannot be acquired / 无法取得原位置时 */
+    private void acquire(Problem rejection) throws SQLException {
         if (attempted)
             throw new SQLException("This activation cannot be replayed in the same boot");
         attempted = true;
@@ -68,9 +82,9 @@ public final class ModActivationLedger {
                     if (!row.next() || !row.getBoolean(1) || !version.equals(row.getString(2))
                             || boot.equals(row.getObject(3, UUID.class)) || !"READY".equals(row.getString(4))
                             || !Set.of("STOPPED", "FAILED").contains(row.getString(6)) || row.getString(7) != null
-                            || !Objects.equals(schema.map(SchemaIdentity::schemaVersion).orElse(null),
-                                    row.getString(5)))
-                        throw new SQLException("Selected Mod is not eligible for a new boot activation");
+                            || rejection == null && !Objects
+                                    .equals(schema.map(SchemaIdentity::schemaVersion).orElse(null), row.getString(5)))
+                        throw denied("Selected Mod is not eligible for a new boot activation");
                 }
             }
             requireDrained(connection);
@@ -81,11 +95,11 @@ public final class ModActivationLedger {
                 try (var row = query.executeQuery()) {
                     row.next();
                     if (row.getLong(1) != 0)
-                        throw new SQLException("Mod intent or maintenance has not reached startup application");
+                        throw denied("Mod intent or maintenance has not reached startup application");
                 }
             }
             requireApplicationBoot(connection);
-            if (schema.isPresent()) {
+            if (rejection == null && schema.isPresent()) {
                 var identity = schema.get();
                 var coordinates = new SchemaCoordinates(identity);
                 try (var update = connection.prepareStatement(
@@ -100,7 +114,7 @@ public final class ModActivationLedger {
                 }
             }
             claimed = true;
-            write(connection, "STARTING", version, null);
+            write(connection, rejection == null ? "STARTING" : "FAILED", rejection == null ? version : null, rejection);
         });
     }
 
@@ -229,9 +243,19 @@ public final class ModActivationLedger {
             try (var row = query.executeQuery()) {
                 row.next();
                 if (row.getLong(1) != 0)
-                    throw new SQLException("Mod work or physical resources still require reconciliation");
+                    throw denied("Mod work or physical resources still require reconciliation");
             }
         }
+    }
+
+    /** Carries a known admission refusal through rollback without claiming uncertain storage. / 通过回滚传递已知准入拒绝，不冒充不确定存储。
+     * @param message constant safe reason / 常量安全原因
+     * @return transactional refusal with public evidence / 携带公开证据的事务拒绝 */
+    private SQLException denied(String message) {
+        return new SQLException(message,
+                new gold.debug.windowstolinux.appapi.task.ApiException(
+                        new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.BUSY, "MOD_ACTIVATION_BLOCKED",
+                                message, Map.of("ownerId", owner), Optional.empty())));
     }
 
     /** Updates only actual state, never intent or restart-disable acknowledgement. / 仅更新实际状态，不更新意图或重启停用确认。

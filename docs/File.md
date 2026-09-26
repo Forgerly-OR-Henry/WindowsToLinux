@@ -8,9 +8,9 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码及有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密字节/引用及 AiService 适配；旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖；完整 ModContext 已通过真实 CLASS 页面任务验收，自动启用协调仍待完成。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，目前没有业务子模块或空职责包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-09-26（1.1 增量实施；完整目标图仍待切换）
+- 更新日期：2026-09-27（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
 - 功能分工：[分析与 Linux 部署链](development/PHASE-0.3.md#architecture)
 
@@ -138,6 +138,8 @@ WindowsToLinux/
    │  ├─ source/
    │  ├─ task/
    │  └─ ui/
+   ├─ mod/                                  业务 Mod 聚合；当前仅有工作区锚点
+   │  └─ pom.xml
    ├─ shared/
    │  ├─ pom.xml
    │  ├─ agent/

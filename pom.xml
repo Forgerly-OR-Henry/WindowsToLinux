@@ -18,6 +18,7 @@
     <module>src/appapi</module>
     <module>src/shared</module>
     <module>src/app</module>
+    <module>src/mod</module>
     <module>src/web</module>
   </modules>
 
@@ -121,7 +122,8 @@
             </includes>
             <eclipse>
               <version>4.32</version>
-              <file>${maven.multiModuleProjectDirectory}/.mvn/formatting/eclipse.xml</file>
+              <file
+              >${maven.multiModuleProjectDirectory}/.mvn/formatting/eclipse.xml</file>
             </eclipse>
             <importOrder>
               <order>java,javax,,#</order>
@@ -135,7 +137,8 @@
             </includes>
             <greclipse>
               <version>4.26</version>
-              <file>${maven.multiModuleProjectDirectory}/.mvn/formatting/greclipse.properties</file>
+              <file
+              >${maven.multiModuleProjectDirectory}/.mvn/formatting/greclipse.properties</file>
             </greclipse>
             <endWithNewline />
           </groovy>

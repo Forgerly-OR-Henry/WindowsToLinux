@@ -130,8 +130,9 @@ class PlatformModServicesTest {
 
     static SchemaIdentity provider(PlatformDatabase db) throws Exception {
         sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,1)", PROVIDER);
-        sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,'fixture',?,'1','{}','CLASS',1,'READY')",
-                PROVIDER, VERSION, "0".repeat(64));
+        sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,'fixture',?,'1',?,'CLASS',1,'READY')",
+                PROVIDER, VERSION, "0".repeat(64),
+                PlatformModIntentsTest.manifest(PROVIDER, VERSION, Map.of(), "1", List.of()));
         sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version=?,selection_initialized=TRUE,actual_version=?,last_runtime_state='RUNNING',last_boot_id=? WHERE mod_id=?",
                 VERSION, VERSION, db.bootId(), PROVIDER);
         var identity = new SchemaIdentity(PROVIDER, "1", UUID.randomUUID());
@@ -187,6 +188,10 @@ class PlatformModServicesTest {
             business = new TaskModDatabase(db, runtime.tasks(), schema);
             providerLoader = loader(PROVIDER, classes, false, Map.of());
             callerLoader = loader(OWNER, classes, true, Map.of("example.provider.api", providerLoader));
+            sql(db, "UPDATE mod_version SET manifest_json=? WHERE mod_id=? AND version=?",
+                    providerLoader.manifest().json(), PROVIDER, VERSION);
+            sql(db, "UPDATE mod_version SET manifest_json=? WHERE mod_id=? AND version=?",
+                    callerLoader.manifest().json(), OWNER, VERSION);
             contract = (Class<Object>) providerLoader.loadClass("example.provider.api.Service");
             assertSame(contract, callerLoader.loadClass(contract.getName()));
             tasks = runtime.tasks().bind(OWNER, VERSION, mode == ModLaunchMode.RECOVERY);
@@ -388,11 +393,23 @@ class PlatformModServicesTest {
             }));
             assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource"));
             try (var handle = f.handle()) {
-                sql(f.db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", PROVIDER);
+                var admitted = new CountDownLatch(1);
+                var providerChanged = new CountDownLatch(1);
                 var task = f.tasks.submit(request(), context -> {
+                    admitted.countDown();
+                    assertTrue(providerChanged.await(12, TimeUnit.SECONDS));
                     assertThrows(ApiException.class, () -> f.call(handle, "write", context));
                     return success(null);
                 });
+                try {
+                    assertTrue(admitted.await(8, TimeUnit.SECONDS));
+                    sql(f.db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", PROVIDER);
+                    assertEquals("MOD_PROVIDER_NOT_RUNNING",
+                            assertThrows(ApiException.class, () -> f.tasks.submit(request(), context -> success(null)))
+                                    .problem().eventCode());
+                } finally {
+                    providerChanged.countDown();
+                }
                 assertEquals(Outcome.SUCCEEDED,
                         task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 assertTrue(new TaskLedger(f.db).dependencies(task.id()).isEmpty());

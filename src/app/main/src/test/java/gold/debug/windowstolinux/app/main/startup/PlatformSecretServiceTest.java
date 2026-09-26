@@ -102,8 +102,9 @@ class PlatformSecretServiceTest {
             initialize(runtime, false);
             var db = runtime.persistence().database();
             sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES('other.mod',1)");
-            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,manifest_json,origin_kind,installed_at,state) VALUES('other.mod',?,'fixture',?,'{}','CLASS',1,'READY')",
-                    VERSION, "0".repeat(64));
+            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,manifest_json,origin_kind,installed_at,state) VALUES('other.mod',?,'fixture',?,?,'CLASS',1,'READY')",
+                    VERSION, "0".repeat(64),
+                    PlatformModIntentsTest.manifest("other.mod", VERSION, Map.of(), null, List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version=?,selection_initialized=TRUE,actual_version=?,last_runtime_state='RUNNING',last_boot_id=? WHERE mod_id='other.mod'",
                     VERSION, VERSION, db.bootId());
             var otherSecrets = runtime.secrets("other.mod", VERSION, Optional.empty());
@@ -183,8 +184,8 @@ class PlatformSecretServiceTest {
             }));
             sql(db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", OWNER);
             assertThrows(SQLException.class, () -> runtime.persistence().security().delete(reference.secret().id()));
-            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'1.0.1','fixture',?,'1','{}','CLASS',1,'READY')",
-                    OWNER, "0".repeat(64));
+            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'1.0.1','fixture',?,'1',?,'CLASS',1,'READY')",
+                    OWNER, "0".repeat(64), PlatformModIntentsTest.manifest(OWNER, "1.0.1", Map.of(), "1", List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version='1.0.1',actual_version='1.0.1' WHERE mod_id=?",
                     OWNER);
             var next = runtime.secrets(OWNER, "1.0.1", Optional.of(schema));
