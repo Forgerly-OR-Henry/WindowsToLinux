@@ -4,7 +4,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult;
 import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult.StatusType;
-import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
+import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
 import gold.debug.windowstolinux.shared.model.failure.*;
@@ -24,14 +24,20 @@ final class RecoveryProbeAdapter {
      */
     static RecoveryProbeResult failed(Exception exception) {
         FailureDescriptor descriptor = null;
+        SecretStoreException credential = null;
         boolean interrupted = Thread.currentThread().isInterrupted();
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
-            if (descriptor == null && cause instanceof FailureCarrier carrier)
+            if (descriptor == null && credential == null && cause instanceof SecretStoreException secret)
+                credential = secret;
+            if (descriptor == null && credential == null && cause instanceof FailureCarrier carrier)
                 descriptor = carrier.failure();
             interrupted |= cause instanceof InterruptedException || cause instanceof java.io.InterruptedIOException
                     || cause instanceof java.util.concurrent.CancellationException;
         }
+        if (credential != null)
+            return new RecoveryProbeResult(interrupted ? StatusType.INTERRUPTED : StatusType.CREDENTIAL_UNAVAILABLE,
+                    Optional.of(credential.problem()));
         if (descriptor == null)
             descriptor = FailureDescriptor.create(
                     interrupted
@@ -48,9 +54,7 @@ final class RecoveryProbeAdapter {
                                 ? StatusType.AUTHENTICATION_REJECTED
                                 : definition == LinuxOperationFailureType.HOST_KEY_REJECTED
                                         ? StatusType.IDENTITY_CONFLICT
-                                        : definition instanceof SecretStoreFailureType
-                                                ? StatusType.CREDENTIAL_UNAVAILABLE
-                                                : StatusType.FAILED;
+                                        : StatusType.FAILED;
         var problem = new gold.debug.windowstolinux.appapi.task.Problem(
                 interrupted
                         ? gold.debug.windowstolinux.appapi.task.ProblemCode.CANCELLED

@@ -6,10 +6,10 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.entity.*;
 import gold.debug.windowstolinux.app.secret.crypto.PasswordKeyCrypto;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,13 +20,13 @@ class CredentialVaultTest {
         return "testpass".toCharArray();
     }
 
-    private Connection connection() throws Exception {
-        return DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db"));
+    private PlatformPersistence open() throws Exception {
+        return new PlatformPersistence(PlatformDatabase.open(directory, CredentialVaultH2Test.TEST_ONLY_PROTECTION));
     }
 
     @Test
     void setupUnlockChangeAndReferenceLifetimePreserveCredentialCiphertext() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = open()) {
             var vault = new CredentialVault(db.security());
             assertFalse(vault.configured());
             char[] supplied = password();
@@ -58,7 +58,7 @@ class CredentialVaultTest {
 
     @Test
     void saltsAreIndependentAndMalformedFormatsFailClosed() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = open()) {
             var vault = new CredentialVault(db.security());
             try (var ignored = vault.initialize(password())) {
             }
@@ -82,15 +82,20 @@ class CredentialVaultTest {
 
     @Test
     void ciphertextTamperingAndCredentialSubstitutionFailAuthentication() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = open()) {
             var vault = new CredentialVault(db.security());
             try (var session = vault.initialize(password())) {
                 session.save("a", "first secret".toCharArray());
                 session.save("b", "second secret".toCharArray());
-                try (var c = connection(); var s = c.createStatement()) {
+                try (var c = db.database().openConnection(); var s = c.createStatement()) {
                     s.execute("UPDATE credential SET credential_id='swapped' WHERE credential_id='a'");
                     assertThrows(SecretStoreException.class, () -> session.read("swapped"));
-                    s.execute("UPDATE credential SET payload=zeroblob(length(payload)) WHERE credential_id='b'");
+                    try (var stored = db.security().find("b").orElseThrow();
+                            var update = c
+                                    .prepareStatement("UPDATE credential SET payload=? WHERE credential_id='b'")) {
+                        update.setBytes(1, new byte[stored.payload().length]);
+                        update.executeUpdate();
+                    }
                     assertThrows(SecretStoreException.class, () -> session.read("b"));
                 }
             }
@@ -99,24 +104,29 @@ class CredentialVaultTest {
 
     @Test
     void encryptionConversionIsAtomicAndDoesNotChangeBusinessRevisions() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = open()) {
             var vault = new CredentialVault(db.security());
             try (var session = vault.initialize(password())) {
                 session.save("a", "first secret".toCharArray());
                 session.save("b", "second secret".toCharArray());
-                db.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(
-                        new SecretReference("business", 1), "a", java.time.Instant.now()));
-                assertThrows(SecretStoreException.class, () -> session.save("a", "changed".toCharArray()));
-                try (var c = connection(); var s = c.createStatement()) {
+                try (var c = db.database().openConnection(); var s = c.createStatement()) {
+                    s.execute("INSERT INTO mod_registry(mod_id,updated_at) VALUES('fixture.mod',0)");
                     s.execute(
-                            "CREATE TRIGGER fail_second BEFORE UPDATE ON credential WHEN NEW.credential_id='b' BEGIN SELECT RAISE(ABORT,'fixture'); END");
+                            "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES('fixture.mod','1',RANDOM_UUID(),'fixture_schema','fixture_user','READY',0,0)");
+                    s.execute(
+                            "INSERT INTO mod_credential_reference SELECT RANDOM_UUID(),'a',mod_id,schema_version,generation,'business','fixture','ACTIVE',0 FROM mod_schema WHERE mod_id='fixture.mod'");
+                }
+                assertThrows(SecretStoreException.class, () -> session.save("a", "changed".toCharArray()));
+                try (var c = db.database().openConnection(); var s = c.createStatement()) {
+                    s.execute(
+                            "ALTER TABLE credential ADD CONSTRAINT fail_second CHECK(credential_id<>'b' OR storage_format<>'PLAIN_V1')");
                     assertThrows(SecretStoreException.class, () -> vault.setEncryption(password(), false));
                     assertTrue(vault.encryptionEnabled());
                     for (String id : List.of("a", "b"))
                         try (var stored = db.security().find(id).orElseThrow()) {
                             assertEquals("AES256_GCM_V1", stored.storageFormat());
                         }
-                    s.execute("DROP TRIGGER fail_second");
+                    s.execute("ALTER TABLE credential DROP CONSTRAINT fail_second");
                 }
                 vault.setEncryption(password(), false);
                 assertFalse(vault.encryptionEnabled());
@@ -126,8 +136,15 @@ class CredentialVaultTest {
                 }
                 vault.setEncryption(password(), true);
                 assertTrue(vault.encryptionEnabled());
-                assertEquals("a", db.applicationSecrets().findRevision(new SecretReference("business", 1)).orElseThrow()
-                        .credentialKey());
+                try (var c = db.database().openConnection();
+                        var s = c.createStatement();
+                        var rows = s.executeQuery(
+                                "SELECT credential_id,state FROM mod_credential_reference WHERE business_key='business'")) {
+                    assertTrue(rows.next());
+                    assertEquals("a", rows.getString(1));
+                    assertEquals("ACTIVE", rows.getString(2));
+                    assertFalse(rows.next());
+                }
                 assertArrayEquals("first secret".toCharArray(), session.read("a").orElseThrow());
             }
         }
@@ -135,7 +152,7 @@ class CredentialVaultTest {
 
     @Test
     void credentialAndOwnerWritesRollbackTogether() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = open()) {
             var vault = new CredentialVault(db.security());
             try (var session = vault.initialize(password())) {
                 assertThrows(SQLException.class, () -> session.transaction(() -> {

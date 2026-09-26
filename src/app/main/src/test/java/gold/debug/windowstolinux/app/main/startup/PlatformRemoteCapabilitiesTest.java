@@ -136,6 +136,40 @@ class PlatformRemoteCapabilitiesTest {
     }
 
     @Test
+    void damagedCredentialReportsPublicEvidenceWithoutInternalCauseOrNetworkAttempt() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            var reviews = new Reviews();
+            runtime.setInteractionPresenter(reviews);
+            try (var stored = runtime.persistence().security().find("credential").orElseThrow();
+                    var connection = runtime.persistence().database().openConnection();
+                    var update = connection
+                            .prepareStatement("UPDATE credential SET payload=? WHERE credential_id='credential'")) {
+                update.setBytes(1, new byte[stored.payload().length]);
+                assertEquals(1, update.executeUpdate());
+            }
+            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
+                    var failure = assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
+                    assertEquals(ApiException.class, failure.getClass());
+                    assertEquals("secret.persistence.decrypt-failed", failure.problem().eventCode());
+                    assertTrue(failure.problem().diagnosticId().isPresent());
+                    assertNull(failure.getCause());
+                    assertEquals(0, failure.getSuppressed().length);
+                    return success(null);
+                });
+                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(0, remote.authentications.get());
+                assertEquals(0, remote.commands.get());
+                assertTrue(reviews.approved.isEmpty());
+                assertEquals(0, count(runtime.persistence().database(),
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            }
+        }
+    }
+
+    @Test
     void actualDefaultCapabilitiesReviewExactCommandsTransfersAndRetainAuthorizationAcrossLock() throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {

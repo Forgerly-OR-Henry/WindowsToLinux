@@ -238,6 +238,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             var prepared = new Prepared(key[0], limit[0]);
             key[0] = null;
             return prepared;
+        } catch (gold.debug.windowstolinux.app.secret.SecretStoreException failure) {
+            throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_UNAVAILABLE",
+                    "The selected model, output limit or protected credential is unavailable");
         } catch (ApiException failure) {
             throw failure;
         } catch (Exception failure) {

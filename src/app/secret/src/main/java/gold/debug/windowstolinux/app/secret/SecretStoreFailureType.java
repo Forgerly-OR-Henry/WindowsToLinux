@@ -1,165 +1,49 @@
 package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
 
-/**
- * Failures owned by secret persistence adapters. / 秘密持久化适配器持有的失败类型。
- */
-public enum SecretStoreFailureType implements FailureDefinition {
-    /**
-     * ENCRYPT FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的加密失败分类。
-     */
-    ENCRYPT_FAILED("secret.persistence.encrypt-failed", "persistence", "secret.error.encryptFailed",
-            FailureRecoveryAction.RETRY),
-    /**
-     * DELETE FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的删除失败分类。
-     */
-    DELETE_FAILED("secret.persistence.delete-failed", "persistence", "secret.error.deleteFailed",
-            FailureRecoveryAction.RETRY),
-    /**
-     * VERSION UNSUPPORTED classification within secret store failure type.
-     * <p>秘密存储失败类型中的版本不支持分类。
-     */
-    VERSION_UNSUPPORTED("secret.persistence.version-unsupported", "persistence", "secret.error.versionUnsupported",
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
-    /**
-     * READ FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的读取失败分类。
-     */
-    READ_FAILED("secret.persistence.read-failed", "persistence", "secret.error.readFailed",
-            FailureRecoveryAction.RETRY),
-    /**
-     * DECRYPT FAILED classification within secret store failure type.
-     * <p>秘密存储失败类型中的解密失败分类。
-     */
-    DECRYPT_FAILED("secret.persistence.decrypt-failed", "persistence", "secret.error.decryptFailed",
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
-    /**
-     * APPLICATION VALUE MISSING classification within secret store failure type.
-     * <p>秘密存储失败类型中的应用内容缺失分类。
-     */
-    APPLICATION_VALUE_MISSING("secret.configuration.application-value-missing", "configuration",
-            "secret.error.applicationValueMissing", FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    /**
-     * APPLICATION REFERENCE MISSING classification within secret store failure type.
-     * <p>秘密存储失败类型中的应用引用缺失分类。
-     */
-    APPLICATION_REFERENCE_MISSING("secret.configuration.application-reference-missing", "configuration",
-            "secret.error.applicationReferenceMissing", FailureRecoveryAction.REQUEST_USER_CORRECTION),
-    /**
-     * SSH CREDENTIAL MISSING classification within secret store failure type.
-     * <p>秘密存储失败类型中的SSH凭据缺失分类。
-     */
-    SSH_CREDENTIAL_MISSING("secret.configuration.ssh-credential-missing", "configuration",
-            "secret.error.sshCredentialMissing", FailureRecoveryAction.REQUEST_USER_CORRECTION);
+/** Credential failures expressed using the public platform vocabulary. / 使用平台公开词汇表达凭据失败。 */
+public enum SecretStoreFailureType {
+    /** Credential encryption failed. / 凭据加密失败。 */
+    ENCRYPT_FAILED("secret.persistence.encrypt-failed", ProblemCode.IO_FAILURE),
+    /** Credential deletion failed. / 凭据删除失败。 */
+    DELETE_FAILED("secret.persistence.delete-failed", ProblemCode.IO_FAILURE),
+    /** Stored credential format is unsupported. / 不支持已存凭据格式。 */
+    VERSION_UNSUPPORTED("secret.persistence.version-unsupported", ProblemCode.INCOMPATIBLE),
+    /** Credential reading failed. / 凭据读取失败。 */
+    READ_FAILED("secret.persistence.read-failed", ProblemCode.IO_FAILURE),
+    /** Credential decryption or authentication failed. / 凭据解密或认证失败。 */
+    DECRYPT_FAILED("secret.persistence.decrypt-failed", ProblemCode.IO_FAILURE),
+    /** Required application secret input is missing. / 缺少必需的应用秘密输入。 */
+    APPLICATION_VALUE_MISSING("secret.configuration.application-value-missing", ProblemCode.INVALID_INPUT),
+    /** Referenced application secret is missing. / 引用的应用秘密不存在。 */
+    APPLICATION_REFERENCE_MISSING("secret.configuration.application-reference-missing", ProblemCode.NOT_FOUND),
+    /** Selected SSH credential is missing. / 所选 SSH 凭据不存在。 */
+    SSH_CREDENTIAL_MISSING("secret.configuration.ssh-credential-missing", ProblemCode.NOT_FOUND);
 
-    /**
-     * Stable machine-readable classification code.
-     * <p>稳定的机器可读分类码。
-     */
-    private final String code;
+    /** Stable diagnostic event retained through the migration. / 迁移前后保留的稳定诊断事件。 */
+    private final String eventCode;
 
-    /**
-     * Stage associated with the result or failure.
-     * <p>结果或失败所属阶段。
-     */
-    private final String phase;
+    /** Public failure category. / 公开失败类别。 */
+    private final ProblemCode problemCode;
 
-    /**
-     * Stable localization key for user-facing text.
-     * <p>用户可见文本的稳定本地化键。
-     */
-    private final String messageKey;
-
-    /**
-     * Action required to recover from the classified failure.
-     * <p>从已分类失败中恢复所需的动作。
-     */
-    private final FailureRecoveryAction recoveryAction;
-
-    /**
-     * Binds the supplied dependencies and state for secret store failure type.
-     * <p>为秘密存储失败类型绑定传入的依赖及状态。
-     *
-     * @param code stable machine-readable classification code / 稳定的机器可读分类码
-     * @param phase stage associated with the result or failure / 结果或失败所属阶段
-     * @param messageKey stable localization key for user-facing text / 用户可见文本的稳定本地化键
-     * @param recoveryAction action required to recover from the classified failure / 从已分类失败中恢复所需的动作
-     */
-    SecretStoreFailureType(String code, String phase, String messageKey, FailureRecoveryAction recoveryAction) {
-        this.code = code;
-        this.phase = phase;
-        this.messageKey = messageKey;
-        this.recoveryAction = recoveryAction;
+    /** Binds one credential event to its public category. / 将凭据事件绑定到公开类别。
+     * @param eventCode stable event code / 稳定事件码
+     * @param problemCode public category / 公开类别 */
+    SecretStoreFailureType(String eventCode, ProblemCode problemCode) {
+        this.eventCode = eventCode;
+        this.problemCode = problemCode;
     }
 
-    /**
-     * Returns stable machine-readable classification code.
-     * <p>返回稳定的机器可读分类码。
-     *
-     * @return stable machine-readable classification code / 稳定的机器可读分类码
-     */
-    @Override
-    public String code() {
-        return code;
+    /** Returns the stable diagnostic event. / 返回稳定诊断事件。
+     * @return original event code / 原事件码 */
+    public String eventCode() {
+        return eventCode;
     }
 
-    /**
-     * Returns the module domain that owns this failure definition.
-     * <p>返回持有当前失败定义的模块领域。
-     *
-     * @return the module domain that owns this failure definition / 持有当前失败定义的模块领域
-     */
-    @Override
-    public String domain() {
-        return "secret";
-    }
-
-    /**
-     * Returns stage associated with the result or failure.
-     * <p>返回结果或失败所属阶段。
-     *
-     * @return stage associated with the result or failure / 结果或失败所属阶段
-     */
-    @Override
-    public String phase() {
-        return phase;
-    }
-
-    /**
-     * Returns stable localization key for user-facing text.
-     * <p>返回用户可见文本的稳定本地化键。
-     *
-     * @return stable localization key for user-facing text / 用户可见文本的稳定本地化键
-     */
-    @Override
-    public String messageKey() {
-        return messageKey;
-    }
-
-    /**
-     * Returns the severity assigned to this failure definition.
-     * <p>返回当前失败定义的严重级别。
-     *
-     * @return the severity assigned to this failure definition / 当前失败定义的严重级别
-     */
-    @Override
-    public FailureSeverityLevel severity() {
-        return FailureSeverityLevel.ERROR;
-    }
-
-    /**
-     * Returns action required to recover from the classified failure.
-     * <p>返回从已分类失败中恢复所需的动作。
-     *
-     * @return action required to recover from the classified failure / 从已分类失败中恢复所需的动作
-     */
-    @Override
-    public FailureRecoveryAction recoveryAction() {
-        return recoveryAction;
+    /** Returns the public failure category. / 返回公开失败类别。
+     * @return public category / 公开类别 */
+    public ProblemCode problemCode() {
+        return problemCode;
     }
 }

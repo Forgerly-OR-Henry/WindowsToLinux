@@ -30,8 +30,7 @@ class RecoveryProbeResultTest {
         assertEquals(RecoveryProbeResult.StatusType.IDENTITY_CONFLICT, RecoveryProbeAdapter
                 .failed(LinuxOperationException.create(LinuxOperationFailureType.HOST_KEY_REJECTED, "safe")).status());
         var missing = SecretStoreException.create(SecretStoreFailureType.SSH_CREDENTIAL_MISSING, "safe");
-        assertEquals(missing.failure().operationIdentity().toString(),
-                RecoveryProbeAdapter.failed(missing).failure().orElseThrow().diagnosticId().orElseThrow().toString());
+        assertSame(missing.problem(), RecoveryProbeAdapter.failed(missing).failure().orElseThrow());
         assertEquals(RecoveryProbeResult.StatusType.CREDENTIAL_UNAVAILABLE,
                 RecoveryProbeAdapter.failed(missing).status());
         var interrupted = LinuxOperationException.create(LinuxOperationFailureType.CONNECTION_FAILED, "safe",
