@@ -1317,34 +1317,39 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │  ├─ backup/                           # [模块] 一个备份插件，负责备份、恢复和离线迁移
 │  │  │  ├─ Mod.java                       # [入口类] 注册备份插件、装配各层并释放插件资源
 │  │  │  ├─ db/                            # [包] 备份目录、操作记录及业务偏好的数据访问
+│  │  │  ├─ linux/                         # [包] 备份采集、恢复所需的业务远端操作适配
+│  │  │  ├─ secret/                        # [包] 可移植归档的密码保护及业务秘密处理，独立于 APP 主密码
 │  │  │  ├─ service/                       # [包] 备份业务实现，以下职责分包仍属同一模块
 │  │  │  │  ├─ archive/                    # [包] 归档格式、清单读取、完整性和结构检查
 │  │  │  │  ├─ backup/                     # [包] 备份用例及结果，通过部署公开 API 协作
 │  │  │  │  ├─ collection/                 # [包] 一致性采集、停写协作和采集后的运行恢复
-│  │  │  │  ├─ crypto/                     # [包] 可移植归档的密码保护格式，独立于 APP 主密码
 │  │  │  │  ├─ migration/                  # [包] 双服务器迁移编排，组合备份与恢复能力
 │  │  │  │  └─ restore/                    # [包] 恢复素材准备、候选恢复和失败补偿编排
+│  │  │  ├─ source/                        # [包] 备份与恢复素材选择、来源核验及取材策略
 │  │  │  ├─ ui/                            # [包] 备份、恢复和迁移页面及业务交互
+│  │  │  ├─ windows/                       # [包] 备份、恢复所需的本机业务协作
 │  │  │  └─ resources/                     # [资源] 所属 JAR 的图标、模板等素材，不是 Java 包
 │  │  └─ deployment/                       # [模块] 一个部署 Mod 主模块，业务按 Java 包划分
 │  │     ├─ Mod.java                       # [入口类] 在根包装配部署能力、注册公开服务及释放资源
 │  │     ├─ ai/                            # [包] 部署提示词、模型输入适配、平台 AI 调用及结果格式校验
 │  │     ├─ api/                           # [公开包] 向其他 Mod 提供应用快照、生命周期与恢复协作契约
 │  │     ├─ db/                            # [包] 部署配置、应用拓扑、版本和业务记录的数据访问
+│  │     ├─ linux/                         # [包] 部署业务远端端口及 helper 适配，经公开 API 使用主体连接
+│  │     ├─ secret/                        # [包] 部署秘密的用途、引用及短期注入策略
 │  │     ├─ service/                       # [包] 部署业务编排、公开契约实现及任务执行
 │  │     │  ├─ agent/                      # [包] 自主部署循环、任务状态、工具执行与审批，独立于 standard
 │  │     │  ├─ core/                       # [包] 标准与自主流程共用的部署业务
 │  │     │  │  ├─ config/                  # [包] 部署配置、不可变修订、秘密引用和资源绑定
 │  │     │  │  ├─ delivery/                # [包] 受管发布、候选健康验证、版本切换和回滚
-│  │     │  │  ├─ git/                     # [包] 为部署选择 Git 版本并准备固定来源
 │  │     │  │  ├─ lifecycle/               # [包] 受管应用的状态、启停、重启及生命周期校验
-│  │     │  │  ├─ model/                   # [包] 部署、应用、发布与业务状态的私有模型
-│  │     │  │  └─ source/                  # [包] 部署取材策略、排除规则及平台快照的业务使用
-│  │     │  ├─ linux/                      # [包] 业务远端端口实现，经 APP 公开 API 使用主体连接
+│  │     │  │  └─ model/                   # [包] 部署、应用、发布与业务状态的私有模型
 │  │     │  └─ standard/                   # [包] 标准部署流程，区分分析和执行
 │  │     │     ├─ analyze/                 # [包] 静态识别、证据提取、冲突和缺项分析
 │  │     │     └─ deploy/                  # [包] 标准计划、适配器、工具链及有界 assistance
+│  │     ├─ source/                        # [包] 部署取材、排除规则及平台快照的业务使用
+│  │     │  └─ git/                        # [包] Git 版本选择及固定来源准备
 │  │     ├─ ui/                            # [包] 部署、受管应用及部署配置页面
+│  │     ├─ windows/                       # [包] 本机构建工具及部署素材准备的业务协作
 │  │     └─ resources/                     # [资源] 所属 JAR 的提示词、素材与业务 helper
 │  └─ web/                                 # [目录] 官网、教程、教学演示、下载和投稿收集；内部结构暂缓
 └─ test/                                   # [目录] 新活动工程的验收夹具，旧夹具另完整归档
@@ -1360,21 +1365,25 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 
 `src/app/mod` 是 APP 内部负责 Mod 安装、加载、生命周期和服务登记的叶子模块，Java 根包为 `gold.debug.windowstolinux.app.mod`；`src/mod` 是与 APP 并列、收纳官方 Mod 源码的聚合模块，各 Mod 使用自己的标准根包。两者按完整路径和职责区分，平台运行模块本身不作为可安装的业务 Mod。
 
-| 使用方                                | 可依赖的边界                                            | 禁止反向渗透                                                  |
-| ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
-| APP 的平台实现                        | API、职责明确的 APP 内部模块；`main`/`service` 负责装配 | 不引用部署/备份私有类型；`linux` 不直接构造平台 UI 或插件引擎 |
-| API                                   | 最小必要的公共类型                                      | 不依赖 APP、Web、插件实现、SSHD 或数据库实现                  |
-| `deployment/api`                      | 平台 API 的必要公共契约                                 | 不依赖或暴露部署私有实现、数据库实体及备份类型                |
-| `deployment/ai`                       | 平台公开 AI 契约、本包的请求与结果类型                  | 不直接依赖 APP 的 AI 实现、Provider 客户端、`db` 或业务流程   |
-| `deployment/db`                       | 平台公开 JDBC/凭据契约、本包的存储映射                  | 不反向依赖 UI、AI 适配或业务流程，不访问其他 Mod 私有表       |
-| `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                    | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入   |
-| `deployment/service/standard/analyze` | 平台 API、必要部署业务契约                              | 保持确定性静态分析，不依赖 agent 或 UI                        |
-| `deployment/service/standard/deploy`  | 标准分析、共用 core、部署 API、所需 ai/db 及平台 API    | 不依赖 agent 或 UI，普通标准流程保持无 AI 路径                |
-| `deployment/service/agent`            | 共用 core、部署 API、所需 ai/db 及平台 API              | 不依赖 standard 或 UI；多轮业务决策和工具执行留在本包         |
-| `deployment/ui`                       | 本 Mod 的 service 及平台 UI 契约                        | 不直接访问 db 或调用 ai 执行业务                              |
-| `deployment/Mod.java`                 | 本 Mod 的各层及平台注册契约                             | 负责装配与生命周期，不把两个引擎互相耦合或承载业务实现        |
-| `backup`                              | 平台 API、部署公开 API                                  | 不依赖 deployment 的 service、ai、db、ui 或私有表             |
-| Web                                   | 后续官网设计自身需要的内容与服务                        | 不接入 APP/插件的用户服务器执行链                             |
+| 使用方                                | 可依赖的边界                                                                     | 禁止反向渗透                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| APP 的平台实现                        | API、职责明确的 APP 内部模块；`main`/`service` 负责装配                          | 不引用部署/备份私有类型；`linux` 不直接构造平台 UI 或插件引擎     |
+| API                                   | 最小必要的公共类型                                                               | 不依赖 APP、Web、插件实现、SSHD 或数据库实现                      |
+| `deployment/api`                      | 平台 API 的必要公共契约                                                          | 不依赖或暴露部署私有实现、数据库实体及备份类型                    |
+| `deployment/ai`                       | 平台公开 AI 契约、本包的请求与结果类型                                           | 不直接依赖 APP 的 AI 实现、Provider 客户端、`db` 或业务流程       |
+| `deployment/db`                       | 平台公开 JDBC/凭据契约、本包的存储映射                                           | 不反向依赖 UI、AI 适配或业务流程，不访问其他 Mod 私有表           |
+| `deployment/linux`                    | 平台 Linux/服务器/任务契约及业务窄端口                                           | 不接管 SSHD、连接、指纹或独立救援；不调用 UI 或两个部署引擎       |
+| `deployment/secret`                   | 平台秘密/任务契约及业务用途和引用值                                              | 不持有 APP 主密钥，不绕过凭据归属和任务授权，不调用 UI 或业务流程 |
+| `deployment/source`                   | 平台 Source/任务契约及业务取材规则                                               | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包    |
+| `deployment/windows`                  | 平台公开 Source/进程/交互等契约及本机业务适配                                    | 不依赖 app/windows 私有类，不接管平台更新、卸载和窗口隐私         |
+| `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                                             | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入       |
+| `deployment/service/standard/analyze` | 平台 API、必要部署业务契约                                                       | 保持确定性静态分析，不依赖 agent 或 UI                            |
+| `deployment/service/standard/deploy`  | 标准分析、共用 core、部署 API、所需 ai/db/linux/secret/source/windows 及平台 API | 不依赖 agent 或 UI，普通标准流程保持无 AI 路径                    |
+| `deployment/service/agent`            | 共用 core、部署 API、所需 ai/db/linux/secret/source/windows 及平台 API           | 不依赖 standard 或 UI；多轮业务决策和工具执行留在本包             |
+| `deployment/ui`                       | 本 Mod 的 service 及平台 UI 契约                                                 | 不直接访问 db 或调用 ai 执行业务                                  |
+| `deployment/Mod.java`                 | 本 Mod 的各层及平台注册契约                                                      | 负责装配与生命周期，不把两个引擎互相耦合或承载业务实现            |
+| `backup`                              | 平台 API、部署公开 API                                                           | 不依赖 deployment 的任何未导出实现包或私有表                      |
+| Web                                   | 后续官网设计自身需要的内容与服务                                                 | 不接入 APP/插件的用户服务器执行链                                 |
 
 备份与部署均采用一个 Mod 主模块，`Mod.java` 位于各自 Java 根包；部署的 core、standard、agent 是 `service` 下的职责包，不再设置独立 runtime 入口模块。包间依赖仍须由架构检查约束，不能因合并构建而取消两个引擎的边界。`deployment/api` 首先是公开契约包，不自动生成独立 JAR；公开类型共享和依赖声明见 [Mod.md](Mod.md#loader-adaptation)。以后只有确需独立构建或隔离依赖时才提取同作者从模块。第三方开发者无需把源码合入本仓库，官网投稿与 APP 执行能力分开建设。
 
@@ -1418,7 +1427,7 @@ API 包保持无环：task 只依赖 JDK；server、ui、db、ai、source 依赖
 
 #### 主模块结构
 
-以下模板以备份、恢复、迁移等业务说明分包，并展示可选的 `api` 与 `ai` 位置；不表示官方备份 Mod 必须增加 AI 或公开服务。`com.example.windowstolinux.mod.backup` 仅为符合标准格式的第三方根包示例，实际作者使用自己的域名倒序前缀，具体业务子包按需建立。
+以下模板以备份、恢复、迁移等业务说明九类职责包的位置；各包按实际需要建立，不表示官方备份 Mod 必须增加 AI、公开服务或其他未使用能力。`com.example.windowstolinux.mod.backup` 仅为符合标准格式的第三方根包示例，实际作者使用自己的域名倒序前缀，具体业务子包按需建立。
 
 ```text
 mod-project/                              # [模块] Mod 主 JAR 的 Maven 工程，项目目录名仅作示例
@@ -1431,18 +1440,22 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
    │  │     ├─ ai/                        # [包，可选] 本 Mod 的提示词组织、平台 AI 调用及结果适配
    │  │     ├─ api/                       # [公开包，可选] 其他 Mod 可依赖的接口及跨边界数据类型
    │  │     ├─ db/                        # [包] 插件数据访问、存储映射与持久化
+   │  │     ├─ linux/                     # [包，可选] 本业务的远端动作、脚本及结果适配
+   │  │     ├─ secret/                    # [包，可选] 本业务的秘密用途、引用及可移植保护格式
    │  │     ├─ service/                   # [包] 业务实现，按职责继续细分
    │  │     │  ├─ backup/                 # [包] 备份规则、流程及业务结果
    │  │     │  ├─ migration/              # [包] 迁移流程，按需组合备份和恢复能力
    │  │     │  └─ restore/                # [包] 恢复规则、流程及业务结果
-   │  │     └─ ui/                        # [包] 页面、表单输入、状态与进度展示
+   │  │     ├─ source/                    # [包，可选] 来源选择、业务排除规则及快照使用
+   │  │     ├─ ui/                        # [包] 页面、表单输入、状态与进度展示
+   │  │     └─ windows/                   # [包，可选] 本机工具、素材和业务辅助操作适配
    │  └─ resources/                       # [资源] 随所属 JAR 打包的图标、语言文件、模板等
    └─ test/                               # [目录] 按实际测试需要建立
       ├─ java/                            # [测试根] 测试包镜像对应生产包
       └─ resources/                       # [资源] 仅供测试使用的夹具
 ```
 
-`Mod.java` 与 `api`、`ai`、`db`、`ui`、`service` 位于同一个 Mod 根包下；这些职责包不各自建立 POM。入口位于 Java 根包，实际物理路径仍遵循 Maven 结构，例如 `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/Mod.java`。没有跨 Mod 服务、AI、持久化或页面需求时，分别省略对应包，不为与 APP 目录对称而创建空包。
+`Mod.java` 与 `ai`、`api`、`db`、`linux`、`secret`、`service`、`source`、`ui`、`windows` 位于同一个 Mod 根包下；这九类职责包不各自建立 POM。入口位于 Java 根包，实际物理路径仍遵循 Maven 结构，例如 `src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/Mod.java`。没有对应能力需求时省略该包；名称与 APP 对应便于定位职责，APP 实现通用能力，Mod 实现业务规则和适配，不复制平台实现。
 
 #### 入口与职责边界
 
@@ -1468,7 +1481,7 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 
 根包与稳定 Mod ID 的关系、发布后的身份保持及数据归属统一见 [Mod.md：身份与版本](Mod.md#mod-identity-version)。
 
-1. 入口类名固定为 `Mod`，源文件名严格为 `Mod.java`，不是 `Mod.Java`。`api`、`ai`、`db`、`ui`、`service` 和其下职责包使用小写英文名称；其他类按明确职责命名，文件与顶级类同名。
+1. 入口类名固定为 `Mod`，源文件名严格为 `Mod.java`，不是 `Mod.Java`。九类职责包及其子包均使用小写英文名称；其他类按明确职责命名，文件与顶级类同名。
 2. 各 Mod 使用独有根包，并遵守本节标准格式。官方 Mod 使用 `gold.debug.windowstolinux.mod.<modname>`；第三方使用自己的域名倒序前缀，并保留 `windowstolinux.mod` 固定段。
 3. 不同 Mod 可以分别声明 `Mod`，以完整限定名区分，例如 `com.example.windowstolinux.mod.backup.Mod` 与 `com.example.windowstolinux.mod.deployment.Mod`。主模块只提供一个指定入口，不依赖简单类名的全局唯一性定位插件。
 4. 同作者从模块用于复用或隔离实际职责，不要求每个从模块再建立入口和全部职责包。只有插件主模块承担入口装配；从模块不能反向依赖主模块。普通职责分包不自动升级为 Maven 模块。

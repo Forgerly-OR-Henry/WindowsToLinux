@@ -2,6 +2,8 @@
 
 ## 状态与阅读顺序
 
+- 用户补充 Mod 职责分包：每个业务 Mod 可在根包设置 ai、api、db、linux、secret、service、source、ui、windows；均为同一主模块内的 Java 包，按需建立。目标树、职责和依赖方向已同步；部署远端适配迁往 linux，取材/Git 迁往 source，备份密码保护迁往 secret。官方业务 Mod 尚未实施，不创建空源码或提前更新实际文件索引。
+
 - S3 救援关闭检查点与重开核对：原浏览器/驱动完整关闭后先持久记录 `browser.closed.v1`，再释放原任务占用；两步任一步失败均保留并可重试。前次启动只有明确关闭记录允许核对，未确认创建、格式异常或混合未确认资源均整次保留 UNKNOWN，不凭主 PID 消失清账，不重放请求或命令。新增 2 项及受影响回归共 20 独立本机测试最终通过、零跳过，包含真实 Chromium 清理与 H2 检查点/释放故障、数据库重开后的 5 种状态。首次重开夹具遗漏凭据外键记录，修正夹具后通过，未放宽产品规则。数据库重开使用受控状态，不声称实测 JVM 崩溃；S3～S6 尚未整体完成，S7 暂缓，无远端或发行物验收。
 
 - S3 救援驱动物理收尾：修复 Playwright 关闭调用返回但 Node 驱动仍存活时可能误报资源已释放的问题。固定 1.58.0 适配保留原 `Process`，在创建前核验内部字段可访问；关闭返回后只等待原进程，不重建、不按名称找进程、不强杀。进程已退出也不能忽略 Java 连接清理失败。3 新反例及相关本机回归共 18 项全部通过，零跳过，包含真实驱动/Chromium、H2 原占用、默认救援、锁定隐私和终端。2 生产文件 57 声明双语与 doclint 通过。跨启动缺少完整物理证据的旧记录继续保持 UNKNOWN；当前修复不表示全部资源恢复或 S3～S6 完成。S7 暂缓，无远端或发行物验收。
@@ -124,12 +126,12 @@ API 仅提取真实调用方需要的最小契约；Linux 通用连接与业务 
 | `app/secret`                           | `app/secret`                                                  | 主密码、密钥寿命、加解密、凭据保护留主体；插件通过带所有者与作用域的引用使用秘密，不取得主密钥。                                        |
 | `app/windows`                          | `app/windows`、`app/source`、`app/linux/recovery`             | 通用本机文件/窗口和维护适配留主体；浏览器救援逻辑移入 Linux；部署文件解释与业务归档策略随插件。                                         |
 | `shared/model`                         | API 的必要公共数据、APP 内部模型、两插件私有模型              | 服务器/任务等跨边界最小值对象进入 API；部署、备份、配置、工具链等业务模型留对应插件。                                                   |
-| `shared/source`                        | `app/source` 与部署插件 `service/core/source`                 | 有界读取、不可变快照和通用本地取材可复用为主体能力；部署排除规则、项目解释及交付素材归插件。                                            |
-| `shared/git`                           | 部署插件 `service/core/git`                                   | 首轮 Git 取材服务部署用例；凭据经平台授权使用，不由插件持久化平台原始凭据。                                                             |
+| `shared/source`                        | `app/source` 与部署插件 `source`                              | 有界读取、不可变快照和通用本地取材可复用为主体能力；部署排除规则、项目解释及交付素材归插件。                                            |
+| `shared/git`                           | 部署插件 `source/git`                                         | 首轮 Git 取材服务部署用例；凭据经平台授权使用，不由插件持久化平台原始凭据。                                                             |
 | `shared/config`                        | 部署插件 `service/core/config`，跨插件必要部分经部署 API 提供 | 部署配置/运行描述与业务序列化不进入通用 API；备份获取已审阅快照而非私有表。                                                             |
 | `shared/ai`                            | `app/ai`、平台 API 最小契约及部署插件 `ai`                    | Provider、传输和通用模型调用留主体；部署提示词、请求/结果适配及专用脱敏进入 Mod ai，业务资料选择、校验与执行由 service 组织。           |
 | `shared/linux`                         | API Linux 能力、`app/linux` 与部署/备份插件                   | 通用连接/受控操作契约归平台边界；构建、工具链、发布、运行和备份端口按业务分拆。                                                         |
-| `shared/linux-sshd`                    | `app/linux/ssh` 与部署插件 `service/linux` 等业务适配         | SSHD、SFTP、连接和指纹归主体；helper 的业务动作、协议载荷及资源归对应插件。迁移期可由部署插件承载完整 helper bundle，避免同时重写协议。 |
+| `shared/linux-sshd`                    | `app/linux/ssh` 与部署插件 `linux` 等业务适配                 | SSHD、SFTP、连接和指纹归主体；helper 的业务动作、协议载荷及资源归对应插件。迁移期可由部署插件承载完整 helper bundle，避免同时重写协议。 |
 | `shared/deploy`                        | `app/service` 的通用任务/审核基础与部署插件 `service/core`    | 候选构建交付、健康门槛、版本切换、生命周期与未知状态处理保留业务语义；平台只调度和承载审批。                                            |
 | `shared/standard`                      | 部署插件 `service/standard` 包                                | 仍区分分析和执行，不与 Agent 合并，不另设聚合模块。                                                                                     |
 | `shared/standard/analyze`              | 部署插件 `service/standard/analyze`                           | 保留静态证据、分析规则与无 AI 路径。                                                                                                    |
@@ -411,7 +413,7 @@ S0 的规范入口维护在[第 9 节规格索引](#implementation-specification
 | A13  | 新旧数据版本切回、旧版本继续写入、已有目标复用；重新建立目标、共享引用、未选中/失败版本、任务占用、最后引用删除、整个 Mod 删除及部分清理失败                                                                                                                                                       | [版本切回](../Mod.md#version-switching)、[Schema 保留](../Mod.md#schema-retention)、[生命周期](../Mod.md#mod-lifecycle)。                    |
 | A14  | 正常完成、失败、取消、未知、待收尾及仍被引用的执行记录；正式状态/历史摘要/临时记录的一致性；归档提交中断、重复重试和历史所属安装信息消失；应急写入不替代归档提交、摘要已清理后不重复归档                                                                                                           | [记录生命周期](../Mod.md#execution-record-lifecycle)、[日志与状态边界](../Mod.md#database-log-management)。                                  |
 | A15  | 公共字段/身份/类别/表后缀校验；无业务 Schema 的 Mod 诊断、旧 Schema 与禁用 Mod 清理；条数边界、并列排序、长度/转义/脱敏/级别；数据库与文件故障、部分清理失败、并发写入/回填；重复 ID/内容冲突、提交未知、文件替换失败、残缺/损坏、归属删除、日志副本不复活；独立备份和状态保护、清理不等于文件压缩 | [完整日志方案](../Mod.md#database-log-management)。                                                                                          |
-| A16  | Mod 的 AI 结果解析、格式和业务校验、确定性无 AI 路径；service/ai/db 分工及跨 Mod 公开能力调用；部署、备份、恢复、双服务器迁移、取消恢复和维护标记归属                                                                                                                                              | [作者职责](../Mod.md#source-development)、[AI 分工](../Mod.md#53-使用-ai-时如何分工)、[部署备份协作](../Mod.md#deployment-backup-contract)。 |
+| A16  | Mod 的 AI 结果解析、格式和业务校验、确定性无 AI 路径；九类 Mod 职责包分工及跨 Mod 公开能力调用；部署、备份、恢复、双服务器迁移、取消恢复和维护标记归属                                                                                                                                             | [作者职责](../Mod.md#source-development)、[AI 分工](../Mod.md#53-使用-ai-时如何分工)、[部署备份协作](../Mod.md#deployment-backup-contract)。 |
 
 ### 10.2 新增规格验收
 
@@ -1464,7 +1466,7 @@ Schema 状态：PREPARING → READY/FAILED/UNKNOWN；FAILED 经明确首次失�
 
 - 前置：S4-06。规格：D2,D4。
 - 目标与交付：部署 H2、配置修订/秘密引用、源码/Git 固定取材。
-- 允许范围与边界：mod/deployment 的 db、core/source/git/config/model。
+- 允许范围与边界：mod/deployment 的 db、secret、source（含 git）及 service/core 下的 config/model。
 - 验收：旧业务字段/序列化逐项映射；跨所有者引用、快照和错误输入验证；覆盖 A16,A20,A25。
 - 失败恢复：保存资源/模型对照和迁移限制，不直接搬 SQLite SQL。
 - 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 Mod、File、AllFile、PHASE。
@@ -1475,7 +1477,7 @@ Schema 状态：PREPARING → READY/FAILED/UNKNOWN；FAILED 经明确首次失�
 
 - 前置：S5-01。规格：D2,D7。
 - 目标与交付：确定性分析→计划→构建→交付→健康/回滚闭环。
-- 允许范围与边界：deployment service/standard 与 core/linux、对应 UI。
+- 允许范围与边界：deployment 的 service/standard、service/core、linux、windows 及对应 UI。
 - 验收：无模型调用；单/多组件及现有成功/失败夹具、取消/未知语义通过；覆盖 A16,A22,A25。
 - 失败恢复：保留原测试语义，不能弱化健康和未知门槛。
 - 证据与同步：记录本任务实际产物、命令/环境、正反结果及未覆盖项；同步 产品手册、Runtime、File、AllFile、PHASE。
