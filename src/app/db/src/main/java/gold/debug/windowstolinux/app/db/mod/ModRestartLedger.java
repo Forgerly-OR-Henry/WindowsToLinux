@@ -406,6 +406,27 @@ public final class ModRestartLedger {
         });
     }
 
+    /** Records physical creation only after the original create returned successfully. / 仅在原物理创建成功返回后记录归属。
+     * @param plan original preparation / 原准备
+     * @param target original permanent or intermediate target / 原正式或中间目标
+     * @throws SQLException if original identity or acknowledgement changed / 原身份或确认变化时 */
+    public void created(Preparation plan, SchemaCoordinates target) throws SQLException {
+        locked(c -> {
+            requirePreparation(c, plan);
+            boolean owned = new SchemaCoordinates(plan.target()).physicalName().equals(target.physicalName())
+                    || plan.steps().stream().anyMatch(
+                            step -> targetCoordinates(plan, step).physicalName().equals(target.physicalName()));
+            require(owned, "Created target is not in the original inventory");
+            target.requireRegistered(c, Set.of("PREPARING"));
+            target.requirePhysicalOwnership(c);
+            var recovery = preparationRecovery(c, plan);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/created")
+                    .put(target.physicalName(), target.identity().generation().toString());
+            saveRecovery(c, plan, recovery);
+            return null;
+        });
+    }
+
     /** Persists the original source fingerprint before migration and checks it after cleanup. / 在迁移前持久化原来源指纹，并在清理后核对。
      * @param plan original migration / 原迁移
      * @param digest physical source fingerprint / 物理来源指纹

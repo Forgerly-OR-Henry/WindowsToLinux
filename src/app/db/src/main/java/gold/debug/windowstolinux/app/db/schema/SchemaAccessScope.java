@@ -23,6 +23,9 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
     /** Whether a temporary SELECT-only identity owns this scope. / 此作用域是否持有临时只读身份。 */
     private final boolean readOnly;
 
+    /** Explicit host reconciliation lease, absent for ordinary preparation. / 明确宿主核对租约，普通准备为空。 */
+    private final UUID reconciliation;
+
     /** Prepared internal database identity, never returned through SchemaAccess. / 已准备内部数据库身份，不经 SchemaAccess 返回。 */
     private final String user;
 
@@ -56,10 +59,36 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
      * @throws Exception if the original target or access cannot be verified / 无法核验原目标或访问时 */
     public SchemaAccessScope(PlatformDatabase database, SchemaCoordinates coordinates, UUID scopeId, boolean readOnly)
             throws Exception {
+        this(database, coordinates, scopeId, readOnly, null);
+    }
+
+    /** Opens only an explicitly claimed UNKNOWN target for read-only reconciliation. / 仅为明确取得的 UNKNOWN 目标开放只读核对。
+     * @param database actual engine / 实际引擎
+     * @param identity original target / 原目标
+     * @param scope original persisted reader / 原持久读取身份
+     * @param operation active reconciliation / 活动核对
+     * @return restricted original scope / 受限原作用域
+     * @throws Exception if original claim is absent / 原取得记录不存在时 */
+    public static SchemaAccessScope reconciliation(PlatformDatabase database, SchemaIdentity identity, UUID scope,
+            UUID operation) throws Exception {
+        return new SchemaAccessScope(database, new SchemaCoordinates(identity), scope, true,
+                Objects.requireNonNull(operation));
+    }
+
+    /** Constructs one original scope under ordinary preparation or a reconciliation claim. / 在普通准备或核对取得记录下构造一个原作用域。
+     * @param database actual engine / 实际引擎
+     * @param coordinates exact target / 精确目标
+     * @param scopeId original scope / 原作用域
+     * @param readOnly whether only SELECT is granted / 是否仅授予 SELECT
+     * @param reconciliation explicit reconciliation, otherwise null / 明确核对，否则为空
+     * @throws Exception if ownership or grants fail / 归属或授权失败时 */
+    private SchemaAccessScope(PlatformDatabase database, SchemaCoordinates coordinates, UUID scopeId, boolean readOnly,
+            UUID reconciliation) throws Exception {
         this.database = Objects.requireNonNull(database);
         this.coordinates = Objects.requireNonNull(coordinates);
         this.scopeId = Objects.requireNonNull(scopeId);
         this.readOnly = readOnly;
+        this.reconciliation = reconciliation;
         verifyRegistration();
         user = readOnly ? readerUser(scopeId) : coordinates.databaseUser();
         if (readOnly) {
@@ -87,8 +116,27 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
      */
     private void verifyRegistration() throws SQLException {
         try (var c = database.openConnection()) {
-            coordinates.requireRegistered(c, Set.of("PREPARING", "READY"));
+            coordinates.requireRegistered(c, reconciliation == null ? Set.of("PREPARING", "READY") : Set.of("UNKNOWN"));
             coordinates.requirePhysicalOwnership(c);
+            if (reconciliation != null) {
+                try (var p = c.prepareStatement(
+                        "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND operation_type='RECONCILE' AND state='RUNNING' AND phase='VALIDATING' AND target_generation=?")) {
+                    p.setObject(1, reconciliation);
+                    p.setObject(2, coordinates.identity().generation());
+                    try (var r = p.executeQuery()) {
+                        if (!r.next())
+                            throw new SQLException("Original reconciliation is not active");
+                        try {
+                            var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(r.getString(1));
+                            if (!scopeId.toString().equals(node.path("reader").asText())
+                                    || !database.bootId().toString().equals(node.path("bootId").asText()))
+                                throw new SQLException("Original reconciliation reader changed");
+                        } catch (java.io.IOException invalid) {
+                            throw new SQLException("Invalid reconciliation reader");
+                        }
+                    }
+                }
+            }
         }
     }
 

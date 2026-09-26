@@ -278,6 +278,22 @@ public final class PlatformRuntime implements AutoCloseable {
         return coordinator.start();
     }
 
+    /** Runs an explicit original schema inspection through the retained development graph. / 经保留开发图运行明确原数据检查。
+     * @param preparation original retained preparation / 原保留准备
+     * @return observed data outcome without business startup / 不含业务启动的已观察数据结果
+     * @throws Exception if authorization, graph or original cleanup is unavailable / 授权、图或原清理不可用时 */
+    public gold.debug.windowstolinux.appapi.task.Outcome reconcileModSchema(java.util.UUID preparation)
+            throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            if (stopping || closed || modCoordinator == null)
+                throw new IllegalStateException("Mod graph is unavailable");
+            coordinator = modCoordinator;
+        }
+        return coordinator.reconcileSchema(preparation);
+    }
+
     /** Reads the actual compiled appapi identity for both management and startup. / 为管理与启动读取实际编译 appapi 身份。
      * @return exact public API release / 精确公开 API 版本
      * @throws java.io.IOException if identity is unavailable / 身份不可用时 */

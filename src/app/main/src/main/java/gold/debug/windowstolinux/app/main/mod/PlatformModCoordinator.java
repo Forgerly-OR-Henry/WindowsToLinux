@@ -50,6 +50,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
     /** Pre-author failures awaiting only durable registration. / 仅等待持久登记的作者执行前失败。 */
     private final Map<String, Rejection> rejected = new LinkedHashMap<>();
 
+    /** Explicit data inspections retaining original cleanup obligations. / 保留原清理义务的明确数据检查。 */
+    private final Map<UUID, ModSchemaInspection> inspections = new LinkedHashMap<>();
+
     /** Source and owner-specific safe startup feedback. / 来源及所有者专属安全启动反馈。 */
     private final Map<String, Problem> issues = new LinkedHashMap<>();
 
@@ -220,6 +223,72 @@ public final class PlatformModCoordinator implements AutoCloseable {
         }
     }
 
+    /** Explicitly validates a retained unknown schema without restarting or migrating it. / 明确验证保留未知数据，不重启或迁移它。
+     * @param preparation original preparation operation selected by the user / 用户选定原准备操作
+     * @return observed data classification, independent of business startup / 已观察数据分类，独立于业务启动
+     * @throws Exception if current authorization, program or cleanup is unavailable / 当前授权、程序或清理不可用时 */
+    public Outcome reconcileSchema(UUID preparation) throws Exception {
+        enter();
+        try (var permission = runtime.security().enterOperation()) {
+            if (!started || closed)
+                throw failure("@platform", "MOD_GRAPH_UNAVAILABLE", "Original development graph is unavailable",
+                        ProblemCode.UNAVAILABLE);
+            var retained = inspections.get(preparation);
+            if (retained != null) {
+                retained.close();
+                inspections.remove(preparation);
+                return retained.outcome();
+            }
+            var ledger = new ModSchemaReconciliation(runtime.persistence().database());
+            var review = ledger.review(preparation);
+            String owner = review.plan().target().ownerId();
+            if (runtime.modContexts().containsKey(owner) || runtime.modSessions().containsKey(owner))
+                throw failure(owner, "MOD_RECONCILIATION_BUSY", "Original Mod session still owns resources",
+                        ProblemCode.BUSY);
+            var discovered = new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
+            var builds = new HashMap<String, PlatformModCatalog.Build>();
+            discovered.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
+            var build = builds.get(owner);
+            if (build == null || !review.version().equals(build.candidate().manifest().version().toString())
+                    || !review.manifest().equals(build.candidate().manifest().json())
+                    || !review.digest().equals(build.contentDigest()))
+                throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
+                        ProblemCode.UNAVAILABLE);
+            PlatformModCatalog.verify(workspace, build);
+            var manifests = new ArrayList<ModManifest>();
+            manifests.add(build.candidate().manifest());
+            var providers = new HashMap<String, ModClassLoader>();
+            for (var entry : slots.entrySet()) {
+                var slot = entry.getValue();
+                if (slot.session != null && slot.session.state() == ModRuntimeSession.SessionState.RUNNING) {
+                    manifests.add(slot.loader.manifest());
+                    providers.put(entry.getKey(), slot.loader);
+                }
+            }
+            var plan = ModDependencyPlan.resolve(manifests, api, Runtime.version().feature());
+            if (plan.failures().containsKey(owner))
+                throw new ApiException(plan.failures().get(owner));
+            var sources = new ArrayList<URL>();
+            for (var path : build.candidate().descriptor().sources())
+                sources.add(path.toUri().toURL());
+            var inspection = new ModSchemaInspection(runtime.persistence().database(), ledger, review,
+                    plan.createLoader(owner, sources, providers));
+            inspections.put(preparation, inspection);
+            try {
+                var outcome = inspection.inspect();
+                inspections.remove(preparation);
+                if (outcome != Outcome.UNKNOWN)
+                    issues.remove(owner);
+                return outcome;
+            } catch (Exception | LinkageError | AssertionError retainedFailure) {
+                throw failure(owner, "MOD_SCHEMA_RECONCILIATION_UNCONFIRMED",
+                        "Original inspection or cleanup remains; retry only its retained cleanup", ProblemCode.UNKNOWN);
+            }
+        } finally {
+            operation.set(false);
+        }
+    }
+
     /** Resolves original requests and READY data before dependency loading. / 在依赖加载前解析原请求及 READY 数据。
      * @param selected original saved selection / 原保存选择
      * @return prepared activation facts / 已准备启用事实
@@ -362,6 +431,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
         try {
             if (closed)
                 return;
+            for (var inspection : List.copyOf(inspections.values()))
+                inspection.close();
+            inspections.clear();
             for (var pending : List.copyOf(rejected.values()))
                 confirmFailure(pending.prepared(), pending.problem());
             for (var slot : new ArrayList<>(slots.values()).reversed()) {
