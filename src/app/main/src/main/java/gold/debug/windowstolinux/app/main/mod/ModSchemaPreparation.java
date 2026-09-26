@@ -90,6 +90,7 @@ final class ModSchemaPreparation implements AutoCloseable {
             }
             ledger.preparationPhase(plan, false);
             new SchemaProvisioner(database).create(plan.target());
+            ledger.created(plan, new SchemaCoordinates(plan.target()));
             writer = new SchemaAccessScope(database, plan.target(), plan.writer(), false);
             ModSchemaLifecycle lifecycle;
             try {
@@ -137,6 +138,7 @@ final class ModSchemaPreparation implements AutoCloseable {
             ledger.beginStep(plan, step, before);
             var target = ModRestartLedger.targetCoordinates(plan, step);
             new SchemaProvisioner(database).create(target);
+            ledger.created(plan, target);
             boolean last = step.index() == plan.steps().size() - 1;
             if (!last)
                 intermediates.add(target);
@@ -258,6 +260,14 @@ final class ModSchemaPreparation implements AutoCloseable {
      * @return author schema lifecycle / 作者数据生命周期
      * @throws ReflectiveOperationException if origin, public shape or constructor is invalid / 来源、公开形状或构造器无效时 */
     private ModSchemaLifecycle lifecycle() throws ReflectiveOperationException {
+        return lifecycle(loader);
+    }
+
+    /** Resolves the same fixed author validator for preparation and explicit reconciliation. / 为准备及明确核对解析同一固定作者验证器。
+     * @param loader verified isolated program loader / 已验证隔离程序加载器
+     * @return original fixed lifecycle / 原固定生命周期
+     * @throws ReflectiveOperationException if its origin or shape is invalid / 来源或形状无效时 */
+    static ModSchemaLifecycle lifecycle(ModClassLoader loader) throws ReflectiveOperationException {
         String root = loader.manifest().rootPackage();
         String name = root.substring(root.lastIndexOf('.') + 1);
         String className = root + ".db." + Character.toUpperCase(name.charAt(0)) + name.substring(1) + "Schema";

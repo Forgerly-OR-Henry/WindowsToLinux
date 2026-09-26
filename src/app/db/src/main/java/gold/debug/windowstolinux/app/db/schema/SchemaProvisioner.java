@@ -86,4 +86,91 @@ public final class SchemaProvisioner {
             }
         }
     }
+
+    /** Releases one inventory-recorded SELECT identity after old connection ownership ended. / 旧连接归属结束后释放一个清单记录的 SELECT 身份。
+     * @param scope original persisted scope / 原持久作用域
+     * @param coordinates only permitted schema / 唯一允许的数据结构
+     * @throws SQLException if the user gained other rights, ownership or still has a connection / 用户获得其他权限、归属或仍有连接时 */
+    public void releaseRecordedReader(java.util.UUID scope, SchemaCoordinates coordinates) throws SQLException {
+        if (database.openConnections(scope.toString()) != 0)
+            throw new SQLException("Original reader connections remain");
+        String user = SchemaAccessScope.readerUser(scope);
+        try (var c = database.openConnection()) {
+            try (var p = c.prepareStatement(
+                    "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE user_name=?)")) {
+                p.setString(1, user);
+                p.setString(2, user);
+                p.setString(3, user);
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    if (r.getLong(1) != 0)
+                        throw new SQLException("Recorded reader gained ownership or remains active");
+                }
+            }
+            try (var p = c.prepareStatement(
+                    "SELECT grantedrole,rights,table_schema FROM information_schema.rights WHERE grantee=?")) {
+                p.setString(1, user);
+                try (var r = p.executeQuery()) {
+                    while (r.next()) {
+                        if (r.getString(1) != null || !"SELECT".equals(r.getString(2))
+                                || !coordinates.physicalName().equals(r.getString(3)))
+                            throw new SQLException("Recorded reader has unexpected privileges");
+                    }
+                }
+            }
+            try (var s = c.createStatement()) {
+                s.execute("DROP USER IF EXISTS " + SchemaAccessScope.quote(user));
+            }
+        }
+    }
+
+    /** Removes only a proven-created original intermediate during explicit reconciliation. / 明确核对时仅移除有创建证明的原中间目标。
+     * @param coordinates exact original inventory entry / 精确原清单项
+     * @param creationAcknowledged whether original creation was durably acknowledged / 原创建是否已持久确认
+     * @throws SQLException if an unowned, partial or altered object remains / 仍有无归属、部分或变化对象时 */
+    public void dropReconciledIntermediate(SchemaCoordinates coordinates, boolean creationAcknowledged)
+            throws SQLException {
+        if (!coordinates.physicalName().startsWith("t_"))
+            throw new SQLException("Final data is not an intermediate");
+        try (var c = database.openConnection()) {
+            boolean present;
+            try (var p = c.prepareStatement(
+                    "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                p.setString(1, coordinates.physicalName());
+                p.setString(2, coordinates.databaseUser());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    present = r.getLong(1) != 0;
+                }
+            }
+            if (!present)
+                return;
+            if (!creationAcknowledged)
+                throw new SQLException("Intermediate creation was not acknowledged");
+            try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?")) {
+                p.setString(1, coordinates.physicalName());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    if (r.getLong(1) != 0)
+                        coordinates.requirePhysicalOwnership(c);
+                }
+            }
+            try (var p = c.prepareStatement(
+                    "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=? AND schema_name<>?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE user_name=?)")) {
+                p.setString(1, coordinates.databaseUser());
+                p.setString(2, coordinates.databaseUser());
+                p.setString(3, coordinates.physicalName());
+                p.setString(4, coordinates.databaseUser());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    if (r.getLong(1) != 0)
+                        throw new SQLException("Intermediate ownership or occupancy changed");
+                }
+            }
+            try (var s = c.createStatement()) {
+                s.execute("DROP SCHEMA IF EXISTS " + SchemaAccessScope.quote(coordinates.physicalName()) + " CASCADE");
+                s.execute("DROP USER IF EXISTS " + SchemaAccessScope.quote(coordinates.databaseUser()));
+            }
+        }
+    }
 }
