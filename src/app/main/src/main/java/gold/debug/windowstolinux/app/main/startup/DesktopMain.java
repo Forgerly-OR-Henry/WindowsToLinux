@@ -118,6 +118,7 @@ public final class DesktopMain {
                 runtime.setSourcePicker(presenter);
                 window.installServers(runtime.servers());
                 window.installModels(models);
+                window.installTransfers(runtime.transfers());
                 return window;
             });
             runtime.started();

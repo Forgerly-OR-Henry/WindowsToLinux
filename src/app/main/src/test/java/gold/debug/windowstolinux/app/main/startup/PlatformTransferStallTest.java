@@ -52,6 +52,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 1));
             var offsets = new CopyOnWriteArrayList<Long>();
             stallWrites(remote, 2, offsets);
             var reviews = new Reviews();
@@ -66,10 +67,17 @@ class PlatformTransferStallTest {
             };
             reviews.stallPolicy = stall -> {
                 assertEquals(TransferProgress.Stage.TRANSFERRING, stall.progress().stage());
+                assertEquals(Duration.ofSeconds(prompts.get() < 2 ? 1 : 3), stall.idleTimeout());
+                if (prompts.get() == 0)
+                    assertDoesNotThrow(() -> runtime.transfers()
+                            .save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 3)));
                 assertEquals(remote.authentications.get(), prompts.incrementAndGet());
                 if (identity.get() == null)
                     identity.set(stall.progress().transferId());
-                assertEquals(identity.get(), stall.progress().transferId());
+                if (prompts.get() <= 2)
+                    assertEquals(identity.get(), stall.progress().transferId());
+                else
+                    assertNotEquals(identity.get(), stall.progress().transferId());
                 assertEquals(1L, (long) assertDoesNotThrow(() -> count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL")));
                 return TransferStallChoice.RETRY;
@@ -77,8 +85,7 @@ class PlatformTransferStallTest {
             try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(), OWNER, VERSION,
                     reviews);
                     var linux = new PlatformLinuxService(runtime.tasks(), runtime.security(),
-                            runtime.persistence().servers(), interaction, OWNER, VERSION, Duration.ofSeconds(5),
-                            Duration.ofMillis(650))) {
+                            runtime.persistence().servers(), interaction, OWNER, VERSION, runtime.transfers())) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     try (var session = linux.connect(SERVER, context)) {
                         var request = new TransferRequest(local, "/file", 100000);
@@ -88,18 +95,25 @@ class PlatformTransferStallTest {
                         var result = session.upload(request, grant);
                         assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                         assertTrue(linux.pendingTransfers(context).isEmpty());
+                        stallWrites(remote, 1, new CopyOnWriteArrayList<>());
+                        var next = new TransferRequest(local, "/next", 100000);
+                        var nextGrant = interaction
+                                .approve(RemoteActions.transfer(SERVER, "next", next, digest(new byte[100000]), true),
+                                        context)
+                                .value().orElseThrow();
+                        assertEquals(Outcome.SUCCEEDED, session.upload(next, nextGrant).outcome());
                         return result;
                     }
                 });
                 assertEquals(Outcome.SUCCEEDED,
                         task.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
-                assertEquals(2, prompts.get());
-                assertEquals(3, remote.authentications.get());
+                assertEquals(3, prompts.get());
+                assertEquals(4, remote.authentications.get());
                 assertEquals(1, conflicts.get());
-                assertEquals(1, reviews.approved.stream().filter(i -> i.type().equals("platform.sftp.upload")).count());
+                assertEquals(2, reviews.approved.stream().filter(i -> i.type().equals("platform.sftp.upload")).count());
                 assertEquals(List.of(0L, 16384L, 32768L), offsets.subList(0, 3));
                 assertArrayEquals(new byte[100000], Files.readAllBytes(remote.files.resolve("file")));
-                assertEquals(1, count(runtime.persistence().database(),
+                assertEquals(2, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE'"));
                 assertEquals(0, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -113,6 +127,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 1));
             stallWrites(remote, 1, new CopyOnWriteArrayList<>());
             var reviews = new Reviews();
             var prompts = new AtomicInteger();
@@ -123,8 +138,7 @@ class PlatformTransferStallTest {
             try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(), OWNER, VERSION,
                     reviews);
                     var linux = new PlatformLinuxService(runtime.tasks(), runtime.security(),
-                            runtime.persistence().servers(), interaction, OWNER, VERSION, Duration.ofSeconds(5),
-                            Duration.ofMillis(650))) {
+                            runtime.persistence().servers(), interaction, OWNER, VERSION, runtime.transfers())) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var original = new AtomicReference<TaskContext>();
                 var local = Files.write(root.resolve("source"), new byte[100000]);
