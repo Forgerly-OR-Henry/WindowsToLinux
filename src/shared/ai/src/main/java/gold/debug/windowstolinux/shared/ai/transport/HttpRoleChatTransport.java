@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 
+import gold.debug.windowstolinux.app.ai.transport.LimitedHttpBodySubscriber;
+
 /**
  * JDK HTTP transport for the exact selected OpenAI-compatible endpoint. / 精确所选 OpenAI 兼容端点的 JDK HTTP 传输。
  */
@@ -49,7 +51,8 @@ public final class HttpRoleChatTransport implements RoleChatTransport {
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(30))
                 .header("Authorization", "Bearer " + new String(apiKey)).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build();
-        HttpResponse<byte[]> response = ClientHolder.CLIENT.send(request, ignored -> new LimitedHttpBodySubscriber());
+        HttpResponse<byte[]> response = ClientHolder.CLIENT.send(request,
+                ignored -> new LimitedHttpBodySubscriber(512 * 1024));
         return new RoleChatResult(response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));
     }
 }

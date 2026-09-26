@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.ai.transport;
+package gold.debug.windowstolinux.app.ai.transport;
 
 import java.io.IOException;
 import java.net.http.HttpResponse;
@@ -11,12 +11,9 @@ import java.util.concurrent.Flow;
 /**
  * Rejects oversized responses before allocating the full body. / 在分配完整正文前拒绝超大响应。
  */
-final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
-    /**
-     * MAX BYTES.
-     * <p>最大字节。
-     */
-    static final int MAX_BYTES = 512 * 1024;
+public final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
+    /** Maximum accepted response bytes. / 最大接受响应字节数。 */
+    private final int maxBytes;
 
     /**
      * Delegate.
@@ -45,8 +42,12 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
     /**
      * Binds the supplied dependencies and state for limited http body subscriber.
      * <p>为LimitedHTTP正文Subscriber绑定传入的依赖及状态。
+     * @param maxBytes positive response byte limit / 正的响应字节上限
      */
-    LimitedHttpBodySubscriber() {
+    public LimitedHttpBodySubscriber(int maxBytes) {
+        if (maxBytes < 1)
+            throw new IllegalArgumentException("Response limit must be positive");
+        this.maxBytes = maxBytes;
         delegate.getBody().whenComplete((bytes, failure) -> {
             if (failure == null)
                 body.complete(bytes);
@@ -86,9 +87,9 @@ final class LimitedHttpBodySubscriber implements HttpResponse.BodySubscriber<byt
         if (body.isDone())
             return;
         for (ByteBuffer buffer : buffers) {
-            if (buffer.remaining() > MAX_BYTES - received) {
+            if (buffer.remaining() > maxBytes - received) {
                 subscription.cancel();
-                delegate.onError(new IOException("AI response exceeded the 512 KiB transport limit"));
+                delegate.onError(new IOException("AI response exceeded the configured transport limit"));
                 return;
             }
             received += buffer.remaining();

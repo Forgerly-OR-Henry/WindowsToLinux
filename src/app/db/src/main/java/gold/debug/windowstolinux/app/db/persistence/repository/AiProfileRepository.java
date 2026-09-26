@@ -199,6 +199,83 @@ public final class AiProfileRepository {
         return new AiPurposeRepository(connections);
     }
 
+    /**
+     * Saves an explicit model output budget using existing platform settings. / 使用已有平台设置保存明确模型输出预算。
+     * @param id existing model identity / 已有模型身份
+     * @param tokens positive output token ceiling / 正的输出 Token 上限
+     * @throws SQLException if the model or transaction is unavailable / 模型或事务不可用时
+     */
+    public void saveOutputLimit(String id, int tokens) throws SQLException {
+        if (tokens < 1)
+            throw new IllegalArgumentException("Model output limit must be positive");
+        String key = outputLimitKey(id);
+        connections.transaction(() -> {
+            try (var connection = connections.open()) {
+                RepositoryConnections.lockPlatformState(connection);
+                try (var statement = connection
+                        .prepareStatement("SELECT model_id FROM ai_model WHERE model_id=? FOR UPDATE")) {
+                    statement.setString(1, id);
+                    try (var rows = statement.executeQuery()) {
+                        if (!rows.next())
+                            throw new SQLException("Model is absent", "02000");
+                    }
+                }
+                new DesktopPreferenceRepository(connections).save(key, Integer.toString(tokens));
+            }
+        });
+    }
+
+    /** Reads a configured ceiling without inventing a provider capability. / 读取已配置上限，不虚构提供者能力。
+     * @param id existing model identity / 已有模型身份
+     * @return explicit limit or absent / 明确上限或缺失
+     * @throws SQLException if configuration is unreadable or malformed / 配置不可读或格式无效时 */
+    public OptionalInt outputLimit(String id) throws SQLException {
+        var saved = new DesktopPreferenceRepository(connections).find(outputLimitKey(id));
+        if (saved.isEmpty())
+            return OptionalInt.empty();
+        try {
+            int value = Integer.parseInt(saved.orElseThrow());
+            if (value < 1 || !Integer.toString(value).equals(saved.orElseThrow()))
+                throw new NumberFormatException();
+            return OptionalInt.of(value);
+        } catch (NumberFormatException invalid) {
+            throw new SQLException("Invalid stored model output limit", "55000");
+        }
+    }
+
+    /**
+     * Locks and revalidates a selected revision before the caller captures its credential. / 调用方取得凭据前锁定并重新核验所选修订。
+     * @param expected captured model revision / 已捕获模型修订
+     * @param purpose selected purpose / 所选用途
+     * @throws SQLException if the model changed or the caller has no owning transaction / 模型已变化或调用方无所属事务时
+     */
+    public void requireInvocation(StoredAiProviderConfiguration expected, AiPurposeType purpose) throws SQLException {
+        try (var connection = connections.open()) {
+            if (connection.getAutoCommit())
+                throw new SQLException("Model capture requires a transaction");
+            try (var statement = connection.prepareStatement("SELECT * FROM ai_model WHERE model_id=? FOR UPDATE")) {
+                statement.setString(1, expected.profile().id());
+                try (var rows = statement.executeQuery()) {
+                    String prefix = AiPurposeRepository.prefix(purpose);
+                    if (!rows.next() || !configuration(rows).profile().equals(expected.profile())
+                            || rows.getLong("configuration_revision") != expected.revision()
+                            || !configuration(rows).verified(purpose) || !rows.getBoolean("is_" + prefix + "_enabled")
+                            || rows.getObject(prefix + "_call_order") == null)
+                        throw new SQLException("Captured model configuration is no longer available", "55000");
+                }
+            }
+        }
+    }
+
+    /** Maps valid model IDs injectively into the platform preference namespace. / 将合法模型标识单射映射到平台偏好命名空间。
+     * @param id exact model identity / 精确模型身份
+     * @return settings key / 设置键 */
+    private static String outputLimitKey(String id) {
+        if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}"))
+            throw new IllegalArgumentException("Invalid model identity");
+        return "ai_model_output_limit_" + id.replace('-', '_');
+    }
+
     /** Reorders inventory through nonconflicting temporary positions in one transaction. / 在同一事务借助无冲突临时位置调整库存顺序。
      * @param ids ids supplied to this boundary / 传入当前边界的ids值
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时

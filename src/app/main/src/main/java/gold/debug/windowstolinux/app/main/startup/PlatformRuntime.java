@@ -45,6 +45,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Bound secret capabilities retained until their actual operations end. / 保留至实际操作结束的已绑定秘密能力。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.security.PlatformSecretService> secretServices = new java.util.LinkedHashSet<>();
 
+    /** Bound model capabilities retaining their actual HTTP clients. / 保留实际 HTTP 客户端的已绑定模型能力。 */
+    private final java.util.Set<gold.debug.windowstolinux.app.service.ai.PlatformAiService> aiServices = new java.util.LinkedHashSet<>();
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -212,6 +215,21 @@ public final class PlatformRuntime implements AutoCloseable {
     }
 
     /**
+     * Creates task-owned generic model access for one Mod activation. / 为一次 Mod 启用创建任务所属通用模型访问。
+     * @param owner exact Mod identity / 精确 Mod 身份
+     * @param version actual loaded release / 实际已加载版本
+     * @return host-owned model capability / 宿主持有的模型能力
+     */
+    public synchronized gold.debug.windowstolinux.app.service.ai.PlatformAiService ai(String owner, String version) {
+        if (closed || stopping)
+            throw new IllegalStateException("Platform model capabilities are closing");
+        var ai = new gold.debug.windowstolinux.app.service.ai.PlatformAiService(persistence.database(), tasks, security,
+                persistence.aiProfiles(), owner, version);
+        aiServices.add(ai);
+        return ai;
+    }
+
+    /**
      * Creates real task, credential, review and SSH adapters for one Mod activation. / 为一次 Mod 启用创建真实任务、凭据、审核及 SSH 适配。
      * @param ownerId exact activating Mod / 精确正在启用的 Mod
      * @param version exact loaded release / 精确已加载版本
@@ -335,6 +353,9 @@ public final class PlatformRuntime implements AutoCloseable {
         for (var secrets : java.util.List.copyOf(secretServices))
             secrets.close();
         secretServices.clear();
+        for (var ai : java.util.List.copyOf(aiServices))
+            ai.close();
+        aiServices.clear();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         tasks.close();

@@ -410,7 +410,6 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ RedactedDeploymentProjectFacts.java  # 允许离开确定性分析边界的最小类型化部署事实
 │  │  └─ transport/  # 角色聊天传输契约、HTTP 实现与结果包
 │  │     ├─ HttpRoleChatTransport.java  # 精确所选 OpenAI 兼容端点的 JDK HTTP 传输
-│  │     ├─ LimitedHttpBodySubscriber.java  # 接收过程中限制 AI 响应为 512 KiB
 │  │     ├─ RoleChatResult.java  # 所选提供者传输返回的有界 HTTP 响应
 │  │     └─ RoleChatTransport.java  # 单个已选提供者的传输；不提供发现或回退 API
 │  ├─ backup/  # 备份恢复迁移
@@ -1664,3 +1663,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ui/shell/PlatformFrame.java`：承载安全控件及独立所属 Mod 视图的平台桌面。
 - `app/ui/server/PlatformServersPane.java`：常驻服务器列表、配置与普通 SSH 认证检查，支持协作取消和显式中断恢复。
 - `app/windows/security/CurrentUserDataProtection.java`：使用 Windows 当前用户 DPAPI 保护引导材料。
+
+- `app/ai/protocol/ModelMessageCodec.java`：通用文字/图片模型请求编码、容量检查及严格响应信封与用量校验。
+- `app/ai/transport/LimitedHttpBodySubscriber.java`：在接收过程中限制完整正文容量，超限取消上游。
+- `app/ai/transport/ModelHttpCall.java`：持有单次模型 HTTP 请求，处理总时限、取消、未知结果及实际客户端关闭。
+- `app/service/ai/PlatformAiService.java`：按已验证用途调用模型，绑定原任务凭据及真实连接占用，保留未完成释放。

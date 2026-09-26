@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.ai.transport;
+package gold.debug.windowstolinux.app.ai.transport;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -13,7 +13,7 @@ class LimitedHttpBodySubscriberTest {
     @Test
     void acceptsExactLimitAndRejectsOneAdditionalByte() {
         var cancelled = new AtomicBoolean();
-        var body = new LimitedHttpBodySubscriber();
+        var body = new LimitedHttpBodySubscriber(512 * 1024);
         body.onSubscribe(new Flow.Subscription() {
             public void request(long count) {
             }
@@ -22,7 +22,7 @@ class LimitedHttpBodySubscriberTest {
                 cancelled.set(true);
             }
         });
-        body.onNext(List.of(ByteBuffer.allocate(LimitedHttpBodySubscriber.MAX_BYTES)));
+        body.onNext(List.of(ByteBuffer.allocate(512 * 1024)));
         assertFalse(cancelled.get());
         body.onNext(List.of(ByteBuffer.wrap(new byte[]{1})));
         assertTrue(cancelled.get());
@@ -33,7 +33,7 @@ class LimitedHttpBodySubscriberTest {
 
     @Test
     void countsAllBuffersAndPreservesAValidResponse() {
-        var body = new LimitedHttpBodySubscriber();
+        var body = new LimitedHttpBodySubscriber(512 * 1024);
         body.onSubscribe(new Flow.Subscription() {
             public void request(long count) {
             }

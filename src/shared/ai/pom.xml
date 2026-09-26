@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-shared-ai</artifactId>
   <dependencies>
     <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-ai</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson.version}</version>

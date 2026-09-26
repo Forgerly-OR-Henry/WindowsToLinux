@@ -4,11 +4,11 @@
 
 ## 文档信息
 
-> 当前实现与 1.1 设计分开维护：第 1 节当前目录树和第 5 节依赖方向继续供现有架构门禁读取；新的详细目录只见文末 [1.1 目标结构](#phase-1-1-target)。当前仍有 `src/shared`；已增量加入 `src/appapi`、`src/app/mod`、`src/app/linux` 及平台基础实现，默认入口已切换 H2 安全外壳和常驻服务器配置/SSH 认证检查。下方旧模块树与依赖门禁基线尚待 S3 完整切换，不代表新增节点尚未实现。0.x 的未实施规划如与 1.1 冲突，已由 [1.1 工程](development/PHASE-1.1.md)取代。
+> 当前实现与 1.1 设计分开维护：第 1 节当前目录树和第 5 节依赖方向继续供现有架构门禁读取；新的详细目录只见文末 [1.1 目标结构](#phase-1-1-target)。当前仍有 `src/shared`；已增量加入 `src/appapi`、`src/app/mod`、`src/app/linux`、`src/app/ai` 及平台基础实现，默认入口已切换 H2 安全外壳和常驻服务器配置/SSH 认证检查。下方旧模块树与依赖门禁基线尚待 S3 完整切换，不代表新增节点尚未实现。0.x 的未实施规划如与 1.1 冲突，已由 [1.1 工程](development/PHASE-1.1.md)取代。
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，service 已接公开任务、审批、服务器引用及秘密字节/引用适配；完整 ModContext 与自动启用接线仍待完成。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码及有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密字节/引用及 AiService 适配；旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖；完整 ModContext 与自动启用接线仍待完成。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-26（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
