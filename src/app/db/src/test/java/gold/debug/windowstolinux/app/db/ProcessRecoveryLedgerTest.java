@@ -59,6 +59,38 @@ class ProcessRecoveryLedgerTest {
     }
 
     @Test
+    void browserFactsKeepTheirNamespaceAndOriginalPidAcrossDatabaseReopen() throws Exception {
+        UUID task;
+        ProcessRecovery started;
+        TaskResource browser;
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            task = new TaskLedgerTest().queue(ledger, "one", "A");
+            assertTrue(ledger.tryStart(task));
+            var before = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(), Optional.empty());
+            var current = ProcessHandle.current();
+            started = new ProcessRecovery(before.boot(), before.process(), OptionalLong.of(current.pid()),
+                    current.info().startInstant());
+            browser = new TaskResource("PROCESS", "browser-v1:" + before.process(), "one", false);
+            ledger.retain(task, browser, before.encode("browser.v1"));
+            assertThrows(SQLException.class, () -> ledger.checkpointProcess(task, browser, before, started));
+            ledger.checkpointBrowser(task, browser, before, started);
+            ledger.checkpointBrowser(task, browser, before, started);
+            var different = new ProcessRecovery(before.boot(), before.process(), OptionalLong.of(current.pid()),
+                    Optional.of(started.started().orElseThrow().plusSeconds(1)));
+            assertThrows(SQLException.class, () -> ledger.checkpointBrowser(task, browser, before, different));
+            assertThrows(IllegalArgumentException.class, () -> ProcessRecovery.decode(started.encode("browser.v1")));
+            assertThrows(IllegalArgumentException.class, () -> ProcessRecovery.decode(started.encode(), "browser.v1"));
+        }
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
+            assertEquals(started, ProcessRecovery.decode(ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser),
+                    "browser.v1"));
+        }
+    }
+
+    @Test
     void incompleteOrNoncanonicalIdentityIsNeverGuessed() {
         var original = new ProcessRecovery(UUID.randomUUID(), UUID.randomUUID(), OptionalLong.empty(),
                 Optional.empty());

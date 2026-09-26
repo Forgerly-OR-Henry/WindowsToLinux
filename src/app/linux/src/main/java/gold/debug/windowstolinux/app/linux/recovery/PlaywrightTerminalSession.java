@@ -18,6 +18,9 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
     /** Lock observation registration released after browser cleanup. / 浏览器清理后释放的锁定观察登记。 */
     private final AutoCloseable privacyRegistration;
 
+    /** Optional durable host ownership used by central-task composition. / 中央任务装配使用的可选持久宿主归属。 */
+    private final BrowserLaunchObserver launchObserver;
+
     /** Terminal element selectors supported by the isolated browser. / 隔离浏览器支持的终端元素选择器。 */
     private static final String SELECTOR = ".xterm, canvas, [role=log], pre[data-terminal], textarea[data-terminal], [data-wtl-terminal]";
 
@@ -31,11 +34,23 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
         return thread;
     });
 
-    /**
-     * Closed.
-     * <p>已关闭。
-     */
+    /** Admission is sealed; actual cleanup is reported separately. / 准入已封闭，实际清理另行报告。 */
     private final AtomicBoolean closed = new AtomicBoolean();
+
+    /** Serializes admission with the single original cleanup submission. / 将准入与唯一原清理提交串行化。 */
+    private final Object admission = new Object();
+
+    /** Original cleanup work, retained across observation timeouts. / 原清理工作，观察超时后仍保留。 */
+    private Future<?> cleanup;
+
+    /** Exact browser identities retained for host task ownership. / 为宿主任务归属保留的精确浏览器身份。 */
+    private volatile List<BrowserProcess> processes = List.of();
+
+    /** Actual physical and registration cleanup completion. / 实际物理资源及登记清理完成状态。 */
+    private volatile boolean resourcesClosed;
+
+    /** Whether the original privacy registration was successfully removed. / 原隐私登记是否已成功移除。 */
+    private boolean privacyReleased;
 
     /**
      * Candidates.
@@ -129,6 +144,15 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
         this(false, "about:blank", observeLock);
     }
 
+    /** Binds native privacy and durable host-task creation before allocating any browser. / 分配任何浏览器前绑定原生隐私及持久宿主任务创建。
+     * @param observeLock native privacy registration / 原生隐私登记
+     * @param launchObserver durable launch ownership / 持久启动归属 */
+    public PlaywrightTerminalSession(
+            java.util.function.Function<java.util.function.Consumer<Boolean>, AutoCloseable> observeLock,
+            BrowserLaunchObserver launchObserver) {
+        this(false, "about:blank", observeLock, java.util.Objects.requireNonNull(launchObserver));
+    }
+
     /** Creates an isolated browser with an explicit privacy registration. / 使用显式隐私登记创建隔离浏览器。
      * @param headless whether no native window is created / 是否不创建原生窗口
      * @param initialUrl initial page / 初始页面
@@ -136,8 +160,20 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
      */
     PlaywrightTerminalSession(boolean headless, String initialUrl,
             java.util.function.Function<java.util.function.Consumer<Boolean>, AutoCloseable> observeLock) {
+        this(headless, initialUrl, observeLock, null);
+    }
+
+    /** Creates explicit browser composition with optional durable task observation. / 创建带可选持久任务观察的显式浏览器装配。
+     * @param headless whether the browser has no visible window / 浏览器是否没有可见窗口
+     * @param initialUrl initial selected page / 初始选定页面
+     * @param observeLock privacy registration / 隐私登记
+     * @param launchObserver optional durable creation observer / 可选持久创建观察器 */
+    PlaywrightTerminalSession(boolean headless, String initialUrl,
+            java.util.function.Function<java.util.function.Consumer<Boolean>, AutoCloseable> observeLock,
+            BrowserLaunchObserver launchObserver) {
         this.headless = headless;
         this.initialUrl = initialUrl;
+        this.launchObserver = launchObserver;
         privacyRegistration = observeLock.apply(privacy::setLocked);
     }
 
@@ -162,6 +198,8 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             bound = null;
             generation++;
             candidates.clear();
+            if (launchObserver != null)
+                launchObserver.preparing();
             playwright = Playwright.create(new Playwright.CreateOptions()
                     .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1", "DEBUG", "", "PWDEBUG", "0")));
             var launch = new BrowserType.LaunchOptions().setHeadless(headless);
@@ -169,7 +207,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             if (channel != null)
                 launch.setChannel(channel);
             browser = playwright.chromium().launch(launch);
-            if (!headless) {
+            {
                 var inspector = browser.newBrowserCDPSession();
                 try {
                     long pid = java.util.stream.StreamSupport
@@ -178,7 +216,13 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                             .map(com.google.gson.JsonElement::getAsJsonObject)
                             .filter(info -> info.get("type").getAsString().equals("browser"))
                             .mapToLong(info -> info.get("id").getAsLong()).findFirst().orElseThrow();
-                    privacy.identify(pid);
+                    var captured = new ArrayList<>(processes);
+                    captured.add(BrowserProcess.capture(pid));
+                    processes = List.copyOf(captured);
+                    if (launchObserver != null)
+                        launchObserver.started(captured.getLast());
+                    if (!headless)
+                        privacy.identify(pid);
                 } finally {
                     inspector.detach();
                 }
@@ -193,18 +237,22 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             context.newPage().navigate(initialUrl);
             return null;
         });
-        if (eventPump != null)
-            return;
-        eventPump = worker.scheduleWithFixedDelay(() -> {
-            try {
-                if (browser != null && browser.isConnected() && !context.pages().isEmpty())
-                    context.pages().getFirst().waitForTimeout(25);
-            } catch (RuntimeException ignored) {
-                // Event failure invalidates every action until manual rebinding. / 事件失败使全部动作失效，等待人工重新绑定。
-                bound = null;
-                generation++;
-            }
-        }, 100, 100, TimeUnit.MILLISECONDS);
+        synchronized (admission) {
+            if (closed.get())
+                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
+            if (eventPump != null)
+                return;
+            eventPump = worker.scheduleWithFixedDelay(() -> {
+                try {
+                    if (browser != null && browser.isConnected() && !context.pages().isEmpty())
+                        context.pages().getFirst().waitForTimeout(25);
+                } catch (RuntimeException ignored) {
+                    // Event failure invalidates every action until manual rebinding. / 事件失败使全部动作失效，等待人工重新绑定。
+                    bound = null;
+                    generation++;
+                }
+            }, 100, 100, TimeUnit.MILLISECONDS);
+        }
     }
 
     /**
@@ -492,10 +540,14 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
      * @throws BrowserRecoveryException if browser work, terminal observation, interruption or owned cleanup cannot complete / 浏览器工作、终端观测、中断处理或自有资源清理无法完成时
      */
     private <T> T call(Callable<T> action) {
-        if (closed.get())
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
         try {
-            return worker.submit(action).get();
+            Future<T> result;
+            synchronized (admission) {
+                if (closed.get())
+                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
+                result = worker.submit(action);
+            }
+            return result.get();
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
             throw new BrowserRecoveryException(BrowserRecoveryException.Reason.INTERRUPTED, failure);
@@ -504,67 +556,117 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
         }
     }
 
-    /**
-     * Closes browser-owned resources on the owner thread, then awaits executor termination with bounded waits while preserving interruption.
-     * <p>在所有者线程关闭浏览器自有资源，随后有界等待执行器终止，并保留中断状态。
-     *
-     * @throws BrowserRecoveryException if browser work, terminal observation, interruption or owned cleanup cannot complete / 浏览器工作、终端观测、中断处理或自有资源清理无法完成时
-     */
+    /** Returns captured original browser identities, including earlier disconnected instances. / 返回已捕获原浏览器身份，包括先前断连实例。
+     * @return immutable native process facts / 不可变原生进程事实 */
+    public List<BrowserProcess> processes() {
+        return processes;
+    }
+
+    /** Reports only actual browser, worker and privacy-registration release. / 仅报告实际浏览器、工作线程及隐私登记释放。
+     * @return whether all owned cleanup completed / 所属清理是否全部完成 */
+    public boolean resourcesClosed() {
+        return resourcesClosed;
+    }
+
+    /** Seals admission and continues original cleanup without cancelling a timed-out worker. / 封闭准入并继续原清理，不取消观察超时的工作线程。
+     * @throws BrowserRecoveryException if original cleanup remains incomplete / 原清理仍未完成时 */
     @Override
-    public void close() {
-        if (!closed.compareAndSet(false, true))
+    public synchronized void close() {
+        if (resourcesClosed)
             return;
         boolean interrupted = Thread.interrupted();
-        Future<?> cleanup = worker.submit(() -> {
-            try {
-                if (context != null)
-                    context.close();
-            } finally {
-                try {
-                    if (browser != null)
-                        browser.close();
-                } finally {
-                    if (playwright != null)
-                        playwright.close();
-                }
-            }
-        });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         try {
+            synchronized (admission) {
+                closed.set(true);
+                if (eventPump != null)
+                    eventPump.cancel(false);
+                if (cleanup == null)
+                    cleanup = worker.submit(this::closeOnOwnerThread);
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
             while (true) {
                 try {
                     cleanup.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
                     break;
                 } catch (InterruptedException failure) {
                     interrupted = true;
+                } catch (ExecutionException failure) {
+                    cleanup = null;
+                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED,
+                            failure.getCause());
+                } catch (TimeoutException failure) {
+                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
                 }
             }
-        } catch (ExecutionException | TimeoutException failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
-        } finally {
-            worker.shutdownNow();
+            worker.shutdown();
             deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            try {
-                while (true) {
-                    try {
-                        if (!worker.awaitTermination(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
-                            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
-                        break;
-                    } catch (InterruptedException failure) {
-                        interrupted = true;
-                    }
+            while (true) {
+                try {
+                    if (!worker.awaitTermination(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
+                        throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+                    break;
+                } catch (InterruptedException failure) {
+                    interrupted = true;
                 }
-            } finally {
-                privacy.forget();
+            }
+            privacy.forget();
+            if (!privacyReleased) {
                 try {
                     privacyRegistration.close();
+                    privacyReleased = true;
                 } catch (Exception failure) {
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
-                } finally {
-                    if (interrupted)
-                        Thread.currentThread().interrupt();
+                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
                 }
             }
+            resourcesClosed = true;
+        } finally {
+            if (interrupted)
+                Thread.currentThread().interrupt();
         }
+    }
+
+    /** Closes original objects in order and retains the first unfinished physical owner for retry. / 按顺序关闭原对象并保留首个未完成物理所有者供重试。 */
+    private void closeOnOwnerThread() {
+        if (context != null) {
+            try {
+                context.close();
+            } catch (RuntimeException failure) {
+                if (!browserExitProved())
+                    throw failure;
+            }
+            context = null;
+        }
+        if (browser != null) {
+            try {
+                browser.close();
+            } catch (RuntimeException failure) {
+                if (!browserExitProved())
+                    throw failure;
+            }
+            browser = null;
+        }
+        if (playwright != null) {
+            playwright.close();
+            playwright = null;
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (processes.stream().anyMatch(BrowserProcess::alive)) {
+            if (System.nanoTime() >= deadline)
+                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+            }
+        }
+        bound = null;
+        candidates.clear();
+    }
+
+    /** Accepts stale browser object failures only after its original native processes are gone. / 仅在原原生进程均已消失后接受失效浏览器对象的关闭错误。
+     * @return whether original process exit is established / 是否已确立原进程退出 */
+    private boolean browserExitProved() {
+        return !processes.isEmpty() && processes.stream().noneMatch(BrowserProcess::alive);
     }
 }

@@ -459,7 +459,31 @@ public final class TaskLedger {
      * @throws SQLException if identity, phase or commit cannot be confirmed / 无法确认身份、阶段或提交时 */
     public void checkpointProcess(UUID taskId, TaskResource resource, ProcessRecovery before, ProcessRecovery after)
             throws SQLException {
-        if (!resource.kind().equals("PROCESS") || !resource.id().equals("process-v1:" + before.process())
+        checkpointPhysicalProcess(taskId, resource, before, after, "process-v1:", "process.v1");
+    }
+
+    /** Records a browser's original PID before allowing terminal observation or input. / 允许终端观测或输入前记录浏览器原 PID。
+     * @param taskId original task / 原任务
+     * @param resource retained browser identity / 保留浏览器身份
+     * @param before durable pre-launch facts / 持久启动前事实
+     * @param after actual native identity / 实际原生身份
+     * @throws SQLException if ownership, transition or commit is unconfirmed / 归属、转换或提交未确认时 */
+    public void checkpointBrowser(UUID taskId, TaskResource resource, ProcessRecovery before, ProcessRecovery after)
+            throws SQLException {
+        checkpointPhysicalProcess(taskId, resource, before, after, "browser-v1:", "browser.v1");
+    }
+
+    /** Atomically advances one exact physical-process protocol once. / 原子推进一个精确物理进程协议一次。
+     * @param taskId original task / 原任务
+     * @param resource retained physical owner / 保留物理所有者
+     * @param before original creation facts / 原创建事实
+     * @param after observed native identity / 已观察原生身份
+     * @param prefix exact resource namespace / 精确资源命名空间
+     * @param protocol exact recovery protocol / 精确恢复协议
+     * @throws SQLException if identity, phase or persistence differs / 身份、阶段或持久化不符时 */
+    private void checkpointPhysicalProcess(UUID taskId, TaskResource resource, ProcessRecovery before,
+            ProcessRecovery after, String prefix, String protocol) throws SQLException {
+        if (!resource.kind().equals("PROCESS") || !resource.id().equals(prefix + before.process())
                 || resource.exclusive() || !bootId.equals(before.boot()) || before.pid().isPresent()
                 || after.pid().isEmpty() || !before.boot().equals(after.boot())
                 || !before.process().equals(after.process()))
@@ -481,13 +505,13 @@ public final class TaskLedger {
                     if (rows.next())
                         throw new SQLException("Duplicate process lease identity");
                 }
-                if (original.equals(after.encode()))
+                if (original.equals(after.encode(protocol)))
                     return null;
-                if (!original.equals(before.encode()))
+                if (!original.equals(before.encode(protocol)))
                     throw new SQLException("Process checkpoint differs from original creation");
                 try (var update = c.prepareStatement(
                         "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
-                    update.setString(1, after.encode().encode());
+                    update.setString(1, after.encode(protocol).encode());
                     update.setObject(2, lease);
                     update.setObject(3, taskId);
                     if (update.executeUpdate() != 1)
