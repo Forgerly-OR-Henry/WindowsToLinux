@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-app-mod</artifactId>
   <dependencies>
     <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+      <version>${commons.compress.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.apache.maven</groupId>
       <artifactId>maven-core</artifactId>
       <version>${maven.build.api.version}</version>
@@ -58,8 +63,7 @@
           <argLine>"-Djava.io.tmpdir=${project.build.directory}"</argLine>
           <systemPropertyVariables>
             <wtl.test.mavenHome>${maven.home}</wtl.test.mavenHome>
-            <wtl.test.repository
-            >${settings.localRepository}</wtl.test.repository>
+            <wtl.test.repository>${settings.localRepository}</wtl.test.repository>
           </systemPropertyVariables>
         </configuration>
       </plugin>

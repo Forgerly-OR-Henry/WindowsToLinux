@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
+import java.nio.file.*;
 import java.util.*;
+import java.util.jar.*;
 
 import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
 import org.pf4j.DefaultPluginDescriptor;
@@ -45,8 +47,25 @@ public final class ModClassLoader extends PluginClassLoader {
             if (!source.getProtocol().equals("file")
                     || source.getAuthority() != null && !source.getAuthority().isEmpty())
                 throw new IllegalArgumentException("Mod code sources must be local files");
+            try {
+                var path = Path.of(source.toURI());
+                if (Files.isRegularFile(path))
+                    try (var jar = new JarFile(path.toFile(), false)) {
+                        rejectManifestClasspath(jar.getManifest());
+                    }
+            } catch (IOException | java.net.URISyntaxException failure) {
+                throw new IllegalArgumentException("Invalid or implicit Mod code source", failure);
+            }
             addURL(source);
         }
+    }
+
+    /** Rejects implicit sources that URL loading would add outside the explicit dependency graph. / 拒绝 URL 加载会在明确依赖图之外追加的隐式来源。
+     * @param manifest original JAR manifest or absent / 原 JAR 清单或缺省
+     * @throws IOException if an additional class path is declared / 声明额外类路径时 */
+    public static void rejectManifestClasspath(Manifest manifest) throws IOException {
+        if (manifest != null && manifest.getMainAttributes().getValue(Attributes.Name.CLASS_PATH) != null)
+            throw new IOException("JAR Class-Path is unsupported; declare each Mod code source explicitly");
     }
 
     /** Returns author metadata bound to this loader. / 返回绑定此加载器的作者元数据。
