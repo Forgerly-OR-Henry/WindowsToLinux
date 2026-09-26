@@ -171,6 +171,9 @@ class ModActivationLedgerTest {
             sql(db, "INSERT INTO mod_operation(operation_id,mod_id,operation_type,state,phase,target_version,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'ENABLE','RUNNING','APPLYING',?,'{}','{}',?,1,1)",
                     UUID.randomUUID(), OWNER, VERSION, UUID.randomUUID().toString());
             var journal = ledger(db);
+            sql(db, "UPDATE mod_operation SET accepted_revision=3");
+            assertThrows(SQLException.class, ledger(db)::starting);
+            sql(db, "UPDATE mod_operation SET accepted_revision=4");
             journal.starting();
             journal.closed(Optional.empty());
             assertEquals("RUNNING", value(db, "SELECT state FROM mod_operation"));

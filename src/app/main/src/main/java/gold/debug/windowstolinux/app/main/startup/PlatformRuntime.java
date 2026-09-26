@@ -58,6 +58,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Permanent model settings and capability probes. / 常驻模型设置及能力探测。 */
     private gold.debug.windowstolinux.app.service.ai.PlatformModelService models;
 
+    /** Original restart-intent management and request reviews. / 原重启意图管理及请求审阅。 */
+    private gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents;
+
     /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
     private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
 
@@ -237,6 +240,29 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return retained session identities / 保留会话身份 */
     public synchronized java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions() {
         return java.util.Map.copyOf(modSessions);
+    }
+
+    /** Returns host-only Mod intent management using the actual compiled public API identity. / 使用实际编译公开 API 身份返回仅供宿主的 Mod 意图管理。
+     * @return original management service / 原管理服务
+     * @throws Exception if build identity or archive registration is unavailable / 构建身份或归档登记不可用时 */
+    public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents() throws Exception {
+        requireWorker();
+        if (stopping || closed)
+            throw new IllegalStateException("Mod intent management is closing");
+        if (modIntents == null) {
+            var properties = new java.util.Properties();
+            try (var input = gold.debug.windowstolinux.appapi.mod.ModContext.class
+                    .getResourceAsStream("/gold/debug/windowstolinux/appapi/build.properties")) {
+                if (input == null)
+                    throw new java.io.IOException("Public API build identity is missing");
+                properties.load(input);
+            }
+            var api = gold.debug.windowstolinux.app.mod.version.SemanticVersion
+                    .parse(properties.getProperty("platform.api.version"));
+            modIntents = new gold.debug.windowstolinux.app.service.mod.PlatformModIntents(persistence.database(),
+                    security, api);
+        }
+        return modIntents;
     }
 
     /** Releases host session bookkeeping after physical and durable cleanup. / 在物理及持久清理后释放宿主会话登记。
@@ -622,6 +648,8 @@ public final class PlatformRuntime implements AutoCloseable {
             recovery.close();
         if (models != null)
             models.close();
+        if (modIntents != null)
+            modIntents.close();
         for (var access : java.util.List.copyOf(serverAccesses))
             access.close();
         serverAccesses.clear();

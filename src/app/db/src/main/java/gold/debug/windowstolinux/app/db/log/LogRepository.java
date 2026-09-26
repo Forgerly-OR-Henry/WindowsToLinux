@@ -137,60 +137,74 @@ public final class LogRepository {
      * @return confirmed removed and remaining record counts / 确认删除及保留记录数
      * @throws SQLException if attribution, content, commit or cleanup is unconfirmed / 归属、内容、提交或清理未确认时 */
     public Retention store(Target target, List<LogRecordCodec.Record> records, int keep) throws SQLException {
-        if (keep != 10 && keep != 100 || records.size() > 100)
-            throw new IllegalArgumentException("Invalid log retention batch");
         try (var c = database.openConnection()) {
             c.setAutoCommit(false);
             try {
-                requireTarget(c, target);
-                validateTable(c, target);
-                for (var record : records) {
-                    try {
-                        LogRecordCodec.decode(target, LogRecordCodec.encode(target.key(), record));
-                    } catch (java.io.IOException | RuntimeException invalid) {
-                        throw new SQLException("Invalid bounded log record");
-                    }
-                    try (var p = c
-                            .prepareStatement("SELECT " + COLUMNS + " FROM " + qualified(target) + " WHERE log_id=?")) {
-                        p.setString(1, record.id().toString());
-                        try (var rows = p.executeQuery()) {
-                            if (rows.next()) {
-                                if (!record.equals(record(rows)))
-                                    throw new SQLException("Existing log identity has different content");
-                                continue;
-                            }
-                        }
-                    }
-                    insert(c, target, record);
-                }
-                long removed;
-                try (var p = c.prepareStatement("DELETE FROM " + qualified(target)
-                        + " WHERE owner_id=? AND category=? AND log_id NOT IN (SELECT log_id FROM " + qualified(target)
-                        + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST " + keep
-                        + " ROWS ONLY)")) {
-                    p.setString(1, target.owner());
-                    p.setString(2, target.category());
-                    p.setString(3, target.owner());
-                    p.setString(4, target.category());
-                    removed = p.executeUpdate();
-                }
-                long retained;
-                try (var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM " + qualified(target) + " WHERE owner_id=? AND category=?")) {
-                    p.setString(1, target.owner());
-                    p.setString(2, target.category());
-                    try (var rows = p.executeQuery()) {
-                        rows.next();
-                        retained = rows.getLong(1);
-                    }
-                }
+                var result = store(c, target, records, keep);
                 c.commit();
-                return new Retention(removed, retained);
+                return result;
             } catch (SQLException | RuntimeException failure) {
                 rollback(c, failure);
                 throw failure;
             }
         }
+    }
+
+    /** Stores and retains records inside an existing platform state transaction without committing it. / 在既有平台状态事务内写入并保留记录，不提交该事务。
+     * @param c original owning platform transaction / 原所属平台事务
+     * @param target verified category / 已核验类别
+     * @param records exact original archive records / 精确原归档记录
+     * @param keep documented retention limit / 文档规定的保留上限
+     * @return counts pending the caller's transaction commit / 等待调用方事务提交的计数
+     * @throws SQLException if ownership, evidence or writes cannot be verified / 无法核验归属、证据或写入时 */
+    public Retention store(Connection c, Target target, List<LogRecordCodec.Record> records, int keep)
+            throws SQLException {
+        if (c.getAutoCommit())
+            throw new SQLException("Log archive requires an owning platform transaction");
+        if (keep != 10 && keep != 100 || records.size() > 100)
+            throw new IllegalArgumentException("Invalid log retention batch");
+        requireTarget(c, target);
+        validateTable(c, target);
+        for (var record : records) {
+            try {
+                LogRecordCodec.decode(target, LogRecordCodec.encode(target.key(), record));
+            } catch (java.io.IOException | RuntimeException invalid) {
+                throw new SQLException("Invalid bounded log record");
+            }
+            try (var p = c.prepareStatement("SELECT " + COLUMNS + " FROM " + qualified(target) + " WHERE log_id=?")) {
+                p.setString(1, record.id().toString());
+                try (var rows = p.executeQuery()) {
+                    if (rows.next()) {
+                        if (!record.equals(record(rows)))
+                            throw new SQLException("Existing log identity has different content");
+                        continue;
+                    }
+                }
+            }
+            insert(c, target, record);
+        }
+        long removed;
+        try (var p = c.prepareStatement("DELETE FROM " + qualified(target)
+                + " WHERE owner_id=? AND category=? AND log_id NOT IN (SELECT log_id FROM " + qualified(target)
+                + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST " + keep
+                + " ROWS ONLY)")) {
+            p.setString(1, target.owner());
+            p.setString(2, target.category());
+            p.setString(3, target.owner());
+            p.setString(4, target.category());
+            removed = p.executeUpdate();
+        }
+        long retained;
+        try (var p = c
+                .prepareStatement("SELECT COUNT(*) FROM " + qualified(target) + " WHERE owner_id=? AND category=?")) {
+            p.setString(1, target.owner());
+            p.setString(2, target.category());
+            try (var rows = p.executeQuery()) {
+                rows.next();
+                retained = rows.getLong(1);
+            }
+        }
+        return new Retention(removed, retained);
     }
 
     /** Reads only one verified category in its canonical newest-first ordering. / 仅按规范新旧顺序读取一个已核验类别。

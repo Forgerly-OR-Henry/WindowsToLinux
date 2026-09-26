@@ -1611,6 +1611,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/ui/UiEnvironment.java`：当前宿主语言、主题及锁定状态。
 - `appapi/ui/UiService.java`：不暴露宿主实现类型的所属页面挂载服务。
 - `app/db/PlatformDatabase.java`：持有唯一嵌入式 H2 引擎及受保护引导材料。
+- `appapi/resources/gold/debug/windowstolinux/appapi/build.properties`：由 Maven 展开实际公开 API 版本，供宿主管理的兼容校验读取。
 - `app/db/PlatformPersistence.java`：在受保护 H2 引擎上装配平台所属配置仓库。
 - `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
@@ -1638,6 +1639,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
+- `app/service/mod/PlatformModIntents.java`：审阅并原子保存开关、版本、连带禁用和迁移来源；撤销未执行请求时同事务归档，保留原修订及任务准入范围。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
 - `app/mod/manifest/ManifestReader.java`：严格读取有界 UTF-8 作者清单，不加载作者类。
