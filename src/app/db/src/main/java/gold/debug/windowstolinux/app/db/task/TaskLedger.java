@@ -330,6 +330,122 @@ public final class TaskLedger {
         });
     }
 
+    /** Reads outstanding recovery facts from an exact host-owned resource namespace. / 从精确宿主资源命名空间读取未完成恢复事实。
+     * @param taskId original task / 原任务
+     * @param kind exact resource kind / 精确资源种类
+     * @param prefix host-owned resource prefix / 宿主所属资源前缀
+     * @return immutable resource facts / 不可变资源事实
+     * @throws SQLException if any matching record is malformed / 任一匹配记录损坏时 */
+    public Map<TaskResource, ResourceRecovery> recoveries(UUID taskId, String kind, String prefix) throws SQLException {
+        return locked(() -> {
+            var found = new LinkedHashMap<TaskResource, ResourceRecovery>();
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND released_at IS NULL ORDER BY resource_id")) {
+                p.setObject(1, taskId);
+                p.setString(2, kind);
+                try (var rows = p.executeQuery()) {
+                    while (rows.next()) {
+                        if (!rows.getString(1).startsWith(prefix))
+                            continue;
+                        var resource = new TaskResource(kind, rows.getString(1), rows.getString(2),
+                                rows.getString(3).equals("EXCLUSIVE"));
+                        if (found.put(resource, ResourceRecovery.decode(rows.getString(4))) != null)
+                            throw new SQLException("Duplicate original recovery resource");
+                    }
+                }
+            }
+            return Map.copyOf(found);
+        });
+    }
+
+    /** Releases vanished SSH clients from an earlier exclusive database boot, preserving file claims. / 释放更早独占数据库启动中已消失的 SSH 客户端，保留文件申请。
+     * @param taskId original recovery task / 原恢复任务
+     * @param owner original Mod identity / 原 Mod 身份
+     * @param version original release / 原发布版本
+     * @throws SQLException if task or connection identity cannot be proved / 无法证明任务或连接身份时 */
+    public void releasePreviousSshConnections(UUID taskId, String owner, String version) throws SQLException {
+        locked(() -> {
+            try (var c = connections.open()) {
+                try (var p = c.prepareStatement(
+                        "SELECT boot_id,owner_id,owner_version,state FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var row = p.executeQuery()) {
+                        if (!row.next() || !owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
+                            throw new SQLException("Original SSH recovery owner differs");
+                        if (bootId.equals(row.getObject(1, UUID.class)))
+                            return null;
+                        if (!Set.of("UNKNOWN", "FINISHING").contains(row.getString(4)))
+                            throw new SQLException("Previous SSH task is not recoverable");
+                    }
+                }
+                var leases = new ArrayList<UUID>();
+                try (var p = c.prepareStatement(
+                        "SELECT lease_id,resource_id,owner_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND released_at IS NULL")) {
+                    p.setObject(1, taskId);
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            String id = rows.getString(2);
+                            if (!id.startsWith("ssh-"))
+                                continue;
+                            var facts = ResourceRecovery.decode(rows.getString(4));
+                            if (!owner.equals(rows.getString(3)) || !facts.protocol().equals("ssh.v1")
+                                    || !facts.fields().keySet().equals(Set.of("bootId", "serverId"))
+                                    || facts.fields().get("serverId").isBlank())
+                                throw new SQLException("Unknown SSH connection ownership");
+                            try {
+                                if (!id.equals("ssh-" + UUID.fromString(id.substring(4))))
+                                    throw new IllegalArgumentException();
+                                if (bootId.equals(UUID.fromString(facts.fields().get("bootId"))))
+                                    continue;
+                            } catch (IllegalArgumentException invalid) {
+                                throw new SQLException("Invalid SSH connection identity", invalid);
+                            }
+                            leases.add(rows.getObject(1, UUID.class));
+                        }
+                    }
+                }
+                try (var p = c.prepareStatement(
+                        "UPDATE platform_task_resource SET released_at=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
+                    for (var lease : leases) {
+                        p.setLong(1, System.currentTimeMillis());
+                        p.setObject(2, lease);
+                        p.setObject(3, taskId);
+                        if (p.executeUpdate() != 1)
+                            throw new SQLException("SSH connection lease changed");
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    /** Checks all capability instances for another outstanding SSH client before file recovery. / 文件恢复前跨能力实例检查其他未释放 SSH 客户端。
+     * @param taskId original task / 原任务
+     * @param currentLease this authenticated connection lease / 此已认证连接占用
+     * @return whether only this SSH client remains / 是否仅余此 SSH 客户端
+     * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
+    public boolean soleSshConnection(UUID taskId, UUID currentLease) throws SQLException {
+        return locked(() -> {
+            boolean currentFound = false;
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT lease_id,resource_id FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND released_at IS NULL")) {
+                p.setObject(1, taskId);
+                try (var rows = p.executeQuery()) {
+                    while (rows.next()) {
+                        if (!rows.getString(2).startsWith("ssh-"))
+                            continue;
+                        if (!currentLease.equals(rows.getObject(1, UUID.class)))
+                            return false;
+                        currentFound = true;
+                    }
+                }
+            }
+            return currentFound;
+        });
+    }
+
     /**
      * Persists cooperative cancellation without inventing termination. / 持久化协作取消，不虚构任务终止。
      * @param taskId selected task / 选中的任务

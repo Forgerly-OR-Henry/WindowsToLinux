@@ -58,6 +58,18 @@ final class SftpDestination {
         local = request.localPath();
     }
 
+    /** Restores only the recorded target decision for an original transfer. / 仅恢复原传输已记录的目标决定。
+     * @param sftp authenticated transport / 已认证传输
+     * @param plan validated original facts / 已校验原事实
+     * @param cancellation original task cancellation / 原任务取消 */
+    SftpDestination(SftpClient sftp, TransferPlan plan, CancellationToken cancellation) {
+        this(sftp, plan.request(), plan.upload(), plan.id(), cancellation);
+        local = plan.localPath();
+        remote = plan.remotePath();
+        expected = plan.target();
+        overwrite = expected != null;
+    }
+
     /** Resolves a same-name conflict before creating a temporary file. / 创建临时文件前解决同名冲突。
      * @param size verified source length / 已验证源长度
      * @param choice actual user decision callback / 实际用户决定回调
@@ -140,11 +152,12 @@ final class SftpDestination {
     }
 
     /** Rechecks the target and publishes only a completed sibling file. / 复核目标并仅发布已完成的同目录文件。
+     * @param size original verified source size / 原已核验源大小
+     * @param sha256 original source digest / 原源摘要
      * @throws IOException if the destination changed or publication failed / 目标变化或发布失败时 */
-    void publish() throws IOException {
-        check();
-        if (!Objects.equals(expected, observe()))
-            throw new IOException("Destination changed after conflict selection");
+    void publish(long size, String sha256) throws IOException {
+        verifyStaged(size, sha256);
+        verifyOriginal();
         if (!upload) {
             WindowsFilePublication.publish(localTemporary(), local, overwrite);
             return;
@@ -157,6 +170,44 @@ final class SftpDestination {
             sftp.rename(remoteTemporary(), remote, SftpClient.CopyMode.Atomic, SftpClient.CopyMode.Overwrite);
         else
             sftp.getExtension(OpenSSHPosixRenameExtension.class).posixRename(remoteTemporary(), remote);
+    }
+
+    /** Reopens the actual staging path after closing transfer handles, before any replacement. / 关闭传输句柄后、任何替换前重新打开实际暂存路径核验。
+     * @param size exact expected byte length / 精确预期字节长度
+     * @param sha256 original source digest / 原源摘要
+     * @throws IOException if the named staging file changed or is redirected / 已命名暂存文件变化或被重定向时 */
+    void verifyStaged(long size, String sha256) throws IOException {
+        check();
+        if (upload) {
+            var attrs = sftp.lstat(remoteTemporary());
+            if (!attrs.isRegularFile() || attrs.isSymbolicLink()
+                    || !attrs.getFlags().contains(SftpClient.Attribute.Size) || attrs.getSize() != size
+                    || !remoteTemporary().equals(sftp.canonicalPath(remoteTemporary())))
+                throw new IOException("Named remote staging changed");
+        } else {
+            var attrs = Files.readAttributes(localTemporary(), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attrs.isRegularFile() || attrs.isOther() || attrs.isSymbolicLink() || attrs.size() != size)
+                throw new IOException("Named local staging changed");
+        }
+        if (!sha256.equals(content(remoteTemporary(), localTemporary(), size)))
+            throw new IOException("Named staging content differs from verified source");
+    }
+
+    /** Refuses further staging when the original destination choice no longer applies. / 原目标选择不再适用时拒绝继续暂存。
+     * @throws IOException if the selected target changed / 选定目标变化时 */
+    void verifyOriginal() throws IOException {
+        check();
+        if (!Objects.equals(expected, observe()))
+            throw new IOException("Destination changed after conflict selection");
+    }
+
+    /** Verifies final content after a possibly lost publication acknowledgement. / 发布确认可能丢失后核验最终内容。
+     * @param source original verified source facts / 原已核验源事实
+     * @return whether final content equals the original source / 最终内容是否等于原源
+     * @throws IOException if final facts cannot be observed / 无法观察最终事实时 */
+    boolean isPublished(TransferPlan.FileStamp source) throws IOException {
+        var actual = observe();
+        return actual != null && actual.size() == source.size() && actual.sha256().equals(source.sha256());
     }
 
     /** Observes an ordinary target without following a final link. / 不跟随末级链接，观察普通目标。
@@ -218,13 +269,23 @@ final class SftpDestination {
      * @return content digest / 内容摘要
      * @throws IOException if reading or length verification fails / 读取或长度核验失败时 */
     private String content(long size) throws IOException {
+        return content(remote, local, size);
+    }
+
+    /** Hashes the exact named final or staging path through a bounded read. / 经有界读取对精确已命名最终或暂存路径求摘要。
+     * @param remotePath exact remote path / 精确远端路径
+     * @param localPath exact local path / 精确本地路径
+     * @param size observed file extent / 已观察文件区间
+     * @return verified extent digest / 已核验区间摘要
+     * @throws IOException if reading or extent verification fails / 读取或区间核验失败时 */
+    private String content(String remotePath, Path localPath, long size) throws IOException {
         java.security.MessageDigest digest;
         try {
             digest = java.security.MessageDigest.getInstance("SHA-256");
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
-        try (var input = upload ? sftp.read(remote) : Files.newInputStream(local, LinkOption.NOFOLLOW_LINKS)) {
+        try (var input = upload ? sftp.read(remotePath) : Files.newInputStream(localPath, LinkOption.NOFOLLOW_LINKS)) {
             byte[] buffer = new byte[65536];
             long read = 0;
             while (read < size) {

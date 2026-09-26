@@ -14,6 +14,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Authoritative persistent resource and result ledger. / 权威的持久化资源及结果账本。 */
     private final TaskLedger ledger;
 
+    /** Actual boot that owns newly created physical clients, including recovery clients. / 持有新物理客户端的实际启动代次，包括恢复客户端。 */
+    private final UUID bootId;
+
     /** Host policy that validates current Mod, schema, server and security admission. / 校验当前 Mod、数据、服务器及安全准入的宿主策略。 */
     private final Admission admission;
 
@@ -60,6 +63,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     public PlatformTaskRuntime(PlatformDatabase database, Admission admission, DesktopSecurityService security)
             throws SQLException {
         ledger = new TaskLedger(database);
+        bootId = database.bootId();
         this.admission = Objects.requireNonNull(admission);
         this.security = Objects.requireNonNull(security);
         for (var id : ledger.unfinished()) {
@@ -305,6 +309,76 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 uncertain(execution, "Recovery resource registration could not be confirmed");
             }
             throw error(ProblemCode.IO_FAILURE, "TASK_RESOURCE", "Resource registration failed");
+        }
+    }
+
+    /** Retains an SSH client with its physical boot independent of the original task's boot. / 保留 SSH 客户端及其物理启动代次，不与原任务启动代次混淆。
+     * @param context original task / 原任务
+     * @param owner bound Mod identity / 绑定 Mod 身份
+     * @param version bound release / 绑定发布版本
+     * @param serverId admitted server / 已准入服务器
+     * @return durable physical connection claim / 持久物理连接申请
+     * @throws ApiException if admission or persistence fails / 准入或持久化失败时 */
+    public synchronized ResourceLease retainSshConnection(TaskContext context, String owner, String version,
+            String serverId) throws ApiException {
+        requireServer(context, owner, version, serverId);
+        return retain(context, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), owner, false),
+                new ResourceRecovery("ssh.v1", Map.of("bootId", bootId.toString(), "serverId", serverId)));
+    }
+
+    /** Lists recovery facts only for the bound original caller and active recovery context. / 仅为绑定原调用方及活动恢复上下文列出恢复事实。
+     * @param context original host context / 原宿主上下文
+     * @param ownerId bound Mod identity / 绑定 Mod 身份
+     * @param version bound release / 绑定发布版本
+     * @param kind host resource kind / 宿主资源种类
+     * @param prefix host resource prefix / 宿主资源前缀
+     * @return immutable original resource facts / 不可变原资源事实
+     * @throws ApiException if ownership or metadata is invalid / 归属或元数据无效时 */
+    public synchronized Map<TaskResource, ResourceRecovery> recoveries(TaskContext context, String ownerId,
+            String version, String kind, String prefix) throws ApiException {
+        requireCleanup(context, ownerId, version);
+        try {
+            var records = ledger.recoveries(context.id(), kind, prefix);
+            if (records.keySet().stream().anyMatch(resource -> !resource.ownerId().equals(ownerId)))
+                throw error(ProblemCode.ACCESS_DENIED, "TASK_RESOURCE_OWNER", "Recovery resource owner differs");
+            return records;
+        } catch (SQLException invalid) {
+            throw error(ProblemCode.IO_FAILURE, "TASK_RECOVERY_FACTS", "Recovery facts cannot be verified");
+        }
+    }
+
+    /** Reconciles only vanished previous-boot SSH clients under the original task. / 仅在原任务下核对前次启动已消失的 SSH 客户端。
+     * @param context authentic recovery context / 真实恢复上下文
+     * @param owner original Mod identity / 原 Mod 身份
+     * @param version original release / 原发布版本
+     * @throws ApiException if original identity or release cannot be confirmed / 无法确认原身份或释放时 */
+    public synchronized void releasePreviousSshConnections(TaskContext context, String owner, String version)
+            throws ApiException {
+        requireCleanup(context, owner, version);
+        try {
+            ledger.releasePreviousSshConnections(context.id(), owner, version);
+            executions.get(context.id()).snapshot = ledger.snapshot(context.id());
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "SSH_PREVIOUS_RELEASE",
+                    "Previous SSH ownership could not be reconciled");
+        }
+    }
+
+    /** Requires previous task SSH clients to be physically closed before file recovery. / 文件恢复前要求原任务其他 SSH 客户端已物理关闭。
+     * @param context original task / 原任务
+     * @param owner bound Mod / 绑定 Mod
+     * @param version bound release / 绑定发布版本
+     * @param connectionLease actual recovery connection lease / 实际恢复连接占用
+     * @throws ApiException if another client remains or ownership cannot be read / 其他客户端仍在或无法读取归属时 */
+    public synchronized void requireSoleSshConnection(TaskContext context, String owner, String version,
+            UUID connectionLease) throws ApiException {
+        requireExecuting(context, owner, version);
+        try {
+            if (!ledger.soleSshConnection(context.id(), connectionLease))
+                throw error(ProblemCode.BUSY, "SFTP_PREVIOUS_CONNECTION",
+                        "Close previous task SSH clients before file recovery");
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "SFTP_CONNECTION_OWNERSHIP", "SSH ownership cannot be verified");
         }
     }
 

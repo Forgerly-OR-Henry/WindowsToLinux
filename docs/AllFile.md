@@ -1554,6 +1554,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/linux/RemoteSession.java`：产生副作用时需要已审核授权的受管 SSH 会话。
 - `appapi/linux/TransferRequest.java`：具有明确远端路径及容量限制的文件传输。
 - `appapi/linux/TransferResult.java`：已观察的传输大小及内容摘要。
+- `appapi/linux/TransferCheckpoint.java`：原任务的持久传输描述，供精确续传或丢弃审核；执行前由宿主重读原事实。
 - `appapi/mod/ModContext.java`：绑定真实启动插件身份的平台能力集合。
 - `appapi/mod/ModEntrypoint.java`：作者生命周期入口及部分启动失败的清理责任。
 - `appapi/mod/ModIdentity.java`：独立于显示名和包文件名的稳定插件身份。

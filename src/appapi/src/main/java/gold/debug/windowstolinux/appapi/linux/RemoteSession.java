@@ -42,6 +42,20 @@ public interface RemoteSession extends AutoCloseable {
      */
     OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException;
 
+    /** Reconciles or resumes one original transfer after source and staging verification. / 核验源及暂存内容后核对或续传一次原传输。
+     * @param transferId original checkpoint owned by this task / 此任务所属的原检查点
+     * @param grant exact single-use recovery approval / 精确单次恢复审批
+     * @return verified publication or retained uncertainty / 经核验发布或保留的不确定性
+     * @throws ApiException if authorization or original ownership fails / 授权或原归属失败时 */
+    OperationResult<TransferResult> resumeTransfer(java.util.UUID transferId, ApprovalGrant grant) throws ApiException;
+
+    /** Removes only verified staging for an original transfer, never its final target. / 仅移除原传输经核验的暂存文件，绝不移除最终目标。
+     * @param transferId original checkpoint owned by this task / 此任务所属的原检查点
+     * @param grant exact single-use discard approval / 精确单次丢弃审批
+     * @return cleanup outcome without a claim about overall business success / 不对整体业务成功作出断言的清理结果
+     * @throws ApiException if authorization or original ownership fails / 授权或原归属失败时 */
+    OperationResult<Void> discardTransfer(java.util.UUID transferId, ApprovalGrant grant) throws ApiException;
+
     /**
      * Releases the owned resource; failure keeps occupancy and permits retry. / 释放所属资源；失败时保留占用并允许重试。
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时

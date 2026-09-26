@@ -39,7 +39,7 @@ public final class RemoteActions {
     }
 
     /**
-     * Describes exclusive file creation with exact paths, direction, size limit and source digest. / 描述排他文件创建，包含精确路径、方向、容量上限及源摘要。
+     * Describes staged transfer with exact paths, direction, size limit and source digest. / 描述暂存传输，包含精确路径、方向、容量上限及源摘要。
      * @param server selected saved server / 选定的已保存服务器
      * @param revision author-owned business revision / 作者所属业务修订
      * @param request exact transfer endpoints and limit / 精确传输端点及上限
@@ -62,5 +62,23 @@ public final class RemoteActions {
                 upload
                         ? "Upload through a verified temporary file; ask separately before replacing an existing target."
                         : "Download through a verified temporary file; ask separately before replacing an existing target.");
+    }
+
+    /** Binds recovery approval to one original transfer and its complete public facts. / 将恢复审批绑定到一次原传输及其完整公开事实。
+     * @param checkpoint original transfer description / 原传输描述
+     * @param revision author-owned recovery revision / 作者所属恢复修订
+     * @param resume true to resume, false to discard verified staging / 续传为真，丢弃经核验暂存为假
+     * @return exact task-scoped recovery intent / 精确任务范围恢复意图 */
+    public static ActionIntent recoverTransfer(TransferCheckpoint checkpoint, String revision, boolean resume) {
+        var original = transfer(checkpoint.server(), revision, checkpoint.request(), checkpoint.sha256(),
+                checkpoint.upload());
+        String action = "WTL-SFTP-RECOVERY-1\ntransferId=" + checkpoint.id() + "\nresume=" + resume + "\nupload="
+                + checkpoint.upload() + "\nsize=" + checkpoint.size() + "\noverwrite=" + checkpoint.overwrite() + "\n"
+                + original.exactAction();
+        return new ActionIntent(resume ? "platform.sftp.resume" : "platform.sftp.discard", original.serverIds(),
+                checkpoint.server().id(), revision, action,
+                resume
+                        ? "Verify the original source and staging prefix, then resume or reconcile publication."
+                        : "Remove only the original transfer's verified staging file; preserve the final target.");
     }
 }

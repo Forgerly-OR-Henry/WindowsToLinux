@@ -45,11 +45,20 @@ final class SftpTransfer {
     /** File occupancy independent of the live connection. / 独立于活动连接的文件占用。 */
     private ResourceLease fileLease;
 
-    /** Whether publication and final content were both verified. / 发布及最终内容是否均已核验。 */
-    private boolean published;
+    /** Whether publication or staging cleanup was verified. / 发布或暂存清理是否已核验。 */
+    private boolean resolved;
+
+    /** Original plan when reconciling a retained transfer. / 核对保留传输时的原计划。 */
+    private final TransferPlan recovery;
+
+    /** Explicitly approved discard instead of continuation. / 明确已批准的丢弃而非继续传输。 */
+    private final boolean discard;
+
+    /** Current non-secret recovery or transfer phase. / 当前不含秘密的恢复或传输阶段。 */
+    private String phase = "local-validation";
 
     /** Unique temporary-file owner for this transfer. / 本次传输唯一临时文件所有者。 */
-    private final UUID transferId = UUID.randomUUID();
+    private final UUID transferId;
 
     /** Whether the physical worker is waiting for the user's conflict decision. / 物理工作线程是否正在等待用户冲突决定。 */
     private volatile long humanStarted;
@@ -75,7 +84,7 @@ final class SftpTransfer {
     /** Cancellation fence checked before every destination effect. / 每次目标副作用前核对的取消栅栏。 */
     private boolean stopped;
 
-    /** Whether a destination-create request may have taken effect. / 目标创建请求是否可能已生效。 */
+    /** Whether an original or new destination mutation may have taken effect. / 原目标或新目标变更是否可能已生效。 */
     private boolean mutation;
 
     /**
@@ -88,18 +97,24 @@ final class SftpTransfer {
      * @param cancellation original task cancellation / 原任务取消
      * @param conflicts host-owned conflict presenter / 宿主所属冲突呈现器
      * @param journal durable original-transfer ownership / 持久原传输归属
+     * @param recovery original plan, or null for a fresh transfer / 原计划，新传输时为 null
+     * @param discard whether to discard verified original staging / 是否丢弃经核验原暂存
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
-            CancellationToken cancellation, TransferConflictResolver conflicts, TransferJournal journal)
-            throws ApiException {
+            CancellationToken cancellation, TransferConflictResolver conflicts, TransferJournal journal,
+            TransferPlan recovery, boolean discard) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
         this.digest = Objects.requireNonNull(digest);
         this.upload = upload;
         this.cancellation = Objects.requireNonNull(cancellation);
-        this.conflicts = Objects.requireNonNull(conflicts);
+        this.conflicts = recovery == null ? Objects.requireNonNull(conflicts) : conflicts;
         this.journal = Objects.requireNonNull(journal);
+        this.recovery = recovery;
+        this.discard = discard;
+        transferId = recovery == null ? UUID.randomUUID() : recovery.id();
+        mutation = recovery != null;
         try {
             budget = timeout.toNanos();
             String path = request.remoteAbsolutePath();
@@ -155,9 +170,10 @@ final class SftpTransfer {
      * @return result without provider messages or paths / 不含提供方消息或路径的结果
      */
     private OperationResult<TransferResult> perform() {
-        String phase = "local-validation";
         try {
             check();
+            if (recovery != null)
+                return recover();
             Path path = request.localPath();
             verifyLocalParents(path);
             BasicFileAttributes before = upload ? regularLocal(path) : null;
@@ -194,7 +210,7 @@ final class SftpTransfer {
                 beginMutation();
                 remote = sftp.open(destination.remoteTemporary(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
                         SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive);
-                copyToRemote(remote, size);
+                copyToRemote(remote, size, 0);
                 verifyUnchanged(before, regularLocal(path));
                 if (!sourceIdentity
                         .equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity.read(path)))
@@ -228,7 +244,7 @@ final class SftpTransfer {
                 beginMutation();
                 local = FileChannel.open(destination.localTemporary(), StandardOpenOption.CREATE_NEW,
                         StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
-                copyToLocal(remote, size);
+                copyToLocal(remote, size, 0);
                 local.force(true);
                 if (local.size() != size || !digest.equals(hashLocal(size)))
                     throw new IOException("Destination digest mismatch");
@@ -240,7 +256,7 @@ final class SftpTransfer {
             remote.close();
             local.close();
             phase = "publish";
-            destination.publish();
+            destination.publish(size, digest);
             regularRemote(sftp.lstat(destination.remote()), size);
             regularLocal(destination.local());
             phase = "published-verification";
@@ -255,7 +271,7 @@ final class SftpTransfer {
                     throw new IOException("Published local content changed");
                 local.close();
             }
-            published = true;
+            resolved = true;
             return new OperationResult<>(Outcome.SUCCEEDED,
                     Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
                     Optional.empty());
@@ -274,6 +290,193 @@ final class SftpTransfer {
                                             : "none"),
                             Optional.empty())));
         }
+    }
+
+    /** Reconciles one retained file using the original source and verified current staging extent. / 利用原源及经核验的当前暂存区间核对一个保留文件。
+     * @return verified publication or staging cleanup / 经核验发布或暂存清理
+     * @throws Exception if any original fact or physical effect cannot be confirmed / 无法确认任一原事实或物理副作用时 */
+    private OperationResult<TransferResult> recover() throws Exception {
+        phase = "recovery-checkpoint";
+        fileLease = Objects.requireNonNull(journal.prepare(recovery));
+        verifyLocalParents(request.localPath());
+        opening = true;
+        sftp = SftpClientFactory.instance().createSftpClient(session);
+        verifyRemoteParents();
+        var destination = new SftpDestination(sftp, recovery, cancellation);
+        phase = "recovery-staging";
+        long extent = stagingSize(destination);
+        if (extent < 0 && (discard || destination.isPublished(recovery.source()))) {
+            resolved = true;
+            return recoveredResult(destination);
+        }
+        if (!discard)
+            destination.verifyOriginal();
+        long size = recovery.source().size();
+        if (extent > size)
+            throw new IOException("Staging exceeds the original source");
+        phase = "recovery-source";
+        verifyRecoverySource();
+        String verifiedPrefix;
+        if (upload) {
+            local = FileChannel.open(request.localPath(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+            if (!digest.equals(hashLocal(size)))
+                throw new IOException("Original source content changed");
+            verifyRecoverySource();
+            boolean create = extent < 0;
+            if (create) {
+                check();
+                extent = 0;
+            }
+            try (var staged = create
+                    ? sftp.open(destination.remoteTemporary(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
+                            SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive)
+                    : sftp.open(destination.remoteTemporary(),
+                            discard
+                                    ? EnumSet.of(SftpClient.OpenMode.Read)
+                                    : EnumSet.of(SftpClient.OpenMode.Read, SftpClient.OpenMode.Write))) {
+                phase = "recovery-prefix";
+                regularRemote(sftp.stat(staged), extent);
+                verifiedPrefix = hashLocal(extent, false);
+                if (!verifiedPrefix.equals(hashRemote(staged, extent)))
+                    throw new IOException("Staging prefix differs from original source");
+                verifyRecoverySource();
+                check();
+                if (stagingSize(destination) != extent)
+                    throw new IOException("Named staging changed before recovery");
+                if (!discard) {
+                    phase = "recovery-upload";
+                    copyToRemote(staged, size, extent);
+                    verifyRecoverySource();
+                    if (!digest.equals(hashLocal(size)) || !digest.equals(hashRemote(staged, size)))
+                        throw new IOException("Resumed content changed");
+                }
+            }
+            local.close();
+        } else {
+            try (var source = sftp.open(request.remoteAbsolutePath(), SftpClient.OpenMode.Read)) {
+                regularRemote(sftp.stat(source), size);
+                if (!digest.equals(hashRemote(source, size)))
+                    throw new IOException("Original remote source changed");
+                verifyRecoverySource();
+                String stagingIdentity = extent < 0
+                        ? null
+                        : gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity
+                                .read(destination.localTemporary());
+                if (extent < 0) {
+                    check();
+                    local = FileChannel.open(destination.localTemporary(), StandardOpenOption.CREATE_NEW,
+                            StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                    extent = 0;
+                    stagingIdentity = gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity
+                            .read(destination.localTemporary());
+                } else {
+                    local = FileChannel.open(destination.localTemporary(), discard
+                            ? Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+                            : Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS));
+                }
+                phase = "recovery-prefix";
+                verifiedPrefix = hashRemote(source, extent, false);
+                if (!hashLocal(extent).equals(verifiedPrefix))
+                    throw new IOException("Staging prefix differs from original remote source");
+                verifyRecoverySource();
+                if (!stagingIdentity.equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity
+                        .read(destination.localTemporary())))
+                    throw new IOException("Local staging was replaced");
+                check();
+                if (!discard) {
+                    phase = "recovery-download";
+                    copyToLocal(source, size, extent);
+                    local.force(true);
+                    verifyRecoverySource();
+                    if (!digest.equals(hashLocal(size)) || !digest.equals(hashRemote(source, size)))
+                        throw new IOException("Resumed content changed");
+                }
+                local.close();
+                if (!stagingIdentity.equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity
+                        .read(destination.localTemporary())))
+                    throw new IOException("Local staging was replaced");
+            }
+        }
+        verifyLocalParents(request.localPath());
+        verifyRemoteParents();
+        check();
+        if (discard) {
+            phase = "recovery-discard";
+            destination.verifyStaged(extent, verifiedPrefix);
+            if (upload)
+                sftp.remove(destination.remoteTemporary());
+            else
+                Files.delete(destination.localTemporary());
+            if (stagingSize(destination) >= 0)
+                throw new IOException("Staging cleanup was not observed");
+        } else {
+            phase = "recovery-publish";
+            destination.publish(size, digest);
+            phase = "recovery-published-verification";
+            if (!destination.isPublished(recovery.source()))
+                throw new IOException("Resumed publication content differs");
+        }
+        resolved = true;
+        return recoveredResult(destination);
+    }
+
+    /** Observes an ordinary staging file without trusting a saved offset. / 观察普通暂存文件，不信任已保存偏移。
+     * @param destination original selected target / 原选定目标
+     * @return current size or minus one for confirmed absence / 当前大小，确认缺失时为负一
+     * @throws IOException if the staging object is redirected or nonregular / 暂存对象被重定向或非普通文件时 */
+    private long stagingSize(SftpDestination destination) throws IOException {
+        check();
+        if (upload) {
+            try {
+                var attrs = sftp.lstat(destination.remoteTemporary());
+                regularRemote(attrs, attrs.getSize());
+                if (!destination.remoteTemporary().equals(sftp.canonicalPath(destination.remoteTemporary())))
+                    throw new IOException("Remote staging is redirected");
+                return attrs.getSize();
+            } catch (SftpException absent) {
+                if (absent.getStatus() == SftpConstants.SSH_FX_NO_SUCH_FILE)
+                    return -1;
+                throw absent;
+            }
+        }
+        try {
+            return regularLocal(destination.localTemporary()).size();
+        } catch (NoSuchFileException absent) {
+            return -1;
+        }
+    }
+
+    /** Rechecks source identity and metadata against the durable original observation. / 根据持久原观测复核源身份及元数据。
+     * @throws IOException if the original source has changed / 原源已变化时 */
+    private void verifyRecoverySource() throws IOException {
+        check();
+        var expected = recovery.source();
+        if (upload) {
+            var attrs = regularLocal(request.localPath());
+            if (attrs.size() != expected.size() || !attrs.lastModifiedTime().toString().equals(expected.modified())
+                    || !gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity.read(request.localPath())
+                            .equals(expected.identity()))
+                throw new IOException("Original local source identity or metadata changed");
+        } else {
+            var attrs = sftp.lstat(request.remoteAbsolutePath());
+            regularRemote(attrs, expected.size());
+            if (!attrs.getFlags().contains(SftpClient.Attribute.ModifyTime)
+                    || !attrs.getModifyTime().toString().equals(expected.modified())
+                    || !request.remoteAbsolutePath().equals(sftp.canonicalPath(request.remoteAbsolutePath())))
+                throw new IOException("Original remote source metadata changed");
+        }
+    }
+
+    /** Returns only a verified file result or a staging-only cleanup conclusion. / 仅返回已核验文件结果或仅暂存清理结论。
+     * @param destination original actual endpoints / 原实际端点
+     * @return known recovery result / 已知恢复结果 */
+    private OperationResult<TransferResult> recoveredResult(SftpDestination destination) {
+        return new OperationResult<>(Outcome.SUCCEEDED,
+                discard
+                        ? Optional.empty()
+                        : Optional.of(new TransferResult(recovery.source().size(), digest, destination.local(),
+                                destination.remote())),
+                Optional.empty());
     }
 
     /** Excludes explicit human decision time from transport waiting. / 从传输等待中排除明确人工决定时间。
@@ -295,11 +498,12 @@ final class SftpTransfer {
      * Streams unchanged local bytes to the newly created remote handle. / 向新建远端句柄流式传送未改变的本地字节。
      * @param remote owned remote handle / 所属远端句柄
      * @param size exact reviewed size / 精确已审核大小
+     * @param offset verified original staging length / 已核验原暂存长度
      * @throws IOException if the source changes or transport fails / 源变化或传输失败时
      */
-    private void copyToRemote(SftpClient.Handle remote, long size) throws IOException {
+    private void copyToRemote(SftpClient.Handle remote, long size, long offset) throws IOException {
         byte[] buffer = new byte[16384];
-        for (long offset = 0; offset < size;) {
+        while (offset < size) {
             check();
             int count = local.read(ByteBuffer.wrap(buffer, 0, (int) Math.min(buffer.length, size - offset)), offset);
             if (count <= 0)
@@ -313,17 +517,17 @@ final class SftpTransfer {
      * Streams the fixed remote extent to a new local file and verifies its digest. / 将固定远端区间流式写入新本地文件并核对摘要。
      * @param remote owned remote handle / 所属远端句柄
      * @param size exact reviewed size / 精确已审核大小
+     * @param offset verified original staging length / 已核验原暂存长度
      * @throws IOException if content changes or transport fails / 内容变化或传输失败时
      */
-    private void copyToLocal(SftpClient.Handle remote, long size) throws IOException {
+    private void copyToLocal(SftpClient.Handle remote, long size, long offset) throws IOException {
         byte[] buffer = new byte[32768];
-        MessageDigest hash = sha256();
-        for (long offset = 0; offset < size;) {
+        local.position(offset);
+        while (offset < size) {
             check();
             int count = sftp.read(remote, offset, buffer, 0, (int) Math.min(buffer.length, size - offset));
             if (count <= 0)
                 throw new IOException("Source ended early");
-            hash.update(buffer, 0, count);
             ByteBuffer bytes = ByteBuffer.wrap(buffer, 0, count);
             while (bytes.hasRemaining()) {
                 check();
@@ -331,7 +535,7 @@ final class SftpTransfer {
             }
             offset += count;
         }
-        if (!digest.equals(HexFormat.of().formatHex(hash.digest())) || sftp.read(remote, size, buffer, 0, 1) >= 0)
+        if (sftp.read(remote, size, buffer, 0, 1) >= 0)
             throw new IOException("Source changed");
     }
 
@@ -342,6 +546,15 @@ final class SftpTransfer {
      * @throws IOException if the source changes or cannot be read / 源变化或无法读取时
      */
     private String hashLocal(long size) throws IOException {
+        return hashLocal(size, true);
+    }
+
+    /** Hashes a verified prefix or exact local extent. / 对已核验前缀或精确本地区间求摘要。
+     * @param size bytes to read / 要读取的字节数
+     * @param exact whether EOF must match / 是否须匹配文件末尾
+     * @return content digest / 内容摘要
+     * @throws IOException if the extent cannot be read / 无法读取区间时 */
+    private String hashLocal(long size, boolean exact) throws IOException {
         MessageDigest hash = sha256();
         ByteBuffer bytes = ByteBuffer.allocate(32768);
         for (long offset = 0; offset < size;) {
@@ -353,7 +566,7 @@ final class SftpTransfer {
             hash.update(bytes.array(), 0, count);
             offset += count;
         }
-        if (local.size() != size)
+        if (exact && local.size() != size)
             throw new IOException("File length changed");
         return HexFormat.of().formatHex(hash.digest());
     }
@@ -366,6 +579,16 @@ final class SftpTransfer {
      * @throws IOException if verification fails / 核验失败时
      */
     private String hashRemote(SftpClient.Handle remote, long size) throws IOException {
+        return hashRemote(remote, size, true);
+    }
+
+    /** Hashes a verified prefix or exact remote extent. / 对已核验前缀或精确远端区间求摘要。
+     * @param remote original file handle / 原文件句柄
+     * @param size bytes to read / 要读取的字节数
+     * @param exact whether EOF must match / 是否须匹配文件末尾
+     * @return content digest / 内容摘要
+     * @throws IOException if the extent cannot be read / 无法读取区间时 */
+    private String hashRemote(SftpClient.Handle remote, long size, boolean exact) throws IOException {
         MessageDigest hash = sha256();
         byte[] bytes = new byte[32768];
         for (long offset = 0; offset < size;) {
@@ -376,7 +599,7 @@ final class SftpTransfer {
             hash.update(bytes, 0, count);
             offset += count;
         }
-        if (sftp.read(remote, size, bytes, 0, 1) >= 0)
+        if (exact && sftp.read(remote, size, bytes, 0, 1) >= 0)
             throw new IOException("Remote file grew");
         return HexFormat.of().formatHex(hash.digest());
     }
@@ -539,7 +762,7 @@ final class SftpTransfer {
                 local.close();
             if ((local != null && local.isOpen()) || (sftp != null && !sftp.getClientChannel().isClosed()))
                 return false;
-            if (fileLease != null && (!mutation || published)) {
+            if (fileLease != null && (!mutation || resolved)) {
                 fileLease.close();
                 fileLease = null;
             }

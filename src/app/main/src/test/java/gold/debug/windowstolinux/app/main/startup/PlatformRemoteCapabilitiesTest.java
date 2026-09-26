@@ -298,6 +298,7 @@ class PlatformRemoteCapabilitiesTest {
 
     @Test
     void disconnectedStagingRetainsDurableFileFactsAfterGenericTaskReconciliation() throws Exception {
+        var interrupt = new AtomicBoolean(true);
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
@@ -307,7 +308,7 @@ class PlatformRemoteCapabilitiesTest {
                         public void written(org.apache.sshd.server.session.ServerSession session, String handle,
                                 org.apache.sshd.sftp.server.FileHandle file, long offset, byte[] data, int start,
                                 int length, Throwable failure) {
-                            if (failure == null)
+                            if (failure == null && interrupt.compareAndSet(true, false))
                                 session.close(true);
                         }
                     });
@@ -328,7 +329,6 @@ class PlatformRemoteCapabilitiesTest {
                 });
                 state(task, TaskState.UNKNOWN);
                 PlatformServerReferenceTest.callbackReturned(runtime, original.get());
-                UUID lease;
                 Path temporary;
                 try (var c = runtime.persistence().database().openConnection();
                         var p = c.prepareStatement(
@@ -336,7 +336,6 @@ class PlatformRemoteCapabilitiesTest {
                     p.setObject(1, task.id());
                     try (var row = p.executeQuery()) {
                         assertTrue(row.next());
-                        lease = row.getObject(1, UUID.class);
                         var facts = new com.fasterxml.jackson.databind.ObjectMapper().readTree(row.getString(2))
                                 .path("fields");
                         assertEquals("server", facts.path("serverId").asText());
@@ -350,8 +349,21 @@ class PlatformRemoteCapabilitiesTest {
                 }
                 assertEquals(16384, Files.size(temporary));
                 assertFalse(Files.exists(remote.files.resolve("file")));
+                var resume = new AtomicBoolean();
                 try (var registration = binding.registerRecovery("fixture", (previous, context) -> {
                     capabilities.closeTaskResources(context);
+                    if (resume.get()) {
+                        var checkpoints = capabilities.linux().pendingTransfers(context);
+                        assertEquals(1, checkpoints.size());
+                        var checkpoint = checkpoints.getFirst();
+                        try (var session = capabilities.linux().connect(SERVER, context)) {
+                            var grant = capabilities.interaction()
+                                    .approve(RemoteActions.recoverTransfer(checkpoint, "recovery", true), context)
+                                    .value().orElseThrow();
+                            assertEquals(Outcome.SUCCEEDED, session.resumeTransfer(checkpoint.id(), grant).outcome());
+                            assertTrue(capabilities.linux().pendingTransfers(context).isEmpty());
+                        }
+                    }
                     return success(null);
                 })) {
                     assertEquals(TaskState.FINISHING, runtime.tasks().reconcile(task.id()).toCompletableFuture()
@@ -359,13 +371,12 @@ class PlatformRemoteCapabilitiesTest {
                     assertFalse(task.completion().toCompletableFuture().isDone());
                     assertTrue(Files.exists(temporary));
                     assertThrows(java.sql.SQLException.class, runtime::close);
-                    // Fixture cleanup of the exact known local server file; not a product recovery implementation.
-                    Files.delete(temporary);
-                    new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
-                            .release(task.id(), lease);
+                    resume.set(true);
                     assertEquals(TaskState.ENDED, runtime.tasks().reconcile(task.id()).toCompletableFuture()
                             .get(10, TimeUnit.SECONDS).state());
                 }
+                assertFalse(Files.exists(temporary));
+                assertArrayEquals(new byte[100000], Files.readAllBytes(remote.files.resolve("file")));
             }
         }
     }
