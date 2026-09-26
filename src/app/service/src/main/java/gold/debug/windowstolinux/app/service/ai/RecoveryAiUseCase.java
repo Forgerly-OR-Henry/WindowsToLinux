@@ -6,10 +6,10 @@ import java.util.function.BiFunction;
 
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
-import gold.debug.windowstolinux.shared.model.recovery.*;
 
 /**
  * Separates visual evidence from regular-model decisions using fresh ordered snapshots. / 通过新的有序快照分离视觉证据和常规模型决策。

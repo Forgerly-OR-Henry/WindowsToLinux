@@ -14,11 +14,12 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
+import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.shared.model.recovery.*;
+import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
 import org.junit.jupiter.api.Test;
 
 class SshRecoveryDialogTest {
@@ -32,7 +33,7 @@ class SshRecoveryDialogTest {
         }
 
         @Override
-        public List<TerminalTarget> terminals() {
+        public List<RecoveryTerminal> terminals() {
             return List.of();
         }
 

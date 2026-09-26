@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.model.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 /**
  * Ephemeral terminal evidence; image bytes never belong in a journal. / 临时终端证据，图片不得进入记录。

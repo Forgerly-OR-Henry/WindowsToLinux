@@ -59,6 +59,7 @@ WindowsToLinux/
    │  │  ├─ schema/
    │  │  └─ task/
    │  ├─ linux/
+   │  │  ├─ recovery/
    │  │  └─ ssh/
    │  ├─ main/
    │  │  ├─ diagnostic/
@@ -119,10 +120,10 @@ WindowsToLinux/
    │  │  └─ shell/
    │  └─ windows/
    │     ├─ filesystem/
-   │     ├─ recovery/
    │     ├─ security/
    │     ├─ uninstall/
    │     ├─ update/
+   │     ├─ window/
    │     └─ workspace/
    ├─ appapi/
    │  ├─ ai/

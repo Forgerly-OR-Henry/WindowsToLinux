@@ -15,11 +15,6 @@
       <version>${jna.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.microsoft.playwright</groupId>
-      <artifactId>playwright</artifactId>
-      <version>1.58.0</version>
-    </dependency>
-    <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-shared-model</artifactId>
       <version>${project.version}</version>

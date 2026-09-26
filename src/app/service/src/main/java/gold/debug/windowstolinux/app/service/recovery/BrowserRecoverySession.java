@@ -11,16 +11,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
 
+import gold.debug.windowstolinux.app.linux.recovery.*;
+import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.SshRecoverySession;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.failure.*;
+import gold.debug.windowstolinux.app.service.recovery.BrowserRecoveryFailureType;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.windows.recovery.BrowserRecoveryFailureType;
-import gold.debug.windowstolinux.app.windows.recovery.BrowserTerminalSession;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.model.failure.*;
-import gold.debug.windowstolinux.shared.model.recovery.*;
+import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
 
 /**
  * Serial service state machine with revocable exact-action approval. / 带可撤销精确动作确认的串行服务状态机。
@@ -174,10 +175,13 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @return terminals / 终端集合
      */
     @Override
-    public List<TerminalTarget> terminals() {
+    public List<gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal> terminals() {
         if (!handoff || snapshot.ended())
             return List.of();
-        return browser.targets();
+        return browser.targets().stream().map(
+                target -> new gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal(target.id(),
+                        target.description()))
+                .toList();
     }
 
     /**
@@ -615,6 +619,12 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
     private void recordFailure(Throwable exception, FailureDefinition fallback) {
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
+            if (cause instanceof gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException browser) {
+                state.failure = FailureDescriptor.create(BrowserRecoveryFailureType.valueOf(browser.reason().name()),
+                        OperationIdentity.from(browser.problem().diagnosticId().orElseThrow().toString()),
+                        browser.problem().message());
+                return;
+            }
             if (cause instanceof FailureCarrier carrier) {
                 state.failure = carrier.failure();
                 return;

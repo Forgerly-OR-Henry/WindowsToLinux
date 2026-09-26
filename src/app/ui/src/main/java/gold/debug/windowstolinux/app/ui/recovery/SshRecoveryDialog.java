@@ -8,10 +8,10 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
+import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.recovery.TerminalTarget;
 
 /**
  * Modeless manual login handoff and exact command approval. / 非模态人工登录交接及精确命令批准。
@@ -51,7 +51,7 @@ public final class SshRecoveryDialog {
      * Terminals.
      * <p>终端集合。
      */
-    private final JComboBox<TerminalTarget> terminals = new JComboBox<>();
+    private final JComboBox<RecoveryTerminal> terminals = new JComboBox<>();
 
     /**
      * Swing control for identity.
@@ -209,7 +209,7 @@ public final class SshRecoveryDialog {
      * <p>绑定选择。
      */
     private void bindSelection() {
-        TerminalTarget target = (TerminalTarget) terminals.getSelectedItem();
+        RecoveryTerminal target = (RecoveryTerminal) terminals.getSelectedItem();
         if (target != null && identity.getText().trim().equals(server.id()) && consent.isSelected()) {
             session.bindTerminal(target.id(), identity.getText().trim(), true, reconciled.isSelected());
             terminals.removeAllItems();

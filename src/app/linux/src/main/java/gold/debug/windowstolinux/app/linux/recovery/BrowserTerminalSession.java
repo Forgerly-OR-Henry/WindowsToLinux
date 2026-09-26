@@ -1,8 +1,8 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import java.util.List;
 
-import gold.debug.windowstolinux.shared.model.recovery.*;
+import gold.debug.windowstolinux.app.linux.recovery.*;
 
 /**
  * Browser capabilities confined to one user-selected terminal. / 浏览器能力限定在用户选定的单一终端。
