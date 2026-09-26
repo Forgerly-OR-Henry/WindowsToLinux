@@ -4,10 +4,10 @@ import java.util.List;
 
 /**
  * Exact reviewed effect and revision bound to task resources. / 绑定任务资源的精确待审核副作用与修订。
- * @param type owner-local task type / 所有者内部的任务类型
+ * @param type reviewed action category / 已审核动作类别
  * @param serverIds copied distinct server identities admitted with the task / 随任务接纳的互不重复服务器身份副本
  * @param target owned target of the requested operation / 请求操作的所属目标
- * @param revision nonnegative revision of the reviewed intent / 已审核意图的非负修订号
+ * @param revision author-owned business revision identity / 作者所属业务修订标识
  * @param exactAction exact action text covered by approval / 审批覆盖的精确操作文本
  * @param effectSummary description of the proposed external effect / 拟执行的外部副作用说明
  */
@@ -15,10 +15,10 @@ public record ActionIntent(String type, List<String> serverIds, String target, S
         String effectSummary) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
-     * @param type owner-local task type / 所有者内部的任务类型
+     * @param type reviewed action category / 已审核动作类别
      * @param serverIds copied distinct server identities admitted with the task / 随任务接纳的互不重复服务器身份副本
      * @param target owned target of the requested operation / 请求操作的所属目标
-     * @param revision nonnegative revision of the reviewed intent / 已审核意图的非负修订号
+     * @param revision author-owned business revision identity / 作者所属业务修订标识
      * @param exactAction exact action text covered by approval / 审批覆盖的精确操作文本
      * @param effectSummary description of the proposed external effect / 拟执行的外部副作用说明
      */

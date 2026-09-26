@@ -10,7 +10,9 @@ import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.service.linux.PlatformLinuxService;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
@@ -24,6 +26,12 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
     private final PlatformTaskRuntime tasks;
+
+    /** Actual desktop presenter, installed before author capabilities are constructed. / 实际桌面呈现器，在构造作者能力之前安装。 */
+    private PlatformInteractionService.Prompts prompts;
+
+    /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
+    private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
 
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
@@ -94,6 +102,88 @@ public final class PlatformRuntime implements AutoCloseable {
     }
 
     /**
+     * Installs the actual window-owned human presenter exactly once. / 仅安装一次实际窗口所属人工呈现器。
+     * @param prompts platform-owned human presentation / 平台所属人工呈现
+     */
+    public synchronized void setInteractionPresenter(PlatformInteractionService.Prompts prompts) {
+        if (this.prompts != null || stopping || closed)
+            throw new IllegalStateException("Platform interaction presenter is already installed or closing");
+        this.prompts = Objects.requireNonNull(prompts);
+    }
+
+    /**
+     * Creates real task, credential, review and SSH adapters for one Mod activation. / 为一次 Mod 启用创建真实任务、凭据、审核及 SSH 适配。
+     * @param ownerId exact activating Mod / 精确正在启用的 Mod
+     * @param version exact loaded release / 精确已加载版本
+     * @return host-owned capability pair / 宿主持有的能力组合
+     */
+    public synchronized RemoteCapabilities remoteCapabilities(String ownerId, String version) {
+        if (closed || stopping || prompts == null)
+            throw new IllegalStateException("Platform remote capabilities are unavailable");
+        var interaction = new PlatformInteractionService(tasks, security, ownerId, version, prompts);
+        var linux = new PlatformLinuxService(tasks, security, persistence.servers(), interaction, ownerId, version,
+                java.time.Duration.ofSeconds(30), java.time.Duration.ofMinutes(5));
+        var capabilities = new RemoteCapabilities(interaction, linux);
+        remoteCapabilities.add(capabilities);
+        return capabilities;
+    }
+
+    /** Remote capabilities whose concrete implementations never cross into author code. / 具体实现不越界交给作者代码的远端能力。 */
+    public final class RemoteCapabilities implements AutoCloseable {
+        /** Same activation's human review authority. / 同次启用的人工审核授权方。 */
+        private final PlatformInteractionService interaction;
+
+        /** Same activation's real transport owner. / 同次启用的真实传输所有者。 */
+        private final PlatformLinuxService linux;
+
+        /**
+         * Takes ownership of the actual platform adapters. / 接管实际平台适配器。
+         * @param interaction review adapter / 审核适配器
+         * @param linux transport adapter / 传输适配器
+         */
+        private RemoteCapabilities(PlatformInteractionService interaction, PlatformLinuxService linux) {
+            this.interaction = interaction;
+            this.linux = linux;
+        }
+
+        /** Returns the public author review contract. / 返回公开作者审核契约。
+         * @return bound review service / 绑定的审核服务 */
+        public gold.debug.windowstolinux.api.task.InteractionService interaction() {
+            return interaction;
+        }
+
+        /** Returns the public author transport contract. / 返回公开作者传输契约。
+         * @return bound Linux service / 绑定的 Linux 服务 */
+        public gold.debug.windowstolinux.api.linux.LinuxService linux() {
+            return linux;
+        }
+
+        /**
+         * Retries retained physical resources for explicit host reconciliation. / 为显式宿主核对重试保留物理资源。
+         * @param task original retained task / 原始保留任务
+         * @throws gold.debug.windowstolinux.api.task.ApiException if release remains incomplete / 释放仍未完成时
+         */
+        public void closeTaskResources(gold.debug.windowstolinux.api.task.TaskContext task)
+                throws gold.debug.windowstolinux.api.task.ApiException {
+            linux.closeTaskResources(task);
+            interaction.retryFinishedReleases();
+        }
+
+        /**
+         * Closes actual clients before revoking their review capability. / 在撤销审核能力之前关闭实际客户端。
+         * @throws gold.debug.windowstolinux.api.task.ApiException if actual cleanup remains / 实际清理仍未完成时
+         */
+        @Override
+        public void close() throws gold.debug.windowstolinux.api.task.ApiException {
+            linux.close();
+            interaction.close();
+            synchronized (PlatformRuntime.this) {
+                remoteCapabilities.remove(this);
+            }
+        }
+    }
+
+    /**
      * Records a successfully constructed desktop in the current boot. / 在当前启动中记录已成功构造的桌面。
      * @throws SQLException if this boot no longer owns the startup marker / 当前启动不再持有启动标记时
      */
@@ -137,6 +227,8 @@ public final class PlatformRuntime implements AutoCloseable {
             }
             stopping = true;
         }
+        for (var capabilities : java.util.List.copyOf(remoteCapabilities))
+            capabilities.close();
         tasks.close();
         security.close();
         persistence.close();

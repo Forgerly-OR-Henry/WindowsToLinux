@@ -349,13 +349,26 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      */
     private <T> T human(java.util.concurrent.Callable<T> work) {
+        return human(work, () -> false);
+    }
+
+    /**
+     * Gates task-owned interaction with cooperative cancellation and lock-generation checks. / 以协作取消及锁定代次检查门控任务所属交互。
+     * @param <T> result type, including disposable secret characters / 结果类型，包括可清除秘密字符
+     * @param work host-owned presentation callback / 宿主所属呈现回调
+     * @param cancellation non-blocking current task cancellation / 非阻塞当前任务取消
+     * @return result accepted within the same unlocked generation / 在同一解锁代次内接受的结果
+     */
+    public <T> T human(java.util.concurrent.Callable<T> work,
+            gold.debug.windowstolinux.api.task.CancellationToken cancellation) {
         for (;;) {
             long expected;
             try {
-                awaitUnlocked();
                 synchronized (this) {
-                    if (session == null || changing)
-                        continue;
+                    while (!closed && (session == null || changing) && !cancellation.requested())
+                        wait(50);
+                    if (closed || cancellation.requested())
+                        throw new java.util.concurrent.CancellationException("human interaction cancelled");
                     expected = generation;
                 }
             } catch (InterruptedException failure) {
@@ -377,11 +390,13 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                 throw new IllegalStateException("human interaction failed", failure);
             }
             synchronized (this) {
-                if (expected == generation && session != null && !changing)
+                if (expected == generation && session != null && !changing && !cancellation.requested())
                     return result;
             }
             if (result instanceof char[] secret)
                 clear(secret);
+            if (cancellation.requested())
+                throw new java.util.concurrent.CancellationException("human interaction cancelled");
         }
     }
 

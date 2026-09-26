@@ -167,6 +167,95 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     }
 
     /**
+     * Verifies a capability's bound caller while its original callback or explicit recovery executes. / 在原回调或显式恢复执行期间核实能力绑定的调用方。
+     * @param context authentic original task / 真实原始任务
+     * @param ownerId caller bound by the host / 宿主绑定的调用方
+     * @param version exact loaded caller release / 精确已加载调用方版本
+     * @return current task identity and state / 当前任务身份及状态
+     * @throws ApiException if the caller is foreign, cancelled or no longer executing / 调用方不符、取消或不再执行时
+     */
+    public synchronized TaskSnapshot requireExecuting(TaskContext context, String ownerId, String version)
+            throws ApiException {
+        var snapshot = requireContext(context);
+        var execution = executions.get(snapshot.id());
+        if (!snapshot.ownerId().equals(ownerId) || !snapshot.ownerVersion().equals(version))
+            throw error(ProblemCode.ACCESS_DENIED, "TASK_CALLER", "The capability belongs to a different Mod release");
+        if (execution.returned && !execution.reconciling || snapshot.state() == TaskState.QUEUED)
+            throw error(ProblemCode.UNAVAILABLE, "TASK_NOT_EXECUTING", "The original task callback is not executing");
+        if (execution.uncertainEffect)
+            throw error(ProblemCode.UNKNOWN, "TASK_EFFECT_UNCERTAIN",
+                    "An external effect requires explicit reconciliation");
+        if (!execution.reconciling && context.cancellation().requested())
+            throw error(ProblemCode.CANCELLED, "TASK_CANCELLED", "The task requested cooperative cancellation");
+        return snapshot;
+    }
+
+    /**
+     * Requires a server from the task's complete initial resource set. / 要求服务器属于任务的完整初始资源集合。
+     * @param context authentic original task / 真实原始任务
+     * @param ownerId bound Mod identity / 绑定的 Mod 身份
+     * @param version bound loaded release / 绑定的已加载版本
+     * @param serverId exact saved server identity / 精确已保存服务器身份
+     * @throws ApiException if ownership or admission cannot be verified / 无法核实归属或准入时
+     */
+    public synchronized void requireServer(TaskContext context, String ownerId, String version, String serverId)
+            throws ApiException {
+        requireExecuting(context, ownerId, version);
+        if (serverId == null || serverId.isBlank() || serverId.length() > 512)
+            throw error(ProblemCode.INVALID_INPUT, "TASK_SERVER_ID", "Invalid saved server identity");
+        try {
+            if (!ledger.holds(context.id(), new TaskResource("SERVER", serverId, ownerId, true)))
+                throw error(ProblemCode.ACCESS_DENIED, "TASK_SERVER_NOT_ADMITTED",
+                        "The server was not admitted with this task");
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "TASK_SERVER_CLAIM", "Server admission could not be verified");
+        }
+    }
+
+    /**
+     * Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
+     * @param <T> internal operation result / 内部操作结果
+     * @param context authentic active task / 真实活动任务
+     * @param ownerId bound Mod identity / 绑定的 Mod 身份
+     * @param version bound release / 绑定版本
+     * @param work adapter work whose resource lease remains held until return / 资源占用持续到返回的适配工作
+     * @return operation result / 操作结果
+     * @throws Exception if authorization or work fails / 授权或工作失败时
+     */
+    public <T> T authorized(TaskContext context, String ownerId, String version, Callable<T> work) throws Exception {
+        DesktopSecurityService.Task authorization;
+        synchronized (this) {
+            requireExecuting(context, ownerId, version);
+            authorization = executions.get(context.id()).authorization;
+        }
+        return authorization.execute(work);
+    }
+
+    /**
+     * Returns cancellation for current work; explicit recovery does not replay an older cancellation. / 返回当前工作取消状态；显式恢复不重放旧取消。
+     * @param context authentic original task / 真实原始任务
+     * @return cancellation checked dynamically during adapter work / 适配工作期间动态检查的取消状态
+     */
+    public synchronized CancellationToken operationCancellation(TaskContext context) {
+        var execution = executions.get(context.id());
+        if (execution == null || execution.context != context)
+            return () -> true;
+        return () -> execution.snapshot.state() == TaskState.ENDED || !execution.reconciling && execution.cancelled;
+    }
+
+    /**
+     * Retains uncertainty even if author code subsequently returns a known result. / 即使作者代码随后返回已知结果，仍保留已观察到的不确定性。
+     * @param context original task whose external effect is uncertain / 外部副作用不确定的原始任务
+     * @throws ApiException if the task identity is invalid / 任务身份无效时
+     */
+    public synchronized void reportUncertainEffect(TaskContext context) throws ApiException {
+        requireContext(context);
+        var execution = executions.get(context.id());
+        execution.uncertainEffect = true;
+        uncertain(execution, "A platform operation could not establish its external outcome");
+    }
+
+    /**
      * Registers actual host resources; adapters call close only after physical release. / 登记实际宿主资源；适配器仅在物理释放后调用关闭。
      * @param context original accepted context / 原始已接纳上下文
      * @param resource host-validated resource claim / 宿主已校验的资源申请
@@ -248,6 +337,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     refreshAuthorizationBlockers();
                 }
                 task.reconciling = true;
+                task.uncertainEffect = false;
                 var completion = new CompletableFuture<TaskSnapshot>();
                 workers.execute(() -> {
                     OperationResult<Void> result;
@@ -325,6 +415,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      */
     private boolean record(Execution<?> task, boolean reconciliation) {
         try {
+            if (task.uncertainEffect)
+                task.observed = unknown("TASK_EFFECT_UNCERTAIN",
+                        "A platform operation requires explicit reconciliation");
             boolean ended = ledger.complete(task.snapshot.id(), task.observed.outcome(), evidence(task.observed),
                     reconciliation, task::releaseAuthorization);
             task.snapshot = ledger.snapshot(task.snapshot.id());
@@ -671,7 +764,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         private boolean returned;
 
         /** Whether explicit reconciliation currently owns this context. / 显式核对当前是否持有此上下文。 */
-        private boolean reconciling;
+        private volatile boolean reconciling;
+
+        /** Whether this execution observed an unreconciled external effect. / 此次执行是否观察到尚未核对的外部副作用。 */
+        private boolean uncertainEffect;
 
         /** Observed result retained while cleanup is pending. / 清理待完成期间保留的已观察结果。 */
         private OperationResult<T> observed;
