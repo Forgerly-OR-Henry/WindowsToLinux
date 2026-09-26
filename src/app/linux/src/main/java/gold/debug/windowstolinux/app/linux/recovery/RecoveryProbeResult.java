@@ -1,11 +1,8 @@
-package gold.debug.windowstolinux.app.service.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.model.failure.*;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Typed SSH admission result retaining the original failure occurrence. / 保留原始失败实例的类型化 SSH 准入结果。
@@ -13,7 +10,7 @@ import gold.debug.windowstolinux.shared.model.failure.*;
  * @param status classification of the current operation result / 当前操作结果的分类
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failure) {
+public record RecoveryProbeResult(StatusType status, Optional<Problem> failure) {
     /**
      * Validates and binds the inputs required by recovery probe result.
      * <p>校验并绑定恢复探测结果所需输入。
@@ -23,7 +20,7 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    RecoveryProbeResult {
+    public RecoveryProbeResult {
         Objects.requireNonNull(status, "status");
         failure = Objects.requireNonNull(failure, "failure");
         if ((status == StatusType.RECOVERED) == failure.isPresent())
@@ -33,7 +30,7 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
      * Distinguishes verified SSH recovery, retryable connection loss and failures requiring attention.
      * <p>区分已验证 SSH 恢复、可重试连接丢失及需处理的失败。
      */
-    enum StatusType {
+    public enum StatusType {
         /**
          * SSH verification succeeded and no failure descriptor is present.
          * <p>SSH 验证成功，不携带失败描述。
@@ -77,14 +74,14 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
      *
      * @return a recovered result with an empty failure field / 失败字段为空的已恢复结果
      */
-    static RecoveryProbeResult recovered() {
+    public static RecoveryProbeResult recovered() {
         return new RecoveryProbeResult(StatusType.RECOVERED, Optional.empty());
     }
 
-    /** Classifies exact platform evidence for the remaining legacy display contract. / 为剩余旧显示契约分类精确平台证据。
+    /** Classifies exact platform evidence without replacing the original Problem. / 分类精确平台证据，不替换原 Problem。
      * @param problem original safe platform evidence / 原安全平台证据
      * @return explicit retry class and preserved diagnostic identity/code / 明确重试分类及保留的诊断身份和代码 */
-    static RecoveryProbeResult failed(gold.debug.windowstolinux.appapi.task.Problem problem) {
+    public static RecoveryProbeResult failed(gold.debug.windowstolinux.appapi.task.Problem problem) {
         var status = problem.code() == gold.debug.windowstolinux.appapi.task.ProblemCode.CANCELLED
                 ? StatusType.INTERRUPTED
                 : switch (problem.eventCode()) {
@@ -94,50 +91,7 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
                     case "SERVER_CREDENTIAL_MISSING" -> StatusType.CREDENTIAL_UNAVAILABLE;
                     default -> StatusType.FAILED;
                 };
-        var identity = problem.diagnosticId().map(id -> OperationIdentity.from(id.toString()))
-                .orElseGet(OperationIdentity::create);
-        return new RecoveryProbeResult(status,
-                Optional.of(FailureDescriptor.create(ApplicationServiceFailureType.RECOVERY_PROBE_FAILED, identity,
-                        problem.eventCode() + ": " + problem.message())));
-    }
-
-    /**
-     * Preserves the first structured failure in the cause chain and separates interruption, authentication, host identity and credential failures. Only an explicit connection failure without interruption is retryable.
-     * <p>保留原因链中的第一个结构化失败，并区分中断、认证、主机身份及凭据失败。仅未伴随中断的明确连接失败可重试。
-     *
-     * @param exception original exception being classified or translated / 正在分类或转换的原始异常
-     * @return a classified result carrying the original descriptor when available / 携带原始描述（存在时）的分类结果
-     */
-    static RecoveryProbeResult failed(Exception exception) {
-        FailureDescriptor descriptor = null;
-        boolean interrupted = Thread.currentThread().isInterrupted();
-        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
-            if (descriptor == null && cause instanceof FailureCarrier carrier)
-                descriptor = carrier.failure();
-            interrupted |= cause instanceof InterruptedException || cause instanceof java.io.InterruptedIOException
-                    || cause instanceof java.util.concurrent.CancellationException;
-        }
-        if (descriptor == null)
-            descriptor = FailureDescriptor.create(
-                    interrupted
-                            ? ApplicationServiceFailureType.RECOVERY_INTERRUPTED
-                            : ApplicationServiceFailureType.RECOVERY_PROBE_FAILED,
-                    OperationIdentity.create(),
-                    interrupted ? "SSH recovery probe was interrupted" : "SSH recovery verification failed");
-        var definition = descriptor.definition();
-        StatusType status = interrupted
-                ? StatusType.INTERRUPTED
-                : definition == LinuxOperationFailureType.CONNECTION_FAILED
-                        ? StatusType.RETRYABLE_CONNECTION
-                        : definition == LinuxOperationFailureType.AUTHENTICATION_FAILED
-                                ? StatusType.AUTHENTICATION_REJECTED
-                                : definition == LinuxOperationFailureType.HOST_KEY_REJECTED
-                                        ? StatusType.IDENTITY_CONFLICT
-                                        : definition instanceof SecretStoreFailureType
-                                                ? StatusType.CREDENTIAL_UNAVAILABLE
-                                                : StatusType.FAILED;
-        return new RecoveryProbeResult(status, Optional.of(descriptor));
+        return new RecoveryProbeResult(status, Optional.of(problem));
     }
 
     /**
@@ -146,7 +100,7 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
      *
      * @return message code text / 消息代码文本
      */
-    String messageCode() {
+    public String messageCode() {
         return switch (status) {
             case RECOVERED -> "recovered";
             case RETRYABLE_CONNECTION -> "connectionFailed";

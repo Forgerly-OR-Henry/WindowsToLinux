@@ -93,6 +93,9 @@ final class ArchitectureSourceInspector {
             Trees syntax = Trees.instance(task);
             var types = task.getTypes();
             TypeMirror throwable = task.getElements().getTypeElement("java.lang.Throwable").asType();
+            TypeMirror sqlException = task.getElements().getTypeElement("java.sql.SQLException").asType();
+            TypeMirror problem = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Problem")
+                    .asType();
             TypeMirror carrier = task.getElements()
                     .getTypeElement("gold.debug.windowstolinux.shared.model.failure.FailureCarrier").asType();
             TypeMirror definition = task.getElements()
@@ -106,10 +109,18 @@ final class ArchitectureSourceInspector {
                         if (!node.getSimpleName().isEmpty()) {
                             TypeElement element = (TypeElement) syntax.getElement(getCurrentPath());
                             TypeMirror type = types.erasure(element.asType());
+                            boolean publicProblem = javax.lang.model.util.ElementFilter
+                                    .methodsIn(task.getElements().getAllMembers(element)).stream()
+                                    .anyMatch(method -> method.getSimpleName().contentEquals("problem")
+                                            && method.getParameters().isEmpty()
+                                            && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
+                                            && !method.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)
+                                            && types.isSameType(method.getReturnType(), problem));
                             declarations.add(
                                     new JavaType(element.getQualifiedName().toString(), node.getSimpleName().toString(),
                                             node.getKind(), types.isAssignable(type, throwable),
-                                            types.isAssignable(type, carrier), types.isAssignable(type, definition)));
+                                            types.isAssignable(type, carrier), types.isAssignable(type, definition),
+                                            publicProblem, types.isAssignable(type, sqlException)));
                         }
                         return super.visitClass(node, unused);
                     }
@@ -136,6 +147,6 @@ final class ArchitectureSourceInspector {
     }
 
     record JavaType(String name, String simpleName, Tree.Kind kind, boolean throwable, boolean failureCarrier,
-            boolean failureDefinition) {
+            boolean failureDefinition, boolean publicProblem, boolean sqlException) {
     }
 }

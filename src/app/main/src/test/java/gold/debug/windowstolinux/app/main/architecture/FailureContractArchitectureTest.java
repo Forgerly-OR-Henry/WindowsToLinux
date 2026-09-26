@@ -44,6 +44,11 @@ import org.junit.jupiter.api.Test;
 
 /** Guards the shared failure vocabulary without centralizing module-specific interpretation. / 在不集中模块特定解释的前提下守护共用失败词汇。 */
 class FailureContractArchitectureTest {
+    // These two SQL rollback signals are translated by the task host before reaching callers. / 仅这两个 SQL 回滚信号在到达调用方前由任务宿主转换。
+    private static final Set<String> SQL_BRIDGE_TYPES = Set.of(
+            "gold.debug.windowstolinux.app.db.task.TaskLedger.DependencyBusyException",
+            "gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime.AdmissionRejectedException");
+
     private static final Pattern CODE = Pattern.compile("^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$");
 
     private static final Pattern MESSAGE_KEY = Pattern.compile("^[a-z][a-z0-9]*\\.error\\.[a-z][A-Za-z0-9]*$");
@@ -66,7 +71,6 @@ class FailureContractArchitectureTest {
             Map.entry(DesktopSystemFailureType.class, "desktop"), Map.entry(GitSnapshotFailureType.class, "git"),
             Map.entry(LinuxOperationFailureType.class, "linux"), Map.entry(SecretStoreFailureType.class, "secret"),
             Map.entry(SourceArchiveFailureType.class, "source"),
-            Map.entry(gold.debug.windowstolinux.app.service.recovery.BrowserRecoveryFailureType.class, "linux"),
             Map.entry(WindowsWorkspaceFailureType.class, "windows"));
 
     @Test
@@ -187,12 +191,47 @@ class FailureContractArchitectureTest {
         List<String> violations = new ArrayList<>();
         sources.stream().flatMap(source -> source.types().stream())
                 .filter(ArchitectureSourceInspector.JavaType::throwable).forEach(type -> {
-                    if (!type.failureCarrier())
-                        violations.add(type.name() + " does not implement FailureCarrier");
+                    if (!type.failureCarrier() && !type.publicProblem()
+                            && !(type.sqlException() && SQL_BRIDGE_TYPES.contains(type.name())))
+                        violations.add(type.name() + " does not expose FailureCarrier or public Problem");
                     if (!type.simpleName().matches("[A-Z][A-Za-z0-9]+Exception"))
                         violations.add(type.name() + " does not name its failure boundary");
                 });
         return violations;
+    }
+
+    @Test
+    void platformProblemsRequireAnActualPublicInstanceAccessorAndSqlSignalsRemainExplicit() throws Exception {
+        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.PlatformFailures", """
+                package fixture;
+                import gold.debug.windowstolinux.appapi.task.Problem;
+                class PlatformFailures {
+                    static class PublicProblemException extends Exception {
+                        public Problem problem() { return null; }
+                    }
+                    static class InheritedProblemException extends PublicProblemException { }
+                    static class WrongReturnException extends Exception {
+                        public String problem() { return "raw text"; }
+                    }
+                    static class PrivateProblemException extends Exception {
+                        private Problem problem() { return null; }
+                    }
+                    static class StaticProblemException extends Exception {
+                        public static Problem problem() { return null; }
+                    }
+                    static class UntranslatedSqlException extends java.sql.SQLException { }
+                }
+                """));
+        var violations = exceptionViolations(sources);
+        assertEquals(4, violations.size());
+        for (String name : List.of("WrongReturnException", "PrivateProblemException", "StaticProblemException",
+                "UntranslatedSqlException"))
+            assertTrue(violations.stream().anyMatch(value -> value.contains(name)), name);
+        var registered = ArchitectureSourceInspector.production().stream().flatMap(source -> source.types().stream())
+                .filter(type -> SQL_BRIDGE_TYPES.contains(type.name())).toList();
+        assertEquals(SQL_BRIDGE_TYPES, registered.stream().map(ArchitectureSourceInspector.JavaType::name)
+                .collect(java.util.stream.Collectors.toSet()));
+        assertTrue(registered.stream().allMatch(ArchitectureSourceInspector.JavaType::sqlException));
     }
 
     @Test
@@ -219,7 +258,7 @@ class FailureContractArchitectureTest {
             while (matcher.find()) {
                 int end = Math.min(content.length(), matcher.end() + 600);
                 String explanationWindow = content.substring(matcher.end(), end);
-                if (!explanationWindow.contains("//")) {
+                if (!explanationWindow.contains("//") && !explanationWindow.contains("/*")) {
                     violations.add(projectRoot().relativize(source)
                             + " silently captures a failure without an explanatory comment");
                 }

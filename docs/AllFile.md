@@ -170,9 +170,7 @@ src/  # 项目源码与模块根目录
 │  │  ├─ lock/  # 同服务器操作互斥注册包
 │  │  │  └─ ServerOperationLockRegistry.java  # 按服务器串行化互斥操作并支持后台任务取消
 │  │  ├─ recovery/  # 网页控制台 SSH 救援职责包
-│  │  │  ├─ BrowserRecoverySession.java  # 串行救援状态机与一次性动作授权
-│  │  │  ├─ RecoveryProbeResult.java  # 保留原始错误描述的类型化 SSH 探测结果
-│  │  │  ├─ RecoverySessionState.java  # 救援工作线程持有的预算及状态
+│  │  │  ├─ RecoveryProbeAdapter.java  # 将剩余旧 SSH 失败转换为 Linux 核心的 Problem 探测结果
 │  │  │  ├─ RecoverySshProbe.java  # 验证 SSH 身份、认证和只读命令执行
 │  │  │  └─ SshRecoveryUseCase.java  # 装配浏览器救援、服务器互斥及原任务衔接
 │  │  ├─ server/  # 服务器配置与观测
@@ -1715,7 +1713,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/main/mod/PlatformModContext.java`：同次真实 Mod 启用的完整能力装配、暂存发布、部分失败回收和实际上下文关闭归属。
 
 - `app/linux/recovery/`：迁入 PlaywrightTerminalSession、BrowserTerminalSession、TerminalTarget、TerminalObservation 和 BrowserRecoveryException；具体浏览器救援不再放在 Windows 或 shared/model。
-- `app/service/recovery/BrowserRecoveryFailureType.java`：尚在迁移的旧救援 UI 所用分类适配，保留新平台诊断身份；Linux 不依赖旧失败模型。
+- `app/linux/recovery/BrowserRecoverySession.java`、`RecoverySessionState.java`：串行救援状态机、预算、精确动作批准和原任务协作取消。
+- `app/linux/recovery/RecoveryProbeResult.java`、`RecoverySnapshot.java`、`RecoveryTarget.java`：保留原 `Problem` 的探测分类、临时核心快照和无凭据端点；不依赖 service/db/shared。
+- `app/service/recovery/RecoveryProbeAdapter.java`：仅供剩余旧 SSH 入口使用的错误转换，保留原事件和诊断身份；旧浏览器失败枚举已移除。
 - `app/service/contract/definition/RecoveryTerminal.java`：服务层终端选择快照，避免救援 UI 直接依赖 Linux 浏览器类型。
 
 - `app/ai/recovery/RecoveryAction.java` 与 `RecoveryProtocol.java`：平台救援的有界建议、影响分类、固定提示及严格结果解析，旧网络客户端复用同一协议。

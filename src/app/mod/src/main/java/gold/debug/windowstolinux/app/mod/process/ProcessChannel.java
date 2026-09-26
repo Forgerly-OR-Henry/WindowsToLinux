@@ -460,6 +460,7 @@ public final class ProcessChannel implements ManagedProcess {
         try {
             observer.failure(problem, uncertain);
         } catch (RuntimeException ignored) {
+            // Feedback failure must not stop pipe draining or erase the retained protocol failure. / 反馈失败不得停止管道排空或抹去保留的协议失败。
             System.err.println("PROCESS_FEEDBACK_FAILED");
         }
     }

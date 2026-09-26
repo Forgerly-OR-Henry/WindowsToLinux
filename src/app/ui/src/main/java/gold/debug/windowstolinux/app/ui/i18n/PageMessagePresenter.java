@@ -101,6 +101,14 @@ public final class PageMessagePresenter {
         return failures.present(failure);
     }
 
+    /** Formats public safe evidence without invoking the legacy report store on every UI refresh. / 格式化公开安全证据，不在每次 UI 刷新时调用旧报告存储。
+     * @param problem original platform diagnostic / 原平台诊断
+     * @return safe message, event and optional diagnostic identity / 安全消息、事件及可选诊断身份 */
+    public String safe(gold.debug.windowstolinux.appapi.task.Problem problem) {
+        return problem.message() + "\n[" + problem.eventCode() + "]"
+                + problem.diagnosticId().map(id -> "\n" + id).orElse("");
+    }
+
     /**
      * Localizes display choices while preserving the submitted protocol value. / 本地化展示选项，同时保留所提交的协议值。
      *

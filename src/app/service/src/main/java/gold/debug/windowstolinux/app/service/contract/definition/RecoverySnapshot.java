@@ -17,7 +17,7 @@ import java.util.Optional;
  */
 public record RecoverySnapshot(String id, State state, String messageCode, Optional<Action> action, String confirmation,
         boolean resultUnknown, int decisions, java.util.Map<String, String> modelAttempts,
-        Optional<gold.debug.windowstolinux.shared.model.failure.FailureDescriptor> failure) {
+        Optional<gold.debug.windowstolinux.appapi.task.Problem> failure) {
     /**
      * Copies non-secret attempt classifications; never stores response text. / 复制无秘密的调用分类，不保存响应原文。
      *
@@ -35,6 +35,15 @@ public record RecoverySnapshot(String id, State state, String messageCode, Optio
     public RecoverySnapshot {
         modelAttempts = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(modelAttempts));
         failure = java.util.Objects.requireNonNull(failure, "failure");
+    }
+
+    /** Copies core state into the UI contract without exposing Linux types to the view. / 将核心状态复制到 UI 契约，不向视图暴露 Linux 类型。
+     * @param value original core snapshot / 原核心快照
+     * @return immutable UI observation with the original Problem / 带原 Problem 的不可变 UI 观察 */
+    public static RecoverySnapshot from(gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot value) {
+        return new RecoverySnapshot(value.id(), State.valueOf(value.state().name()), value.messageCode(), value.action()
+                .map(action -> new Action(action.command(), action.reason(), action.expected(), action.highImpact())),
+                value.confirmation(), value.resultUnknown(), value.decisions(), value.modelAttempts(), value.failure());
     }
 
     /** Carries a prepared proposal to the UI without exposing AI implementation types. / 向 UI 传递已准备建议，不暴露 AI 实现类型。

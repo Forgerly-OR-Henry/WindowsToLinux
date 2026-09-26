@@ -312,6 +312,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                 try {
                     tasks.reportUncertainEffect(task);
                 } catch (ApiException ignored) {
+                    // The process lease remains held; report the failed ledger update without throwing from the reader. / 进程占用仍保留；报告账本更新失败，不从读取线程抛出。
                     System.err.println("PROCESS_TASK_UNCERTAINTY_UNCONFIRMED");
                 }
             logs.write(target, new LogEvent(LogLevel.WARN, problem.eventCode(), problem.message(), Optional.empty(),

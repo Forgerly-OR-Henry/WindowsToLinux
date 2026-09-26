@@ -846,18 +846,20 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 
 ### 2.9 异常、枚举和测试类命名
 
-| 编号 | 异常命名规范                                                                              | 正确示例                          | 禁止示例                                             |
-| ---- | ----------------------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------- |
-| E-01 | 异常使用 `Exception` 后缀。                                                               | `LinuxOperationException`         | `LinuxOperationError`                                |
-| E-02 | 名称必须说明失败边界。                                                                    | `SecretStoreException`            | `OperationException`                                 |
-| E-03 | 公共异常不得直接以底层实现细节命名。                                                      | `LinuxOperationException`         | `SshChannelException`                                |
-| E-04 | 安全异常名称不得包含秘密内容。                                                            | `SecretStoreException`            | `InvalidPasswordValueException`                      |
-| E-05 | 受控失败必须以 `FailureCarrier` 暴露结构化描述，本地化消息与安全诊断分离。                | `ApplicationServiceException`     | 中文异常类名、原始 `exception.getMessage()` 用户回退 |
-| E-06 | 异常使用 `[FailureBoundary]Exception`，名称说明模块内失败边界。                           | `SourceArchiveException`          | `SourceError`、`OperationException`                  |
-| E-07 | 模块错误枚举使用 `[Boundary]FailureType`。                                                | `LinuxOperationFailureType`       | `LinuxError`、`FailureKind`                          |
-| E-08 | 只有重复的确定性转换逻辑才建立 `[BoundaryOrTechnology]FailureMapper`。                    | `SqliteFailureMapper`             | 单次使用的通用 `ErrorManager`                        |
-| E-09 | 恢复判断使用 `[Operation]FailureRecoveryPolicy` 与 `[Operation]FailureRecoveryDecision`。 | `DeploymentFailureRecoveryPolicy` | `RecoveryProcessor`                                  |
-| E-10 | 业务类型不得使用 `Error`、`Manager`、`Processor` 等泛化错误治理名称。                     | `DesktopFailurePresenter`         | `ErrorManager`、`FailureProcessor`                   |
+| 编号 | 异常命名规范                                                                                                             | 正确示例                                   | 禁止示例                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------- |
+| E-01 | 异常使用 `Exception` 后缀。                                                                                              | `LinuxOperationException`                  | `LinuxOperationError`                  |
+| E-02 | 名称必须说明失败边界。                                                                                                   | `SecretStoreException`                     | `OperationException`                   |
+| E-03 | 公共异常不得直接以底层实现细节命名。                                                                                     | `LinuxOperationException`                  | `SshChannelException`                  |
+| E-04 | 安全异常名称不得包含秘密内容。                                                                                           | `SecretStoreException`                     | `InvalidPasswordValueException`        |
+| E-05 | 1.1 受控失败以公开实例方法 `Problem problem()` 暴露安全原因；未迁移代码保留 `FailureCarrier`。本地化消息与安全诊断分离。 | `ApiException`、`BrowserRecoveryException` | 原始 `exception.getMessage()` 用户回退 |
+| E-06 | 异常使用 `[FailureBoundary]Exception`，名称说明模块内失败边界。                                                          | `SourceArchiveException`                   | `SourceError`、`OperationException`    |
+| E-07 | 模块错误枚举使用 `[Boundary]FailureType`。                                                                               | `LinuxOperationFailureType`                | `LinuxError`、`FailureKind`            |
+| E-08 | 只有重复的确定性转换逻辑才建立 `[BoundaryOrTechnology]FailureMapper`。                                                   | `SqliteFailureMapper`                      | 单次使用的通用 `ErrorManager`          |
+| E-09 | 恢复判断使用 `[Operation]FailureRecoveryPolicy` 与 `[Operation]FailureRecoveryDecision`。                                | `DeploymentFailureRecoveryPolicy`          | `RecoveryProcessor`                    |
+| E-10 | 业务类型不得使用 `Error`、`Manager`、`Processor` 等泛化错误治理名称。                                                    | `DesktopFailurePresenter`                  | `ErrorManager`、`FailureProcessor`     |
+
+任务持久化的 `TaskLedger.DependencyBusyException` 与私有 `PlatformTaskRuntime.AdmissionRejectedException` 是两个明确的 SQL 回滚信号，均在任务宿主内转换为公开失败；它们不实现旧共享契约，也不是允许其他异常省略结构化原因的通用例外。架构检查按真实返回类型检查公开、非静态、无参数的 `problem()`，保留异常命名要求及旧错误枚举登记检查。
 
 | 枚举性质   | 统一后缀      | 示例                         |
 | ---------- | ------------- | ---------------------------- |

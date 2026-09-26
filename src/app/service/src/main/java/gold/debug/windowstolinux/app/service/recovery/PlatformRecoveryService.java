@@ -7,6 +7,9 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySession;
+import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult;
+import gold.debug.windowstolinux.app.linux.recovery.RecoveryTarget;
 import gold.debug.windowstolinux.app.service.ai.PlatformAiService;
 import gold.debug.windowstolinux.app.service.contract.SshRecoverySession;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
@@ -215,7 +218,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
         /** Original physical owner retained across failed cleanup. / 跨失败清理保留的原物理所有者。 */
         private volatile TaskBrowserSession browser;
 
-        /** Original platform evidence, separate from legacy display conversion. / 原平台证据，独立于旧显示转换。 */
+        /** Original platform evidence retained during setup or journal failure. / 准备或日志失败期间保留的原平台证据。 */
         private volatile Problem failure;
 
         /** Last non-secret command hash for durable submission events. / 持久提交事件所用最后非秘密命令摘要。 */
@@ -238,9 +241,10 @@ public final class PlatformRecoveryService implements AutoCloseable {
                     PlatformTaskAdmission.PLATFORM_OWNER, version, security::observeLock);
             try {
                 controller = new BrowserRecoverySession(browser, new PlatformRecoveryModels(ai, task),
-                        () -> probe(task), snapshot -> journal(task, profile, snapshot), profile, task);
+                        () -> probe(task), snapshot -> journal(task, profile, snapshot),
+                        new RecoveryTarget(profile.id(), profile.host(), profile.sshPort()), task);
                 controller.run();
-                var result = controller.snapshot();
+                var result = RecoverySnapshot.from(controller.snapshot());
                 Outcome outcome = result.resultUnknown() ? Outcome.UNKNOWN : switch (result.state()) {
                     case RECOVERED -> Outcome.SUCCEEDED;
                     case CANCELLED -> Outcome.CANCELLED;
@@ -254,8 +258,8 @@ public final class PlatformRecoveryService implements AutoCloseable {
                                 : outcome == Outcome.CANCELLED
                                         ? problem(ProblemCode.CANCELLED, "RESCUE_CANCELLED",
                                                 "The original rescue was cancelled")
-                                        : controller.platformProblem().isPresent()
-                                                ? controller.platformProblem().orElseThrow()
+                                        : result.failure().isPresent()
+                                                ? result.failure().orElseThrow()
                                                 : failure != null
                                                         ? failure
                                                         : problem(ProblemCode.IO_FAILURE,
@@ -293,7 +297,8 @@ public final class PlatformRecoveryService implements AutoCloseable {
          * @param task original task / 原任务
          * @param profile admitted saved profile / 准入已保存配置
          * @param snapshot transient controller state / 临时控制器状态 */
-        private void journal(TaskContext task, ServerProfile profile, RecoverySnapshot snapshot) {
+        private void journal(TaskContext task, ServerProfile profile,
+                gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot snapshot) {
             try {
                 if (snapshot.action().isPresent())
                     digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -304,7 +309,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
             } catch (Exception problem) {
                 failure = problem(ProblemCode.IO_FAILURE, "RESCUE_JOURNAL",
                         "The original rescue journal could not be committed");
-                throw new IllegalStateException("Rescue metadata commit failed", problem);
+                throw new IllegalStateException("Rescue metadata commit failed", new ApiException(failure));
             }
         }
 
@@ -314,7 +319,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
         public RecoverySnapshot snapshot() {
             return security.whileUnlocked(() -> {
                 if (controller != null)
-                    return controller.snapshot();
+                    return RecoverySnapshot.from(controller.snapshot());
                 var task = handle.snapshot();
                 var ended = task.state() == TaskState.ENDED || task.state() == TaskState.UNKNOWN;
                 var cancelled = task.outcome().equals(Optional.of(Outcome.CANCELLED));
@@ -331,7 +336,9 @@ public final class PlatformRecoveryService implements AutoCloseable {
          * @return selected-session candidates / 所选会话候选 */
         @Override
         public List<RecoveryTerminal> terminals() {
-            return interactive(() -> controller == null ? List.of() : controller.terminals());
+            return interactive(() -> controller == null
+                    ? List.of()
+                    : controller.terminals().stream().map(RecoveryTerminal::from).toList());
         }
 
         /** Confirms the original target and observation consent. / 确认原目标及观察同意。

@@ -1,6 +1,6 @@
-package gold.debug.windowstolinux.app.service.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
-import static gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot.State.*;
+import static gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot.State.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -12,19 +12,12 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
 
 import gold.debug.windowstolinux.app.ai.recovery.RecoveryAction;
-import gold.debug.windowstolinux.app.linux.recovery.*;
-import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
-import gold.debug.windowstolinux.app.service.contract.SshRecoverySession;
-import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
-import gold.debug.windowstolinux.app.service.failure.*;
-import gold.debug.windowstolinux.app.service.recovery.BrowserRecoveryFailureType;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.shared.model.failure.*;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /**
- * Serial service state machine with revocable exact-action approval. / 带可撤销精确动作确认的串行服务状态机。
+ * Serial Linux rescue state machine with revocable exact-action approval. / 带可撤销精确动作确认的串行 Linux 救援状态机。
  */
-public final class BrowserRecoverySession implements SshRecoverySession, Runnable {
+public final class BrowserRecoverySession implements AutoCloseable, Runnable {
     /**
      * Current lifecycle or workflow state.
      * <p>当前生命周期或工作流状态。
@@ -62,7 +55,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * Server identity or selected server configuration.
      * <p>服务器身份或所选服务器配置。
      */
-    private final ServerProfile server;
+    private final RecoveryTarget server;
 
     /**
      * Lock.
@@ -118,15 +111,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      */
     private volatile Thread runner;
 
-    /** Original platform evidence retained separately from the transitional legacy display. / 独立于过渡旧显示保留的原平台证据。 */
-    private volatile gold.debug.windowstolinux.appapi.task.Problem platformProblem;
-
-    /** Returns original platform evidence for central task completion. / 返回中央任务完成所用原平台证据。
-     * @return original structured problem, when present / 存在时的原结构化问题 */
-    Optional<gold.debug.windowstolinux.appapi.task.Problem> platformProblem() {
-        return Optional.ofNullable(platformProblem);
-    }
-
     /**
      * Initializes browser recovery session through its shared constructor contract.
      * <p>通过共享构造契约初始化浏览器恢复会话。
@@ -138,8 +122,9 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
      * @param lock lock / 锁
      */
-    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
-            Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock) {
+    public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
+            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            ReentrantLock lock) {
         this(browser, ai, probe, journal, server, lock, System::nanoTime);
     }
 
@@ -155,8 +140,9 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param lock lock / 锁
      * @param clock clock / 时钟
      */
-    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
-            Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock, LongSupplier clock) {
+    public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
+            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            ReentrantLock lock, LongSupplier clock) {
         this(browser, ai, probe, journal, server, lock, clock, UUID.randomUUID(), null);
     }
 
@@ -167,8 +153,8 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param journal original-task metadata journal / 原任务元数据记录
      * @param server admitted server / 准入服务器
      * @param task original central context / 原中央上下文 */
-    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
-            Consumer<RecoverySnapshot> journal, ServerProfile server,
+    public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
+            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
             gold.debug.windowstolinux.appapi.task.TaskContext task) {
         this(browser, ai, probe, journal, server, new ReentrantLock(), System::nanoTime, task.id(),
                 task.cancellation());
@@ -185,7 +171,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param id original session identity / 原会话身份
      * @param cancellation optional central cancellation / 可选中央取消 */
     private BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, ServerProfile server,
+            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
             ReentrantLock lock, LongSupplier clock, UUID id,
             gold.debug.windowstolinux.appapi.task.CancellationToken cancellation) {
         state = new RecoverySessionState(id);
@@ -207,7 +193,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      *
      * @return immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
      */
-    @Override
     public RecoverySnapshot snapshot() {
         return snapshot;
     }
@@ -218,14 +203,8 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      *
      * @return terminals / 终端集合
      */
-    @Override
-    public List<gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal> terminals() {
-        if (!handoff || snapshot.ended())
-            return List.of();
-        return browser.targets().stream().map(
-                target -> new gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal(target.id(),
-                        target.description()))
-                .toList();
+    public List<TerminalTarget> terminals() {
+        return !handoff || snapshot.ended() ? List.of() : browser.targets();
     }
 
     /**
@@ -238,7 +217,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param reconciled reconciled / 已核对
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    @Override
     public void bindTerminal(String target, String serverId, boolean consent, boolean reconciled) {
         if (!server.id().equals(serverId) || !consent)
             throw new IllegalArgumentException("terminal-consent-required");
@@ -263,7 +241,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param token token / 令牌
      * @param impact impact / 影响
      */
-    @Override
     public void confirmAction(String token, boolean impact) {
         long epoch = authorization.get();
         enqueue(() -> {
@@ -278,7 +255,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * Revokes authorization immediately and queues browser invalidation followed by the paused state.
      * <p>立即撤销授权，并将浏览器失效及转入暂停状态加入队列。
      */
-    @Override
     public void pause() {
         handoff = true;
         authorization.incrementAndGet();
@@ -294,7 +270,6 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * Revokes prior authorization and queues a fresh browser handoff with reset decision and active-time budgets.
      * <p>撤销此前授权，并将新的浏览器交接加入队列，同时重置决策及活跃时间预算。
      */
-    @Override
     public void resume() {
         handoff = true;
         authorization.incrementAndGet();
@@ -389,10 +364,10 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
                 change(CANCELLED, state.unknown ? "resultUnknown" : "cancelled");
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            recordFailure(failure, ApplicationServiceFailureType.RECOVERY_INTERRUPTED);
+            recordFailure(failure, ProblemCode.CANCELLED, "RESCUE_INTERRUPTED");
             change(CANCELLED, "cancelled");
         } catch (Exception failure) {
-            recordFailure(failure, BrowserRecoveryFailureType.OPERATION_FAILED);
+            recordFailure(failure, ProblemCode.IO_FAILURE, "linux.browser.operation-failed");
             change(Thread.currentThread().isInterrupted() ? CANCELLED : FAILED,
                     state.unknown ? "resultUnknown" : "browserUnavailable");
         } finally {
@@ -402,7 +377,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             try {
                 browser.close();
             } catch (RuntimeException failure) {
-                recordFailure(failure, BrowserRecoveryFailureType.CLEANUP_FAILED);
+                recordFailure(failure, ProblemCode.UNKNOWN, "linux.browser.cleanup-failed");
                 change(FAILED, "cleanupIncomplete");
             } finally {
                 if (acquired)
@@ -516,7 +491,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
                     .formatHex(MessageDigest.getInstance("SHA-256").digest(line.getBytes(StandardCharsets.UTF_8)));
             change(AWAITING_CONFIRMATION, "confirm");
         } catch (Exception failure) {
-            recordFailure(failure, ApplicationServiceFailureType.RECOVERY_OBSERVATION_FAILED);
+            recordFailure(failure, ProblemCode.IO_FAILURE, "RESCUE_OBSERVATION_FAILED");
             interrupt("observationFailed");
         }
     }
@@ -548,7 +523,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             browser.submit(state.generation, command);
             checkSsh();
         } catch (RuntimeException failure) {
-            recordFailure(failure, BrowserRecoveryFailureType.OPERATION_FAILED);
+            recordFailure(failure, ProblemCode.IO_FAILURE, "linux.browser.operation-failed");
             interrupt("resultUnknown");
         }
     }
@@ -571,7 +546,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
                             line -> line.matches(java.util.regex.Pattern.quote(state.marker) + ":[0-9]{1,3}")))
                         state.unknown = false;
                 } catch (RuntimeException failure) {
-                    recordFailure(failure, BrowserRecoveryFailureType.OBSERVATION_FAILED);
+                    recordFailure(failure, ProblemCode.IO_FAILURE, "linux.browser.observation-failed");
                     // Missing completion evidence remains unknown and must not be replayed. / 缺少完成证据仍为未知，不得重放。
                 }
             }
@@ -646,8 +621,8 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
     }
 
     /**
-     * Publishes a transient snapshot and records only the journal's approved metadata. Journal failure ends the session with a persistence-owned descriptor and never recursively retries the failed journal write.
-     * <p>发布临时快照并仅记录日志契约批准的元数据。日志失败以持久化模块持有的描述结束会话，绝不递归重试已失败的日志写入。
+     * Publishes a transient snapshot and records only the journal's approved metadata. Journal failure ends the session with a structured Problem and never recursively retries the failed journal write.
+     * <p>发布临时快照并仅记录日志契约批准的元数据。日志失败以结构化 Problem结束会话，绝不递归重试已失败的日志写入。
      *
      * @param code stable machine-readable classification code / 稳定的机器可读分类码
      * @return whether the required journal write succeeded / 必需日志写入是否成功
@@ -659,8 +634,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             journal.accept(snapshot);
             return true;
         } catch (RuntimeException failure) {
-            recordFailure(failure,
-                    gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.RECOVERY_JOURNAL_FAILED);
+            recordFailure(failure, ProblemCode.IO_FAILURE, "RESCUE_JOURNAL");
             handoff = true;
             authorization.incrementAndGet();
             state.revoke();
@@ -671,33 +645,23 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         }
     }
 
-    /**
-     * Retains an existing structured cause unchanged; otherwise creates a bounded module-owned descriptor without copying exception text or terminal contents.
-     * <p>原样保留既有结构化原因；否则创建有界的模块自有描述，不复制异常文本或终端内容。
-     *
-     * @param exception original exception being classified or translated / 正在分类或转换的原始异常
-     * @param fallback fallback / 回退
-     */
-    private void recordFailure(Throwable exception, FailureDefinition fallback) {
+    /** Retains the original public Problem; fallback evidence never copies exception or terminal text. / 保留原公开 Problem；后备证据绝不复制异常或终端原文。
+     * @param exception original cause / 原原因
+     * @param code safe fallback category / 安全后备类别
+     * @param event safe fallback event / 安全后备事件 */
+    private void recordFailure(Throwable exception, ProblemCode code, String event) {
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
-            if (cause instanceof gold.debug.windowstolinux.appapi.task.ApiException api) {
-                platformProblem = api.problem();
-                state.failure = RecoveryProbeResult.failed(api.problem()).failure().orElseThrow();
+            if (cause instanceof ApiException api) {
+                state.failure = api.problem();
                 return;
             }
-            if (cause instanceof gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException browser) {
-                state.failure = FailureDescriptor.create(BrowserRecoveryFailureType.valueOf(browser.reason().name()),
-                        OperationIdentity.from(browser.problem().diagnosticId().orElseThrow().toString()),
-                        browser.problem().message());
-                return;
-            }
-            if (cause instanceof FailureCarrier carrier) {
-                state.failure = carrier.failure();
+            if (cause instanceof BrowserRecoveryException browserFailure) {
+                state.failure = browserFailure.problem();
                 return;
             }
         }
-        state.failure = FailureDescriptor.create(fallback, OperationIdentity.from(state.id),
-                "Recovery stage failed without verified completion");
+        state.failure = new Problem(code, event, "Recovery stage failed without verified completion", Map.of(),
+                Optional.of(UUID.fromString(state.id)));
     }
 }
