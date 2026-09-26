@@ -1614,6 +1614,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/PlatformPersistence.java`：在受保护 H2 引擎上装配平台所属配置仓库。
 - `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
+- `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
 - `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
@@ -1635,7 +1636,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
-- `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，并保留部分停止归属直至实际清理。
+- `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
 - `app/mod/manifest/ManifestReader.java`：严格读取有界 UTF-8 作者清单，不加载作者类。

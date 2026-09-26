@@ -79,6 +79,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Complete or partially prepared Mod contexts whose cleanup is still owned. / 仍持有清理责任的完整或部分已准备 Mod 上下文。 */
     private final java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts = new java.util.LinkedHashMap<>();
 
+    /** Original loaders and lifecycle journals retained beyond physical context closure. / 超出物理上下文关闭阶段仍保留的原加载器及生命周期记录器。 */
+    private final java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions = new java.util.LinkedHashMap<>();
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -177,7 +180,7 @@ public final class PlatformRuntime implements AutoCloseable {
             if (stopping || closed || prompts == null || sourcePicker == null)
                 throw new IllegalStateException("Install desktop presenters before preparing Mod capabilities");
             String owner = loader.manifest().id();
-            if (modContexts.containsKey(owner))
+            if (modContexts.containsKey(owner) || modSessions.containsKey(owner))
                 throw new IllegalStateException("This Mod still owns an activation context");
             prepared = new gold.debug.windowstolinux.app.main.mod.PlatformModContext(this, loader, schema, mode, pages,
                     () -> forgetModContext(owner));
@@ -200,6 +203,46 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return exact original context ownership / 精确原上下文归属 */
     public synchronized java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts() {
         return java.util.Map.copyOf(modContexts);
+    }
+
+    /** Creates one real session whose durable lifecycle must finish before platform shutdown. / 创建一个真实会话，其持久生命周期必须在平台关闭前完成。
+     * @param loader actual prepared code owner / 实际已准备代码所有者
+     * @param schema selected data generation / 选定数据代次
+     * @param mode normal or recovery mode / 普通或恢复模式
+     * @param pages actual page registry / 实际页面登记
+     * @param platformApi actual host API release / 实际宿主 API 版本
+     * @return retained original lifecycle session / 保留的原生命周期会话
+     * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
+    public gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession modSession(
+            gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
+            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+            gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages,
+            gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception {
+        Objects.requireNonNull(platformApi);
+        synchronized (this) {
+            if (modSessions.containsKey(loader.manifest().id()))
+                throw new IllegalStateException("Original Mod lifecycle acknowledgement is still pending");
+        }
+        var context = modContext(loader, schema, mode, pages);
+        var session = new gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession(loader, context, platformApi,
+                context.journal(() -> forgetModSession(loader.manifest().id())));
+        synchronized (this) {
+            modSessions.put(loader.manifest().id(), session);
+        }
+        return session;
+    }
+
+    /** Exposes original sessions for host cleanup retries without replaying author startup. / 向宿主清理重试提供原会话，不重放作者启动。
+     * @return retained session identities / 保留会话身份 */
+    public synchronized java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions() {
+        return java.util.Map.copyOf(modSessions);
+    }
+
+    /** Releases host session bookkeeping after physical and durable cleanup. / 在物理及持久清理后释放宿主会话登记。
+     * @param owner original owner ID / 原所有者 ID */
+    private synchronized void forgetModSession(String owner) {
+        modSessions.remove(owner);
     }
 
     /** Removes a context only after its own physical cleanup succeeded. / 仅在上下文本身物理清理成功后移除。
@@ -556,7 +599,7 @@ public final class PlatformRuntime implements AutoCloseable {
         boolean wasSealed = tasks.seal(true);
         if (!stopping) {
             try {
-                if (!modContexts.isEmpty())
+                if (!modContexts.isEmpty() || !modSessions.isEmpty())
                     throw new SQLException(
                             "Mod sessions and their original contexts must close before platform shutdown");
                 if (!new TaskLedger(persistence.database()).unfinished().isEmpty())

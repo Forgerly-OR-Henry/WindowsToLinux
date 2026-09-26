@@ -240,7 +240,8 @@ class ModLifecycleIntegrationTest {
                     var database = new TaskModDatabase(db, tasks, identity);
                     var session = new ModRuntimeSession(loader,
                             lease(context(scope, authorTasks, database, ModLaunchMode.NORMAL), tasks, scope),
-                            SemanticVersion.parse("1.0.0-dev.1"));
+                            SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                            });
                     assertThrows(ApiException.class, () -> authorTasks.submit(
                             new TaskRequest("prestart", "Denied", List.of(), true),
                             task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
@@ -299,7 +300,8 @@ class ModLifecycleIntegrationTest {
                 var context = context(scope, tasks.bind(identity.ownerId(), "1.0.0", false),
                         new TaskModDatabase(db, tasks, identity), ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                        SemanticVersion.parse("1.0.0-dev.1"));
+                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                        });
                 session.start();
                 scope.open("main");
                 signal(entry, "release").countDown();
@@ -339,7 +341,8 @@ class ModLifecycleIntegrationTest {
                 var context = context(scope, authorTasks, new TaskModDatabase(db, tasks, identity),
                         ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                        SemanticVersion.parse("1.0.0-dev.1"));
+                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                        });
                 assertThrows(IllegalStateException.class, session::start);
                 assertTrue(pages.contributions().isEmpty());
                 assertTrue(tasks.snapshots().isEmpty());
@@ -386,7 +389,8 @@ class ModLifecycleIntegrationTest {
             var session = new ModRuntimeSession(loader,
                     lease(context(scope, authorTasks, new TaskModDatabase(db, tasks, identity), ModLaunchMode.RECOVERY),
                             tasks, scope),
-                    SemanticVersion.parse("1.0.0-dev.1"));
+                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                    });
             session.start();
             assertTrue(pages.contributions().isEmpty());
             assertThrows(ApiException.class, () -> scope.open("main"));
