@@ -1624,6 +1624,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
+- `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
 - `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
@@ -1651,6 +1652,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
 - `app/service/contract/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
 - `app/service/server/PlatformServerService.java`：平台服务器配置、受引用保护的删除及原身份 SSH 认证检查/中断收尾。
+- `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/核对及未完成释放重试。
 - `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
 - `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
 - `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
