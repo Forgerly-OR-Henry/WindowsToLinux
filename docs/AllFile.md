@@ -1641,6 +1641,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
 - `app/service/mod/PlatformModIntents.java`：审阅并原子保存开关、版本、连带禁用和迁移来源；撤销未执行请求时同事务归档，保留原修订及任务准入范围。
+- `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
 - `app/mod/manifest/ManifestReader.java`：严格读取有界 UTF-8 作者清单，不加载作者类。
