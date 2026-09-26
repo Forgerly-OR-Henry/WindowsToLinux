@@ -39,14 +39,15 @@ class RecoveryModelClientTest {
 
     @Test
     void observationCannotSmuggleActionsAndCommandsNeedStrictSchemas() throws Exception {
-        assertThrows(Exception.class,
-                () -> RecoveryModelClient.parseObservation("{\"observation\":\"ok\",\"command\":\"rm\"}"));
-        assertThrows(Exception.class,
-                () -> RecoveryModelClient.parseObservation("{\"observation\":\"a\",\"observation\":\"b\"}"));
-        assertThrows(Exception.class, () -> RecoveryModelClient.parseObservation("{\"observation\":\"ok\"} {}"));
-        assertThrows(Exception.class, () -> RecoveryModelClient
+        assertThrows(Exception.class, () -> gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
+                .parseObservation("{\"observation\":\"ok\",\"command\":\"rm\"}"));
+        assertThrows(Exception.class, () -> gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
+                .parseObservation("{\"observation\":\"a\",\"observation\":\"b\"}"));
+        assertThrows(Exception.class, () -> gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
+                .parseObservation("{\"observation\":\"ok\"} {}"));
+        assertThrows(Exception.class, () -> gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
                 .parseAction("{\"command\":\"id\\nreboot\",\"reason\":\"x\",\"expected\":\"x\",\"highImpact\":false}"));
-        var action = RecoveryModelClient
+        var action = gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
                 .parseAction("{\"command\":\"reboot\",\"reason\":\"x\",\"expected\":\"restart\",\"highImpact\":false}");
         assertTrue(action.highImpact());
         assertFalse(action.toString().contains("reboot"));

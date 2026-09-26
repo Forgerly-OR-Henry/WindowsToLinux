@@ -44,6 +44,7 @@ WindowsToLinux/
    │  ├─ pom.xml
    │  ├─ ai/
    │  │  ├─ protocol/
+   │  │  ├─ recovery/
    │  │  └─ transport/
    │  ├─ db/
    │  │  ├─ bootstrap/
@@ -261,7 +262,6 @@ WindowsToLinux/
    │  │  ├─ project/
    │  │  │  ├─ application/
    │  │  │  └─ component/
-   │  │  ├─ recovery/
    │  │  ├─ security/
    │  │  ├─ server/
    │  │  │  └─ security/

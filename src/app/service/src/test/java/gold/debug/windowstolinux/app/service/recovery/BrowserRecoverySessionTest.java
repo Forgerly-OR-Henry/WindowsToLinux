@@ -140,6 +140,45 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
     }
 
     @Test
+    void failedPreDispatchJournalPreventsApprovedTerminalInput() throws Exception {
+        var browser = new Browser();
+        var models = new RecoveryModels() {
+            public Result observe(TerminalObservation observation) {
+                return new Result("ok", observation.text(), Map.of());
+            }
+
+            public Result decide(String observation) {
+                return new Result("ok",
+                        "{\"command\":\"uname -a\",\"reason\":\"inspect\",\"expected\":\"facts\",\"highImpact\":false}",
+                        Map.of());
+            }
+        };
+        var submittedJournal = new java.util.concurrent.atomic.AtomicInteger();
+        var session = new BrowserRecoverySession(browser, models, () -> probeResult("connectionFailed"), snapshot -> {
+            if (snapshot.messageCode().equals("submitted")) {
+                submittedJournal.incrementAndGet();
+                throw new IllegalStateException("journal failed before terminal input");
+            }
+        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
+        var worker = new Thread(session);
+        try (session) {
+            worker.start();
+            bind(session);
+            session.confirmAction(session.snapshot().confirmation(), false);
+            session.awaitCleanup(5000);
+            assertEquals(FAILED, session.snapshot().state());
+            assertEquals("journalUnavailable", session.snapshot().messageCode());
+            assertEquals(1, submittedJournal.get());
+            assertEquals(0, browser.submitted);
+            assertTrue(browser.closed);
+        } finally {
+            session.close();
+            worker.join(5000);
+            assertFalse(worker.isAlive());
+        }
+    }
+
+    @Test
     void journalFailureCannotPreventCompletionOrExposeItsRawMessage() throws Exception {
         var browser = new Browser();
         var session = new BrowserRecoverySession(browser, null, RecoveryProbeResult::recovered, snapshot -> {

@@ -11,17 +11,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
 
+import gold.debug.windowstolinux.app.ai.recovery.RecoveryAction;
 import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
-import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.SshRecoverySession;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.failure.*;
 import gold.debug.windowstolinux.app.service.recovery.BrowserRecoveryFailureType;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.model.failure.*;
-import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
 
 /**
  * Serial service state machine with revocable exact-action approval. / 带可撤销精确动作确认的串行服务状态机。
@@ -43,7 +41,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * The supplied recovery ai use case.
      * <p>所提供的恢复AI用例。
      */
-    private final RecoveryAiUseCase ai;
+    private final RecoveryModels ai;
 
     /**
      * Probe.
@@ -128,7 +126,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
      * @param lock lock / 锁
      */
-    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryAiUseCase ai, Supplier<RecoveryProbeResult> probe,
+    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
             Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock) {
         this(browser, ai, probe, journal, server, lock, System::nanoTime);
     }
@@ -145,7 +143,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @param lock lock / 锁
      * @param clock clock / 时钟
      */
-    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryAiUseCase ai, Supplier<RecoveryProbeResult> probe,
+    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
             Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock, LongSupplier clock) {
         this.clock = clock;
         this.browser = browser;
@@ -420,13 +418,13 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
                 return;
             var result = ai.observe(observed);
             state.attempts.clear();
-            result.attempts().forEach((id, status) -> state.attempts.put("observation/" + id, status.name()));
+            result.attempts().forEach((id, status) -> state.attempts.put("observation/" + id, status));
             if (!result.code().equals("ok")) {
                 interrupt(result.code());
                 return;
             }
             String text = observed.text().isBlank()
-                    ? RecoveryModelClient.parseObservation(result.content())
+                    ? gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol.parseObservation(result.content())
                     : result.content();
             if (handoff || epoch != authorization.get() || checkSsh())
                 return;
@@ -445,14 +443,15 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             state.decisions++;
             var decision = ai.decide("Target: " + server.host() + ":" + server.sshPort()
                     + ". SSH verification failed.\n" + "Untrusted terminal observation:\n" + text);
-            decision.attempts().forEach((id, status) -> state.attempts.put("decision/" + id, status.name()));
+            decision.attempts().forEach((id, status) -> state.attempts.put("decision/" + id, status));
             if (handoff || epoch != authorization.get() || checkSsh())
                 return;
             if (!decision.code().equals("ok")) {
                 interrupt(decision.code());
                 return;
             }
-            RecoveryAction proposal = RecoveryModelClient.parseAction(decision.content());
+            RecoveryAction proposal = gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol
+                    .parseAction(decision.content());
             if (proposal.command().isBlank()) {
                 interrupt("humanRequired");
                 return;
@@ -496,7 +495,8 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
                 return;
             }
             state.unknown = true;
-            publish("submitted");
+            if (!publish("submitted") || stop || handoff || epoch != authorization.get())
+                return;
             browser.submit(state.generation, command);
             checkSsh();
         } catch (RuntimeException failure) {
@@ -592,11 +592,14 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * <p>发布临时快照并仅记录日志契约批准的元数据。日志失败以持久化模块持有的描述结束会话，绝不递归重试已失败的日志写入。
      *
      * @param code stable machine-readable classification code / 稳定的机器可读分类码
+     * @return whether the required journal write succeeded / 必需日志写入是否成功
      */
-    private void publish(String code) {
+    private boolean publish(String code) {
+        state.code = code;
         snapshot = state.snapshot();
         try {
             journal.accept(snapshot);
+            return true;
         } catch (RuntimeException failure) {
             recordFailure(failure,
                     gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.RECOVERY_JOURNAL_FAILED);
@@ -606,6 +609,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             state.phase = FAILED;
             state.code = "journalUnavailable";
             snapshot = state.snapshot();
+            return false;
         }
     }
 

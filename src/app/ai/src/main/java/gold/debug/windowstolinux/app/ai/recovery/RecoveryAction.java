@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.model.recovery;
+package gold.debug.windowstolinux.app.ai.recovery;
 
 import java.util.Objects;
 

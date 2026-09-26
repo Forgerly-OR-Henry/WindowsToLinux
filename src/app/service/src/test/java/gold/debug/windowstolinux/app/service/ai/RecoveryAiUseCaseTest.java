@@ -81,7 +81,9 @@ class RecoveryAiUseCaseTest extends SecurityTestFixture {
             var observed = ai.observe(
                     new gold.debug.windowstolinux.app.linux.recovery.TerminalObservation("", new byte[]{1}, 1));
             assertEquals("ok", observed.code());
-            assertEquals("ok", ai.decide(RecoveryModelClient.parseObservation(observed.content())).code());
+            assertEquals("ok", ai.decide(
+                    gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol.parseObservation(observed.content()))
+                    .code());
             assertEquals(List.of("vision/true", "deployment/false"), calls);
             calls.clear();
             assertEquals("text shell", ai.observe(

@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.service.recovery;
 
 import java.util.*;
 
+import gold.debug.windowstolinux.app.ai.recovery.RecoveryAction;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
-import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
 
 /**
  * Worker-owned state; snapshots contain no raw terminal evidence. / 工作线程持有状态，快照不含原始终端证据。
@@ -111,8 +111,11 @@ final class RecoverySessionState {
      * @return recovery snapshot from the supplied snapshot inputs / 根据所提供快照输入构建恢复快照
      */
     RecoverySnapshot snapshot() {
-        return new RecoverySnapshot(id, phase, code, Optional.ofNullable(action), token, unknown, decisions, attempts,
-                Optional.ofNullable(failure));
+        return new RecoverySnapshot(id, phase, code,
+                Optional.ofNullable(action)
+                        .map(value -> new RecoverySnapshot.Action(value.command(), value.reason(), value.expected(),
+                                value.highImpact())),
+                token, unknown, decisions, attempts, Optional.ofNullable(failure));
     }
 
     /**
