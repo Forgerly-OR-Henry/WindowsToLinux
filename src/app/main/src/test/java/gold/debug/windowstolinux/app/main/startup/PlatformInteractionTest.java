@@ -37,6 +37,17 @@ class PlatformInteractionTest {
             return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.TERMINATE;
         }
 
+        public gold.debug.windowstolinux.appapi.linux.TransferStallChoice transferStalled(
+                gold.debug.windowstolinux.appapi.linux.TransferStall stall,
+                gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation) {
+            return gold.debug.windowstolinux.appapi.linux.TransferStallChoice.TERMINATE;
+        }
+
+        public String transferProgress(gold.debug.windowstolinux.appapi.linux.TransferProgress progress) {
+            return progress.stage().name();
+        }
+
         public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
             return true;
         }

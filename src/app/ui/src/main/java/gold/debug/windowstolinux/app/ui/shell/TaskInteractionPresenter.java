@@ -66,6 +66,60 @@ public final class TaskInteractionPresenter
         });
     }
 
+    /** Presents original-transfer retry and explicit termination after physical shutdown. / 物理停止后呈现原传输重试及明确终止。
+     * @param stall last effective progress and original paths / 最后有效进展及原路径
+     * @param server original admitted server / 原准入服务器
+     * @param task original task identity / 原任务身份
+     * @param cancellation cooperative cancellation / 协作取消
+     * @return explicit retry or termination / 明确重试或终止 */
+    @Override
+    public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            CancellationToken cancellation) {
+        return onEdt(() -> {
+            var description = new JTextArea(messages.text("transfer.stall.explanation") + "\n\n"
+                    + messages.text("task.review.servers") + ": " + server.id() + "\n" + messages.text("transfer.local")
+                    + ": " + stall.request().localPath() + "\n" + messages.text("transfer.remote") + ": "
+                    + stall.request().remoteAbsolutePath() + "\n" + messages.text("transfer.direction") + ": "
+                    + messages.text(stall.upload() ? "transfer.upload" : "transfer.download") + "\n"
+                    + messages.text("transfer.stall.seconds") + ": " + stall.idleTimeout().toSeconds() + "\n"
+                    + transferProgress(stall.progress()));
+            description.setEditable(false);
+            description.setLineWrap(true);
+            description.setWrapStyleWord(true);
+            description.setName("transfer.stall.details");
+            var scroll = new JScrollPane(description);
+            scroll.setPreferredSize(new Dimension(680, 300));
+            String[] options = {messages.text("transfer.retry"), messages.text("transfer.terminate")};
+            var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll},
+                    JOptionPane.QUESTION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[1]);
+            return options[0].equals(show(pane, messages.text("transfer.stall.title"), cancellation))
+                    ? TransferStallChoice.RETRY
+                    : TransferStallChoice.TERMINATE;
+        });
+    }
+
+    /** Formats verification and transfer as separate byte-based stages. / 将核验及传输格式化为独立字节阶段。
+     * @param progress actual physical observation / 实际物理观测
+     * @return localized stage with known extent if available / 本地化阶段，带可用的已知范围 */
+    @Override
+    public String transferProgress(TransferProgress progress) {
+        String key = switch (progress.stage()) {
+            case PREPARING -> "preparing";
+            case VERIFYING_SOURCE -> "source";
+            case VERIFYING_TARGET -> "target";
+            case VERIFYING_PREFIX -> "prefix";
+            case TRANSFERRING -> "copy";
+            case VERIFYING_STAGING -> "staging";
+            case PUBLISHING -> "publishing";
+            case VERIFYING_RESULT -> "result";
+            case CLEANING -> "cleaning";
+        };
+        return messages.text("transfer.stage." + key) + (progress.totalBytes() < 0
+                ? ""
+                : " — " + progress.completedBytes() + " / " + progress.totalBytes() + " "
+                        + messages.text("transfer.bytes"));
+    }
+
     /** Confirms a local directory in the platform-owned cancellable modal window. / 在平台所属可取消模态窗口确认本地目录。
      * @param title author-supplied title / 作者提供标题
      * @param task original task identity / 原任务身份

@@ -56,13 +56,15 @@ class SftpPublicationTest {
                     return TransferConflictChoice.OVERWRITE;
                 };
                 var uploaded = connection.transfer(new TransferRequest(source, "/file.bin", bytes.length),
-                        digest(bytes), true, Duration.ofSeconds(5), () -> false, overwrite, journal());
+                        digest(bytes), true, Duration.ofSeconds(5), () -> false, progress -> {
+                        }, overwrite, journal());
                 assertEquals(Outcome.SUCCEEDED, uploaded.outcome(), uploaded.toString());
                 assertTrue(writes.get() > 1);
                 assertArrayEquals(bytes, Files.readAllBytes(oldRemote));
                 downloading.set(true);
                 var downloaded = connection.transfer(new TransferRequest(oldLocal, "/file.bin", bytes.length),
-                        digest(bytes), false, Duration.ofSeconds(5), () -> false, overwrite, journal());
+                        digest(bytes), false, Duration.ofSeconds(5), () -> false, progress -> {
+                        }, overwrite, journal());
                 assertEquals(Outcome.SUCCEEDED, downloaded.outcome(), downloaded.toString());
                 assertArrayEquals(bytes, Files.readAllBytes(oldLocal));
                 assertEquals(2, asks.get());
@@ -87,7 +89,8 @@ class SftpPublicationTest {
             Files.writeString(fixture.remote.resolve("file.txt"), "old");
             Files.createDirectory(fixture.remote.resolve("file (1).txt"));
             var result = connection.transfer(new TransferRequest(source, "/file.txt", 3), digest("new".getBytes()),
-                    true, Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.KEEP_BOTH, journal());
+                    true, Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.KEEP_BOTH, journal());
             assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
             assertEquals("/file (2).txt", result.value().orElseThrow().remoteAbsolutePath());
             assertEquals("old", Files.readString(fixture.remote.resolve("file.txt")));
@@ -95,13 +98,14 @@ class SftpPublicationTest {
             Files.writeString(target, "preserved");
             Files.createDirectory(root.resolve("file (1).txt"));
             var received = connection.transfer(new TransferRequest(target, "/file (2).txt", 3),
-                    digest("new".getBytes()), false, Duration.ofSeconds(5), () -> false,
-                    conflict -> TransferConflictChoice.KEEP_BOTH, journal());
+                    digest("new".getBytes()), false, Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.KEEP_BOTH, journal());
             assertEquals(Outcome.SUCCEEDED, received.outcome(), received.toString());
             assertEquals(root.resolve("file (2).txt"), received.value().orElseThrow().localPath());
             assertEquals("preserved", Files.readString(target));
             var stopped = connection.transfer(new TransferRequest(target, "/file (2).txt", 3), digest("new".getBytes()),
-                    false, Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.TERMINATE, journal());
+                    false, Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.TERMINATE, journal());
             assertEquals(Outcome.CANCELLED, stopped.outcome());
             try (var entries = Files.walk(root)) {
                 assertEquals(0,
@@ -130,7 +134,8 @@ class SftpPublicationTest {
             Files.writeString(old, "initial");
             var source = Files.writeString(root.resolve("input"), "new");
             var result = connection.transfer(new TransferRequest(source, "/file", 3), digest("new".getBytes()), true,
-                    Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.OVERWRITE, journal());
+                    Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.OVERWRITE, journal());
             assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
             assertEquals("changed", Files.readString(old));
             assertEquals("new", Files.readString(temporary(fixture.remote)));

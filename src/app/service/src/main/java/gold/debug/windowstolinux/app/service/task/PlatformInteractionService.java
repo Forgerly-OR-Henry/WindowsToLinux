@@ -125,6 +125,47 @@ public final class PlatformInteractionService implements InteractionService, Aut
         }
     }
 
+    /** Presents a stalled transfer only after its physical attempt has stopped. / 仅在物理尝试停止后呈现停滞传输。
+     * @param stall exact observed file stall / 精确已观察停滞
+     * @param server original admitted server / 原准入服务器
+     * @param task original active task / 原活动任务
+     * @return explicit retry choice, or termination after cancellation / 明确重试选择，取消后终止
+     * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
+    public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskContext task)
+            throws ApiException {
+        worker();
+        requireOpen();
+        tasks.requireServer(task, owner, version, server.id());
+        var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
+                "interaction-" + UUID.randomUUID(), owner, false));
+        try {
+            var cancellation = cancellation(task);
+            var choice = security.human(() -> prompts.transferStalled(stall, server,
+                    tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+            requireOpen();
+            tasks.requireServer(task, owner, version, server.id());
+            return Objects.requireNonNull(choice);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            return TransferStallChoice.TERMINATE;
+        } catch (ApiException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw error(ProblemCode.UNAVAILABLE, "TRANSFER_STALL_CHOICE", "Transfer retry choice did not complete");
+        } finally {
+            release(lease);
+        }
+    }
+
+    /** Publishes localized physical transfer progress to the original task. / 向原任务发布本地化物理传输进度。
+     * @param progress actual stage observation / 实际阶段观测
+     * @param task original active task / 原活动任务
+     * @throws ApiException if task publication fails / 任务发布失败时 */
+    public void transferProgress(TransferProgress progress, TaskContext task) throws ApiException {
+        requireOpen();
+        tasks.requireExecuting(task, owner, version);
+        task.progress(prompts.transferProgress(progress), progress.fraction());
+    }
+
     /**
      * Returns text only after the privacy gate accepts the same unlock generation. / 仅在隐私门禁确认同一解锁代次后返回文本。
      * @param title human-readable input title / 可读输入标题
@@ -317,6 +358,20 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @return explicit business choice / 明确业务选择 */
         TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
                 CancellationToken cancellation);
+
+        /** Presents retry or termination after the old transfer physically stops. / 原传输物理停止后呈现重试或终止。
+         * @param stall last effective progress and original request / 最后有效进展及原请求
+         * @param server original server / 原服务器
+         * @param task original task identity / 原任务身份
+         * @param cancellation cooperative prompt cancellation / 协作提示取消
+         * @return explicit user choice / 明确用户选择 */
+        TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation);
+
+        /** Formats a physical stage without accessing window controls. / 不访问窗口控件地格式化物理阶段。
+         * @param progress actual stage and byte counts / 实际阶段及字节数
+         * @return localized task progress / 本地化任务进度 */
+        String transferProgress(TransferProgress progress);
 
         /**
          * Presents the complete effect for explicit review. / 呈现完整副作用供明确审核。

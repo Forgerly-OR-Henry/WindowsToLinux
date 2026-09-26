@@ -145,12 +145,14 @@ class SftpTransferTest {
             byte[] bytes = new byte[200000];
             Path source = Files.write(root.resolve("input"), bytes);
             var request = new TransferRequest(source, "/partial", bytes.length);
-            assertEquals(Outcome.CANCELLED, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
-                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
+            assertEquals(Outcome.CANCELLED, connection
+                    .transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get, progress -> {
+                    }, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             cancelled.set(false);
-            assertEquals(Outcome.UNKNOWN, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
-                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
+            assertEquals(Outcome.UNKNOWN, connection
+                    .transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get, progress -> {
+                    }, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
             assertEquals(1, writes.get());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             assertEquals(16384, Files.size(temporary(fixture.remote)));
@@ -191,11 +193,12 @@ class SftpTransferTest {
                 try {
                     var result = connection.transfer(new TransferRequest(source, "/partial", bytes.length),
                             digest(bytes), true, timeout ? Duration.ofMillis(400) : Duration.ofSeconds(5), () -> false,
-                            conflict -> TransferConflictChoice.TERMINATE, journal());
+                            progress -> {
+                            }, conflict -> TransferConflictChoice.TERMINATE, journal());
                     assertEquals(0, entered.getCount());
                     assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
                     if (timeout)
-                        assertEquals("SFTP_TIMEOUT", result.problem().orElseThrow().eventCode());
+                        assertEquals("SFTP_STALLED", result.problem().orElseThrow().eventCode());
                     assertFalse(Files.exists(fixture.remote.resolve("partial")));
                     assertEquals(16384, Files.size(temporary(fixture.remote)));
                     assertTrue(temporary(fixture.remote).getFileName().toString()
@@ -242,7 +245,8 @@ class SftpTransferTest {
             SshConnector.Connection connection, Path local, String remote, long limit, String digest, boolean upload)
             throws ApiException {
         return connection.transfer(new TransferRequest(local, remote, limit), digest, upload, Duration.ofSeconds(5),
-                () -> false, conflict -> TransferConflictChoice.TERMINATE, journal());
+                () -> false, progress -> {
+                }, conflict -> TransferConflictChoice.TERMINATE, journal());
     }
 
     @Test

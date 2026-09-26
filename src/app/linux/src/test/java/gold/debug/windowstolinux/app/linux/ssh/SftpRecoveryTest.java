@@ -103,8 +103,8 @@ class SftpRecoveryTest {
             try (var connector = new SshConnector();
                     var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
                 var result = connection.transfer(new TransferRequest(local, "/file.bin", bytes.length), digest(bytes),
-                        upload, Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.OVERWRITE,
-                        journal());
+                        upload, Duration.ofSeconds(5), () -> false, progress -> {
+                        }, conflict -> TransferConflictChoice.OVERWRITE, journal());
                 assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
             }
             assertEquals(0, releases.get());
@@ -122,7 +122,8 @@ class SftpRecoveryTest {
             resuming.set(true);
             try (var connector = new SshConnector();
                     var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
-                return connection.recoverTransfer(plan.get(), discard, Duration.ofSeconds(5), () -> false, journal());
+                return connection.recoverTransfer(plan.get(), discard, Duration.ofSeconds(5), () -> false, progress -> {
+                }, journal());
             }
         }
 
@@ -231,17 +232,17 @@ class SftpRecoveryTest {
             };
             try (var connector = new SshConnector();
                     var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
-                assertEquals(Outcome.UNKNOWN,
-                        connection.transfer(new TransferRequest(source, "/file", 3), digest("new".getBytes()), true,
-                                Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.TERMINATE,
-                                journal).outcome());
+                assertEquals(Outcome.UNKNOWN, connection.transfer(new TransferRequest(source, "/file", 3),
+                        digest("new".getBytes()), true, Duration.ofSeconds(5), () -> false, progress -> {
+                        }, conflict -> TransferConflictChoice.TERMINATE, journal).outcome());
             }
             assertEquals(0, releases.get());
             Files.delete(source);
             try (var connector = new SshConnector();
                     var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
                 var recovered = connection.recoverTransfer(plan.get(), false, Duration.ofSeconds(5), () -> false,
-                        journal);
+                        progress -> {
+                        }, journal);
                 assertEquals(Outcome.SUCCEEDED, recovered.outcome(), recovered.toString());
             }
             assertEquals(1, publications.get());
@@ -291,8 +292,8 @@ class SftpRecoveryTest {
                 var local = Files.writeString(directory.resolve("file"), upload ? "new" : "old");
                 var remote = Files.writeString(fixture.remote.resolve("file"), upload ? "old" : "new");
                 var result = connection.transfer(new TransferRequest(local, "/file", 3), digest("new".getBytes()),
-                        upload, Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.OVERWRITE,
-                        original -> {
+                        upload, Duration.ofSeconds(5), () -> false, progress -> {
+                        }, conflict -> TransferConflictChoice.OVERWRITE, original -> {
                             plan.set(original);
                             return journal().prepare(original);
                         });

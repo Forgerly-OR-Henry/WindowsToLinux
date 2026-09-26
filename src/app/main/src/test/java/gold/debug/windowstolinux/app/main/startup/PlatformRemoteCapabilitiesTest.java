@@ -41,6 +41,19 @@ class PlatformRemoteCapabilitiesTest {
         final List<ActionIntent> approved = new CopyOnWriteArrayList<>();
 
         volatile java.util.function.Predicate<ActionIntent> policy = intent -> true;
+
+        java.util.function.Function<TransferStall, TransferStallChoice> stallPolicy = stall -> TransferStallChoice.TERMINATE;
+        public gold.debug.windowstolinux.appapi.linux.TransferStallChoice transferStalled(
+                gold.debug.windowstolinux.appapi.linux.TransferStall stall,
+                gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation) {
+            return stallPolicy.apply(stall);
+        }
+
+        public String transferProgress(gold.debug.windowstolinux.appapi.linux.TransferProgress progress) {
+            return progress.stage().name();
+        }
+
         public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
             approved.add(intent);
             return policy.test(intent);

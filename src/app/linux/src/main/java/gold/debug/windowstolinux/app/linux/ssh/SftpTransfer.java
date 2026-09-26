@@ -30,8 +30,17 @@ final class SftpTransfer {
     /** Whether the destination is remote. / 目标是否在远端。 */
     private final boolean upload;
 
-    /** Original total nanosecond budget. / 原始总纳秒预算。 */
-    private final long budget;
+    /** Allowed interval without effective file-byte progress. / 允许无有效文件字节进展的时长。 */
+    private final long idleNanos;
+
+    /** Thread-safe physical byte progress and human-wait clock. / 线程安全物理字节进度及人工等待计时。 */
+    private final SftpProgress progress;
+
+    /** Host progress publisher observed from the monitoring thread. / 由监控线程调用的宿主进度发布器。 */
+    private final TransferProgressListener listener;
+
+    /** Original session properties restored only after the actual SFTP worker closes. / 仅在实际 SFTP 工作线程关闭后恢复的原会话属性。 */
+    private final Map<String, Object> originalTimeouts = new HashMap<>();
 
     /** Original task cancellation source. / 原任务取消来源。 */
     private final CancellationToken cancellation;
@@ -60,12 +69,6 @@ final class SftpTransfer {
     /** Unique temporary-file owner for this transfer. / 本次传输唯一临时文件所有者。 */
     private final UUID transferId;
 
-    /** Whether the physical worker is waiting for the user's conflict decision. / 物理工作线程是否正在等待用户冲突决定。 */
-    private volatile long humanStarted;
-
-    /** Time spent waiting for conflict decisions. / 等待冲突决定花费的时间。 */
-    private volatile long humanElapsed;
-
     /** Actual worker, retained until it terminates. / 终止前保留的实际工作线程。 */
     private Thread worker;
 
@@ -93,17 +96,18 @@ final class SftpTransfer {
      * @param request exact reviewed file request / 精确已审核文件请求
      * @param digest approved lowercase SHA-256 / 已批准的小写 SHA-256
      * @param upload whether this is an upload / 是否为上传
-     * @param timeout total host operation budget / 宿主操作总预算
+     * @param timeout no-effective-progress interval / 无有效进展时长
      * @param cancellation original task cancellation / 原任务取消
      * @param conflicts host-owned conflict presenter / 宿主所属冲突呈现器
      * @param journal durable original-transfer ownership / 持久原传输归属
+     * @param listener host progress publication / 宿主进度发布
      * @param recovery original plan, or null for a fresh transfer / 原计划，新传输时为 null
      * @param discard whether to discard verified original staging / 是否丢弃经核验原暂存
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
             CancellationToken cancellation, TransferConflictResolver conflicts, TransferJournal journal,
-            TransferPlan recovery, boolean discard) throws ApiException {
+            TransferProgressListener listener, TransferPlan recovery, boolean discard) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
         this.digest = Objects.requireNonNull(digest);
@@ -111,14 +115,16 @@ final class SftpTransfer {
         this.cancellation = Objects.requireNonNull(cancellation);
         this.conflicts = recovery == null ? Objects.requireNonNull(conflicts) : conflicts;
         this.journal = Objects.requireNonNull(journal);
+        this.listener = Objects.requireNonNull(listener);
         this.recovery = recovery;
         this.discard = discard;
         transferId = recovery == null ? UUID.randomUUID() : recovery.id();
+        progress = new SftpProgress(transferId);
         mutation = recovery != null;
         try {
-            budget = timeout.toNanos();
+            idleNanos = timeout.toNanos();
             String path = request.remoteAbsolutePath();
-            if (budget <= 0 || !digest.matches("[0-9a-f]{64}") || !request.localPath().isAbsolute()
+            if (idleNanos <= 0 || !digest.matches("[0-9a-f]{64}") || !request.localPath().isAbsolute()
                     || !request.localPath().normalize().equals(request.localPath()) || path.length() > 4096
                     || !path.startsWith("/") || path.equals("/") || path.indexOf('\\') >= 0
                     || path.codePoints().anyMatch(Character::isISOControl)
@@ -129,7 +135,7 @@ final class SftpTransfer {
                     throw new IllegalArgumentException();
         } catch (RuntimeException failure) {
             throw SshConnector.failure(ProblemCode.INVALID_INPUT, "SFTP_INPUT",
-                    "SFTP request paths, digest or deadline are invalid");
+                    "SFTP request paths, digest or no-progress interval are invalid");
         }
     }
 
@@ -138,29 +144,46 @@ final class SftpTransfer {
      * @return verified completion or explicit uncertainty / 经核验的完成或明确不确定性
      */
     OperationResult<TransferResult> run() {
-        long started = System.nanoTime();
+        long reported = 0;
+        TransferProgress previous = null;
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
             return stopped("SFTP_CANCELLED", ProblemCode.CANCELLED);
+        var providerTimeout = Duration.ofNanos(idleNanos).plusSeconds(5);
+        for (var property : List.of(org.apache.sshd.core.CoreModuleProperties.IDLE_TIMEOUT,
+                org.apache.sshd.sftp.client.impl.AbstractSftpClient.SFTP_CLIENT_CMD_TIMEOUT,
+                org.apache.sshd.sftp.SftpModuleProperties.SFTP_CHANNEL_OPEN_TIMEOUT)) {
+            originalTimeouts.put(property.getName(), session.getProperties().get(property.getName()));
+            property.set(session, providerTimeout);
+        }
         pending = new FutureTask<>(this::perform);
         worker = Thread.ofVirtual().name("platform-sftp-transfer").start(pending);
         while (true) {
             try {
+                var current = progress.snapshot();
+                long now = System.nanoTime();
+                if (!current.equals(previous) && (pending.isDone() || previous == null
+                        || current.stage() != previous.stage() || now - reported >= 200_000_000)) {
+                    listener.progress(current);
+                    previous = current;
+                    reported = now;
+                }
                 if (pending.isDone())
                     return pending.get();
                 if (cancellation.requested() || Thread.currentThread().isInterrupted())
                     return stopped("SFTP_CANCELLED", ProblemCode.CANCELLED);
-                long now = System.nanoTime(), prompt = humanStarted;
-                long remaining = budget - (now - started - humanElapsed - (prompt == 0 ? 0 : now - prompt));
+                long remaining = progress.remaining(idleNanos);
                 if (remaining <= 0)
-                    return stopped("SFTP_TIMEOUT", ProblemCode.TIMEOUT);
-                return pending.get(Math.min(remaining, 50_000_000), TimeUnit.NANOSECONDS);
+                    return stopped("SFTP_STALLED", ProblemCode.TIMEOUT);
+                pending.get(Math.min(remaining, 50_000_000), TimeUnit.NANOSECONDS);
             } catch (TimeoutException retry) {
-                // Recheck the original total budget and cancellation. / 复核原始总预算与取消。
+                // Heartbeats do not enter the file-byte clock. / 心跳不进入文件字节计时。
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 return stopped("SFTP_CANCELLED", ProblemCode.CANCELLED);
             } catch (ExecutionException failure) {
                 return stopped("SFTP_WORKER_FAILED", ProblemCode.IO_FAILURE);
+            } catch (Exception publication) {
+                return stopped("SFTP_PROGRESS_FAILED", ProblemCode.IO_FAILURE);
             }
         }
     }
@@ -196,7 +219,7 @@ final class SftpTransfer {
             sftp = SftpClientFactory.instance().createSftpClient(session);
             phase = "remote-validation";
             verifyRemoteParents();
-            var destination = new SftpDestination(sftp, request, upload, transferId, cancellation);
+            var destination = new SftpDestination(sftp, request, upload, transferId, this::stopRequested, progress);
             SftpClient.CloseableHandle remote;
             long size;
             if (upload) {
@@ -262,12 +285,12 @@ final class SftpTransfer {
             phase = "published-verification";
             if (upload) {
                 try (var published = sftp.open(destination.remote(), SftpClient.OpenMode.Read)) {
-                    if (!digest.equals(hashRemote(published, size)))
+                    if (!digest.equals(hashRemote(published, size, true, TransferProgress.Stage.VERIFYING_RESULT)))
                         throw new IOException("Published remote content changed");
                 }
             } else {
                 local = FileChannel.open(destination.local(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
-                if (!digest.equals(hashLocal(size)))
+                if (!digest.equals(hashLocal(size, true, TransferProgress.Stage.VERIFYING_RESULT)))
                     throw new IOException("Published local content changed");
                 local.close();
             }
@@ -302,7 +325,7 @@ final class SftpTransfer {
         opening = true;
         sftp = SftpClientFactory.instance().createSftpClient(session);
         verifyRemoteParents();
-        var destination = new SftpDestination(sftp, recovery, cancellation);
+        var destination = new SftpDestination(sftp, recovery, this::stopRequested, progress);
         phase = "recovery-staging";
         long extent = stagingSize(destination);
         if (extent < 0 && (discard || destination.isPublished(recovery.source()))) {
@@ -337,7 +360,7 @@ final class SftpTransfer {
                 phase = "recovery-prefix";
                 regularRemote(sftp.stat(staged), extent);
                 verifiedPrefix = hashLocal(extent, false);
-                if (!verifiedPrefix.equals(hashRemote(staged, extent)))
+                if (!verifiedPrefix.equals(hashRemote(staged, extent, true, TransferProgress.Stage.VERIFYING_PREFIX)))
                     throw new IOException("Staging prefix differs from original source");
                 verifyRecoverySource();
                 check();
@@ -376,7 +399,7 @@ final class SftpTransfer {
                 }
                 phase = "recovery-prefix";
                 verifiedPrefix = hashRemote(source, extent, false);
-                if (!hashLocal(extent).equals(verifiedPrefix))
+                if (!hashLocal(extent, true, TransferProgress.Stage.VERIFYING_PREFIX).equals(verifiedPrefix))
                     throw new IOException("Staging prefix differs from original remote source");
                 verifyRecoverySource();
                 if (!stagingIdentity.equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity
@@ -403,6 +426,7 @@ final class SftpTransfer {
         if (discard) {
             phase = "recovery-discard";
             destination.verifyStaged(extent, verifiedPrefix);
+            progress.begin(TransferProgress.Stage.CLEANING, -1, 0);
             if (upload)
                 sftp.remove(destination.remoteTemporary());
             else
@@ -484,13 +508,11 @@ final class SftpTransfer {
      * @return explicit user choice / 明确用户选择
      * @throws Exception if the owned dialog fails / 所属对话框失败时 */
     private TransferConflictChoice choose(TransferConflict conflict) throws Exception {
-        long started = System.nanoTime();
-        humanStarted = started;
+        progress.human(true);
         try {
             return conflicts.resolve(conflict);
         } finally {
-            humanElapsed += System.nanoTime() - started;
-            humanStarted = 0;
+            progress.human(false);
         }
     }
 
@@ -502,6 +524,7 @@ final class SftpTransfer {
      * @throws IOException if the source changes or transport fails / 源变化或传输失败时
      */
     private void copyToRemote(SftpClient.Handle remote, long size, long offset) throws IOException {
+        progress.begin(TransferProgress.Stage.TRANSFERRING, size, offset);
         byte[] buffer = new byte[16384];
         while (offset < size) {
             check();
@@ -510,6 +533,7 @@ final class SftpTransfer {
                 throw new IOException("Source ended early");
             sftp.write(remote, offset, buffer, 0, count);
             offset += count;
+            progress.advance(count);
         }
     }
 
@@ -521,6 +545,7 @@ final class SftpTransfer {
      * @throws IOException if content changes or transport fails / 内容变化或传输失败时
      */
     private void copyToLocal(SftpClient.Handle remote, long size, long offset) throws IOException {
+        progress.begin(TransferProgress.Stage.TRANSFERRING, size, offset);
         byte[] buffer = new byte[32768];
         local.position(offset);
         while (offset < size) {
@@ -534,6 +559,7 @@ final class SftpTransfer {
                 local.write(bytes);
             }
             offset += count;
+            progress.advance(count);
         }
         if (sftp.read(remote, size, buffer, 0, 1) >= 0)
             throw new IOException("Source changed");
@@ -546,7 +572,8 @@ final class SftpTransfer {
      * @throws IOException if the source changes or cannot be read / 源变化或无法读取时
      */
     private String hashLocal(long size) throws IOException {
-        return hashLocal(size, true);
+        return hashLocal(size, true,
+                upload ? TransferProgress.Stage.VERIFYING_SOURCE : TransferProgress.Stage.VERIFYING_STAGING);
     }
 
     /** Hashes a verified prefix or exact local extent. / 对已核验前缀或精确本地区间求摘要。
@@ -555,6 +582,17 @@ final class SftpTransfer {
      * @return content digest / 内容摘要
      * @throws IOException if the extent cannot be read / 无法读取区间时 */
     private String hashLocal(long size, boolean exact) throws IOException {
+        return hashLocal(size, exact, TransferProgress.Stage.VERIFYING_PREFIX);
+    }
+
+    /** Hashes local bytes while reporting the distinct verification stage. / 对本地字节求摘要并报告独立核验阶段。
+     * @param size bytes to verify / 要核验的字节数
+     * @param exact whether EOF must match / 是否须匹配文件末尾
+     * @param stage actual verification purpose / 实际核验用途
+     * @return verified digest / 已核验摘要
+     * @throws IOException if reading or length verification fails / 读取或长度核验失败时 */
+    private String hashLocal(long size, boolean exact, TransferProgress.Stage stage) throws IOException {
+        progress.begin(stage, size, 0);
         MessageDigest hash = sha256();
         ByteBuffer bytes = ByteBuffer.allocate(32768);
         for (long offset = 0; offset < size;) {
@@ -565,6 +603,7 @@ final class SftpTransfer {
                 throw new IOException("Source ended early");
             hash.update(bytes.array(), 0, count);
             offset += count;
+            progress.advance(count);
         }
         if (exact && local.size() != size)
             throw new IOException("File length changed");
@@ -579,7 +618,8 @@ final class SftpTransfer {
      * @throws IOException if verification fails / 核验失败时
      */
     private String hashRemote(SftpClient.Handle remote, long size) throws IOException {
-        return hashRemote(remote, size, true);
+        return hashRemote(remote, size, true,
+                upload ? TransferProgress.Stage.VERIFYING_STAGING : TransferProgress.Stage.VERIFYING_SOURCE);
     }
 
     /** Hashes a verified prefix or exact remote extent. / 对已核验前缀或精确远端区间求摘要。
@@ -589,6 +629,19 @@ final class SftpTransfer {
      * @return content digest / 内容摘要
      * @throws IOException if the extent cannot be read / 无法读取区间时 */
     private String hashRemote(SftpClient.Handle remote, long size, boolean exact) throws IOException {
+        return hashRemote(remote, size, exact, TransferProgress.Stage.VERIFYING_PREFIX);
+    }
+
+    /** Hashes remote bytes while reporting the distinct verification stage. / 对远端字节求摘要并报告独立核验阶段。
+     * @param remote owned file handle / 所属文件句柄
+     * @param size bytes to verify / 要核验的字节数
+     * @param exact whether EOF must match / 是否须匹配文件末尾
+     * @param stage actual verification purpose / 实际核验用途
+     * @return verified digest / 已核验摘要
+     * @throws IOException if reading or length verification fails / 读取或长度核验失败时 */
+    private String hashRemote(SftpClient.Handle remote, long size, boolean exact, TransferProgress.Stage stage)
+            throws IOException {
+        progress.begin(stage, size, 0);
         MessageDigest hash = sha256();
         byte[] bytes = new byte[32768];
         for (long offset = 0; offset < size;) {
@@ -598,6 +651,7 @@ final class SftpTransfer {
                 throw new IOException("Remote file ended early");
             hash.update(bytes, 0, count);
             offset += count;
+            progress.advance(count);
         }
         if (exact && sftp.read(remote, size, bytes, 0, 1) >= 0)
             throw new IOException("Remote file grew");
@@ -727,6 +781,22 @@ final class SftpTransfer {
         return problem(event, code);
     }
 
+    /** Keeps verified completion when the worker finishes during physical shutdown. / 工作线程在物理停止期间完成时保留已核验完成结果。
+     * @param observed monitor result before shutdown / 停止前监控结果
+     * @return verified worker result for a late completion, otherwise the observation / 延迟完成的已核验工作结果，否则原观测 */
+    OperationResult<TransferResult> afterClose(OperationResult<TransferResult> observed) {
+        if (resolved && pending != null && pending.state() == Future.State.SUCCESS
+                && observed.problem().map(problem -> problem.eventCode().equals("SFTP_STALLED")).orElse(false))
+            return pending.resultNow();
+        return observed;
+    }
+
+    /** Exposes the same stop fence to destination verification and local publication. / 向目标核验及本地发布暴露相同停止栅栏。
+     * @return whether this physical attempt must stop / 此物理尝试是否必须停止 */
+    private synchronized boolean stopRequested() {
+        return stopped || cancellation.requested();
+    }
+
     /**
      * Releases actual channels and waits for the worker before closing its local file. / 释放实际通道，并等待工作线程后关闭其本地文件。
      * @return whether every local resource is actually closed / 每个本地资源是否实际关闭
@@ -766,6 +836,13 @@ final class SftpTransfer {
                 fileLease.close();
                 fileLease = null;
             }
+            originalTimeouts.forEach((key, value) -> {
+                if (value == null)
+                    session.getProperties().remove(key);
+                else
+                    session.getProperties().put(key, value);
+            });
+            originalTimeouts.clear();
             return true;
         } catch (IOException | ApiException | RuntimeException failure) {
             return false;

@@ -39,7 +39,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     /** Total authentication budget. / 认证总时间预算。 */
     private final Duration connectTimeout;
 
-    /** Total file-transfer budget, since the public transfer request has no timeout field. / 文件传输总预算，公开传输请求未设超时字段。 */
+    /** Maximum interval without effective file-byte progress. / 无有效文件字节进展的最长时段。 */
     private final Duration transferTimeout;
 
     /** Includes failed connections whose physical cleanup has not completed. / 包含尚未完成物理清理的失败连接。 */
@@ -57,7 +57,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param owner exact caller identity / 精确调用方身份
      * @param version exact caller release / 精确调用方版本
      * @param connectTimeout positive authentication deadline / 正认证期限
-     * @param transferTimeout positive transfer deadline / 正传输期限
+     * @param transferTimeout positive no-progress interval / 正无进展时长
      */
     public PlatformLinuxService(PlatformTaskRuntime tasks, DesktopSecurityService security,
             ServerProfileRepository servers, PlatformInteractionService interaction, String owner, String version,
@@ -91,6 +91,31 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             session = new Session(server, task, lease);
             retained.add(session);
         }
+        try {
+            authenticate(session);
+            session.opening.set(false);
+            return session;
+        } catch (Exception failure) {
+            session.opening.set(false);
+            ApiException reported = failure instanceof ApiException known
+                    ? known
+                    : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
+                            "SSH connection or authenticated trust could not be established");
+            try {
+                session.close();
+            } catch (ApiException cleanup) {
+                reported.addSuppressed(cleanup);
+            }
+            throw reported;
+        }
+    }
+
+    /** Authenticates one physical connection using the original task and current saved trust. / 使用原任务及当前保存信任认证一个物理连接。
+     * @param session retained logical session / 保留的逻辑会话
+     * @throws Exception if credentials, trust, authentication or persistence fails / 凭据、信任、认证或持久化失败时 */
+    private void authenticate(Session session) throws Exception {
+        var server = session.server;
+        var task = session.task;
         char[] password = null;
         try {
             var profile = servers.findServerProfile(server.id()).orElseThrow(
@@ -125,20 +150,6 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             servers.saveAuthenticatedServer(
                     new ServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
                     expected);
-            session.opening.set(false);
-            return session;
-        } catch (Exception failure) {
-            session.opening.set(false);
-            ApiException reported = failure instanceof ApiException known
-                    ? known
-                    : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
-                            "SSH connection or authenticated trust could not be established");
-            try {
-                session.close();
-            } catch (ApiException cleanup) {
-                reported.addSuppressed(cleanup);
-            }
-            throw reported;
         } finally {
             if (password != null)
                 Arrays.fill(password, '\0');
@@ -389,9 +400,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 var reviewed = interaction.reviewed(grant, task);
                 interaction.consume(grant,
                         RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
-                return connection.recoverTransfer(record.plan(), !resume, transferTimeout,
-                        tasks.operationCancellation(task),
-                        plan -> tasks.retain(task, record.resource(), record.metadata()));
+                return new TransferRun(record.plan(), plan -> tasks.retain(task, record.resource(), record.metadata()))
+                        .run(record.plan().request(), record.plan().source().sha256(), record.plan().upload(), !resume);
             });
         }
 
@@ -415,16 +425,132 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 String sha256 = digest.group(1);
                 interaction.consume(grant, RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload),
                         task);
-                return connection.transfer(request, sha256, upload, transferTimeout, tasks.operationCancellation(task),
-                        conflict -> interaction.transferConflict(conflict, server, task), plan -> {
-                            tasks.requireServer(task, owner, version, server.id());
-                            var facts = new TreeMap<>(plan.recoveryFields());
-                            facts.put("serverId", server.id());
-                            facts.put("fingerprint", connection.fingerprint());
-                            return tasks.retain(task, new TaskResource("FILE", "sftp:" + plan.id(), owner, true),
-                                    new ResourceRecovery("sftp.v1", facts));
-                        });
+                return new TransferRun(null, plan -> {
+                    tasks.requireServer(task, owner, version, server.id());
+                    var facts = new TreeMap<>(plan.recoveryFields());
+                    facts.put("serverId", server.id());
+                    facts.put("fingerprint", connection.fingerprint());
+                    return tasks.retain(task, new TaskResource("FILE", "sftp:" + plan.id(), owner, true),
+                            new ResourceRecovery("sftp.v1", facts));
+                }).run(request, sha256, upload, false);
             });
+        }
+
+        /** Owns repeated physical attempts of one reviewed file operation. / 持有一个已审核文件操作的多次物理尝试。 */
+        private final class TransferRun implements TransferJournal {
+            /** Original persistence operation, reused only after its prior lease closes. / 原持久化操作，仅在原占用关闭后复用。 */
+            private final TransferJournal journal;
+
+            /** Original facts, never inferred from an unverified offset. / 原事实，不从未核验偏移推导。 */
+            private TransferPlan plan;
+
+            /** Same actual file lease across stopped attempts. / 已停止尝试之间共用的实际文件占用。 */
+            private ResourceLease file;
+
+            /** Latest actual stage and completed byte observation. / 最近实际阶段及完成字节观测。 */
+            private TransferProgress latest;
+
+            /** Binds new or original recovery facts to the durable owner. / 将新传输或原恢复事实绑定到持久所有者。
+             * @param plan original plan, or null before first preparation / 原计划，首次准备前为 null
+             * @param journal original durable ownership gate / 原持久归属门禁 */
+            private TransferRun(TransferPlan plan, TransferJournal journal) {
+                this.plan = plan;
+                this.journal = journal;
+            }
+
+            /** Keeps one lease while each stopped attempt revalidates the same facts. / 保留一个占用，每次已停止尝试重新核验相同事实。
+             * @param prepared verified original plan / 已核验原计划
+             * @return same owned release handle until resolved / 解决前保持相同所属释放句柄
+             * @throws Exception if facts differ or durable admission fails / 事实不符或持久准入失败时 */
+            @Override
+            public synchronized ResourceLease prepare(TransferPlan prepared) throws Exception {
+                if (plan != null && !plan.equals(prepared))
+                    throw error(ProblemCode.ACCESS_DENIED, "SFTP_RETRY_FACTS",
+                            "Retry facts differ from the original transfer");
+                if (file == null) {
+                    var retainedFile = journal.prepare(prepared);
+                    plan = prepared;
+                    file = new ResourceLease() {
+                        /** Returns the original durable lease identity. / 返回原持久占用身份。
+                         * @return exact resource identity / 精确资源身份 */
+                        @Override
+                        public UUID id() {
+                            return retainedFile.id();
+                        }
+
+                        /** Releases only when the physical operation confirms resolution. / 仅在物理操作确认解决后释放。
+                         * @throws ApiException if persistent release fails / 持久释放失败时 */
+                        @Override
+                        public void close() throws ApiException {
+                            synchronized (TransferRun.this) {
+                                retainedFile.close();
+                                file = null;
+                                plan = null;
+                            }
+                        }
+                    };
+                }
+                return file;
+            }
+
+            /** Publishes physical stage progress without manufacturing effective bytes. / 发布物理阶段进度，不制造有效字节。
+             * @param value current physical observation / 当前物理观测
+             * @throws ApiException if task publication fails / 任务发布失败时 */
+            private void progress(TransferProgress value) throws ApiException {
+                latest = value;
+                interaction.transferProgress(value, task);
+            }
+
+            /** Retries only after actual transport closure and an explicit human choice. / 仅在实际传输关闭及明确人工选择后重试。
+             * @param request original reviewed request / 原已审核请求
+             * @param digest original reviewed digest / 原已审核摘要
+             * @param upload original direction / 原方向
+             * @param discard whether this operation explicitly discards verified staging / 此操作是否明确丢弃经核验暂存
+             * @return final observed result with unresolved effects preserved / 保留未解决副作用的最终观测结果
+             * @throws ApiException if original ownership or explicit retry cannot continue / 原归属或明确重试无法继续时 */
+            private OperationResult<TransferResult> run(TransferRequest request, String digest, boolean upload,
+                    boolean discard) throws ApiException {
+                var cancellation = tasks.operationCancellation(task);
+                String fingerprint = connection.fingerprint();
+                while (true) {
+                    var result = plan == null
+                            ? connection.transfer(request, digest, upload, transferTimeout, cancellation,
+                                    this::progress, conflict -> interaction.transferConflict(conflict, server, task),
+                                    this)
+                            : connection.recoverTransfer(plan, discard, transferTimeout, cancellation, this::progress,
+                                    this);
+                    if (result.problem().isEmpty()
+                            || !result.problem().orElseThrow().eventCode().equals("SFTP_STALLED"))
+                        return result;
+                    try {
+                        connection.close();
+                        var actual = plan == null
+                                ? request
+                                : new TransferRequest(plan.localPath(), plan.remotePath(), request.maxBytes());
+                        var choice = interaction.transferStalled(
+                                new TransferStall(latest, actual, upload, transferTimeout), server, task);
+                        if (choice != TransferStallChoice.RETRY || cancellation.requested() || closing)
+                            return result.outcome() == Outcome.UNKNOWN
+                                    ? result
+                                    : new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                                            Optional.of(error(ProblemCode.CANCELLED, "SFTP_TERMINATED",
+                                                    "Transfer was terminated before file effects").problem()));
+                        tasks.requireServer(task, owner, version, server.id());
+                        tasks.requireSoleSshConnection(task, owner, version, lease.id());
+                        authenticate(Session.this);
+                        if (!fingerprint.equals(connection.fingerprint()))
+                            throw error(ProblemCode.ACCESS_DENIED, "SFTP_RETRY_SERVER",
+                                    "Retry server differs from the original transfer");
+                    } catch (Exception failure) {
+                        if (result.outcome() == Outcome.UNKNOWN)
+                            tasks.reportUncertainEffect(task);
+                        if (failure instanceof ApiException known)
+                            throw known;
+                        throw error(ProblemCode.IO_FAILURE, "SFTP_RETRY_UNAVAILABLE",
+                                "Original transfer retry could not proceed");
+                    }
+                }
+            }
         }
 
         /**
