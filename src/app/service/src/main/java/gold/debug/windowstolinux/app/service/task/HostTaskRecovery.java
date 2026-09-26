@@ -45,9 +45,21 @@ public final class HostTaskRecovery {
                             continue;
                         String kind = rows.getString(2), id = rows.getString(3);
                         String prefix = allowedPrefixes.get(kind);
-                        if (!PlatformTaskAdmission.PLATFORM_OWNER.equals(rows.getString(4))
-                                || !"{\"release\":\"EXPLICIT\"}".equals(rows.getString(5)) || prefix == null
-                                || !id.startsWith(prefix))
+                        boolean explicit = "{\"release\":\"EXPLICIT\"}".equals(rows.getString(5));
+                        if (kind.equals("CONNECTION") && "ssh-".equals(prefix)) {
+                            var facts = gold.debug.windowstolinux.app.db.task.ResourceRecovery
+                                    .decode(rows.getString(5));
+                            try {
+                                explicit = facts.protocol().equals("ssh.v1")
+                                        && facts.fields().keySet().equals(Set.of("bootId", "serverId"))
+                                        && !facts.fields().get("serverId").isBlank()
+                                        && !database.bootId().equals(UUID.fromString(facts.fields().get("bootId")));
+                            } catch (IllegalArgumentException | NullPointerException invalid) {
+                                throw new SQLException("SSH physical boot is invalid", invalid);
+                            }
+                        }
+                        if (!PlatformTaskAdmission.PLATFORM_OWNER.equals(rows.getString(4)) || !explicit
+                                || prefix == null || !id.startsWith(prefix))
                             throw new SQLException("Host recovery contains an unknown resource");
                         try {
                             UUID.fromString(id.substring(prefix.length()));

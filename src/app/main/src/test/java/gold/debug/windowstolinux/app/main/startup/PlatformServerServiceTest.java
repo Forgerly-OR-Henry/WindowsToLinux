@@ -217,7 +217,8 @@ class PlatformServerServiceTest {
             }
             var ledger = new TaskLedger(db);
             known = old(ledger, HOST, TYPE);
-            ledger.retain(known, new TaskResource("CONNECTION", UUID.randomUUID().toString(), HOST, false));
+            ledger.retain(known, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), HOST, false),
+                    new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "fixture")));
             ledger.retain(known, new TaskResource("CUSTOM", "interaction-" + UUID.randomUUID(), HOST, false));
             unexpected = old(ledger, HOST, TYPE);
             extra = ledger.retain(unexpected, new TaskResource("CUSTOM", "unrecognized-resource", HOST, false));
@@ -267,7 +268,7 @@ class PlatformServerServiceTest {
             var handle = runtime.tasks().bind(HOST, runtime.version(), false)
                     .submit(new TaskRequest(TYPE, "Current host check", List.of(), true), task -> {
                         lease.set(runtime.tasks().retain(task,
-                                new TaskResource("CONNECTION", UUID.randomUUID().toString(), HOST, false)));
+                                new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), HOST, false)));
                         throw new IllegalStateException("Injected after physical open");
                     });
             try {

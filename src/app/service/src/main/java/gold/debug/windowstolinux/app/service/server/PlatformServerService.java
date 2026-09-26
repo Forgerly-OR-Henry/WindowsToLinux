@@ -202,7 +202,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      */
     private boolean releasePreviousProcessResources(TaskSnapshot task) throws SQLException {
         return HostTaskRecovery.releasePreviousProcess(persistence.database(), task,
-                Map.of("CONNECTION", "", "CUSTOM", "interaction-"));
+                Map.of("CONNECTION", "ssh-", "CUSTOM", "interaction-"));
     }
 
     /** Returns in-memory unfinished host checks without reading business tables. / 返回内存中的未结束宿主检查，不读取业务表。

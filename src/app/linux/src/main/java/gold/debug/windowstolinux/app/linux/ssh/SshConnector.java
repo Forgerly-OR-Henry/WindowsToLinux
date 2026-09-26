@@ -326,6 +326,39 @@ public final class SshConnector implements AutoCloseable {
         public OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
                 Duration timeout, CancellationToken cancellation, TransferConflictResolver conflicts,
                 TransferJournal journal) throws ApiException {
+            return transfer(request, sha256, upload, timeout, cancellation, conflicts, journal, null, false);
+        }
+
+        /** Recovers only an original journalled transfer on this authenticated server. / 仅在此已认证服务器上恢复原已记录传输。
+         * @param plan validated original plan / 已校验原计划
+         * @param discard whether to discard verified staging / 是否丢弃经核验暂存
+         * @param timeout recovery operation budget / 恢复操作预算
+         * @param cancellation original task cancellation / 原任务取消
+         * @param journal original durable file ownership / 原持久文件归属
+         * @return verified recovery result or uncertainty / 经核验恢复结果或不确定性
+         * @throws ApiException if admission fails / 准入失败时 */
+        public OperationResult<TransferResult> recoverTransfer(TransferPlan plan, boolean discard, Duration timeout,
+                CancellationToken cancellation, TransferJournal journal) throws ApiException {
+            Objects.requireNonNull(plan);
+            return transfer(plan.request(), plan.source().sha256(), plan.upload(), timeout, cancellation, null, journal,
+                    plan, discard);
+        }
+
+        /** Serializes original and recovery transfers with the actual channel lifetime. / 按实际通道寿命串行化原传输及恢复传输。
+         * @param request original request / 原请求
+         * @param sha256 original source digest / 原源摘要
+         * @param upload direction / 方向
+         * @param timeout operation budget / 操作预算
+         * @param cancellation original cancellation / 原取消
+         * @param conflicts presenter for a new transfer / 新传输呈现器
+         * @param journal durable ownership gate / 持久归属门禁
+         * @param recovery original retained plan or null / 原保留计划或 null
+         * @param discard explicit staging discard / 明确暂存丢弃
+         * @return observed transfer result / 已观察传输结果
+         * @throws ApiException if transport admission fails / 传输准入失败时 */
+        private OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
+                Duration timeout, CancellationToken cancellation, TransferConflictResolver conflicts,
+                TransferJournal journal, TransferPlan recovery, boolean discard) throws ApiException {
             worker();
             if (!operating.compareAndSet(false, true))
                 throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
@@ -335,8 +368,8 @@ public final class SshConnector implements AutoCloseable {
                 if (uncertain || command != null || transfer != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                             "SSH connection requires closure after unfinished work");
-                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts,
-                        journal);
+                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts, journal,
+                        recovery, discard);
                 var result = transfer.run();
                 uncertain = result.outcome() == Outcome.UNKNOWN;
                 if (transfer.close())

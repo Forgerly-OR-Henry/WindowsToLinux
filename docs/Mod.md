@@ -1117,6 +1117,7 @@ public interface SecretService {
 package gold.debug.windowstolinux.appapi.linux;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.nio.file.Path;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
@@ -1134,6 +1135,8 @@ public record TransferResult(long transferredBytes, String sha256,
 public enum TransferConflictChoice { OVERWRITE, KEEP_BOTH, TERMINATE }
 public record TransferConflict(TransferRequest request, boolean upload,
     long incomingBytes, long existingBytes) {}
+public record TransferCheckpoint(java.util.UUID id, ServerRef server, boolean upload,
+    TransferRequest request, String sha256, long size, boolean overwrite) {}
 public interface RemoteSession extends AutoCloseable {
     RemoteFacts facts();
     OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant)
@@ -1142,10 +1145,15 @@ public interface RemoteSession extends AutoCloseable {
         throws ApiException;
     OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant)
         throws ApiException;
+    OperationResult<TransferResult> resumeTransfer(java.util.UUID transferId, ApprovalGrant grant)
+        throws ApiException;
+    OperationResult<Void> discardTransfer(java.util.UUID transferId, ApprovalGrant grant)
+        throws ApiException;
     @Override void close() throws ApiException;
 }
 public interface LinuxService {
     RemoteSession connect(ServerRef server, TaskContext task) throws ApiException;
+    List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException;
 }
 ```
 
@@ -1173,9 +1181,17 @@ public interface LinuxService {
 
 首次创建临时文件前，宿主在同一事务内写入独立 FILE 占用和 `sftp.v1` 恢复事实：原任务/Mod/版本由账本关联，记录服务器 ID/指纹、原始和实际端点、容量上限、源身份/摘要/修改时间、覆盖目标观测及随机暂存路径。写入未获确认时不创建文件；没有保存正文、凭据或可直接信任的续传偏移。记录使用既有 `platform_task_resource.recovery_json`，不新增业务表。
 
-只有确认未创建临时文件，或发布、最终内容核验及实际传输资源关闭均完成后，才释放该 FILE 占用。传输后断连、校验失败、账本释放失败均保留原恢复依据；关闭连接或通用任务核对不能替代文件核对。未知格式或损坏记录仍计入任务阻断，不因附加恢复字段而漏算资源。
+只有确认未创建临时文件、经核验清理暂存，或发布、最终内容核验及实际传输资源关闭均完成后，才释放该 FILE 占用。传输后断连、校验失败、账本释放失败均保留原恢复依据；关闭连接或通用任务核对不能替代文件核对。未知格式或损坏记录仍计入任务阻断，不因附加恢复字段而漏算资源。
 
-**尚未完成：** 固定传输总时限仍待替换为有效进展/无进展提示；检查点的原任务查询、核验续传和显式丢弃入口尚未接通，当前残留文件会继续阻止原任务结束。已有记录只是恢复依据，尚未核验残留身份与内容前缀，不能据此追加或删除临时文件。人工冲突选择的等待已排除于现有总时限，不能将其视为完整新超时策略。三档平台授权及其偏好也仍待实现。
+原任务回调或原版本的显式恢复回调通过 `pendingTransfers(task)` 读取未完成传输，描述中的路径为实际选定端点。作者使用 `RemoteActions.recoverTransfer(checkpoint, revision, resume)` 构造恢复审批：`resume=true` 对应 `resumeTransfer`，`false` 对应 `discardTransfer`；两种审批不能互换。宿主重新读取原记录，核对原任务/Mod/版本、服务器及指纹，再消费一次性授权，不信任作者重新构造的检查点字段。
+
+续传重新核对完整源内容及原身份/长度/修改时间，按原随机暂存路径找到普通文件，将其全部现有内容与源前缀比较；两端均核验后才从实际已验证长度继续，不截断原前缀。Windows 同时核对操作期间暂存的原生文件身份，远端依赖已认证 SFTP 服务端的路径与文件事实。原源、暂存前缀或原覆盖目标不符时保留 UNKNOWN，不追加、不删除。传输句柄关闭后再次核验实际暂存路径的完整内容，随后才发布并回读最终目标。
+
+若暂存已不存在且最终目标大小/摘要匹配原源，恢复仅确认现有结果，不重新发布，此时无需原源仍留在磁盘。暂存缺失、最终目标未发布时，仅在原目标选择与完整源仍可核验的情况下，从零开始恢复该原传输。丢弃只删除经核验的原暂存文件，或确认其已不存在；不修改最终目标，也不宣称整体业务成功。源已改变、暂存损坏或记录不能核验时，继续保留占用，须处理原事实后再次明确核对。
+
+SSH 客户端使用 `ssh.v1` 记录其实际启动代次，与任务最初启动代次分开。跨启动恢复只释放确认来自旧进程的 SSH 客户端记录；本次恢复新建的连接仍须实际关闭。恢复前核对原任务仅剩当前 SSH 连接，其他能力实例的未释放连接也会阻断，防止旧传输与恢复并行操作同一文件。不会因此释放 FILE 或其他未知类型资源，也不重跑部署命令。
+
+**尚未完成：** 固定传输总时限仍待替换为有效进展/无进展提示；可配置连接和停滞阈值、分阶段进度与重试/终止交互尚未接入。人工冲突选择的等待已排除于现有总时限，不能将其视为完整新超时策略。三档平台授权及其偏好、业务 Mod 对上述恢复入口的接线也仍待实现。
 
 ### 8.7 ai：通用模型调用
 

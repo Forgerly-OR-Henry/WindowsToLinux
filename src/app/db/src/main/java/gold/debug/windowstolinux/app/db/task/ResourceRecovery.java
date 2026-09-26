@@ -57,7 +57,7 @@ public record ResourceRecovery(String protocol, Map<String, String> fields) {
      * @param value original stored envelope / 原存储封套
      * @return typed immutable facts / 有类型的不可变事实
      * @throws SQLException if the envelope is unknown or invalid / 封套未知或无效时 */
-    static ResourceRecovery decode(String value) throws SQLException {
+    public static ResourceRecovery decode(String value) throws SQLException {
         if (value == null || value.length() > 65536)
             throw new SQLException("Invalid resource recovery metadata size");
         try {

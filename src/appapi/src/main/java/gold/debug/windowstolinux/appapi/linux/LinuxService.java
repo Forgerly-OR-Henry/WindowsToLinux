@@ -17,4 +17,10 @@ public interface LinuxService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     RemoteSession connect(ServerRef server, TaskContext task) throws ApiException;
+
+    /** Lists outstanding transfers owned by the original executing or recovering task. / 列出原执行或恢复任务所属的未完成传输。
+     * @param task authentic original task / 真实原任务
+     * @return immutable original transfer descriptions / 不可变原传输描述
+     * @throws ApiException if ownership or stored facts cannot be verified / 无法核验归属或存储事实时 */
+    java.util.List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException;
 }

@@ -87,7 +87,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         synchronized (this) {
             if (closed)
                 throw error(ProblemCode.UNAVAILABLE, "LINUX_SERVICE_CLOSED", "The owning Linux capability has closed");
-            var lease = tasks.retain(task, new TaskResource("CONNECTION", UUID.randomUUID().toString(), owner, false));
+            var lease = tasks.retainSshConnection(task, owner, version, server.id());
             session = new Session(server, task, lease);
             retained.add(session);
         }
@@ -145,6 +145,65 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         }
     }
 
+    /** Lists only the original caller's outstanding transfer descriptions. / 仅列出原调用方未完成的传输描述。
+     * @param task authentic executing or recovery task / 真实执行或恢复任务
+     * @return immutable checkpoint descriptions / 不可变检查点描述
+     * @throws ApiException if ownership or recovery facts are invalid / 归属或恢复事实无效时 */
+    @Override
+    public List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException {
+        worker();
+        return recoveryRecords(task).stream().map(RecoveredTransfer::checkpoint)
+                .sorted(Comparator.comparing(TransferCheckpoint::id)).toList();
+    }
+
+    /** Loads strict transport facts separately from their task and server binding. / 严格加载传输事实，单独核对任务及服务器绑定。
+     * @param task authentic original task / 真实原任务
+     * @return validated host recovery records / 已校验宿主恢复记录
+     * @throws ApiException if any matching record cannot be verified / 无法核验任一匹配记录时 */
+    private List<RecoveredTransfer> recoveryRecords(TaskContext task) throws ApiException {
+        synchronized (this) {
+            if (closed)
+                throw error(ProblemCode.UNAVAILABLE, "LINUX_SERVICE_CLOSED", "The Linux capability has closed");
+        }
+        var records = tasks.recoveries(task, owner, version, "FILE", "sftp:");
+        var found = new ArrayList<RecoveredTransfer>();
+        try {
+            for (var entry : records.entrySet()) {
+                var resource = entry.getKey();
+                var metadata = entry.getValue();
+                if (!resource.exclusive() || !metadata.protocol().equals("sftp.v1"))
+                    throw new IllegalArgumentException("Unknown transfer resource protocol");
+                var fields = new TreeMap<>(metadata.fields());
+                var server = new ServerRef(Objects.requireNonNull(fields.remove("serverId")));
+                String fingerprint = Objects.requireNonNull(fields.remove("fingerprint"));
+                var plan = TransferPlan.fromRecoveryFields(fields);
+                if (!resource.id().equals("sftp:" + plan.id()) || !fingerprint.startsWith("SHA256:"))
+                    throw new IllegalArgumentException("Transfer binding differs");
+                found.add(new RecoveredTransfer(resource, metadata, server, fingerprint, plan));
+            }
+            return List.copyOf(found);
+        } catch (RuntimeException invalid) {
+            throw error(ProblemCode.IO_FAILURE, "SFTP_RECOVERY_FACTS", "Original transfer facts cannot be verified");
+        }
+    }
+
+    /** Host-only binding retained independently of the public checkpoint. / 独立于公开检查点保留的宿主绑定。
+     * @param resource exact original file claim / 精确原文件申请
+     * @param metadata exact persisted envelope / 精确持久封套
+     * @param server original server identity / 原服务器身份
+     * @param fingerprint original authenticated host key / 原已认证主机密钥
+     * @param plan exact transport facts / 精确传输事实 */
+    private record RecoveredTransfer(TaskResource resource, ResourceRecovery metadata, ServerRef server,
+            String fingerprint, TransferPlan plan) {
+        /** Exposes only facts needed to review the recovery operation. / 仅公开审核恢复操作所需事实。
+         * @return public review description / 公开审核描述 */
+        TransferCheckpoint checkpoint() {
+            return new TransferCheckpoint(plan.id(), server, plan.upload(),
+                    new TransferRequest(plan.localPath(), plan.remotePath(), plan.request().maxBytes()),
+                    plan.source().sha256(), plan.source().size(), plan.target() != null);
+        }
+    }
+
     /**
      * Retries physical cleanup for one retained task without replaying remote business. / 重试一个保留任务的物理清理，不重放远端业务。
      * @param task authentic retained task / 真实保留任务
@@ -156,6 +215,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         if (!snapshot.ownerId().equals(owner) || !snapshot.ownerVersion().equals(version))
             throw error(ProblemCode.ACCESS_DENIED, "SSH_TASK_OWNER", "The task belongs to another Linux capability");
         closeSessions(task);
+        tasks.releasePreviousSshConnections(task, owner, version);
     }
 
     /**
@@ -284,6 +344,55 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant)
                 throws ApiException {
             return transfer(request, grant, false);
+        }
+
+        /** Resumes only a verified original transfer owned by this task and server. / 仅续传此任务及服务器所属的经核验原传输。
+         * @param transferId original checkpoint identity / 原检查点身份
+         * @param grant exact reviewed resume approval / 精确已审核续传审批
+         * @return verified file result or uncertainty / 经核验文件结果或不确定性
+         * @throws ApiException if authorization or ownership fails / 授权或归属失败时 */
+        @Override
+        public OperationResult<TransferResult> resumeTransfer(UUID transferId, ApprovalGrant grant)
+                throws ApiException {
+            return recoverTransfer(transferId, grant, true);
+        }
+
+        /** Discards verified staging without deleting or rewriting the final target. / 丢弃经核验暂存，不删除或重写最终目标。
+         * @param transferId original checkpoint identity / 原检查点身份
+         * @param grant exact reviewed discard approval / 精确已审核丢弃审批
+         * @return staging cleanup conclusion / 暂存清理结论
+         * @throws ApiException if authorization or ownership fails / 授权或归属失败时 */
+        @Override
+        public OperationResult<Void> discardTransfer(UUID transferId, ApprovalGrant grant) throws ApiException {
+            var result = recoverTransfer(transferId, grant, false);
+            return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+        }
+
+        /** Reloads original facts and consumes the exact recovery-specific grant before transport. / 传输前重新加载原事实并消费精确恢复专用授权。
+         * @param transferId original checkpoint / 原检查点
+         * @param grant original approval object / 原审批对象
+         * @param resume whether to continue rather than discard / 是否继续而非丢弃
+         * @return observed recovery result / 已观察恢复结果
+         * @throws ApiException if original identity, grant or physical ownership differs / 原身份、授权或物理归属不符时 */
+        private OperationResult<TransferResult> recoverTransfer(UUID transferId, ApprovalGrant grant, boolean resume)
+                throws ApiException {
+            return operate(() -> {
+                tasks.releasePreviousSshConnections(task, owner, version);
+                tasks.requireSoleSshConnection(task, owner, version, lease.id());
+                var record = recoveryRecords(task).stream()
+                        .filter(value -> value.plan().id().equals(transferId) && value.server().equals(server))
+                        .findFirst().orElseThrow(() -> error(ProblemCode.NOT_FOUND, "SFTP_CHECKPOINT_MISSING",
+                                "Original transfer checkpoint is unavailable"));
+                if (!record.fingerprint().equals(connection.fingerprint()))
+                    throw error(ProblemCode.ACCESS_DENIED, "SFTP_RECOVERY_SERVER",
+                            "The authenticated server differs from the original transfer");
+                var reviewed = interaction.reviewed(grant, task);
+                interaction.consume(grant,
+                        RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
+                return connection.recoverTransfer(record.plan(), !resume, transferTimeout,
+                        tasks.operationCancellation(task),
+                        plan -> tasks.retain(task, record.resource(), record.metadata()));
+            });
         }
 
         /**
