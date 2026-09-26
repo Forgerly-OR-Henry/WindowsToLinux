@@ -1625,6 +1625,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
+- `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
@@ -1636,7 +1637,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SftpTransfer.java`：普通文件的临时传输、摘要与容量核对、校验后发布及回读，保留不确定结果及未释放资源。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
-- `app/main/mod/ModSchemaInitialization.java`：持有独立首次 Schema 初始化、验证和原资源收尾，不重放作者动作。
+- `app/main/mod/ModSchemaPreparation.java`：持有隔离初始化或已确认多步迁移、来源核验、目标验证及原资源收尾，不重放作者动作。
 - `app/main/mod/PlatformModCoordinator.java`：按真实开发构建装配已选依赖图，保留原启用失败和归档义务，并按依赖逆序关闭实际会话。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。

@@ -310,14 +310,19 @@ class PlatformModIntentsTest {
             sql(runtime.persistence().database(), "UPDATE mod_schema SET generation=? WHERE mod_id=?",
                     source.generation(), P);
             var accepted = manager.review(P, choice(true, "2.0.0"), Optional.of(source));
-            manager.apply(accepted, false);
+            sql(runtime.persistence().database(), "UPDATE mod_schema SET validation_digest=? WHERE mod_id=?",
+                    "1".repeat(64), P);
+            assertEquals("MOD_REVIEW_STALE",
+                    assertThrows(ApiException.class, () -> manager.apply(accepted, false)).problem().eventCode());
+            var current = manager.review(P, choice(true, "2.0.0"), Optional.of(source));
+            manager.apply(current, false);
             var request = JSON.readTree(text(runtime, "SELECT request_json FROM mod_operation"));
             assertEquals("MIGRATE", request.path("data").path("mode").asText());
             assertEquals(source.generation().toString(), request.path("data").path("generation").asText());
             assertEquals("1", text(runtime, "SELECT source_schema_version FROM mod_operation"));
             assertEquals("2", text(runtime, "SELECT target_schema_version FROM mod_operation"));
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema"));
-            manager.apply(manager.reviewCancellation(accepted.id()), false);
+            manager.apply(manager.reviewCancellation(current.id()), false);
             schema(runtime, P, "2");
             assertThrows(ApiException.class, () -> manager.review(P, choice(true, "2.0.0"), Optional.of(source)));
             manager.apply(manager.review(P, choice(true, "2.0.0"), Optional.empty()), false);

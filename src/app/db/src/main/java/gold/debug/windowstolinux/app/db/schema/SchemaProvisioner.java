@@ -28,7 +28,13 @@ public final class SchemaProvisioner {
      * @throws Exception if the registration, collision check or DDL fails / 登记、冲突检查或 DDL 失败时
      */
     public void create(SchemaIdentity identity) throws Exception {
-        var coordinates = new SchemaCoordinates(identity);
+        create(new SchemaCoordinates(identity));
+    }
+
+    /** Creates exactly the permanent or intermediate target registered by the operation. / 仅创建操作登记的正式或中间目标。
+     * @param coordinates exact persisted target / 精确已持久目标
+     * @throws Exception if registration or physical creation is unconfirmed / 登记或物理创建未确认时 */
+    public void create(SchemaCoordinates coordinates) throws Exception {
         coordinates.requireRegistered(database, Set.of("PREPARING"));
         try (var c = database.openConnection()) {
             try (var p = c.prepareStatement(
@@ -54,6 +60,29 @@ public final class SchemaProvisioner {
             } catch (SQLException failure) {
                 throw new SQLException("Schema provisioning failed; its recorded target requires reconciliation",
                         failure.getSQLState(), failure.getErrorCode());
+            }
+        }
+    }
+
+    /** Releases a proven operation-created intermediate after all its scopes close. / 全部作用域关闭后释放已证明由操作创建的中间目标。
+     * @param coordinates original operation target / 原操作目标
+     * @throws SQLException if original registration, ownership or release is unconfirmed / 原登记、归属或释放未确认时 */
+    public void dropIntermediate(SchemaCoordinates coordinates) throws SQLException {
+        if (!coordinates.physicalName().startsWith("t_"))
+            throw new SQLException("Permanent Mod data cannot be removed as an intermediate");
+        coordinates.requireRegistered(database, Set.of("PREPARING"));
+        try (var c = database.openConnection()) {
+            try (var p = c
+                    .prepareStatement("SELECT schema_owner FROM information_schema.schemata WHERE schema_name=?")) {
+                p.setString(1, coordinates.physicalName());
+                try (var r = p.executeQuery()) {
+                    if (r.next() && !coordinates.databaseUser().equals(r.getString(1)))
+                        throw new SQLException("Intermediate physical ownership changed");
+                }
+            }
+            try (var s = c.createStatement()) {
+                s.execute("DROP SCHEMA IF EXISTS " + SchemaAccessScope.quote(coordinates.physicalName()) + " CASCADE");
+                s.execute("DROP USER IF EXISTS " + SchemaAccessScope.quote(coordinates.databaseUser()));
             }
         }
     }

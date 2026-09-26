@@ -45,8 +45,19 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
      */
     public SchemaAccessScope(PlatformDatabase database, SchemaIdentity identity, UUID scopeId, boolean readOnly)
             throws Exception {
+        this(database, new SchemaCoordinates(identity), scopeId, readOnly);
+    }
+
+    /** Binds a permanent or operation-registered intermediate scope. / 绑定正式或由操作登记的中间作用域。
+     * @param database original engine / 原引擎
+     * @param coordinates registered physical ownership / 已登记物理归属
+     * @param scopeId persisted scope identity / 已持久作用域身份
+     * @param readOnly whether only SELECT is granted / 是否只授予 SELECT
+     * @throws Exception if the original target or access cannot be verified / 无法核验原目标或访问时 */
+    public SchemaAccessScope(PlatformDatabase database, SchemaCoordinates coordinates, UUID scopeId, boolean readOnly)
+            throws Exception {
         this.database = Objects.requireNonNull(database);
-        coordinates = new SchemaCoordinates(identity);
+        this.coordinates = Objects.requireNonNull(coordinates);
         this.scopeId = Objects.requireNonNull(scopeId);
         this.readOnly = readOnly;
         verifyRegistration();
@@ -75,7 +86,10 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
      * @throws SQLException if a stale, failed or mismatched identity is observed / 观察到过期、失败或不匹配身份时
      */
     private void verifyRegistration() throws SQLException {
-        coordinates.requireRegistered(database, Set.of("PREPARING", "READY"));
+        try (var c = database.openConnection()) {
+            coordinates.requireRegistered(c, Set.of("PREPARING", "READY"));
+            coordinates.requirePhysicalOwnership(c);
+        }
     }
 
     /**

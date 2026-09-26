@@ -22,16 +22,38 @@ public final class SchemaCoordinates {
     /** Non-administrator owner user identifier. / 非管理员所有者用户标识。 */
     private final String databaseUser;
 
+    /** Owning migration for an intermediate schema, otherwise null. / 中间数据结构所属迁移，否则为空。 */
+    private final java.util.UUID operation;
+
+    /** Zero-based intermediate step, or minus one for selectable data. / 从零开始的中间步骤，可选数据为负一。 */
+    private final int step;
+
     /**
      * Encodes the unchanged owner ID and canonical decimal data version. / 编码未改变的所有者 ID 及规范十进制数据版本。
      * @param identity logical data identity / 逻辑数据身份
      */
     public SchemaCoordinates(SchemaIdentity identity) {
+        this(identity, null, -1);
+    }
+
+    /** Encodes a registered migration intermediate without adding a selectable data version. / 编码已登记迁移中间目标，不增加可选数据版本。
+     * @param identity operation-owned logical identity / 操作所属逻辑身份
+     * @param operation original migration, or null for permanent data / 原迁移，正式数据为空
+     * @param step original intermediate index, or minus one for permanent data / 原中间序号，正式数据为负一 */
+    public SchemaCoordinates(SchemaIdentity identity, java.util.UUID operation, int step) {
         this.identity = Objects.requireNonNull(identity);
+        this.operation = operation;
+        this.step = step;
         if (identity.ownerId().isBlank() || identity.ownerId().length() > 512 || identity.ownerId().indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid schema owner identity");
-        physicalName = "m_" + hash(identity.ownerId()) + "_v" + identity.schemaVersion();
-        databaseUser = "u_" + hash(identity.ownerId() + "\0" + identity.schemaVersion());
+        if (operation == null && step != -1 || operation != null && (step < 0 || step >= 256))
+            throw new IllegalArgumentException("Invalid intermediate identity");
+        physicalName = operation == null
+                ? "m_" + hash(identity.ownerId()) + "_v" + identity.schemaVersion()
+                : "t_" + operation.toString().replace("-", "") + "_" + step;
+        databaseUser = operation == null
+                ? "u_" + hash(identity.ownerId() + "\0" + identity.schemaVersion())
+                : "u_" + hash(physicalName);
     }
 
     /**
@@ -85,6 +107,10 @@ public final class SchemaCoordinates {
      * @throws SQLException if exact registration is unavailable / 精确登记不可用时
      */
     public void requireRegistered(java.sql.Connection connection, Set<String> allowedStates) throws SQLException {
+        if (operation != null) {
+            requireIntermediate(connection, allowedStates);
+            return;
+        }
         try (var p = connection.prepareStatement(
                 "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
             p.setString(1, identity.ownerId());
@@ -94,6 +120,57 @@ public final class SchemaCoordinates {
                         || !physicalName.equals(r.getString(2)) || !databaseUser.equals(r.getString(3))
                         || !allowedStates.contains(r.getString(4)))
                     throw new SQLException("Schema registration is stale or unavailable", "55000");
+            }
+        }
+    }
+
+    /** Checks live schema ownership and the original non-administrator account. / 检查实际数据结构归属及原非管理员账户。
+     * @param connection privileged host connection / 宿主特权连接
+     * @throws SQLException if physical objects no longer match the registration / 物理对象不再匹配登记时 */
+    public void requirePhysicalOwnership(java.sql.Connection connection) throws SQLException {
+        try (var p = connection.prepareStatement(
+                "SELECT COUNT(*) FROM information_schema.schemata s JOIN information_schema.users u ON u.user_name=s.schema_owner WHERE s.schema_name=? AND s.schema_owner=? AND NOT u.is_admin")) {
+            p.setString(1, physicalName);
+            p.setString(2, databaseUser);
+            try (var r = p.executeQuery()) {
+                r.next();
+                if (r.getLong(1) != 1)
+                    throw new SQLException("Schema physical ownership no longer matches its original registration",
+                            "55000");
+            }
+        }
+    }
+
+    /** Checks original recovery inventory and step ownership for an intermediate. / 检查中间目标的原恢复清单及步骤归属。
+     * @param connection platform connection / 平台连接
+     * @param allowedStates caller's permitted data states / 调用者允许的数据状态
+     * @throws SQLException if the original migration identity changed / 原迁移身份发生变化时 */
+    private void requireIntermediate(java.sql.Connection connection, Set<String> allowedStates) throws SQLException {
+        if (!allowedStates.contains("PREPARING"))
+            throw new SQLException("Intermediate data cannot be selected for business");
+        try (var p = connection.prepareStatement(
+                "SELECT o.recovery_json FROM mod_operation o JOIN mod_migration_step s ON s.operation_id=o.operation_id WHERE o.operation_id=? AND o.mod_id=? AND o.operation_type='MIGRATE' AND o.state='RUNNING' AND o.outcome IS NULL AND s.step_number=? AND s.to_version=? AND s.target_schema=?")) {
+            p.setObject(1, operation);
+            p.setString(2, identity.ownerId());
+            p.setInt(3, step);
+            p.setString(4, identity.schemaVersion());
+            p.setString(5, physicalName);
+            try (var r = p.executeQuery()) {
+                if (!r.next())
+                    throw new SQLException("Original intermediate registration is absent");
+                try {
+                    var json = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                            .readTree(r.getString(1));
+                    var target = json.path("steps").path(step);
+                    if (!identity.generation().toString().equals(target.path("generation").textValue())
+                            || !physicalName.equals(target.path("physicalSchema").textValue())
+                            || !databaseUser.equals(target.path("databaseUser").textValue()))
+                        throw new SQLException("Original intermediate inventory changed");
+                } catch (java.io.IOException invalid) {
+                    throw new SQLException("Invalid intermediate inventory", invalid);
+                }
             }
         }
     }

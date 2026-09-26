@@ -18,7 +18,7 @@ public final class SchemaValidation {
      * @throws SQLException if a constraint fails or validation cannot be completed / 约束失败或无法完成验证时 */
     public static String validate(SchemaAccessScope access) throws SQLException {
         try (var c = access.openConnection()) {
-            String schema = new SchemaCoordinates(access.identity()).physicalName();
+            String schema = c.getSchema();
             var evidence = new StringBuilder("WTL-SCHEMA-VALIDATION-1\n").append(schema).append('\n');
             try (var p = c.prepareStatement(
                     "SELECT t.table_name,c.column_name,c.is_nullable,c.data_type,c.domain_schema,c.domain_name FROM information_schema.tables t JOIN information_schema.columns c ON c.table_schema=t.table_schema AND c.table_name=t.table_name WHERE t.table_schema=? AND t.table_type='BASE TABLE' ORDER BY t.table_name,c.ordinal_position")) {
@@ -31,6 +31,8 @@ public final class SchemaValidation {
                             noRows(c, "SELECT 1 FROM " + qualified(schema, rows.getString(1)) + " WHERE "
                                     + SchemaAccessScope.quote(rows.getString(2)) + " IS NULL");
                         if (rows.getString(6) != null) {
+                            if (!schema.equals(rows.getString(5)))
+                                throw new SQLException("Column domain leaves its owner schema", "23000");
                             String domain = qualified(rows.getString(5), rows.getString(6));
                             evidence.append(domain).append('\n');
                             try (var s = c.createStatement();
