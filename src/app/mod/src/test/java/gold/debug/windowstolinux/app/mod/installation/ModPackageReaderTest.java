@@ -465,4 +465,35 @@ class ModPackageReaderTest {
         Files.move(root.resolve("foreign.jar"), root.resolve("foreign-released.jar"));
         Files.move(source, root.resolve("implicit-released.jar"));
     }
+
+    @Test
+    void extractedTreeCanBeVerifiedWithoutTheArchiveAndRejectsMissingChangedOrAddedContent() throws Exception {
+        var original = archive("original.wtlmod", files());
+        var inspection = ModPackageReader.read(original);
+        var directory = root.resolve("verified");
+        ModPackageReader.extract(inspection, directory);
+        Files.delete(original);
+        ModPackageReader.verifyDirectory(inspection, directory);
+        var readme = directory.resolve("README.md");
+        byte[] expected = Files.readAllBytes(readme);
+        Files.writeString(readme, "tampered");
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(inspection, directory));
+        Files.delete(readme);
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(inspection, directory));
+        Files.write(readme, expected);
+        var extra = directory.resolve("unknown.txt");
+        Files.writeString(extra, "preserve");
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(inspection, directory));
+        assertEquals("preserve", Files.readString(extra));
+        Files.delete(extra);
+        var subdirectory = directory.resolve("unknown");
+        Files.createDirectory(subdirectory);
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(inspection, directory));
+        Files.delete(subdirectory);
+        ModPackageReader.verifyDirectory(inspection, directory);
+        var changedEvidence = new ModPackageReader.Inspection(inspection.archive(), inspection.manifest(),
+                inspection.archiveSha256(), "0".repeat(64), inspection.files(), inspection.jars(),
+                inspection.classes());
+        assertThrows(IOException.class, () -> ModPackageReader.verifyDirectory(changedEvidence, directory));
+    }
 }

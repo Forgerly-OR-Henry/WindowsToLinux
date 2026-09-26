@@ -61,6 +61,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Original restart-intent management and request reviews. / 原重启意图管理及请求审阅。 */
     private gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents;
 
+    /** Original-package installer, owned only in actual JAR or APP layouts. / 仅实际 JAR 或 APP 布局持有的原包安装器。 */
+    private gold.debug.windowstolinux.app.service.mod.PlatformModInstallation modInstallation;
+
     /** Original automatic CLASS graph and its reverse cleanup ownership. / 原自动 CLASS 图及其逆序清理归属。 */
     private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator modCoordinator;
 
@@ -257,6 +260,23 @@ public final class PlatformRuntime implements AutoCloseable {
                     security, readApiVersion());
         }
         return modIntents;
+    }
+
+    /** Returns original-package installation for the actual application layout. / 为实际应用布局返回原包安装能力。
+     * @return original installation owner / 原安装所有者
+     * @throws Exception if closing, in CLASS mode or storage is unavailable / 正在关闭、处于 CLASS 模式或存储不可用时 */
+    public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModInstallation modInstallation()
+            throws Exception {
+        requireWorker();
+        if (stopping || closed)
+            throw new IllegalStateException("Mod installation is closing");
+        var layout = gold.debug.windowstolinux.app.main.runtime.RunModeResolver.resolve();
+        if (layout.mode() == gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode.RUN_CLASS)
+            throw new IllegalStateException("CLASS mode uses source builds, not installed package directories");
+        if (modInstallation == null)
+            modInstallation = new gold.debug.windowstolinux.app.service.mod.PlatformModInstallation(
+                    persistence.database(), security, layout.applicationHome());
+        return modInstallation;
     }
 
     /** Starts the one automatic graph without holding the runtime monitor across author code. / 启动唯一自动图，不跨作者代码持有运行时监视器。
@@ -750,6 +770,8 @@ public final class PlatformRuntime implements AutoCloseable {
             recovery.close();
         if (models != null)
             models.close();
+        if (modInstallation != null)
+            modInstallation.close();
         if (modIntents != null)
             modIntents.close();
         for (var access : java.util.List.copyOf(serverAccesses))
