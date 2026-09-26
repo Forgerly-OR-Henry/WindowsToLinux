@@ -156,6 +156,15 @@ public final class PlatformModCoordinator implements AutoCloseable {
                         var loader = plan.createLoader(manifest.id(), sources, providers);
                         slot = new Slot(prepared, loader);
                         slots.put(manifest.id(), slot);
+                        if (prepared.schema().isEmpty() && prepared.selection().schema() != null) {
+                            slot.preparation = new ModSchemaInitialization(runtime.persistence().database(), restarts,
+                                    plan.createLoader(manifest.id(), sources, providers));
+                            var identity = slot.preparation.initialize(prepared.intent().orElseThrow(),
+                                    prepared.build().contentDigest());
+                            prepared = new Prepared(prepared.selection(), Optional.of(identity), prepared.intent(),
+                                    prepared.build());
+                            slot.prepared = prepared;
+                        }
                         slot.session = runtime.modSession(loader, prepared.schema(), ModLaunchMode.NORMAL, pages, api);
                         slot.session.start();
                     } catch (Exception | LinkageError | AssertionError failure) {
@@ -174,8 +183,12 @@ public final class PlatformModCoordinator implements AutoCloseable {
                                     if (!slot.unclaimed)
                                         confirmFailure(slot.prepared, problem);
                                 } else if (slot.session == null && runtime.modContexts().get(manifest.id()) == null) {
+                                    if (slot.preparation != null)
+                                        slot.preparation.close();
                                     slot.loader.close();
-                                    confirmFailure(slot.prepared, problem);
+                                    slot.unclaimed = slot.preparation != null && !slot.preparation.acknowledged();
+                                    if (!slot.unclaimed)
+                                        confirmFailure(slot.prepared, problem);
                                 }
                             } catch (Exception cleanup) {
                                 issues.put(manifest.id(),
@@ -227,6 +240,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     ProblemCode.BUSY);
         Optional<SchemaIdentity> schema = Optional.empty();
         if (!pending.isEmpty()) {
+            if (selected.enabled() && restarts.needsInitialization(pending.getFirst()))
+                return new Prepared(selected, schema, Optional.of(pending.getFirst()), null);
             var applying = restarts.begin(pending.getFirst());
             schema = applying.schema();
             if (!selected.enabled()) {
@@ -296,9 +311,12 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @throws SQLException if failure or its archive cannot be acknowledged / 无法确认失败或其归档时 */
     private void confirmFailure(Prepared prepared, Problem problem) throws SQLException {
         String owner = prepared.selection().owner();
-        if (!currentFailure(owner))
+        if (!currentFailure(owner)) {
+            if (prepared.intent().isPresent() && prepared.schema().isEmpty() && prepared.selection().schema() != null)
+                restarts.rejectInitialization(prepared.intent().get());
             new ModActivationLedger(runtime.persistence().database(), owner, prepared.selection().version(),
                     prepared.schema()).rejectedBeforeStart(problem);
+        }
         rejected.remove(owner);
         if (prepared.intent().isPresent())
             archives.put(owner, new Archive(prepared.intent().get(), true));
@@ -348,6 +366,11 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 confirmFailure(pending.prepared(), pending.problem());
             for (var slot : new ArrayList<>(slots.values()).reversed()) {
                 String owner = slot.prepared.selection().owner();
+                if (slot.preparation != null) {
+                    slot.preparation.close();
+                    if (slot.session == null)
+                        slot.unclaimed = !slot.preparation.acknowledged();
+                }
                 if (slot.failure == null)
                     archive(owner);
                 if (slot.session != null) {
@@ -443,7 +466,10 @@ public final class PlatformModCoordinator implements AutoCloseable {
     /** Original allocated resources, retained even when construction or cleanup fails. / 原已分配资源，即使构造或清理失败也保留。 */
     private static final class Slot {
         /** Original activation facts. / 原启用事实。 */
-        private final Prepared prepared;
+        private Prepared prepared;
+
+        /** Original isolated data preparation, retained until physically released. / 保留至物理释放的原隔离数据准备。 */
+        private ModSchemaInitialization preparation;
 
         /** Actual allocated code owner. / 实际已分配代码所有者。 */
         private final ModClassLoader loader;
