@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+import gold.debug.windowstolinux.appapi.linux.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.TransferRequest;
 import gold.debug.windowstolinux.appapi.task.*;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
@@ -47,10 +48,10 @@ class SftpTransferTest {
                         false);
                 assertEquals(Outcome.SUCCEEDED, download.outcome(), download.toString());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
-                assertEquals(Outcome.FAILED,
+                assertEquals(Outcome.CANCELLED,
                         transfer(connection, received, "/nested/二进制 file.bin", bytes.length, digest(bytes), false)
                                 .outcome());
-                assertEquals(Outcome.FAILED,
+                assertEquals(Outcome.CANCELLED,
                         transfer(connection, source, "/nested/二进制 file.bin", bytes.length, digest(bytes), true)
                                 .outcome());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
@@ -118,7 +119,8 @@ class SftpTransferTest {
             var result = transfer(connection, source, "/corrupt", 3, digest(bytes), true);
             assertEquals(Outcome.UNKNOWN, result.outcome());
             assertEquals(1, writes.get());
-            assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(fixture.remote.resolve("corrupt")));
+            assertFalse(Files.exists(fixture.remote.resolve("corrupt")));
+            assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(temporary(fixture.remote)));
             assertThrows(ApiException.class, () -> transfer(connection, source, "/retry", 3, digest(bytes), true));
             assertEquals(1, writes.get());
         }
@@ -143,14 +145,15 @@ class SftpTransferTest {
             byte[] bytes = new byte[200000];
             Path source = Files.write(root.resolve("input"), bytes);
             var request = new TransferRequest(source, "/partial", bytes.length);
-            assertEquals(Outcome.CANCELLED,
-                    connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get).outcome());
+            assertEquals(Outcome.CANCELLED, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
+                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE).outcome());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             cancelled.set(false);
-            assertEquals(Outcome.UNKNOWN,
-                    connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get).outcome());
+            assertEquals(Outcome.UNKNOWN, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
+                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE).outcome());
             assertEquals(1, writes.get());
-            assertEquals(16384, Files.size(fixture.remote.resolve("partial")));
+            assertFalse(Files.exists(fixture.remote.resolve("partial")));
+            assertEquals(16384, Files.size(temporary(fixture.remote)));
             assertEquals(1, connector.retainedConnections());
         }
     }
@@ -187,12 +190,16 @@ class SftpTransferTest {
                 Path source = Files.write(directory.resolve("input"), bytes);
                 try {
                     var result = connection.transfer(new TransferRequest(source, "/partial", bytes.length),
-                            digest(bytes), true, timeout ? Duration.ofMillis(400) : Duration.ofSeconds(5), () -> false);
+                            digest(bytes), true, timeout ? Duration.ofMillis(400) : Duration.ofSeconds(5), () -> false,
+                            conflict -> TransferConflictChoice.TERMINATE);
                     assertEquals(0, entered.getCount());
                     assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
                     if (timeout)
                         assertEquals("SFTP_TIMEOUT", result.problem().orElseThrow().eventCode());
-                    assertEquals(16384, Files.size(fixture.remote.resolve("partial")));
+                    assertFalse(Files.exists(fixture.remote.resolve("partial")));
+                    assertEquals(16384, Files.size(temporary(fixture.remote)));
+                    assertTrue(temporary(fixture.remote).getFileName().toString()
+                            .contains(result.problem().orElseThrow().context().get("transferId")));
                 } finally {
                     release.countDown();
                 }
@@ -215,7 +222,8 @@ class SftpTransferTest {
             var result = transfer(connection, source, "/changed", 3, digest(bytes), true);
             assertEquals(Outcome.UNKNOWN, result.outcome());
             assertTrue(result.value().isEmpty());
-            assertArrayEquals(new byte[]{9, 2, 3}, Files.readAllBytes(fixture.remote.resolve("changed")));
+            assertFalse(Files.exists(fixture.remote.resolve("changed")));
+            assertArrayEquals(new byte[]{9, 2, 3}, Files.readAllBytes(temporary(fixture.remote)));
         }
     }
 
@@ -223,7 +231,7 @@ class SftpTransferTest {
             SshConnector.Connection connection, Path local, String remote, long limit, String digest, boolean upload)
             throws ApiException {
         return connection.transfer(new TransferRequest(local, remote, limit), digest, upload, Duration.ofSeconds(5),
-                () -> false);
+                () -> false, conflict -> TransferConflictChoice.TERMINATE);
     }
 
     @Test
@@ -293,8 +301,9 @@ class SftpTransferTest {
             var result = transfer(connection, received, "/changing", bytes.length, digest(bytes), false);
             assertEquals(Outcome.UNKNOWN, result.outcome());
             assertTrue(result.value().isEmpty());
-            assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(received));
-            Files.delete(received);
+            assertFalse(Files.exists(received));
+            assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(temporary(root)));
+            Files.delete(temporary(root));
         }
     }
 
@@ -322,6 +331,14 @@ class SftpTransferTest {
 
     static String digest(byte[] bytes) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+
+    static Path temporary(Path directory) throws Exception {
+        try (var files = Files.list(directory)) {
+            var matches = files.filter(file -> file.getFileName().toString().startsWith(".wtl-transfer-")).toList();
+            assertEquals(1, matches.size(), matches.toString());
+            return matches.getFirst();
+        }
     }
 
     static final class Fixture implements AutoCloseable {

@@ -5,6 +5,8 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Owns caller-bound human review and single-use grants without persisting secret input. / 持有调用方绑定的人工审核及单次授权，不持久化秘密输入。 */
@@ -87,6 +89,37 @@ public final class PlatformInteractionService implements InteractionService, Aut
                 grants.put(grant, new Reviewed(task, intent));
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
+        } finally {
+            release(lease);
+        }
+    }
+
+    /** Presents a file conflict independently of any reusable operation authorization. / 独立于任何可复用操作授权呈现文件冲突。
+     * @param conflict exact observed file conflict / 精确已观察文件冲突
+     * @param server original admitted server / 原准入服务器
+     * @param task original active task / 原活动任务
+     * @return explicit conflict choice, or termination after cancellation / 明确冲突选择，取消后终止
+     * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
+    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskContext task)
+            throws ApiException {
+        worker();
+        requireOpen();
+        tasks.requireServer(task, owner, version, server.id());
+        var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
+                "interaction-" + UUID.randomUUID(), owner, false));
+        try {
+            var cancellation = cancellation(task);
+            var choice = security.human(() -> prompts.transferConflict(conflict, server,
+                    tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+            requireOpen();
+            tasks.requireServer(task, owner, version, server.id());
+            return Objects.requireNonNull(choice);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            return TransferConflictChoice.TERMINATE;
+        } catch (ApiException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw error(ProblemCode.UNAVAILABLE, "TRANSFER_CHOICE", "File conflict choice did not complete");
         } finally {
             release(lease);
         }
@@ -276,6 +309,15 @@ public final class PlatformInteractionService implements InteractionService, Aut
 
     /** Host-owned human presentation; implementations marshal their controls to the EDT. / 宿主持有的人工呈现；实现将控件操作调度至 EDT。 */
     public interface Prompts {
+        /** Resolves an actual same-name conflict without inferring consent from authorization mode. / 解决实际同名冲突，不从授权模式推断同意。
+         * @param conflict exact file conflict / 精确文件冲突
+         * @param server selected server / 选定服务器
+         * @param task original task identity / 原任务身份
+         * @param cancellation cooperative prompt cancellation / 协作提示取消
+         * @return explicit business choice / 明确业务选择 */
+        TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation);
+
         /**
          * Presents the complete effect for explicit review. / 呈现完整副作用供明确审核。
          * @param intent exact immutable action / 精确不可变动作

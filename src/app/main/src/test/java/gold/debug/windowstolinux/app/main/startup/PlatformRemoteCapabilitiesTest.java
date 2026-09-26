@@ -31,6 +31,13 @@ class PlatformRemoteCapabilitiesTest {
     static final ServerRef SERVER = new ServerRef("server");
 
     static final class Reviews implements PlatformInteractionService.Prompts {
+        java.util.function.Function<gold.debug.windowstolinux.appapi.linux.TransferConflict, gold.debug.windowstolinux.appapi.linux.TransferConflictChoice> conflictPolicy = conflict -> gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.TERMINATE;
+        public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
+                gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
+                gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation) {
+            return conflictPolicy.apply(conflict);
+        }
         final List<ActionIntent> approved = new CopyOnWriteArrayList<>();
 
         volatile java.util.function.Predicate<ActionIntent> policy = intent -> true;
@@ -170,6 +177,53 @@ class PlatformRemoteCapabilitiesTest {
                 assertEquals(1, remote.commands.get());
                 assertEquals(0, runtime.security().securityState().activeTasks());
                 assertTrue(runtime.persistence().servers().findServer("server").isPresent());
+            }
+        }
+    }
+
+    @Test
+    void exactOperationApprovalStillRequiresAnIndependentSameNameBusinessChoice() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            var reviews = new Reviews();
+            var choices = new AtomicInteger();
+            reviews.conflictPolicy = conflict -> {
+                assertEquals(3, conflict.incomingBytes());
+                return switch (choices.getAndIncrement()) {
+                    case 0 -> TransferConflictChoice.KEEP_BOTH;
+                    case 1 -> TransferConflictChoice.OVERWRITE;
+                    default -> TransferConflictChoice.TERMINATE;
+                };
+            };
+            runtime.setInteractionPresenter(reviews);
+            var source = Files.writeString(root.resolve("input.txt"), "new");
+            Files.writeString(remote.files.resolve("file.txt"), "old");
+            String digest = HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest("new".getBytes(StandardCharsets.UTF_8)));
+            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                    try (var session = capabilities.linux().connect(SERVER, task)) {
+                        var request = new TransferRequest(source, "/file.txt", 3);
+                        for (int i = 0; i < 3; i++) {
+                            var grant = capabilities.interaction()
+                                    .approve(RemoteActions.transfer(SERVER, "revision", request, digest, true), task)
+                                    .value().orElseThrow();
+                            var transferred = session.upload(request, grant);
+                            assertEquals(i == 2 ? Outcome.CANCELLED : Outcome.SUCCEEDED, transferred.outcome(),
+                                    transferred.toString());
+                            if (i == 0)
+                                assertEquals("/file (1).txt", transferred.value().orElseThrow().remoteAbsolutePath());
+                        }
+                    }
+                    return success(null);
+                });
+                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(3, choices.get());
+                assertEquals("new", Files.readString(remote.files.resolve("file.txt")));
+                assertEquals("new", Files.readString(remote.files.resolve("file (1).txt")));
+                assertEquals(0, count(runtime.persistence().database(),
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             }
         }
     }

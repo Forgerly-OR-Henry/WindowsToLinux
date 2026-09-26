@@ -7,6 +7,8 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Presents full task review in dialogs owned by the platform privacy window. / 在平台隐私窗口所属对话框内呈现完整任务审核。 */
@@ -28,6 +30,40 @@ public final class TaskInteractionPresenter
     public TaskInteractionPresenter(JFrame owner, MessageCatalog messages) {
         this.owner = java.util.Objects.requireNonNull(owner);
         this.messages = java.util.Objects.requireNonNull(messages);
+    }
+
+    /** Shows the three file-conflict choices, with termination selected initially. / 显示三个文件冲突选项，初始选择终止。
+     * @param conflict exact observed conflict / 精确已观察冲突
+     * @param server selected server / 选定服务器
+     * @param task original task identity / 原任务身份
+     * @param cancellation cooperative cancellation / 协作取消
+     * @return explicit user choice / 明确用户选择 */
+    @Override
+    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
+            CancellationToken cancellation) {
+        return onEdt(() -> {
+            var description = new JTextArea(messages.text("transfer.conflict.explanation") + "\n\n"
+                    + messages.text("task.review.servers") + ": " + server.id() + "\n" + messages.text("transfer.local")
+                    + ": " + conflict.request().localPath() + "\n" + messages.text("transfer.remote") + ": "
+                    + conflict.request().remoteAbsolutePath() + "\n" + messages.text("transfer.direction") + ": "
+                    + messages.text(conflict.upload() ? "transfer.upload" : "transfer.download") + "\n"
+                    + messages.text("transfer.incomingBytes") + ": " + conflict.incomingBytes() + "\n"
+                    + messages.text("transfer.existingBytes") + ": " + conflict.existingBytes());
+            description.setEditable(false);
+            description.setLineWrap(true);
+            description.setWrapStyleWord(true);
+            description.setName("transfer.conflict.details");
+            var scroll = new JScrollPane(description);
+            scroll.setPreferredSize(new Dimension(680, 280));
+            String[] options = {messages.text("transfer.overwrite"), messages.text("transfer.keepBoth"),
+                    messages.text("transfer.terminate")};
+            var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll},
+                    JOptionPane.QUESTION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[2]);
+            Object result = show(pane, messages.text("transfer.conflict.title"), cancellation);
+            return options[0].equals(result)
+                    ? TransferConflictChoice.OVERWRITE
+                    : options[1].equals(result) ? TransferConflictChoice.KEEP_BOTH : TransferConflictChoice.TERMINATE;
+        });
     }
 
     /** Confirms a local directory in the platform-owned cancellable modal window. / 在平台所属可取消模态窗口确认本地目录。

@@ -312,17 +312,19 @@ public final class SshConnector implements AutoCloseable {
         }
 
         /**
-         * Transfers one reviewed regular file to a new destination without retries. / 向新目标传输一个已审核普通文件，不进行重试。
+         * Stages and verifies one reviewed file, then publishes the explicitly selected destination. / 暂存并核验一个已审核文件，随后发布明确选定目标。
          * @param request exact approved transfer request / 精确已批准传输请求
          * @param sha256 approved source digest checked before destination creation / 创建目标前核对的已批准源摘要
          * @param upload whether the destination is remote / 目标是否在远端
          * @param timeout host total operation deadline / 宿主操作总期限
          * @param cancellation original task cancellation / 原任务取消
+         * @param conflicts actual same-name decision / 实际同名决定
          * @return verified transfer or explicit uncertainty / 已核验传输或明确不确定性
          * @throws ApiException if admission fails before transfer / 传输前准入失败时
          */
         public OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
-                Duration timeout, CancellationToken cancellation) throws ApiException {
+                Duration timeout, CancellationToken cancellation, TransferConflictResolver conflicts)
+                throws ApiException {
             worker();
             if (!operating.compareAndSet(false, true))
                 throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
@@ -332,7 +334,7 @@ public final class SshConnector implements AutoCloseable {
                 if (uncertain || command != null || transfer != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                             "SSH connection requires closure after unfinished work");
-                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation);
+                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts);
                 var result = transfer.run();
                 uncertain = result.outcome() == Outcome.UNKNOWN;
                 if (transfer.close())

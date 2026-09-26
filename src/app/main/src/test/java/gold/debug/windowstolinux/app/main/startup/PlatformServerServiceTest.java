@@ -165,6 +165,13 @@ class PlatformServerServiceTest {
             var entered = new CountDownLatch(1);
             runtime.setInteractionPresenter(
                     new gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts() {
+                        public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
+                                gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
+                                gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                                CancellationToken cancellation) {
+                            return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.TERMINATE;
+                        }
+
                         public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancel) {
                             entered.countDown();
                             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);

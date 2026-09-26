@@ -1635,7 +1635,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SshCommandExecution.java`：一次 SSH 命令发送、有界等待、退出证据及未知结果处理，保留尚未释放的通道和发送线程。
 - `app/linux/ssh/SshCommandFrame.java`：固定 Bash 引导与长度帧，在标准输入上传送脚本及原始二进制输入。
 - `app/linux/ssh/SshOutputCapture.java`：合并限制标准输出和错误输出的保留容量，超限后继续排空。
-- `app/linux/ssh/SftpTransfer.java`：普通文件的排他新建传输、审批摘要与容量核对，保留不确定结果及未释放资源。
+- `app/linux/ssh/SftpTransfer.java`：普通文件的临时传输、摘要与容量核对、校验后发布及回读，保留不确定结果及未释放资源。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
@@ -1680,3 +1680,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
 - `app/service/source/PlatformSourceAccess.java`：把目录确认、读取和快照绑定原 Mod 任务，保留实际 FILE 占用并支持原身份恢复。
 - `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 读取 Windows 卷号和 128 位文件 ID，并关闭实际原生句柄。
+
+- `appapi/linux/TransferConflict.java`：同名冲突的精确端点、方向与实测大小。
+- `appapi/linux/TransferConflictChoice.java`：覆盖、保留两份与终止的明确用户选择。
+- `app/linux/ssh/SftpDestination.java`：在暂存期间保留旧目标，生成不冲突名称并核对用户选择后发布。
+- `app/linux/ssh/TransferConflictResolver.java`：由宿主提供的实际同名冲突决定接口。
+- `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录发布，并拒绝未授权覆盖。
