@@ -84,6 +84,18 @@ class DevelopmentModDiscoveryTest {
     }
 
     @Test
+    void buildAndDiscoveryRejectNonEntrypointBeforeAuthorExecution() throws Exception {
+        Path root = workspace();
+        Path module = module(root, "admission", "example.admission");
+        Path descriptor = generate(root, module);
+        compile(module, Map.of("example.admission.Mod", "package example.admission; public class Mod {}"));
+        assertThrows(IOException.class, () -> generate(root, module));
+        assertTrue(DevelopmentModDiscovery.scan(root).candidates().isEmpty());
+        assertTrue(Files.exists(descriptor));
+        assertNull(System.getProperty("wtl.discovery.initialized"));
+    }
+
+    @Test
     void discoversCompiledMainCompanionAndPrivateLibraryWithoutBuildingAMainJarOrExecutingCode() throws Exception {
         Path root = workspace();
         Path main = module(root, "main", "example.discovery");

@@ -46,6 +46,7 @@
     <h2.version>2.5.250</h2.version>
     <jna.version>5.17.0</jna.version>
     <pf4j.version>3.13.0</pf4j.version>
+    <asm.version>9.10.1</asm.version>
     <bouncycastle.version>1.78.1</bouncycastle.version>
     <flatlaf.version>3.7.1</flatlaf.version>
     <jackson.version>2.18.1</jackson.version>

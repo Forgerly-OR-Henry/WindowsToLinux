@@ -154,7 +154,19 @@ public final class ModDependencyPlan {
         }
         var bindings = new TreeMap<String, ModClassLoader>();
         exports.get(owner).forEach((name, provider) -> bindings.put(name, originals.get(provider)));
-        return new ModClassLoader(manifest, sources, bindings);
+        var loader = new ModClassLoader(manifest, sources, bindings);
+        try {
+            loader.inspectCode();
+            return loader;
+        } catch (java.io.IOException invalid) {
+            try {
+                loader.close();
+            } catch (java.io.IOException cleanup) {
+                invalid.addSuppressed(cleanup);
+            }
+            throw new ApiException(
+                    problem("MOD_CODE_INVALID", "Selected Mod code failed static admission", owner, owner));
+        }
     }
 
     /** Checks equal or containing package names without treating textual prefixes as packages. / 检查相同或包含包名，不将文本前缀误当作包。
@@ -175,7 +187,7 @@ public final class ModDependencyPlan {
         ProblemCode code = switch (event) {
             case "MOD_HOST_INCOMPATIBLE", "MOD_DEPENDENCY_INCOMPATIBLE", "MOD_DEPENDENCY_CYCLE" ->
                 ProblemCode.INCOMPATIBLE;
-            case "MOD_SELECTION_AMBIGUOUS", "MOD_EXPORT_CONFLICT" -> ProblemCode.CONTRACT_VIOLATION;
+            case "MOD_SELECTION_AMBIGUOUS", "MOD_EXPORT_CONFLICT", "MOD_CODE_INVALID" -> ProblemCode.CONTRACT_VIOLATION;
             default -> ProblemCode.UNAVAILABLE;
         };
         return new Problem(code, event, message, Map.of("ownerId", owner, "dependencyId", dependency),

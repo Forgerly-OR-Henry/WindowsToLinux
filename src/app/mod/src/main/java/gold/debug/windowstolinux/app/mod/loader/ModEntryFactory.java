@@ -17,6 +17,11 @@ public final class ModEntryFactory {
      * @throws ReflectiveOperationException if entry shape, origin or construction fails / 入口形状、来源或构造失败时
      */
     public static ModEntrypoint create(ModClassLoader loader) throws ReflectiveOperationException {
+        try {
+            loader.inspectCode();
+        } catch (java.io.IOException invalid) {
+            throw new ReflectiveOperationException("Mod code admission failed", invalid);
+        }
         var type = Class.forName(loader.manifest().entryClass(), false, loader);
         int modifiers = type.getModifiers();
         if (!loader.ownsMainClass(type) || !Modifier.isPublic(modifiers) || Modifier.isAbstract(modifiers)

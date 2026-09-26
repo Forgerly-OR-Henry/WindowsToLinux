@@ -12,6 +12,7 @@ import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.loader.ModCodeInspection;
 import gold.debug.windowstolinux.app.mod.manifest.*;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 
@@ -245,6 +246,14 @@ public final class ModPackageReader {
         if (!remaining.isEmpty() || !Files.readString(directory.resolve("mod.json"), StandardCharsets.UTF_8)
                 .equals(expected.manifest().json()))
             throw new IOException("Extracted files or manifest do not match original evidence");
+        var jars = new ArrayList<String>();
+        jars.add(expected.manifest().mainJar());
+        sorted.stream().map(FileEntry::path)
+                .filter(name -> name.startsWith("main/") && !name.equals(expected.manifest().mainJar()))
+                .forEach(jars::add);
+        sorted.stream().map(FileEntry::path).filter(name -> name.startsWith("lib/")).forEach(jars::add);
+        ModCodeInspection.read(expected.manifest(), jars.stream().map(directory::resolve).toList()).validate(false,
+                Map.of());
     }
 
     /** Indexes nested class names without expanding resources or linking author types. / 不展开资源或链接作者类型地索引嵌套类名。
@@ -259,24 +268,30 @@ public final class ModPackageReader {
         var classes = new HashMap<String, String>();
         int count = 0;
         boolean mainEntry = false;
+        var code = new ModCodeInspection(manifest);
         for (String path : jars) {
             var source = entries.get(path);
             try (var jar = new ModZip(file, source.getDataOffset(), source.getSize(), MAX_JAR_ENTRIES - count, false)) {
                 count += jar.entries.size();
+                boolean multiRelease = false;
+                for (var entry : jar.entries) {
+                    if (!entry.getName().equalsIgnoreCase("META-INF/MANIFEST.MF"))
+                        continue;
+                    if (entry.getSize() > ManifestReader.MAX_BYTES)
+                        throw new IOException("JAR manifest exceeds size limit");
+                    var metadata = new ByteArrayOutputStream();
+                    copy(jar, entry, metadata);
+                    var attributes = new java.util.jar.Manifest(new ByteArrayInputStream(metadata.toByteArray()));
+                    ModClassLoader.rejectManifestClasspath(attributes);
+                    multiRelease = "true".equalsIgnoreCase(attributes.getMainAttributes().getValue("Multi-Release"));
+                }
                 for (var entry : jar.entries) {
                     if (entry.getMethod() != ZipEntry.STORED && entry.getMethod() != ZipEntry.DEFLATED)
                         throw new IOException("Unsupported JAR compression method");
                     if (entry.isDirectory())
                         continue;
                     String name = ModZip.name(entry, false);
-                    if (name.equalsIgnoreCase("META-INF/MANIFEST.MF")) {
-                        if (entry.getSize() > ManifestReader.MAX_BYTES)
-                            throw new IOException("JAR manifest exceeds size limit");
-                        var metadata = new ByteArrayOutputStream();
-                        copy(jar, entry, metadata);
-                        ModClassLoader.rejectManifestClasspath(
-                                new java.util.jar.Manifest(new ByteArrayInputStream(metadata.toByteArray())));
-                    }
+                    int release = ModCodeInspection.release(name, multiRelease);
                     if (name.startsWith("META-INF/versions/")) {
                         String[] parts = name.split("/", 4);
                         if (parts.length != 4 || !parts[2].matches("[1-9][0-9]*"))
@@ -294,14 +309,15 @@ public final class ModPackageReader {
                     String owner = classes.putIfAbsent(type, path);
                     if (owner != null && !owner.equals(path))
                         throw new IOException("Duplicate class across Mod JARs");
-                    if (type.equals(manifest.entryClass()) && path.equals(manifest.mainJar())) {
-                        // Read class structure only; static initializers and dependency linking remain disabled. / 只读类结构；不运行静态初始化或依赖链接。
+                    if (release >= 0) {
                         var crc = new CRC32();
                         try (var input = new java.util.zip.CheckedInputStream(jar.zip.getInputStream(entry), crc)) {
-                            ModEntryShape.read(input, entry.getSize(), name);
+                            code.add(path, path.equals(manifest.mainJar()), name, release, input, entry.getSize());
                         }
                         if (crc.getValue() != entry.getCrc())
-                            throw new IOException("Entry class CRC mismatch");
+                            throw new IOException("Class CRC mismatch");
+                    }
+                    if (type.equals(manifest.entryClass()) && path.equals(manifest.mainJar())) {
                         if (entry.getName().equals(name))
                             mainEntry = true;
                     }
@@ -310,6 +326,7 @@ public final class ModPackageReader {
         }
         if (!mainEntry)
             throw new IOException("Main JAR must contain the base entry class");
+        code.validate(false, Map.of());
         return Map.copyOf(classes);
     }
 

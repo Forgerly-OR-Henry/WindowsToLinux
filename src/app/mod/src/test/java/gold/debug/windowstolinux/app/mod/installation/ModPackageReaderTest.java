@@ -146,6 +146,22 @@ class ModPackageReaderTest {
     }
 
     @Test
+    void archiveAdmissionRejectsDuckTypedEntryWithoutInitializingIt() throws Exception {
+        String original = Files.readString(root.resolve("Mod.java"));
+        String changed = original.replace("implements ModEntrypoint", "");
+        assertNotEquals(original, changed);
+        Files.writeString(root.resolve("Mod.java"), changed);
+        var cp = Path.of(ModEntrypoint.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-proc:none", "--release", "21",
+                "-classpath", cp.toString(), "-d", root.toString(), root.resolve("Mod.java").toString()));
+        entryClass = Files.readAllBytes(root.resolve("sample/bundle/Mod.class"));
+        var originalPackage = archive("invalid-contract.wtlmod", files());
+        assertTrue(assertThrows(IOException.class, () -> ModPackageReader.read(originalPackage)).getMessage()
+                .contains("implement"));
+        assertNull(System.getProperty(MARK));
+    }
+
+    @Test
     void contentDigestIgnoresArchiveOrderDirectoriesAndContainerMetadata() throws Exception {
         var values = files();
         var first = ModPackageReader.read(archive("one.wtlmod", values));
@@ -474,6 +490,9 @@ class ModPackageReaderTest {
         ModPackageReader.extract(inspection, directory);
         Files.delete(original);
         ModPackageReader.verifyDirectory(inspection, directory);
+        var durable = new ModPackageReader.Inspection(inspection.archive(), inspection.manifest(),
+                inspection.archiveSha256(), inspection.contentSha256(), inspection.files(), List.of(), Map.of());
+        ModPackageReader.verifyDirectory(durable, directory);
         var readme = directory.resolve("README.md");
         byte[] expected = Files.readAllBytes(readme);
         Files.writeString(readme, "tampered");
