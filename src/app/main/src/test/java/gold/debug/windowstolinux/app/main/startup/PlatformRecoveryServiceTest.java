@@ -110,7 +110,10 @@ class PlatformRecoveryServiceTest {
             await(() -> task(runtime, session).state() == TaskState.ENDED);
             assertEquals(RecoverySnapshot.State.FAILED, session.snapshot().state());
             assertEquals("authentication", session.snapshot().messageCode());
-            assertTrue(session.snapshot().failure().orElseThrow().diagnostic().contains("SSH_AUTHENTICATION_FAILED"));
+            assertEquals("SSH_AUTHENTICATION_FAILED", session.snapshot().failure().orElseThrow().eventCode());
+            var completed = ((TaskHandle<?>) field(session, "handle")).completion().toCompletableFuture().get(5,
+                    TimeUnit.SECONDS);
+            assertEquals(session.snapshot().failure(), completed.problem());
             assertTrue(remote.authentications.get() > 0);
             assertEquals(1, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION'"));

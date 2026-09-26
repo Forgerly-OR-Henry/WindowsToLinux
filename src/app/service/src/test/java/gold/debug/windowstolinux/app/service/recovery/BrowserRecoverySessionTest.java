@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.service.recovery;
 
-import static gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot.State.*;
+import static gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot.State.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -13,9 +13,9 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
+import gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
-import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
@@ -111,7 +111,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
                     "{\"choices\":[{\"message\":{\"content\":\"{\\\"command\\\":\\\"uname -a\\\",\\\"reason\\\":\\\"inspect\\\",\\\"expected\\\":\\\"hello\\\",\\\"highImpact\\\":false}\"}}]}");
         }));
         return new BrowserRecoverySession(browser, ai, () -> probeResult(ssh.get()), ignored -> {
-        }, new ServerProfile("server", "127.0.0.1", 22, "user", "ai/key"), lock, clock);
+        }, new RecoveryTarget("server", "127.0.0.1", 22), lock, clock);
     }
 
     private static RecoveryProbeResult probeResult(String code) {
@@ -126,7 +126,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
                 gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.HOST_KEY_REJECTED;
             default -> throw new IllegalArgumentException(code);
         };
-        return RecoveryProbeResult.failed(
+        return RecoveryProbeAdapter.failed(
                 gold.debug.windowstolinux.shared.linux.error.LinuxOperationException.create(type, "test probe"));
     }
 
@@ -159,7 +159,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
                 submittedJournal.incrementAndGet();
                 throw new IllegalStateException("journal failed before terminal input");
             }
-        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
+        }, new RecoveryTarget("server", "example.test", 22), new ReentrantLock());
         var worker = new Thread(session);
         try (session) {
             worker.start();
@@ -183,13 +183,13 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         var browser = new Browser();
         var session = new BrowserRecoverySession(browser, null, RecoveryProbeResult::recovered, snapshot -> {
             throw new IllegalStateException("terminal-password=never-persist");
-        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
+        }, new RecoveryTarget("server", "example.test", 22), new ReentrantLock());
         session.run();
         var end = session.await();
         assertEquals(FAILED, end.state());
         assertTrue(browser.closed);
-        assertEquals("persistence.recovery.journal-failed", end.failure().orElseThrow().code());
-        assertFalse(end.failure().orElseThrow().diagnostic().contains("never-persist"));
+        assertEquals("RESCUE_JOURNAL", end.failure().orElseThrow().eventCode());
+        assertFalse(end.failure().orElseThrow().message().contains("never-persist"));
         assertTrue(end.action().isEmpty());
     }
 
@@ -207,13 +207,13 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         };
         var session = new BrowserRecoverySession(browser, null, () -> {
             calls.incrementAndGet();
-            return RecoveryProbeResult.failed(new InterruptedException());
+            return RecoveryProbeAdapter.failed(new InterruptedException());
         }, ignored -> {
-        }, new ServerProfile("server", "example.test", 22, "user", "key"), new ReentrantLock());
+        }, new RecoveryTarget("server", "example.test", 22), new ReentrantLock());
         session.run();
         assertEquals(1, calls.get());
         assertTrue(browser.closed);
-        assertEquals("linux.browser.cleanup-failed", session.await().failure().orElseThrow().code());
+        assertEquals("linux.browser.cleanup-failed", session.await().failure().orElseThrow().eventCode());
     }
 
     private void until(java.util.function.BooleanSupplier predicate) throws Exception {
@@ -335,7 +335,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         var session = new BrowserRecoverySession(browser, null,
                 () -> probeResult(attempts.incrementAndGet() == 1 ? "connectionFailed" : "identityConflict"),
                 ignored -> {
-                }, new ServerProfile("server", "127.0.0.1", 22, "user", "key"), new ReentrantLock());
+                }, new RecoveryTarget("server", "127.0.0.1", 22), new ReentrantLock());
         session.run();
         assertEquals(FAILED, session.await().state());
         assertEquals("identityConflict", session.snapshot().messageCode());

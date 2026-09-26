@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.service.recovery;
 
 import java.util.function.Predicate;
 
+import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.error.*;
@@ -60,7 +61,7 @@ final class RecoverySshProbe {
                 credential.clear();
             }
         } catch (Exception failure) {
-            return RecoveryProbeResult.failed(failure);
+            return RecoveryProbeAdapter.failed(failure);
         }
     }
 }

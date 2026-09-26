@@ -1,9 +1,8 @@
-package gold.debug.windowstolinux.app.service.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import java.util.*;
 
 import gold.debug.windowstolinux.app.ai.recovery.RecoveryAction;
-import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 
 /**
  * Worker-owned state; snapshots contain no raw terminal evidence. / 工作线程持有状态，快照不含原始终端证据。
@@ -43,7 +42,7 @@ final class RecoverySessionState {
      * Structured failure occurrence retained for safe reporting.
      * <p>保留用于安全报告的结构化失败实例。
      */
-    gold.debug.windowstolinux.shared.model.failure.FailureDescriptor failure;
+    gold.debug.windowstolinux.appapi.task.Problem failure;
 
     /**
      * Token.

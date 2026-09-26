@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-app-linux</artifactId>
   <dependencies>
     <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-ai</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.microsoft.playwright</groupId>
       <artifactId>playwright</artifactId>
       <version>1.58.0</version>

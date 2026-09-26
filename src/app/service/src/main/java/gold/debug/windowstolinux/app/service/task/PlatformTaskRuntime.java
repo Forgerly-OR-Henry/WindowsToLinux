@@ -528,10 +528,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     try {
                         return resolver.claims(connection);
                     } catch (ApiException rejected) {
-                        throw new AdmissionRejected(rejected);
+                        throw new AdmissionRejectedException(rejected);
                     }
                 });
-            } catch (AdmissionRejected rejected) {
+            } catch (AdmissionRejectedException rejected) {
                 dependencyScopes.remove(facts.call());
                 throw rejected.rejection;
             } catch (TaskLedger.DependencyBusyException busy) {
@@ -963,7 +963,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     }
 
     /** Carries a rejected policy through repository rollback without inventing uncertain work. / 跨仓库回滚传递策略拒绝，不虚构未知工作。 */
-    private static final class AdmissionRejected extends SQLException {
+    private static final class AdmissionRejectedException extends SQLException {
         /** Original public rejection. / 原始公开拒绝原因。 */
         private final ApiException rejection;
 
@@ -971,7 +971,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * Retains the validation result before any task insert. / 在任何任务插入之前保留校验结果。
          * @param rejection original policy error / 原始策略错误
          */
-        private AdmissionRejected(ApiException rejection) {
+        private AdmissionRejectedException(ApiException rejection) {
             super("Task admission rejected", rejection);
             this.rejection = rejection;
         }
@@ -1046,7 +1046,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                                                 blockedOwners.get(claim.id()));
                                 return claims;
                             } catch (ApiException rejected) {
-                                throw new AdmissionRejected(rejected);
+                                throw new AdmissionRejectedException(rejected);
                             }
                         });
                         var task = new Execution<>(ledger.snapshot(id), work, request.cancellable());
@@ -1055,7 +1055,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         retained = true;
                         dispatch();
                         return task;
-                    } catch (AdmissionRejected rejected) {
+                    } catch (AdmissionRejectedException rejected) {
                         throw rejected.rejection;
                     } catch (SQLException failure) {
                         try {

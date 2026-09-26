@@ -5,10 +5,13 @@ import java.util.concurrent.*;
 import java.util.function.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySession;
 import gold.debug.windowstolinux.app.linux.recovery.PlaywrightTerminalSession;
+import gold.debug.windowstolinux.app.linux.recovery.RecoveryTarget;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
+import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
@@ -142,7 +145,7 @@ public final class SshRecoveryUseCase implements AutoCloseable {
             show.accept(guarded(session));
             started = true;
             session.run();
-            RecoverySnapshot result = session.await();
+            RecoverySnapshot result = RecoverySnapshot.from(session.await());
             return result.state() == RecoverySnapshot.State.RECOVERED && !result.resultUnknown();
         } finally {
             session.close();
@@ -276,7 +279,7 @@ public final class SshRecoveryUseCase implements AutoCloseable {
                      * @param snapshot snapshot supplied to this boundary / 传入当前边界的snapshot值
                      */
                     @Override
-                    public void accept(RecoverySnapshot snapshot) {
+                    public void accept(gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot snapshot) {
                         try {
                             if (snapshot.action().isPresent())
                                 digest = HexFormat.of()
@@ -288,16 +291,15 @@ public final class SshRecoveryUseCase implements AutoCloseable {
                             persistence.recovery().save(snapshot.id(), server.id(), operation, snapshot.state().name(),
                                     digest, event);
                         } catch (Exception failure) {
-                            throw new gold.debug.windowstolinux.app.service.failure.ApplicationServiceException(
-                                    gold.debug.windowstolinux.shared.model.failure.FailureDescriptor.create(
-                                            gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.RECOVERY_JOURNAL_FAILED,
-                                            gold.debug.windowstolinux.shared.model.failure.OperationIdentity
-                                                    .from(snapshot.id()),
-                                            "Recovery journal could not be saved"),
-                                    failure);
+                            var problem = new gold.debug.windowstolinux.appapi.task.Problem(
+                                    gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE,
+                                    "persistence.recovery.journal-failed", "Recovery journal could not be saved",
+                                    Map.of(), Optional.of(UUID.fromString(snapshot.id())));
+                            throw new IllegalStateException("Recovery journal could not be saved",
+                                    new gold.debug.windowstolinux.appapi.task.ApiException(problem));
                         }
                     }
-                }, server, locks.forServer(server.id()));
+                }, new RecoveryTarget(server.id(), server.host(), server.sshPort()), locks.forServer(server.id()));
     }
 
     /**
@@ -312,14 +314,14 @@ public final class SshRecoveryUseCase implements AutoCloseable {
              * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
              */
             public RecoverySnapshot snapshot() {
-                return secrets.whileUnlocked(session::snapshot);
+                return secrets.whileUnlocked(() -> RecoverySnapshot.from(session.snapshot()));
             }
 
             /** Lists recovery terminals only through the interactive authorization gate. / 仅通过交互授权门禁列出救援终端。
              * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
              */
             public java.util.List<gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal> terminals() {
-                return secrets.whileUnlocked(session::terminals);
+                return secrets.whileUnlocked(() -> session.terminals().stream().map(RecoveryTerminal::from).toList());
             }
 
             /** Binds the manually reviewed recovery terminal while unlocked. / 在解锁时绑定人工审阅的救援终端。
