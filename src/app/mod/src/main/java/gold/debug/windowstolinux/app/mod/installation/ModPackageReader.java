@@ -1,0 +1,345 @@
+package gold.debug.windowstolinux.app.mod.installation;
+
+import java.io.*;
+import java.nio.*;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.security.*;
+import java.util.*;
+import java.util.zip.CRC32;
+import java.util.zip.ZipEntry;
+
+import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.manifest.*;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+
+/** Reads and stages original packages without loading author classes or changing installed state. / 读取并暂存原包，不加载作者类或改变已安装状态。 */
+public final class ModPackageReader {
+    /** Original archive and total outer payload limit. / 原归档及外层载荷总量上限。 */
+    public static final long MAX_BYTES = 2L * 1024 * 1024 * 1024;
+
+    /** Outer file and directory count limit. / 外层文件及目录计数上限。 */
+    public static final int MAX_ENTRIES = 10000;
+
+    /** Total nested metadata entry limit, without expanding resources. / 不展开资源时的嵌套元数据条目总量上限。 */
+    private static final int MAX_JAR_ENTRIES = 100000;
+
+    /** Ordinary files permitted at the archive root. / 归档根允许的普通文件。 */
+    private static final Set<String> ROOT_FILES = Set.of("mod.json", "README.md", "LICENSE", "CHANGELOG.md");
+
+    /** Immutable original outer-file evidence. / 不可变原外层文件依据。
+     * @param path original relative spelling / 原相对路径拼写
+     * @param size actual byte length / 实际字节长度
+     * @param sha256 original file digest / 原文件摘要 */
+    public record FileEntry(String path, long size, String sha256) {
+    }
+
+    /** Read-only archive facts, not an installation or authorization receipt. / 只读归档事实，不是安装或授权凭据。
+     * @param archive exact original path / 精确原路径
+     * @param manifest strict declaration / 严格声明
+     * @param archiveSha256 original archive bytes / 原归档字节摘要
+     * @param contentSha256 format-one content digest / 格式一内容摘要
+     * @param files verified ordinary files / 已验证普通文件
+     * @param jars main, companions and libraries in explicit loading order / 主包、从包及库的明确加载顺序
+     * @param classes logical class names mapped to their owning JAR / 逻辑类名到所属 JAR 的映射 */
+    public record Inspection(Path archive, ModManifest manifest, String archiveSha256, String contentSha256,
+            List<FileEntry> files, List<String> jars, Map<String, String> classes) {
+        /** Copies collections without granting authority from caller-constructed evidence. / 复制集合，不因调用方构造依据而授予权限。
+         * @param archive original path / 原路径
+         * @param manifest author metadata / 作者元数据
+         * @param archiveSha256 archive digest / 归档摘要
+         * @param contentSha256 content digest / 内容摘要
+         * @param files ordinary files / 普通文件
+         * @param jars ordered sources / 有序来源
+         * @param classes class ownership / 类归属 */
+        public Inspection {
+            files = List.copyOf(files);
+            jars = List.copyOf(jars);
+            classes = Map.copyOf(classes);
+        }
+    }
+
+    /** Prevents construction of the stateless reader. / 禁止构造无状态读取器。 */
+    private ModPackageReader() {
+    }
+
+    /** Verifies original bytes, topology, hashes and nested class ownership without executing code. / 不执行代码地核验原字节、布局、摘要及嵌套类归属。
+     * @param archive explicit original package / 明示原包
+     * @return immutable archive facts / 不可变归档事实
+     * @throws IOException if incomplete, redirected, invalid or changed during reading / 不完整、重定向、无效或读取时变化 */
+    public static Inspection read(Path archive) throws IOException {
+        Path path = ordinary(archive);
+        if (!path.getFileName().toString().endsWith(".wtlmod"))
+            throw new IOException("Expected .wtlmod extension");
+        var before = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (before.size() > MAX_BYTES)
+            throw new IOException("Mod package exceeds 2 GiB");
+        try (var file = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            String archiveHash = hash(file);
+            Inspection result;
+            try (var outer = new ModZip(file, 0, file.size(), MAX_ENTRIES, true)) {
+                var entries = new LinkedHashMap<String, ZipArchiveEntry>();
+                var files = new ArrayList<FileEntry>();
+                long total = 0;
+                byte[] manifestBytes = null;
+                for (var entry : outer.entries) {
+                    String name = ModZip.name(entry, true);
+                    if (entry.getMethod() != ZipEntry.STORED || entry.getSize() != entry.getCompressedSize())
+                        throw new IOException("Outer Mod entries must use STORED");
+                    if (entry.isDirectory()) {
+                        if (!Set.of("main", "lib").contains(name) || entry.getSize() != 0 || entry.getCrc() != 0)
+                            throw new IOException("Unexpected outer directory");
+                        continue;
+                    }
+                    if (!ROOT_FILES.contains(name) && !name.matches("(?:main|lib)/[^/]+\\.jar"))
+                        throw new IOException("Unexpected outer file layout");
+                    total = Math.addExact(total, entry.getSize());
+                    if (total > MAX_BYTES || (entry.getSize() == 0 && !name.equals("CHANGELOG.md")))
+                        throw new IOException("Empty required file or excessive package payload");
+                    if (name.equals("mod.json") && entry.getSize() > ManifestReader.MAX_BYTES)
+                        throw new IOException("Mod manifest exceeds size limit");
+                    var captured = name.equals("mod.json") ? new ByteArrayOutputStream() : null;
+                    var digest = copy(outer, entry, captured == null ? OutputStream.nullOutputStream() : captured);
+                    files.add(new FileEntry(name, entry.getSize(), digest));
+                    entries.put(name, entry);
+                    if (captured != null)
+                        manifestBytes = captured.toByteArray();
+                }
+                if (!entries.keySet().containsAll(Set.of("mod.json", "README.md", "LICENSE")))
+                    throw new IOException("Missing required package files");
+                var manifest = ManifestReader.read(manifestBytes);
+                if (!entries.containsKey(manifest.mainJar()))
+                    throw new IOException("Declared main JAR is missing");
+                var jars = new ArrayList<String>();
+                jars.add(manifest.mainJar());
+                entries.keySet().stream().filter(n -> n.startsWith("main/") && !n.equals(manifest.mainJar()))
+                        .sorted(ModPackageReader::comparePaths).forEach(jars::add);
+                entries.keySet().stream().filter(n -> n.startsWith("lib/")).sorted(ModPackageReader::comparePaths)
+                        .forEach(jars::add);
+                var classes = index(file, entries, jars, manifest);
+                files.sort((a, b) -> comparePaths(a.path(), b.path()));
+                result = new Inspection(path, manifest, archiveHash, content(files), files, jars, classes);
+            }
+            var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!before.isRegularFile() || !after.isRegularFile() || before.size() != after.size()
+                    || !before.lastModifiedTime().equals(after.lastModifiedTime())
+                    || !Objects.equals(before.fileKey(), after.fileKey()) || !ordinary(path).equals(path)
+                    || !archiveHash.equals(hash(file)))
+                throw new IOException("Original package changed during inspection");
+            return result;
+        }
+    }
+
+    /** Expands a newly verified package only into a new explicit staging directory. / 仅向新明示暂存目录展开重新核验过的包。
+     * Partial output remains owned by the caller's operation on failure. / 失败时部分输出仍归调用方操作持有。
+     * @param expected previous read-only facts, rechecked before writing / 写入前复核的先前只读事实
+     * @param destination absent directory under an existing staging parent / 现有暂存父目录下尚不存在的目录
+     * @return current reverified archive facts / 当前重新验证的归档事实
+     * @throws IOException if evidence changed, destination exists or copying is unconfirmed / 依据变化、目标已存在或复制未确认时 */
+    public static Inspection extract(Inspection expected, Path destination) throws IOException {
+        var current = read(expected.archive());
+        if (!current.archiveSha256().equals(expected.archiveSha256())
+                || !current.contentSha256().equals(expected.contentSha256()))
+            throw new IOException("Package changed since review");
+        if (!destination.isAbsolute() || !destination.equals(destination.normalize()))
+            throw new IOException("Staging destination must be an absolute canonical path");
+        var parent = destination.getParent();
+        unredirected(parent);
+        if (!Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Missing staging parent");
+        try (var file = FileChannel.open(current.archive(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+                var outer = new ModZip(file, 0, file.size(), MAX_ENTRIES, true)) {
+            if (!hash(file).equals(current.archiveSha256()))
+                throw new IOException("Package changed before staging");
+            Files.createDirectory(destination);
+            for (var entry : current.files()) {
+                Path target = destination.resolve(entry.path());
+                if (!target.getParent().equals(destination)
+                        && !Files.exists(target.getParent(), LinkOption.NOFOLLOW_LINKS))
+                    Files.createDirectory(target.getParent());
+                unredirected(target.getParent());
+                var source = outer.zip.getEntry(entry.path());
+                if (source == null || source.getSize() != entry.size())
+                    throw new IOException("Package entry changed");
+                try (var output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW,
+                        StandardOpenOption.WRITE)) {
+                    if (!copy(outer, source, output).equals(entry.sha256()))
+                        throw new IOException("Staged bytes differ from review");
+                }
+            }
+            if (!hash(file).equals(current.archiveSha256()))
+                throw new IOException("Package changed while staging");
+        }
+        // No publication, deletion or database registration is implied by staging. / 暂存不代表发布、删除或数据库登记。
+        return current;
+    }
+
+    /** Indexes nested class names without expanding resources or linking author types. / 不展开资源或链接作者类型地索引嵌套类名。
+     * @param file original held handle / 原持有句柄
+     * @param entries outer entries / 外层条目
+     * @param jars explicit loading order / 明确加载顺序
+     * @param manifest strict metadata / 严格元数据
+     * @return exact logical class owners / 精确逻辑类归属
+     * @throws IOException if a JAR is invalid, duplicates types or carries reserved code / JAR 无效、重复类型或携带保留代码时 */
+    private static Map<String, String> index(FileChannel file, Map<String, ZipArchiveEntry> entries, List<String> jars,
+            ModManifest manifest) throws IOException {
+        var classes = new HashMap<String, String>();
+        int count = 0;
+        boolean mainEntry = false;
+        for (String path : jars) {
+            var source = entries.get(path);
+            try (var jar = new ModZip(file, source.getDataOffset(), source.getSize(), MAX_JAR_ENTRIES - count, false)) {
+                count += jar.entries.size();
+                for (var entry : jar.entries) {
+                    if (entry.getMethod() != ZipEntry.STORED && entry.getMethod() != ZipEntry.DEFLATED)
+                        throw new IOException("Unsupported JAR compression method");
+                    if (entry.isDirectory())
+                        continue;
+                    String name = ModZip.name(entry, false);
+                    if (name.equalsIgnoreCase("META-INF/MANIFEST.MF")) {
+                        if (entry.getSize() > ManifestReader.MAX_BYTES)
+                            throw new IOException("JAR manifest exceeds size limit");
+                        var metadata = new ByteArrayOutputStream();
+                        copy(jar, entry, metadata);
+                        ModClassLoader.rejectManifestClasspath(
+                                new java.util.jar.Manifest(new ByteArrayInputStream(metadata.toByteArray())));
+                    }
+                    if (name.startsWith("META-INF/versions/")) {
+                        String[] parts = name.split("/", 4);
+                        if (parts.length != 4 || !parts[2].matches("[1-9][0-9]*"))
+                            throw new IOException("Malformed multi-release resource");
+                        name = parts[3];
+                    }
+                    if (!name.endsWith(".class") || name.equals("module-info.class"))
+                        continue;
+                    String type = name.substring(0, name.length() - 6).replace('/', '.');
+                    if (type.startsWith("java.") || type.startsWith("jdk.") || type.startsWith("sun.")
+                            || type.startsWith("org.h2.") || type.startsWith("gold.debug.windowstolinux.app.")
+                            || type.startsWith("gold.debug.windowstolinux.appapi.")
+                            || ClassLoader.getPlatformClassLoader().getResource(name) != null)
+                        throw new IOException("Mod contains a reserved host class");
+                    String owner = classes.putIfAbsent(type, path);
+                    if (owner != null && !owner.equals(path))
+                        throw new IOException("Duplicate class across Mod JARs");
+                    if (type.equals(manifest.entryClass()) && path.equals(manifest.mainJar())) {
+                        // Read class structure only; static initializers and dependency linking remain disabled. / 只读类结构；不运行静态初始化或依赖链接。
+                        var crc = new CRC32();
+                        try (var input = new java.util.zip.CheckedInputStream(jar.zip.getInputStream(entry), crc)) {
+                            ModEntryShape.read(input, entry.getSize(), name);
+                        }
+                        if (crc.getValue() != entry.getCrc())
+                            throw new IOException("Entry class CRC mismatch");
+                        if (entry.getName().equals(name))
+                            mainEntry = true;
+                    }
+                }
+            }
+        }
+        if (!mainEntry)
+            throw new IOException("Main JAR must contain the base entry class");
+        return Map.copyOf(classes);
+    }
+
+    /** Streams actual bytes while enforcing the original length and CRC. / 流式读取实际字节并强制原长度及 CRC。
+     * @param archive held archive / 持有归档
+     * @param entry original entry / 原条目
+     * @param output destination or null sink / 目标或丢弃流
+     * @return exact file digest / 精确文件摘要
+     * @throws IOException if data or output is incomplete / 数据或输出不完整时 */
+    private static String copy(ModZip archive, ZipArchiveEntry entry, OutputStream output) throws IOException {
+        var digest = sha256();
+        var crc = new CRC32();
+        long count = 0;
+        byte[] buffer = new byte[65536];
+        try (var input = archive.zip.getInputStream(entry)) {
+            for (int read; (read = input.read(buffer)) != -1;) {
+                count += read;
+                if (count > entry.getSize() || count > MAX_BYTES)
+                    throw new IOException("ZIP payload exceeds declaration");
+                digest.update(buffer, 0, read);
+                crc.update(buffer, 0, read);
+                output.write(buffer, 0, read);
+            }
+        }
+        if (count != entry.getSize() || crc.getValue() != entry.getCrc())
+            throw new IOException("ZIP length or CRC mismatch");
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    /** Computes the documented v1 content digest over original file spellings and bytes. / 按原文件拼写及字节计算文档规定的 v1 内容摘要。
+     * @param files sorted verified files / 已排序已验证文件
+     * @return content digest / 内容摘要 */
+    private static String content(List<FileEntry> files) {
+        var digest = sha256();
+        digest.update("WTLMOD-CONTENT-1\n".getBytes(StandardCharsets.US_ASCII));
+        for (var file : files) {
+            byte[] name = file.path().getBytes(StandardCharsets.UTF_8);
+            digest.update(ByteBuffer.allocate(4).putInt(name.length).array());
+            digest.update(name);
+            digest.update(ByteBuffer.allocate(8).putLong(file.size()).array());
+            digest.update(HexFormat.of().parseHex(file.sha256()));
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    /** Orders paths by unsigned UTF-8 bytes. / 按无符号 UTF-8 字节排序路径。
+     * @param first first path / 第一路径
+     * @param second second path / 第二路径
+     * @return lexical comparison / 字典序比较 */
+    private static int comparePaths(String first, String second) {
+        return Arrays.compareUnsigned(first.getBytes(StandardCharsets.UTF_8), second.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Hashes the original open file without changing its shared cursor. / 不改变共用游标地摘要原打开文件。
+     * @param file original handle / 原句柄
+     * @return original SHA-256 digest / 原始 SHA-256 摘要
+     * @throws IOException if bytes are unavailable / 字节不可用时 */
+    private static String hash(FileChannel file) throws IOException {
+        var digest = sha256();
+        var bytes = ByteBuffer.allocate(65536);
+        long position = 0;
+        for (int read; (read = file.read(bytes, position)) != -1;) {
+            bytes.flip();
+            digest.update(bytes);
+            position += read;
+            bytes.clear();
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    /** Creates the JDK-required digest engine. / 创建 JDK 必需的摘要引擎。
+     * @return fresh digest / 新摘要实例 */
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
+    }
+
+    /** Resolves only an unredirected ordinary file. / 仅解析无重定向普通文件。
+     * @param file explicit file / 明示文件
+     * @return canonical file / 规范文件
+     * @throws IOException if absent or redirected / 缺失或重定向时 */
+    private static Path ordinary(Path file) throws IOException {
+        if (file == null || !file.isAbsolute() || !file.equals(file.normalize()))
+            throw new IOException("Explicit canonical archive path required");
+        unredirected(file);
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Package is not a regular file");
+        return file;
+    }
+
+    /** Rejects symbolic or reparse redirection in every existing path component. / 拒绝每个现有路径段中的符号或重解析重定向。
+     * @param path existing canonical path / 现有规范路径
+     * @throws IOException if redirected or absent / 重定向或缺失时 */
+    private static void unredirected(Path path) throws IOException {
+        for (Path part = path; part != null; part = part.getParent()) {
+            var attributes = Files.readAttributes(part, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (attributes.isSymbolicLink() || attributes.isOther() || !part.toRealPath().equals(part))
+                throw new IOException("Package or staging path is redirected");
+        }
+    }
+}

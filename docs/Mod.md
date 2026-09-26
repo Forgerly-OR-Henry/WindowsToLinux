@@ -67,7 +67,7 @@ example-1.0.0.wtlmod       # ZIP 容器；外层所有条目使用 STORED
 
 不能通过 JAR 排序或扫描同名类猜测入口。
 
-运行后产生的配置、数据库、日志等数据与分发包分开，由 APP 按插件归属管理。数据库已确定为平台统一提供的嵌入式 H2，按 Mod 分配 Schema，并由清单声明独立的 `schemaVersion`；具体规则见[数据库与 Schema 版本](#mod-database)。旧 Schema 保留至用户手动删除对应旧版本，清理时须保护仍被保留版本引用的数据；[三种模式的数据根](#mod-data-root)已确认，内部布局见对应章节。`Mod.java` 及同级 `api`、`ai`、`db`、`ui`、`service` 的详细源码结构统一见 [Mod 源码结构与命名](File.md#mod-source-layout)，各包使用方法见[作者开发约定](#source-development)。
+运行后产生的配置、数据库、日志等数据与分发包分开，由 APP 按插件归属管理。数据库已确定为平台统一提供的嵌入式 H2，按 Mod 分配 Schema，并由清单声明独立的 `schemaVersion`；具体规则见[数据库与 Schema 版本](#mod-database)。旧 Schema 保留至用户手动删除对应旧版本，清理时须保护仍被保留版本引用的数据；[三种模式的数据根](#mod-data-root)已确认，内部布局见对应章节。`Mod.java` 与按需使用的九类职责包的详细源码结构统一见 [Mod 源码结构与命名](File.md#mod-source-layout)，各包使用方法见[作者开发约定](#source-development)。
 
 APP 安装后的整体目录见 [APP 发布布局](APP.md#release-layout)，主 JAR 直接运行时见 [JAR 发布布局](APP.md#jar-layout)。其中根目录 `lib/` 服务于平台主体，每个 Mod 内部的 `lib/` 服务于该 Mod，两者分别管理；整体发布图不替代本文的包内结构。
 
@@ -838,6 +838,14 @@ H2 的部分结构变更（包括 `CREATE SCHEMA`、`DROP SCHEMA`）会提交当
 - 禁止 Mod 打包平台 API、H2 驱动和 `java.*` 等宿主保留类；同一个 Mod 的 main/lib 内重复类一律报错，不以文件顺序覆盖。`exports` 只能位于本 Mod 根包下，导出其子包；公开签名只能使用 JDK、平台 API、本 Mod 导出类型和显式依赖提供方的导出类型。只有格式有效但 Java/API/依赖暂不满足的包可以登记安装而暂不可启用，格式或内容错误不能安装。
 
 **内容摘要算法 v1**：先验证全部条目，再按普通文件的原始、规范化相对路径 UTF-8 字节无符号字典序排序。向 SHA-256 依次输入 ASCII `WTLMOD-CONTENT-1\n`，以及每个文件的 `uint32be(路径字节数)`、路径字节、`uint64be(文件长度)`、32 字节文件 SHA-256。清单、README、LICENSE、可选 CHANGELOG 和所有 JAR 原字节均参与；ZIP 时间、条目顺序、归档文件名及目录项不参与。包文件自身另保存 `archive_sha256`，用于传输和原包核对。相同 ID/版本而内容摘要不同拒绝覆盖；重装也不能借同版本改变内容。两个摘要不得混用。
+
+当前 `ModPackageReader` 已提供原包读取与新目录暂存：复用严格清单，核对外层 STORED、必选文件、实际长度/CRC、路径冲突、链接和原始 SHA-256；按上述算法另算内容摘要。普通 ZIP 与限额内 ZIP64 均支持，中央目录和本地头必须一致；归档读取前后复核原句柄字节和文件事实。原包路径及暂存父目录不允许符号链接或重解析重定向。读取不执行作者代码，也不建立 Schema。
+
+嵌套 JAR 通过原文件的有界视图枚举，不展开到磁盘；检查重复类归属、宿主保留类及主入口存在。入口只读取类身份、公开具体形状和公开无参构造器；真正接口链接、依赖/Java/API 可用性及公开签名准入仍由后续加载/安装协调完成，读取成功不等于可启用或已安装。代码来源先取显式主 JAR，再分别按原 UTF-8 路径字节序排列 main 从包与 lib 私有库；不按归档条目顺序决定资源优先级。JAR 资源保持大小写敏感，不能把外层 Windows 文件冲突规则强加到 JAR 内；同一 JAR 的多版本类条目保留 Java 覆盖语义，跨 JAR 的同一逻辑类仍拒绝。清单声明的 Java/API 暂不兼容不作为归档损坏处理。原包读取时 JAR 清单最多 256 KiB；原包检查与既有 CLASS/JAR 加载器共用 `Class-Path` 属性拒绝规则，防止 URL 加载器隐式追加清单之外的代码来源。main/lib 及 CLASS 描述须明确列出所需来源，不用 JAR 清单另建加载路径，参见 [JAR Class-Path 规范](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html#class-path-attribute)。
+
+读取器另设元数据工作量边界：每份 ZIP 中央目录最多 32 MiB，全部嵌套 JAR 最多 100,000 条目，名称原字节最多 4,096、解码后最多 1,024 个 Java 字符，单份主入口 class 最多 16 MiB。超限明确拒绝；不会递归展开嵌套资源或启动作者静态初始化。原 ZIP 解析能力复用工程已有 Commons Compress 1.26.1，端记录及局部头按 [ZIP 格式规范](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)核对；有界随机读取方式参考 [Commons Compress ZIP 文档](https://commons.apache.org/proper/commons-compress/zip.html)。
+
+暂存前重新读取并核对审阅时的两类摘要，只写入尚不存在的明确目标目录，以新建文件方式保留原包字节；目标存在或来源变化时拒绝，不覆盖。暂存失败后的部分输出归调用方操作持有，不擅自删除；本接口不发布正式版本、不写安装登记、不删除原包。原始包扫描/UI、完整安装事务及恢复协调仍待实现，S7 作者打包命令继续暂缓。
 
 ### 7.2 CLASS 开发描述
 
