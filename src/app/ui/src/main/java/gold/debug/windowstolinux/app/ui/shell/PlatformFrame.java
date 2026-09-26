@@ -49,6 +49,9 @@ public final class PlatformFrame extends JFrame {
     /** Permanent diagnostic management page. / 常驻诊断管理页面。 */
     private gold.debug.windowstolinux.app.ui.setting.LogSettingsPane logs;
 
+    /** Permanent installed Mod choices and explicit data maintenance. / 常驻已安装 Mod 选择及明确数据维护。 */
+    private gold.debug.windowstolinux.app.ui.mod.PlatformModsPane mods;
+
     /** Visible non-recursive diagnostic persistence feedback. / 可见非递归诊断持久化反馈。 */
     private final JLabel logIssue = new JLabel();
 
@@ -128,6 +131,8 @@ public final class PlatformFrame extends JFrame {
                 authorization.setLocked(locked);
             if (logs != null)
                 logs.setLocked(locked);
+            if (mods != null)
+                mods.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -143,6 +148,23 @@ public final class PlatformFrame extends JFrame {
      * @return actual page registry / 实际页面登记 */
     public ModPageRegistry pages() {
         return pages;
+    }
+
+    /** Mounts actual Mod management after the original startup graph has settled. / 原启动图稳定后挂载实际 Mod 管理。
+     * @param service original serialized intent service / 原串行意图服务
+     * @param actions original graph maintenance / 原图维护 */
+    public void installMods(gold.debug.windowstolinux.app.service.mod.PlatformModIntents service,
+            gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions actions) {
+        if (!SwingUtilities.isEventDispatchThread() || mods != null)
+            throw new IllegalStateException("Mod management must be installed once on the EDT");
+        mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, components, messages, () -> {
+            if (logs != null)
+                content.setSelectedComponent(logs);
+        });
+        var navigation = new JTabbedPane();
+        navigation.addTab(messages.text("mods.installed"), mods);
+        content.addTab("Mod", navigation);
+        mods.setLocked(!security.securityState().unlocked());
     }
 
     /** Shows actual startup counts while retaining safe failure details behind the lock boundary. / 展示实际启动数量，将安全失败详情保留在锁定边界之后。
@@ -318,6 +340,8 @@ public final class PlatformFrame extends JFrame {
             authorization.close();
         if (logs != null)
             logs.close();
+        if (mods != null)
+            mods.close();
         if (logSubscription != null)
             try {
                 logSubscription.close();

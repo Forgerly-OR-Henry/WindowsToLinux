@@ -131,6 +131,7 @@ public final class DesktopMain {
                 return null;
             });
             var modReport = startMods(runtime, layout, System.getProperty("wtl.workspace"), created.pages());
+            installModManagement(runtime, created);
             onEdt(() -> {
                 if (created.isDisplayable())
                     created.showModStartup(modReport.running().size(), modReport.problems());
@@ -157,6 +158,50 @@ public final class DesktopMain {
                     DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
                             "The platform desktop could not be initialized", failure));
         }
+    }
+
+    /** Connects the default management page to original runtime operations outside the EDT. / 在 EDT 外将默认管理页面接入原运行时操作。
+     * @param runtime original platform runtime / 原平台运行时
+     * @param frame original desktop window / 原桌面窗口
+     * @throws Exception if original service or view cannot be installed / 无法安装原服务或视图时 */
+    static void installModManagement(PlatformRuntime runtime, PlatformFrame frame) throws Exception {
+        var service = runtime.modIntents();
+        var actions = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions() {
+            /** Delegates exact source review to the original graph. / 将精确来源审阅交给原图。
+             * @param owner selected owner / 已选所有者
+             * @param source confirmed source / 已确认来源
+             * @return original review / 原审阅
+             * @throws Exception if unavailable / 不可用时 */
+            @Override
+            public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review(String owner,
+                    java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
+                return runtime.reviewModSchemaRetry(owner, source);
+            }
+
+            /** Delegates only the confirmed original retry. / 仅委派已确认原重试。
+             * @param review original review / 原审阅
+             * @return observed data result / 已观察数据结果
+             * @throws Exception if unconfirmed / 未确认时 */
+            @Override
+            public gold.debug.windowstolinux.appapi.task.Outcome retry(
+                    gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
+                return runtime.retryModSchema(review);
+            }
+
+            /** Delegates original read-only reconciliation. / 委派原只读核对。
+             * @param operation original preparation / 原准备
+             * @return verified data result / 已核实数据结果
+             * @throws Exception if unconfirmed / 未确认时 */
+            @Override
+            public gold.debug.windowstolinux.appapi.task.Outcome reconcile(java.util.UUID operation) throws Exception {
+                return runtime.reconcileModSchema(operation);
+            }
+        };
+        onEdt(() -> {
+            if (frame.isDisplayable())
+                frame.installMods(service, actions);
+            return null;
+        });
     }
 
     /** Applies default CLASS startup only to the explicit workspace matching the verified program layout. / 仅对与已验证程序布局匹配的明示工作区应用默认 CLASS 启动。
