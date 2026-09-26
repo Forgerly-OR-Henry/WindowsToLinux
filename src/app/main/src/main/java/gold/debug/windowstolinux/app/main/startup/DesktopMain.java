@@ -113,8 +113,9 @@ public final class DesktopMain {
                                 runtime.security().securityState().configured()),
                         reports);
                 window.onExit(runtime);
-                runtime.setInteractionPresenter(
-                        new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages));
+                var presenter = new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages);
+                runtime.setInteractionPresenter(presenter);
+                runtime.setSourcePicker(presenter);
                 window.installServers(runtime.servers());
                 window.installModels(models);
                 return window;

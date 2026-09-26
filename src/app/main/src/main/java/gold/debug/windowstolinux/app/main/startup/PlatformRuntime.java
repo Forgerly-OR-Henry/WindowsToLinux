@@ -33,6 +33,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Actual desktop presenter, installed before author capabilities are constructed. / 实际桌面呈现器，在构造作者能力之前安装。 */
     private PlatformInteractionService.Prompts prompts;
 
+    /** Actual window-owned source chooser. / 实际窗口所属来源选择器。 */
+    private gold.debug.windowstolinux.app.service.source.PlatformSourceAccess.DirectoryPicker sourcePicker;
+
     /** Permanent server settings and authentication-check coordinator. / 常驻服务器设置及认证检查协调器。 */
     private gold.debug.windowstolinux.app.service.server.PlatformServerService servers;
 
@@ -50,6 +53,9 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Bound model capabilities retaining their actual HTTP clients. / 保留实际 HTTP 客户端的已绑定模型能力。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.ai.PlatformAiService> aiServices = new java.util.LinkedHashSet<>();
+
+    /** Bound source capabilities retaining actual snapshot files. / 保留实际快照文件的已绑定来源能力。 */
+    private final java.util.Set<gold.debug.windowstolinux.app.service.source.PlatformSourceAccess> sourceServices = new java.util.LinkedHashSet<>();
 
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
@@ -155,6 +161,29 @@ public final class PlatformRuntime implements AutoCloseable {
         if (this.prompts != null || stopping || closed)
             throw new IllegalStateException("Platform interaction presenter is already installed or closing");
         this.prompts = Objects.requireNonNull(prompts);
+    }
+
+    /** Installs the actual source chooser before constructing author capabilities. / 构造作者能力前安装实际来源选择器。
+     * @param picker window-owned directory picker / 窗口所属目录选择器 */
+    public synchronized void setSourcePicker(
+            gold.debug.windowstolinux.app.service.source.PlatformSourceAccess.DirectoryPicker picker) {
+        if (sourcePicker != null || stopping || closed)
+            throw new IllegalStateException("Platform source picker is already installed or closing");
+        sourcePicker = Objects.requireNonNull(picker);
+    }
+
+    /** Creates task-bound local source access for one Mod activation. / 为一次 Mod 启用创建任务绑定本地来源访问。
+     * @param owner exact Mod identity / 精确 Mod 身份
+     * @param version actual loaded release / 实际已加载版本
+     * @return host-owned source capability / 宿主持有的来源能力 */
+    public synchronized gold.debug.windowstolinux.app.service.source.PlatformSourceAccess source(String owner,
+            String version) {
+        if (closed || stopping || sourcePicker == null)
+            throw new IllegalStateException("Platform source capabilities are unavailable");
+        var source = new gold.debug.windowstolinux.app.service.source.PlatformSourceAccess(persistence.database(),
+                tasks, security, owner, version, sourcePicker);
+        sourceServices.add(source);
+        return source;
     }
 
     /**
@@ -375,6 +404,9 @@ public final class PlatformRuntime implements AutoCloseable {
         for (var ai : java.util.List.copyOf(aiServices))
             ai.close();
         aiServices.clear();
+        for (var source : java.util.List.copyOf(sourceServices))
+            source.close();
+        sourceServices.clear();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         tasks.close();

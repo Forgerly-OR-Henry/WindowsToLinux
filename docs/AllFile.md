@@ -1675,3 +1675,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/HostTaskRecovery.java`：对已知宿主协议核对前次启动消失的进程内资源，未知种类继续阻塞。
 - `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
+
+- `app/source/boundary/SelectedDirectory.java`：校验用户目录内的精确相对文件，按身份、内容和容量进行读取与复制。
+- `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
+- `app/service/source/PlatformSourceAccess.java`：把目录确认、读取和快照绑定原 Mod 任务，保留实际 FILE 占用并支持原身份恢复。
+- `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 读取 Windows 卷号和 128 位文件 ID，并关闭实际原生句柄。
