@@ -53,7 +53,7 @@ class PlatformModMigrationTest {
         }
     }
 
-    void upgrade(String mode) throws Exception {
+    void buildUpgrade(String mode) throws Exception {
         var module = fixture.workspace.resolve("src/mod/" + OWNER);
         var classes = module.resolve("target/classes");
         var sources = new ArrayList<String>();
@@ -109,6 +109,10 @@ class PlatformModMigrationTest {
                 List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"),
                         module.resolve("pom.xml")),
                 List.of());
+    }
+
+    void upgrade(String mode) throws Exception {
+        buildUpgrade(mode);
         try (var runtime = fixture.open(true)) {
             var report = new PlatformModCatalog(runtime.persistence().database()).refresh(fixture.workspace);
             assertTrue(report.rejections().isEmpty(), report.rejections().toString());

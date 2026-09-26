@@ -73,7 +73,7 @@ final class ModSchemaInspection implements AutoCloseable {
             attempt = ledger.begin(review);
             ledger.cleanup(attempt, false);
             if (sourceMatches()) {
-                if (!ledger.targetExists(attempt))
+                if (!ledger.targetNeedsValidation(attempt))
                     outcome = Outcome.FAILED;
                 else {
                     reader = SchemaAccessScope.reconciliation(database, review.plan().target(), attempt.reader(),
@@ -111,6 +111,8 @@ final class ModSchemaInspection implements AutoCloseable {
         if (review.plan().source().isEmpty())
             return true;
         var before = review.sourceDigest();
+        if (before.isEmpty() && review.beforeRetryExecution())
+            return true;
         return before.isPresent() && before.get().matches("[0-9a-f]{64}") && before.get()
                 .equals(SchemaSnapshot.digest(database, new SchemaCoordinates(review.plan().source().get())));
     }

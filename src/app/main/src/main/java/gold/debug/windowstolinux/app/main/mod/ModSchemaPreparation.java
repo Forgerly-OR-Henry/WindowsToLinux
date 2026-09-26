@@ -45,6 +45,9 @@ final class ModSchemaPreparation implements AutoCloseable {
     /** Whether resource release and its durable acknowledgement finished. / 资源释放及持久确认是否结束。 */
     private boolean closed;
 
+    /** Physical cleanup completed before a possibly uncertain final commit. / 可能不确定的最终提交前物理清理已完成。 */
+    private boolean resourcesReleased;
+
     /** Original migration scopes, including earlier steps already closed. / 原迁移作用域，包括此前已关闭步骤。 */
     private final List<SchemaAccessScope> migrationScopes = new ArrayList<>();
 
@@ -76,11 +79,32 @@ final class ModSchemaPreparation implements AutoCloseable {
      * @return exact ready generation / 精确就绪代次
      * @throws Exception if author validation, release or durable acknowledgement fails / 作者验证、释放或持久确认失败时 */
     SchemaIdentity prepare(UUID intent, String contentDigest) throws Exception {
+        return execute(intent, contentDigest, null);
+    }
+
+    /** Executes one already accepted explicit retry through the same preparation engine. / 经同一准备执行器运行一次已接纳明确重试。
+     * @param claimed original durable retry / 原持久重试
+     * @return validated new target / 已验证新目标
+     * @throws Exception if preparation or cleanup remains unconfirmed / 准备或清理仍未确认时 */
+    SchemaIdentity retry(ModRestartLedger.Preparation claimed) throws Exception {
+        if (!claimed.intent().equals(claimed.operation()))
+            throw new IllegalArgumentException("Explicit retry required");
+        return execute(null, null, claimed);
+    }
+
+    /** Runs the same isolated initialization or migration for one original claim. / 为一个原取得记录运行同一隔离初始化或迁移。
+     * @param intent restart intent, absent for an accepted retry / 重启意图，已接纳重试为空
+     * @param contentDigest verified bytes for initial preparation / 首次准备的已验证字节
+     * @param claimed accepted retry, absent for initial preparation / 已接纳重试，首次准备为空
+     * @return validated exact target / 已验证精确目标
+     * @throws Exception if execution or original cleanup fails / 执行或原清理失败时 */
+    private SchemaIdentity execute(UUID intent, String contentDigest, ModRestartLedger.Preparation claimed)
+            throws Exception {
         if (attempted)
             throw new IllegalStateException("Data preparation cannot replay author code");
         attempted = true;
         try {
-            plan = ledger.beginPreparation(intent, loader.manifest().json(), contentDigest);
+            plan = claimed == null ? ledger.beginPreparation(intent, loader.manifest().json(), contentDigest) : claimed;
             if (plan.source().isPresent()) {
                 migrate();
                 close();
@@ -89,6 +113,7 @@ final class ModSchemaPreparation implements AutoCloseable {
                 return plan.target();
             }
             ledger.preparationPhase(plan, false);
+            resetForRetry();
             new SchemaProvisioner(database).create(plan.target());
             ledger.created(plan, new SchemaCoordinates(plan.target()));
             writer = new SchemaAccessScope(database, plan.target(), plan.writer(), false);
@@ -131,6 +156,7 @@ final class ModSchemaPreparation implements AutoCloseable {
         ledger.sourceDigest(plan, originalSource, false);
         constraints(source);
         ledger.preparationPhase(plan, false);
+        resetForRetry();
         for (var step : plan.steps()) {
             if (step.index() != 0)
                 source = scope(ModRestartLedger.sourceCoordinates(plan, step), step.sourceReader(), true);
@@ -186,6 +212,21 @@ final class ModSchemaPreparation implements AutoCloseable {
             if (!last)
                 outcome = Outcome.UNKNOWN;
         }
+    }
+
+    /** Rebuilds a failed target only after source checks and under the original explicit claim. / 仅在来源检查后及原明确取得记录下重建失败目标。
+     * @throws SQLException if original reset cannot be proved complete / 无法证明原重置完成时 */
+    private void resetForRetry() throws SQLException {
+        if (plan.intent().equals(plan.operation())) {
+            new SchemaProvisioner(database).resetFailedTarget(plan.target(), plan.operation());
+            ledger.resetCompleted(plan);
+        }
+    }
+
+    /** Returns the observed result for explicit management after original cleanup. / 原清理后为明确管理返回已观察结果。
+     * @return original result / 原结果 */
+    Outcome outcome() {
+        return outcome;
     }
 
     /** Allocates and retains one original intermediate or permanent scope. / 分配并保留一个原中间或正式作用域。
@@ -302,27 +343,30 @@ final class ModSchemaPreparation implements AutoCloseable {
     public void close() throws Exception {
         if (closed)
             return;
-        for (var scope : migrationScopes)
-            scope.close();
-        if (writer != null)
-            writer.close();
-        if (reader != null)
-            reader.close();
-        loader.close();
-        if (plan != null && plan.source().isPresent()) {
-            if (outcome != Outcome.UNKNOWN) {
-                completeStep();
-                if (originalSource != null && !sourceCompared) {
-                    String after = SchemaSnapshot.digest(database, new SchemaCoordinates(plan.source().get()));
-                    boolean matches = ledger.sourceDigest(plan, after, true);
-                    sourceCompared = true;
-                    if (!matches)
-                        outcome = Outcome.UNKNOWN;
+        if (!resourcesReleased) {
+            for (var scope : migrationScopes)
+                scope.close();
+            if (writer != null)
+                writer.close();
+            if (reader != null)
+                reader.close();
+            loader.close();
+            if (plan != null && plan.source().isPresent()) {
+                if (outcome != Outcome.UNKNOWN) {
+                    completeStep();
+                    if (originalSource != null && !sourceCompared) {
+                        String after = SchemaSnapshot.digest(database, new SchemaCoordinates(plan.source().get()));
+                        boolean matches = ledger.sourceDigest(plan, after, true);
+                        sourceCompared = true;
+                        if (!matches)
+                            outcome = Outcome.UNKNOWN;
+                    }
+                    if (outcome != Outcome.UNKNOWN)
+                        for (var target : intermediates)
+                            new SchemaProvisioner(database).dropIntermediate(target);
                 }
-                if (outcome != Outcome.UNKNOWN)
-                    for (var target : intermediates)
-                        new SchemaProvisioner(database).dropIntermediate(target);
             }
+            resourcesReleased = true;
         }
         if (plan != null)
             ledger.finishPreparation(plan, outcome, outcome == Outcome.SUCCEEDED ? digest : null);

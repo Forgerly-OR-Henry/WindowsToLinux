@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
 
-/** Applies a prepared restart intent against durable facts from the original boot. / 根据原启动的持久事实应用已准备的重启意图。 */
+/** Applies restart intentions and explicit data retries against original durable facts. / 根据原持久事实应用重启意图和明确数据重试。 */
 public final class ModRestartLedger {
     /** Exact physical database boot. / 精确物理数据库启动身份。 */
     private final UUID boot;
@@ -98,7 +98,7 @@ public final class ModRestartLedger {
     }
 
     /** Original identities for one physical data preparation attempt. / 一次物理数据准备尝试的原身份。
-     * @param intent original enabled choice / 原启用选择
+     * @param intent original enabled choice, or the standalone retry operation / 原启用选择，或独立重试操作
      * @param operation independent preparation operation / 独立准备操作
      * @param target newly registered generation / 新登记代次
      * @param writer tracked initialization scope / 受跟踪初始化作用域
@@ -109,7 +109,7 @@ public final class ModRestartLedger {
     public record Preparation(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
             UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
         /** Copies the operation-owned ordered steps. / 复制操作所属有序步骤。
-         * @param intent original intent / 原意图
+         * @param intent original intent, or the standalone retry operation / 原意图，或独立重试操作
          * @param operation preparation operation / 准备操作
          * @param target final target / 最终目标
          * @param writer final writer scope / 最终写入作用域
@@ -168,6 +168,147 @@ public final class ModRestartLedger {
                 : beginInitialization(id, manifest, digest));
     }
 
+    /** Claims one explicitly reviewed failed target inside the caller's platform transaction. / 在调用者的平台事务中取得一个明确审阅的失败目标。
+     * @param c caller-owned serialized transaction / 调用者所属串行事务
+     * @param previous exact failed and unused generation / 精确失败未使用代次
+     * @param version unchanged selected program / 未改变选定程序
+     * @param revision unchanged selection revision / 未改变选择修订
+     * @param manifest verified target declaration / 已验证目标声明
+     * @param digest verified target content / 已验证目标内容摘要
+     * @param dataJson explicitly confirmed data plan / 明确确认数据计划
+     * @return registered original preparation, whose intent equals its standalone operation / 已登记原准备，其意图等于独立操作
+     * @throws SQLException if source, target, references or occupancy changed / 来源、目标、引用或占用变化时 */
+    public Preparation beginRetry(Connection c, SchemaIdentity previous, String version, long revision, String manifest,
+            String digest, String dataJson) throws SQLException {
+        require(!c.getAutoCommit(), "Explicit retry requires the owning platform transaction");
+        RepositoryConnections.lockPlatformState(c);
+        try (var s = c.createStatement();
+                var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+            require(r.next() && boot.equals(r.getObject(1, UUID.class)) && "RUNNING".equals(r.getString(2)),
+                    "Retry no longer owns the running platform boot");
+        }
+        var old = new SchemaCoordinates(previous);
+        old.requireRegistered(c, Set.of("FAILED"));
+        var declaration = object(manifest);
+        var data = object(dataJson);
+        require(previous.ownerId().equals(declaration.path("id").textValue())
+                && version.equals(declaration.path("version").textValue())
+                && previous.schemaVersion().equals(declaration.path("schemaVersion").textValue())
+                && previous.schemaVersion().equals(data.path("target").textValue()),
+                "Retry target declaration changed");
+        try (var p = c.prepareStatement(
+                "SELECT COUNT(*) FROM mod_schema s JOIN mod_registry r ON r.mod_id=s.mod_id JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version WHERE s.generation=? AND s.state='FAILED' AND NOT s.ever_used AND s.validated_at IS NULL AND s.validation_digest IS NULL AND r.enabled AND r.selected_version=? AND r.revision=? AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.manifest_json=? AND v.content_sha256=?")) {
+            p.setObject(1, previous.generation());
+            p.setString(2, version);
+            p.setLong(3, revision);
+            p.setString(4, manifest);
+            p.setString(5, digest);
+            try (var r = p.executeQuery()) {
+                r.next();
+                require(r.getLong(1) == 1, "Only the selected failed unused target may be retried");
+            }
+        }
+        try (var p = c.prepareStatement(
+                "SELECT (SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_server_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM log_category WHERE schema_generation=?)")) {
+            for (int i = 1; i <= 4; i++)
+                p.setString(i, previous.ownerId());
+            for (int i = 5; i <= 7; i++)
+                p.setObject(i, previous.generation());
+            try (var r = p.executeQuery()) {
+                r.next();
+                require(r.getLong(1) == 0, "Failed target still has work, references or maintenance");
+            }
+        }
+        try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?")) {
+            p.setString(1, old.databaseUser());
+            try (var r = p.executeQuery()) {
+                r.next();
+                require(r.getLong(1) == 0, "Original target still owns a physical session");
+            }
+        }
+        var target = new SchemaIdentity(previous.ownerId(), previous.schemaVersion(), UUID.randomUUID());
+        Optional<SchemaIdentity> source = Optional.empty();
+        List<MigrationStep> steps = List.of();
+        if ("MIGRATE".equals(data.path("mode").textValue())) {
+            require(fields(data).equals(Set.of("mode", "target", "source", "generation", "steps")),
+                    "Invalid retry source plan");
+            source = Optional
+                    .of(new SchemaIdentity(previous.ownerId(), data.path("source").asText(), uuid(data, "generation")));
+            new SchemaCoordinates(source.get()).requireRegistered(c, Set.of("READY"));
+            steps = migrationSteps(source.get(), target, data, manifest);
+        } else {
+            require("INITIALIZE".equals(data.path("mode").textValue()) && fields(data).equals(Set.of("mode", "target")),
+                    "Retry requires initialization or confirmed migration");
+            try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND generation<>?")) {
+                p.setString(1, previous.ownerId());
+                p.setObject(2, previous.generation());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    require(r.getLong(1) == 0, "Existing sources require explicit confirmation");
+                }
+            }
+        }
+        UUID operation = UUID.randomUUID();
+        var plan = new Preparation(operation, operation, target,
+                steps.isEmpty() ? UUID.randomUUID() : steps.getLast().writer(),
+                steps.isEmpty() ? UUID.randomUUID() : steps.getLast().reader(), UUID.randomUUID(), source, steps);
+        long now = System.currentTimeMillis();
+        var request = JSON.createObjectNode().put("formatVersion", 1).put("mode", "RETRY")
+                .put("ownerId", previous.ownerId()).put("previousGeneration", previous.generation().toString())
+                .put("manifest", manifest).put("contentDigest", digest);
+        request.putObject("target").put("enabled", true).put("version", version);
+        request.set("data", data);
+        try (var p = c.prepareStatement(
+                "UPDATE mod_schema SET generation=?,state='PREPARING',created_at=?,validated_at=NULL,validation_digest=NULL WHERE generation=? AND state='FAILED' AND NOT ever_used")) {
+            p.setObject(1, target.generation());
+            p.setLong(2, now);
+            p.setObject(3, previous.generation());
+            require(p.executeUpdate() == 1, "Original failed target changed");
+        }
+        try (var p = c.prepareStatement(
+                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,source_schema_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
+            p.setObject(1, operation);
+            p.setString(2, target.ownerId());
+            p.setString(3, version);
+            p.setString(4, source.map(SchemaIdentity::schemaVersion).orElse(null));
+            p.setString(5, target.schemaVersion());
+            p.setObject(6, target.generation());
+            p.setLong(7, revision);
+            p.setString(8, request.toString());
+            p.setString(9, preparationEvidence(plan));
+            p.setString(10, plan.archive().toString());
+            p.setLong(11, now);
+            p.setLong(12, now);
+            p.executeUpdate();
+        }
+        registerSteps(c, plan);
+        return plan;
+    }
+
+    /** Confirms physical removal before any retried author code may create new data. / 在重试作者代码创建新数据前确认物理移除。
+     * @param plan original explicit retry / 原明确重试
+     * @throws SQLException if original target removal remains uncertain / 原目标移除仍不确定时 */
+    public void resetCompleted(Preparation plan) throws SQLException {
+        locked(c -> {
+            require(plan.intent().equals(plan.operation()) && "MIGRATING".equals(requirePreparation(c, plan)),
+                    "Not an active retry reset");
+            var target = new SchemaCoordinates(plan.target());
+            try (var p = c.prepareStatement(
+                    "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                p.setString(1, target.physicalName());
+                p.setString(2, target.databaseUser());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    require(r.getLong(1) == 0, "Failed target removal is incomplete");
+                }
+            }
+            var recovery = preparationRecovery(c, plan);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).put("retryResetComplete", true);
+            saveRecovery(c, plan, recovery);
+            return null;
+        });
+    }
+
     /** Registers the previously confirmed chain without choosing another source or path. / 登记此前已确认链，不另选来源或路径。
      * @param id original restart intent / 原重启意图
      * @param manifest verified selected declaration / 已验证选定声明
@@ -211,34 +352,8 @@ public final class ModRestartLedger {
                     require(r.getLong(1) == 0, "Target data already exists and requires reconciliation");
                 }
             }
-            var declared = object(manifest).path("migrations");
-            var edges = data.path("steps");
-            require(edges.isArray() && !edges.isEmpty() && edges.size() <= 256, "Original migration chain is invalid");
             var target = new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID());
-            var steps = new ArrayList<MigrationStep>();
-            String previous = source.schemaVersion();
-            for (var edge : edges) {
-                require(fields(edge).equals(Set.of("from", "to", "className"))
-                        && previous.equals(edge.path("from").textValue())
-                        && edge.path("to").asText().matches("[1-9][0-9]{0,63}")
-                        && new java.math.BigInteger(previous)
-                                .compareTo(new java.math.BigInteger(edge.path("to").asText())) < 0,
-                        "Original migration chain is discontinuous");
-                boolean found = false;
-                for (var candidate : declared)
-                    if (edge.path("from").equals(candidate.path("from")) && edge.path("to").equals(candidate.path("to"))
-                            && edge.path("className").asText().equals(candidate.path("class").asText()))
-                        found = true;
-                require(found, "Original migration class is no longer declared");
-                previous = edge.path("to").asText();
-                var identity = steps.size() == edges.size() - 1
-                        ? target
-                        : new SchemaIdentity(row.owner(), previous, UUID.randomUUID());
-                steps.add(new MigrationStep(steps.size(), edge.path("from").asText(), previous,
-                        edge.path("className").asText(), identity, UUID.randomUUID(), UUID.randomUUID(),
-                        UUID.randomUUID()));
-            }
-            require(previous.equals(row.targetSchema()), "Original chain does not reach its requested target");
+            var steps = migrationSteps(source, target, data, manifest);
             claimUnprepared(c, row);
             var last = steps.getLast();
             var plan = new Preparation(id, UUID.randomUUID(), target, last.writer(), last.reader(), UUID.randomUUID(),
@@ -246,6 +361,45 @@ public final class ModRestartLedger {
             registerPreparation(c, row, plan);
             return plan;
         });
+    }
+
+    /** Reuses the exact declared ordered chain for initial and explicitly retried preparation. / 为首次及明确重试准备复用精确声明有序链。
+     * @param source confirmed retained source / 已确认保留来源
+     * @param target new exact target generation / 新精确目标代次
+     * @param data reviewed data plan / 已审阅数据计划
+     * @param manifest verified selected declaration / 已验证选定声明
+     * @return original ordered step identities / 原有序步骤身份
+     * @throws SQLException if the confirmed chain no longer matches / 已确认链不再匹配时 */
+    private static List<MigrationStep> migrationSteps(SchemaIdentity source, SchemaIdentity target, JsonNode data,
+            String manifest) throws SQLException {
+        var declared = object(manifest).path("migrations");
+        var edges = data.path("steps");
+        require(edges.isArray() && !edges.isEmpty() && edges.size() <= 256, "Original migration chain is invalid");
+        var steps = new ArrayList<MigrationStep>();
+        String previous = source.schemaVersion();
+        for (var edge : edges) {
+            require(fields(edge).equals(Set.of("from", "to", "className"))
+                    && previous.equals(edge.path("from").textValue())
+                    && edge.path("to").asText().matches("[1-9][0-9]{0,63}")
+                    && new java.math.BigInteger(previous)
+                            .compareTo(new java.math.BigInteger(edge.path("to").asText())) < 0,
+                    "Original migration chain is discontinuous");
+            boolean found = false;
+            for (var candidate : declared)
+                if (edge.path("from").equals(candidate.path("from")) && edge.path("to").equals(candidate.path("to"))
+                        && edge.path("className").asText().equals(candidate.path("class").asText()))
+                    found = true;
+            require(found, "Original migration class is no longer declared");
+            previous = edge.path("to").asText();
+            var identity = steps.size() == edges.size() - 1
+                    ? target
+                    : new SchemaIdentity(target.ownerId(), previous, UUID.randomUUID());
+            steps.add(new MigrationStep(steps.size(), edge.path("from").asText(), previous,
+                    edge.path("className").asText(), identity, UUID.randomUUID(), UUID.randomUUID(),
+                    UUID.randomUUID()));
+        }
+        require(previous.equals(target.schemaVersion()), "Original chain does not reach its requested target");
+        return List.copyOf(steps);
     }
 
     /** Registers the target and all scope identities before any DDL or author callback. / 在任一 DDL 或作者回调前登记目标及全部作用域身份。
@@ -337,6 +491,14 @@ public final class ModRestartLedger {
                 p.setObject(2, plan.operation());
                 require(p.executeUpdate() == 1, "Original migration disappeared");
             }
+        registerSteps(c, plan);
+    }
+
+    /** Persists every original edge before any author execution. / 在任意作者执行前持久化每条原迁移边。
+     * @param c original transaction / 原事务
+     * @param plan original preparation / 原准备
+     * @throws SQLException if an edge cannot be registered / 无法登记迁移边时 */
+    private static void registerSteps(Connection c, Preparation plan) throws SQLException {
         for (var step : plan.steps()) {
             try (var p = c.prepareStatement(
                     "INSERT INTO mod_migration_step(operation_id,step_number,from_version,to_version,migration_class,source_schema,target_schema,state) VALUES(?,?,?,?,?,?,?,'PENDING')")) {
@@ -643,10 +805,14 @@ public final class ModRestartLedger {
                     p.setLong(1, now);
                     p.setObject(2, plan.operation());
                     p.setObject(3, plan.intent());
-                    require(p.executeUpdate() == 2, "Original preparation identities changed");
+                    require(p.executeUpdate() == (plan.intent().equals(plan.operation()) ? 1 : 2),
+                            "Original preparation identities changed");
                 }
             } else {
-                var row = required(c, plan.intent());
+                String owner = plan.target().ownerId();
+                String version = plan.intent().equals(plan.operation())
+                        ? retryRequest(c, plan).path("target").path("version").asText()
+                        : required(c, plan.intent()).version();
                 boolean migrating = plan.source().isPresent();
                 logs.store(c, archive, List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation",
                         outcome == Outcome.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
@@ -658,7 +824,19 @@ public final class ModRestartLedger {
                         outcome == Outcome.SUCCEEDED
                                 ? "Data validation and original resource cleanup succeeded"
                                 : "Data preparation failed and original resources are closed",
-                        null, row.owner(), row.version(), null, plan.operation(), outcome, false)), 100);
+                        null, owner, version, null, plan.operation(), outcome, false)), 100);
+                if (plan.intent().equals(plan.operation())) {
+                    try (var p = c.prepareStatement(
+                            "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=?")) {
+                        p.setObject(1, boot);
+                        p.setString(2,
+                                outcome == Outcome.SUCCEEDED
+                                        ? "MOD_DATA_READY_RESTART_REQUIRED"
+                                        : "MOD_SCHEMA_PREPARATION_FAILED");
+                        p.setString(3, owner);
+                        require(p.executeUpdate() == 1, "Retry owner disappeared");
+                    }
+                }
                 try (var p = c.prepareStatement("DELETE FROM mod_migration_step WHERE operation_id=?")) {
                     p.setObject(1, plan.operation());
                     p.executeUpdate();
@@ -681,6 +859,26 @@ public final class ModRestartLedger {
      * @throws SQLException if retained evidence cannot be read / 无法读取保留证据时 */
     private boolean preparationFinished(Connection c, Preparation plan, Outcome outcome, String digest)
             throws SQLException {
+        if (plan.intent().equals(plan.operation())) {
+            String state = outcome == Outcome.SUCCEEDED ? "READY" : outcome.name();
+            try (var p = c.prepareStatement("SELECT state,validation_digest FROM mod_schema WHERE generation=?")) {
+                p.setObject(1, plan.target().generation());
+                try (var r = p.executeQuery()) {
+                    if (!r.next() || !state.equals(r.getString(1)) || !Objects.equals(digest, r.getString(2)))
+                        return false;
+                }
+            }
+            new SchemaCoordinates(plan.target()).requireRegistered(c, Set.of(state));
+            try (var p = c.prepareStatement("SELECT state,recovery_json FROM mod_operation WHERE operation_id=?")) {
+                p.setObject(1, plan.operation());
+                try (var r = p.executeQuery()) {
+                    boolean exists = r.next();
+                    return outcome == Outcome.UNKNOWN
+                            ? exists && "UNKNOWN".equals(r.getString(1)) && sameInventory(r.getString(2), plan)
+                            : !exists;
+                }
+            }
+        }
         var row = required(c, plan.intent());
         require(plan.target().ownerId().equals(row.owner()) && plan.target().generation().equals(row.generation())
                 && plan.target().schemaVersion().equals(row.targetSchema())
@@ -714,25 +912,68 @@ public final class ModRestartLedger {
      * @return current physical preparation phase / 当前物理准备阶段
      * @throws SQLException if ownership or registry evidence changed / 归属或登记证据变化时 */
     private String requirePreparation(Connection c, Preparation plan) throws SQLException {
-        var row = required(c, plan.intent());
-        require(row.owner().equals(plan.target().ownerId())
-                && Objects.equals(row.targetSchema(), plan.target().schemaVersion())
-                && plan.target().generation().equals(row.generation()) && row.state().equals("RUNNING")
-                && row.phase().equals("APPLYING") && boot.equals(uuid(object(row.recovery()), "applicationBootId")),
-                "Original preparation intent changed");
-        requireClosed(registry(c, row));
+        if (plan.intent().equals(plan.operation()))
+            retryRequest(c, plan);
+        else {
+            var row = required(c, plan.intent());
+            require(row.owner().equals(plan.target().ownerId())
+                    && Objects.equals(row.targetSchema(), plan.target().schemaVersion())
+                    && plan.target().generation().equals(row.generation()) && row.state().equals("RUNNING")
+                    && row.phase().equals("APPLYING") && boot.equals(uuid(object(row.recovery()), "applicationBootId")),
+                    "Original preparation intent changed");
+            requireClosed(registry(c, row));
+        }
         new SchemaCoordinates(plan.target()).requireRegistered(c, Set.of("PREPARING"));
         if (plan.source().isPresent())
             new SchemaCoordinates(plan.source().get()).requireRegistered(c, Set.of("READY"));
         try (var p = c.prepareStatement(
                 "SELECT phase,recovery_json FROM mod_operation WHERE operation_id=? AND mod_id=? AND operation_type='MIGRATE' AND target_generation=? AND state='RUNNING' AND outcome IS NULL AND archive_log_id=?")) {
             p.setObject(1, plan.operation());
-            p.setString(2, row.owner());
+            p.setString(2, plan.target().ownerId());
             p.setObject(3, plan.target().generation());
             p.setString(4, plan.archive().toString());
             try (var r = p.executeQuery()) {
                 require(r.next() && sameInventory(r.getString(2), plan), "Original preparation ownership changed");
                 return r.getString(1);
+            }
+        }
+    }
+
+    /** Validates an explicit standalone retry without inventing an activation intent. / 验证明示独立重试，不虚构启用意图。
+     * @param c original transaction / 原事务
+     * @param plan original preparation / 原准备
+     * @return exact retry request / 精确重试请求
+     * @throws SQLException if original program, choice or ownership changed / 原程序、选择或归属变化时 */
+    private JsonNode retryRequest(Connection c, Preparation plan) throws SQLException {
+        try (var p = c.prepareStatement(
+                "SELECT o.request_json,o.target_version FROM mod_operation o JOIN mod_registry r ON r.mod_id=o.mod_id JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.mod_id=? AND o.operation_type='MIGRATE' AND o.state='RUNNING' AND o.outcome IS NULL AND o.target_generation=? AND r.enabled AND r.selected_version=o.target_version AND r.revision=o.accepted_revision AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.schema_version=o.target_schema_version")) {
+            p.setObject(1, plan.operation());
+            p.setString(2, plan.target().ownerId());
+            p.setObject(3, plan.target().generation());
+            try (var r = p.executeQuery()) {
+                require(r.next(), "Original explicit retry is no longer owned");
+                var request = object(r.getString(1));
+                require(fields(request)
+                        .equals(Set.of("formatVersion", "mode", "ownerId", "previousGeneration", "manifest",
+                                "contentDigest", "target", "data"))
+                        && request.path("formatVersion").asInt() == 1 && "RETRY".equals(request.path("mode").asText())
+                        && plan.target().ownerId().equals(request.path("ownerId").asText())
+                        && request.path("target").path("enabled").asBoolean()
+                        && r.getString(2).equals(request.path("target").path("version").asText())
+                        && !plan.target().generation().equals(uuid(request, "previousGeneration")),
+                        "Original retry request changed");
+                try (var q = c.prepareStatement(
+                        "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND manifest_json=? AND content_sha256=?")) {
+                    q.setString(1, plan.target().ownerId());
+                    q.setString(2, r.getString(2));
+                    q.setString(3, request.path("manifest").asText());
+                    q.setString(4, request.path("contentDigest").asText());
+                    try (var v = q.executeQuery()) {
+                        v.next();
+                        require(v.getLong(1) == 1, "Original retry program changed");
+                    }
+                }
+                return request;
             }
         }
     }
