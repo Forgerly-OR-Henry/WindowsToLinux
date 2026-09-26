@@ -92,56 +92,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 OperationResult<AiResponse> result = null;
                 for (var candidate : candidates) {
                     try (var prepared = capture(candidate, purpose, task)) {
-                        byte[] body;
-                        try {
-                            body = ModelMessageCodec.encode(candidate.profile().model(), request,
-                                    prepared.maxOutputTokens());
-                        } catch (IllegalArgumentException invalid) {
-                            throw error(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET",
-                                    "Model input, capability or output budget is invalid");
-                        }
-                        boolean transferred = false;
-                        try {
-                            ResourceLease lease = tasks.retain(task,
-                                    new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
-                            var pending = new PendingCall(task, lease);
-                            synchronized (this) {
-                                retained.add(pending);
-                            }
-                            try {
-                                long remaining = timeout - (System.nanoTime() - start);
-                                if (remaining <= 0)
-                                    return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                                            Optional.of(new Problem(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
-                                                    "The request budget ended before another model request was sent",
-                                                    Map.of(), Optional.empty())));
-                                try {
-                                    pending.call = new ModelHttpCall(URI.create(candidate.profile().endpoint()),
-                                            prepared.key(), body, Duration.ofNanos(remaining), candidate.profile().id(),
-                                            request.jsonObjectResponse());
-                                    transferred = true;
-                                } catch (IllegalArgumentException invalid) {
-                                    throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
-                                            "The configured endpoint or credential is invalid");
-                                }
-                                result = pending.call.execute(tasks.operationCancellation(task));
-                                if (result.outcome() == Outcome.UNKNOWN)
-                                    tasks.reportUncertainEffect(task);
-                            } finally {
-                                synchronized (pending) {
-                                    pending.running = false;
-                                }
-                                try {
-                                    pending.close();
-                                } catch (ApiException incomplete) {
-                                    tasks.reportUncertainEffect(task);
-                                    throw incomplete;
-                                }
-                            }
-                        } finally {
-                            if (!transferred)
-                                Arrays.fill(body, (byte) 0);
-                        }
+                        result = send(candidate.profile(), prepared, request, task, start, timeout);
                     }
                     if (result.outcome() != Outcome.FAILED || result.problem().isEmpty()
                             || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))
@@ -151,6 +102,86 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             });
         } catch (SQLException failure) {
             throw error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read");
+        }
+    }
+
+    /** Sends a single host-owned candidate using the same transport lifetime as author calls. / 使用与作者调用相同的传输寿命发送单个宿主候选。
+     * @param profile exact provider configuration / 精确提供者配置
+     * @param key caller-owned temporary credential / 调用方持有的临时凭据
+     * @param request platform-created probe request / 平台创建的探测请求
+     * @param task original host task / 原宿主任务
+     * @return actual probe outcome / 实际探测结果
+     * @throws ApiException if authorization or cleanup fails / 授权或清理失败时 */
+    OperationResult<AiResponse> probe(gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile profile,
+            char[] key, AiRequest request, TaskContext task) throws ApiException {
+        long start = System.nanoTime();
+        try (var prepared = new Prepared(key.clone(), request.maxOutputTokens())) {
+            return scope.call(task, false,
+                    () -> send(profile, prepared, request, task, start, request.timeout().toNanos()));
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "AI_PROBE_STORAGE", "The probe resource could not be recorded");
+        }
+    }
+
+    /** Owns encoding, one send and actual cleanup within the original deadline. / 在原始期限内持有编码、单次发送及实际清理。
+     * @param profile exact captured provider / 精确已捕获提供者
+     * @param prepared original credential and budget / 原凭据及预算
+     * @param request bounded request / 有界请求
+     * @param task original task / 原任务
+     * @param start original start time / 原开始时间
+     * @param timeout whole operation budget / 整体操作预算
+     * @return classified provider result / 已分类提供者结果
+     * @throws ApiException if input, authorization or cleanup fails / 输入、授权或清理失败时 */
+    private OperationResult<AiResponse> send(gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile profile,
+            Prepared prepared, AiRequest request, TaskContext task, long start, long timeout) throws ApiException {
+        byte[] body;
+        try {
+            body = ModelMessageCodec.encode(profile.model(), request, prepared.maxOutputTokens());
+        } catch (IllegalArgumentException invalid) {
+            throw error(ProblemCode.INVALID_INPUT, "AI_REQUEST_BUDGET",
+                    "Model input, capability or output budget is invalid");
+        }
+        boolean transferred = false;
+        try {
+            ResourceLease lease = tasks.retain(task,
+                    new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
+            var pending = new PendingCall(task, lease);
+            synchronized (this) {
+                retained.add(pending);
+            }
+            try {
+                long remaining = timeout - (System.nanoTime() - start);
+                if (remaining <= 0)
+                    return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                            Optional.of(new Problem(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
+                                    "The request budget ended before another model request was sent", Map.of(),
+                                    Optional.empty())));
+                try {
+                    pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), body,
+                            Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse());
+                    transferred = true;
+                } catch (IllegalArgumentException invalid) {
+                    throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
+                            "The configured endpoint or credential is invalid");
+                }
+                var result = pending.call.execute(tasks.operationCancellation(task));
+                if (result.outcome() == Outcome.UNKNOWN)
+                    tasks.reportUncertainEffect(task);
+                return result;
+            } finally {
+                synchronized (pending) {
+                    pending.running = false;
+                }
+                try {
+                    pending.close();
+                } catch (ApiException incomplete) {
+                    tasks.reportUncertainEffect(task);
+                    throw incomplete;
+                }
+            }
+        } finally {
+            if (!transferred)
+                Arrays.fill(body, (byte) 0);
         }
     }
 

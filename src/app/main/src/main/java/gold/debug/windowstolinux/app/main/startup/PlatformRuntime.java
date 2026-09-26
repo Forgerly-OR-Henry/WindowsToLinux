@@ -36,6 +36,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Permanent server settings and authentication-check coordinator. / 常驻服务器设置及认证检查协调器。 */
     private gold.debug.windowstolinux.app.service.server.PlatformServerService servers;
 
+    /** Permanent model settings and capability probes. / 常驻模型设置及能力探测。 */
+    private gold.debug.windowstolinux.app.service.ai.PlatformModelService models;
+
     /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
     private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
 
@@ -197,6 +200,20 @@ public final class PlatformRuntime implements AutoCloseable {
         return access;
     }
 
+    /** Creates the permanent model configuration service with real task-bound probes. / 创建具有真实任务探测的常驻模型配置服务。
+     * @return host model settings / 宿主模型设置
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if recovery registration fails / 恢复登记失败时 */
+    public synchronized gold.debug.windowstolinux.app.service.ai.PlatformModelService models()
+            throws gold.debug.windowstolinux.appapi.task.ApiException {
+        requireWorker();
+        if (closed || stopping)
+            throw new IllegalStateException("Platform model settings are closing");
+        if (models == null)
+            models = new gold.debug.windowstolinux.app.service.ai.PlatformModelService(persistence, security, tasks,
+                    version, ai(PlatformTaskAdmission.PLATFORM_OWNER, version));
+        return models;
+    }
+
     /**
      * Creates protected-byte and reference access for one Mod activation. / 为一次 Mod 启用创建受保护字节及引用访问。
      * @param owner exact Mod identity / 精确 Mod 身份
@@ -347,6 +364,8 @@ public final class PlatformRuntime implements AutoCloseable {
         }
         if (servers != null)
             servers.close();
+        if (models != null)
+            models.close();
         for (var access : java.util.List.copyOf(serverAccesses))
             access.close();
         serverAccesses.clear();

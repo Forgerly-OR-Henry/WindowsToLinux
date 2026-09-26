@@ -1668,3 +1668,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ai/transport/LimitedHttpBodySubscriber.java`：在接收过程中限制完整正文容量，超限取消上游。
 - `app/ai/transport/ModelHttpCall.java`：持有单次模型 HTTP 请求，处理总时限、取消、未知结果及实际客户端关闭。
 - `app/service/ai/PlatformAiService.java`：按已验证用途调用模型，绑定原任务凭据及真实连接占用，保留未完成释放。
+
+- `app/ai/protocol/ModelCapabilityProbe.java`：与业务无关的随机文字/图片挑战及精确答案核验。
+- `app/service/ai/PlatformModelService.java`：平台模型验证后保存、明确用途配置及原任务中断核对。
+- `app/service/contract/AiInventoryAccess.java`：供平台清单控件使用的非秘密配置和用途窄接口。
+- `app/service/task/HostTaskRecovery.java`：对已知宿主协议核对前次启动消失的进程内资源，未知种类继续阻塞。
+- `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
+- `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。

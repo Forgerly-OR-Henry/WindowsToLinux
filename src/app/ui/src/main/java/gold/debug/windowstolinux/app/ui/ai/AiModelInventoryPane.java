@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
-import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.AiInventoryAccess;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.ai.*;
@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.shared.model.ai.*;
 /** Keeps the original inventory visible while editing a purpose inline. / 内联编辑用途时保持原模型清单可见。 */
 final class AiModelInventoryPane extends JPanel {
     /** Model application boundary. / 模型应用边界。 */
-    private final AiApplicationFacade service;
+    private final AiInventoryAccess service;
 
     /** Localized messages. / 本地化消息。 */
     private final PageMessagePresenter messages;
@@ -97,7 +97,7 @@ final class AiModelInventoryPane extends JPanel {
      * @param messages localized messages / 本地化消息
      * @param edit model editing callback / 模型编辑回调
      */
-    AiModelInventoryPane(AiApplicationFacade service, DesktopComponentFactory c, PageMessagePresenter messages,
+    AiModelInventoryPane(AiInventoryAccess service, DesktopComponentFactory c, PageMessagePresenter messages,
             Consumer<AiProviderSummary> edit) {
         super(new BorderLayout(8, 8));
         this.service = service;
@@ -190,6 +190,8 @@ final class AiModelInventoryPane extends JPanel {
         JPanel modelActions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         JButton newModel = c.primaryButton(messages.text("ai.models.add")),
                 editModel = c.secondaryButton(messages.text("ai.models.edit"));
+        newModel.setName("ai.models.add");
+        editModel.setName("ai.models.edit");
         newModel.addActionListener(event -> {
             if (!blocked())
                 edit.accept(null);
