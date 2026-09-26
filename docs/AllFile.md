@@ -1721,3 +1721,4 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/service/ServiceSnapshot.java`：跨 Mod 同步调用的有界值复制，拒绝活动句柄、闭包及异步对象。
 - `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。
 - `app/service/mod/PlatformModServices.java`：真实加载器身份的服务登记、启动发布、依赖发现和原任务同步调用。
+- `app/main/mod/PlatformModContext.java`：同次真实 Mod 启用的完整能力装配、暂存发布、部分失败回收和实际上下文关闭归属。

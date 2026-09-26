@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Connects owned business JDBC directly to the original task's resource ledger. / 将所属业务 JDBC 直接连接到原始任务的资源账本。 */
-public final class TaskModDatabase implements ModDatabase {
+public final class TaskModDatabase implements ModDatabase, AutoCloseable {
     /** Host-owned engine containing the actual registered schema. / 包含实际登记数据结构的宿主引擎。 */
     private final PlatformDatabase database;
 
@@ -19,6 +19,9 @@ public final class TaskModDatabase implements ModDatabase {
 
     /** Immutable bound identity, never supplied by individual author calls. / 不可变绑定身份，不由单次作者调用提供。 */
     private final SchemaCoordinates coordinates;
+
+    /** Revoked activation admission, without claiming existing connections have closed. / 已撤销启用准入，不声称已有连接已关闭。 */
+    private volatile boolean closed;
 
     /**
      * Binds one prepared caller schema to the platform task runtime. / 将一个已准备的调用方数据结构绑定到平台任务运行时。
@@ -39,6 +42,7 @@ public final class TaskModDatabase implements ModDatabase {
      */
     @Override
     public SchemaIdentity identity() throws ApiException {
+        requireOpen();
         try {
             coordinates.requireRegistered(database, Set.of("READY"));
             return coordinates.identity();
@@ -56,6 +60,7 @@ public final class TaskModDatabase implements ModDatabase {
      */
     @Override
     public Connection openConnection(TaskContext task) throws ApiException, SQLException {
+        requireOpen();
         if (javax.swing.SwingUtilities.isEventDispatchThread())
             throw new ApiException(new Problem(ProblemCode.CONTRACT_VIOLATION, "MOD_JDBC_REQUIRES_BACKGROUND",
                     "Task JDBC access must run on a background thread", Map.of(), Optional.empty()));
@@ -97,6 +102,20 @@ public final class TaskModDatabase implements ModDatabase {
                 }
             throw failure;
         }
+    }
+
+    /** Revokes new capability calls while existing JDBC remains the author's close responsibility. / 撤销新能力调用，已有 JDBC 仍由作者负责关闭。 */
+    @Override
+    public void close() {
+        closed = true;
+    }
+
+    /** Rejects an old activation's capability after its owning context closes. / 所属上下文关闭后拒绝旧启用能力。
+     * @throws ApiException if the activation was revoked / 启用已撤销时 */
+    private void requireOpen() throws ApiException {
+        if (closed)
+            throw new ApiException(new Problem(ProblemCode.UNAVAILABLE, "MOD_DATABASE_CLOSED",
+                    "The original Mod database capability has closed", Map.of(), Optional.empty()));
     }
 
     /**
