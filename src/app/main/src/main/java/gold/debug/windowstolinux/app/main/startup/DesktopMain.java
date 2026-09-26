@@ -120,6 +120,7 @@ public final class DesktopMain {
                 window.installModels(models);
                 window.installTransfers(runtime.transfers());
                 window.installAuthorization(runtime.authorization());
+                window.installLogs(runtime.logs());
                 return window;
             });
             runtime.started();

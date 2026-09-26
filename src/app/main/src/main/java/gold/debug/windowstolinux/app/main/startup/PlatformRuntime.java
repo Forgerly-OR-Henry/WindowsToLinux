@@ -31,6 +31,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Independent platform permission preference and current workflow scopes. / 独立平台权限偏好及当前流程作用域。 */
     private final PlatformAuthorizationService authorization;
 
+    /** Shared actual diagnostic storage and emergency reconciliation. / 共用实际诊断存储及应急核对。 */
+    private final gold.debug.windowstolinux.app.service.log.PlatformLogService logs;
+
     /** Shared permanent connection and transfer preferences. / 共用常驻连接及传输偏好。 */
     private final gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers;
 
@@ -83,6 +86,12 @@ public final class PlatformRuntime implements AutoCloseable {
         this.security = Objects.requireNonNull(security);
         transfers = new gold.debug.windowstolinux.app.service.linux.TransferSettingsService(persistence, security);
         version = readVersion();
+        logs = new gold.debug.windowstolinux.app.service.log.PlatformLogService(persistence.database(), security);
+        try {
+            logs.replayAll();
+        } catch (Exception failure) {
+            throw new SQLException("Platform diagnostic recovery could not enumerate registered categories", failure);
+        }
         tasks = new PlatformTaskRuntime(persistence.database(),
                 new PlatformTaskAdmission(persistence.database(), version), security);
         authorization = new PlatformAuthorizationService(persistence, security, tasks);
@@ -143,6 +152,24 @@ public final class PlatformRuntime implements AutoCloseable {
         if (stopping || closed)
             throw new IllegalStateException("Platform authorization is closing");
         return authorization;
+    }
+
+    /** Returns host diagnostic management without exposing it to author contexts. / 返回宿主诊断管理，不将其暴露给作者上下文。
+     * @return shared log owner / 共用日志所有者 */
+    public synchronized gold.debug.windowstolinux.app.service.log.PlatformLogService logs() {
+        if (stopping || closed)
+            throw new IllegalStateException("Platform logs are closing");
+        return logs;
+    }
+
+    /** Creates an exact owner-bound public logger for one activation. / 为一次启用创建精确所有者绑定公开日志器。
+     * @param owner actual Mod identity / 实际 Mod 身份
+     * @param version loaded release / 加载发布版本
+     * @param schema optional business generation / 可选业务代次
+     * @return original activation's logger / 原启用日志器 */
+    public synchronized gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner,
+            String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
+        return logs().bind(owner, version, schema, tasks);
     }
 
     /** Returns the actual application artifact identity. / 返回实际应用产物身份。
@@ -449,6 +476,7 @@ public final class PlatformRuntime implements AutoCloseable {
             capabilities.close();
         transfers.close();
         authorization.close();
+        logs.close();
         tasks.close();
         security.close();
         persistence.close();

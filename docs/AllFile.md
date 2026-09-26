@@ -1706,3 +1706,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/PlatformAuthorizationService.java`：独立模式偏好、宿主流程准入、原任务临时语义授权及结束失效。
 - `app/ui/component/WorkflowLaunchButton.java`：从实际用户操作捕获表单目标并提交中央流程任务，防止重复启动。
 - `app/ui/setting/AuthorizationSettingsPane.java`：常驻三档平台授权偏好选择、保存确认与失败显示回滚。
+
+- `app/db/log/LogRecordCodec.java`：SQL 与应急文件共用的有界脱敏记录、原身份时间及严格 UTF-8 封套校验。
+- `app/db/log/LogRepository.java`：验证固定标准表与实际 Schema 代次，按类别原子写入、去重及保留。
+- `app/db/log/EmergencyLogs.java`：固定根下每类应急文件及原子替换，保留损坏和中断替换证据。
+- `app/service/log/PlatformLogService.java`：启用所属公开日志绑定、共享类别协调、回填及仅宿主日志管理。
+- `app/ui/setting/LogSettingsPane.java`：默认数据库管理页，异步查看、清理、实际计数和本次 DEBUG 开关。
