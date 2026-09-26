@@ -129,11 +129,62 @@ class ModRuntimeSessionTest {
         }
     }
     ModRuntimeSession session(ModClassLoader loader, Lease lease) {
-        return new ModRuntimeSession(loader, lease, SemanticVersion.parse("1.0.0-dev.1"));
+        return new ModRuntimeSession(loader, lease, SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+        });
     }
 
     int count(Class<?> entry, String name) throws Exception {
         return entry.getField(name).getInt(null);
+    }
+
+    @Test
+    void journalCoversCompatibilityFailureBeforeAnyAuthorConstruction() throws Exception {
+        var loader = loader();
+        var entry = loader.loadClass("example.fixture.Mod");
+        assertEquals(0, count(entry, "instances"));
+        var lease = new Lease();
+        var states = new ArrayList<ModRuntimeSession.SessionState>();
+        var failureEvidence = new ArrayList<Problem>();
+        var session = new ModRuntimeSession(loader, lease, SemanticVersion.parse("2.0.0"), (state, failure, closed) -> {
+            states.add(state);
+            if (closed)
+                failureEvidence.add(failure.orElseThrow());
+        });
+        assertThrows(IllegalStateException.class, session::start);
+        assertEquals(List.of(ModRuntimeSession.SessionState.STARTING, ModRuntimeSession.SessionState.STOPPING,
+                ModRuntimeSession.SessionState.FAILED), states);
+        assertEquals(0, count(entry, "instances"));
+        assertEquals(1, failureEvidence.size());
+        assertEquals("MOD_START_FAILED", failureEvidence.getFirst().eventCode());
+        assertTrue(session.finalized());
+    }
+
+    @Test
+    void failedStartupAndFinalAcknowledgementKeepOriginalProblemAndSkipCompletedCleanup() throws Exception {
+        var loader = loader();
+        var entry = loader.loadClass("example.fixture.Mod");
+        entry.getField("failStart").setBoolean(null, true);
+        var lease = new Lease();
+        var finalEvidence = new ArrayList<Problem>();
+        var session = new ModRuntimeSession(loader, lease, SemanticVersion.parse("1.0.0-dev.1"),
+                (state, failure, closed) -> {
+                    if (closed) {
+                        finalEvidence.add(failure.orElseThrow());
+                        if (finalEvidence.size() == 1)
+                            throw new java.io.IOException("Final acknowledgement unavailable");
+                    }
+                });
+        var original = assertThrows(IllegalStateException.class, session::start);
+        assertEquals(1, original.getSuppressed().length);
+        assertTrue(session.resourcesClosed());
+        assertFalse(session.finalized());
+        session.stop(StopReason.APPLICATION_EXIT);
+        assertEquals(2, finalEvidence.size());
+        assertEquals(finalEvidence.getFirst(), finalEvidence.getLast());
+        assertEquals(1, count(entry, "stops"));
+        assertEquals(1, lease.closes);
+        assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+        assertTrue(session.finalized());
     }
 
     @Test

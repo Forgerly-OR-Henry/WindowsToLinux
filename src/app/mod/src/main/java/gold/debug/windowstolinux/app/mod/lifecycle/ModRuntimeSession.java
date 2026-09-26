@@ -21,6 +21,9 @@ public final class ModRuntimeSession {
     /** Actual host API release used for compatibility checks. / 用于兼容校验的实际宿主 API 版本。 */
     private final SemanticVersion platformApi;
 
+    /** Mandatory host journal, separate from author-owned context cleanup. / 必需的宿主状态记录器，独立于作者上下文清理。 */
+    private final Journal journal;
+
     /** Prevents concurrent lifecycle callbacks without holding a monitor across author code. / 不跨作者代码持有监视器的生命周期回调互斥标记。 */
     private final AtomicBoolean operation = new AtomicBoolean();
 
@@ -42,16 +45,24 @@ public final class ModRuntimeSession {
     /** Whether the final class-loader close succeeded. / 最终类加载器关闭是否成功。 */
     private volatile boolean resourcesClosed;
 
+    /** Whether final physical-close evidence was durably acknowledged. / 最终物理关闭证据是否已持久确认。 */
+    private volatile boolean finalized;
+
+    /** Original safe startup failure retained across cleanup retries. / 跨清理重试保留的原安全启动失败。 */
+    private Optional<Problem> startupFailure = Optional.empty();
+
     /**
      * Takes ownership of dependency-checked loading and host context preparation. / 接管已完成依赖校验的加载器及宿主上下文准备结果。
      * @param loader prepared owner loader / 已准备的所有者加载器
      * @param lease host context and registration ownership / 宿主上下文及登记归属
      * @param platformApi actual host API release / 实际宿主 API 版本
+     * @param journal actual host lifecycle persistence / 实际宿主生命周期持久化
      */
-    public ModRuntimeSession(ModClassLoader loader, ContextLease lease, SemanticVersion platformApi) {
+    public ModRuntimeSession(ModClassLoader loader, ContextLease lease, SemanticVersion platformApi, Journal journal) {
         this.loader = Objects.requireNonNull(loader);
         this.lease = Objects.requireNonNull(lease);
         this.platformApi = Objects.requireNonNull(platformApi);
+        this.journal = Objects.requireNonNull(journal);
     }
 
     /**
@@ -66,6 +77,7 @@ public final class ModRuntimeSession {
             startAttempted = true;
             state = SessionState.STARTING;
             try {
+                journal.record(SessionState.STARTING, Optional.empty(), false);
                 var manifest = loader.manifest();
                 if (Runtime.version().feature() < manifest.minJavaVersion()
                         || !manifest.platformApiRange().contains(platformApi))
@@ -78,13 +90,16 @@ public final class ModRuntimeSession {
                 entry = ModEntryFactory.create(loader);
                 entry.start(context);
                 lease.commit();
+                journal.record(SessionState.RUNNING, Optional.empty(), false);
                 state = SessionState.RUNNING;
             } catch (Exception | LinkageError | AssertionError failure) {
                 state = SessionState.FAILED;
+                startupFailure = Optional.of(problem(failure, "MOD_START_FAILED", "Mod startup could not complete"));
                 try {
                     drain(StopReason.START_FAILURE);
                 } catch (Exception | LinkageError | AssertionError cleanup) {
                     failure.addSuppressed(cleanup);
+                    retain(cleanup, failure);
                 }
                 throw failure;
             }
@@ -102,16 +117,17 @@ public final class ModRuntimeSession {
         Objects.requireNonNull(reason);
         enter();
         try {
-            if (resourcesClosed)
+            if (finalized)
                 return;
             state = SessionState.STOPPING;
             try {
                 drain(reason);
-                state = SessionState.STOPPED;
+                state = startupFailure.isPresent() ? SessionState.FAILED : SessionState.STOPPED;
             } catch (Exception | LinkageError | AssertionError failure) {
                 state = failure instanceof ApiException api && api.problem().code() == ProblemCode.BUSY
                         ? SessionState.STOPPING
                         : SessionState.FAILED;
+                retain(failure, failure);
                 throw failure;
             }
         } finally {
@@ -125,7 +141,12 @@ public final class ModRuntimeSession {
      * @throws Exception if occupancy or cleanup remains unresolved / 占用或清理仍未解决时
      */
     private void drain(StopReason reason) throws Exception {
+        if (resourcesClosed) {
+            finishJournal();
+            return;
+        }
         lease.seal();
+        journal.record(SessionState.STOPPING, startupFailure, false);
         var blockers = List.copyOf(lease.blockers());
         if (!blockers.isEmpty())
             throw new ApiException(new Problem(ProblemCode.BUSY, "MOD_STOP_BLOCKED",
@@ -143,6 +164,39 @@ public final class ModRuntimeSession {
             loader.close();
             resourcesClosed = true;
         }
+        finishJournal();
+    }
+
+    /** Confirms physical close separately so a failed commit can be retried without replaying author cleanup. / 单独确认物理关闭，提交失败可重试而不重放作者清理。
+     * @throws Exception if the final durable acknowledgement fails / 最终持久确认失败时 */
+    private void finishJournal() throws Exception {
+        journal.record(startupFailure.isPresent() ? SessionState.FAILED : SessionState.STOPPED, startupFailure, true);
+        finalized = true;
+    }
+
+    /** Preserves cleanup uncertainty without replacing the original thrown failure. / 保留清理不确定性，不替换原抛出失败。
+     * @param failure cleanup or persistence failure / 清理或持久化失败
+     * @param original original exception receiving any journal error / 接收记录错误的原异常 */
+    private void retain(Throwable failure, Throwable original) {
+        try {
+            var evidence = startupFailure
+                    .orElseGet(() -> problem(failure, "MOD_STOP_FAILED", "Mod cleanup is incomplete"));
+            boolean busy = failure instanceof ApiException api && api.problem().code() == ProblemCode.BUSY;
+            journal.record(busy ? SessionState.STOPPING : SessionState.FAILED, Optional.of(evidence), false);
+        } catch (Exception | LinkageError | AssertionError journalFailure) {
+            original.addSuppressed(journalFailure);
+        }
+    }
+
+    /** Keeps public evidence, otherwise uses a constant host explanation without author exception text. / 保留公开证据，否则使用宿主固定说明，不包含作者异常文本。
+     * @param failure original failure / 原失败
+     * @param event fallback event / 回退事件
+     * @param message safe fallback explanation / 安全回退说明
+     * @return original or newly identified safe evidence / 原证据或新分配身份的安全证据 */
+    private static Problem problem(Throwable failure, String event, String message) {
+        return failure instanceof ApiException api
+                ? api.problem()
+                : new Problem(ProblemCode.IO_FAILURE, event, message, Map.of(), Optional.of(UUID.randomUUID()));
     }
 
     /**
@@ -165,6 +219,23 @@ public final class ModRuntimeSession {
      * @return true only after entry, context and loader cleanup / 仅在入口、上下文及加载器清理后为真 */
     public boolean resourcesClosed() {
         return resourcesClosed;
+    }
+
+    /** Reports physical cleanup and its final durable acknowledgement together. / 同时报告物理清理及最终持久确认。
+     * @return whether no lifecycle ownership remains / 是否不再有生命周期归属 */
+    public boolean finalized() {
+        return finalized;
+    }
+
+    /** Host lifecycle persistence that never invokes author code. / 不调用作者代码的宿主生命周期持久化。 */
+    @FunctionalInterface
+    public interface Journal {
+        /** Records proven state while retaining failed final acknowledgements for retry. / 记录已证明状态，并保留失败的最终确认以便重试。
+         * @param state observed lifecycle state / 已观察生命周期状态
+         * @param failure safe original failure / 原安全失败
+         * @param resourcesClosed whether every actual resource has closed / 每个实际资源是否都已关闭
+         * @throws Exception if persistence cannot be confirmed / 无法确认持久化时 */
+        void record(SessionState state, Optional<Problem> failure, boolean resourcesClosed) throws Exception;
     }
 
     /** Process-local activation state, not a replacement for persistent Mod intent. / 进程内启用状态，不替代持久化 Mod 意图。 */

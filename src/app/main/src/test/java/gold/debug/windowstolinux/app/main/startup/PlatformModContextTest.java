@@ -44,13 +44,14 @@ class PlatformModContextTest {
                 public static ModContext context;
                 public static TaskHandle<String> task;
                 public static boolean failStart;
-                public static int stops, pageCloses;
+                public static int instances, stops, pageCloses;
                 public static String blockedStartup;
                 public static final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
                 public static java.nio.file.Path snapshotPath;
                 private PageRegistration page;
                 private ServiceRegistration service;
                 private LogTarget logs;
+                public Mod(){instances++;}
                 public void start(ModContext supplied) throws Exception {
                     context=supplied;
                     List.of(context.identity(),context.launchMode(),context.ui(),context.tasks(),context.interaction(),context.servers(),context.linux(),context.ai(),context.db(),context.secrets(),context.source(),context.logs(),context.processes(),context.services());
@@ -130,6 +131,30 @@ class PlatformModContextTest {
         return new ModClassLoader(candidate.manifest(), sources, Map.of());
     }
 
+    static void prepareActivation(PlatformRuntime runtime) throws Exception {
+        sql(runtime.persistence().database(),
+                "UPDATE mod_registry SET last_boot_id=NULL,last_runtime_state='STOPPED',actual_version=NULL WHERE mod_id=?",
+                OWNER);
+    }
+
+    static void actual(PlatformRuntime runtime, String state, String version) throws Exception {
+        try (var c = runtime.persistence().database().openConnection();
+                var s = c.prepareStatement(
+                        "SELECT last_boot_id,last_runtime_state,actual_version,enabled,selected_version,revision,disable_ack_revision FROM mod_registry WHERE mod_id=?")) {
+            s.setString(1, OWNER);
+            try (var r = s.executeQuery()) {
+                assertTrue(r.next());
+                assertEquals(runtime.persistence().database().bootId(), r.getObject(1, UUID.class));
+                assertEquals(state, r.getString(2));
+                assertEquals(version, r.getString(3));
+                assertTrue(r.getBoolean(4));
+                assertEquals(VERSION, r.getString(5));
+                assertEquals(0, r.getLong(6));
+                assertNull(r.getObject(7));
+            }
+        }
+    }
+
     static final class Host implements ModPageRegistry.PageHost {
         final Map<ModPageRegistry.PageKey, JComponent> mounted = new LinkedHashMap<>();
 
@@ -173,14 +198,18 @@ class PlatformModContextTest {
         Fixture(boolean schema, ModLaunchMode mode) throws Exception {
             runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION);
             SchemaIdentity identity = initialize(runtime, schema);
+            if (mode == ModLaunchMode.NORMAL)
+                prepareActivation(runtime);
             runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
             Path source = Files.createDirectories(root.resolve("选择的目录"));
             Files.writeString(source.resolve("sample.txt"), "真实源码验收");
             runtime.setSourcePicker((title, task, cancel) -> source);
             loader = loader(schema);
             entry = loader.loadClass("example.admission.Mod");
-            assembly = runtime.modContext(loader, Optional.ofNullable(identity), mode, pages);
-            session = new ModRuntimeSession(loader, assembly, SemanticVersion.parse("1.0.0-dev.1"));
+            entry.getFields();
+            session = runtime.modSession(loader, Optional.ofNullable(identity), mode, pages,
+                    SemanticVersion.parse("1.0.0-dev.1"));
+            assembly = runtime.modContexts().get(OWNER);
         }
 
         CountDownLatch signal(String name) throws Exception {
@@ -205,7 +234,7 @@ class PlatformModContextTest {
         @Override
         public void close() throws Exception {
             signal("release").countDown();
-            if (!session.resourcesClosed())
+            if (!session.finalized())
                 session.stop(StopReason.APPLICATION_EXIT);
             runtime.close();
         }
@@ -219,6 +248,10 @@ class PlatformModContextTest {
             assertThrows(SQLException.class, f.runtime::close);
             f.session.start();
             assertEquals("BUSY", f.entry.getField("blockedStartup").get(null));
+            actual(f.runtime, "RUNNING", VERSION);
+            assertEquals(Set.of(OWNER), f.runtime.modSessions().keySet());
+            assertEquals(1,
+                    count(f.runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema WHERE ever_used=TRUE"));
             assertEquals(1, f.pages.contributions().size());
             var context = f.context();
             for (var method : ModContext.class.getMethods())
@@ -234,6 +267,9 @@ class PlatformModContextTest {
             assertEquals(0, f.runtime.persistence().database().openConnections());
             f.session.stop(StopReason.APPLICATION_EXIT);
             assertTrue(f.session.resourcesClosed());
+            actual(f.runtime, "STOPPED", null);
+            assertTrue(f.session.finalized());
+            assertTrue(f.runtime.modSessions().isEmpty());
             assertTrue(f.loader.isClosed());
             assertTrue(f.runtime.modContexts().isEmpty());
             assertTrue(f.pages.contributions().isEmpty());
@@ -254,6 +290,7 @@ class PlatformModContextTest {
                         assertThrows(ApiException.class, () -> f.session.stop(StopReason.APPLICATION_RESTART)).problem()
                                 .code());
                 assertEquals(0, f.entry.getField("stops").getInt(null));
+                actual(f.runtime, "STOPPING", VERSION);
                 assertFalse(f.loader.isClosed());
                 assertTrue(Files.exists((Path) f.entry.getField("snapshotPath").get(null)));
                 assertThrows(SQLException.class, f.runtime::close);
@@ -273,6 +310,17 @@ class PlatformModContextTest {
             var identity = f.assembly.context().db().identity();
             f.entry.getField("failStart").setBoolean(null, true);
             assertThrows(IllegalStateException.class, f.session::start);
+            actual(f.runtime, "FAILED", null);
+            assertTrue(f.runtime.modSessions().isEmpty());
+            try (var c = f.runtime.persistence().database().openConnection();
+                    var s = c.createStatement();
+                    var r = s.executeQuery("SELECT failure_code,failure_detail FROM mod_registry")) {
+                assertTrue(r.next());
+                assertEquals("MOD_START_FAILED", r.getString(1));
+                var evidence = new com.fasterxml.jackson.databind.ObjectMapper().readTree(r.getString(2));
+                assertNotNull(UUID.fromString(evidence.path("diagnosticId").asText()));
+                assertFalse(r.getString(2).contains("Intentional partial startup failure"));
+            }
             assertTrue(f.session.resourcesClosed());
             assertTrue(f.loader.isClosed());
             assertTrue(f.runtime.modContexts().isEmpty());
@@ -293,7 +341,9 @@ class PlatformModContextTest {
             f.session.start();
             f.context().ui().open("main");
             f.host.failRemove.set(true);
-            assertThrows(ApiException.class, () -> f.session.stop(StopReason.APPLICATION_EXIT));
+            var failure = assertThrows(ApiException.class, () -> f.session.stop(StopReason.APPLICATION_EXIT));
+            assertEquals("PAGE_CLEANUP_PENDING", failure.problem().eventCode());
+            actual(f.runtime, "STOPPING", VERSION);
             assertFalse(f.session.resourcesClosed());
             assertFalse(f.loader.isClosed());
             assertEquals(Set.of(OWNER), f.runtime.modContexts().keySet());
@@ -301,6 +351,7 @@ class PlatformModContextTest {
             assertEquals(1, f.entry.getField("pageCloses").getInt(null));
             f.session.stop(StopReason.APPLICATION_EXIT);
             assertTrue(f.runtime.modContexts().isEmpty());
+            actual(f.runtime, "STOPPED", null);
             assertEquals(1, f.entry.getField("pageCloses").getInt(null));
             SwingUtilities.invokeAndWait(() -> assertTrue(f.host.mounted.isEmpty()));
         }
@@ -318,7 +369,83 @@ class PlatformModContextTest {
                     assertThrows(ApiException.class, context.db()::identity).problem().eventCode());
             assertEquals(0, count(f.runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema"));
             f.session.stop(StopReason.RECOVERY_FINISHED);
+            actual(f.runtime, "RUNNING", VERSION);
+            assertTrue(f.runtime.modSessions().isEmpty());
             assertTrue(f.runtime.modContexts().isEmpty());
+        }
+    }
+
+    @Test
+    void failedStartingWritePreventsAuthorConstructionAndRollsBackSchemaUse() throws Exception {
+        try (var f = new Fixture(true, ModLaunchMode.NORMAL)) {
+            assertEquals(0, f.entry.getField("instances").getInt(null));
+            var db = f.runtime.persistence().database();
+            sql(db, "ALTER TABLE mod_registry ADD CONSTRAINT fixture_start CHECK(last_runtime_state<>'STARTING')");
+            try {
+                assertThrows(SQLException.class, f.session::start);
+                assertEquals(0, f.entry.getField("instances").getInt(null));
+                assertNull(f.context());
+                assertEquals(0, count(db, "SELECT COUNT(*) FROM mod_schema WHERE ever_used=TRUE"));
+                assertEquals(1, count(db,
+                        "SELECT COUNT(*) FROM mod_registry WHERE last_boot_id IS NULL AND last_runtime_state='STOPPED'"));
+                assertTrue(f.session.finalized());
+                assertTrue(f.runtime.modContexts().isEmpty());
+                assertTrue(f.runtime.modSessions().isEmpty());
+            } finally {
+                sql(db, "ALTER TABLE mod_registry DROP CONSTRAINT fixture_start");
+            }
+        }
+    }
+
+    @Test
+    void failedRunningWriteRevokesPublishedContributionsAndRecordsStartupFailure() throws Exception {
+        try (var f = new Fixture(false, ModLaunchMode.NORMAL)) {
+            var db = f.runtime.persistence().database();
+            sql(db, "ALTER TABLE mod_registry ADD CONSTRAINT fixture_running CHECK(last_runtime_state<>'RUNNING')");
+            try {
+                assertThrows(SQLException.class, f.session::start);
+                actual(f.runtime, "FAILED", null);
+                assertEquals(1, f.entry.getField("instances").getInt(null));
+                assertEquals(1, f.entry.getField("stops").getInt(null));
+                assertTrue(f.pages.contributions().isEmpty());
+                assertTrue(f.session.finalized());
+                assertTrue(f.runtime.modSessions().isEmpty());
+                assertThrows(ApiException.class, () -> f.context().tasks().submit(request(), t -> success(null)));
+            } finally {
+                sql(db, "ALTER TABLE mod_registry DROP CONSTRAINT fixture_running");
+            }
+        }
+    }
+
+    @Test
+    void failedFinalWriteRetainsOriginalSessionAfterPhysicalCloseAndRetriesOnlyPersistence() throws Exception {
+        try (var f = new Fixture(false, ModLaunchMode.NORMAL)) {
+            f.session.start();
+            var db = f.runtime.persistence().database();
+            sql(db, "ALTER TABLE mod_registry ADD CONSTRAINT fixture_final CHECK(last_runtime_state<>'STOPPED')");
+            try {
+                assertThrows(SQLException.class, () -> f.session.stop(StopReason.APPLICATION_EXIT));
+                actual(f.runtime, "UNKNOWN", VERSION);
+                assertTrue(f.session.resourcesClosed());
+                assertFalse(f.session.finalized());
+                assertTrue(f.runtime.modContexts().isEmpty());
+                assertSame(f.session, f.runtime.modSessions().get(OWNER));
+                assertThrows(SQLException.class, f.runtime::close);
+                try (var duplicate = loader(false)) {
+                    assertThrows(IllegalStateException.class,
+                            () -> f.runtime.modContext(duplicate, Optional.empty(), ModLaunchMode.NORMAL, f.pages));
+                    assertThrows(IllegalStateException.class, () -> f.runtime.modSession(duplicate, Optional.empty(),
+                            ModLaunchMode.NORMAL, f.pages, SemanticVersion.parse("1.0.0-dev.1")));
+                }
+                assertEquals(1, f.entry.getField("stops").getInt(null));
+            } finally {
+                sql(db, "ALTER TABLE mod_registry DROP CONSTRAINT fixture_final");
+            }
+            f.session.stop(StopReason.APPLICATION_EXIT);
+            actual(f.runtime, "STOPPED", null);
+            assertTrue(f.session.finalized());
+            assertTrue(f.runtime.modSessions().isEmpty());
+            assertEquals(1, f.entry.getField("stops").getInt(null));
         }
     }
 
@@ -394,8 +521,10 @@ class PlatformModContextTest {
             });
             ModRuntimeSession session = null;
             try {
-                var assembly = runtime.modContext(loader, Optional.of(schema), ModLaunchMode.NORMAL, frame.pages());
-                session = new ModRuntimeSession(loader, assembly, SemanticVersion.parse("1.0.0-dev.1"));
+                prepareActivation(runtime);
+                session = runtime.modSession(loader, Optional.of(schema), ModLaunchMode.NORMAL, frame.pages(),
+                        SemanticVersion.parse("1.0.0-dev.1"));
+                var assembly = runtime.modContexts().get(OWNER);
                 session.start();
                 var entry = loader.loadClass("example.admission.Mod");
                 ((CountDownLatch) entry.getField("release").get(null)).countDown();
@@ -416,7 +545,7 @@ class PlatformModContextTest {
                 assertTrue(runtime.modContexts().isEmpty());
                 assertTrue(frame.pages().contributions().isEmpty());
             } finally {
-                if (session != null && !session.resourcesClosed())
+                if (session != null && !session.finalized())
                     session.stop(StopReason.APPLICATION_EXIT);
                 PlatformWindowTest.onEdt(() -> {
                     frame.dispose();

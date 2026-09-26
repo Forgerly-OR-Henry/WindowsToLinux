@@ -53,6 +53,7 @@ WindowsToLinux/
    │  │  │  └─ schema/
    │  │  ├─ failure/
    │  │  ├─ log/
+   │  │  ├─ mod/
    │  │  ├─ persistence/
    │  │  │  ├─ connection/
    │  │  │  ├─ repository/

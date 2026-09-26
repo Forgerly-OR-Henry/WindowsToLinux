@@ -128,6 +128,32 @@ public final class PlatformModContext implements ContextLease {
         return lease.context();
     }
 
+    /** Binds normal activation persistence; recovery contexts never replace ordinary runtime state. / 绑定普通启用持久化；恢复上下文不替换普通运行状态。
+     * @param finalized removes the original session only after durable final acknowledgement / 仅在最终持久确认后移除原会话
+     * @return original host lifecycle journal / 原宿主生命周期记录器 */
+    public gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.Journal journal(Runnable finalized) {
+        var ledger = new gold.debug.windowstolinux.app.db.mod.ModActivationLedger(runtime.persistence().database(),
+                identity.id(), identity.version(), schema);
+        return (state, failure, resourcesClosed) -> {
+            if (mode == ModLaunchMode.NORMAL) {
+                if (resourcesClosed)
+                    ledger.closed(failure);
+                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.STARTING)
+                    ledger.starting();
+                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.RUNNING)
+                    ledger.running();
+                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.STOPPING) {
+                    ledger.stopping();
+                    if (failure.isPresent())
+                        ledger.retained(failure.get(), true);
+                } else if (failure.isPresent())
+                    ledger.retained(failure.get(), false);
+            }
+            if (resourcesClosed)
+                finalized.run();
+        };
+    }
+
     /** Publishes staged pages and services after actual author startup. / 实际作者启动完成后发布暂存页面及服务。
      * @throws Exception if preparation, lifecycle or publication is unavailable / 准备、生命周期或发布不可用时 */
     @Override
