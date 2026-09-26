@@ -177,9 +177,11 @@ public final class TaskBrowserSession implements BrowserTerminalSession {
             var remaining = claims.iterator();
             while (remaining.hasNext()) {
                 try {
-                    remaining.next().lease().close();
+                    var claim = remaining.next();
+                    new TaskLedger(database).confirmBrowserClosed(task.id(), claim.resource(), claim.before());
+                    claim.lease().close();
                     remaining.remove();
-                } catch (ApiException failure) {
+                } catch (Exception failure) {
                     try {
                         tasks.reportUncertainEffect(task);
                     } catch (ApiException accounting) {

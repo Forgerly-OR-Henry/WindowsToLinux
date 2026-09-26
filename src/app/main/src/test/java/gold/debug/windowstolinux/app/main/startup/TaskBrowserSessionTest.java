@@ -207,43 +207,51 @@ class TaskBrowserSessionTest {
     }
 
     @Test
-    void failedPersistentReleaseRetriesTheSameLeaseWithoutLaunchingAnotherBrowser() throws Exception {
-        try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
-            initialize(runtime, false);
-            var db = runtime.persistence().database();
-            sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_browser CHECK(resource_id NOT LIKE 'browser-v1:%' OR released_at IS NULL)");
-            var owned = new AtomicReference<TaskBrowserSession>();
-            var original = new AtomicReference<TaskContext>();
-            var binding = runtime.tasks().bind(OWNER, VERSION, false);
-            var handle = binding.submit(request(), task -> {
-                original.set(task);
-                var browser = create(runtime, task, runtime.security()::observeLock);
-                owned.set(browser);
-                browser.open();
-                assertThrows(BrowserRecoveryException.class, browser::close);
-                assertTrue(actual(browser).resourcesClosed());
-                assertTrue(actual(browser).processes().stream().noneMatch(BrowserProcess::alive));
-                assertEquals(1, claims(runtime));
-                return success(null);
-            });
-            try {
-                state(handle, TaskState.UNKNOWN);
-                PlatformProcessServiceTest.returned(runtime, original.get());
-                var identities = actual(owned.get()).processes();
-                sql(db, "ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_browser");
-                try (var recovery = binding.registerRecovery("fixture", (previous, task) -> {
-                    owned.get().close();
-                    return PlatformProcessServiceTest.reconciledFailure();
-                })) {
-                    assertEquals(TaskState.ENDED, runtime.tasks().reconcile(handle.id()).toCompletableFuture()
-                            .get(8, TimeUnit.SECONDS).state());
+    void failedCleanupCheckpointOrReleaseRetriesTheSameLeaseWithoutLaunchingAnotherBrowser() throws Exception {
+        for (boolean checkpointFailure : List.of(true, false)) {
+            try (var runtime = PlatformRuntime.open(root.resolve("data-" + checkpointFailure),
+                    PlatformStartupTest.PROTECTION)) {
+                initialize(runtime, false);
+                var db = runtime.persistence().database();
+                sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_browser CHECK(resource_id NOT LIKE 'browser-v1:%' OR "
+                        + (checkpointFailure ? "recovery_json NOT LIKE '%browser.closed.v1%'" : "released_at IS NULL")
+                        + ")");
+                var owned = new AtomicReference<TaskBrowserSession>();
+                var original = new AtomicReference<TaskContext>();
+                var binding = runtime.tasks().bind(OWNER, VERSION, false);
+                var handle = binding.submit(request(), task -> {
+                    original.set(task);
+                    var browser = create(runtime, task, runtime.security()::observeLock);
+                    owned.set(browser);
+                    browser.open();
+                    assertThrows(BrowserRecoveryException.class, browser::close);
+                    assertTrue(actual(browser).resourcesClosed());
+                    assertTrue(actual(browser).processes().stream().noneMatch(BrowserProcess::alive));
+                    assertEquals(1, claims(runtime));
+                    var facts = new TaskLedger(db).recoveries(task.id(), "PROCESS", "browser-v1:").values().iterator()
+                            .next();
+                    assertEquals(checkpointFailure ? "browser.v1" : "browser.closed.v1", facts.protocol());
+                    return success(null);
+                });
+                try {
+                    state(handle, TaskState.UNKNOWN);
+                    PlatformProcessServiceTest.returned(runtime, original.get());
+                    var identities = actual(owned.get()).processes();
+                    sql(db, "ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_browser");
+                    try (var recovery = binding.registerRecovery("fixture", (previous, task) -> {
+                        owned.get().close();
+                        return PlatformProcessServiceTest.reconciledFailure();
+                    })) {
+                        assertEquals(TaskState.ENDED, runtime.tasks().reconcile(handle.id()).toCompletableFuture()
+                                .get(8, TimeUnit.SECONDS).state());
+                    }
+                    assertEquals(0, claims(runtime));
+                    assertEquals(identities, actual(owned.get()).processes());
+                } finally {
+                    sql(db, "ALTER TABLE platform_task_resource DROP CONSTRAINT IF EXISTS fixture_browser");
+                    if (owned.get() != null)
+                        owned.get().close();
                 }
-                assertEquals(0, claims(runtime));
-                assertEquals(identities, actual(owned.get()).processes());
-            } finally {
-                sql(db, "ALTER TABLE platform_task_resource DROP CONSTRAINT IF EXISTS fixture_browser");
-                if (owned.get() != null)
-                    owned.get().close();
             }
         }
     }

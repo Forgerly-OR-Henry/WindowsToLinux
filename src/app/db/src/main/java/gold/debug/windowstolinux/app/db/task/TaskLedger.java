@@ -473,6 +473,62 @@ public final class TaskLedger {
         checkpointPhysicalProcess(taskId, resource, before, after, "browser-v1:", "browser.v1");
     }
 
+    /** Persists the original browser owner's confirmed cleanup before releasing its claim. / 释放申请前持久化原浏览器所有者已确认的清理。
+     * @param taskId original task / 原任务
+     * @param resource original browser claim / 原浏览器申请
+     * @param before original pre-creation identity / 原创建前身份
+     * @throws SQLException if ownership, physical boot or the durable checkpoint differs / 归属、物理启动代次或持久检查点不符时 */
+    public void confirmBrowserClosed(UUID taskId, TaskResource resource, ProcessRecovery before) throws SQLException {
+        if (!resource.kind().equals("PROCESS") || !resource.id().equals("browser-v1:" + before.process())
+                || resource.exclusive() || !bootId.equals(before.boot()) || before.pid().isPresent())
+            throw new SQLException("Invalid browser closure identity");
+        locked(() -> {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT lease_id,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='PROCESS' AND resource_id=? AND owner_id=? AND access_mode='SHARED'")) {
+                p.setObject(1, taskId);
+                p.setString(2, resource.id());
+                p.setString(3, resource.ownerId());
+                UUID lease;
+                ResourceRecovery recorded;
+                boolean released;
+                try (var rows = p.executeQuery()) {
+                    if (!rows.next())
+                        throw new SQLException("Original browser lease is unavailable");
+                    lease = rows.getObject(1, UUID.class);
+                    recorded = ResourceRecovery.decode(rows.getString(2));
+                    released = rows.getObject(3) != null;
+                    if (rows.next())
+                        throw new SQLException("Duplicate browser lease identity");
+                }
+                boolean closed = recorded.protocol().equals("browser.closed.v1");
+                ProcessRecovery actual;
+                try {
+                    actual = closed
+                            ? ProcessRecovery.decodeBrowserClosed(recorded)
+                            : ProcessRecovery.decode(recorded, "browser.v1");
+                } catch (IllegalArgumentException invalid) {
+                    throw new SQLException("Browser creation facts are invalid", invalid);
+                }
+                if (!before.boot().equals(actual.boot()) || !before.process().equals(actual.process()))
+                    throw new SQLException("Browser closure differs from original creation");
+                if (closed)
+                    return null;
+                if (released)
+                    throw new SQLException("Browser lease was released without confirmed cleanup");
+                try (var update = c.prepareStatement(
+                        "UPDATE platform_task_resource SET recovery_json=? WHERE task_id=? AND lease_id=? AND released_at IS NULL")) {
+                    update.setString(1, actual.encodeBrowserClosed().encode());
+                    update.setObject(2, taskId);
+                    update.setObject(3, lease);
+                    if (update.executeUpdate() != 1)
+                        throw new SQLException("Browser closure is no longer owned");
+                }
+            }
+            return null;
+        });
+    }
+
     /** Atomically advances one exact physical-process protocol once. / 原子推进一个精确物理进程协议一次。
      * @param taskId original task / 原任务
      * @param resource retained physical owner / 保留物理所有者

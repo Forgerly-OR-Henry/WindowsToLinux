@@ -92,8 +92,8 @@ public final class PlatformRecoveryService implements AutoCloseable {
                                 this.cleanup.close(task);
                                 this.ai.closeTaskResources(task);
                             } else {
-                                HostTaskRecovery.releasePreviousProcess(persistence.database(), previous,
-                                        Map.of("CONNECTION", "ssh-", "CUSTOM", "interaction-"));
+                                HostTaskRecovery.releasePreviousProcess(persistence.database(), previous, Map
+                                        .of("CONNECTION", "ssh-", "CUSTOM", "interaction-", "PROCESS", "browser-v1:"));
                             }
                             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
                                     Optional.of(problem(ProblemCode.UNAVAILABLE, "RESCUE_RECONCILED",

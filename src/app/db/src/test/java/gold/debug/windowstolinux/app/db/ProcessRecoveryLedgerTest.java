@@ -91,6 +91,59 @@ class ProcessRecoveryLedgerTest {
     }
 
     @Test
+    void browserClosureCheckpointIsAtomicOneWayAndBoundToTheOriginalPhysicalBoot() throws Exception {
+        UUID task;
+        ProcessRecovery before, started;
+        TaskResource browser;
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            task = new TaskLedgerTest().queue(ledger, "one", "A");
+            assertTrue(ledger.tryStart(task));
+            before = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(), Optional.empty());
+            started = new ProcessRecovery(before.boot(), before.process(), OptionalLong.of(123),
+                    Optional.of(Instant.now()));
+            browser = new TaskResource("PROCESS", "browser-v1:" + before.process(), "one", false);
+            ledger.retain(task, browser, before.encode("browser.v1"));
+            ledger.checkpointBrowser(task, browser, before, started);
+            try (var c = db.openConnection(); var s = c.createStatement()) {
+                s.execute(
+                        "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_closed CHECK(recovery_json NOT LIKE '%browser.closed.v1%')");
+            }
+            assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(task, browser, before));
+            assertEquals(started.encode("browser.v1"), ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser));
+            try (var c = db.openConnection(); var s = c.createStatement()) {
+                s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_closed");
+            }
+            assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(UUID.randomUUID(), browser, before));
+            assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(task,
+                    new TaskResource("PROCESS", browser.id(), "other", false), before));
+            ledger.confirmBrowserClosed(task, browser, before);
+            ledger.confirmBrowserClosed(task, browser, before);
+            assertEquals(started.encodeBrowserClosed(), ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser));
+            assertThrows(SQLException.class, () -> ledger.checkpointBrowser(task, browser, before, started));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ProcessRecovery.decodeBrowserClosed(started.encode("browser.v1")));
+            var invalid = new HashMap<>(started.encodeBrowserClosed().fields());
+            invalid.put("unverified", "true");
+            assertThrows(IllegalArgumentException.class,
+                    () -> ProcessRecovery.decodeBrowserClosed(new ResourceRecovery("browser.closed.v1", invalid)));
+            var unstarted = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(), Optional.empty());
+            var unused = new TaskResource("PROCESS", "browser-v1:" + unstarted.process(), "one", false);
+            var lease = ledger.retain(task, unused, unstarted.encode("browser.v1"));
+            ledger.confirmBrowserClosed(task, unused, unstarted);
+            ledger.release(task, lease);
+            ledger.confirmBrowserClosed(task, unused, unstarted);
+        }
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
+            assertEquals(started, ProcessRecovery
+                    .decodeBrowserClosed(ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser)));
+            assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(task, browser, before));
+        }
+    }
+
+    @Test
     void incompleteOrNoncanonicalIdentityIsNeverGuessed() {
         var original = new ProcessRecovery(UUID.randomUUID(), UUID.randomUUID(), OptionalLong.empty(),
                 Optional.empty());

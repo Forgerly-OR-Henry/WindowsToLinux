@@ -29,6 +29,21 @@ public record ProcessRecovery(UUID boot, UUID process, OptionalLong pid, Optiona
         return encode("process.v1");
     }
 
+    /** Records confirmed browser-session cleanup while retaining the original creation facts. / 记录已确认的浏览器会话清理，同时保留原创建事实。
+     * @return host-only physical closure evidence / 仅供宿主的物理关闭证据 */
+    public ResourceRecovery encodeBrowserClosed() {
+        return new ResourceRecovery("browser.closed.v1", encode("browser.v1").fields());
+    }
+
+    /** Requires an explicit closure marker; PID disappearance alone cannot produce it. / 要求明确关闭标记，单凭 PID 消失不能生成此证据。
+     * @param recovery durable physical closure evidence / 持久物理关闭证据
+     * @return original creation facts whose owner confirmed cleanup / 所有者已确认清理的原创建事实 */
+    public static ProcessRecovery decodeBrowserClosed(ResourceRecovery recovery) {
+        if (!recovery.protocol().equals("browser.closed.v1"))
+            throw new IllegalArgumentException("Browser cleanup is unconfirmed");
+        return decode(new ResourceRecovery("browser.v1", recovery.fields()), "browser.v1");
+    }
+
     /** Encodes the known managed-process or browser ownership protocol. / 编码已知受管进程或浏览器归属协议。
      * @param protocol exact host process protocol / 精确宿主进程协议
      * @return original creation facts / 原创建事实 */
