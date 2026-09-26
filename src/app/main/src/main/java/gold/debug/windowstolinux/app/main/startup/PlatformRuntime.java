@@ -73,6 +73,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Activation process owners retained until actual exit and durable release. / 保留至实际退出及持久释放的启用进程所有者。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.task.PlatformProcessService> processServices = new java.util.LinkedHashSet<>();
 
+    /** Complete or partially prepared Mod contexts whose cleanup is still owned. / 仍持有清理责任的完整或部分已准备 Mod 上下文。 */
+    private final java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts = new java.util.LinkedHashMap<>();
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -151,6 +154,55 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return current boot task owner / 当前启动的任务所有者 */
     public PlatformTaskRuntime tasks() {
         return tasks;
+    }
+
+    /** Prepares all actual Mod capabilities after the desktop presenters are installed. / 桌面呈现器安装后准备全部实际 Mod 能力。
+     * @param loader actual prepared loader / 实际已准备加载器
+     * @param schema exact selected business generation / 精确选定业务代次
+     * @param mode normal or recovery activation / 普通或恢复启用
+     * @param pages actual desktop page registry / 实际桌面页面登记
+     * @return host-owned context lease for the surrounding Mod runtime session / 外围 Mod 运行会话所用宿主持有上下文占用
+     * @throws Exception if identity, preparation or cleanup fails / 身份、准备或清理失败时 */
+    public gold.debug.windowstolinux.app.main.mod.PlatformModContext modContext(
+            gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
+            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+            gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModContext prepared;
+        synchronized (this) {
+            if (stopping || closed || prompts == null || sourcePicker == null)
+                throw new IllegalStateException("Install desktop presenters before preparing Mod capabilities");
+            String owner = loader.manifest().id();
+            if (modContexts.containsKey(owner))
+                throw new IllegalStateException("This Mod still owns an activation context");
+            prepared = new gold.debug.windowstolinux.app.main.mod.PlatformModContext(this, loader, schema, mode, pages,
+                    () -> forgetModContext(owner));
+            modContexts.put(owner, prepared);
+        }
+        try {
+            prepared.prepare();
+            return prepared;
+        } catch (Exception | LinkageError | AssertionError failure) {
+            try {
+                prepared.close();
+            } catch (Exception cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
+    }
+
+    /** Exposes retained context leases to trusted lifecycle cleanup, including failed preparation. / 向可信生命周期清理公开保留上下文占用，包括失败准备。
+     * @return exact original context ownership / 精确原上下文归属 */
+    public synchronized java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts() {
+        return java.util.Map.copyOf(modContexts);
+    }
+
+    /** Removes a context only after its own physical cleanup succeeded. / 仅在上下文本身物理清理成功后移除。
+     * @param owner exact completed activation owner / 精确已完成启用所有者 */
+    private synchronized void forgetModContext(String owner) {
+        modContexts.remove(owner);
     }
 
     /** Returns service graph assembly for trusted lifecycle composition. / 返回供可信生命周期装配使用的服务图。
@@ -471,6 +523,9 @@ public final class PlatformRuntime implements AutoCloseable {
         boolean wasSealed = tasks.seal(true);
         if (!stopping) {
             try {
+                if (!modContexts.isEmpty())
+                    throw new SQLException(
+                            "Mod sessions and their original contexts must close before platform shutdown");
                 if (!new TaskLedger(persistence.database()).unfinished().isEmpty())
                     throw new SQLException("Unfinished platform tasks require reconciliation before shutdown");
                 if (persistence.database().openConnections() != 0)
