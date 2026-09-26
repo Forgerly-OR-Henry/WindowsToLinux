@@ -5,10 +5,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.mod.*;
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.mod.loader.*;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
+import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Activates one prepared Mod and preserves partial-stop ownership until actual cleanup. / 启用一个已准备的 Mod，并保留部分停止归属直至实际清理。 */
 public final class ModRuntimeSession {

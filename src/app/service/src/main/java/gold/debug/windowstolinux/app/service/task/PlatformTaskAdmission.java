@@ -4,11 +4,11 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.api.db.SchemaIdentity;
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Resolves task ownership from the current boot's authoritative platform registry. / 根据当前启动的权威平台登记解析任务归属。 */
 public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admission {

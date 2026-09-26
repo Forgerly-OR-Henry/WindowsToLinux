@@ -88,7 +88,7 @@ public final class ModClassLoader extends PluginClassLoader {
             var loaded = findLoadedClass(name);
             if (loaded != null)
                 return loaded;
-            if (name.startsWith("gold.debug.windowstolinux.api."))
+            if (name.startsWith("gold.debug.windowstolinux.appapi."))
                 return getParent().loadClass(name);
             if (name.startsWith("gold.debug.windowstolinux.app.") || name.startsWith("org.h2."))
                 throw new ClassNotFoundException("Reserved host implementation: " + name);
@@ -114,7 +114,7 @@ public final class ModClassLoader extends PluginClassLoader {
     public URL getResource(String name) {
         if (isClosed() || !resourceName(name))
             return null;
-        if (name.startsWith("gold/debug/windowstolinux/api/"))
+        if (name.startsWith("gold/debug/windowstolinux/appapi/"))
             return getParent().getResource(name);
         var jdk = ClassLoader.getPlatformClassLoader().getResource(name);
         if (jdk != null)
@@ -135,7 +135,7 @@ public final class ModClassLoader extends PluginClassLoader {
     public Enumeration<URL> getResources(String name) throws IOException {
         if (isClosed() || !resourceName(name))
             return Collections.emptyEnumeration();
-        if (name.startsWith("gold/debug/windowstolinux/api/"))
+        if (name.startsWith("gold/debug/windowstolinux/appapi/"))
             return getParent().getResources(name);
         var jdk = ClassLoader.getPlatformClassLoader().getResources(name);
         if (jdk.hasMoreElements())

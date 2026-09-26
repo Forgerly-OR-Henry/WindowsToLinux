@@ -148,10 +148,10 @@ public final class PlatformRuntime implements AutoCloseable {
     /**
      * Creates the permanent platform server capability after human presentation is installed. / 安装人工呈现后创建常驻平台服务器能力。
      * @return current platform settings and check coordinator / 当前平台设置及检查协调器
-     * @throws gold.debug.windowstolinux.api.task.ApiException if recovery ownership cannot be registered / 无法登记恢复归属时
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if recovery ownership cannot be registered / 无法登记恢复归属时
      */
     public synchronized gold.debug.windowstolinux.app.service.server.PlatformServerService servers()
-            throws gold.debug.windowstolinux.api.task.ApiException {
+            throws gold.debug.windowstolinux.appapi.task.ApiException {
         if (closed || stopping || prompts == null)
             throw new IllegalStateException("Platform server settings are unavailable");
         if (servers == null) {
@@ -159,7 +159,7 @@ public final class PlatformRuntime implements AutoCloseable {
             try {
                 servers = new gold.debug.windowstolinux.app.service.server.PlatformServerService(persistence, security,
                         tasks, version, remote.linux(), remote::closeTaskResources);
-            } catch (gold.debug.windowstolinux.api.task.ApiException | RuntimeException failure) {
+            } catch (gold.debug.windowstolinux.appapi.task.ApiException | RuntimeException failure) {
                 try {
                     remote.close();
                 } catch (Exception cleanup) {
@@ -208,33 +208,33 @@ public final class PlatformRuntime implements AutoCloseable {
 
         /** Returns the public author review contract. / 返回公开作者审核契约。
          * @return bound review service / 绑定的审核服务 */
-        public gold.debug.windowstolinux.api.task.InteractionService interaction() {
+        public gold.debug.windowstolinux.appapi.task.InteractionService interaction() {
             return interaction;
         }
 
         /** Returns the public author transport contract. / 返回公开作者传输契约。
          * @return bound Linux service / 绑定的 Linux 服务 */
-        public gold.debug.windowstolinux.api.linux.LinuxService linux() {
+        public gold.debug.windowstolinux.appapi.linux.LinuxService linux() {
             return linux;
         }
 
         /**
          * Retries retained physical resources for explicit host reconciliation. / 为显式宿主核对重试保留物理资源。
          * @param task original retained task / 原始保留任务
-         * @throws gold.debug.windowstolinux.api.task.ApiException if release remains incomplete / 释放仍未完成时
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if release remains incomplete / 释放仍未完成时
          */
-        public void closeTaskResources(gold.debug.windowstolinux.api.task.TaskContext task)
-                throws gold.debug.windowstolinux.api.task.ApiException {
+        public void closeTaskResources(gold.debug.windowstolinux.appapi.task.TaskContext task)
+                throws gold.debug.windowstolinux.appapi.task.ApiException {
             linux.closeTaskResources(task);
             interaction.retryFinishedReleases();
         }
 
         /**
          * Closes actual clients before revoking their review capability. / 在撤销审核能力之前关闭实际客户端。
-         * @throws gold.debug.windowstolinux.api.task.ApiException if actual cleanup remains / 实际清理仍未完成时
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍未完成时
          */
         @Override
-        public void close() throws gold.debug.windowstolinux.api.task.ApiException {
+        public void close() throws gold.debug.windowstolinux.appapi.task.ApiException {
             linux.close();
             interaction.close();
             synchronized (PlatformRuntime.this) {

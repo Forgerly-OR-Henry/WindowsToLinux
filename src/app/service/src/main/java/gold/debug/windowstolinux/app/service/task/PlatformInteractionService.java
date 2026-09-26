@@ -4,8 +4,8 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Owns caller-bound human review and single-use grants without persisting secret input. / 持有调用方绑定的人工审核及单次授权，不持久化秘密输入。 */
 public final class PlatformInteractionService implements InteractionService, AutoCloseable {

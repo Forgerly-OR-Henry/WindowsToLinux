@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.mod.loader;
 
 import java.lang.reflect.Modifier;
 
-import gold.debug.windowstolinux.api.mod.ModEntrypoint;
+import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
 
 /** Constructs an entry only during activation, after inspecting its public shape and origin. / 仅在启用期间检查公开形状与来源后构造入口。 */
 public final class ModEntryFactory {

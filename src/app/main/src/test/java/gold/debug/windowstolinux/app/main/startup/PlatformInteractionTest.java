@@ -12,13 +12,13 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.task.*;
-import gold.debug.windowstolinux.api.ui.UiEnvironment;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.*;
+import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

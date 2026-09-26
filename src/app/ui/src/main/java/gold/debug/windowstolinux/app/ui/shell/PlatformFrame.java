@@ -5,7 +5,6 @@ import java.util.Objects;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.ui.UiEnvironment;
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
@@ -13,6 +12,7 @@ import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.setting.SecuritySettingsPane;
+import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 
 /** Platform desktop hosting security controls and independently owned Mod views. / 承载安全控件及独立所属 Mod 视图的平台桌面。 */
 public final class PlatformFrame extends JFrame {

@@ -6,14 +6,14 @@ import java.util.concurrent.CompletionStage;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.api.linux.*;
-import gold.debug.windowstolinux.api.server.ServerRef;
-import gold.debug.windowstolinux.api.task.*;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.contract.ServerProfileEditor;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /** Manages platform server settings and task-owned authentication checks without deployment code. / 管理平台服务器设置及任务所属认证检查，不依赖部署代码。 */
 public final class PlatformServerService implements ServerProfileEditor, AutoCloseable {

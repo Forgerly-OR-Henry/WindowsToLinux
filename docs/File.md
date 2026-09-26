@@ -4,11 +4,11 @@
 
 ## 文档信息
 
-> 当前实现与 1.1 设计分开维护：第 1 节当前目录树和第 5 节依赖方向继续供现有架构门禁读取；新的详细目录只见文末 [1.1 目标结构](#phase-1-1-target)。当前仍有 `src/shared`；已增量加入 `src/api`、`src/app/mod`、`src/app/linux` 及平台基础实现，默认入口已切换 H2 安全外壳和常驻服务器配置/SSH 认证检查。下方旧模块树与依赖门禁基线尚待 S3 完整切换，不代表新增节点尚未实现。0.x 的未实施规划如与 1.1 冲突，已由 [1.1 工程](development/PHASE-1.1.md)取代。
+> 当前实现与 1.1 设计分开维护：第 1 节当前目录树和第 5 节依赖方向继续供现有架构门禁读取；新的详细目录只见文末 [1.1 目标结构](#phase-1-1-target)。当前仍有 `src/shared`；已增量加入 `src/appapi`、`src/app/mod`、`src/app/linux` 及平台基础实现，默认入口已切换 H2 安全外壳和常驻服务器配置/SSH 认证检查。下方旧模块树与依赖门禁基线尚待 S3 完整切换，不代表新增节点尚未实现。0.x 的未实施规划如与 1.1 冲突，已由 [1.1 工程](development/PHASE-1.1.md)取代。
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `api`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，service 已接公开任务与审批适配。目标活动根为 `api`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，service 已接公开任务与审批适配。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-26（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
@@ -886,10 +886,10 @@ UPPER_SNAKE_CASE
 
 | 模块      | 职责                                                                                                                                                                   | 明确不负责                                                                                                                                         |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ui`      | 实现 Swing/FlatLaf 界面、输入校验、进度展示和用户决定交互。                                                                                                            | 不直接访问 SQLite、SSH、AI、加密算法或 APP 数据库中的统一凭据库。                                                                                |
+| `ui`      | 实现 Swing/FlatLaf 界面、输入校验、进度展示和用户决定交互。                                                                                                            | 不直接访问 SQLite、SSH、AI、加密算法或 APP 数据库中的统一凭据库。                                                                                  |
 | `windows` | 选择和访问 Windows 本地项目、备份及工作目录，采集文件与环境事实，通过 `shared/source` 准备待上传项目包；持有桌面包签名/版本/架构验证、独立更新事务和受管卸载文件边界。 | 不自行定义源码归档格式，不执行远程上传，不解释备份格式，不处理加密、私钥、明文秘密或 Credential Manager 实现；卸载凭据只能经 `secret` 窄端口编排。 |
-| `db`      | 管理 SQLite 连接、表结构、版本化迁移和事务，保存非敏感数据、配置实例与历史版本、受管应用标识、最后观测状态及由 `secret` 生成的加密数据。                               | 不定义共用配置规则，不执行加解密，不派生或保存明文密钥，不直接访问 APP 数据库中的统一凭据库。                      |
-| `secret`  | 统一处理主密码、Argon2id 密钥派生、AES-256-GCM 加解密、DEK 包装、敏感信息存取和 APP 数据库中的统一凭据库。                                                  | 不负责普通业务数据、界面、项目打包、部署或远程连接。                                                                                               |
+| `db`      | 管理 SQLite 连接、表结构、版本化迁移和事务，保存非敏感数据、配置实例与历史版本、受管应用标识、最后观测状态及由 `secret` 生成的加密数据。                               | 不定义共用配置规则，不执行加解密，不派生或保存明文密钥，不直接访问 APP 数据库中的统一凭据库。                                                      |
+| `secret`  | 统一处理主密码、Argon2id 密钥派生、AES-256-GCM 加解密、DEK 包装、敏感信息存取和 APP 数据库中的统一凭据库。                                                             | 不负责普通业务数据、界面、项目打包、部署或远程连接。                                                                                               |
 | `service` | 实现桌面端部署和受管应用生命周期等用例、后台任务、同服务器修改互斥、事件、取消和模块协作，整合 `app` 与 `shared` 能力。                                                | 不自行实现界面、SQLite、加密算法、凭据平台接口、SSH/SFTP 或 Linux 生命周期动作。                                                                   |
 | `main`    | 提供应用启动入口，识别运行模式、解析应用与数据目录，装配模块和 `linux-sshd` 实现并管理生命周期。                                                                       | 不承载具体业务规则、界面逻辑、持久化、SSH/SFTP 或加密实现。                                                                                        |
 
@@ -905,12 +905,12 @@ UPPER_SNAKE_CASE
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `frontend` | 实现 Vue 3/TypeScript 页面、用户交互、流式上传交互和 SSE 事件展示。                                                                                             | 不保存原始凭据，不直接访问数据库、文件系统、SSH/SFTP 或共用执行模块。                                |
 | `api`      | 通过 Spring MVC Controller 实现版本化 REST API、SSE 及输入输出边界，Filter 执行来源和容量检查，统一提供脱敏错误。                                               | 不直接访问 SQLite、受管文件目录、凭据或部署执行器，不承载业务流程或直接执行生命周期动作。            |
-| `auth`     | 旧 0.6 期身份、登录、会话与访问安全结构预留，当前无业务实现；该生产方向已由 1.1 取代。                                                                            | 0.5 期内部功能测试不得提前创建伪认证；本模块不自行实现密码哈希、加密算法、主密钥或普通业务编排。       |
+| `auth`     | 旧 0.6 期身份、登录、会话与访问安全结构预留，当前无业务实现；该生产方向已由 1.1 取代。                                                                          | 0.5 期内部功能测试不得提前创建伪认证；本模块不自行实现密码哈希、加密算法、主密钥或普通业务编排。     |
 | `service`  | 实现 Web 部署、配置访问控制和受管应用生命周期等用例并整合 `db`、`file`、`secret` 与 `shared` 能力。                                                             | 不实现 HTTP/SSE、任务调度、SQLite、文件底层操作、密码学算法、SSHD 或 Linux 生命周期动作。            |
 | `task`     | 管理部署和生命周期等持久化任务的状态、调度、同服务器互斥、受控取消、重启恢复和结构化事件。                                                                      | 不传输 SSE，不重复实现分析、部署、生命周期、备份或迁移规则。                                         |
 | `db`       | 使用受管数据源、Spring 事务和 MyBatis-Plus Mapper 管理 Web SQLite、版本化迁移及持久化仓储，包括配置实例与历史版本、项目与环境关联、受管应用标识和最后观测状态。 | 不定义共用配置规则，不执行加解密，不管理上传文件、后台调度或接口协议，不把最后观测状态当作远端事实。 |
 | `file`     | 管理流式上传下载、配额、临时文件清理和受管工作目录，对上传容器执行配额和路径检查，完成后通过 `shared/source` 生成规范源码归档。                                 | 不定义第二套规范源码归档格式，不负责 SFTP、远程 Linux 文件、备份恢复语义或秘密加解密。               |
-| `secret`   | 0.5 期为内部功能测试处理测试主密钥和服务端凭据；旧 0.6 期认证密码学预留只作历史，不代表新官网要保存下载者账号。                                                            | 不负责登录会话流程、普通数据库业务、上传文件、部署或远程连接；不得因 0.5 期无登录而明文保存秘密。       |
+| `secret`   | 0.5 期为内部功能测试处理测试主密钥和服务端凭据；旧 0.6 期认证密码学预留只作历史，不代表新官网要保存下载者账号。                                                 | 不负责登录会话流程、普通数据库业务、上传文件、部署或远程连接；不得因 0.5 期无登录而明文保存秘密。    |
 | `main`     | 提供 Spring Boot 无参入口及 YAML 绑定，装配后端模块、`linux-sshd`、数据源与前端静态资源，管理启动检查、健康检查和关闭。                                         | 不承载具体业务、接口、任务、持久化、文件、SSH/SFTP 或密码学实现。                                    |
 
 Web 主密钥和本地凭据加解密由 `web/secret` 独占；可移植备份密码格式由 App/Web 共用的 `shared/backup.crypto` 独占。0.5 期不实现登录或管理员密码；旧 0.6 期曾约定 `auth` 通过 `secret` 使用认证密码学，这属于未实施历史方向。其他 Web 模块不得直接接触明文密钥或实现加密算法。
@@ -1183,21 +1183,21 @@ web/task ──→ shared/model, web/db, web/service
 
 ### 8.1 目录标记与阅读方式
 
-已认可保留现有 `src/` 作为活动源码的容器，“顶层 `app`、`api`、`mod`、`web`”指其下四个职责分组。与 `app` 并列的插件源码聚合模块名称已确认为 `mod`，路径为 `src/mod`，统一收纳各 Mod 的源码模块。仓库根仍容纳文档、验收夹具和构建工具；`history-src` 位于根目录并退出活动构建。Linux 单模块及两个官方 Mod 各自采用一个主模块已确认；补全方案采用本文目标结构，不因 api/ai/db 职责包而额外拆模块。同作者从模块只服务实际复用或隔离需求，不固定全工程 POM 数量。
+已认可保留现有 `src/` 作为活动源码的容器，“顶层 `app`、`appapi`、`mod`、`web`”指其下四个职责分组。与 `app` 并列的插件源码聚合模块名称已确认为 `mod`，路径为 `src/mod`，统一收纳各 Mod 的源码模块。仓库根仍容纳文档、验收夹具和构建工具；`history-src` 位于根目录并退出活动构建。Linux 单模块及两个官方 Mod 各自采用一个主模块已确认；补全方案采用本文目标结构，不因 api/ai/db 职责包而额外拆模块。同作者从模块只服务实际复用或隔离需求，不固定全工程 POM 数量。
 
 每一行的 `#` 后都注明节点类型与职责，按下表区分“目录、模块、包”：
 
-| 标记 | 含义 | 阅读时注意 |
-| --- | --- | --- |
-| `[目录]` | 源码、文档或工具的文件系统分组 | 不因有目录就产生独立 Maven 模块。 |
-| `[聚合]` | 拟设 Maven 聚合模块 | 管理子模块构建；自身不承载业务 Java 实现。 |
-| `[模块]` | 拟设独立 Maven 叶子模块 | 有自己的 POM、源码和测试；不等于用户要单独安装的插件。 |
-| `[包]` | 所在模块内部的 Java 职责包 | 没有独立 POM；包名按所属模块及职责展开。 |
-| `[入口类]` | Mod 主模块根包内的 `Mod.java` | 负责装配与生命周期；不是独立模块或业务实现包。 |
+| 标记       | 含义                                 | 阅读时注意                                                            |
+| ---------- | ------------------------------------ | --------------------------------------------------------------------- |
+| `[目录]`   | 源码、文档或工具的文件系统分组       | 不因有目录就产生独立 Maven 模块。                                     |
+| `[聚合]`   | 拟设 Maven 聚合模块                  | 管理子模块构建；自身不承载业务 Java 实现。                            |
+| `[模块]`   | 拟设独立 Maven 叶子模块              | 有自己的 POM、源码和测试；不等于用户要单独安装的插件。                |
+| `[包]`     | 所在模块内部的 Java 职责包           | 没有独立 POM；包名按所属模块及职责展开。                              |
+| `[入口类]` | Mod 主模块根包内的 `Mod.java`        | 负责装配与生命周期；不是独立模块或业务实现包。                        |
 | `[公开包]` | 平台 API 或 Mod 向调用方开放的契约包 | 只承载公开契约，不混入主体或插件私有实现；不自动成为独立 Maven 模块。 |
-| `[资源]` | 所在模块的资源目录 | 对应 Maven `src/main/resources`，不是 Java 包；清单规范见 Mod.md。 |
-| `[文档]` | 现有文件在目标结构中的职责 | 文件已存在，但其中的目标设计不表示代码已完成。 |
-| `[归档]` | 旧工程冻结副本 | 不参与新构建、IDE 活动包树或生产发布。 |
+| `[资源]`   | 所在模块的资源目录                   | 对应 Maven `src/main/resources`，不是 Java 包；清单规范见 Mod.md。    |
+| `[文档]`   | 现有文件在目标结构中的职责           | 文件已存在，但其中的目标设计不表示代码已完成。                        |
+| `[归档]`   | 旧工程冻结副本                       | 不参与新构建、IDE 活动包树或生产发布。                                |
 
 下方省略每个 Java 叶子模块重复的 `src/main/java/gold/debug/windowstolinux/...` 和 `src/test/java/...` 路径，直接展示模块根包下的职责包。尚未细化子包的模块只说明模块责任，不据此推定要把所有类平铺在一个包里。文档文件名逐项展开，方便审阅各份文档的归属；社区作者的开发说明统一放在 `Mod.md`。
 
@@ -1228,7 +1228,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  ├─ PRODUCT-MANUAL.md                    # [文档] 使用者操作手册；区分当前可用功能与规划能力
 │  └─ Runtime.md                          # [文档] 运行数据、业务约定、数据库与安全机制
 ├─ history-src/                            # [归档] 完整旧工程冻结副本；保存范围见 1.1 主文档
-├─ src/                                    # [目录] 新活动源码，仅组织 app、api、mod、web 四分组
+├─ src/                                    # [目录] 新活动源码，仅组织 app、appapi、mod、web 四分组
 │  ├─ app/                                 # [聚合] APP 平台主体，提供插件运行所需的公共基础
 │  │  ├─ ai/                               # [模块] 通用模型调用实现；不承载部署专用 Agent
 │  │  │  ├─ invocation/                    # [包] 管理调用预算、取消、结果与通用脱敏
@@ -1263,7 +1263,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │  │  ├─ shell/                         # [包] 主窗口、导航、主题/语言、锁定遮罩与扩展页面挂载
 │  │  │  └─ task/                          # [包] 通用任务状态、进度、日志和取消入口
 │  │  └─ windows/                          # [模块] 通用文件/窗口等本机适配及维护基础，不承载救援流程
-│  ├─ api/                                 # [模块] 插件作者引用的最小公开契约，不包含主体实现
+│  ├─ appapi/                              # [模块] 插件作者引用的最小公开契约，不包含主体实现
 │  │  ├─ ai/                               # [公开包] 模型调用的请求、结果、预算和取消契约
 │  │  ├─ db/                               # [公开包] Mod Schema 归属、标准 JDBC 连接及版本迁移契约
 │  │  ├─ linux/                            # [公开包] 受控远端操作与结果，不暴露 SSHD 客户端类型
@@ -1316,31 +1316,31 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 
 ### 8.3 目标依赖与边界说明
 
-目标依赖仅作设计说明，不由现有第 5 节解析器读取。表中的平台 API 指独立 `src/api` 契约模块；`deployment/` 以下的路径表示部署主模块内的 Java 包：
+目标依赖仅作设计说明，不由现有第 5 节解析器读取。表中的平台 API 指独立 `src/appapi` 契约模块；`deployment/` 以下的路径表示部署主模块内的 Java 包：
 
 `src/app/mod` 是 APP 内部负责 Mod 安装、加载、生命周期和服务登记的叶子模块，Java 根包为 `gold.debug.windowstolinux.app.mod`；`src/mod` 是与 APP 并列、收纳官方 Mod 源码的聚合模块，各 Mod 使用自己的标准根包。两者按完整路径和职责区分，平台运行模块本身不作为可安装的业务 Mod。
 
-| 使用方 | 可依赖的边界 | 禁止反向渗透 |
-| --- | --- | --- |
-| APP 的平台实现 | API、职责明确的 APP 内部模块；`main`/`service` 负责装配 | 不引用部署/备份私有类型；`linux` 不直接构造平台 UI 或插件引擎 |
-| API | 最小必要的公共类型 | 不依赖 APP、Web、插件实现、SSHD 或数据库实现 |
-| `deployment/api` | 平台 API 的必要公共契约 | 不依赖或暴露部署私有实现、数据库实体及备份类型 |
-| `deployment/ai` | 平台公开 AI 契约、本包的请求与结果类型 | 不直接依赖 APP 的 AI 实现、Provider 客户端、`db` 或业务流程 |
-| `deployment/db` | 平台公开 JDBC/凭据契约、本包的存储映射 | 不反向依赖 UI、AI 适配或业务流程，不访问其他 Mod 私有表 |
-| `deployment/service/core` | 平台 API、部署公开契约及必要业务能力 | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入 |
-| `deployment/service/standard/analyze` | 平台 API、必要部署业务契约 | 保持确定性静态分析，不依赖 agent 或 UI |
-| `deployment/service/standard/deploy` | 标准分析、共用 core、部署 API、所需 ai/db 及平台 API | 不依赖 agent 或 UI，普通标准流程保持无 AI 路径 |
-| `deployment/service/agent` | 共用 core、部署 API、所需 ai/db 及平台 API | 不依赖 standard 或 UI；多轮业务决策和工具执行留在本包 |
-| `deployment/ui` | 本 Mod 的 service 及平台 UI 契约 | 不直接访问 db 或调用 ai 执行业务 |
-| `deployment/Mod.java` | 本 Mod 的各层及平台注册契约 | 负责装配与生命周期，不把两个引擎互相耦合或承载业务实现 |
-| `backup` | 平台 API、部署公开 API | 不依赖 deployment 的 service、ai、db、ui 或私有表 |
-| Web | 后续官网设计自身需要的内容与服务 | 不接入 APP/插件的用户服务器执行链 |
+| 使用方                                | 可依赖的边界                                            | 禁止反向渗透                                                  |
+| ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
+| APP 的平台实现                        | API、职责明确的 APP 内部模块；`main`/`service` 负责装配 | 不引用部署/备份私有类型；`linux` 不直接构造平台 UI 或插件引擎 |
+| API                                   | 最小必要的公共类型                                      | 不依赖 APP、Web、插件实现、SSHD 或数据库实现                  |
+| `deployment/api`                      | 平台 API 的必要公共契约                                 | 不依赖或暴露部署私有实现、数据库实体及备份类型                |
+| `deployment/ai`                       | 平台公开 AI 契约、本包的请求与结果类型                  | 不直接依赖 APP 的 AI 实现、Provider 客户端、`db` 或业务流程   |
+| `deployment/db`                       | 平台公开 JDBC/凭据契约、本包的存储映射                  | 不反向依赖 UI、AI 适配或业务流程，不访问其他 Mod 私有表       |
+| `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                    | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入   |
+| `deployment/service/standard/analyze` | 平台 API、必要部署业务契约                              | 保持确定性静态分析，不依赖 agent 或 UI                        |
+| `deployment/service/standard/deploy`  | 标准分析、共用 core、部署 API、所需 ai/db 及平台 API    | 不依赖 agent 或 UI，普通标准流程保持无 AI 路径                |
+| `deployment/service/agent`            | 共用 core、部署 API、所需 ai/db 及平台 API              | 不依赖 standard 或 UI；多轮业务决策和工具执行留在本包         |
+| `deployment/ui`                       | 本 Mod 的 service 及平台 UI 契约                        | 不直接访问 db 或调用 ai 执行业务                              |
+| `deployment/Mod.java`                 | 本 Mod 的各层及平台注册契约                             | 负责装配与生命周期，不把两个引擎互相耦合或承载业务实现        |
+| `backup`                              | 平台 API、部署公开 API                                  | 不依赖 deployment 的 service、ai、db、ui 或私有表             |
+| Web                                   | 后续官网设计自身需要的内容与服务                        | 不接入 APP/插件的用户服务器执行链                             |
 
 备份与部署均采用一个 Mod 主模块，`Mod.java` 位于各自 Java 根包；部署的 core、standard、agent 是 `service` 下的职责包，不再设置独立 runtime 入口模块。包间依赖仍须由架构检查约束，不能因合并构建而取消两个引擎的边界。`deployment/api` 首先是公开契约包，不自动生成独立 JAR；公开类型共享和依赖声明见 [Mod.md](Mod.md#loader-adaptation)。以后只有确需独立构建或隔离依赖时才提取同作者从模块。第三方开发者无需把源码合入本仓库，官网投稿与 APP 执行能力分开建设。
 
 Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各自的 POM，也不是插件。救援依赖随 APP 预备，UI 和服务层留有固定入口；通用 Windows 窗口处理可以由 `app/windows` 提供，但具体救援流程统一归 `app/linux/recovery`。
 
-`gold.debug.windowstolinux` 仍为项目包前缀。后续活动代码按所属 `app`、`api`、`mod` 职责命名；公开接口以平台 API 契约为边界。冻结归档中的旧 `shared.*` 等包声明不改名。API 不另建第二套平台实现，不为尚无调用方的扩展点或通用 Agent 创建空模块。
+`gold.debug.windowstolinux` 仍为项目包前缀。后续活动代码按所属 `app`、`appapi`、`mod` 职责命名；公开接口以平台 API 契约为边界。冻结归档中的旧 `shared.*` 等包声明不改名。API 不另建第二套平台实现，不为尚无调用方的扩展点或通用 Agent 创建空模块。
 
 当前与目标结构分别描述实际状态，不重复登记同一实现；AllFile 只收录实际存在的生产文件，归档不属于活动源码。
 
@@ -1348,23 +1348,23 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 
 #### 目标 Maven 模块图与 API 包依赖
 
-根仅聚合 `src/api`、`src/app`、`src/mod`；app 聚合其十个叶子模块，mod 聚合 deployment 与 backup。Web 实施后置，不挂空模块。下表列出平台模块可声明的项目依赖上界，实际 Maven 仅保留真实使用边，不为凑齐上界添加依赖；第三方版本及发行物清单见 [APP 构建契约](APP.md#build-contract)。
+根仅聚合 `src/appapi`、`src/app`、`src/mod`；app 聚合其十个叶子模块，mod 聚合 deployment 与 backup。Web 实施后置，不挂空模块。下表列出平台模块可声明的项目依赖上界，实际 Maven 仅保留真实使用边，不为凑齐上界添加依赖；第三方版本及发行物清单见 [APP 构建契约](APP.md#build-contract)。
 
-| 模块 | 允许的直接项目依赖 |
-| --- | --- |
-| api | 无，仅 JDK 的 java.base、java.desktop、java.sql 等所需标准类型。 |
-| app/db | api；引导凭据由装配方注入，不反向调用 windows 或 secret。 |
-| app/windows | api。 |
-| app/secret | api、app/db。 |
-| app/ai | api、app/db、app/secret。 |
-| app/source | api、app/windows。 |
-| app/linux | api、app/ai、app/secret、app/windows；ai 用于平台救援能力。 |
-| app/mod | api、app/db；任务准入和 ModContext 工厂由装配注入，不能反向依赖 service/ui。 |
-| app/service | api、app/ai、app/db、app/linux、app/mod、app/secret、app/source、app/windows。 |
-| app/ui | api、app/service；平台能力通过用例适配，不能引用业务 Mod 实现。 |
-| app/main | api 及以上 APP 叶子模块，仅负责构建装配与启动关闭。 |
-| mod/deployment | api（provided）；不依赖任何 APP 实现。 |
-| mod/backup | api、mod/deployment（均为 provided，后者仅导出 API 包）；运行由 Mod 加载器解析。 |
+| 模块           | 允许的直接项目依赖                                                                  |
+| -------------- | ----------------------------------------------------------------------------------- |
+| appapi         | 无，仅 JDK 的 java.base、java.desktop、java.sql 等所需标准类型。                    |
+| app/db         | appapi；引导凭据由装配方注入，不反向调用 windows 或 secret。                        |
+| app/windows    | appapi。                                                                            |
+| app/secret     | appapi、app/db。                                                                    |
+| app/ai         | appapi、app/db、app/secret。                                                        |
+| app/source     | appapi、app/windows。                                                               |
+| app/linux      | appapi、app/ai、app/secret、app/windows；ai 用于平台救援能力。                      |
+| app/mod        | appapi、app/db；任务准入和 ModContext 工厂由装配注入，不能反向依赖 service/ui。     |
+| app/service    | appapi、app/ai、app/db、app/linux、app/mod、app/secret、app/source、app/windows。   |
+| app/ui         | appapi、app/service；平台能力通过用例适配，不能引用业务 Mod 实现。                  |
+| app/main       | appapi 及以上 APP 叶子模块，仅负责构建装配与启动关闭。                              |
+| mod/deployment | appapi（provided）；不依赖任何 APP 实现。                                           |
+| mod/backup     | appapi、mod/deployment（均为 provided，后者仅导出 API 包）；运行由 Mod 加载器解析。 |
 
 API 包保持无环：task 只依赖 JDK；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
 
@@ -1420,11 +1420,11 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 
 域名前缀按倒序排列；可选的其他域名层级位于固定的 `windowstolinux.mod` 之前。上面的尖括号、方括号和省略号只是格式说明，不是实际包名字符。`modname` 是该 Mod 的包名段，沿用小写且符合 Java 包名的命名约束。
 
-| 域名示例 | Mod 名 | 标准根包 | 入口完整类名 |
-| --- | --- | --- | --- |
-| `debug.gold` | `backup` | `gold.debug.windowstolinux.mod.backup` | `gold.debug.windowstolinux.mod.backup.Mod` |
-| `example.com` | `deployment` | `com.example.windowstolinux.mod.deployment` | `com.example.windowstolinux.mod.deployment.Mod` |
-| `tools.example.com` | `backup` | `com.example.tools.windowstolinux.mod.backup` | `com.example.tools.windowstolinux.mod.backup.Mod` |
+| 域名示例            | Mod 名       | 标准根包                                      | 入口完整类名                                      |
+| ------------------- | ------------ | --------------------------------------------- | ------------------------------------------------- |
+| `debug.gold`        | `backup`     | `gold.debug.windowstolinux.mod.backup`        | `gold.debug.windowstolinux.mod.backup.Mod`        |
+| `example.com`       | `deployment` | `com.example.windowstolinux.mod.deployment`   | `com.example.windowstolinux.mod.deployment.Mod`   |
+| `tools.example.com` | `backup`     | `com.example.tools.windowstolinux.mod.backup` | `com.example.tools.windowstolinux.mod.backup.Mod` |
 
 根包与稳定 Mod ID 的关系、发布后的身份保持及数据归属统一见 [Mod.md：身份与版本](Mod.md#mod-identity-version)。
 

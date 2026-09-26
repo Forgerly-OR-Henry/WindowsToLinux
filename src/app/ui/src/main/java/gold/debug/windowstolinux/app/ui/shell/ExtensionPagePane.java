@@ -6,8 +6,8 @@ import java.util.function.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.ui.*;
 import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.*;
+import gold.debug.windowstolinux.appapi.ui.*;
 
 /** Mounts opened Mod views and owner-grouped settings without adding navigation pins. / 挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。 */
 public final class ExtensionPagePane extends JPanel implements PageHost {

@@ -10,7 +10,7 @@ import javax.tools.ToolProvider;
 import org.pf4j.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import gold.debug.windowstolinux.api.mod.ModEntrypoint;
+import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LoaderProbeTest {
@@ -44,10 +44,10 @@ class LoaderProbeTest {
             "example.provider.api.Echo","package example.provider.api; public interface Echo { String value(); }",
             "example.provider.PrivateService","package example.provider; public final class PrivateService {}",
             "privatevendor.Value","package privatevendor; public final class Value { public static String get(){return \"provider\";} }",
-            "example.provider.Mod","package example.provider; public final class Mod implements gold.debug.windowstolinux.api.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.api.mod.ModContext c){} public void stop(gold.debug.windowstolinux.api.mod.StopContext c){} }"));
+            "example.provider.Mod","package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"));
         var consumer=compile("consumer",Map.of(
             "privatevendor.Value","package privatevendor; public final class Value { public static String get(){return \"consumer\";} }",
-            "example.consumer.Mod","package example.consumer; public final class Mod implements gold.debug.windowstolinux.api.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.api.mod.ModContext c){} public void stop(gold.debug.windowstolinux.api.mod.StopContext c){} }"),provider);
+            "example.consumer.Mod","package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"),provider);
         var companion=compile("companion",Map.of("example.consumer.extra.Companion","package example.consumer.extra; public final class Companion {}"));
         Files.writeString(companion.resolve("companion.txt"),"resource bytes 中文");
         var providerJar=jar(provider,"provider");var consumerJar=jar(consumer,"consumer");var companionJar=jar(companion,"companion");

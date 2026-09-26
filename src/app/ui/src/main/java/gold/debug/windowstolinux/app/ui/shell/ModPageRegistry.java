@@ -5,8 +5,8 @@ import java.util.concurrent.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.api.task.*;
-import gold.debug.windowstolinux.api.ui.*;
+import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ui.*;
 
 /** Owns staged page contributions and EDT-confined author view lifetimes. / 持有暂存页面扩展及限定在 EDT 的作者视图生命周期。 */
 public final class ModPageRegistry {

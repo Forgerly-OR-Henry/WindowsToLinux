@@ -11,8 +11,8 @@ import java.util.jar.*;
 
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.api.mod.ModEntrypoint;
 import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
+import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.pf4j.*;
@@ -72,11 +72,11 @@ class ModClassLoaderTest {
                 "privatevendor.Value",
                 "package privatevendor; public final class Value { public static String get(){return \"provider\";} }",
                 "example.provider.Mod",
-                "package example.provider; public final class Mod implements gold.debug.windowstolinux.api.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.api.mod.ModContext c){} public void stop(gold.debug.windowstolinux.api.mod.StopContext c){} }"));
+                "package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"));
         var consumer = compile("consumer", Map.of("privatevendor.Value",
                 "package privatevendor; public final class Value { public static String get(){return \"consumer\";} }",
                 "example.consumer.Mod",
-                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.api.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.api.mod.ModContext c){} public void stop(gold.debug.windowstolinux.api.mod.StopContext c){} }"),
+                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"),
                 provider);
         var companion = compile("companion", Map.of("example.consumer.extra.Companion",
                 "package example.consumer.extra; public final class Companion {}"));
@@ -113,7 +113,7 @@ class ModClassLoaderTest {
                             new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
                 }
                 assertNull(c.getResource("gold/debug/windowstolinux/app/mod/loader/ModClassLoaderTest.class"));
-                assertNotNull(c.getResource("gold/debug/windowstolinux/api/mod/ModEntrypoint.class"));
+                assertNotNull(c.getResource("gold/debug/windowstolinux/appapi/mod/ModEntrypoint.class"));
                 var resources = new ArrayList<String>();
                 var found = c.getResources("shared.txt");
                 while (found.hasMoreElements())
@@ -193,7 +193,7 @@ class ModClassLoaderTest {
             resource = loader.getResource("note.txt");
             assertNotNull(resource);
             for (var name : List.of("../note.txt", "/note.txt",
-                    "gold/debug/windowstolinux/api/../app/main/AppMain.class",
+                    "gold/debug/windowstolinux/appapi/../app/main/AppMain.class",
                     "gold\\debug\\windowstolinux\\api\\mod\\ModEntrypoint.class")) {
                 assertNull(loader.getResource(name));
                 assertFalse(loader.getResources(name).hasMoreElements());
@@ -210,10 +210,10 @@ class ModClassLoaderTest {
 
     @Test
     void entryMustBePublicConcreteAndDefinedByTheExplicitMainSource() throws Exception {
-        String methods = "public void start(gold.debug.windowstolinux.api.mod.ModContext c){} public void stop(gold.debug.windowstolinux.api.mod.StopContext c){}";
+        String methods = "public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){}";
         for (var shape : List.of("class Mod", "public abstract class Mod", "public class Mod")) {
             var name = "shape" + Math.abs(shape.hashCode());
-            var body = shape + " implements gold.debug.windowstolinux.api.mod.ModEntrypoint {"
+            var body = shape + " implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {"
                     + (shape.equals("public class Mod") ? "private Mod(){}" : "") + methods + "}";
             var output = compile(name, Map.of("example.shape.Mod", "package example.shape; " + body));
             try (var loader = loader("shape", List.of(output.toUri().toURL()), Map.of())) {
@@ -223,7 +223,7 @@ class ModClassLoaderTest {
         var main = root.resolve("empty-main");
         Files.createDirectories(main);
         var companion = compile("misplaced", Map.of("example.misplaced.Mod",
-                "package example.misplaced; public class Mod implements gold.debug.windowstolinux.api.mod.ModEntrypoint {"
+                "package example.misplaced; public class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {"
                         + methods + "}"));
         try (var loader = loader("misplaced", List.of(main.toUri().toURL(), companion.toUri().toURL()), Map.of())) {
             assertThrows(ReflectiveOperationException.class, () -> ModEntryFactory.create(loader));

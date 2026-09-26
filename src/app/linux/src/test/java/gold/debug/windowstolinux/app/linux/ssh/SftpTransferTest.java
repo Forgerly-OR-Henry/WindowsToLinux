@@ -10,8 +10,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.api.linux.TransferRequest;
-import gold.debug.windowstolinux.api.task.*;
+import gold.debug.windowstolinux.appapi.linux.TransferRequest;
+import gold.debug.windowstolinux.appapi.task.*;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.util.threads.*;
 import org.apache.sshd.server.session.ServerSession;
@@ -219,7 +219,7 @@ class SftpTransferTest {
         }
     }
 
-    static OperationResult<gold.debug.windowstolinux.api.linux.TransferResult> transfer(
+    static OperationResult<gold.debug.windowstolinux.appapi.linux.TransferResult> transfer(
             SshConnector.Connection connection, Path local, String remote, long limit, String digest, boolean upload)
             throws ApiException {
         return connection.transfer(new TransferRequest(local, remote, limit), digest, upload, Duration.ofSeconds(5),

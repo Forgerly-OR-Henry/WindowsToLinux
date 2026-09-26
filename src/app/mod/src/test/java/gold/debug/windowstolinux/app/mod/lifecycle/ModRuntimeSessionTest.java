@@ -8,12 +8,12 @@ import java.util.*;
 
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.api.mod.*;
-import gold.debug.windowstolinux.api.task.*;
-import gold.debug.windowstolinux.api.ui.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
+import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ui.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,8 +23,8 @@ class ModRuntimeSessionTest {
 
     static final String ENTRY = """
             package example.fixture;
-            import gold.debug.windowstolinux.api.mod.*;
-            import gold.debug.windowstolinux.api.ui.*;
+            import gold.debug.windowstolinux.appapi.mod.*;
+            import gold.debug.windowstolinux.appapi.ui.*;
             public final class Mod implements ModEntrypoint {
               public static int instances, starts, stops;
               public static boolean failStart, failStop;

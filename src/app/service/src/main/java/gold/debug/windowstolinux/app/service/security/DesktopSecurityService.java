@@ -360,7 +360,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @return result accepted within the same unlocked generation / 在同一解锁代次内接受的结果
      */
     public <T> T human(java.util.concurrent.Callable<T> work,
-            gold.debug.windowstolinux.api.task.CancellationToken cancellation) {
+            gold.debug.windowstolinux.appapi.task.CancellationToken cancellation) {
         for (;;) {
             long expected;
             try {

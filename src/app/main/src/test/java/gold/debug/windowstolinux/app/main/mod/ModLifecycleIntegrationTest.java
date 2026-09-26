@@ -14,10 +14,6 @@ import java.util.jar.*;
 import javax.swing.*;
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.api.db.*;
-import gold.debug.windowstolinux.api.mod.*;
-import gold.debug.windowstolinux.api.task.*;
-import gold.debug.windowstolinux.api.ui.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.schema.*;
@@ -31,6 +27,10 @@ import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.app.ui.shell.*;
+import gold.debug.windowstolinux.appapi.db.*;
+import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ui.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -66,9 +66,9 @@ class ModLifecycleIntegrationTest {
 
     static final String SOURCE = """
             package example.fixture;
-            import gold.debug.windowstolinux.api.mod.*;
-            import gold.debug.windowstolinux.api.task.*;
-            import gold.debug.windowstolinux.api.ui.*;
+            import gold.debug.windowstolinux.appapi.mod.*;
+            import gold.debug.windowstolinux.appapi.task.*;
+            import gold.debug.windowstolinux.appapi.ui.*;
             import java.util.*;
             import java.util.concurrent.*;
             import javax.swing.*;

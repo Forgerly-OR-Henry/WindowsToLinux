@@ -29,7 +29,7 @@ public final class BoundaryClassLoader extends PluginClassLoader {
             if (isClosed()) throw new ClassNotFoundException("Loader closed: " + name);
             var loaded = findLoadedClass(name);
             if (loaded != null) return loaded;
-            if (name.startsWith("gold.debug.windowstolinux.api.")) return getParent().loadClass(name);
+            if (name.startsWith("gold.debug.windowstolinux.appapi.")) return getParent().loadClass(name);
             try { return ClassLoader.getPlatformClassLoader().loadClass(name); }
             catch (ClassNotFoundException notJdk) {
                 for (var entry : exports.entrySet()) {

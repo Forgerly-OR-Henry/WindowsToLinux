@@ -2,9 +2,9 @@ package gold.debug.windowstolinux.app.service.mod;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.api.mod.ModContext;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
 
 /** Binds actual task gates and staged host contributions to one Mod activation. / 将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。 */
 public final class ModHostLease implements ContextLease {
@@ -59,7 +59,7 @@ public final class ModHostLease implements ContextLease {
             throw new IllegalStateException("Mod publication is sealed");
         if (published)
             return;
-        boolean normal = context.launchMode() == gold.debug.windowstolinux.api.mod.ModLaunchMode.NORMAL;
+        boolean normal = context.launchMode() == gold.debug.windowstolinux.appapi.mod.ModLaunchMode.NORMAL;
         if (normal && !tasks.ownerBlockers(context.identity().id()).isEmpty())
             throw new IllegalStateException("Previous Mod work still requires reconciliation");
         for (var contribution : contributions)

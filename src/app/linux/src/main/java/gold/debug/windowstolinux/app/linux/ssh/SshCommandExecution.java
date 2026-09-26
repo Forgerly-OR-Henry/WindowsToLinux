@@ -4,8 +4,8 @@ import java.io.*;
 import java.time.Duration;
 import java.util.*;
 
-import gold.debug.windowstolinux.api.linux.*;
-import gold.debug.windowstolinux.api.task.*;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.task.*;
 import org.apache.sshd.client.channel.*;
 import org.apache.sshd.client.session.ClientSession;
 
