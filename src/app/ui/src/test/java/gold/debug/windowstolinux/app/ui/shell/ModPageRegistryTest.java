@@ -254,7 +254,8 @@ class ModPageRegistryTest {
             } catch (ApiException failure) {
                 closeFailure.set(failure);
             }
-        }, owner -> "Owner " + owner, () -> "Locked")));
+        }, owner -> "Owner " + owner, () -> "Locked", settings -> {
+        })));
         registry.set(new ModPageRegistry(pane.get(), INITIAL));
         var business = new Page();
         var settings = new Page();

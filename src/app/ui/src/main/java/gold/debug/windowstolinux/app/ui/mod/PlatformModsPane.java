@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.PageContribution;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 
@@ -51,6 +52,18 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Current themed controls. / 当前主题控件。 */
     private final DesktopComponentFactory components;
+
+    /** Shared exact page publication and persisted navigation preferences. / 共用的精确页面发布及持久导航偏好。 */
+    private final ModNavigationPane navigation;
+
+    /** Actual published pages for the selected owner. / 所选所有者的实际已发布页面。 */
+    private final JComboBox<PageContribution> pagePicker = new JComboBox<>();
+
+    /** Explicit opening and pinning, independent of version selection. / 独立于版本选择的明确打开及固定操作。 */
+    private final JButton openPage, pinPage;
+
+    /** Host subscription released with this view. / 随此视图释放的宿主订阅。 */
+    private final AutoCloseable navigationSubscription;
 
     /** Installed identities without mutable authority. / 不含修改权限的已安装身份。 */
     private final DefaultListModel<ModView> rows = new DefaultListModel<>();
@@ -93,9 +106,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param schemas actual maintenance callbacks / 实际维护回调
      * @param components themed components / 主题控件
      * @param messages safe localized feedback / 安全本地化反馈
-     * @param showLogs opens existing platform log management / 打开既有平台日志管理 */
+     * @param showLogs opens existing platform log management / 打开既有平台日志管理
+     * @param navigation actual publication and navigation owner / 实际发布及导航所有者 */
     public PlatformModsPane(PlatformModIntents service, SchemaActions schemas, DesktopComponentFactory components,
-            PageMessagePresenter messages, Runnable showLogs) {
+            PageMessagePresenter messages, Runnable showLogs, ModNavigationPane navigation) {
         super(new BorderLayout(12, 12));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Mod management requires the EDT");
@@ -103,6 +117,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         this.schemas = Objects.requireNonNull(schemas);
         this.components = components;
         this.messages = messages;
+        this.navigation = navigation;
         setName("platform.mods");
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         inventory.setName("mods.inventory");
@@ -129,6 +144,35 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         var right = new JPanel(new BorderLayout(8, 8));
         right.add(enabled, BorderLayout.NORTH);
         var facts = new JPanel(new BorderLayout(8, 8));
+        pagePicker.setName("mods.pages");
+        pagePicker.setRenderer((list, value, index, selected, focus) -> {
+            var renderer = new DefaultListCellRenderer();
+            renderer.putClientProperty("html.disable", true);
+            return renderer.getListCellRendererComponent(list,
+                    value == null
+                            ? ""
+                            : value.spec().defaultTitle()
+                                    + (value.spec().settingsPage() ? " · " + messages.text("mods.settingsPage") : ""),
+                    index, selected, focus);
+        });
+        pagePicker.addActionListener(event -> pageControls());
+        openPage = button("openPage", () -> {
+            var page = (PageContribution) pagePicker.getSelectedItem();
+            if (page != null)
+                navigation.open(page.key());
+        });
+        pinPage = button("pinPage", () -> {
+            var page = (PageContribution) pagePicker.getSelectedItem();
+            if (page != null)
+                navigation.pin(page.key(), !navigation.pinned(page.key()));
+        });
+        var pageActions = new JPanel(new BorderLayout(6, 0));
+        pageActions.add(pagePicker);
+        var pageButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        pageButtons.add(openPage);
+        pageButtons.add(pinPage);
+        pageActions.add(pageButtons, BorderLayout.EAST);
+        facts.add(pageActions, BorderLayout.NORTH);
         facts.add(new JScrollPane(details), BorderLayout.CENTER);
         var versionScroll = new JScrollPane(versions);
         versionScroll.setBorder(BorderFactory.createTitledBorder(messages.text("mods.versions")));
@@ -156,6 +200,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         progress.setName("mods.progress");
         footer.add(progress, BorderLayout.NORTH);
         add(footer, BorderLayout.SOUTH);
+        navigationSubscription = navigation.onChange(this::renderPages);
         controls();
     }
 
@@ -259,7 +304,34 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         }
         versions.revalidate();
         versions.repaint();
+        renderPages();
         controls();
+    }
+
+    /** Refreshes exact current-owner contributions while preserving the selected page identity. / 刷新当前所有者精确扩展并保留所选页面身份。 */
+    private void renderPages() {
+        var previous = (PageContribution) pagePicker.getSelectedItem();
+        pagePicker.removeAllItems();
+        var owner = inventory.getSelectedValue();
+        if (!locked && !closed && owner != null) {
+            for (var page : navigation.published(owner.owner())) {
+                pagePicker.addItem(page);
+                if (previous != null && previous.key().equals(page.key()))
+                    pagePicker.setSelectedItem(page);
+            }
+        }
+        pageControls();
+    }
+
+    /** Enables page controls only for current published identities and interactive host state. / 仅为当前已发布身份及可交互宿主状态启用页面控件。 */
+    private void pageControls() {
+        var page = (PageContribution) pagePicker.getSelectedItem();
+        boolean active = !locked && !closed && !busy && navigation.available() && page != null;
+        pagePicker.setEnabled(active);
+        openPage.setEnabled(active);
+        pinPage.setEnabled(active);
+        pinPage.setText(
+                messages.text(page != null && navigation.pinned(page.key()) ? "mods.unpinPage" : "mods.pinPage"));
     }
 
     /** Localizes a persisted state without changing its meaning. / 本地化持久状态，不改变其含义。
@@ -302,6 +374,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         retry.setEnabled(active);
         for (var child : versions.getComponents())
             child.setEnabled(active);
+        pageControls();
     }
 
     /** Selects and explicitly confirms a source using actual runtime then semantic version order. / 按实际运行再语义版本顺序选择并明确确认来源。
@@ -506,6 +579,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         epoch++;
         rows.clear();
         retained.clear();
+        try {
+            navigationSubscription.close();
+        } catch (Exception failure) {
+            status.setText(messages.safe(failure));
+        }
         status.setText("");
         render();
     }
