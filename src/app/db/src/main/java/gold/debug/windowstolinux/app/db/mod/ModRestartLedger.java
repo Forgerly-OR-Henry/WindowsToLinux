@@ -85,27 +85,167 @@ public final class ModRestartLedger {
         });
     }
 
-    /** Identifies an untouched first-use request without claiming or executing it. / 识别未执行的首次使用请求，不取得或执行它。
+    /** Identifies an untouched request needing data preparation without claiming it. / 识别需要数据准备的未执行请求，不取得它。
      * @param id retained intent / 保留意图
-     * @return whether first initialization remains necessary / 是否仍需首次初始化
+     * @return whether initialization or migration remains necessary / 是否仍需初始化或迁移
      * @throws SQLException if the original request is invalid / 原请求无效时 */
-    public boolean needsInitialization(UUID id) throws SQLException {
+    public boolean needsPreparation(UUID id) throws SQLException {
         return locked(c -> {
             var row = required(c, id);
             return row.state().equals("WAITING") && row.phase().equals("WAIT_RESTART") && row.outcome() == null
-                    && "INITIALIZE".equals(row.data().path("mode").textValue());
+                    && Set.of("INITIALIZE", "MIGRATE").contains(row.data().path("mode").asText());
         });
     }
 
-    /** Original identities for a single physical first-use attempt. / 一次物理首次使用尝试的原身份。
+    /** Original identities for one physical data preparation attempt. / 一次物理数据准备尝试的原身份。
      * @param intent original enabled choice / 原启用选择
      * @param operation independent preparation operation / 独立准备操作
      * @param target newly registered generation / 新登记代次
      * @param writer tracked initialization scope / 受跟踪初始化作用域
      * @param reader recoverable SELECT-only scope / 可恢复只读作用域
-     * @param archive fixed summary identity / 固定摘要身份 */
-    public record Initialization(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
-            UUID archive) {
+     * @param archive fixed summary identity / 固定摘要身份
+     * @param source confirmed original source, if migrating / 迁移时已确认的原来源
+     * @param steps original ordered migration chain / 原有序迁移链 */
+    public record Preparation(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
+            UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
+        /** Copies the operation-owned ordered steps. / 复制操作所属有序步骤。
+         * @param intent original intent / 原意图
+         * @param operation preparation operation / 准备操作
+         * @param target final target / 最终目标
+         * @param writer final writer scope / 最终写入作用域
+         * @param reader final reader scope / 最终读取作用域
+         * @param archive original summary / 原摘要
+         * @param source confirmed source, if migrating / 迁移时的已确认来源
+         * @param steps ordered original chain / 有序原链 */
+        public Preparation {
+            source = Objects.requireNonNull(source);
+            steps = List.copyOf(steps);
+        }
+    }
+
+    /** Persisted ordered migration edge and its tracked scopes. / 已持久的有序迁移边及其受跟踪作用域。
+     * @param index zero-based original step / 从零开始的原步骤
+     * @param from source logical version / 来源逻辑版本
+     * @param to target logical version / 目标逻辑版本
+     * @param className explicitly declared migration / 明确声明的迁移
+     * @param target unique target generation / 唯一目标代次
+     * @param sourceReader original source reader scope / 原来源读取作用域
+     * @param writer original target writer scope / 原目标写入作用域
+     * @param reader original target validation scope / 原目标验证作用域 */
+    public record MigrationStep(int index, String from, String to, String className, SchemaIdentity target,
+            UUID sourceReader, UUID writer, UUID reader) {
+    }
+
+    /** Resolves permanent or intermediate physical target ownership. / 解析正式或中间物理目标归属。
+     * @param plan original operation / 原操作
+     * @param step original edge / 原迁移边
+     * @return original target coordinates / 原目标坐标 */
+    public static SchemaCoordinates targetCoordinates(Preparation plan, MigrationStep step) {
+        return step.index() == plan.steps().size() - 1
+                ? new SchemaCoordinates(plan.target())
+                : new SchemaCoordinates(step.target(), plan.operation(), step.index());
+    }
+
+    /** Resolves the exact confirmed source or preceding operation-owned intermediate. / 解析精确已确认来源或前一步操作所属中间目标。
+     * @param plan original operation / 原操作
+     * @param step original edge / 原迁移边
+     * @return exact original source / 精确原来源 */
+    public static SchemaCoordinates sourceCoordinates(Preparation plan, MigrationStep step) {
+        return step.index() == 0
+                ? new SchemaCoordinates(plan.source().orElseThrow())
+                : targetCoordinates(plan, plan.steps().get(step.index() - 1));
+    }
+
+    /** Claims the original initialization or migration mode without changing its data plan. / 取得原初始化或迁移模式，不改变其数据计划。
+     * @param id original intent / 原意图
+     * @param manifest verified selected declaration / 已验证选定声明
+     * @param digest verified program bytes / 已验证程序字节摘要
+     * @return committed preparation / 已提交准备
+     * @throws SQLException if the original plan cannot execute / 原计划无法执行时 */
+    public Preparation beginPreparation(UUID id, String manifest, String digest) throws SQLException {
+        return locked(c -> "MIGRATE".equals(required(c, id).data().path("mode").asText())
+                ? beginMigration(id, manifest, digest)
+                : beginInitialization(id, manifest, digest));
+    }
+
+    /** Registers the previously confirmed chain without choosing another source or path. / 登记此前已确认链，不另选来源或路径。
+     * @param id original restart intent / 原重启意图
+     * @param manifest verified selected declaration / 已验证选定声明
+     * @param digest verified selected bytes / 已验证选定字节摘要
+     * @return committed original preparation / 已提交原准备
+     * @throws SQLException if source, declaration, chain or occupancy changed / 来源、声明、迁移链或占用变化时 */
+    public Preparation beginMigration(UUID id, String manifest, String digest) throws SQLException {
+        return locked(c -> {
+            var row = required(c, id);
+            var data = row.data();
+            require(row.enabled() && row.targetSchema() != null && row.generation() == null
+                    && fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
+                    && "MIGRATE".equals(data.path("mode").textValue())
+                    && row.targetSchema().equals(data.path("target").textValue()), "Original migration plan changed");
+            var source = new SchemaIdentity(row.owner(), data.path("source").asText(), uuid(data, "generation"));
+            new SchemaCoordinates(source).requireRegistered(c, Set.of("READY"));
+            try (var p = c.prepareStatement("SELECT source_schema_version FROM mod_operation WHERE operation_id=?")) {
+                p.setObject(1, id);
+                try (var r = p.executeQuery()) {
+                    require(r.next() && source.schemaVersion().equals(r.getString(1)),
+                            "Original source version identity changed");
+                }
+            }
+            try (var p = c.prepareStatement(
+                    "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
+                p.setString(1, row.owner());
+                p.setString(2, row.version());
+                p.setString(3, row.targetSchema());
+                p.setString(4, manifest);
+                p.setString(5, digest);
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    require(r.getLong(1) == 1, "Original migration program changed");
+                }
+            }
+            try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+                p.setString(1, row.owner());
+                p.setString(2, row.targetSchema());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    require(r.getLong(1) == 0, "Target data already exists and requires reconciliation");
+                }
+            }
+            var declared = object(manifest).path("migrations");
+            var edges = data.path("steps");
+            require(edges.isArray() && !edges.isEmpty() && edges.size() <= 256, "Original migration chain is invalid");
+            var target = new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID());
+            var steps = new ArrayList<MigrationStep>();
+            String previous = source.schemaVersion();
+            for (var edge : edges) {
+                require(fields(edge).equals(Set.of("from", "to", "className"))
+                        && previous.equals(edge.path("from").textValue())
+                        && edge.path("to").asText().matches("[1-9][0-9]{0,63}")
+                        && new java.math.BigInteger(previous)
+                                .compareTo(new java.math.BigInteger(edge.path("to").asText())) < 0,
+                        "Original migration chain is discontinuous");
+                boolean found = false;
+                for (var candidate : declared)
+                    if (edge.path("from").equals(candidate.path("from")) && edge.path("to").equals(candidate.path("to"))
+                            && edge.path("className").asText().equals(candidate.path("class").asText()))
+                        found = true;
+                require(found, "Original migration class is no longer declared");
+                previous = edge.path("to").asText();
+                var identity = steps.size() == edges.size() - 1
+                        ? target
+                        : new SchemaIdentity(row.owner(), previous, UUID.randomUUID());
+                steps.add(new MigrationStep(steps.size(), edge.path("from").asText(), previous,
+                        edge.path("className").asText(), identity, UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID()));
+            }
+            require(previous.equals(row.targetSchema()), "Original chain does not reach its requested target");
+            claimUnprepared(c, row);
+            var last = steps.getLast();
+            var plan = new Preparation(id, UUID.randomUUID(), target, last.writer(), last.reader(), UUID.randomUUID(),
+                    Optional.of(source), steps);
+            registerPreparation(c, row, plan);
+            return plan;
+        });
     }
 
     /** Registers the target and all scope identities before any DDL or author callback. / 在任一 DDL 或作者回调前登记目标及全部作用域身份。
@@ -114,7 +254,7 @@ public final class ModRestartLedger {
      * @param digest verified selected content digest / 已验证选定内容摘要
      * @return committed preparation identities / 已提交准备身份
      * @throws SQLException if the original choice, source or exclusivity changed / 原选择、来源或独占发生变化时 */
-    public Initialization beginInitialization(UUID id, String manifest, String digest) throws SQLException {
+    public Preparation beginInitialization(UUID id, String manifest, String digest) throws SQLException {
         return locked(c -> {
             var row = required(c, id);
             require(row.enabled() && row.targetSchema() != null && row.generation() == null
@@ -142,54 +282,85 @@ public final class ModRestartLedger {
                 }
             }
             claimUnprepared(c, row);
-            var plan = new Initialization(id, UUID.randomUUID(),
+            var plan = new Preparation(id, UUID.randomUUID(),
                     new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID()), UUID.randomUUID(),
-                    UUID.randomUUID(), UUID.randomUUID());
-            var coordinates = new SchemaCoordinates(plan.target());
-            long now = System.currentTimeMillis();
-            try (var p = c.prepareStatement(
-                    "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',?)")) {
-                p.setString(1, row.owner());
-                p.setString(2, row.targetSchema());
-                p.setObject(3, plan.target().generation());
-                p.setString(4, coordinates.physicalName());
-                p.setString(5, coordinates.databaseUser());
-                p.setLong(6, now);
-                p.executeUpdate();
-            }
-            try (var p = c.prepareStatement("UPDATE mod_operation SET target_generation=? WHERE operation_id=?")) {
-                p.setObject(1, plan.target().generation());
-                p.setObject(2, id);
-                require(p.executeUpdate() == 1, "Original intent disappeared");
-            }
-            try (var p = c.prepareStatement(
-                    "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
-                p.setObject(1, plan.operation());
-                p.setString(2, row.owner());
-                p.setString(3, row.version());
-                p.setString(4, row.targetSchema());
-                p.setObject(5, plan.target().generation());
-                p.setLong(6, row.revision());
-                p.setString(7, JSON.createObjectNode().put("formatVersion", 1).put("mode", "INITIALIZE")
-                        .put("intent", id.toString()).toString());
-                p.setString(8, initializationEvidence(plan));
-                p.setString(9, plan.archive().toString());
-                p.setLong(10, now);
-                p.setLong(11, now);
-                p.executeUpdate();
-            }
+                    UUID.randomUUID(), UUID.randomUUID(), Optional.empty(), List.of());
+            registerPreparation(c, row, plan);
             return plan;
         });
+    }
+
+    /** Registers one exclusive preparation before physical creation. / 在物理创建前登记一次独占准备。
+     * @param c original transaction / 原事务
+     * @param row original intent / 原意图
+     * @param plan original physical plan / 原物理计划
+     * @throws SQLException if registration fails / 登记失败时 */
+    private void registerPreparation(Connection c, Intent row, Preparation plan) throws SQLException {
+        var coordinates = new SchemaCoordinates(plan.target());
+        long now = System.currentTimeMillis();
+        try (var p = c.prepareStatement(
+                "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',?)")) {
+            p.setString(1, row.owner());
+            p.setString(2, row.targetSchema());
+            p.setObject(3, plan.target().generation());
+            p.setString(4, coordinates.physicalName());
+            p.setString(5, coordinates.databaseUser());
+            p.setLong(6, now);
+            p.executeUpdate();
+        }
+        try (var p = c.prepareStatement("UPDATE mod_operation SET target_generation=? WHERE operation_id=?")) {
+            p.setObject(1, plan.target().generation());
+            p.setObject(2, plan.intent());
+            require(p.executeUpdate() == 1, "Original intent disappeared");
+        }
+        try (var p = c.prepareStatement(
+                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
+            p.setObject(1, plan.operation());
+            p.setString(2, row.owner());
+            p.setString(3, row.version());
+            p.setString(4, row.targetSchema());
+            p.setObject(5, plan.target().generation());
+            p.setLong(6, row.revision());
+            p.setString(7,
+                    JSON.createObjectNode().put("formatVersion", 1)
+                            .put("mode", plan.source().isPresent() ? "MIGRATE" : "INITIALIZE")
+                            .put("intent", plan.intent().toString()).toString());
+            p.setString(8, preparationEvidence(plan));
+            p.setString(9, plan.archive().toString());
+            p.setLong(10, now);
+            p.setLong(11, now);
+            p.executeUpdate();
+        }
+        if (plan.source().isPresent())
+            try (var p = c.prepareStatement("UPDATE mod_operation SET source_schema_version=? WHERE operation_id=?")) {
+                p.setString(1, plan.source().get().schemaVersion());
+                p.setObject(2, plan.operation());
+                require(p.executeUpdate() == 1, "Original migration disappeared");
+            }
+        for (var step : plan.steps()) {
+            try (var p = c.prepareStatement(
+                    "INSERT INTO mod_migration_step(operation_id,step_number,from_version,to_version,migration_class,source_schema,target_schema,state) VALUES(?,?,?,?,?,?,?,'PENDING')")) {
+                p.setObject(1, plan.operation());
+                p.setInt(2, step.index());
+                p.setString(3, step.from());
+                p.setString(4, step.to());
+                p.setString(5, step.className());
+                p.setString(6, sourceCoordinates(plan, step).physicalName());
+                p.setString(7, targetCoordinates(plan, step).physicalName());
+                p.executeUpdate();
+            }
+        }
     }
 
     /** Claims only an untouched request rejected before physical preparation. / 仅取得物理准备前已被拒绝的未执行请求。
      * @param id original request / 原请求
      * @throws SQLException if prior execution or work remains / 已有执行或工作残留时 */
-    public void rejectInitialization(UUID id) throws SQLException {
+    public void rejectPreparation(UUID id) throws SQLException {
         locked(c -> {
             var row = required(c, id);
             if (row.state().equals("WAITING")) {
-                require("INITIALIZE".equals(row.data().path("mode").textValue()), "Not an initialization request");
+                require(Set.of("INITIALIZE", "MIGRATE").contains(row.data().path("mode").asText()),
+                        "Not a preparation request");
                 claimUnprepared(c, row);
             }
             return null;
@@ -221,9 +392,9 @@ public final class ModRestartLedger {
      * @param plan original attempt / 原尝试
      * @param validating true for validation, false for initialization / 真表示验证，假表示初始化
      * @throws SQLException if original ownership or phase is stale / 原归属或阶段已过期时 */
-    public void initializationPhase(Initialization plan, boolean validating) throws SQLException {
+    public void preparationPhase(Preparation plan, boolean validating) throws SQLException {
         locked(c -> {
-            String phase = requireInitialization(c, plan);
+            String phase = requirePreparation(c, plan);
             require(phase.equals(validating ? "MIGRATING" : "SOURCE_CHECKED"), "Preparation phase changed");
             try (var p = c.prepareStatement("UPDATE mod_operation SET phase=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, validating ? "VALIDATING" : "MIGRATING");
@@ -235,30 +406,202 @@ public final class ModRestartLedger {
         });
     }
 
+    /** Persists the original source fingerprint before migration and checks it after cleanup. / 在迁移前持久化原来源指纹，并在清理后核对。
+     * @param plan original migration / 原迁移
+     * @param digest physical source fingerprint / 物理来源指纹
+     * @param after whether this is the final observation / 是否最终观测
+     * @return whether the observed source still matches its original / 观测来源是否仍匹配原值
+     * @throws SQLException if source evidence cannot be recorded / 无法记录来源证据时 */
+    public boolean sourceDigest(Preparation plan, String digest, boolean after) throws SQLException {
+        require(digest != null && digest.matches("[0-9a-f]{64}") && plan.source().isPresent(), "Invalid source proof");
+        return locked(c -> {
+            String phase = requirePreparation(c, plan);
+            require(after || phase.equals("SOURCE_CHECKED"), "Source proof must precede migration");
+            var recovery = preparationRecovery(c, plan);
+            var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
+            String field = after ? "sourceAfter" : "sourceBefore";
+            require(after || !facts.has(field) || digest.equals(facts.path(field).asText()),
+                    "Original source proof changed");
+            facts.put(field, digest);
+            saveRecovery(c, plan, recovery);
+            return !after || digest.equals(facts.path("sourceBefore").asText());
+        });
+    }
+
+    /** Starts one original edge only after all preceding steps completed. / 仅在此前步骤全部完成后开始一条原迁移边。
+     * @param plan original migration / 原迁移
+     * @param step original ordered edge / 原有序迁移边
+     * @param before source fingerprint before this callback / 此回调前来源指纹
+     * @throws SQLException if phase or previous steps changed / 阶段或前序步骤变化时 */
+    public void beginStep(Preparation plan, MigrationStep step, String before) throws SQLException {
+        require(before != null && before.matches("[0-9a-f]{64}"), "Invalid original step source proof");
+        locked(c -> {
+            require(requirePreparation(c, plan).equals("MIGRATING"), "Migration is not executing");
+            var facts = preparationRecovery(c, plan).path("facts");
+            require(facts.path("sourceBefore").asText().matches("[0-9a-f]{64}"),
+                    "Original source has not been checked");
+            try (var p = c.prepareStatement(
+                    "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND step_number<? AND state<>'COMPLETE'")) {
+                p.setObject(1, plan.operation());
+                p.setInt(2, step.index());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    require(r.getLong(1) == 0, "Previous migration step is incomplete");
+                }
+            }
+            try (var p = c.prepareStatement(
+                    "UPDATE mod_migration_step SET state='RUNNING',started_at=? WHERE operation_id=? AND step_number=? AND from_version=? AND to_version=? AND migration_class=? AND source_schema=? AND target_schema=? AND state='PENDING'")) {
+                p.setLong(1, System.currentTimeMillis());
+                p.setObject(2, plan.operation());
+                p.setInt(3, step.index());
+                p.setString(4, step.from());
+                p.setString(5, step.to());
+                p.setString(6, step.className());
+                p.setString(7, sourceCoordinates(plan, step).physicalName());
+                p.setString(8, targetCoordinates(plan, step).physicalName());
+                require(p.executeUpdate() == 1, "Original migration step changed or was already attempted");
+            }
+            var recovery = preparationRecovery(c, plan);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/steps")
+                    .putObject(Integer.toString(step.index())).put("sourceBefore", before);
+            saveRecovery(c, plan, recovery);
+            return null;
+        });
+    }
+
+    /** Records a completed edge only after physical scope release and unchanged source proof. / 仅在物理作用域释放且来源未变后记录完成的迁移边。
+     * @param plan original migration / 原迁移
+     * @param step original edge / 原迁移边
+     * @param before source snapshot before its callback / 回调前来源快照
+     * @param after source snapshot after its callback / 回调后来源快照
+     * @param targetDigest target validation receipt / 目标验证凭据
+     * @throws SQLException if physical release, proof or write fails / 物理释放、证明或写入失败时 */
+    public void completeStep(Preparation plan, MigrationStep step, String before, String after, String targetDigest)
+            throws SQLException {
+        require(before != null && before.matches("[0-9a-f]{64}") && before.equals(after) && targetDigest != null
+                && targetDigest.matches("[0-9a-f]{64}"), "Migration source changed or validation is absent");
+        for (var scope : List.of(step.sourceReader(), step.writer(), step.reader()))
+            require(database.openConnections(scope.toString()) == 0, "Original migration step connections remain");
+        locked(c -> {
+            require(Set.of("MIGRATING", "VALIDATING").contains(requirePreparation(c, plan)),
+                    "Original migration phase changed");
+            var recovery = preparationRecovery(c, plan);
+            var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
+            var original = facts.path("steps").path(Integer.toString(step.index()));
+            require(before.equals(original.path("sourceBefore").asText()), "Original step source proof changed");
+            try (var p = c.prepareStatement(
+                    "UPDATE mod_migration_step SET state='COMPLETE',ended_at=? WHERE operation_id=? AND step_number=? AND state='RUNNING'")) {
+                p.setLong(1, System.currentTimeMillis());
+                p.setObject(2, plan.operation());
+                p.setInt(3, step.index());
+                if (p.executeUpdate() != 1) {
+                    try (var q = c.prepareStatement(
+                            "SELECT state FROM mod_migration_step WHERE operation_id=? AND step_number=?")) {
+                        q.setObject(1, plan.operation());
+                        q.setInt(2, step.index());
+                        try (var r = q.executeQuery()) {
+                            require(r.next() && "COMPLETE".equals(r.getString(1))
+                                    && after.equals(original.path("sourceAfter").asText())
+                                    && targetDigest.equals(original.path("targetDigest").asText()),
+                                    "Original step completion is unconfirmed");
+                            return null;
+                        }
+                    }
+                }
+            }
+            facts.withObject("/steps").putObject(Integer.toString(step.index())).put("sourceBefore", before)
+                    .put("sourceAfter", after).put("targetDigest", targetDigest);
+            saveRecovery(c, plan, recovery);
+            return null;
+        });
+    }
+
+    /** Reads the bounded recovery object already checked against its immutable inventory. / 读取已按不可变清单核验的有界恢复对象。
+     * @param c platform transaction / 平台事务
+     * @param plan original operation / 原操作
+     * @return mutable copy of original recovery facts / 原恢复事实的可变副本
+     * @throws SQLException if original recovery is absent / 原恢复不存在时 */
+    private static com.fasterxml.jackson.databind.node.ObjectNode preparationRecovery(Connection c, Preparation plan)
+            throws SQLException {
+        try (var p = c.prepareStatement("SELECT recovery_json FROM mod_operation WHERE operation_id=?")) {
+            p.setObject(1, plan.operation());
+            try (var r = p.executeQuery()) {
+                require(r.next(), "Original preparation disappeared");
+                return (com.fasterxml.jackson.databind.node.ObjectNode) object(r.getString(1));
+            }
+        }
+    }
+
+    /** Saves evidence without changing the original preparation inventory. / 保存证据而不改变原准备清单。
+     * @param c platform transaction / 平台事务
+     * @param plan original operation / 原操作
+     * @param recovery complete original envelope / 完整原封套
+     * @throws SQLException if the original write cannot be confirmed / 无法确认原写入时 */
+    private static void saveRecovery(Connection c, Preparation plan, JsonNode recovery) throws SQLException {
+        try (var p = c.prepareStatement("UPDATE mod_operation SET recovery_json=?,updated_at=? WHERE operation_id=?")) {
+            p.setString(1, recovery.toString());
+            p.setLong(2, System.currentTimeMillis());
+            p.setObject(3, plan.operation());
+            require(p.executeUpdate() == 1, "Original preparation disappeared");
+        }
+    }
+
     /** Confirms closed preparation and archives its known outcome in one transaction. / 在同一事务确认已关闭准备并归档已知结果。
      * @param plan original attempt / 原尝试
      * @param outcome known result, or UNKNOWN for retained reconciliation / 已知结果，UNKNOWN 保留核对
      * @param digest validation receipt for success, otherwise null / 成功验证凭据，否则为空
      * @throws SQLException if release, identity or atomic archival cannot be confirmed / 无法确认释放、身份或原子归档时 */
-    public void finishInitialization(Initialization plan, Outcome outcome, String digest) throws SQLException {
+    public void finishPreparation(Preparation plan, Outcome outcome, String digest) throws SQLException {
         require(Set.of(Outcome.SUCCEEDED, Outcome.FAILED, Outcome.UNKNOWN).contains(outcome),
                 "Invalid preparation result");
-        require(database.openConnections(plan.writer().toString()) == 0
-                && database.openConnections(plan.reader().toString()) == 0, "Preparation connections remain");
+        var scopes = new HashSet<>(List.of(plan.writer(), plan.reader()));
+        plan.steps().forEach(step -> scopes.addAll(List.of(step.sourceReader(), step.writer(), step.reader())));
+        for (var scope : scopes)
+            require(database.openConnections(scope.toString()) == 0, "Preparation connections remain");
         locked(c -> {
-            if (initializationFinished(c, plan, outcome, digest))
+            if (preparationFinished(c, plan, outcome, digest))
                 return null;
-            String phase = requireInitialization(c, plan);
-            try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.users WHERE user_name=?")) {
-                p.setString(1, SchemaAccessScope.readerUser(plan.reader()));
-                try (var r = p.executeQuery()) {
-                    r.next();
-                    require(outcome == Outcome.UNKNOWN || r.getLong(1) == 0, "Temporary preparation user remains");
+            String phase = requirePreparation(c, plan);
+            for (var scope : scopes) {
+                try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.users WHERE user_name=?")) {
+                    p.setString(1, SchemaAccessScope.readerUser(scope));
+                    try (var r = p.executeQuery()) {
+                        r.next();
+                        require(outcome == Outcome.UNKNOWN || r.getLong(1) == 0, "Temporary preparation user remains");
+                    }
                 }
             }
             require(outcome != Outcome.SUCCEEDED
                     || phase.equals("VALIDATING") && digest != null && digest.matches("[0-9a-f]{64}"),
                     "Successful validation evidence is absent");
+            if (plan.source().isPresent() && outcome != Outcome.UNKNOWN) {
+                var facts = preparationRecovery(c, plan).path("facts");
+                require(!facts.has("sourceBefore") && outcome == Outcome.FAILED
+                        || facts.path("sourceBefore").asText().matches("[0-9a-f]{64}")
+                                && facts.path("sourceBefore").equals(facts.path("sourceAfter")),
+                        "Original source is not confirmed unchanged");
+                try (var p = c.prepareStatement(
+                        "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND state<>'COMPLETE'")) {
+                    p.setObject(1, plan.operation());
+                    try (var r = p.executeQuery()) {
+                        r.next();
+                        require(outcome != Outcome.SUCCEEDED || r.getLong(1) == 0,
+                                "Original migration chain is incomplete");
+                    }
+                }
+                for (var step : plan.steps().subList(0, plan.steps().size() - 1)) {
+                    var coordinates = targetCoordinates(plan, step);
+                    try (var p = c.prepareStatement(
+                            "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                        p.setString(1, coordinates.physicalName());
+                        p.setString(2, coordinates.databaseUser());
+                        try (var r = p.executeQuery()) {
+                            r.next();
+                            require(r.getLong(1) == 0, "Original intermediate cleanup remains");
+                        }
+                    }
+                }
+            }
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
                     "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='PREPARING' AND NOT ever_used")) {
@@ -270,6 +613,11 @@ public final class ModRestartLedger {
             }
             if (outcome == Outcome.UNKNOWN) {
                 try (var p = c.prepareStatement(
+                        "UPDATE mod_migration_step SET state='UNKNOWN' WHERE operation_id=? AND state='RUNNING'")) {
+                    p.setObject(1, plan.operation());
+                    p.executeUpdate();
+                }
+                try (var p = c.prepareStatement(
                         "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_PREPARATION_UNKNOWN',updated_at=? WHERE operation_id IN (?,?)")) {
                     p.setLong(1, now);
                     p.setObject(2, plan.operation());
@@ -278,13 +626,22 @@ public final class ModRestartLedger {
                 }
             } else {
                 var row = required(c, plan.intent());
+                boolean migrating = plan.source().isPresent();
                 logs.store(c, archive, List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation",
                         outcome == Outcome.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
-                        outcome == Outcome.SUCCEEDED ? "MOD_SCHEMA_INITIALIZED" : "MOD_SCHEMA_INITIALIZATION_FAILED",
+                        migrating
+                                ? outcome == Outcome.SUCCEEDED ? "MOD_SCHEMA_MIGRATED" : "MOD_SCHEMA_MIGRATION_FAILED"
+                                : outcome == Outcome.SUCCEEDED
+                                        ? "MOD_SCHEMA_INITIALIZED"
+                                        : "MOD_SCHEMA_INITIALIZATION_FAILED",
                         outcome == Outcome.SUCCEEDED
-                                ? "Initial data validation and cleanup succeeded"
-                                : "Initial data preparation failed and resources are closed",
+                                ? "Data validation and original resource cleanup succeeded"
+                                : "Data preparation failed and original resources are closed",
                         null, row.owner(), row.version(), null, plan.operation(), outcome, false)), 100);
+                try (var p = c.prepareStatement("DELETE FROM mod_migration_step WHERE operation_id=?")) {
+                    p.setObject(1, plan.operation());
+                    p.executeUpdate();
+                }
                 try (var p = c.prepareStatement("DELETE FROM mod_operation WHERE operation_id=?")) {
                     p.setObject(1, plan.operation());
                     require(p.executeUpdate() == 1, "Original preparation disappeared");
@@ -301,7 +658,7 @@ public final class ModRestartLedger {
      * @param digest original validation receipt / 原验证凭据
      * @return whether the exact original terminal transaction is already visible / 是否已经可见精确原终态事务
      * @throws SQLException if retained evidence cannot be read / 无法读取保留证据时 */
-    private boolean initializationFinished(Connection c, Initialization plan, Outcome outcome, String digest)
+    private boolean preparationFinished(Connection c, Preparation plan, Outcome outcome, String digest)
             throws SQLException {
         var row = required(c, plan.intent());
         require(plan.target().ownerId().equals(row.owner()) && plan.target().generation().equals(row.generation())
@@ -324,7 +681,7 @@ public final class ModRestartLedger {
                 boolean exists = r.next();
                 return outcome == Outcome.UNKNOWN
                         ? exists && row.state().equals("UNKNOWN") && "UNKNOWN".equals(r.getString(1))
-                                && initializationEvidence(plan).equals(r.getString(2))
+                                && sameInventory(r.getString(2), plan)
                         : !exists && row.state().equals("RUNNING") && row.phase().equals("APPLYING");
             }
         }
@@ -335,7 +692,7 @@ public final class ModRestartLedger {
      * @param plan original preparation / 原准备
      * @return current physical preparation phase / 当前物理准备阶段
      * @throws SQLException if ownership or registry evidence changed / 归属或登记证据变化时 */
-    private String requireInitialization(Connection c, Initialization plan) throws SQLException {
+    private String requirePreparation(Connection c, Preparation plan) throws SQLException {
         var row = required(c, plan.intent());
         require(row.owner().equals(plan.target().ownerId())
                 && Objects.equals(row.targetSchema(), plan.target().schemaVersion())
@@ -344,15 +701,16 @@ public final class ModRestartLedger {
                 "Original preparation intent changed");
         requireClosed(registry(c, row));
         new SchemaCoordinates(plan.target()).requireRegistered(c, Set.of("PREPARING"));
+        if (plan.source().isPresent())
+            new SchemaCoordinates(plan.source().get()).requireRegistered(c, Set.of("READY"));
         try (var p = c.prepareStatement(
-                "SELECT phase FROM mod_operation WHERE operation_id=? AND mod_id=? AND operation_type='MIGRATE' AND target_generation=? AND state='RUNNING' AND outcome IS NULL AND recovery_json=? AND archive_log_id=?")) {
+                "SELECT phase,recovery_json FROM mod_operation WHERE operation_id=? AND mod_id=? AND operation_type='MIGRATE' AND target_generation=? AND state='RUNNING' AND outcome IS NULL AND archive_log_id=?")) {
             p.setObject(1, plan.operation());
             p.setString(2, row.owner());
             p.setObject(3, plan.target().generation());
-            p.setString(4, initializationEvidence(plan));
-            p.setString(5, plan.archive().toString());
+            p.setString(4, plan.archive().toString());
             try (var r = p.executeQuery()) {
-                require(r.next(), "Original preparation ownership changed");
+                require(r.next() && sameInventory(r.getString(2), plan), "Original preparation ownership changed");
                 return r.getString(1);
             }
         }
@@ -361,12 +719,42 @@ public final class ModRestartLedger {
     /** Encodes recoverable physical identities without passwords or author data. / 编码可恢复物理身份，不含口令或作者数据。
      * @param plan original preparation / 原准备
      * @return canonical recovery envelope / 规范恢复封套 */
-    private String initializationEvidence(Initialization plan) {
+    private String preparationEvidence(Preparation plan) {
         var coordinates = new SchemaCoordinates(plan.target());
-        return JSON.createObjectNode().put("formatVersion", 1).put("bootId", boot.toString())
+        var recovery = JSON.createObjectNode().put("formatVersion", 1).put("bootId", boot.toString())
                 .put("intent", plan.intent().toString()).put("writer", plan.writer().toString())
                 .put("reader", plan.reader().toString()).put("physicalSchema", coordinates.physicalName())
-                .put("databaseUser", coordinates.databaseUser()).toString();
+                .put("databaseUser", coordinates.databaseUser());
+        recovery.putObject("facts");
+        if (plan.source().isPresent()) {
+            var source = plan.source().get();
+            recovery.putObject("source").put("schemaVersion", source.schemaVersion()).put("generation",
+                    source.generation().toString());
+        }
+        var steps = recovery.putArray("steps");
+        for (var step : plan.steps()) {
+            var target = targetCoordinates(plan, step);
+            steps.addObject().put("from", step.from()).put("to", step.to()).put("className", step.className())
+                    .put("generation", step.target().generation().toString())
+                    .put("physicalSchema", target.physicalName()).put("databaseUser", target.databaseUser())
+                    .put("sourceReader", step.sourceReader().toString()).put("writer", step.writer().toString())
+                    .put("reader", step.reader().toString());
+        }
+        return recovery.toString();
+    }
+
+    /** Compares immutable original inventory while retaining separately recorded runtime facts. / 比较不可变原清单，同时保留单独记录的运行事实。
+     * @param encoded original recovery envelope / 原恢复封套
+     * @param plan original in-memory operation / 原内存操作
+     * @return whether original inventory and facts shape match / 原清单和事实形状是否匹配
+     * @throws SQLException if recovery is malformed / 恢复格式错误时 */
+    private boolean sameInventory(String encoded, Preparation plan) throws SQLException {
+        var actual = (com.fasterxml.jackson.databind.node.ObjectNode) object(encoded);
+        var expected = (com.fasterxml.jackson.databind.node.ObjectNode) object(preparationEvidence(plan));
+        require(actual.path("facts").isObject(), "Original preparation facts are invalid");
+        actual.remove("facts");
+        expected.remove("facts");
+        return actual.equals(expected);
     }
 
     /** Archives actual success, or confirms a never-loaded disabled Mod in this new boot. / 归档实际成功，或确认本次新启动未加载的关闭 Mod。
@@ -517,9 +905,11 @@ public final class ModRestartLedger {
                     && row.generation() == null, "Stateless startup has invalid data evidence");
             return Optional.empty();
         }
-        boolean initialized = fields(data).equals(Set.of("mode", "target"))
-                && "INITIALIZE".equals(data.path("mode").textValue()) && row.state().equals("RUNNING")
-                && row.phase().equals("APPLYING") && row.generation() != null;
+        boolean initialized = (fields(data).equals(Set.of("mode", "target"))
+                && "INITIALIZE".equals(data.path("mode").textValue())
+                || fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
+                        && "MIGRATE".equals(data.path("mode").textValue()))
+                && row.state().equals("RUNNING") && row.phase().equals("APPLYING") && row.generation() != null;
         require((initialized || fields(data).equals(Set.of("mode", "target", "generation"))
                 && "REUSE".equals(data.path("mode").textValue())) && schema.equals(data.path("target").textValue()),
                 "Original data preparation must be completed before activation");

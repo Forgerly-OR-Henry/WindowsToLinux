@@ -491,10 +491,11 @@ public final class PlatformModIntents implements AutoCloseable {
         var schemas = new TreeMap<String, Map<String, Data>>();
         try (var s = c.createStatement();
                 var r = s.executeQuery(
-                        "SELECT mod_id,schema_version,generation,state,physical_name,database_user,ever_used FROM mod_schema ORDER BY mod_id,schema_version")) {
+                        "SELECT mod_id,schema_version,generation,state,physical_name,database_user,ever_used,validated_at,validation_digest FROM mod_schema ORDER BY mod_id,schema_version")) {
             while (r.next())
-                schemas.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2), new Data(
-                        r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6), r.getBoolean(7)));
+                schemas.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2),
+                        new Data(r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6),
+                                r.getBoolean(7), r.getObject(8, Long.class), r.getString(9)));
         }
         var pending = new TreeMap<String, Pending>();
         var busy = new TreeSet<String>();
@@ -727,8 +728,11 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param state preparation state / 准备状态
      * @param physical physical schema / 物理 Schema
      * @param user exact database owner / 精确数据库所有者
-     * @param used whether handed to business / 是否曾交付业务 */
-    private record Data(UUID generation, String state, String physical, String user, boolean used) {
+     * @param used whether handed to business / 是否曾交付业务
+     * @param validatedAt original accepted validation time / 原接纳验证时间
+     * @param validationDigest original accepted validation receipt / 原接纳验证凭据 */
+    private record Data(UUID generation, String state, String physical, String user, boolean used, Long validatedAt,
+            String validationDigest) {
     }
 
     /** Retained original restart request. / 保留的原重启请求。

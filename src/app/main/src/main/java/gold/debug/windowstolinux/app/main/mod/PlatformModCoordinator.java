@@ -157,9 +157,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
                         slot = new Slot(prepared, loader);
                         slots.put(manifest.id(), slot);
                         if (prepared.schema().isEmpty() && prepared.selection().schema() != null) {
-                            slot.preparation = new ModSchemaInitialization(runtime.persistence().database(), restarts,
+                            slot.preparation = new ModSchemaPreparation(runtime.persistence().database(), restarts,
                                     plan.createLoader(manifest.id(), sources, providers));
-                            var identity = slot.preparation.initialize(prepared.intent().orElseThrow(),
+                            var identity = slot.preparation.prepare(prepared.intent().orElseThrow(),
                                     prepared.build().contentDigest());
                             prepared = new Prepared(prepared.selection(), Optional.of(identity), prepared.intent(),
                                     prepared.build());
@@ -240,7 +240,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     ProblemCode.BUSY);
         Optional<SchemaIdentity> schema = Optional.empty();
         if (!pending.isEmpty()) {
-            if (selected.enabled() && restarts.needsInitialization(pending.getFirst()))
+            if (selected.enabled() && restarts.needsPreparation(pending.getFirst()))
                 return new Prepared(selected, schema, Optional.of(pending.getFirst()), null);
             var applying = restarts.begin(pending.getFirst());
             schema = applying.schema();
@@ -313,7 +313,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         String owner = prepared.selection().owner();
         if (!currentFailure(owner)) {
             if (prepared.intent().isPresent() && prepared.schema().isEmpty() && prepared.selection().schema() != null)
-                restarts.rejectInitialization(prepared.intent().get());
+                restarts.rejectPreparation(prepared.intent().get());
             new ModActivationLedger(runtime.persistence().database(), owner, prepared.selection().version(),
                     prepared.schema()).rejectedBeforeStart(problem);
         }
@@ -469,7 +469,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         private Prepared prepared;
 
         /** Original isolated data preparation, retained until physically released. / 保留至物理释放的原隔离数据准备。 */
-        private ModSchemaInitialization preparation;
+        private ModSchemaPreparation preparation;
 
         /** Actual allocated code owner. / 实际已分配代码所有者。 */
         private final ModClassLoader loader;

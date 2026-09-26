@@ -274,14 +274,14 @@ class PlatformModInitializationTest {
             var plan = ledger.beginInitialization(intent, manifest, digest);
             new gold.debug.windowstolinux.app.db.schema.SchemaProvisioner(runtime.persistence().database())
                     .create(plan.target());
-            ledger.initializationPhase(plan, false);
-            ledger.initializationPhase(plan, true);
-            ledger.finishInitialization(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
+            ledger.preparationPhase(plan, false);
+            ledger.preparationPhase(plan, true);
+            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
             sql(runtime.persistence().database(), "DELETE FROM runtime_log WHERE event_code='MOD_SCHEMA_INITIALIZED'");
-            ledger.finishInitialization(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
+            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
             assertEquals(0, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_SCHEMA_INITIALIZED'"));
-            assertThrows(SQLException.class, () -> ledger.finishInitialization(plan,
+            assertThrows(SQLException.class, () -> ledger.finishPreparation(plan,
                     gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "2".repeat(64)));
         }
     }
