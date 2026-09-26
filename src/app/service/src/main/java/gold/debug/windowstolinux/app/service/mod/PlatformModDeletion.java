@@ -9,7 +9,7 @@ import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.mod.ModVersionDeletionLedger;
+import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
 import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity;
@@ -28,7 +28,7 @@ public final class PlatformModDeletion implements AutoCloseable {
     private final DesktopSecurityService security;
 
     /** Exact durable deletion authority. / 精确持久删除权限。 */
-    private final ModVersionDeletionLedger ledger;
+    private final ModDeletionLedger ledger;
 
     /** Prevents new calls after accepted work has drained. / 已接纳工作排空后阻止新调用。 */
     private boolean closed;
@@ -48,7 +48,7 @@ public final class PlatformModDeletion implements AutoCloseable {
         this.database = database;
         this.security = security;
         this.home = home;
-        ledger = new ModVersionDeletionLedger(database, home);
+        ledger = new ModDeletionLedger(database, home);
     }
 
     /** One-use review including exact data impact and optional proven originals. / 包含精确数据影响及可选已证明原包的一次性审阅。 */
@@ -57,7 +57,7 @@ public final class PlatformModDeletion implements AutoCloseable {
         private final PlatformModDeletion issuer = PlatformModDeletion.this;
 
         /** Original catalog review. / 原目录审阅。 */
-        private final ModVersionDeletionLedger.Review catalog;
+        private final ModDeletionLedger.Review catalog;
 
         /** Captured physical scope. / 捕获物理范围。 */
         private final Evidence evidence;
@@ -73,7 +73,7 @@ public final class PlatformModDeletion implements AutoCloseable {
          * @param evidence actual files / 实际文件
          * @param owner exact Mod / 精确 Mod
          * @param version exact release / 精确版本 */
-        private Review(ModVersionDeletionLedger.Review catalog, Evidence evidence, String owner, String version) {
+        private Review(ModDeletionLedger.Review catalog, Evidence evidence, String owner, String version) {
             this.catalog = catalog;
             this.evidence = evidence;
             this.owner = owner;

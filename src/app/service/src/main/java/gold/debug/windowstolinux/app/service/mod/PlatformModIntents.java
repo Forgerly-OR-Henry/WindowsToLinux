@@ -10,6 +10,7 @@ import javax.swing.SwingUtilities;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModDependencyPlan;
@@ -224,9 +225,7 @@ public final class PlatformModIntents implements AutoCloseable {
          * @param ownerId exact owner / 精确所有者
          * @param pageId local page / 内部页面 */
         public PagePin {
-            if (ownerId == null || ownerId.isBlank() || ownerId.length() > 512 || ownerId.indexOf('\0') >= 0
-                    || pageId == null || pageId.isBlank() || pageId.length() > 1024 || pageId.indexOf('\0') >= 0)
-                throw new IllegalArgumentException("Invalid navigation identity");
+            new ModNavigationPreferences.PagePin(ownerId, pageId);
         }
     }
 
@@ -238,7 +237,8 @@ public final class PlatformModIntents implements AutoCloseable {
         try (var permission = security.enterOperation()) {
             return locked(c -> {
                 read(c);
-                return readPins(c);
+                return ModNavigationPreferences.read(c).stream().map(pin -> new PagePin(pin.ownerId(), pin.pageId()))
+                        .toList();
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -256,61 +256,30 @@ public final class PlatformModIntents implements AutoCloseable {
             return locked(c -> {
                 var state = read(c);
                 var owner = state.owners().get(pin.ownerId());
+                try (var pending = c.prepareStatement(
+                        "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='DELETE_MOD'")) {
+                    pending.setString(1, pin.ownerId());
+                    try (var rows = pending.executeQuery()) {
+                        rows.next();
+                        if (rows.getLong(1) != 0)
+                            throw rejected("MOD_DELETE_PENDING",
+                                    "Whole-Mod deletion retains the original navigation scope");
+                    }
+                }
                 if (pinned && (owner == null || !"RUNNING".equals(owner.runtime()) || owner.actual() == null))
                     throw rejected("MOD_PAGE_UNAVAILABLE", "Only an actually running Mod can add navigation entries");
-                var pins = new ArrayList<>(readPins(c));
+                var pins = new ArrayList<>(ModNavigationPreferences.read(c).stream()
+                        .map(saved -> new PagePin(saved.ownerId(), saved.pageId())).toList());
                 if (pinned && !pins.contains(pin))
                     pins.add(pin);
                 if (!pinned)
                     pins.remove(pin);
-                if (pins.size() > 1024)
-                    throw rejected("MOD_NAVIGATION_FULL", "Navigation preference limit reached");
-                var node = JSON.createObjectNode().put("formatVersion", 1);
-                node.set("pages", JSON.valueToTree(pins));
-                if (node.toString().length() > 1024 * 1024)
-                    throw rejected("MOD_NAVIGATION_FULL", "Navigation preference limit reached");
-                try (var p = c.prepareStatement(
-                        "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES('mod_navigation_pins',?)")) {
-                    p.setString(1, node.toString());
-                    p.executeUpdate();
-                }
+                ModNavigationPreferences.write(c, pins.stream()
+                        .map(saved -> new ModNavigationPreferences.PagePin(saved.ownerId(), saved.pageId())).toList());
                 return List.copyOf(pins);
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
-        }
-    }
-
-    /** Decodes the original bounded preferences and rejects corruption without replacing it. / 解码原有界偏好，拒绝损坏且不替换。
-     * @param c original serialized transaction / 原串行事务
-     * @return exact ordered identities / 精确有序身份
-     * @throws SQLException if retained data is invalid / 保留数据无效时 */
-    private static List<PagePin> readPins(Connection c) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT preference_value FROM desktop_preference WHERE preference_key='mod_navigation_pins'");
-                var r = p.executeQuery()) {
-            if (!r.next())
-                return List.of();
-            String stored = r.getString(1);
-            try {
-                if (stored.length() > 1024 * 1024)
-                    throw new IllegalArgumentException("Oversized pins");
-                var node = JSON.readTree(stored);
-                if (node == null || !node.isObject() || node.size() != 2 || !node.path("formatVersion").isInt()
-                        || node.path("formatVersion").asInt() != 1 || !node.path("pages").isArray()
-                        || node.path("pages").size() > 1024)
-                    throw new IllegalArgumentException("Invalid pins");
-                var pins = new LinkedHashSet<PagePin>();
-                for (var page : node.path("pages")) {
-                    if (!page.isObject() || page.size() != 2 || !page.path("ownerId").isTextual()
-                            || !page.path("pageId").isTextual() || !pins.add(
-                                    new PagePin(page.path("ownerId").textValue(), page.path("pageId").textValue())))
-                        throw new IllegalArgumentException("Invalid pin identity");
-                }
-                return List.copyOf(pins);
-            } catch (java.io.IOException | IllegalArgumentException invalid) {
-                throw rejected("MOD_NAVIGATION_INVALID", "Stored navigation preferences cannot be verified");
-            }
         }
     }
 
@@ -1054,6 +1023,10 @@ public final class PlatformModIntents implements AutoCloseable {
     private static ApiException publicFailure(SQLException failure) {
         if (failure.getSuppressed().length == 0 && failure.getCause() instanceof ApiException api)
             return api;
+        if (failure.getSuppressed().length == 0 && ("MOD_NAVIGATION_INVALID".equals(failure.getSQLState())
+                || "MOD_NAVIGATION_FULL".equals(failure.getSQLState())))
+            return new ApiException(new Problem(ProblemCode.UNAVAILABLE, failure.getSQLState(),
+                    "Navigation preferences could not be verified or exceed their bounds", Map.of(), Optional.empty()));
         return new ApiException(new Problem(ProblemCode.UNKNOWN, "MOD_INTENT_STORAGE_UNCONFIRMED",
                 "Mod management storage could not be confirmed; reread the saved state", Map.of(),
                 Optional.of(UUID.randomUUID())));

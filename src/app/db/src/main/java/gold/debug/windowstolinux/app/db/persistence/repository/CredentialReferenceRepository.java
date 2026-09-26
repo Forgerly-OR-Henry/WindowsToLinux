@@ -46,6 +46,39 @@ public final class CredentialReferenceRepository {
         }
     }
 
+    /** Lists exact platform-issued identities for whole-owner cleanup without reading secret payloads. / 列出整所有者清理所需精确平台签发身份，不读取秘密载荷。
+     * @param connection serialized platform transaction / 串行平台事务
+     * @param owner exact Mod identity / 精确 Mod 身份
+     * @return sorted bounded owned credential IDs / 有序有界自有凭据 ID
+     * @throws SQLException if identity evidence is malformed or exceeds bounds / 身份证据无效或超限时 */
+    public static List<String> ownedIdentities(Connection connection, String owner) throws SQLException {
+        String prefix = "mod-secret-v1:" + hash(owner) + ":";
+        var ids = new ArrayList<String>();
+        try (var statement = connection.prepareStatement(
+                "SELECT credential_id FROM credential WHERE credential_id LIKE ? ORDER BY credential_id")) {
+            statement.setString(1, prefix + "%");
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    String id = rows.getString(1);
+                    if (ids.size() >= 10000 || !ownedIdentity(owner, id))
+                        throw new SQLException("Owned credential catalog cannot be verified");
+                    ids.add(id);
+                }
+            }
+        }
+        return List.copyOf(ids);
+    }
+
+    /** Checks the canonical owner namespace and issuance shape without needing a secret's purpose or value. / 不需要秘密用途或值地检查规范所有者命名空间及签发形状。
+     * @param owner exact Mod identity / 精确 Mod 身份
+     * @param id retained credential ID / 保留凭据 ID
+     * @return whether the identity has this owner's exact platform format / 身份是否符合此所有者精确平台格式 */
+    public static boolean ownedIdentity(String owner, String id) {
+        String prefix = "mod-secret-v1:" + hash(owner) + ":";
+        return id != null && id.startsWith(prefix) && id.substring(prefix.length())
+                .matches("[0-9a-f]{64}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
     /** Encodes bounded exact metadata independently of Mod release or Schema version. / 编码有界精确元数据，不绑定 Mod 发布或 Schema 版本。
      * @param owner exact Mod ID / 精确 Mod 标识
      * @param purpose exact purpose / 精确用途

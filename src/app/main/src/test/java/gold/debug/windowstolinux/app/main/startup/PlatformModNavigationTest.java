@@ -305,6 +305,31 @@ class PlatformModNavigationTest {
     }
 
     @Test
+    void pendingWholeDeletionPreservesItsOwnedPinsUntilTheOriginalCleanupFinishes() throws Exception {
+        click("mods.pinPage");
+        var original = runtime.modIntents().pins();
+        UUID operation = UUID.randomUUID();
+        var db = runtime.persistence().database();
+        sql(db, "INSERT INTO mod_operation(operation_id,mod_id,operation_type,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'DELETE_MOD','UNKNOWN','DATA_REMOVED','{}','{}',?,1,1)",
+                operation, P, UUID.randomUUID().toString());
+        try {
+            assertEquals("MOD_DELETE_PENDING",
+                    assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "main"), false))
+                            .problem().eventCode());
+            assertEquals("MOD_DELETE_PENDING",
+                    assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "settings"), true))
+                            .problem().eventCode());
+            assertEquals(original, runtime.modIntents().pins());
+            runtime.modIntents().pin(new PagePin(FREE, "main"), true);
+            assertTrue(runtime.modIntents().pins().contains(new PagePin(FREE, "main")));
+        } finally {
+            sql(db, "DELETE FROM mod_operation WHERE operation_id=?", operation);
+        }
+        runtime.modIntents().pin(new PagePin(P, "main"), false);
+        assertFalse(runtime.modIntents().pins().contains(new PagePin(P, "main")));
+    }
+
+    @Test
     void failedPinStorageIsNotShownAsSavedAndOriginalPreferencesAreNotReplaced() throws Exception {
         sql(runtime.persistence().database(),
                 "ALTER TABLE desktop_preference ADD CONSTRAINT navigation_write_failure CHECK(preference_key<>'mod_navigation_pins')");
