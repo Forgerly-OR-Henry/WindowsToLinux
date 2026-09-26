@@ -68,6 +68,7 @@ WindowsToLinux/
    │  │  ├─ runtime/
    │  │  └─ startup/
    │  ├─ mod/
+   │  │  ├─ development/
    │  │  ├─ lifecycle/
    │  │  ├─ loader/
    │  │  ├─ manifest/
@@ -1281,6 +1282,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │  │  └─ resources/                     # [资源] 内置救援所需资源，随 APP 交付准备
 │  │  ├─ main/                             # [模块] APP 启动、运行模式、数据根、主体装配与关闭
 │  │  ├─ mod/                              # [模块] Mod 运行基础；包结构已确认，框架适配和完整契约待验证
+│  │  │  ├─ development/                   # [包] CLASS 构建描述、输入摘要及工作区发现
 │  │  │  ├─ installation/                  # [包] 校验插件包、版本兼容和依赖，维护安装状态
 │  │  │  ├─ lifecycle/                     # [包] 组织重启生效的启停/切换、依赖停用和资源释放
 │  │  │  └─ registry/                      # [包] 登记插件扩展点及公开服务，供宿主与插件发现
