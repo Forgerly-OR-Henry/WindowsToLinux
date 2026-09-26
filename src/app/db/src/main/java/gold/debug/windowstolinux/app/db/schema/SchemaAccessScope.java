@@ -32,6 +32,9 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
     /** Whether normal release completed. / 正常释放是否完成。 */
     private boolean closed;
 
+    /** Rejects new connections once cleanup starts, even while old connections remain. / 清理开始后拒绝新连接，即使旧连接仍残留。 */
+    private boolean sealing;
+
     /**
      * Binds a scope after the caller has persisted its operation identity. / 调用方持久化操作身份后绑定作用域。
      * @param database owned engine / 所属引擎
@@ -141,7 +144,7 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
      */
     @Override
     public synchronized Connection openConnection() throws SQLException {
-        if (closed)
+        if (sealing)
             throw new SQLException("Schema access scope is closed");
         verifyRegistration();
         return database.openInternalConnection(coordinates.physicalName(), user, password, scopeId.toString());
@@ -161,6 +164,7 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
     public synchronized void close() throws SQLException {
         if (closed)
             return;
+        sealing = true;
         if (openConnections() != 0)
             throw new SQLException("Schema access still owns open connections");
         if (readOnly)
