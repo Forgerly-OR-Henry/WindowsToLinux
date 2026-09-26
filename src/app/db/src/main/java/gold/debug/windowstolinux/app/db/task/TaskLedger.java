@@ -298,6 +298,53 @@ public final class TaskLedger {
         return id;
     }
 
+    /** Records the first actual PID and start time before any process HELLO is sent. / 发送任何进程 HELLO 前记录首个实际 PID 及启动时间。
+     * @param taskId original task / 原任务
+     * @param resource exact retained process / 精确保留进程
+     * @param before original pre-creation checkpoint / 原创建前检查点
+     * @param after observed physical identity / 已观察物理身份
+     * @throws SQLException if identity, phase or commit cannot be confirmed / 无法确认身份、阶段或提交时 */
+    public void checkpointProcess(UUID taskId, TaskResource resource, ProcessRecovery before, ProcessRecovery after)
+            throws SQLException {
+        if (!resource.kind().equals("PROCESS") || !resource.id().equals("process-v1:" + before.process())
+                || resource.exclusive() || !bootId.equals(before.boot()) || before.pid().isPresent()
+                || after.pid().isEmpty() || !before.boot().equals(after.boot())
+                || !before.process().equals(after.process()))
+            throw new SQLException("Invalid process checkpoint transition");
+        locked(() -> {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT lease_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='PROCESS' AND resource_id=? AND owner_id=? AND access_mode='SHARED' AND released_at IS NULL")) {
+                p.setObject(1, taskId);
+                p.setString(2, resource.id());
+                p.setString(3, resource.ownerId());
+                UUID lease;
+                ResourceRecovery original;
+                try (var rows = p.executeQuery()) {
+                    if (!rows.next())
+                        throw new SQLException("Original process lease is unavailable");
+                    lease = rows.getObject(1, UUID.class);
+                    original = ResourceRecovery.decode(rows.getString(2));
+                    if (rows.next())
+                        throw new SQLException("Duplicate process lease identity");
+                }
+                if (original.equals(after.encode()))
+                    return null;
+                if (!original.equals(before.encode()))
+                    throw new SQLException("Process checkpoint differs from original creation");
+                try (var update = c.prepareStatement(
+                        "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
+                    update.setString(1, after.encode().encode());
+                    update.setObject(2, lease);
+                    update.setObject(3, taskId);
+                    if (update.executeUpdate() != 1)
+                        throw new SQLException("Process checkpoint no longer owned");
+                }
+            }
+            return null;
+        });
+    }
+
     /**
      * Records a verified physical release without releasing another task's resources. / 记录已核实的物理释放，不释放其他任务资源。
      * @param taskId owning task / 所属任务

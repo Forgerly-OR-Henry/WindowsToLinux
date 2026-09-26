@@ -366,7 +366,7 @@ Mod、安装版本和实际 Schema 分别登记。多个安装版本可引用同
 
 #### 设置中的数据库管理与日志清理
 
-本节为 **1.1 日志规格，核心存储、公开接口适配和默认数据库管理页已实现**。当前支持已登记目标的 H2 写入、100/10 条保留、应急文件与原 ID 回填、所属 Schema 校验、有界脱敏查看及失败反馈，已通过本机 H2 和实际窗口验证。旧 Logback/失败报告、H2 打开前的启动诊断、任务及 Mod 操作结束摘要的原子归档、受管进程 stderr 尚待接入，不能认为全部旧日志已统一迁移。完整 ModContext 和官方业务 Mod 仍待装配。具体改造流程只在 [1.1 数据库实施](development/PHASE-1.1.md#database-implementation)维护。
+本节为 **1.1 日志规格，核心存储、公开接口适配和默认数据库管理页已实现**。当前支持已登记目标的 H2 写入、100/10 条保留、应急文件与原 ID 回填、所属 Schema 校验、有界脱敏查看及失败反馈，已通过本机 H2 和实际窗口验证。受管进程 stderr 已接入；旧 Logback/失败报告、H2 打开前的启动诊断、任务及 Mod 操作结束摘要的原子归档仍待迁移，不能认为全部旧日志已统一迁移。完整 ModContext 和官方业务 Mod 仍待装配。具体改造流程只在 [1.1 数据库实施](development/PHASE-1.1.md#database-implementation)维护。
 
 <a id="log-storage"></a>
 
@@ -1351,6 +1351,8 @@ public interface ModContext {
 
 ### 8.10 辅助进程消息协议
 
+当前 `ProcessProtocol`/`ProcessChannel`、`PlatformProcessService` 和默认 Runtime 工厂已实现下述通信与原任务归属基础，使用本机真实 Java 子进程验证。完整 ModContext、Mod 停止协调器及恢复界面仍待接入；不能把工厂验证视为全部插件生命周期验收。
+
 进程采用 UTF-8 JSON Lines，无 BOM，每帧最多 1 MiB（含 LF），每个方向由一个写入队列串行输出；业务对象必须是 JSON object。封套固定如下，字段全部必填，未知/重复字段拒绝：
 
 ```json
@@ -1370,6 +1372,14 @@ public interface ModContext {
 REQUEST/RESULT/ERROR 一对一关联，requestId 为 UUID；RESULT payload 固定 `{"outcome":"SUCCEEDED","value":{},"problem":null}`，value 为对象或 null，problem 为上述 Problem 的 JSON 表达或 null；错误和未知约束与 Java 结果一致。EVENT 使用所属请求 ID；未知 ID、重复冲突响应、损坏帧和 stdout 非协议文本均标协议错误，不猜测解析。Task/Process ID 必须与启动上下文一致。每进程最多 32 个未结束请求、待写队列最多 32 帧，超量返回 BUSY，不无限缓存。
 
 超时或取消发送一次 CANCEL，禁止重发原业务请求；尚不能证明结束则保持 UNKNOWN。STOP 表示停止接新请求并收尾，收到 STOPPED 仍要等进程实际退出及句柄关闭。停止等待每 30 秒刷新阻塞详情，用户可继续等待，平台不强杀。stdin 关闭、stdout EOF 或进程退出时，未有可信终态的请求一律未知；已收到明确结果仍保留其结果，额外退出/清理失败单列。stderr 按已有日志长度、脱敏和合并规则处理，不占用结构化 stdout；大量输出须持续消费并截断，避免管道阻塞。
+
+当前实现补充约定：
+
+- HELLO/READY、STOP/STOPPED 使用控制类型 `wtl.process`；READY/STOPPED 的 payload 为空对象。ERROR 使用 RESULT 相同的结果封套，outcome 为 FAILED 或 UNKNOWN。`type` 为不含控制字符的非空字符串，最多 256 字符；JSON 嵌套最多 64 层。
+- 原请求超时只结束调用方的未知观察，仍计入 32 个未核实请求，直到收到可信终态或进程退出；不会用超时腾出无限新请求。取消尚未排入满队列时只重试该 CANCEL 的入队，已入队就不重发。最近 32 个终态响应用于核验完全重复的响应，JSON 对象字段顺序不影响比较；更早的关联 ID 不猜测恢复。EVENT 校验归属，不把任意载荷解释为任务终态或直接显示。
+- 启动前在原任务登记 PROCESS/`process.v1` 的 STARTING 事实；取得实际 PID 和系统启动时间后，只能从该原记录单向提交 STARTED，成功后才发 HELLO。字面参数不经过命令 shell；子进程只获得 `ProcessSpec.environment` 明确提供的环境，不默认继承宿主环境。作者不得在参数中放凭据。
+- 当前启动只通过保留的原 Java Process 对象关闭；重启核对只在原 PID 已消失，或同 PID 的系统启动时间不同、证明是另一进程时释放旧申请，不向另一进程发送信号。原进程仍存活、启动时间不可读取或崩溃留下不完整 STARTING 时保留 UNKNOWN，不能用平台已重启推断子进程也退出。核对不重新启动进程或重发业务请求。
+- stderr 独立持续消费，约每秒或 EOF 聚合一次，保留最多 8 KiB 片段后交原所有者 LogService 脱敏，并保留截断标记；不把大量输出逐块写成无数日志。非零退出单独记录，已确认业务结果保持原值。进程、实际管道工作线程和持久申请均释放后，任务才可结束。
 
 ### 8.11 最小完整示例
 

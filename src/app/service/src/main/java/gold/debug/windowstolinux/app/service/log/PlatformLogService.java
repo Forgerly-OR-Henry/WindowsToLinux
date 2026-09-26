@@ -420,6 +420,15 @@ public final class PlatformLogService implements AutoCloseable {
          * @return actual storage result without altering the business task / 不改变业务任务的实际存储结果 */
         @Override
         public LogWriteResult write(LogTarget handle, LogEvent event) {
+            return writeExcerpt(handle, event, false);
+        }
+
+        /** Preserves upstream truncation when a host stream has already discarded excess bytes. / 宿主流已丢弃超量字节时保留上游截断标记。
+         * @param handle original target / 原目标
+         * @param event bounded diagnostic intent / 有界诊断意图
+         * @param truncated whether the host already truncated the source / 宿主是否已截断来源
+         * @return actual persistence observation / 实际持久观察 */
+        public LogWriteResult writeExcerpt(LogTarget handle, LogEvent event, boolean truncated) {
             UUID rejectedId = UUID.randomUUID();
             try {
                 enter();
@@ -439,6 +448,8 @@ public final class PlatformLogService implements AutoCloseable {
                                 && task.ownerId().equals(owner) && task.ownerVersion().equals(version)))
                     throw new IllegalArgumentException("Foreign task attribution");
                 var record = LogRecordCodec.create(target, version, event);
+                if (truncated)
+                    record = record.withDetails(record.details(), true);
                 if (event.level() == LogLevel.DEBUG && !debug)
                     return new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(), Optional.empty());
                 return reported(PlatformLogService.this.write(target, record));

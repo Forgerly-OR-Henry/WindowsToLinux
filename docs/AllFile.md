@@ -1712,3 +1712,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/log/EmergencyLogs.java`：固定根下每类应急文件及原子替换，保留损坏和中断替换证据。
 - `app/service/log/PlatformLogService.java`：启用所属公开日志绑定、共享类别协调、回填及仅宿主日志管理。
 - `app/ui/setting/LogSettingsPane.java`：默认数据库管理页，异步查看、清理、实际计数和本次 DEBUG 开关。
+
+- `app/mod/process/ProcessProtocol.java`：严格 UTF-8 JSONL 封套、关联身份、容量和结果契约校验。
+- `app/mod/process/ProcessChannel.java`：实际子进程的有界双向管道、握手、请求、取消、停止及独立 stderr 消费。
+- `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间。
+- `app/service/task/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
