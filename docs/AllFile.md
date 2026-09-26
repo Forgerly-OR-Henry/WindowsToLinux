@@ -1721,3 +1721,5 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ai/recovery/RecoveryAction.java` 与 `RecoveryProtocol.java`：平台救援的有界建议、影响分类、固定提示及严格结果解析，旧网络客户端复用同一协议。
 - `app/linux/recovery/RecoveryModels.java`：救援控制器的临时观测/建议端口，结果不自动授权命令。
 - `app/service/recovery/PlatformRecoveryModels.java`：原任务的真实平台模型适配，沿用用途、凭据、预算及 HTTP 占用，未知结果不继续请求。
+- `app/linux/recovery/BrowserProcess.java` 与 `BrowserLaunchObserver.java`：原浏览器 PID/系统启动时间及实际创建前、终端可用前的宿主持久登记边界。
+- `app/service/recovery/TaskBrowserSession.java`：原中央任务的浏览器归属；复用 `ProcessRecovery` 的独立 `browser.v1` 协议及 `TaskLedger.checkpointBrowser`，真实清理完成后才释放 H2 占用。默认救援入口及跨启动完整恢复仍待接入。
