@@ -1695,3 +1695,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/TransferProgressListener.java`：由实际传输监控线程发布阶段与字节观测的宿主回调。
 - `app/linux/ssh/TransferPlan.java`：原传输的源/目标观测、选定端点和暂存名称，不含未核验续传偏移。
 - `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录发布，并拒绝未授权覆盖。
+
+- `app/service/linux/TransferSettings.java`：独立连接及有效字节停滞阈值，每个逻辑操作使用不可变设置。
+- `app/service/linux/TransferSettingsService.java`：当前用户门禁下后台读取并原子保存平台传输偏好，不保存任务授权或检查点。
+- `app/ui/setting/TransferSettingsPane.java`：常驻连接/传输阈值设置页，持久化确认后生效，失败恢复上次确认显示。

@@ -40,6 +40,9 @@ public final class PlatformFrame extends JFrame {
     /** Permanent model inventory and capability checks. / 常驻模型清单及能力检查。 */
     private gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane models;
 
+    /** Permanent connection and transfer threshold settings. / 常驻连接及传输阈值设置。 */
+    private gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane transfers;
+
     /** Prevents duplicate shutdown workers. / 防止重复启动关闭工作线程。 */
     private boolean closing;
 
@@ -84,6 +87,8 @@ public final class PlatformFrame extends JFrame {
                 servers.setLocked(locked);
             if (models != null)
                 models.setLocked(locked);
+            if (transfers != null)
+                transfers.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -121,6 +126,16 @@ public final class PlatformFrame extends JFrame {
         models = new gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane(this, service, components, messages);
         content.insertTab(messages.text("platform.models"), null, models, null, servers == null ? 0 : 1);
         models.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts independent platform connection and no-progress preferences. / 挂载独立平台连接及无进展偏好。
+     * @param service shared persisted threshold owner / 共用持久阈值所有者 */
+    public void installTransfers(gold.debug.windowstolinux.app.service.linux.TransferSettingsService service) {
+        if (!SwingUtilities.isEventDispatchThread() || transfers != null)
+            throw new IllegalStateException("Transfer settings must be installed once on the EDT");
+        transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, components, messages);
+        content.addTab(messages.text("transfer.settings.title"), transfers);
+        transfers.setLocked(!security.securityState().unlocked());
     }
 
     /**
@@ -178,6 +193,8 @@ public final class PlatformFrame extends JFrame {
             servers.close();
         if (models != null)
             models.close();
+        if (transfers != null)
+            transfers.close();
         lock.close();
         super.dispose();
     }

@@ -27,6 +27,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
     private final PlatformTaskRuntime tasks;
 
+    /** Shared permanent connection and transfer preferences. / 共用常驻连接及传输偏好。 */
+    private final gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers;
+
     /** Actual Maven artifact version, also used by host-owned task recovery. / 实际 Maven 产物版本，同时用于宿主任务恢复。 */
     private final String version;
 
@@ -74,6 +77,7 @@ public final class PlatformRuntime implements AutoCloseable {
             throws SQLException, java.io.IOException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
+        transfers = new gold.debug.windowstolinux.app.service.linux.TransferSettingsService(persistence, security);
         version = readVersion();
         tasks = new PlatformTaskRuntime(persistence.database(),
                 new PlatformTaskAdmission(persistence.database(), version), security);
@@ -151,6 +155,14 @@ public final class PlatformRuntime implements AutoCloseable {
         if (value.isBlank() || value.length() > 512 || value.contains("${"))
             throw new java.io.IOException("Application build identity is invalid");
         return value;
+    }
+
+    /** Returns the permanent transfer preference owner. / 返回常驻传输偏好所有者。
+     * @return shared settings service / 共用设置服务 */
+    public synchronized gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers() {
+        if (stopping || closed)
+            throw new IllegalStateException("Platform transfer settings are closing");
+        return transfers;
     }
 
     /**
@@ -286,7 +298,7 @@ public final class PlatformRuntime implements AutoCloseable {
             throw new IllegalStateException("Platform remote capabilities are unavailable");
         var interaction = new PlatformInteractionService(tasks, security, ownerId, version, prompts);
         var linux = new PlatformLinuxService(tasks, security, persistence.servers(), interaction, ownerId, version,
-                java.time.Duration.ofSeconds(30), java.time.Duration.ofMinutes(5));
+                transfers);
         var capabilities = new RemoteCapabilities(interaction, linux);
         remoteCapabilities.add(capabilities);
         return capabilities;
@@ -409,6 +421,7 @@ public final class PlatformRuntime implements AutoCloseable {
         sourceServices.clear();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
+        transfers.close();
         tasks.close();
         security.close();
         persistence.close();

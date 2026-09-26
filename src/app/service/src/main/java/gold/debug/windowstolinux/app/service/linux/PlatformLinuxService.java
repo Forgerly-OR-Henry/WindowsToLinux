@@ -36,11 +36,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     /** Exact owning loaded release. / 精确所属已加载版本。 */
     private final String version;
 
-    /** Total authentication budget. / 认证总时间预算。 */
-    private final Duration connectTimeout;
-
-    /** Maximum interval without effective file-byte progress. / 无有效文件字节进展的最长时段。 */
-    private final Duration transferTimeout;
+    /** Shared persisted thresholds read at each logical operation boundary. / 在每个逻辑操作边界读取的共用持久阈值。 */
+    private final TransferSettingsService settings;
 
     /** Includes failed connections whose physical cleanup has not completed. / 包含尚未完成物理清理的失败连接。 */
     private final Set<Session> retained = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -56,20 +53,18 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param interaction same activation's review authority / 同次启用的审核授权方
      * @param owner exact caller identity / 精确调用方身份
      * @param version exact caller release / 精确调用方版本
-     * @param connectTimeout positive authentication deadline / 正认证期限
-     * @param transferTimeout positive no-progress interval / 正无进展时长
+     * @param settings shared persisted threshold owner / 共用持久阈值所有者
      */
     public PlatformLinuxService(PlatformTaskRuntime tasks, DesktopSecurityService security,
             ServerProfileRepository servers, PlatformInteractionService interaction, String owner, String version,
-            Duration connectTimeout, Duration transferTimeout) {
+            TransferSettingsService settings) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.servers = Objects.requireNonNull(servers);
         this.interaction = Objects.requireNonNull(interaction);
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
-        this.connectTimeout = positive(connectTimeout);
-        this.transferTimeout = positive(transferTimeout);
+        this.settings = Objects.requireNonNull(settings);
     }
 
     /**
@@ -83,6 +78,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
         worker();
         tasks.requireServer(task, owner, version, Objects.requireNonNull(server).id());
+        var thresholds = thresholds(task);
         Session session;
         synchronized (this) {
             if (closed)
@@ -92,7 +88,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             retained.add(session);
         }
         try {
-            authenticate(session);
+            authenticate(session, thresholds.connectTimeout());
             session.opening.set(false);
             return session;
         } catch (Exception failure) {
@@ -112,8 +108,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
 
     /** Authenticates one physical connection using the original task and current saved trust. / 使用原任务及当前保存信任认证一个物理连接。
      * @param session retained logical session / 保留的逻辑会话
+     * @param connectTimeout captured connection threshold / 已捕获连接阈值
      * @throws Exception if credentials, trust, authentication or persistence fails / 凭据、信任、认证或持久化失败时 */
-    private void authenticate(Session session) throws Exception {
+    private void authenticate(Session session, Duration connectTimeout) throws Exception {
         var server = session.server;
         var task = session.task;
         char[] password = null;
@@ -510,6 +507,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
              * @throws ApiException if original ownership or explicit retry cannot continue / 原归属或明确重试无法继续时 */
             private OperationResult<TransferResult> run(TransferRequest request, String digest, boolean upload,
                     boolean discard) throws ApiException {
+                var thresholds = thresholds(task);
+                var transferTimeout = thresholds.idleTimeout();
                 var cancellation = tasks.operationCancellation(task);
                 String fingerprint = connection.fingerprint();
                 while (true) {
@@ -537,7 +536,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                                                     "Transfer was terminated before file effects").problem()));
                         tasks.requireServer(task, owner, version, server.id());
                         tasks.requireSoleSshConnection(task, owner, version, lease.id());
-                        authenticate(Session.this);
+                        authenticate(Session.this, thresholds.connectTimeout());
                         if (!fingerprint.equals(connection.fingerprint()))
                             throw error(ProblemCode.ACCESS_DENIED, "SFTP_RETRY_SERVER",
                                     "Retry server differs from the original transfer");
@@ -619,15 +618,19 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         OperationResult<T> run() throws ApiException;
     }
 
-    /**
-     * Requires an exactly representable positive transport budget. / 要求可精确表示的正传输预算。
-     * @param value configured duration / 配置时长
-     * @return validated duration / 已校验时长
-     */
-    private static Duration positive(Duration value) {
-        if (Objects.requireNonNull(value).toNanos() <= 0)
-            throw new IllegalArgumentException("Transport timeout must be positive");
-        return value;
+    /** Reads current thresholds using the original accepted task authorization. / 使用原已接纳任务授权读取当前阈值。
+     * @param task original executing task / 原执行任务
+     * @return immutable settings for this operation / 本操作不可变设置
+     * @throws ApiException if identity or settings are unavailable / 身份或设置不可用时 */
+    private TransferSettings thresholds(TaskContext task) throws ApiException {
+        try {
+            return tasks.authorized(task, owner, version, settings::read);
+        } catch (ApiException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw error(ProblemCode.UNAVAILABLE, "TRANSFER_SETTINGS_UNAVAILABLE",
+                    "Transfer settings could not be read");
+        }
     }
 
     /**

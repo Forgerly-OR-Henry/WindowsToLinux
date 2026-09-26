@@ -131,6 +131,8 @@ class PlatformEntryProcessTest {
                     frame.completeExceptionally(new AssertionError("AppMain did not show the platform"));
             });
             var opened = frame.get(10, TimeUnit.SECONDS);
+            SwingUtilities.invokeAndWait(() -> assertTrue(PlatformWindowTest.descendants(opened)
+                    .anyMatch(component -> "platform.transfers".equals(component.getName()))));
             SwingUtilities
                     .invokeAndWait(() -> opened.dispatchEvent(new WindowEvent(opened, WindowEvent.WINDOW_CLOSING)));
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
