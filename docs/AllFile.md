@@ -1666,7 +1666,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ai/protocol/ModelCapabilityProbe.java`：与业务无关的随机文字/图片挑战及精确答案核验。
 - `app/service/ai/PlatformModelService.java`：平台模型验证后保存、明确用途配置及原任务中断核对。
 - `app/service/contract/AiInventoryAccess.java`：供平台清单控件使用的非秘密配置和用途窄接口。
-- `app/service/task/HostTaskRecovery.java`：对已知宿主协议核对前次启动消失的进程内资源，未知种类继续阻塞。
+- `app/service/task/HostTaskRecovery.java`：核对已知宿主协议的前次启动资源；浏览器只承认原所有者持久化的关闭检查点，任一资源未确认则整次不释放。
 - `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
 
@@ -1704,7 +1704,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `app/mod/process/ProcessProtocol.java`：严格 UTF-8 JSONL 封套、关联身份、容量和结果契约校验。
 - `app/mod/process/ProcessChannel.java`：实际子进程的有界双向管道、握手、请求、取消、停止及独立 stderr 消费。
-- `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间。
+- `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间，以及保留原事实的 `browser.closed.v1` 明确关闭协议。
 - `app/service/task/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
 
 - `app/mod/service/ServiceSnapshot.java`：跨 Mod 同步调用的有界值复制，拒绝活动句柄、闭包及异步对象。
@@ -1723,6 +1723,6 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/recovery/PlatformRecoveryModels.java`：原任务的真实平台模型适配，沿用用途、凭据、预算及 HTTP 占用，未知结果不继续请求。
 - `app/linux/recovery/BrowserProcess.java` 与 `BrowserLaunchObserver.java`：原浏览器 PID/系统启动时间及实际创建前、终端可用前的宿主持久登记边界。
 - `app/linux/recovery/PlaywrightDriver.java`：固定依赖版本的原驱动对象适配，分别核验连接关闭和原 `Process` 实际退出，失败保留原对象；不按进程名称猜测归属。
-- `app/service/recovery/TaskBrowserSession.java`：原中央任务的浏览器归属；复用 `ProcessRecovery` 的独立 `browser.v1` 协议及 `TaskLedger.checkpointBrowser`，真实清理完成后才释放 H2 占用。默认救援入口现经 PlatformRecoveryService 接入；跨启动完整恢复仍待完成。
+- `app/service/recovery/TaskBrowserSession.java`：原中央任务的浏览器归属；创建前登记 `browser.v1`，真实清理完成后经 `TaskLedger.confirmBrowserClosed` 提交关闭检查点，再释放 H2 占用。默认救援由 PlatformRecoveryService 接入；跨启动只能核对已确认关闭的记录，不推定未知资源已退出。
 
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。

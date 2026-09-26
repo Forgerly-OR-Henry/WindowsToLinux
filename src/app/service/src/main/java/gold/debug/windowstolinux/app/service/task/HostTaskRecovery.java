@@ -58,6 +58,17 @@ public final class HostTaskRecovery {
                                 throw new SQLException("SSH physical boot is invalid", invalid);
                             }
                         }
+                        if (kind.equals("PROCESS") && "browser-v1:".equals(prefix)) {
+                            try {
+                                var closed = gold.debug.windowstolinux.app.db.task.ProcessRecovery
+                                        .decodeBrowserClosed(gold.debug.windowstolinux.app.db.task.ResourceRecovery
+                                                .decode(rows.getString(5)));
+                                explicit = !database.bootId().equals(closed.boot())
+                                        && id.equals(prefix + closed.process());
+                            } catch (IllegalArgumentException | NullPointerException invalid) {
+                                throw new SQLException("Browser physical cleanup is unconfirmed", invalid);
+                            }
+                        }
                         if (!PlatformTaskAdmission.PLATFORM_OWNER.equals(rows.getString(4)) || !explicit
                                 || prefix == null || !id.startsWith(prefix))
                             throw new SQLException("Host recovery contains an unknown resource");
