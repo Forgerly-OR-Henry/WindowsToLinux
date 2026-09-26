@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.service.linux.PlatformLinuxService;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
@@ -26,6 +27,9 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
     private final PlatformTaskRuntime tasks;
+
+    /** Independent platform permission preference and current workflow scopes. / 独立平台权限偏好及当前流程作用域。 */
+    private final PlatformAuthorizationService authorization;
 
     /** Shared permanent connection and transfer preferences. / 共用常驻连接及传输偏好。 */
     private final gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers;
@@ -81,6 +85,7 @@ public final class PlatformRuntime implements AutoCloseable {
         version = readVersion();
         tasks = new PlatformTaskRuntime(persistence.database(),
                 new PlatformTaskAdmission(persistence.database(), version), security);
+        authorization = new PlatformAuthorizationService(persistence, security, tasks);
     }
 
     /**
@@ -130,6 +135,14 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return current boot task owner / 当前启动的任务所有者 */
     public PlatformTaskRuntime tasks() {
         return tasks;
+    }
+
+    /** Returns platform permission settings for trusted host controls. / 返回供可信宿主控件使用的平台权限设置。
+     * @return current workflow permission owner / 当前流程权限所有者 */
+    public synchronized PlatformAuthorizationService authorization() {
+        if (stopping || closed)
+            throw new IllegalStateException("Platform authorization is closing");
+        return authorization;
     }
 
     /** Returns the actual application artifact identity. / 返回实际应用产物身份。
@@ -296,10 +309,10 @@ public final class PlatformRuntime implements AutoCloseable {
     public synchronized RemoteCapabilities remoteCapabilities(String ownerId, String version) {
         if (closed || stopping || prompts == null)
             throw new IllegalStateException("Platform remote capabilities are unavailable");
-        var interaction = new PlatformInteractionService(tasks, security, ownerId, version, prompts);
+        var interaction = new PlatformInteractionService(tasks, security, authorization, ownerId, version, prompts);
         var linux = new PlatformLinuxService(tasks, security, persistence.servers(), interaction, ownerId, version,
                 transfers);
-        var capabilities = new RemoteCapabilities(interaction, linux);
+        var capabilities = new RemoteCapabilities(interaction, linux, authorization.launcher(ownerId, version));
         remoteCapabilities.add(capabilities);
         return capabilities;
     }
@@ -312,14 +325,26 @@ public final class PlatformRuntime implements AutoCloseable {
         /** Same activation's real transport owner. / 同次启用的真实传输所有者。 */
         private final PlatformLinuxService linux;
 
+        /** Same activation's host-owned workflow start authority. / 同次启用的宿主所属流程启动授权。 */
+        private final PlatformAuthorizationService.Launcher launcher;
+
         /**
          * Takes ownership of the actual platform adapters. / 接管实际平台适配器。
          * @param interaction review adapter / 审核适配器
          * @param linux transport adapter / 传输适配器
+         * @param launcher host start authority / 宿主启动授权
          */
-        private RemoteCapabilities(PlatformInteractionService interaction, PlatformLinuxService linux) {
+        private RemoteCapabilities(PlatformInteractionService interaction, PlatformLinuxService linux,
+                PlatformAuthorizationService.Launcher launcher) {
             this.interaction = interaction;
             this.linux = linux;
+            this.launcher = launcher;
+        }
+
+        /** Returns host start authority without exposing it through ordinary TaskService. / 返回宿主启动授权，不通过普通 TaskService 暴露。
+         * @return original activation's launcher / 原启用的启动器 */
+        public PlatformAuthorizationService.Launcher launcher() {
+            return launcher;
         }
 
         /** Returns the public author review contract. / 返回公开作者审核契约。
@@ -351,6 +376,7 @@ public final class PlatformRuntime implements AutoCloseable {
          */
         @Override
         public void close() throws gold.debug.windowstolinux.appapi.task.ApiException {
+            launcher.close();
             linux.close();
             interaction.close();
             synchronized (PlatformRuntime.this) {
@@ -422,6 +448,7 @@ public final class PlatformRuntime implements AutoCloseable {
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         transfers.close();
+        authorization.close();
         tasks.close();
         security.close();
         persistence.close();

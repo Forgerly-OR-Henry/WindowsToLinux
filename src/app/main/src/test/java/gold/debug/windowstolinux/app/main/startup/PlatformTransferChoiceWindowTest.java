@@ -40,8 +40,8 @@ class PlatformTransferChoiceWindowTest {
                 window.setVisible(true);
                 return window;
             });
-            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(), OWNER, VERSION,
-                    new TaskInteractionPresenter(frame, messages))) {
+            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(),
+                    runtime.authorization(), OWNER, VERSION, new TaskInteractionPresenter(frame, messages))) {
                 var conflict = new TransferConflict(
                         new TransferRequest(root.resolve("已存在 文件.txt"), "/application/data.txt", 100), false, 80, 50);
                 String[] labels = {"覆盖", "保留两份", "终止"};

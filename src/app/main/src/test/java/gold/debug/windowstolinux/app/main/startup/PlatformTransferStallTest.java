@@ -82,8 +82,8 @@ class PlatformTransferStallTest {
                         "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL")));
                 return TransferStallChoice.RETRY;
             };
-            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(), OWNER, VERSION,
-                    reviews);
+            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(),
+                    runtime.authorization(), OWNER, VERSION, reviews);
                     var linux = new PlatformLinuxService(runtime.tasks(), runtime.security(),
                             runtime.persistence().servers(), interaction, OWNER, VERSION, runtime.transfers())) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
@@ -135,8 +135,8 @@ class PlatformTransferStallTest {
                 prompts.incrementAndGet();
                 return TransferStallChoice.TERMINATE;
             };
-            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(), OWNER, VERSION,
-                    reviews);
+            try (var interaction = new PlatformInteractionService(runtime.tasks(), runtime.security(),
+                    runtime.authorization(), OWNER, VERSION, reviews);
                     var linux = new PlatformLinuxService(runtime.tasks(), runtime.security(),
                             runtime.persistence().servers(), interaction, OWNER, VERSION, runtime.transfers())) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);

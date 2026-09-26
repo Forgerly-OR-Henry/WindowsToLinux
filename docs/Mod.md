@@ -909,8 +909,13 @@ public interface TaskRecovery {
 public interface RecoveryRegistration extends AutoCloseable {
     @Override void close() throws ApiException;
 }
+public enum AuthorizationMode { ONCE, GENERAL, FULL }
+public record ActionTarget(gold.debug.windowstolinux.appapi.server.ServerRef server,
+    String kind, String id) {}
+public record ActionSemantics(String operation, java.util.Set<ActionTarget> targets) {}
 public record ActionIntent(String type, List<String> serverIds, String target,
-    String revision, String exactAction, String effectSummary) {}
+    String revision, String exactAction, String effectSummary,
+    Optional<ActionSemantics> semantics) {}
 public record ApprovalGrant(UUID id) {}
 public interface InteractionService {
     OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) throws ApiException;
@@ -969,7 +974,11 @@ public interface ProcessService {
 
 AI 审批继续决定 AI 提议的动作是否获准，平台授权决定获准动作是否可在平台执行。平台完全授权不能绕过 AI 审批；静态部署使用平台授权，不引入 AI 审批。两层都需要人工确认时可合并为一次交互，但必须清楚展示 AI 动作审核和平台操作授权两层含义。
 
-当前公开类型与逐次审核适配仍需按此规则更新，旧回归通过不代表新增模式已实现；完成证据统一记录在 1.1 开发文档。
+当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
+
+作者在 `RemoteActions` 生成的精确意图上调用 `withSemantics`，提供从已校验业务操作与目标派生的含义。业务 Mod 负责证明其请求与该含义相符，不能用自由文本标签替代业务校验；平台不解析任意 Bash 来证明业务语义，也不把可信本地 Mod 当作恶意代码沙箱。宿主只保留已审核的语义元数据，仍从实际命令/传输请求重建并逐字段核对精确副作用，然后单次消费原对象令牌。未分类操作逐次人工确认；首次主机信任、同名冲突和停滞选择独立处理。
+
+默认桌面的“平台授权”页沿用手掌/盾牌/警示盾牌的三项选择器，默认通用授权，后台保存 `platform_authorization_mode`，失败恢复上次确认显示，可重新读取。缺失键才默认，损坏已存值报错。模式仅影响随后启动的流程，独立于 `deploy_approval` 等 AI 偏好；当前具体授权不写入偏好或任务恢复数据。平台基础链路已本机验证；完整 ModContext 与官方部署 Mod 的启动控件、业务语义派生及独立 AI 审批组合仍随 S3/S5 迁移，不能将此基础验证视为完整部署验收。
 
 平台在接纳任务时捕获独立凭据作用域，排队期间和执行回调共用原授权；锁定阻止新任务及人工核对准入，已接纳工作仍可使用原作用域。`FINISHING`、`UNKNOWN` 和重启遗留的未结束任务均阻止主密码或凭据加密设置变更。业务结果已知、显式资源清理完成后，平台先释放任务凭据，再提交终态；若后续终态持久化失败，仍保留原任务阻断，解锁后的显式核对重新取得当前作用域。重启不恢复旧密钥句柄，也不重放原业务回调。
 
@@ -1199,7 +1208,7 @@ SSH 客户端使用 `ssh.v1` 记录其实际启动代次，与任务最初启动
 
 每次新连接及新传输开始时读取当前已保存设置，包括已创建的能力对象；正在执行的传输及同一次停滞重试使用启动时的不可变设置，不随页面中途改值而变化。连接检查使用同一连接设置，命令仍使用自己的 `CommandRequest.timeout`。原任务在锁定后继续时，读取设置沿用原任务授权，不能扩展为新的人工作业授权。
 
-**尚未完成：** 三档平台授权及其偏好、业务 Mod 对上述传输和恢复入口的接线仍待实现。
+**尚未完成：** 平台三档授权基础与偏好已实现，业务 Mod 对授权启动、上述传输和恢复入口的完整接线仍待 S5/S6 迁移。
 
 ### 8.7 ai：通用模型调用
 

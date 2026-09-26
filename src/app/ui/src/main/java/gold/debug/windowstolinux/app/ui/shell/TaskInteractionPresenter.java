@@ -159,6 +159,12 @@ public final class TaskInteractionPresenter
                     + ": " + intent.type() + "\n" + messages.text("task.review.servers") + ": "
                     + String.join(", ", intent.serverIds()) + "\n" + messages.text("task.review.target") + ": "
                     + intent.target() + "\n" + messages.text("task.review.revision") + ": " + intent.revision() + "\n\n"
+                    + intent.semantics().map(meaning -> messages.text("task.review.semantics") + ": "
+                            + meaning.operation() + "\n"
+                            + meaning.targets().stream()
+                                    .map(target -> target.server().id() + " / " + target.kind() + " / " + target.id())
+                                    .sorted().collect(java.util.stream.Collectors.joining("\n"))
+                            + "\n\n").orElse("")
                     + intent.effectSummary() + "\n\n" + intent.exactAction());
             text.setName("task.review.exactAction");
             text.setEditable(false);

@@ -323,7 +323,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         public OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant) throws ApiException {
             return operate(() -> {
                 var reviewed = interaction.reviewed(grant, task);
-                interaction.consume(grant, RemoteActions.command(server, reviewed.revision(), request), task);
+                interaction.consumeRemote(grant, RemoteActions.command(server, reviewed.revision(), request), task);
                 return connection.execute(request, tasks.operationCancellation(task));
             });
         }
@@ -395,7 +395,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     throw error(ProblemCode.ACCESS_DENIED, "SFTP_RECOVERY_SERVER",
                             "The authenticated server differs from the original transfer");
                 var reviewed = interaction.reviewed(grant, task);
-                interaction.consume(grant,
+                interaction.consumeRemote(grant,
                         RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
                 return new TransferRun(record.plan(), plan -> tasks.retain(task, record.resource(), record.metadata()))
                         .run(record.plan().request(), record.plan().source().sha256(), record.plan().upload(), !resume);
@@ -420,8 +420,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     throw error(ProblemCode.ACCESS_DENIED, "SFTP_APPROVAL",
                             "Transfer approval has no exact source digest");
                 String sha256 = digest.group(1);
-                interaction.consume(grant, RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload),
-                        task);
+                interaction.consumeRemote(grant,
+                        RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload), task);
                 return new TransferRun(null, plan -> {
                     tasks.requireServer(task, owner, version, server.id());
                     var facts = new TreeMap<>(plan.recoveryFields());

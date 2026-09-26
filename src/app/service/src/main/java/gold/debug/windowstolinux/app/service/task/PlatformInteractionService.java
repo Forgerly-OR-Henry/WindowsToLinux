@@ -26,6 +26,9 @@ public final class PlatformInteractionService implements InteractionService, Aut
     /** Current-user privacy gate shared with the platform window. / 与平台窗口共用的当前用户隐私门禁。 */
     private final DesktopSecurityService security;
 
+    /** Current workflow policy independent of AI review. / 独立于 AI 审批的当前流程策略。 */
+    private final PlatformAuthorizationService authorization;
+
     /** Object-identity grants, never authority derived from a copied UUID. / 对象身份授权，不从复制的 UUID 推导权限。 */
     private final Map<ApprovalGrant, Reviewed> grants = new IdentityHashMap<>();
 
@@ -39,16 +42,18 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * Binds one Mod's review capability to the platform privacy boundary. / 将一个 Mod 的审核能力绑定到平台隐私边界。
      * @param tasks current task authority / 当前任务授权方
      * @param security current-user interaction gate / 当前用户交互门禁
+     * @param authorization host workflow permission owner / 宿主流程权限所有者
      * @param owner exact Mod identity / 精确 Mod 身份
      * @param version exact release / 精确发布版本
      * @param prompts host-owned presenter / 宿主持有的呈现器
      */
-    public PlatformInteractionService(PlatformTaskRuntime tasks, DesktopSecurityService security, String owner,
-            String version, Prompts prompts) {
+    public PlatformInteractionService(PlatformTaskRuntime tasks, DesktopSecurityService security,
+            PlatformAuthorizationService authorization, String owner, String version, Prompts prompts) {
         this.tasks = Objects.requireNonNull(tasks);
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
         this.security = Objects.requireNonNull(security);
+        this.authorization = Objects.requireNonNull(authorization);
         this.prompts = Objects.requireNonNull(prompts);
     }
 
@@ -66,27 +71,28 @@ public final class PlatformInteractionService implements InteractionService, Aut
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
                 "interaction-" + UUID.randomUUID(), owner, false));
         try {
-            final boolean approved;
+            final PlatformAuthorizationService.Permit permit;
             try {
                 var cancellation = cancellation(task);
-                approved = security.human(
+                permit = authorization.review(owner, version, intent, task, () -> security.human(
                         () -> prompts.approve(intent, tasks.requireExecuting(task, owner, version), cancellation),
-                        cancellation);
+                        cancellation));
             } catch (java.util.concurrent.CancellationException cancelled) {
                 return cancelled();
             } catch (RuntimeException failure) {
                 throw error(ProblemCode.UNAVAILABLE, "APPROVAL_UNAVAILABLE", "Human review did not complete");
             }
             validate(intent, task);
-            if (!approved)
+            if (!permit.approved())
                 return cancelled();
+            authorization.validate(permit, task);
             synchronized (this) {
                 requireOpen();
                 var activeTasks = tasks.snapshots().stream().filter(snapshot -> snapshot.state() != TaskState.ENDED)
                         .map(TaskSnapshot::id).collect(java.util.stream.Collectors.toSet());
                 grants.entrySet().removeIf(entry -> !activeTasks.contains(entry.getValue().task().id()));
                 var grant = new ApprovalGrant(UUID.randomUUID());
-                grants.put(grant, new Reviewed(task, intent));
+                grants.put(grant, new Reviewed(task, intent, permit));
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
         } finally {
@@ -254,7 +260,20 @@ public final class PlatformInteractionService implements InteractionService, Aut
         if (reviewed == null || reviewed.task() != task)
             throw error(ProblemCode.ACCESS_DENIED, "APPROVAL_IDENTITY",
                     "Approval is foreign, expired or already consumed");
+        authorization.validate(reviewed.permit(), task);
         return reviewed.intent();
+    }
+
+    /** Checks reconstructed transport facts with the business meaning already reviewed. / 使用已审核业务含义核对重建的传输事实。
+     * @param grant original exact grant / 原精确授权
+     * @param actual complete operation reconstructed by the transport / 传输层重建的完整操作
+     * @param task original task / 原任务
+     * @throws ApiException if any actual effect field differs / 任一实际副作用字段不符时 */
+    public synchronized void consumeRemote(ApprovalGrant grant, ActionIntent actual, TaskContext task)
+            throws ApiException {
+        var semantics = reviewed(grant, task).semantics();
+        consume(grant, new ActionIntent(actual.type(), actual.serverIds(), actual.target(), actual.revision(),
+                actual.exactAction(), actual.effectSummary(), semantics), task);
     }
 
     /**
@@ -344,8 +363,9 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * Retains the original task object and unchanged review text. / 保留原始任务对象及未改变的审核文本。
      * @param task original accepted context / 原始已接纳上下文
      * @param intent complete reviewed intent / 完整已审核意图
+     * @param permit original live-scope policy decision / 原活动作用域策略决定
      */
-    private record Reviewed(TaskContext task, ActionIntent intent) {
+    private record Reviewed(TaskContext task, ActionIntent intent, PlatformAuthorizationService.Permit permit) {
     }
 
     /** Host-owned human presentation; implementations marshal their controls to the EDT. / 宿主持有的人工呈现；实现将控件操作调度至 EDT。 */
