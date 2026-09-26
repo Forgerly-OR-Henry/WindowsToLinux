@@ -1646,12 +1646,13 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/development/MavenDevelopmentInputs.java`：在 Maven 原构建会话中撤销旧描述，捕获真实解析的依赖、从模块和构建配置输入。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
 - `app/mod/installation/ModPackageTool.java`：独立 Java 构建命令，当前执行 CLASS describe，复用正式开发描述校验并输出有界输入的结构化结果。
-- `app/mod/installation/ModPackageReader.java`：核验原包布局、实际外层字节、两类摘要及嵌套 JAR 类归属；审阅后重验再展开到新暂存目录，不登记安装。
+- `app/mod/installation/ModPackageReader.java`：核验原包布局、实际外层字节、两类摘要及嵌套 JAR 类归属；审阅后重验再展开到新暂存目录，并可在原包不存在时按保留证据核验完整展开树；本读取器不登记安装。
 - `app/mod/installation/ModZip.java`：在分配条目前检查 ZIP/ZIP64 中央目录，核对原路径、本地头与有界嵌套视图，拒绝链接及冲突。
 - `app/mod/installation/ModEntryShape.java`：静态读取入口类结构、公开具体形状及无参构造器，不链接或初始化作者类型。
 - `app/mod/resources/META-INF/maven/plugin.xml`：登记 development-inputs 构建目标及原 Maven 会话注入，不注册业务 Mod。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
+- `app/service/mod/PlatformModInstallation.java`：绑定原包审阅及留存选择；按原 INSTALL 阶段暂存、不覆盖发布、登记、清理和归档，以 Windows 原身份及逐文件摘要恢复，不自动启用或接管替代目录。
 - `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档；保存用户页面固定偏好。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离；原包及 CLASS/JAR 共用 JAR 隐式 Class-Path 拒绝规则。
@@ -1705,7 +1706,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SftpProgress.java`：仅以真实文件字节刷新计时，排除人工等待，区分传输与校验阶段。
 - `app/linux/ssh/TransferProgressListener.java`：由实际传输监控线程发布阶段与字节观测的宿主回调。
 - `app/linux/ssh/TransferPlan.java`：原传输的源/目标观测、选定端点和暂存名称，不含未核验续传偏移。
-- `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录发布，并拒绝未授权覆盖。
+- `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录文件发布；完整目录另以同卷不复制、不覆盖的原生重命名发布。
 
 - `app/service/linux/TransferSettings.java`：独立连接及有效字节停滞阈值，每个逻辑操作使用不可变设置。
 - `app/service/linux/TransferSettingsService.java`：当前用户门禁下后台读取并原子保存平台传输偏好，不保存任务授权或检查点。

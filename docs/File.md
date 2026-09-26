@@ -1426,7 +1426,7 @@ API 包保持无环：task 只依赖 JDK；server、ui、db、ai、source 依赖
 
 作者工具复用 `app/mod/installation` 的包读取/校验能力，以命令行模式运行，不启动 APP。构建配置和 SDK 父 POM 归 `.mvn/mod/` 维护，不新增业务叶子模块；正式源码任务才创建这些文件，AllFile 不提前登记工具类或示例。完整结构门禁映射见 [工程门禁](development/PHASE-1.1.md#129-工程门禁映射)。
 
-当前 `app/mod/installation` 已实现原包读取、嵌套 JAR 索引与新目录暂存，直接复用工程集中管理的 Commons Compress 1.26.1；包内 ZIP 视图借用原文件句柄，不生成临时 JAR 副本。读取结果不代表已安装或可启用；正式发布、操作登记和原包 UI 仍待接入，完整行为见 [Mod 包校验](Mod.md#package-installation)。
+当前 `app/mod/installation` 已实现原包读取、嵌套 JAR 索引与新目录暂存，直接复用工程集中管理的 Commons Compress 1.26.1；包内 ZIP 视图借用原文件句柄，不生成临时 JAR 副本。读取结果不代表已安装或可启用。`app/service/mod/PlatformModInstallation` 已串联原 INSTALL 记录、原生目录发布、版本登记、留存设置和明确中断核对，CLASS 装配不使用该安装来源；原包 UI、完整代码准入及部分暂存的明确撤销清理仍待接入，完整行为见 [Mod 包校验](Mod.md#package-installation)。
 
 <a id="mod-source-layout"></a>
 

@@ -6,10 +6,31 @@ import java.nio.file.attribute.BasicFileAttributes;
 
 import com.sun.jna.platform.win32.*;
 
-/** Publishes a verified sibling file without deleting the previous target first. / 发布已验证的同目录文件，不先删除原目标。 */
+/** Publishes verified files or whole directories with explicit native rename rules. / 按明确原生重命名规则发布已验证文件或整个目录。 */
 public final class WindowsFilePublication {
     /** Prevents utility construction. / 禁止构造工具实例。 */
     private WindowsFilePublication() {
+    }
+
+    /** Publishes a complete directory with one same-volume native rename, never replacing a target. / 以一次同卷原生重命名发布完整目录，绝不替换目标。
+     * @param staged verified ordinary staging directory / 已验证普通暂存目录
+     * @param target absent final directory under an existing parent / 现有父目录下不存在的最终目录
+     * @throws IOException if boundaries or the no-copy rename fail / 边界或不复制重命名失败时 */
+    public static void publishDirectory(Path staged, Path target) throws IOException {
+        if (!staged.isAbsolute() || !target.isAbsolute() || !staged.equals(staged.normalize())
+                || !target.equals(target.normalize()) || staged.equals(target) || target.startsWith(staged))
+            throw new IOException("Directory publication requires explicit distinct canonical paths");
+        for (Path path : java.util.List.of(staged, target.getParent())) {
+            for (Path parent = path; parent != null; parent = parent.getParent()) {
+                var attrs = Files.readAttributes(parent, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (!attrs.isDirectory() || attrs.isOther() || attrs.isSymbolicLink()
+                        || !parent.toRealPath().equals(parent))
+                    throw new IOException("Directory publication path is redirected");
+            }
+        }
+        if (!Kernel32.INSTANCE.MoveFileEx(staged.toString(), target.toString(),
+                new WinDef.DWORD(WinBase.MOVEFILE_WRITE_THROUGH)))
+            throw new IOException("Native directory publication failed");
     }
 
     /** Moves within one directory using the native no-copy rename operation. / 使用原生不复制的重命名操作在同一目录内移动。

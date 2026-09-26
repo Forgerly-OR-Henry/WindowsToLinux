@@ -176,6 +176,77 @@ public final class ModPackageReader {
         return current;
     }
 
+    /** Verifies the entire extracted tree against retained file evidence without needing the archive. / 无需原包，按保留文件依据核验整个展开目录树。
+     * This proves bytes, not ownership or permission to publish/delete the directory. / 此方法证明字节，不证明目录归属或发布、删除权限。
+     * @param expected original inspected file facts / 原检验文件事实
+     * @param directory explicit extracted root / 明示展开根目录
+     * @throws IOException if evidence, paths or bytes differ / 依据、路径或字节不一致时 */
+    public static void verifyDirectory(Inspection expected, Path directory) throws IOException {
+        if (!directory.isAbsolute() || !directory.equals(directory.normalize()))
+            throw new IOException("Explicit extracted directory required");
+        unredirected(directory);
+        var remaining = new HashMap<String, FileEntry>();
+        if (expected.files().isEmpty() || expected.files().size() > MAX_ENTRIES)
+            throw new IOException("Invalid retained file count");
+        long total = 0;
+        for (var entry : expected.files()) {
+            if (entry.path() == null || entry.size() < 0 || entry.size() > MAX_BYTES || entry.sha256() == null
+                    || !entry.sha256().matches("[0-9a-f]{64}")
+                    || (!ROOT_FILES.contains(entry.path()) && !entry.path().matches("(?:main|lib)/[^/\\\\:]+\\.jar"))
+                    || remaining.putIfAbsent(entry.path(), entry) != null)
+                throw new IOException("Invalid retained file evidence");
+            total += entry.size();
+            if (total > MAX_BYTES)
+                throw new IOException("Retained payload exceeds limit");
+        }
+        var sorted = new ArrayList<>(expected.files());
+        sorted.sort((a, b) -> comparePaths(a.path(), b.path()));
+        if (!content(sorted).equals(expected.contentSha256())
+                || !remaining.keySet().containsAll(Set.of("mod.json", "README.md", "LICENSE")))
+            throw new IOException("Retained content evidence is inconsistent");
+        Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+            /** Permits only ordinary archive containers. / 仅允许普通归档容器。
+             * @param path current directory / 当前目录
+             * @param attrs observed attributes / 已观察属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if redirected or unexpected / 重定向或意外目录时 */
+            @Override
+            public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {
+                unredirected(path);
+                String name = directory.relativize(path).toString();
+                if (!name.isEmpty() && !Set.of("main", "lib").contains(name))
+                    throw new IOException("Unexpected extracted directory");
+                return FileVisitResult.CONTINUE;
+            }
+
+            /** Hashes every original file and rejects additions or changes. / 摘要每个原文件并拒绝增加或变化。
+             * @param path current file / 当前文件
+             * @param before observed attributes / 已观察属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if changed, redirected or unexpected / 变化、重定向或意外文件时 */
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes before) throws IOException {
+                var entry = remaining.remove(directory.relativize(path).toString().replace('\\', '/'));
+                if (entry == null || !before.isRegularFile() || before.size() != entry.size())
+                    throw new IOException("Extracted files differ from retained evidence");
+                ordinary(path);
+                try (var file = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                    if (!hash(file).equals(entry.sha256()))
+                        throw new IOException("Extracted file digest changed");
+                }
+                var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
+                        || !before.lastModifiedTime().equals(after.lastModifiedTime()))
+                    throw new IOException("Extracted file changed during verification");
+                ordinary(path);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        if (!remaining.isEmpty() || !Files.readString(directory.resolve("mod.json"), StandardCharsets.UTF_8)
+                .equals(expected.manifest().json()))
+            throw new IOException("Extracted files or manifest do not match original evidence");
+    }
+
     /** Indexes nested class names without expanding resources or linking author types. / 不展开资源或链接作者类型地索引嵌套类名。
      * @param file original held handle / 原持有句柄
      * @param entries outer entries / 外层条目

@@ -182,6 +182,8 @@ public final class PlatformDatabase implements AutoCloseable {
                     s.executeUpdate("UPDATE mod_migration_step SET state='UNKNOWN' WHERE state='RUNNING'");
                     s.executeUpdate(
                             "UPDATE mod_operation SET state='UNKNOWN' WHERE operation_type='RECONCILE' AND state='RUNNING' AND outcome IS NULL");
+                    s.executeUpdate(
+                            "UPDATE mod_operation SET state='UNKNOWN' WHERE operation_type='INSTALL' AND state='RUNNING' AND outcome IS NULL");
                 }
                 anchor.commit();
             } catch (SQLException failure) {
