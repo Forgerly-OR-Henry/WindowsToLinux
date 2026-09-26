@@ -8,7 +8,7 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `api`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 连接认证。目标活动根为 `api`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `api`、`app`、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，service 已接公开任务与审批适配。目标活动根为 `api`、`app` 和官方业务 `mod`，Web 后置。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-26（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)

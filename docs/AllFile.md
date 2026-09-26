@@ -1551,6 +1551,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `api/linux/CommandResult.java`：不推断未观察退出状态的远端输出。
 - `api/linux/LinuxService.java`：绑定任务授权及主机信任校验的 SSH 能力。
 - `api/linux/RemoteFacts.java`：已观察的远端平台与认证主机指纹。
+- `api/linux/RemoteActions.java`：作者与宿主共用的精确命令、输入摘要及文件传输审核描述。
 - `api/linux/RemoteSession.java`：产生副作用时需要已审核授权的受管 SSH 会话。
 - `api/linux/TransferRequest.java`：具有明确远端路径及容量限制的文件传输。
 - `api/linux/TransferResult.java`：已观察的传输大小及内容摘要。
@@ -1647,6 +1648,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源收尾并保留未完成归属。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
+- `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
+- `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
+- `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
 - `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。
 - `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期。
 - `app/ui/shell/PlatformFrame.java`：承载安全控件及独立所属 Mod 视图的平台桌面。

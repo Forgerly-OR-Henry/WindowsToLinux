@@ -112,6 +112,8 @@ public final class DesktopMain {
                                 runtime.security().securityState().configured()),
                         reports);
                 window.onExit(runtime);
+                runtime.setInteractionPresenter(
+                        new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages));
                 return window;
             });
             runtime.started();
