@@ -1637,6 +1637,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
+- `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
 - `app/mod/manifest/ManifestReader.java`：严格读取有界 UTF-8 作者清单，不加载作者类。

@@ -16,6 +16,7 @@ import javax.tools.ToolProvider;
 import gold.debug.windowstolinux.app.main.mod.PlatformModContext;
 import gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor;
 import gold.debug.windowstolinux.app.mod.development.DevelopmentModDiscovery;
+import gold.debug.windowstolinux.app.mod.lifecycle.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
@@ -128,7 +129,10 @@ class PlatformModContextTest {
         var sources = new ArrayList<java.net.URL>();
         for (Path source : candidate.descriptor().sources())
             sources.add(source.toUri().toURL());
-        return new ModClassLoader(candidate.manifest(), sources, Map.of());
+        var plan = ModDependencyPlan.resolve(List.of(candidate.manifest()), SemanticVersion.parse("1.0.0-dev.1"),
+                Runtime.version().feature());
+        assertTrue(plan.failures().isEmpty());
+        return plan.createLoader(candidate.manifest().id(), sources, Map.of());
     }
 
     static void prepareActivation(PlatformRuntime runtime) throws Exception {
