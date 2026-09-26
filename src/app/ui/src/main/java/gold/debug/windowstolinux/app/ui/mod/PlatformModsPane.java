@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
+import gold.debug.windowstolinux.app.service.mod.PlatformModDeletion;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
@@ -81,7 +82,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private final JPanel versions = new JPanel();
 
     /** Explicit management actions. / 明确管理操作。 */
-    private final JButton refresh, save, cancel, reconcile, retry, logs;
+    private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, reconcileDeletion;
+
+    /** Actual installed-layout deletion, absent for CLASS. / 实际安装布局删除，CLASS 缺省。 */
+    private PlatformModDeletion deletion;
+
+    /** Refreshes the original-package observation after version cleanup. / 版本清理后刷新原包观察。 */
+    private Runnable refreshOriginals;
 
     /** Safe operation feedback outside the retained snapshot. / 保留快照之外的安全操作反馈。 */
     private final JLabel status = new JLabel();
@@ -100,6 +107,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Invalidates results and confirmations across lock changes. / 使跨锁定变化的结果及确认失效。 */
     private long epoch;
+
+    /** Owned confirmation closed when its private review becomes stale. / 私有审阅过期时关闭的从属确认。 */
+    private JDialog confirmation;
 
     /** Builds the permanent management page on the event thread. / 在事件线程构造常驻管理页面。
      * @param service actual intent owner / 实际意图所有者
@@ -190,7 +200,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         reconcile = button("reconcile", this::reconcile);
         retry = button("retry", this::retry);
         logs = button("logs", showLogs);
-        for (var button : List.of(refresh, save, cancel, reconcile, retry, logs))
+        deleteVersion = button("deleteVersion", this::deleteVersion);
+        deleteVersion.setToolTipText(messages.text("mods.deleteNotice"));
+        reconcileDeletion = button("reconcileDeletion", this::reconcileDeletion);
+        for (var button : List.of(refresh, save, cancel, reconcile, retry, deleteVersion, reconcileDeletion, logs))
             actions.add(button);
         var footer = new JPanel(new BorderLayout(8, 8));
         footer.add(actions);
@@ -201,6 +214,17 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         footer.add(progress, BorderLayout.NORTH);
         add(footer, BorderLayout.SOUTH);
         navigationSubscription = navigation.onChange(this::renderPages);
+        controls();
+    }
+
+    /** Adds installed-layout maintenance after actual installation services are composed. / 实际安装服务装配后加入安装布局维护。
+     * @param deletion original installed deletion owner / 原安装删除所有者
+     * @param refreshOriginals original observation refresh / 原包观察刷新 */
+    public void installDeletion(PlatformModDeletion deletion, Runnable refreshOriginals) {
+        if (!SwingUtilities.isEventDispatchThread() || this.deletion != null)
+            throw new IllegalStateException("Installed deletion must be composed once on the EDT");
+        this.deletion = Objects.requireNonNull(deletion);
+        this.refreshOriginals = Objects.requireNonNull(refreshOriginals);
         controls();
     }
 
@@ -223,6 +247,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     public void setLocked(boolean value) {
         locked = value;
         epoch++;
+        if (confirmation != null)
+            confirmation.dispose();
         rows.clear();
         status.setText("");
         render();
@@ -372,6 +398,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                         && value.data().stream().anyMatch(d -> d.retryable()
                                 && v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
         retry.setEnabled(active);
+        deleteVersion.setVisible(deletion != null);
+        deleteVersion.setEnabled(active && deletion != null && value != null && !value.choice().enabled()
+                && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty());
+        reconcileDeletion.setVisible(deletion != null && value != null
+                && value.operations().stream().anyMatch(o -> o.type().equals("DELETE_VERSION")));
+        reconcileDeletion.setEnabled(active && value != null && value.operations().stream()
+                .anyMatch(o -> o.type().equals("DELETE_VERSION") && o.state().equals("UNKNOWN")));
         for (var child : versions.getComponents())
             child.setEnabled(active);
         pageControls();
@@ -419,6 +452,56 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             return null;
         var chosen = (SourceChoice) select.getSelectedItem();
         return chosen == null ? Optional.empty() : Optional.of(chosen.data().identity());
+    }
+
+    /** Reviews actual installed bytes and data impact before explicit removal. / 明确移除前审阅实际安装字节及数据影响。 */
+    private void deleteVersion() {
+        String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
+        run(() -> deletion.review(owner, version), review -> {
+            var text = new StringBuilder(messages.text("mods.confirmDeleteVersion",
+                    Map.of("owner", review.owner(), "version", review.version(), "bytes", review.bytes())));
+            text.append('\n')
+                    .append(review.removedSchema()
+                            .map(s -> messages.text("mods.deleteSchema", Map.of("schema", s.schemaVersion())))
+                            .orElseGet(() -> messages.text("mods.keepSchema",
+                                    Map.of("versions", String.join(", ", review.retainedSchemaVersions())))));
+            for (var path : review.programs())
+                text.append('\n').append(path);
+            text.append("\n\n").append(messages.text("mods.deleteOriginalCandidates"));
+            for (var path : review.originals())
+                text.append('\n').append(path);
+            var area = new JTextArea(text.toString(), 14, 66);
+            area.setName("mods.confirmation");
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            var originals = new JCheckBox(messages.text("mods.deleteOriginals"), false);
+            originals.setName("mods.deleteOriginals");
+            originals.setEnabled(!review.originals().isEmpty());
+            var panel = new JPanel(new BorderLayout(8, 8));
+            panel.add(new JScrollPane(area));
+            panel.add(originals, BorderLayout.SOUTH);
+            if (confirm(panel)) {
+                boolean selected = originals.isSelected();
+                run(() -> deletion.delete(review, selected), result -> deleted(result.outcome()), true);
+            }
+        });
+    }
+
+    /** Continues an original accepted deletion without choosing a fresh file scope. / 继续原已接纳删除，不选择新的文件范围。 */
+    private void reconcileDeletion() {
+        var operation = inventory.getSelectedValue().operations().stream()
+                .filter(o -> o.type().equals("DELETE_VERSION") && o.state().equals("UNKNOWN")).findFirst()
+                .orElseThrow();
+        if (confirm(messages.text("mods.confirmDeletionReconcile")))
+            run(() -> deletion.reconcile(operation.id()), result -> deleted(result.outcome()), true);
+    }
+
+    /** Reports actual cleanup and refreshes both durable catalog and original observations. / 报告实际清理并刷新持久目录及原包观察。
+     * @param result observed deletion result / 观察删除结果 */
+    private void deleted(Outcome result) {
+        completed(result == Outcome.SUCCEEDED ? "mods.deleted" : "mods.deletePending");
+        refreshOriginals.run();
     }
 
     /** Reviews a draft without changing persistent choice before confirmation. / 在确认前不改变持久选择地审阅草稿。 */
@@ -522,15 +605,28 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param text concrete reviewed effects / 具体已审阅影响
      * @return whether user confirmed within the same privacy epoch / 用户是否在同一隐私代次确认 */
     private boolean confirm(String text) {
-        long original = epoch;
         var area = new JTextArea(text, 12, 62);
         area.setName("mods.confirmation");
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        return JOptionPane.showConfirmDialog(this, new JScrollPane(area), messages.text("mods.confirm"),
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION && !locked
-                && !closed && original == epoch;
+        return confirm(new JScrollPane(area));
+    }
+
+    /** Presents an owned review whose contents and authority end at the next lock transition. / 展示从属审阅，其内容及权限在下一锁定变化时结束。
+     * @param body concrete review controls / 具体审阅控件
+     * @return explicit confirmation within the original privacy epoch / 原隐私代次内的明确确认 */
+    private boolean confirm(Component body) {
+        long original = epoch;
+        var option = new JOptionPane(body, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+        confirmation = option.createDialog(this, messages.text("mods.confirm"));
+        try {
+            confirmation.setVisible(true);
+            return Objects.equals(option.getValue(), JOptionPane.OK_OPTION) && !locked && !closed && original == epoch;
+        } finally {
+            confirmation.dispose();
+            confirmation = null;
+        }
     }
 
     /** Runs one original operation off the EDT without queuing repeat clicks. / 在 EDT 外运行一个原操作，不排队重复点击。
@@ -577,6 +673,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     public void close() {
         closed = true;
         epoch++;
+        if (confirmation != null)
+            confirmation.dispose();
         rows.clear();
         retained.clear();
         try {

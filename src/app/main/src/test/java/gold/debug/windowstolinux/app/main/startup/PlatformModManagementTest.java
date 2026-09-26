@@ -203,12 +203,18 @@ class PlatformModManagementTest {
         click("mods.enabled");
         click("mods.save");
         var confirm = dialog();
+        var oldOption = onEdt(() -> (JOptionPane) descendants(confirm).filter(JOptionPane.class::isInstance).findFirst()
+                .orElseThrow());
         runtime.security().lock();
         await(() -> ((JList<?>) named(frame, "mods.inventory")).getModel().getSize() == 0);
+        await(() -> !confirm.isDisplayable());
         assertEquals("", details());
         runtime.security().unlock(PASSWORD.toCharArray());
         await(() -> named(frame, "mods.refresh").isEnabled());
-        answer(confirm, true);
+        onEdt(() -> {
+            oldOption.setValue(JOptionPane.OK_OPTION);
+            return null;
+        });
         idle();
         assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
