@@ -20,6 +20,9 @@ public final class PlatformPersistence implements AutoCloseable {
     /** Server configuration and authenticated host trust. / 服务器配置及已认证主机信任。 */
     private final ServerProfileRepository servers;
 
+    /** Generation-owned business references to shared servers. / 共享服务器的代次所属业务引用。 */
+    private final ServerReferenceRepository serverReferences;
+
     /** Model configuration and revision-bound capability evidence. / 模型配置及绑定修订的能力证据。 */
     private final AiProfileRepository aiProfiles;
 
@@ -38,6 +41,7 @@ public final class PlatformPersistence implements AutoCloseable {
         connections = new RepositoryConnections(database::openConnection);
         security = new SecurityRepository(connections);
         servers = new ServerProfileRepository(connections);
+        serverReferences = new ServerReferenceRepository(connections);
         aiProfiles = new AiProfileRepository(connections);
         preferences = new DesktopPreferenceRepository(connections);
         recovery = new BrowserRecoveryRepository(connections);
@@ -59,6 +63,12 @@ public final class PlatformPersistence implements AutoCloseable {
      * @return server repository / 服务器仓库 */
     public ServerProfileRepository servers() {
         return servers;
+    }
+
+    /** Returns authoritative server reference transactions. / 返回权威服务器引用事务。
+     * @return generation-owned reference repository / 代次所属引用仓库 */
+    public ServerReferenceRepository serverReferences() {
+        return serverReferences;
     }
 
     /** Returns model configuration and capability evidence. / 返回模型配置和能力证据。

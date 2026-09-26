@@ -176,17 +176,32 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      */
     public synchronized TaskSnapshot requireExecuting(TaskContext context, String ownerId, String version)
             throws ApiException {
+        var snapshot = requireCleanup(context, ownerId, version);
+        var execution = executions.get(snapshot.id());
+        if (execution.uncertainEffect)
+            throw error(ProblemCode.UNKNOWN, "TASK_EFFECT_UNCERTAIN",
+                    "An external effect requires explicit reconciliation");
+        if (!execution.reconciling && context.cancellation().requested())
+            throw error(ProblemCode.CANCELLED, "TASK_CANCELLED", "The task requested cooperative cancellation");
+        return snapshot;
+    }
+
+    /**
+     * Authenticates cleanup of already owned resources even after cancellation or uncertainty. / 即使已取消或出现不确定性，仍认证已持有资源的清理。
+     * @param context original currently executing or reconciling context / 原始且正在执行或核对的上下文
+     * @param ownerId capability owner / 能力所有者
+     * @param version exact bound release / 精确绑定版本
+     * @return authenticated task snapshot / 已认证任务快照
+     * @throws ApiException if the context is foreign or no callback is executing / 上下文属于他方或没有正在执行的回调时
+     */
+    public synchronized TaskSnapshot requireCleanup(TaskContext context, String ownerId, String version)
+            throws ApiException {
         var snapshot = requireContext(context);
         var execution = executions.get(snapshot.id());
         if (!snapshot.ownerId().equals(ownerId) || !snapshot.ownerVersion().equals(version))
             throw error(ProblemCode.ACCESS_DENIED, "TASK_CALLER", "The capability belongs to a different Mod release");
         if (execution.returned && !execution.reconciling || snapshot.state() == TaskState.QUEUED)
             throw error(ProblemCode.UNAVAILABLE, "TASK_NOT_EXECUTING", "The original task callback is not executing");
-        if (execution.uncertainEffect)
-            throw error(ProblemCode.UNKNOWN, "TASK_EFFECT_UNCERTAIN",
-                    "An external effect requires explicit reconciliation");
-        if (!execution.reconciling && context.cancellation().requested())
-            throw error(ProblemCode.CANCELLED, "TASK_CANCELLED", "The task requested cooperative cancellation");
         return snapshot;
     }
 
