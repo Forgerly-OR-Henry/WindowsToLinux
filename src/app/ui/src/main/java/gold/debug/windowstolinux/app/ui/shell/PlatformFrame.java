@@ -43,6 +43,9 @@ public final class PlatformFrame extends JFrame {
     /** Permanent connection and transfer threshold settings. / 常驻连接及传输阈值设置。 */
     private gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane transfers;
 
+    /** Permanent policy preference independent of AI review. / 独立于 AI 审批的常驻策略偏好。 */
+    private gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane authorization;
+
     /** Prevents duplicate shutdown workers. / 防止重复启动关闭工作线程。 */
     private boolean closing;
 
@@ -89,6 +92,8 @@ public final class PlatformFrame extends JFrame {
                 models.setLocked(locked);
             if (transfers != null)
                 transfers.setLocked(locked);
+            if (authorization != null)
+                authorization.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -136,6 +141,17 @@ public final class PlatformFrame extends JFrame {
         transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, components, messages);
         content.addTab(messages.text("transfer.settings.title"), transfers);
         transfers.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts platform authorization preferences independently of business AI modes. / 独立于业务 AI 模式挂载平台授权偏好。
+     * @param service actual preference and scope owner / 实际偏好及作用域所有者 */
+    public void installAuthorization(gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService service) {
+        if (!SwingUtilities.isEventDispatchThread() || authorization != null)
+            throw new IllegalStateException("Authorization settings must be installed once on the EDT");
+        authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service, components,
+                messages);
+        content.addTab(messages.text("authorization.title"), authorization);
+        authorization.setLocked(!security.securityState().unlocked());
     }
 
     /**
@@ -195,6 +211,8 @@ public final class PlatformFrame extends JFrame {
             models.close();
         if (transfers != null)
             transfers.close();
+        if (authorization != null)
+            authorization.close();
         lock.close();
         super.dispose();
     }

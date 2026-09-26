@@ -119,6 +119,7 @@ public final class DesktopMain {
                 window.installServers(runtime.servers());
                 window.installModels(models);
                 window.installTransfers(runtime.transfers());
+                window.installAuthorization(runtime.authorization());
                 return window;
             });
             runtime.started();

@@ -1699,3 +1699,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/linux/TransferSettings.java`：独立连接及有效字节停滞阈值，每个逻辑操作使用不可变设置。
 - `app/service/linux/TransferSettingsService.java`：当前用户门禁下后台读取并原子保存平台传输偏好，不保存任务授权或检查点。
 - `app/ui/setting/TransferSettingsPane.java`：常驻连接/传输阈值设置页，持久化确认后生效，失败恢复上次确认显示。
+
+- `appapi/task/AuthorizationMode.java`：独立平台一次/通用/完全授权枚举。
+- `appapi/task/ActionTarget.java`：操作所属的实际服务器、业务种类及已解析目标身份。
+- `appapi/task/ActionSemantics.java`：业务校验后的操作含义和不可变完整目标集合。
+- `app/service/task/PlatformAuthorizationService.java`：独立模式偏好、宿主流程准入、原任务临时语义授权及结束失效。
+- `app/ui/component/WorkflowLaunchButton.java`：从实际用户操作捕获表单目标并提交中央流程任务，防止重复启动。
+- `app/ui/setting/AuthorizationSettingsPane.java`：常驻三档平台授权偏好选择、保存确认与失败显示回滚。
