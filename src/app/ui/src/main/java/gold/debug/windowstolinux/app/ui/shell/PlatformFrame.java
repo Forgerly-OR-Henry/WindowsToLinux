@@ -46,6 +46,15 @@ public final class PlatformFrame extends JFrame {
     /** Permanent policy preference independent of AI review. / 独立于 AI 审批的常驻策略偏好。 */
     private gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane authorization;
 
+    /** Permanent diagnostic management page. / 常驻诊断管理页面。 */
+    private gold.debug.windowstolinux.app.ui.setting.LogSettingsPane logs;
+
+    /** Visible non-recursive diagnostic persistence feedback. / 可见非递归诊断持久化反馈。 */
+    private final JLabel logIssue = new JLabel();
+
+    /** Actual feedback subscription owned by this window. / 此窗口持有的实际反馈订阅。 */
+    private AutoCloseable logSubscription;
+
     /** Prevents duplicate shutdown workers. / 防止重复启动关闭工作线程。 */
     private boolean closing;
 
@@ -83,6 +92,8 @@ public final class PlatformFrame extends JFrame {
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
         getContentPane().add(sidebar, BorderLayout.WEST);
         getContentPane().add(content, BorderLayout.CENTER);
+        logIssue.setName("platform.logIssue");
+        getContentPane().add(logIssue, BorderLayout.SOUTH);
         lock = DesktopLockController.attach(this, security, catalog, reports, sidebar, components, false,
                 () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
@@ -94,6 +105,8 @@ public final class PlatformFrame extends JFrame {
                 transfers.setLocked(locked);
             if (authorization != null)
                 authorization.setLocked(locked);
+            if (logs != null)
+                logs.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -152,6 +165,29 @@ public final class PlatformFrame extends JFrame {
                 messages);
         content.addTab(messages.text("authorization.title"), authorization);
         authorization.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts actual log management and storage-failure feedback. / 挂载实际日志管理及存储失败反馈。
+     * @param service actual category and storage owner / 实际类别及存储所有者 */
+    public void installLogs(gold.debug.windowstolinux.app.service.log.PlatformLogService service) {
+        if (!SwingUtilities.isEventDispatchThread() || logs != null)
+            throw new IllegalStateException("Log settings must be installed once on the EDT");
+        logs = new gold.debug.windowstolinux.app.ui.setting.LogSettingsPane(service, components, messages);
+        content.addTab(messages.text("logs.title"), logs);
+        logSubscription = service.onIssue(problem -> SwingUtilities.invokeLater(() -> showLogIssue(problem)));
+        service.issue().ifPresent(this::showLogIssue);
+        logs.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Displays safe localized feedback outside the selected page. / 在所选页面之外显示安全本地化反馈。
+     * @param problem structured storage issue / 结构化存储问题 */
+    private void showLogIssue(gold.debug.windowstolinux.appapi.task.Problem problem) {
+        String key = switch (problem.eventCode()) {
+            case "LOG_DATABASE_UNCONFIRMED" -> "logs.emergencyNotice";
+            case "LOG_REPLAY_PENDING" -> "logs.pendingNotice";
+            default -> "logs.failureNotice";
+        };
+        logIssue.setText(messages.text(key));
     }
 
     /**
@@ -213,6 +249,14 @@ public final class PlatformFrame extends JFrame {
             transfers.close();
         if (authorization != null)
             authorization.close();
+        if (logs != null)
+            logs.close();
+        if (logSubscription != null)
+            try {
+                logSubscription.close();
+            } catch (Exception failure) {
+                logIssue.setText(messages.text("logs.failed"));
+            }
         lock.close();
         super.dispose();
     }
