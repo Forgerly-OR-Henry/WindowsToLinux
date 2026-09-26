@@ -1426,7 +1426,7 @@ API 包保持无环：task 只依赖 JDK；server、ui、db、ai、source 依赖
 
 作者工具复用 `app/mod/installation` 的包读取/校验能力，以命令行模式运行，不启动 APP。构建配置和 SDK 父 POM 归 `.mvn/mod/` 维护，不新增业务叶子模块；正式源码任务才创建这些文件，AllFile 不提前登记工具类或示例。完整结构门禁映射见 [工程门禁](development/PHASE-1.1.md#129-工程门禁映射)。
 
-当前 app/db/mod/ModVersionDeletionLedger 已实现普通安装版本删除的持久阶段、停用确认、最后 Schema 引用判断、独立 DDL 清理、引用释放和固定摘要归档。账本自身不删除程序文件，推进前核验登记安装目录实际不存在；CLASS 源码不是安装目录。PlatformModDeletion 现已由安装服务持有，接入程序文件清理、可选原包清理及默认已下载页；整个 Mod 删除仍待完成。
+当前 app/db/mod/ModDeletionLedger 已实现普通安装版本删除的持久阶段、停用确认、最后 Schema 引用判断、独立 DDL 清理、引用释放和固定摘要归档。账本自身不删除程序文件，推进前核验登记安装目录实际不存在；CLASS 源码不是安装目录。PlatformModDeletion 现已由安装服务持有，接入单版本程序文件清理、可选原包清理及默认已下载页。整 Mod 删除数据库范围现与单版本共用账本，增加全部版本及孤立 Schema、专属诊断、非共享自有凭据和固定导航的原范围清理；ModNavigationPreferences 是导航入口和删除事务的共同持久化实现。整 Mod 日志服务并发封闭、真实专属文件删除和默认入口仍待接线。
 
 当前 `app/mod/installation` 已实现原包读取、嵌套 JAR 索引与新目录暂存，直接复用工程集中管理的 Commons Compress 1.26.1；包内 ZIP 视图借用原文件句柄，不生成临时 JAR 副本。读取结果不代表已安装或可启用。`app/service/mod/PlatformModInstallation` 已串联原 INSTALL 记录、原生目录发布、版本登记、留存设置和明确中断核对，CLASS 装配不使用该安装来源；`app/ui/mod/ModOriginalsPane` 已接 JAR/APP 原包扫描、搜索、确认安装、原包删除、留存设置及原操作核对；`app/mod/loader` 使用 Maven 集中管理的 ASM 9.10.1，在原包、原安装恢复、CLASS 构建/发现和启用前共用入口继承与公开签名静态准入；`app/service/mod/ModInstallationCleanup` 为未登记安装的明确撤销捕获和复核原文件范围；原 INSTALL 保存 CANCELLING 后才删除，UI 接原清理核对，完整行为见 [Mod 包校验](Mod.md#package-installation)。
 
