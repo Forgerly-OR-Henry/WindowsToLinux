@@ -1638,7 +1638,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/main/mod/PlatformModCoordinator.java`：按真实开发构建装配已选依赖图，保留原启用失败和归档义务，并按依赖逆序关闭实际会话。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
+- `app/mod/development/MavenDevelopmentInputs.java`：在 Maven 原构建会话中撤销旧描述，捕获真实解析的依赖、从模块和构建配置输入。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
+- `app/mod/installation/ModPackageTool.java`：独立 Java 构建命令，当前执行 CLASS describe，复用正式开发描述校验并输出有界输入的结构化结果。
+- `app/mod/resources/META-INF/maven/plugin.xml`：登记 development-inputs 构建目标及原 Maven 会话注入，不注册业务 Mod。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
 - `app/service/mod/PlatformModIntents.java`：审阅并原子保存开关、版本、连带禁用和迁移来源；撤销未执行请求时同事务归档，保留原修订及任务准入范围。

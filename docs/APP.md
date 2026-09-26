@@ -107,7 +107,7 @@ app.mainclass=example.Main
 - 投稿经人工审核后上架，邮箱仅后台可见；拒绝或撤回的投稿在 90 天后清理邮箱，已上架项目维护期间保留。下载无需登录不代表后台可匿名管理。
 - 商店使用官方 HTTPS 服务，提供 Mod 列表、版本信息和包下载，目录附带包摘要并进行官方签名，由 APP 验证。下载不要求账号；不自动下载缺失依赖，也不自动升级或切换用户已经安装的版本。下载后的本地行为只维护在 [Mod 获取与解压流程](Mod.md#package-acquisition)。
 
-  0.6 期的多用户执行服务台、生产账号与工作区规划已由本方向取代。网站不是未来第三方插件的执行环境；第三方包在 APP 使用。投稿收集意味着网站可能需要接收服务，因此不把“纯静态网站”或某种后端技术栈提前定为要求。
+    0.6 期的多用户执行服务台、生产账号与工作区规划已由本方向取代。网站不是未来第三方插件的执行环境；第三方包在 APP 使用。投稿收集意味着网站可能需要接收服务，因此不把“纯静态网站”或某种后端技术栈提前定为要求。
 
 <a id="build-contract"></a>
 
@@ -132,6 +132,10 @@ app.mainclass=example.Main
 
 ### 8.2 作者构建和校验工具
 
+当前源码已提供 `.mvn/wtlmod-author-parent/pom.xml` 的 CLASS 构建接线，版本暂随现有工程为 `0.1.0-SNAPSHOT`。Mod 主模块通过相对路径继承该独立 POM，并显式声明平台 API 的 provided 依赖；配套模块保持普通 Maven 配置。`initialize` 的 `development-inputs` 目标使用 Maven 原会话捕获解析结果并撤销旧描述，`process-classes` 的 exec 子进程调用 `ModPackageTool describe`。真实 reactor 已验证可直接使用 app/mod 的编译输出，不要求预先打包或安装工具 JAR；工具不进入业务 Mod 运行依赖。当前仅 describe 已实现，下面 pack/verify、SDK 分发与 package 绑定仍是 S7 目标。
+
+`wtl.workspace` 构建默认采用 Maven 明确的多模块根，也可用同名属性指定；运行 APP 时仍必须明确提供该 VM 参数。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
+
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 
 工具主类固定为 `gold.debug.windowstolinux.app.mod.installation.ModPackageTool`，使用 app/mod 现有安装校验职责，不新增 Maven 业务模块。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
@@ -142,7 +146,7 @@ java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.installation.ModPackag
 java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.installation.ModPackageTool verify --package <目标.wtlmod>
 ```
 
-输入 JSON 固定字段 `formatVersion`（1）、`manifest`、`mainJar`、`authorJars`、`libraries`、`readme`、`license`、`changelog`（可选）、`mainOutput`、`authorOutputs`；文件路径均为绝对路径，数组可以为空，无未知键和重复键，未使用的 changelog 省略。mainJar 为待打包主产物；describe 阶段允许它尚不存在，必须验证编译输出及处理后的资源。作者原始清单的 mainJar 相对包路径保持不变，构建复制主产物到该路径，不要求物理 Maven JAR 同名。
+输入 JSON 固定字段 `formatVersion`（1）、`workspace`、`buildInputs`、`manifest`、`mainJar`、`authorJars`、`libraries`、`readme`、`license`、`changelog`（可选）、`mainOutput`、`authorOutputs`；文件路径均为绝对路径，数组可以为空，无未知键和重复键，未使用的 changelog 省略。`workspace` 为明确工作区，`buildInputs` 是 Maven 提供的实际配置文件集合，算法见 [CLASS 开发描述](Mod.md#72-class-开发描述)。mainJar 为待打包主产物；describe 阶段允许 mainJar、authorJars、README/LICENSE 尚不存在，只验证这些字段的路径语法，并必须验证编译输出及处理后的资源。describe 结果的 contentSha256 是生成描述文件本身的 SHA-256，不是发行包内容摘要。作者原始清单的 mainJar 相对包路径保持不变，构建复制主产物到该路径，不要求物理 Maven JAR 同名。
 
 `mvn package` 通过 Maven exec 插件的 Java 子进程调用同一工具：process-classes 后 describe，package 后 pack/verify；不要求作者安装 Python。工具只处理输入和输出，不能安装或启用 Mod、打开平台运行库或调用入口。成功返回退出码 0，输入错误 2，I/O/校验失败 3；输出 UTF-8 JSON 结果，包含 command、success、artifact、contentSha256 和 problems 数组，诊断走 stderr。独立 verify 与 APP 安装使用相同规则；源码生成、打包和校验规则不能维护三份实现。
 

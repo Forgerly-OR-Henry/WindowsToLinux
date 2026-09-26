@@ -10,6 +10,12 @@
   <artifactId>windowstolinux-app-mod</artifactId>
   <dependencies>
     <dependency>
+      <groupId>org.apache.maven</groupId>
+      <artifactId>maven-core</artifactId>
+      <version>${maven.build.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
       <version>1.0.0-dev.1</version>
@@ -50,6 +56,11 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <argLine>"-Djava.io.tmpdir=${project.build.directory}"</argLine>
+          <systemPropertyVariables>
+            <wtl.test.mavenHome>${maven.home}</wtl.test.mavenHome>
+            <wtl.test.repository
+            >${settings.localRepository}</wtl.test.repository>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
     </plugins>

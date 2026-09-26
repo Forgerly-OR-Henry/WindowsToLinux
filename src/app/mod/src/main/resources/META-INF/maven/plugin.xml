@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<plugin>
+  <name>WindowsToLinux CLASS build inputs</name>
+  <description
+  >Resolves author build inputs without running author code.</description>
+  <groupId>gold.debug.windowstolinux</groupId>
+  <artifactId>windowstolinux-app-mod</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <goalPrefix>wtlmod</goalPrefix>
+  <isolatedRealm>false</isolatedRealm>
+  <inheritedByDefault>true</inheritedByDefault>
+  <requiredJavaVersion>21</requiredJavaVersion>
+  <requiredMavenVersion>3.9.12</requiredMavenVersion>
+  <mojos>
+    <mojo>
+      <goal>development-inputs</goal>
+      <description
+      >Invalidate previous CLASS evidence and save resolved build inputs.</description>
+      <requiresDependencyResolution>test</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>initialize</phase>
+      <implementation
+      >gold.debug.windowstolinux.app.mod.development.MavenDevelopmentInputs</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>Original Maven session for this module.</description>
+        </parameter>
+      </parameters>
+      <configuration><session
+          implementation="org.apache.maven.execution.MavenSession"
+          default-value="${session}"
+        /></configuration>
+    </mojo>
+  </mojos>
+</plugin>
