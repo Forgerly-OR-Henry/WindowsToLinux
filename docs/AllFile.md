@@ -1618,6 +1618,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
 - `app/db/mod/ModSchemaReconciliation.java`：核验原 UNKNOWN 数据身份、取得明确只读核对并原子归档已证明结果，不改变用户选择。
 - `app/db/mod/ModRestartLedger.java`：核验前次启动意图与明确失败重试，登记原准备/新代次并按实际状态原子归档，保留重启停用确认。
+- `app/db/mod/ModVersionDeletionLedger.java`：审阅并登记重启停用后的单版本删除，保护其他保留版本引用的 Schema；独立核验程序目录缺失，再清理精确数据、引用和登记，保留原阶段核对及固定摘要归档。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
 - `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
