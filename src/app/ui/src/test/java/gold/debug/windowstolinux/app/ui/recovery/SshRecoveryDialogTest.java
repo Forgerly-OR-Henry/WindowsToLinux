@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
 import org.junit.jupiter.api.Test;
 
 class SshRecoveryDialogTest {
@@ -28,7 +27,7 @@ class SshRecoveryDialogTest {
         @Override
         public RecoverySnapshot snapshot() {
             return new RecoverySnapshot("fixture", RecoverySnapshot.State.AWAITING_CONFIRMATION, "confirm",
-                    Optional.of(new RecoveryAction("uname -a", "先确认当前内核与系统事实。", "仅返回系统信息，不修改目标。", false)),
+                    Optional.of(new RecoverySnapshot.Action("uname -a", "先确认当前内核与系统事实。", "仅返回系统信息，不修改目标。", false)),
                     "exact-action", false, 1, Map.of("decision/fixture", "VALID"), Optional.empty());
         }
 

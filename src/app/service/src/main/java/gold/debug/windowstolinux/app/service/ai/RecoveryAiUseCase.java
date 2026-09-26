@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 /**
  * Separates visual evidence from regular-model decisions using fresh ordered snapshots. / 通过新的有序快照分离视觉证据和常规模型决策。
  */
-public final class RecoveryAiUseCase {
+public final class RecoveryAiUseCase implements RecoveryModels {
     /**
      * Bound ai profile repository collaborator for profiles.
      * <p>处理配置资料集合的AI配置资料仓库协作对象。
@@ -45,37 +45,7 @@ public final class RecoveryAiUseCase {
         this.secrets = secrets;
         this.client = client;
     }
-    /**
-     * Contains only status evidence and transient result; its string form excludes content. / 仅持有状态证据和临时结果，字符串不含内容。
-     *
-     * @param code stable machine-readable classification code / 稳定的机器可读分类码
-     * @param content content / 内容
-     * @param attempts attempts / 尝试集合
-     */
-    public record Result(String code, String content, Map<String, RecoveryModelClient.OutcomeStatus> attempts) {
-        /**
-         * Binds the supplied dependencies and state for result.
-         * <p>为结果绑定传入的依赖及状态。
-         *
-         * @param code stable machine-readable classification code / 稳定的机器可读分类码
-         * @param content content / 内容
-         * @param attempts attempts / 尝试集合
-         */
-        public Result {
-            attempts = Collections.unmodifiableMap(new LinkedHashMap<>(attempts));
-        }
 
-        /**
-         * Returns the diagnostic text representation of this object.
-         * <p>返回当前对象的诊断文本表示。
-         *
-         * @return the diagnostic text representation of this object / 当前对象的诊断文本表示
-         */
-        @Override
-        public String toString() {
-            return "RecoveryModelResult[" + code + "]";
-        }
-    }
     /**
      * Converts text directly or routes images through the configured vision order. / 直接返回文字，或按配置的视觉顺序处理图片。
      *
@@ -159,14 +129,23 @@ public final class RecoveryAiUseCase {
             checkCancelled();
             attempts.put(profile.profile().id(), reply.status());
             if (reply.status() == RecoveryModelClient.OutcomeStatus.VALID)
-                return new Result("ok", reply.content(), attempts);
+                return new Result("ok", reply.content(), classifications(attempts));
         }
         String code = attempts.containsValue(RecoveryModelClient.OutcomeStatus.UNAVAILABLE)
                 ? "modelUnavailable"
                 : attempts.containsValue(RecoveryModelClient.OutcomeStatus.INVALID)
                         ? "modelInvalid"
                         : vision ? "visionUnsupported" : "regularUnavailable";
-        return new Result(code, "", attempts);
+        return new Result(code, "", classifications(attempts));
+    }
+
+    /** Copies legacy provider classifications into the rescue port. / 将旧提供方分类复制到救援端口。
+     * @param attempts classified provider attempts / 已分类提供方尝试
+     * @return safe names preserving attempt order / 保持尝试顺序的安全名称 */
+    private static Map<String, String> classifications(Map<String, RecoveryModelClient.OutcomeStatus> attempts) {
+        var result = new LinkedHashMap<String, String>();
+        attempts.forEach((id, status) -> result.put(id, status.name()));
+        return result;
     }
 
     /**

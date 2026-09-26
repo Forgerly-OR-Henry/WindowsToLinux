@@ -69,6 +69,26 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      */
     @Override
     public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
+        return call(request, task, false);
+    }
+
+    /** Applies a host-owned output ceiling within each selected model's configured limit. / 在每个所选模型的配置上限内应用宿主输出预算。
+     * @param request host request with a maximum permitted output / 带最大允许输出的宿主请求
+     * @param task original task / 原任务
+     * @return actual routed result / 实际路由结果
+     * @throws ApiException if configuration, authority or cleanup is unavailable / 配置、授权或清理不可用时 */
+    public OperationResult<AiResponse> callWithinModelLimit(AiRequest request, TaskContext task) throws ApiException {
+        return call(request, task, true);
+    }
+
+    /** Routes one original request while keeping explicit author budgets strict. / 路由一次原请求，同时保持作者显式预算的严格校验。
+     * @param request bounded original request / 有界原请求
+     * @param task original task / 原任务
+     * @param hostCeiling whether the host accepts the smaller configured output / 宿主是否接受较小配置输出
+     * @return actual routed result / 实际路由结果
+     * @throws ApiException if configuration, authority or cleanup is unavailable / 配置、授权或清理不可用时 */
+    private OperationResult<AiResponse> call(AiRequest request, TaskContext task, boolean hostCeiling)
+            throws ApiException {
         if (request == null)
             throw error(ProblemCode.INVALID_INPUT, "AI_REQUEST", "A model request is required");
         long timeout;
@@ -92,7 +112,12 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                 OperationResult<AiResponse> result = null;
                 for (var candidate : candidates) {
                     try (var prepared = capture(candidate, purpose, task)) {
-                        result = send(candidate.profile(), prepared, request, task, start, timeout);
+                        var effective = hostCeiling
+                                ? new AiRequest(request.purpose(), request.messages(),
+                                        Math.min(request.maxOutputTokens(), prepared.maxOutputTokens()),
+                                        request.timeout(), request.jsonObjectResponse())
+                                : request;
+                        result = send(candidate.profile(), prepared, effective, task, start, timeout);
                     }
                     if (result.outcome() != Outcome.FAILED || result.problem().isEmpty()
                             || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))

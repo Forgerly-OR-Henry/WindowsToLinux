@@ -2,8 +2,6 @@ package gold.debug.windowstolinux.app.service.contract.definition;
 
 import java.util.Optional;
 
-import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
-
 /**
  * Transient UI state; command contents must not be logged or persisted. / 临时界面状态，命令内容不得记录日志或持久化。
  *
@@ -17,8 +15,8 @@ import gold.debug.windowstolinux.shared.model.recovery.RecoveryAction;
  * @param modelAttempts provider identifiers mapped to safe attempt classifications; raw model responses are excluded / 提供者标识到安全尝试分类的映射；不包含模型原始响应
  * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
-public record RecoverySnapshot(String id, State state, String messageCode, Optional<RecoveryAction> action,
-        String confirmation, boolean resultUnknown, int decisions, java.util.Map<String, String> modelAttempts,
+public record RecoverySnapshot(String id, State state, String messageCode, Optional<Action> action, String confirmation,
+        boolean resultUnknown, int decisions, java.util.Map<String, String> modelAttempts,
         Optional<gold.debug.windowstolinux.shared.model.failure.FailureDescriptor> failure) {
     /**
      * Copies non-secret attempt classifications; never stores response text. / 复制无秘密的调用分类，不保存响应原文。
@@ -37,6 +35,20 @@ public record RecoverySnapshot(String id, State state, String messageCode, Optio
     public RecoverySnapshot {
         modelAttempts = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(modelAttempts));
         failure = java.util.Objects.requireNonNull(failure, "failure");
+    }
+
+    /** Carries a prepared proposal to the UI without exposing AI implementation types. / 向 UI 传递已准备建议，不暴露 AI 实现类型。
+     * @param command exact proposed command / 精确建议命令
+     * @param reason safe explanation / 安全说明
+     * @param expected expected effect and recovery guidance / 预期效果及恢复指引
+     * @param highImpact whether separate impact approval is required / 是否需要单独影响批准 */
+    public record Action(String command, String reason, String expected, boolean highImpact) {
+        /** Excludes command contents from diagnostics. / 从诊断中排除命令内容。
+         * @return safe description / 安全说明 */
+        @Override
+        public String toString() {
+            return "RecoveryAction[redacted]";
+        }
     }
     /**
      * Explicit rescue lifecycle. / 明确的救援生命周期。

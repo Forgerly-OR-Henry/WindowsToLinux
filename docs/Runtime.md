@@ -226,7 +226,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 ### APP 网页控制台救援边界
 
-`app/linux/recovery` 独占 Playwright Java 1.58.0 对象、终端契约与安全 Problem，并在专用线程处理页面事件和终端输入；不接管个人浏览器配置。`app/windows/window` 仅提供所属子进程窗口隐私适配，不持有 Playwright。该浏览器基础已迁移，以下旧救援状态机尚未接入新默认入口和中央任务账本。`app/service/recovery` 使用原有服务器锁，持有救援状态、预算、动作确认和 SSH 验证；`SshRecoveryApplicationFacade`、`SshRecoverySession` 与 `RecoverySnapshot` 是 UI 使用的救援契约。`shared/ai/recovery` 仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。
+`app/linux/recovery` 独占 Playwright Java 1.58.0 对象、终端契约与安全 Problem，并在专用线程处理页面事件和终端输入；不接管个人浏览器配置。`app/windows/window` 仅提供所属子进程窗口隐私适配，不持有 Playwright。该浏览器基础已迁移，以下旧救援状态机尚未接入新默认入口和中央任务账本。`app/service/recovery` 使用原有服务器锁，持有救援状态、预算、动作确认和 SSH 验证；`SshRecoveryApplicationFacade`、`SshRecoverySession` 与 `RecoverySnapshot` 是 UI 使用的救援契约。救援固定提示、建议影响分类和严格 JSON 解析现归 `app/ai/recovery`；旧 `shared/ai/recovery` 网络客户端继续复用该协议，待整体入口切换后移除。新 `PlatformRecoveryModels` 经原平台任务及实际 AiService 分别调用视觉/语言用途，不使用审批模型生成建议；宿主输出上限为 2048 Token，并按各候选模型已配置上限取较小值，每次调用期限为 60 秒。普通 Mod 显式 AiRequest 的超限拒绝规则不变。完整响应结构不合格不另换模型；发送后结果未知保留原任务，不请求下一条建议。已通过本机 H2/HTTP 验证，新默认救援入口仍待装配。模型仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。
 
 桌面模型用途以 `AiPurposeType` 明确划分部署、审批和视觉；`AiCapabilityType` 区分文字/图像测试。显示排序与用途调用顺序分离，任务持有精确配置快照。视觉识别只返回受控观察，部署和审批保持独立上下文。APP SQLite v21 用 `ai_model` 保存用途、独立顺序和能力修订，任务及事件表保存非秘密历史。三模式自动部署不接入浏览器救援，独立救援继续要求用户逐项授权。
 

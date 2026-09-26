@@ -942,8 +942,6 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ RuntimeIdentityMode.java  # 历史、systemd 动态与容器非 root 身份策略
 │  │  │  ├─ SourceRevision.java  # 用于绑定分析、目标机构建和部署记录的不可变源码身份
 │  │  │  └─ ValidatedDeploymentTarget.java  # 由真实产品入口验收证据支撑的一个精确目标组合
-│  │  ├─ recovery/  # 网页控制台 SSH 救援职责包
-│  │  │  └─ RecoveryAction.java  # 待批准的终端命令、理由与影响声明
 │  │  ├─ security/  # 主机安全与防火墙状态模型包
 │  │  │  └─ CredentialStorageMode.java  # 用户选择的平台凭据存储机制，其本身绝不是秘密
 │  │  ├─ server/  # 服务器配置与观测
@@ -1719,3 +1717,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/recovery/`：迁入 PlaywrightTerminalSession、BrowserTerminalSession、TerminalTarget、TerminalObservation 和 BrowserRecoveryException；具体浏览器救援不再放在 Windows 或 shared/model。
 - `app/service/recovery/BrowserRecoveryFailureType.java`：尚在迁移的旧救援 UI 所用分类适配，保留新平台诊断身份；Linux 不依赖旧失败模型。
 - `app/service/contract/definition/RecoveryTerminal.java`：服务层终端选择快照，避免救援 UI 直接依赖 Linux 浏览器类型。
+
+- `app/ai/recovery/RecoveryAction.java` 与 `RecoveryProtocol.java`：平台救援的有界建议、影响分类、固定提示及严格结果解析，旧网络客户端复用同一协议。
+- `app/linux/recovery/RecoveryModels.java`：救援控制器的临时观测/建议端口，结果不自动授权命令。
+- `app/service/recovery/PlatformRecoveryModels.java`：原任务的真实平台模型适配，沿用用途、凭据、预算及 HTTP 占用，未知结果不继续请求。
