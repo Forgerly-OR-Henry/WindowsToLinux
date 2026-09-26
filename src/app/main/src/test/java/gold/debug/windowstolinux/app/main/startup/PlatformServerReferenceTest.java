@@ -34,6 +34,22 @@ class PlatformServerReferenceTest {
         return result.value().orElse(null);
     }
 
+    static void callbackReturned(PlatformRuntime runtime, TaskContext task) throws Exception {
+        assertNotNull(task);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+        while (System.nanoTime() < deadline) {
+            try {
+                runtime.tasks().requireCleanup(task, OWNER, VERSION);
+            } catch (ApiException rejected) {
+                assertEquals(ProblemCode.UNAVAILABLE, rejected.problem().code());
+                assertEquals("TASK_NOT_EXECUTING", rejected.problem().eventCode());
+                return;
+            }
+            Thread.sleep(5);
+        }
+        fail("The original callback did not return after its failure");
+    }
+
     @Test
     void committedBusinessAssociationSurvivesTaskEndDisableAndReleaseVersionChange() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
@@ -179,8 +195,10 @@ class PlatformServerReferenceTest {
             var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var reference = new AtomicReference<ServerReference>();
+            var original = new AtomicReference<TaskContext>();
             sql(db, "ALTER TABLE mod_server_reference ADD CONSTRAINT fixture_no_active CHECK(state<>'ACTIVE')");
             var handle = binding.submit(request("server"), task -> {
+                original.set(task);
                 reference.set(access.reserve(SERVER, "unknown-business", task));
                 assertEquals(ProblemCode.UNKNOWN,
                         assertThrows(ApiException.class,
@@ -190,6 +208,7 @@ class PlatformServerReferenceTest {
                 return success(null);
             });
             state(handle, TaskState.UNKNOWN);
+            callbackReturned(runtime, original.get());
             assertEquals(1, count(db, "SELECT COUNT(*) FROM mod_server_reference WHERE state='UNKNOWN'"));
             assertThrows(SQLException.class, () -> runtime.persistence().servers().deleteServerProfile("server"));
             sql(db, "ALTER TABLE mod_server_reference DROP CONSTRAINT fixture_no_active");
@@ -214,8 +233,13 @@ class PlatformServerReferenceTest {
             var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_no_release CHECK(released_at IS NULL)");
-            var handle = binding.submit(request("server"), task -> success(access.get(SERVER, task)));
+            var original = new AtomicReference<TaskContext>();
+            var handle = binding.submit(request("server"), task -> {
+                original.set(task);
+                return success(access.get(SERVER, task));
+            });
             state(handle, TaskState.UNKNOWN);
+            callbackReturned(runtime, original.get());
             assertEquals(0, db.openConnections());
             assertEquals(1, count(db,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));

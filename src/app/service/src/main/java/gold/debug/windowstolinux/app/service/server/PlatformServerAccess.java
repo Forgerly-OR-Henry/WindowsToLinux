@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerReferenceRepository;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
+import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.*;
 import gold.debug.windowstolinux.appapi.task.*;
@@ -27,20 +28,11 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
     /** Exact author identity bound by the host. / 宿主绑定的精确作者身份。 */
     private final String owner;
 
-    /** Actual loaded author release. / 实际已加载作者版本。 */
-    private final String version;
-
     /** Bound business generation, absent for stateless Mods. / 绑定业务代次，无状态 Mod 不存在。 */
     private final Optional<SchemaIdentity> schema;
 
-    /** Finished platform operations whose durable release still needs retry. / 持久释放仍待重试的已结束平台操作。 */
-    private final Map<UUID, PendingRelease> pending = new HashMap<>();
-
-    /** Active operations, preventing capability teardown while work runs. / 活动操作，防止工作运行时拆除能力。 */
-    private int active;
-
-    /** Whether new calls are sealed by owner teardown. / 所有者拆除是否已封闭新调用。 */
-    private boolean closed;
+    /** Shared task ownership and actual release tracking. / 共享任务归属和实际释放跟踪。 */
+    private final TaskCapabilityScope scope;
 
     /**
      * Binds one activation's server capability without exposing platform repositories. / 绑定一次启用的服务器能力，不暴露平台仓库。
@@ -57,10 +49,8 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
         this.repository = Objects.requireNonNull(repository);
         this.ledger = new TaskLedger(database);
         this.owner = Objects.requireNonNull(owner);
-        this.version = Objects.requireNonNull(version);
         this.schema = Objects.requireNonNull(schema);
-        if (schema.isPresent() && !owner.equals(schema.orElseThrow().ownerId()))
-            throw new IllegalArgumentException("Server capability schema belongs to another Mod");
+        scope = new TaskCapabilityScope(database, tasks, owner, version, schema, "server-access-");
     }
 
     /**
@@ -153,61 +143,33 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @return copied platform result / 复制的平台结果
      * @throws ApiException if admission, access or durable cleanup fails / 准入、访问或持久清理失败时
      */
-    private <T> T access(TaskContext task, boolean cleanup, boolean writes, Work<T> work) throws ApiException {
-        worker();
-        if (cleanup)
-            tasks.requireCleanup(task, owner, version);
-        else
-            tasks.requireExecuting(task, owner, version);
-        synchronized (this) {
-            if (closed)
-                throw error(ProblemCode.UNAVAILABLE, "SERVER_ACCESS_CLOSED", "The server capability is closed");
-            active++;
-        }
-        ResourceLease lease;
+    private <T> T access(TaskContext task, boolean cleanup, boolean writes, TaskCapabilityScope.Work<T> work)
+            throws ApiException {
         try {
-            lease = tasks.retain(task, new TaskResource("CUSTOM", "server-access-" + UUID.randomUUID(), owner, false));
-        } catch (ApiException | RuntimeException failure) {
-            synchronized (this) {
-                active--;
-            }
-            throw failure;
-        }
-        try {
-            if (schema.isPresent() && !ledger.holds(task.id(),
-                    new TaskResource("SCHEMA", schema.orElseThrow().generation().toString(), owner, false)))
-                throw error(ProblemCode.ACCESS_DENIED, "SERVER_REFERENCE_SCHEMA",
-                        "The task does not hold this schema generation");
-            return work.run();
+            return scope.call(task, cleanup, () -> {
+                try {
+                    return work.run();
+                } catch (SQLException failure) {
+                    String state = failure.getSQLState();
+                    if ("42501".equals(state))
+                        throw error(ProblemCode.ACCESS_DENIED, "SERVER_REFERENCE_OWNER",
+                                "The reference belongs to another generation");
+                    if ("55000".equals(state))
+                        throw error(ProblemCode.UNAVAILABLE, "SERVER_REFERENCE_SCHEMA",
+                                "The data generation is unavailable");
+                    if ("02000".equals(state))
+                        throw error(ProblemCode.NOT_FOUND, "SERVER_REFERENCE_MISSING",
+                                "The requested reference or server is unavailable");
+                    if (writes)
+                        tasks.reportUncertainEffect(task);
+                    throw error(writes ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE, "SERVER_REFERENCE_STORAGE",
+                            writes
+                                    ? "Server reference persistence requires reconciliation"
+                                    : "Server observations could not be read");
+                }
+            });
         } catch (SQLException failure) {
-            String state = failure.getSQLState();
-            if ("42501".equals(state))
-                throw error(ProblemCode.ACCESS_DENIED, "SERVER_REFERENCE_OWNER",
-                        "The reference belongs to another generation");
-            if ("55000".equals(state))
-                throw error(ProblemCode.UNAVAILABLE, "SERVER_REFERENCE_SCHEMA", "The data generation is unavailable");
-            if ("02000".equals(state))
-                throw error(ProblemCode.NOT_FOUND, "SERVER_REFERENCE_MISSING",
-                        "The requested reference or server is unavailable");
-            if (writes)
-                tasks.reportUncertainEffect(task);
-            throw error(writes ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE, "SERVER_REFERENCE_STORAGE",
-                    writes
-                            ? "Server reference persistence requires reconciliation"
-                            : "Server observations could not be read");
-        } finally {
-            try {
-                lease.close();
-            } catch (ApiException failure) {
-                synchronized (this) {
-                    pending.put(lease.id(), new PendingRelease(task, lease));
-                }
-                throw failure;
-            } finally {
-                synchronized (this) {
-                    active--;
-                }
-            }
+            throw error(ProblemCode.IO_FAILURE, "SERVER_ACCESS_CLAIM", "Server capability admission could not be read");
         }
     }
 
@@ -217,20 +179,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if a release still cannot persist / 仍无法持久化释放时
      */
     public void retryFinishedReleases(TaskContext task) throws ApiException {
-        worker();
-        tasks.requireCleanup(task, owner, version);
-        List<PendingRelease> releases;
-        synchronized (this) {
-            releases = List.copyOf(pending.values());
-        }
-        for (var entry : releases) {
-            if (entry.task() != task)
-                continue;
-            entry.lease().close();
-            synchronized (this) {
-                pending.remove(entry.lease().id());
-            }
-        }
+        scope.retryFinishedReleases(task);
     }
 
     /**
@@ -239,20 +188,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      */
     @Override
     public void close() throws ApiException {
-        worker();
-        List<PendingRelease> releases;
-        synchronized (this) {
-            closed = true;
-            if (active != 0)
-                throw error(ProblemCode.BUSY, "SERVER_ACCESS_BUSY", "Server reference operations are still running");
-            releases = List.copyOf(pending.values());
-        }
-        for (var entry : releases) {
-            entry.lease().close();
-            synchronized (this) {
-                pending.remove(entry.lease().id());
-            }
-        }
+        scope.close();
     }
 
     /** Returns the selected data identity or rejects persistent references for stateless Mods. / 返回选定数据身份，或拒绝无状态 Mod 的持久引用。
@@ -325,14 +261,6 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
         }
     }
 
-    /** Rejects database access on the event thread. / 拒绝在事件线程访问数据库。
-     * @throws ApiException if called from Swing / 从 Swing 调用时 */
-    private static void worker() throws ApiException {
-        if (javax.swing.SwingUtilities.isEventDispatchThread())
-            throw error(ProblemCode.CONTRACT_VIOLATION, "SERVER_ACCESS_BACKGROUND",
-                    "Server access requires a background thread");
-    }
-
     /**
      * Builds a safe public failure without database exception text. / 构造不含数据库异常文本的安全公开失败。
      * @param code public category / 公开类别
@@ -344,22 +272,4 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
         return new ApiException(new Problem(code, event, message, Map.of(), Optional.empty()));
     }
 
-    /**
-     * Completed physical operation awaiting durable release. / 等待持久释放的已完成物理操作。
-     * @param task authentic original task / 真实原始任务
-     * @param lease retained release marker / 保留释放标记
-     */
-    private record PendingRelease(TaskContext task, ResourceLease lease) {
-    }
-
-    /** Checked platform work without driver types crossing the public boundary. / 驱动类型不越过公开边界的受检平台工作。
-     * @param <T> result type / 结果类型 */
-    @FunctionalInterface
-    private interface Work<T> {
-        /** Runs one admitted platform access. / 执行一次已准入平台访问。
-         * @return copied result / 复制结果
-         * @throws SQLException if storage fails / 存储失败时
-         * @throws ApiException if authorization fails / 授权失败时 */
-        T run() throws SQLException, ApiException;
-    }
 }

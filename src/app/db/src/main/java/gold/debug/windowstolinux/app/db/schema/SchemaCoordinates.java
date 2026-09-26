@@ -73,16 +73,27 @@ public final class SchemaCoordinates {
      * @throws SQLException if the exact registration is absent or unavailable / 精确登记不存在或不可用时
      */
     public void requireRegistered(PlatformDatabase database, Set<String> allowedStates) throws SQLException {
-        try (var c = database.openConnection();
-                var p = c.prepareStatement(
-                        "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+        try (var connection = database.openConnection()) {
+            requireRegistered(connection, allowedStates);
+        }
+    }
+
+    /**
+     * Checks registration inside an existing platform transaction. / 在已有平台事务中核对登记。
+     * @param connection caller-owned platform connection / 调用方所属平台连接
+     * @param allowedStates accepted lifecycle states / 接受的生命周期状态
+     * @throws SQLException if exact registration is unavailable / 精确登记不可用时
+     */
+    public void requireRegistered(java.sql.Connection connection, Set<String> allowedStates) throws SQLException {
+        try (var p = connection.prepareStatement(
+                "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
             p.setString(1, identity.ownerId());
             p.setString(2, identity.schemaVersion());
             try (var r = p.executeQuery()) {
                 if (!r.next() || !identity.generation().equals(r.getObject(1, java.util.UUID.class))
                         || !physicalName.equals(r.getString(2)) || !databaseUser.equals(r.getString(3))
                         || !allowedStates.contains(r.getString(4)))
-                    throw new SQLException("Schema registration is stale or unavailable");
+                    throw new SQLException("Schema registration is stale or unavailable", "55000");
             }
         }
     }

@@ -1625,6 +1625,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
 - `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
+- `app/db/persistence/repository/CredentialReferenceRepository.java`：签发 Mod/用途所属凭据身份，并事务化保护精确数据代次的业务引用。
 - `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
@@ -1650,6 +1651,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源收尾并保留未完成归属。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
+- `app/service/task/TaskCapabilityScope.java`：跟踪服务器及秘密适配器的真实操作寿命、Schema 占用及失败释放重试。
+- `app/service/security/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。
 - `app/service/contract/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
 - `app/service/server/PlatformServerService.java`：平台服务器配置、受引用保护的删除及原身份 SSH 认证检查/中断收尾。
 - `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/核对及未完成释放重试。

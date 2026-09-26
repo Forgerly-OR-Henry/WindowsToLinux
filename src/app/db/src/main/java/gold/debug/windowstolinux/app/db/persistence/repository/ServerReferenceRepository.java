@@ -82,7 +82,7 @@ public final class ServerReferenceRepository {
         connections.transaction(() -> {
             try (var connection = connections.open()) {
                 RepositoryConnections.lockPlatformState(connection);
-                requireSchema(connection, identity);
+                new SchemaCoordinates(identity).requireRegistered(connection, Set.of("READY"));
                 lockServer(connection, serverId);
                 try (var statement = connection.prepareStatement(
                         "SELECT reference_id,state FROM mod_server_reference WHERE mod_id=? AND schema_version=? AND schema_generation=? AND server_profile_id=? AND business_key=?")) {
@@ -153,7 +153,7 @@ public final class ServerReferenceRepository {
         connections.transaction(() -> {
             try (var connection = connections.open()) {
                 RepositoryConnections.lockPlatformState(connection);
-                requireSchema(connection, identity);
+                new SchemaCoordinates(identity).requireRegistered(connection, Set.of("READY"));
                 var reference = find(identity, referenceId);
                 if (reference.isEmpty()) {
                     if (result == ReferenceResolution.NOT_REFERENCED)
@@ -180,27 +180,6 @@ public final class ServerReferenceRepository {
                 }
             }
         });
-    }
-
-    /**
-     * Verifies all durable generation coordinates before changing references. / 修改引用前核实完整持久代次坐标。
-     * @param connection locked platform transaction / 已锁定平台事务
-     * @param identity bound business generation / 绑定业务代次
-     * @throws SQLException if the registered data is stale or unavailable / 登记数据过期或不可用时
-     */
-    private static void requireSchema(Connection connection, SchemaIdentity identity) throws SQLException {
-        var coordinates = new SchemaCoordinates(identity);
-        try (var statement = connection.prepareStatement(
-                "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
-            statement.setString(1, identity.ownerId());
-            statement.setString(2, identity.schemaVersion());
-            try (var row = statement.executeQuery()) {
-                if (!row.next() || !identity.generation().equals(row.getObject(1, UUID.class))
-                        || !coordinates.physicalName().equals(row.getString(2))
-                        || !coordinates.databaseUser().equals(row.getString(3)) || !"READY".equals(row.getString(4)))
-                    throw new SQLException("Reference schema is stale or unavailable", "55000");
-            }
-        }
     }
 
     /**

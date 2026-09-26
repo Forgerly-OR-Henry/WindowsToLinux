@@ -42,6 +42,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Bound public server capabilities retained through owner teardown. / 保留至所有者拆除的已绑定公开服务器能力。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.server.PlatformServerAccess> serverAccesses = new java.util.LinkedHashSet<>();
 
+    /** Bound secret capabilities retained until their actual operations end. / 保留至实际操作结束的已绑定秘密能力。 */
+    private final java.util.Set<gold.debug.windowstolinux.app.service.security.PlatformSecretService> secretServices = new java.util.LinkedHashSet<>();
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -192,6 +195,23 @@ public final class PlatformRuntime implements AutoCloseable {
     }
 
     /**
+     * Creates protected-byte and reference access for one Mod activation. / 为一次 Mod 启用创建受保护字节及引用访问。
+     * @param owner exact Mod identity / 精确 Mod 身份
+     * @param version actual loaded release / 实际已加载版本
+     * @param schema selected optional business generation / 选定的可选业务代次
+     * @return host-owned secret adapter / 宿主持有的秘密适配器
+     */
+    public synchronized gold.debug.windowstolinux.app.service.security.PlatformSecretService secrets(String owner,
+            String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
+        if (closed || stopping)
+            throw new IllegalStateException("Platform secret capabilities are closing");
+        var secrets = new gold.debug.windowstolinux.app.service.security.PlatformSecretService(persistence.database(),
+                tasks, security, persistence.credentialReferences(), owner, version, schema);
+        secretServices.add(secrets);
+        return secrets;
+    }
+
+    /**
      * Creates real task, credential, review and SSH adapters for one Mod activation. / 为一次 Mod 启用创建真实任务、凭据、审核及 SSH 适配。
      * @param ownerId exact activating Mod / 精确正在启用的 Mod
      * @param version exact loaded release / 精确已加载版本
@@ -312,6 +332,9 @@ public final class PlatformRuntime implements AutoCloseable {
         for (var access : java.util.List.copyOf(serverAccesses))
             access.close();
         serverAccesses.clear();
+        for (var secrets : java.util.List.copyOf(secretServices))
+            secrets.close();
+        secretServices.clear();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         tasks.close();
