@@ -2,7 +2,7 @@
 
 WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，正在改造为 APP 与 Mod 平台。
 
-**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、Mod 页面外壳；服务器、模型、SSH/救援、插件安装和业务迁移尚未全部接入新入口。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
+**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、服务器配置及普通 SSH 认证检查、Mod 页面外壳；模型、救援、插件安装和业务迁移尚未全部接入新入口。保存服务器不会自动连接，SSH 检查单独触发且不探测或修改远端环境。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
 
 > [!IMPORTANT]
 > 项目仍在开发中，尚未提供正式安装包。改造前的 0.x 标准部署与自主 Agent 结构及 helper v10 已通过当时本地验证；此前 helper v9 在 Ubuntu 24 上的八个多语言原生项目通过了代表性部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他平台及备份迁移矩阵仍待验证。helper v7 的代表性部署和历史 helper v5 基线见[0.4 期验收](docs/development/PHASE-0.4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
@@ -13,7 +13,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，�
 
 官网将提供介绍、教学演示和公开下载，下载者无需账号或留下信息；投稿者通过官网上传插件并提供联系邮箱，维护者从后台查看投稿，无需贡献者提交 Git PR。网站细节暂缓，优先改造 APP。
 
-本轮只更新文档。旧代码保持当前结构，未来先完整保存在 `history-src` 并注销活动注册，再迁移新工程；文档完整审阅通过且用户明确要求后才能开始。详见 [1.1 工程主文档](docs/development/PHASE-1.1.md)、[待审目标结构](docs/File.md#phase-1-1-target)及[工程编号对应表](docs/development/DEVELOPMENT.md#phase-numbering)。下列能力、结构与运行命令描述当前 0.x 代码，不代表插件版已发布。
+本轮按已确认的开发文档实施，完成一个经本机验证的闭环后提交 Git。旧代码已完整冻结在 `history-src`；活动 `shared/web` 和旧业务依赖仍待整体切换。详见 [1.1 工程主文档](docs/development/PHASE-1.1.md)、[目标结构](docs/File.md#phase-1-1-target)及[工程编号对应表](docs/development/DEVELOPMENT.md#phase-numbering)。下列完整业务能力和运行命令仍描述 0.x 代码，不代表插件版已发布。
 
 ## 当前核心能力
 

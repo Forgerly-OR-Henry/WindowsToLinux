@@ -114,6 +114,7 @@ public final class DesktopMain {
                 window.onExit(runtime);
                 runtime.setInteractionPresenter(
                         new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages));
+                window.installServers(runtime.servers());
                 return window;
             });
             runtime.started();

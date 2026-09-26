@@ -10,13 +10,13 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.ServerProfileEditor;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 
 /**
- * Independent server editor with the existing secret store and SSH trust flow. / 独立服务器编辑窗口，复用秘密存储及 SSH 信任流程。
+ * Independent server configuration editor; connection checks are separate actions. / 独立服务器配置编辑窗口，连接检查是单独动作。
  */
 public final class ServerProfileDialog extends JDialog {
     /**
@@ -65,7 +65,7 @@ public final class ServerProfileDialog extends JDialog {
      * Bound server application facade collaborator for application service used by the caller.
      * <p>处理调用方使用的应用服务的服务器应用门面协作对象。
      */
-    private final ServerApplicationFacade service;
+    private final ServerProfileEditor service;
 
     /**
      * Bound page message presenter collaborator for localized message resolver.
@@ -107,12 +107,18 @@ public final class ServerProfileDialog extends JDialog {
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param saved saved / 已保存
      */
-    public ServerProfileDialog(Window owner, ServerApplicationFacade service, DesktopComponentFactory c,
+    public ServerProfileDialog(Window owner, ServerProfileEditor service, DesktopComponentFactory c,
             PageMessagePresenter messages, ServerProfile profile, Consumer<ServerProfile> saved) {
         super(owner, messages.text(profile == null ? "auto.addServer" : "server.edit"), ModalityType.APPLICATION_MODAL);
         this.service = service;
         this.messages = messages;
         this.saved = saved;
+        setName("server.editor");
+        name.setName("server.name");
+        host.setName("server.host");
+        port.setName("server.port");
+        username.setName("server.user");
+        password.setName("server.password");
         existing = profile != null;
         id = existing ? profile.id() : "server-" + UUID.randomUUID().toString().substring(0, 12);
         credentialKey = existing ? profile.credentialKey() : "ssh/" + id + "/password";
@@ -130,6 +136,7 @@ public final class ServerProfileDialog extends JDialog {
         c.addField(form, 3, 0, messages.text("field.sshUser"), username);
         c.addField(form, 4, 0, messages.text("field.sshPassword"), password);
         save = c.primaryButton(messages.text("button.saveServer"));
+        save.setName("server.save");
         save.addActionListener(event -> save());
         JButton cancel = c.secondaryButton(messages.text("button.cancel"));
         cancel.addActionListener(event -> {
@@ -192,20 +199,17 @@ public final class ServerProfileDialog extends JDialog {
             var profile = new ServerProfile(id, host.getText().trim(), Integer.parseInt(port.getText().trim()),
                     username.getText().trim(), credentialKey, name.getText());
             char[] secret = password.getPassword();
+            password.setText("");
             if (!existing && secret.length == 0) {
                 throw new IllegalArgumentException(messages.text("server.password.required"));
             }
             busy = true;
             save.setEnabled(false);
             setInputs(false);
-            status.setText(messages.text("server.connecting"));
-            var written = new java.util.concurrent.atomic.AtomicBoolean();
+            status.setText(messages.text("server.saving"));
             DesktopTaskExecutor.run(() -> {
                 try {
                     service.saveServerProfile(profile, secret);
-                    written.set(true);
-                    service.verifyServer(profile,
-                            fingerprint -> ServerTrustPrompt.confirm(this, messages, fingerprint));
                     return profile;
                 } finally {
                     Arrays.fill(secret, '\0');
@@ -215,11 +219,11 @@ public final class ServerProfileDialog extends JDialog {
                 saved.accept(value);
                 dispose();
             }, failure -> {
+                Arrays.fill(secret, '\0');
                 busy = false;
-                existing = existing || written.get();
                 save.setEnabled(true);
                 setInputs(true);
-                status.setText(messages.text("server.saveCheckFailed", Map.of("detail", messages.safe(failure))));
+                status.setText(messages.text("server.saveFailed", Map.of("detail", messages.safe(failure))));
             });
         } catch (Exception failure) {
             status.setText(messages.safe(failure));
@@ -227,8 +231,8 @@ public final class ServerProfileDialog extends JDialog {
     }
 
     /**
-     * Updates reviewed non-secret deployment input fields.
-     * <p>更新已审阅的非秘密部署输入字段。
+     * Enables configuration inputs after a save has finished.
+     * <p>保存结束后启用配置输入。
      *
      * @param enabled whether this configured capability participates in execution / 当前配置能力是否参与执行
      */

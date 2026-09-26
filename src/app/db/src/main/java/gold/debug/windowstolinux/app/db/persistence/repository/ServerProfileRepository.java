@@ -169,6 +169,42 @@ public final class ServerProfileRepository {
         }
     }
 
+    /**
+     * Deletes only an idle server without persistent business references. / 仅删除没有活动任务及持久业务引用的服务器。
+     * @param serverId exact saved server identity / 精确已保存服务器身份
+     * @return previous credential identity for separately checked cleanup / 原凭据身份，供单独核验清理
+     * @throws SQLException if a task, reference or database failure blocks deletion / 任务、引用或数据库失败阻止删除时
+     */
+    public Optional<String> deleteServerProfile(String serverId) throws SQLException {
+        var credential = new java.util.concurrent.atomic.AtomicReference<Optional<String>>(Optional.empty());
+        connections.transaction(() -> {
+            try (var connection = connections.open()) {
+                if (platform) {
+                    RepositoryConnections.lockPlatformState(connection);
+                    gold.debug.windowstolinux.app.db.task.TaskLedger.requireServerIdle(connection, serverId);
+                }
+                var profile = findServerProfile(serverId);
+                if (profile.isEmpty())
+                    return;
+                try (var references = connection.prepareStatement(referenceQuery)) {
+                    references.setString(1, serverId);
+                    try (var rows = references.executeQuery()) {
+                        if (rows.next())
+                            throw new SQLException("Persistent business references still require this server");
+                    }
+                }
+                try (var statement = connection
+                        .prepareStatement("DELETE FROM server_profile WHERE server_profile_id=?")) {
+                    statement.setString(1, serverId);
+                    if (statement.executeUpdate() != 1)
+                        throw new SQLException("Server deletion could not be confirmed");
+                }
+                credential.set(Optional.of(profile.orElseThrow().credentialKey()));
+            }
+        });
+        return credential.get();
+    }
+
     /** Reads the last non-authoritative connection observation. / 读取最后一次非权威连接观测。
      * @param serverId profile identifier / 配置标识
      * @return observation / 观测

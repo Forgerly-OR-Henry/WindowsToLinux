@@ -25,6 +25,18 @@ public final class PlatformFrame extends JFrame {
     /** Safe localized diagnostic formatter. / 安全的本地化诊断格式化器。 */
     private final PageMessagePresenter messages;
 
+    /** Permanent platform and extension navigation. / 常驻平台及扩展导航。 */
+    private final JTabbedPane content = new JTabbedPane();
+
+    /** Current theme used by platform configuration dialogs. / 平台配置窗口使用的当前主题。 */
+    private final DesktopComponentFactory components;
+
+    /** Current non-secret security status. / 当前不含秘密的安全状态。 */
+    private final SecurityApplicationFacade security;
+
+    /** Installed permanent server page, if composition has completed. / 已安装常驻服务器页面，装配完成后存在。 */
+    private gold.debug.windowstolinux.app.ui.server.PlatformServersPane servers;
+
     /** Prevents duplicate shutdown workers. / 防止重复启动关闭工作线程。 */
     private boolean closing;
 
@@ -41,9 +53,9 @@ public final class PlatformFrame extends JFrame {
         super("WindowsToLinux");
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Platform window construction requires the EDT");
-        Objects.requireNonNull(security);
+        this.security = Objects.requireNonNull(security);
         messages = new PageMessagePresenter(catalog, reports);
-        var components = new DesktopComponentFactory(palette);
+        components = new DesktopComponentFactory(palette);
         var extensions = new ExtensionPagePane(this::closePage, owner -> owner, () -> catalog.text("security.locked"));
         pages = new ModPageRegistry(extensions, environment);
         var settings = new SecuritySettingsPane(security, components, messages);
@@ -52,7 +64,6 @@ public final class PlatformFrame extends JFrame {
         settingsSurface.add(settings, BorderLayout.NORTH);
         var settingsScroll = new JScrollPane(settingsSurface);
         settingsScroll.setBorder(BorderFactory.createEmptyBorder());
-        var content = new JTabbedPane();
         content.setName("platform.pages");
         content.addTab(catalog.text("platform.pages"), extensions);
         content.addTab(catalog.text("security.settings"), settingsScroll);
@@ -66,6 +77,8 @@ public final class PlatformFrame extends JFrame {
         lock = DesktopLockController.attach(this, security, catalog, reports, sidebar, components, false,
                 () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
+            if (servers != null)
+                servers.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -81,6 +94,18 @@ public final class PlatformFrame extends JFrame {
      * @return actual page registry / 实际页面登记 */
     public ModPageRegistry pages() {
         return pages;
+    }
+
+    /**
+     * Mounts the permanent server settings independently of Mod pages. / 独立于 Mod 页面挂载常驻服务器设置。
+     * @param service actual host-owned settings and SSH checks / 实际宿主服务器设置及 SSH 检查
+     */
+    public void installServers(gold.debug.windowstolinux.app.service.server.PlatformServerService service) {
+        if (!SwingUtilities.isEventDispatchThread() || servers != null)
+            throw new IllegalStateException("Server page must be installed once on the EDT");
+        servers = new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(this, service, components, messages);
+        content.insertTab(messages.text("platform.servers"), null, servers, null, 0);
+        servers.setLocked(!security.securityState().unlocked());
     }
 
     /**
@@ -134,6 +159,8 @@ public final class PlatformFrame extends JFrame {
     /** Releases privacy listeners and disposes the window after lifecycle cleanup. / 生命周期清理后释放隐私监听器并销毁窗口。 */
     @Override
     public void dispose() {
+        if (servers != null)
+            servers.close();
         lock.close();
         super.dispose();
     }
