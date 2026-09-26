@@ -66,8 +66,8 @@ src/  # 项目源码与模块根目录
 │  ├─ secret/  # 主密码保护的统一数据库凭据存储
 │  │  ├─ crypto/  # 认证加密与备份秘密格式
 │  │  ├─ SecretStore.java  # 定义秘密写入、读取、删除与调用方清零责任的平台凭据边界
-│  │  ├─ SecretStoreException.java  # 敏感存储失败被刻意设计为不附加明文输入
-│  │  ├─ SecretStoreFailureType.java  # 秘密存储失败码、阶段与人工恢复边界
+│  │  ├─ SecretStoreException.java  # 凭据失败的公开 Problem；安全诊断与内部 cause 分离
+│  │  ├─ SecretStoreFailureType.java  # 保留凭据事件码并映射公开 ProblemCode 类别
 │  ├─ service/  # App 模式分流、凭据与持久化及共享能力编排
 │  │  ├─ ai/  # AI 模型功能
 │  │  │  ├─ AiConfigurationUseCase.java  # 桌面模型测试、保存与顺序编排

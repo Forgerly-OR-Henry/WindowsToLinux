@@ -69,8 +69,7 @@ class FailureContractArchitectureTest {
             Map.entry(DeploymentExecutionFailureType.class, "deployment"),
             Map.entry(DesktopPersistenceFailureType.class, "persistence"),
             Map.entry(DesktopSystemFailureType.class, "desktop"), Map.entry(GitSnapshotFailureType.class, "git"),
-            Map.entry(LinuxOperationFailureType.class, "linux"), Map.entry(SecretStoreFailureType.class, "secret"),
-            Map.entry(SourceArchiveFailureType.class, "source"),
+            Map.entry(LinuxOperationFailureType.class, "linux"), Map.entry(SourceArchiveFailureType.class, "source"),
             Map.entry(WindowsWorkspaceFailureType.class, "windows"));
 
     @Test
@@ -97,6 +96,13 @@ class FailureContractArchitectureTest {
             assertFalse(definition.phase().isBlank(), definition::code);
         }
         assertFalse(definitions.isEmpty());
+        for (var type : SecretStoreFailureType.values()) {
+            assertTrue(CODE.matcher(type.eventCode()).matches(), type::eventCode);
+            assertTrue(codes.add(type.eventCode()), type::eventCode);
+            assertTrue(english.containsKey("problem." + type.eventCode()), type::eventCode);
+            assertTrue(chinese.containsKey("problem." + type.eventCode()), type::eventCode);
+            assertTrue(type.problemCode() != null);
+        }
         writeCatalog(definitions);
     }
 

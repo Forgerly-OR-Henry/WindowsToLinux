@@ -968,18 +968,18 @@ Web 主密钥和本地凭据加解密由 `web/secret` 独占；可移植备份�
 ### 3.5 桌面端本地化与诊断边界
 
 1. 英文是桌面端生产代码、内部校验、程序生成诊断和默认消息资源的基准语言；`app/ui/i18n/messages/Messages.properties` 是消息目录的规范来源，简体中文只保存在 `Messages_zh_CN.properties`。
-2. 生产模块不得提前拼接英文或中文界面句子。固定用户文案必须使用稳定消息键和命名参数表达；跨模块失败通过 `FailureCarrier.failure()` 暴露 `FailureDescriptor`，UI 是唯一负责将消息键解析为显示语言的边界。
+2. 生产模块不得提前拼接英文或中文界面句子。1.1 失败通过公开 `Problem` 传递稳定事件码、安全英文诊断、上下文及原诊断身份；UI 按 `problem.<eventCode>` 查找固定本地化说明，未登记事件使用脱敏后的安全诊断。未迁移代码仍通过 `FailureCarrier.failure()` 暴露 `FailureDescriptor` 及原消息键；UI 是唯一负责解析显示语言的边界。
 3. 部署步骤、部署状态、置信度、运行状态、自启状态和生命周期动作必须以稳定代码、`record` 或 `enum` 跨模块传递，不得依赖 `Object.toString()` 或显示字符串表达业务状态。
 
 语言选择、原始诊断处理等运行规则见 [运行约定](Runtime.md)。
 
 ### 3.6 结构化错误契约与模块归属
 
-1. 错误识别、低层异常转换和安全恢复属于产生错误的模块，不新增中央 `error` Maven 模块，也不通过复制真实包结构集中保存模块私有异常。`shared.model.failure` 只提供 `OperationIdentity`、`FailureDefinition`、`FailureDescriptor`、`FailureCarrier`、`FailureSeverityLevel`、`FailureRecoveryAction` 和 `FailureRecoveryDisposition` 七个稳定最小契约。
-2. 错误码固定为 `<domain>.<operation>.<reason>`：全部小写，`reason` 使用 kebab-case，例如 `linux.connection.authentication-failed`。消息键固定为 `<domain>.error.<lowerCamelReason>`。已发布错误码不得复用、改义或静默删除；同一错误码在仓库内必须唯一。
+1. 错误识别、低层异常转换和安全恢复属于产生错误的模块，不新增中央 `error` Maven 模块，也不通过复制真实包结构集中保存模块私有异常。1.1 使用 `appapi.task` 的 `Problem`、`ProblemCode` 和 `ApiException`；内部异常可以保留原 cause，但平台公开出口只能携带安全 Problem。`shared.model.failure` 的七个旧契约仅用于尚未迁移的调用链。
+2. 旧错误码固定为 `<domain>.<operation>.<reason>`：全部小写，`reason` 使用 kebab-case，例如 `linux.connection.authentication-failed`；旧消息键为 `<domain>.error.<lowerCamelReason>`。迁移凭据错误时保留原八个事件码，采用公开 `ProblemCode` 分类，UI 消息键改为 `problem.<eventCode>`。已发布错误码不得复用、改义或静默删除；同一错误码在仓库内必须唯一。
 3. 系统级错误只由 `app/main/diagnostic/DesktopSystemFailureType` 管理，覆盖启动布局、数据目录、数据库初始化、UI 初始化、未知运行时异常、诊断报告写入、资源耗尽和关闭失败。运行时错误继续由 `ai`、`config`、`db`、`deploy`、`git`、`linux`、`secret`、`service`、`source`、`windows` 等产生错误的模块自己的 `FailureType` 管理。
-4. 调用链固定为“模块内识别与恢复 → 共用失败契约 → `deploy`/`service` 编排 → `app/ui/diagnostic` 安全展示 → `app/main/diagnostic` 本地报告”。`DeploymentEvent` 只接受 `DeploymentTraceEvent`，可以携带 `FailureDescriptor`；部署与生命周期结果必须携带一个 `OperationIdentity` 和非致命警告列表，所含失败统一绑定到该操作标识。
-5. `FailureContractArchitectureTest` 以 JDK AST 遍历全部生产失败定义并与登记表双向核对，新增未登记、漏登记和失效登记均失败；按类型继承关系检查顶级及嵌套异常的 `Exception` 后缀和 `FailureCarrier`，不得按文件名筛选。继续检查错误码格式和唯一性、模块归属、类型命名、中英文消息键一致、用户边界及静默捕获，并在 `target/failure-catalog.md` 生成不跟踪的失败目录。原生 DB 六类原因由 `linux.error` 提供结构化描述，服务边界保留既有 `service.database.*` 及恢复建议。
+4. 已迁移调用链保留原 `Problem` 和诊断身份，UI 不经旧报告写入器重新生成身份；统一后台日志生产方迁移仍待完成。旧调用链继续使用“模块内识别与恢复 → 共用失败契约 → `deploy`/`service` 编排 → `app/ui/diagnostic` 安全展示 → `app/main/diagnostic` 本地报告”。旧 `DeploymentEvent` 只接受 `DeploymentTraceEvent`，可以携带 `FailureDescriptor`；部署与生命周期结果携带 `OperationIdentity` 和非致命警告列表，所含失败统一绑定到该操作标识。
+5. `FailureContractArchitectureTest` 以 JDK AST 遍历仍实现 `FailureDefinition` 的生产定义并与登记表双向核对，新增未登记、漏登记和失效登记均失败；按类型继承关系检查顶级及嵌套异常的 `Exception` 后缀，以及公开实例 `Problem problem()` 或未迁移的 `FailureCarrier`，不得按文件名筛选。继续检查旧错误码及凭据事件码格式和唯一性、模块归属、类型命名、中英文消息键一致、用户边界及静默捕获，并在 `target/failure-catalog.md` 生成不跟踪的旧失败目录。原生 DB 六类原因由 `linux.error` 提供结构化描述，服务边界保留既有 `service.database.*` 及恢复建议。
 
 重试、恢复、日志、备份和更新行为及验收边界见 [运行约定](Runtime.md)。
 
@@ -1155,7 +1155,7 @@ shared/standard/deploy ──→ shared/ai, shared/config, shared/deploy, shared
 ```text
 app/db ──→ shared/config, shared/model
 app/main ──→ app/db, app/secret, app/service, app/ui, app/windows, shared/agent, shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/linux-sshd, shared/model, shared/standard/analyze, shared/standard/deploy
-app/secret ──→ app/db, shared/backup, shared/config, shared/model
+app/secret ──→ appapi, app/db
 app/service ──→ app/db, app/secret, app/windows, shared/agent, shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/model, shared/source, shared/standard/analyze, shared/standard/deploy
 app/ui ──→ app/service, shared/model
 app/windows ──→ shared/model, shared/source

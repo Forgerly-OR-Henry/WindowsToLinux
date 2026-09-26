@@ -189,6 +189,9 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
                     return work.run(store);
                 }
             });
+        } catch (gold.debug.windowstolinux.app.secret.SecretStoreException failure) {
+            // Storage failures still enter the write-uncertainty boundary; being an ApiException does not prove rollback. / 存储失败仍进入写入不确定边界，属于 ApiException 不能证明已回滚。
+            throw new SQLException("Protected credential storage failed");
         } catch (ApiException failure) {
             throw failure;
         } catch (Exception failure) {

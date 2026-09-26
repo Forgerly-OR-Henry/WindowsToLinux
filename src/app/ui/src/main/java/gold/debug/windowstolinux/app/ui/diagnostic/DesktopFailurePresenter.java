@@ -65,6 +65,8 @@ public final class DesktopFailurePresenter {
      */
     public String present(Throwable throwable) {
         Throwable root = unwrap(Objects.requireNonNull(throwable, "throwable"));
+        if (root instanceof gold.debug.windowstolinux.appapi.task.ApiException api)
+            return present(api.problem());
         Optional<FailureReportRecord> recorded = reports.record(root);
         FailureDescriptor descriptor = recorded.map(FailureReportRecord::failure)
                 .orElseGet(() -> findStructured(root).orElse(null));
@@ -81,6 +83,23 @@ public final class DesktopFailurePresenter {
                         "recovery",
                         text("failure.recovery." + descriptor.recoveryDisposition().name().toLowerCase(Locale.ROOT)),
                         "report", report));
+    }
+
+    /** Displays public evidence without replacing its diagnostic identity through the legacy writer. / 展示公开证据，不经旧写入器替换诊断身份。
+     * @param problem original safe platform diagnostic / 原安全平台诊断
+     * @return localized explanation, event and original identity / 本地化说明、事件及原身份 */
+    public String present(gold.debug.windowstolinux.appapi.task.Problem problem) {
+        String key = "problem." + problem.eventCode();
+        String explanation = problem.message();
+        try {
+            String localized = text(key, problem.context());
+            if (!localized.equals(key))
+                explanation = localized;
+        } catch (IllegalArgumentException untranslated) {
+            // Public events, including author-defined events, need not have a host translation. / 公开事件包括作者自定义事件，不要求宿主提供翻译。
+        }
+        return redact(explanation) + "\n[" + redact(problem.eventCode()) + "]"
+                + problem.diagnosticId().map(id -> "\n" + id).orElse("");
     }
 
     /**

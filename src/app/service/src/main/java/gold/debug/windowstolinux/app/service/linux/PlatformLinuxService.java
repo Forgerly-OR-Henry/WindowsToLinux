@@ -93,10 +93,12 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             return session;
         } catch (Exception failure) {
             session.opening.set(false);
-            ApiException reported = failure instanceof ApiException known
-                    ? known
-                    : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
-                            "SSH connection or authenticated trust could not be established");
+            ApiException reported = failure instanceof gold.debug.windowstolinux.app.secret.SecretStoreException secret
+                    ? new ApiException(secret.problem())
+                    : failure instanceof ApiException known
+                            ? known
+                            : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
+                                    "SSH connection or authenticated trust could not be established");
             try {
                 session.close();
             } catch (ApiException cleanup) {

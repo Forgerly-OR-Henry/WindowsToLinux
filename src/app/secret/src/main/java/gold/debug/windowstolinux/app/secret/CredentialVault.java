@@ -330,17 +330,14 @@ public final class CredentialVault {
 
     /** Preserves a credential failure across the SQL transaction callback. / 在 SQL 事务回调中保留凭据失败。
      */
-    private static final class CredentialWriteException extends SQLException
-            implements
-                gold.debug.windowstolinux.shared.model.failure.FailureCarrier {
+    private static final class CredentialWriteException extends SQLException {
         /** Exception serialization version. / 异常序列化版本。
          */
         /** Preserves the credential error classification across transaction rollback. / 在事务回滚中保留凭据错误分类。
          * @return original structured credential failure / 原始结构化凭据失败
          */
-        @Override
-        public gold.debug.windowstolinux.shared.model.failure.FailureDescriptor failure() {
-            return ((SecretStoreException) getCause()).failure();
+        public gold.debug.windowstolinux.appapi.task.Problem problem() {
+            return ((SecretStoreException) getCause()).problem();
         }
 
         /** Exception serialization version. / 异常序列化版本。

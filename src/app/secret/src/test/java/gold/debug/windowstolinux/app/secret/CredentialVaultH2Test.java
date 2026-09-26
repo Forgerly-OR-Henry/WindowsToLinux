@@ -36,6 +36,29 @@ class CredentialVaultH2Test {
     }
 
     @Test
+    void publicProblemSurvivesTheTransactionBridgeWithoutLeakingCauseMessages() throws Exception {
+        try (var database = PlatformDatabase.open(directory, TEST_ONLY_PROTECTION)) {
+            var repository = repository(database);
+            var vault = new CredentialVault(repository);
+            try (var session = vault.initialize(password())) {
+                var original = SecretStoreException.create(SecretStoreFailureType.ENCRYPT_FAILED,
+                        "Credential persistence failed", new SQLException("password=private-fixture"));
+                var returned = assertThrows(SecretStoreException.class, () -> session.transaction(() -> {
+                    session.save("rollback", "private-value".toCharArray());
+                    throw original;
+                }));
+                assertSame(original, returned);
+                assertSame(original.problem(), returned.problem());
+                assertTrue(repository.find("rollback").isEmpty());
+                assertFalse(returned.problem().toString().contains("private-fixture"));
+                assertFalse(returned.problem().toString().contains("private-value"));
+                assertFalse(returned.getMessage().contains("private-fixture"));
+                assertTrue(returned.problem().diagnosticId().isPresent());
+            }
+        }
+    }
+
+    @Test
     void existingVaultProtectsH2CredentialsAcrossPasswordChangesAndDatabaseReopen() throws Exception {
         byte[] before;
         try (var database = PlatformDatabase.open(directory, TEST_ONLY_PROTECTION)) {

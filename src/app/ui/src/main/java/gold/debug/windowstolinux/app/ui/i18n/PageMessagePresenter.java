@@ -105,8 +105,7 @@ public final class PageMessagePresenter {
      * @param problem original platform diagnostic / 原平台诊断
      * @return safe message, event and optional diagnostic identity / 安全消息、事件及可选诊断身份 */
     public String safe(gold.debug.windowstolinux.appapi.task.Problem problem) {
-        return problem.message() + "\n[" + problem.eventCode() + "]"
-                + problem.diagnosticId().map(id -> "\n" + id).orElse("");
+        return failures.present(problem);
     }
 
     /**
