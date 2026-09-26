@@ -13,7 +13,13 @@ final class RecoverySessionState {
      * Stable identifier within the owning registry.
      * <p>所属登记表内的稳定标识。
      */
-    final String id = UUID.randomUUID().toString();
+    final String id;
+
+    /** Uses the original central task identity for every rescue event. / 为每个救援事件使用原中央任务身份。
+     * @param id original admitted identity / 原准入身份 */
+    RecoverySessionState(UUID id) {
+        this.id = Objects.requireNonNull(id).toString();
+    }
 
     /**
      * Stage associated with the result or failure.

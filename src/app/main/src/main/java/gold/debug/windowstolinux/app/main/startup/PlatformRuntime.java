@@ -52,6 +52,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Permanent server settings and authentication-check coordinator. / 常驻服务器设置及认证检查协调器。 */
     private gold.debug.windowstolinux.app.service.server.PlatformServerService servers;
 
+    /** Permanent independent rescue coordinator on central platform tasks. / 中央平台任务上的常驻独立救援协调器。 */
+    private gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService recovery;
+
     /** Permanent model settings and capability probes. / 常驻模型设置及能力探测。 */
     private gold.debug.windowstolinux.app.service.ai.PlatformModelService models;
 
@@ -331,6 +334,36 @@ public final class PlatformRuntime implements AutoCloseable {
         return servers;
     }
 
+    /** Composes permanent rescue with actual host model, browser and SSH task ownership. / 使用实际宿主模型、浏览器及 SSH 任务归属装配常驻救援。
+     * @return original platform rescue coordinator / 原平台救援协调器
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if original recovery registration fails / 原恢复登记失败时 */
+    public synchronized gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService recovery()
+            throws gold.debug.windowstolinux.appapi.task.ApiException {
+        if (closed || stopping || prompts == null)
+            throw new IllegalStateException("Platform rescue is unavailable");
+        if (recovery == null) {
+            var remote = remoteCapabilities(PlatformTaskAdmission.PLATFORM_OWNER, version);
+            var model = ai(PlatformTaskAdmission.PLATFORM_OWNER, version);
+            try {
+                recovery = new gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService(persistence,
+                        security, tasks, version, remote.linux, model, remote::closeTaskResources);
+            } catch (gold.debug.windowstolinux.appapi.task.ApiException | RuntimeException failure) {
+                try {
+                    remote.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+                try {
+                    model.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+                throw failure;
+            }
+        }
+        return recovery;
+    }
+
     /**
      * Creates an activation-bound public server reference capability. / 创建绑定一次启用的公开服务器引用能力。
      * @param owner exact Mod identity / 精确 Mod 身份
@@ -542,6 +575,8 @@ public final class PlatformRuntime implements AutoCloseable {
         }
         if (servers != null)
             servers.close();
+        if (recovery != null)
+            recovery.close();
         if (models != null)
             models.close();
         for (var access : java.util.List.copyOf(serverAccesses))

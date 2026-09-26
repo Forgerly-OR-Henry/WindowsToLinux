@@ -106,6 +106,35 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         }
     }
 
+    /** Verifies a host rescue using a fixed read-only command after normal identity and authentication checks. / 正常身份及认证检查后使用固定只读命令复核宿主救援。
+     * @param server originally admitted server / 原准入服务器
+     * @param task original platform rescue context / 原平台救援上下文
+     * @return observed fixed verification outcome / 已观察固定复核结果
+     * @throws ApiException if ownership, trust, transport or actual cleanup is unavailable / 归属、信任、传输或实际清理不可用时 */
+    public OperationResult<Void> verifyRecovery(ServerRef server, TaskContext task) throws ApiException {
+        worker();
+        var identity = tasks.requireExecuting(task, owner, version);
+        if (!owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)
+                || !identity.type().equals(PlatformTaskAdmission.RESCUE_TYPE))
+            throw error(ProblemCode.ACCESS_DENIED, "RESCUE_TASK_REQUIRED",
+                    "Fixed rescue verification requires its original host task");
+        try (var session = (Session) connect(server, task)) {
+            var request = new CommandRequest("printf '%s\\n' WTL_SSH_RESCUE_OK", new byte[0], Duration.ofSeconds(15),
+                    1024);
+            var result = session.operate(() -> session.connection.execute(request, tasks.operationCancellation(task)));
+            if (result.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+            var output = result.value().orElseThrow();
+            if (!output.exitCode().equals(Optional.of(0)) || output.truncated()
+                    || !output.stdout().equals("WTL_SSH_RESCUE_OK\n"))
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "RESCUE_VERIFICATION_OUTPUT",
+                                "The fixed SSH verification did not produce its expected result", Map.of(),
+                                Optional.empty())));
+            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        }
+    }
+
     /** Authenticates one physical connection using the original task and current saved trust. / 使用原任务及当前保存信任认证一个物理连接。
      * @param session retained logical session / 保留的逻辑会话
      * @param connectTimeout captured connection threshold / 已捕获连接阈值

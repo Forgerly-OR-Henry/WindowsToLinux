@@ -26,6 +26,15 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Actual platform operations, never a deployment facade. / 实际平台操作，不是部署门面。 */
     private final PlatformServerService service;
 
+    /** Actual independent rescue coordinator installed by the platform shell. / 平台外壳安装的实际独立救援协调器。 */
+    private gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService recovery;
+
+    /** Navigation to permanent model configuration. / 前往常驻模型配置的导航。 */
+    private Runnable modelSettings;
+
+    /** Starts or reopens the original selected-server rescue. / 启动或重新打开所选服务器原救援。 */
+    private final JButton rescue;
+
     /** Current themed controls. / 当前主题控件。 */
     private final DesktopComponentFactory components;
 
@@ -104,7 +113,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         delete = button("server.delete", "servers.delete", this::delete);
         refresh = button("server.refresh", "servers.refresh", this::refresh);
         check = button("server.check", "servers.check", this::check);
-        for (var button : List.of(add, edit, delete, refresh, check))
+        rescue = button("recovery.title", "servers.rescue", this::rescue);
+        for (var button : List.of(add, edit, delete, refresh, check, rescue))
             actions.add(button);
         heading.add(actions, BorderLayout.SOUTH);
         add(heading, BorderLayout.NORTH);
@@ -154,6 +164,30 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         timer = new Timer(250, event -> poll());
         timer.start();
         controls();
+    }
+
+    /** Binds the real rescue entry once without adding a business extension dependency. / 绑定一次真实救援入口，不添加业务扩展依赖。
+     * @param service actual platform rescue / 实际平台救援
+     * @param modelSettings permanent model-settings navigation / 常驻模型设置导航 */
+    public void installRecovery(gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService service,
+            Runnable modelSettings) {
+        if (recovery != null || !SwingUtilities.isEventDispatchThread())
+            throw new IllegalStateException("Rescue must be installed once on the EDT");
+        recovery = Objects.requireNonNull(service);
+        this.modelSettings = Objects.requireNonNull(modelSettings);
+        controls();
+    }
+
+    /** Opens the existing original rescue or submits one new complete-server task. / 打开既有原救援或提交一个新的完整服务器任务。 */
+    private void rescue() {
+        var profile = selected();
+        if (profile == null || recovery == null)
+            return;
+        work(() -> recovery.start(profile), session -> {
+            gold.debug.windowstolinux.app.ui.recovery.SshRecoveryDialog.platform(this, profile, session, modelSettings,
+                    components, messages);
+            poll();
+        });
     }
 
     /**
@@ -255,7 +289,11 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         var task = (TaskSnapshot) checks.getSelectedItem();
         if (task != null)
             work(() -> {
-                service.cancel(task.id());
+                if (task.type()
+                        .equals(gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService.TASK_TYPE))
+                    recovery.cancel(task.id());
+                else
+                    service.cancel(task.id());
                 return null;
             }, ignored -> poll());
     }
@@ -265,16 +303,20 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         var task = (TaskSnapshot) checks.getSelectedItem();
         if (task == null || locked || busy)
             return;
-        if (JOptionPane.showConfirmDialog(owner, messages.text("server.reconcileConfirm"),
+        boolean rescueTask = task.type()
+                .equals(gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService.TASK_TYPE);
+        if (JOptionPane.showConfirmDialog(owner,
+                messages.text(rescueTask ? "recovery.taskReconcileConfirm" : "server.reconcileConfirm"),
                 messages.text("server.reconcile"), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
             return;
-        work(() -> service.reconcile(task.id()).toCompletableFuture().get(), result -> {
-            output.setText(messages.text("platform.task." + result.state()) + "\n"
-                    + (result.state() == TaskState.ENDED
-                            ? messages.text("server.interrupted")
-                            : String.join("\n", result.blockers())));
-            poll();
-        });
+        work(() -> (rescueTask ? recovery.reconcile(task.id(), true) : service.reconcile(task.id()))
+                .toCompletableFuture().get(), result -> {
+                    output.setText(messages.text("platform.task." + result.state()) + "\n"
+                            + (result.state() == TaskState.ENDED
+                                    ? messages.text(rescueTask ? "recovery.taskInterrupted" : "server.interrupted")
+                                    : String.join("\n", result.blockers())));
+                    poll();
+                });
     }
 
     /** Updates only in-memory task snapshots on the event thread. / 在事件线程仅更新内存任务快照。 */
@@ -283,7 +325,10 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             return;
         var selected = (TaskSnapshot) checks.getSelectedItem();
         UUID id = selected == null ? null : selected.id();
-        var values = service.checks();
+        var values = java.util.stream.Stream
+                .concat(service.checks().stream(),
+                        recovery == null ? java.util.stream.Stream.<TaskSnapshot>empty() : recovery.pending().stream())
+                .toList();
         boolean changed = checks.getItemCount() != values.size();
         for (int i = 0; !changed && i < values.size(); i++)
             changed = !values.get(i).equals(checks.getItemAt(i));
@@ -306,6 +351,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         edit.setEnabled(enabled && selected() != null);
         delete.setEnabled(enabled && selected() != null);
         check.setEnabled(enabled && selected() != null);
+        rescue.setEnabled(enabled && recovery != null && selected() != null);
         var task = (TaskSnapshot) checks.getSelectedItem();
         cancel.setEnabled(
                 enabled && task != null && (task.state() == TaskState.RUNNING || task.state() == TaskState.QUEUED));

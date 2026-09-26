@@ -15,6 +15,9 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
     /** Reserved platform identity outside the valid Mod identifier syntax. / 不属于合法 Mod 标识语法的保留平台身份。 */
     public static final String PLATFORM_OWNER = "@platform";
 
+    /** Host rescue protocol allowed to use the fixed read-only SSH verification. / 允许使用固定只读 SSH 复核的宿主救援协议。 */
+    public static final String RESCUE_TYPE = "platform.ssh.rescue.v1";
+
     /** Exact boot whose running Mod instances may accept business. / 可以接纳业务的运行 Mod 实例所属精确启动。 */
     private final UUID bootId;
 

@@ -117,6 +117,7 @@ public final class DesktopMain {
                 runtime.setInteractionPresenter(presenter);
                 runtime.setSourcePicker(presenter);
                 window.installServers(runtime.servers());
+                window.installRecovery(runtime.recovery());
                 window.installModels(models);
                 window.installTransfers(runtime.transfers());
                 window.installAuthorization(runtime.authorization());
