@@ -1616,6 +1616,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
 - `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
+- `app/db/mod/ModRestartLedger.java`：核验前次启动的已准备意图、推进 APPLYING，并按本次实际状态原子归档成功/失败及确认重启停用。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
 - `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
