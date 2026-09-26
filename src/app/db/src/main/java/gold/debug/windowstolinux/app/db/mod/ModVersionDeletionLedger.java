@@ -127,15 +127,18 @@ public final class ModVersionDeletionLedger {
 
     /** Atomically reserves exactly the reviewed release and last-reference generation. / 原子保留精确已审阅版本及最后引用代次。
      * @param review original review from this service / 此服务的原审阅
+     * @param files bounded host-reviewed physical scope, preserved verbatim / 有界宿主审阅物理范围，原样保留
      * @return durable operation identity / 持久操作身份
      * @throws SQLException if review became stale or admission is unconfirmed / 审阅过期或准入未确认时 */
-    public synchronized UUID begin(Review review) throws SQLException {
+    public synchronized UUID begin(Review review, String files) throws SQLException {
         require(review != null && review.issuer == this && !review.attempted, "Deletion review is stale or foreign");
         review.attempted = true;
         return locked(c -> {
-            var request = review.request;
-            require(request.equals(snapshot(c, request.owner(), request.version())),
-                    "Reviewed release or data changed");
+            var before = review.request;
+            require(before.equals(snapshot(c, before.owner(), before.version())), "Reviewed release or data changed");
+            require(files != null && files.length() <= 4 * 1024 * 1024, "Physical deletion scope exceeds bounds");
+            var request = new Request(before.format(), before.home(), before.owner(), before.version(),
+                    before.ownerState(), before.versions(), before.schema(), before.removeSchema(), files);
             drained(c, request.owner(), null);
             dependents(c, request.owner());
             if (request.removeSchema())
@@ -162,6 +165,44 @@ public final class ModVersionDeletionLedger {
                 update(c, "UPDATE mod_schema SET state='DELETE_PENDING' WHERE mod_id=? AND schema_version=?",
                         request.owner(), request.release().schema());
             return review.operation;
+        });
+    }
+
+    /** Retained physical cleanup scope and exact original checkpoint. / 保留物理清理范围及精确原检查点。
+     * @param operation original operation / 原操作
+     * @param owner original Mod / 原 Mod
+     * @param version original release / 原发布
+     * @param program original registered program directory / 原登记程序目录
+     * @param phase last confirmed checkpoint / 最后确认检查点
+     * @param state retained execution state / 保留执行状态
+     * @param files original host-reviewed physical scope / 原宿主审阅物理范围 */
+    public record Execution(UUID operation, String owner, String version, Path program, String phase, String state,
+            String files) {
+    }
+
+    /** Reads original evidence without granting permission to replay completed work. / 读取原证据，不授予重放已完成工作的权限。
+     * @param operation original identity / 原身份
+     * @return retained immutable evidence / 保留不可变证据
+     * @throws SQLException if the original range is absent or changed / 原范围缺失或变化时 */
+    public Execution execution(UUID operation) throws SQLException {
+        return locked(c -> {
+            var row = load(c, operation);
+            unchanged(c, row);
+            var request = row.request();
+            return new Execution(operation, request.owner(), request.version(), Path.of(request.release().path()),
+                    row.phase(), row.state(), request.files());
+        });
+    }
+
+    /** Marks interrupted host file work unknown without changing its original phase or scope. / 将中断宿主文件工作标未知，不改变原阶段或范围。
+     * @param operation original identity / 原身份
+     * @throws SQLException if the uncertainty cannot be retained / 无法保留不确定性时 */
+    public void unconfirmed(UUID operation) throws SQLException {
+        locked(c -> {
+            update(c,
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_DELETE_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type='DELETE_VERSION' AND state='RUNNING' AND outcome IS NULL",
+                    System.currentTimeMillis(), operation);
+            return null;
         });
     }
 
@@ -352,7 +393,7 @@ public final class ModVersionDeletionLedger {
         Schema schema = schema(c, owner, release.schema());
         boolean remove = schema != null && versions.stream()
                 .noneMatch(v -> !v.version().equals(version) && Objects.equals(v.schema(), release.schema()));
-        return new Request(1, home.toString(), owner, version, state, versions, schema, remove);
+        return new Request(1, home.toString(), owner, version, state, versions, schema, remove, "{}");
     }
 
     /** Rechecks the reviewed catalog with only this operation's confirmed changes allowed. / 复核已审阅目录，仅允许此操作已确认变更。
@@ -493,7 +534,8 @@ public final class ModVersionDeletionLedger {
         try {
             require(request.format() == 1 && home.toString().equals(request.home()) && request.ownerState() != null
                     && request.ownerState().revision() >= 0 && request.versions() != null
-                    && !request.versions().isEmpty() && request.versions().size() <= 1024, "Invalid deletion request");
+                    && !request.versions().isEmpty() && request.versions().size() <= 1024 && request.files() != null
+                    && request.files().length() <= 4 * 1024 * 1024, "Invalid deletion request");
             UUID.fromString(request.ownerState().ackBoot());
             require(segment(request.owner()) && segment(request.version()), "Invalid installed path identity");
             var release = request.release();
@@ -867,9 +909,10 @@ public final class ModVersionDeletionLedger {
      * @param ownerState original disabled intent / 原禁用意图
      * @param versions complete retained release evidence / 完整保留版本证据
      * @param schema optional original prepared data / 可选原已准备数据
-     * @param removeSchema whether this deletes the final reference / 是否删除最后引用 */
+     * @param removeSchema whether this deletes the final reference / 是否删除最后引用
+     * @param files original host physical scope / 原宿主物理范围 */
     private record Request(int format, String home, String owner, String version, Owner ownerState,
-            List<Release> versions, Schema schema, boolean removeSchema) {
+            List<Release> versions, Schema schema, boolean removeSchema, String files) {
         /** Finds the unique original release. / 查找唯一原版本。
          * @return original release, or null for invalid evidence / 原版本，无效证据则为空 */
         Release release() {

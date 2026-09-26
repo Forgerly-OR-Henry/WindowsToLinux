@@ -1653,7 +1653,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
 - `app/ui/mod/ModOriginalsPane.java`：JAR/APP 原包搜索/刷新、明确安装及原包删除、共用留存设置与原中断核对；锁定撤销确认，读取失败封闭修改，保留安装/清理的分别结果。
-- `app/service/mod/ModInstallationCleanup.java`：对未登记安装审阅有界的精确剩余文件，校验原目录身份与持久清理范围，继续删除原子集并拒绝额外或变化内容。
+- `app/service/mod/ModInstallationCleanup.java`：为未登记安装撤销及已安装版本删除审阅有界的精确剩余文件，校验原目录身份与持久清理范围，继续删除原子集并拒绝额外或变化内容。
+- `app/service/mod/PlatformModDeletion.java`：审阅并持久保存安装版本的精确原生文件范围；串联程序、共享 Schema、引用及登记删除，按明确勾选清理清单匹配原包，保留中断原范围并提供终态凭据。
 - `app/service/mod/PlatformModInstallation.java`：绑定原包审阅及留存选择；按原 INSTALL 阶段暂存、不覆盖发布、登记、清理和归档，以 Windows 原身份及逐文件摘要恢复；支持明确撤销未登记安装及原 CANCELLING 清理/归档；提供含无效包的只读扫描、独立待处理清单及原包删除审阅，不自动启用或接管替代目录。
 - `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档；保存用户页面固定偏好。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。

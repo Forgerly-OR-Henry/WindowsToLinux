@@ -104,7 +104,7 @@ class ModVersionDeletionLedgerTest {
             var review = ledger.review(OWNER, "1.0.0");
             assertEquals(List.of("1.1.0"), review.retainedSchemaVersions());
             assertTrue(review.removedSchema().isEmpty());
-            var id = ledger.begin(review);
+            var id = ledger.begin(review, "{}");
             removeProgram("1.0.0");
             complete(ledger, id);
             assertEquals("retained data",
@@ -113,7 +113,7 @@ class ModVersionDeletionLedgerTest {
             assertNull(value(db, "SELECT selected_version FROM mod_registry WHERE mod_id=?", OWNER));
             var last = ledger.review(OWNER, "1.1.0");
             assertEquals(Optional.of(data), last.removedSchema());
-            id = ledger.begin(last);
+            id = ledger.begin(last, "{}");
             removeProgram("1.1.0");
             complete(ledger, id);
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_schema WHERE mod_id=?", OWNER));
@@ -159,10 +159,10 @@ class ModVersionDeletionLedgerTest {
             var ledger = new ModVersionDeletionLedger(db, root);
             var review = ledger.review(OWNER, "1.0.0");
             release(db, "1.0.1", "1");
-            assertThrows(SQLException.class, () -> ledger.begin(review));
-            assertThrows(SQLException.class, () -> ledger.begin(review));
+            assertThrows(SQLException.class, () -> ledger.begin(review, "{}"));
+            assertThrows(SQLException.class, () -> ledger.begin(review, "{}"));
             var foreign = new ModVersionDeletionLedger(db, root).review(OWNER, "1.0.0");
-            assertThrows(SQLException.class, () -> ledger.begin(foreign));
+            assertThrows(SQLException.class, () -> ledger.begin(foreign, "{}"));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_operation"));
             assertEquals("READY", value(db, "SELECT state FROM mod_version WHERE version='1.0.0'"));
         }
@@ -175,7 +175,7 @@ class ModVersionDeletionLedgerTest {
             release(db, "1.0.0", "1");
             var data = schema(db, "1");
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             assertThrows(SQLException.class, () -> ledger.programRemoved(id));
             assertEquals("UNKNOWN/QUIESCENT", phase(db, id));
             assertEquals("QUIESCENT", ledger.resume(id));
@@ -198,7 +198,7 @@ class ModVersionDeletionLedgerTest {
             data = schema(db, "1");
             firstBoot = db.bootId();
             var ledger = new ModVersionDeletionLedger(db, root);
-            id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
             ledger.programRemoved(id);
             sql(db, "ALTER TABLE mod_operation ADD CONSTRAINT fixture_checkpoint CHECK(phase<>'DATA_REMOVED')");
@@ -232,7 +232,7 @@ class ModVersionDeletionLedgerTest {
             owner(db);
             release(db, "1.0.0", null);
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             String archive = value(db, "SELECT archive_log_id FROM mod_operation WHERE operation_id=?", id);
             removeProgram("1.0.0");
             ledger.programRemoved(id);
@@ -264,7 +264,7 @@ class ModVersionDeletionLedgerTest {
             release(db, "1.0.0", "1");
             var data = schema(db, "1");
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
             ledger.programRemoved(id);
             String request = value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id);
@@ -358,7 +358,7 @@ class ModVersionDeletionLedgerTest {
             sql(db, "CREATE VIEW " + schema + ".own_view AS SELECT * FROM " + schema + ".items");
             sql(db, "CREATE VIEW app.external_view AS SELECT * FROM " + schema + ".own_view");
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
             ledger.programRemoved(id);
             assertThrows(SQLException.class, () -> ledger.removeData(id));
@@ -408,13 +408,13 @@ class ModVersionDeletionLedgerTest {
             var ledger = new ModVersionDeletionLedger(db, root);
             var review = ledger.review(OWNER, "1.0.0");
             assertEquals(Optional.of(data), review.removedSchema());
-            var id = ledger.begin(review);
+            var id = ledger.begin(review, "{}");
             removeProgram("1.0.0");
             complete(ledger, id);
             release(db, "2.0.0", "2");
             review = ledger.review(OWNER, "2.0.0");
             assertTrue(review.removedSchema().isEmpty());
-            id = ledger.begin(review);
+            id = ledger.begin(review, "{}");
             removeProgram("2.0.0");
             complete(ledger, id);
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_schema"));
@@ -428,7 +428,7 @@ class ModVersionDeletionLedgerTest {
             release(db, "1.0.0", "1");
             var data = schema(db, "1");
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
             ledger.programRemoved(id);
             release(db, "2.0.0", "1");
@@ -493,7 +493,7 @@ class ModVersionDeletionLedgerTest {
             sql(db, "INSERT INTO log_category VALUES(?,?,?, ?,?,'fixture','fixture_log','fixture',1)",
                     UUID.randomUUID(), OWNER, "v1", data.generation(), new SchemaCoordinates(data).physicalName());
             var ledger = new ModVersionDeletionLedger(db, root);
-            var id = ledger.begin(ledger.review(OWNER, "1.0.0"));
+            var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
             ledger.programRemoved(id);
             ledger.removeData(id);

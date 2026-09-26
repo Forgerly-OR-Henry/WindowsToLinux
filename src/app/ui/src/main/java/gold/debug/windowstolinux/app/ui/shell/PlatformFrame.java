@@ -216,6 +216,7 @@ public final class PlatformFrame extends JFrame {
                     if (logs != null)
                         content.setSelectedComponent(logs);
                 });
+        mods.installDeletion(service.orElseThrow().deletion(), originals::refresh);
         modManagement.addTab(messages.text("originals.title"), originals);
         javax.swing.event.ChangeListener refresh = event -> {
             if (content.getSelectedComponent() == modManagement && modManagement.getSelectedComponent() == originals)

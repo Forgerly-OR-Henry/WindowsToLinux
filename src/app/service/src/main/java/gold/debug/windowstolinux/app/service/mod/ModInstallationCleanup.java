@@ -193,7 +193,7 @@ final class ModInstallationCleanup {
      * @param maximum file size bound or minus one for a directory / 文件大小界限，目录为负一
      * @return exact current evidence / 精确当前依据
      * @throws IOException if changed, redirected or oversized / 变化、重定向或超限时 */
-    private static Entry observe(Path path, long maximum) throws IOException {
+    static Entry observe(Path path, long maximum) throws IOException {
         boolean directory = maximum == -1;
         PlatformModInstallation.ordinary(path, directory);
         String identity = WindowsFileIdentity.read(path);
@@ -227,5 +227,141 @@ final class ModInstallationCleanup {
                 && (before.size() != after.size() || !before.lastModifiedTime().equals(after.lastModifiedTime())))
             throw new IOException("Cancellation file changed during review");
         return new Entry(path.toString(), identity, directory, directory ? 0 : before.size(), hash);
+    }
+
+    /** Captures the current ordinary installed package without executing or trusting its code. / 捕获当前普通安装包，不执行或信任其代码。
+     * @param root registered installed root / 登记安装根
+     * @return exact files in deletion order, empty if already absent / 按删除顺序的精确文件，已不存在则为空
+     * @throws IOException if unknown layout, redirection or bounds prevent review / 未知布局、重定向或界限阻止审阅时 */
+    static List<Entry> installed(Path root) throws IOException {
+        if (!PlatformModInstallation.exists(root))
+            return List.of();
+        var entries = new ArrayList<Entry>();
+        long[] total = {0};
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            /** Captures only ordinary package directories. / 仅捕获普通包目录。
+             * @param path current directory / 当前目录
+             * @param attrs original attributes / 原属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if outside layout / 超出布局时 */
+            @Override
+            public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {
+                capture(path, true);
+                return FileVisitResult.CONTINUE;
+            }
+
+            /** Captures bounded actual bytes, including damaged program bytes. / 捕获有界实际字节，包括损坏程序字节。
+             * @param path current file / 当前文件
+             * @param attrs original attributes / 原属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if outside layout or bounds / 超出布局或界限时 */
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
+                capture(path, false);
+                return FileVisitResult.CONTINUE;
+            }
+
+            /** Checks layout before reading file contents. / 读取文件内容前检查布局。
+             * @param path current entry / 当前条目
+             * @param directory expected kind / 预期种类
+             * @throws IOException if unsafe / 不安全时 */
+            private void capture(Path path, boolean directory) throws IOException {
+                if (!installedPath(root, path, directory) || entries.size() >= ModPackageReader.MAX_ENTRIES + 3)
+                    throw new IOException("Unexpected installed content must be resolved before deletion");
+                var entry = observe(path, directory ? -1 : ModPackageReader.MAX_BYTES - total[0]);
+                total[0] += entry.size();
+                entries.add(entry);
+            }
+        });
+        PlatformModInstallation.identity(root, entries.getFirst().identity());
+        return ordered(entries);
+    }
+
+    /** Validates persisted installed evidence against the registered root and package layout. / 按登记根和包布局校验持久安装依据。
+     * @param entries accepted physical scope / 接纳物理范围
+     * @param root registered root / 登记根
+     * @throws IOException if malformed or out of scope / 畸形或越界时 */
+    static void validateInstalled(List<Entry> entries, Path root) throws IOException {
+        if (entries == null || entries.size() > ModPackageReader.MAX_ENTRIES + 3)
+            throw new IOException("Installed deletion scope exceeds bounds");
+        var indexed = new HashMap<String, Entry>();
+        long total = 0;
+        for (var entry : entries) {
+            validateEntry(entry);
+            if (!installedPath(root, Path.of(entry.path()), entry.directory())
+                    || indexed.putIfAbsent(entry.path(), entry) != null)
+                throw new IOException("Invalid installed deletion path");
+            total += entry.size();
+            if (total > ModPackageReader.MAX_BYTES)
+                throw new IOException("Installed deletion content exceeds bounds");
+        }
+        for (var entry : entries) {
+            Path path = Path.of(entry.path());
+            if (path.equals(root))
+                continue;
+            var parent = indexed.get(path.getParent().toString());
+            if (parent == null || !parent.directory())
+                throw new IOException("Missing installed ancestor evidence");
+        }
+    }
+
+    /** Deletes only the unchanged still-present subset of the confirmed installed scope. / 仅删除确认安装范围中未变且仍存在的子集。
+     * @param accepted original accepted entries / 原接纳条目
+     * @param root exact installed root / 精确安装根
+     * @throws IOException if replacement, extras or deletion remain unconfirmed / 替代物、额外内容或删除未确认时 */
+    static void removeInstalled(List<Entry> accepted, Path root) throws IOException {
+        validateInstalled(accepted, root);
+        var indexed = new HashMap<String, Entry>();
+        accepted.forEach(e -> indexed.put(e.path(), e));
+        var remaining = installed(root);
+        for (var entry : remaining)
+            if (!entry.equals(indexed.get(entry.path())))
+                throw new IOException("Installed deletion scope changed after confirmation");
+        for (var entry : remaining) {
+            Path path = Path.of(entry.path());
+            for (Path parent = path.getParent(); indexed.containsKey(parent.toString()); parent = parent.getParent())
+                PlatformModInstallation.identity(parent, indexed.get(parent.toString()).identity());
+            if (!entry.equals(observe(path, entry.directory() ? -1 : entry.size())))
+                throw new IOException("Installed entry changed before deletion");
+            Files.delete(path);
+        }
+        if (PlatformModInstallation.exists(root))
+            throw new IOException("Installed program still remains");
+    }
+
+    /** Validates one exact ordinary native identity and bounded content record. / 校验一个精确普通原生身份及有界内容记录。
+     * @param entry persisted entry / 持久条目
+     * @throws IOException if invalid / 无效时 */
+    static void validateEntry(Entry entry) throws IOException {
+        if (entry == null || entry.path() == null || entry.identity() == null
+                || !entry.identity().matches("[0-9a-f]{48}") || entry.size() < 0
+                || entry.size() > ModPackageReader.MAX_BYTES
+                || (entry.directory()
+                        ? entry.size() != 0 || entry.sha256() != null
+                        : entry.sha256() == null || !entry.sha256().matches("[0-9a-f]{64}")))
+            throw new IOException("Invalid physical deletion evidence");
+    }
+
+    /** Tests a fixed installed layout without trusting persisted absolute strings. / 检查固定安装布局，不信任持久绝对字符串。
+     * @param root registered root / 登记根
+     * @param path candidate / 候选
+     * @param directory expected kind / 预期种类
+     * @return whether within the closed layout / 是否在封闭布局内 */
+    private static boolean installedPath(Path root, Path path, boolean directory) {
+        if (!path.isAbsolute() || !path.normalize().equals(path) || !path.startsWith(root))
+            return false;
+        String name = root.relativize(path).toString().replace('\\', '/');
+        return directory
+                ? Set.of("", "main", "lib").contains(name)
+                : Set.of("mod.json", "README.md", "LICENSE", "CHANGELOG.md").contains(name)
+                        || name.matches("(?:main|lib)/[^/\\\\:]+\\.jar");
+    }
+
+    /** Orders actual children before their empty parent directories. / 将实际子项排在其空父目录前。
+     * @param entries observed entries / 观察条目
+     * @return immutable deterministic deletion order / 不可变确定删除顺序 */
+    private static List<Entry> ordered(List<Entry> entries) {
+        return entries.stream().sorted(Comparator.<Entry>comparingInt(e -> Path.of(e.path()).getNameCount()).reversed()
+                .thenComparing(Entry::path)).toList();
     }
 }

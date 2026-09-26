@@ -41,6 +41,9 @@ public final class PlatformModInstallation implements AutoCloseable {
     /** Fixed platform archive registration. / 固定平台归档登记。 */
     private final LogRepository.Target archive;
 
+    /** Installed-version cleanup bound to the same root and security owner. / 绑定同一根及安全所有者的安装版本清理。 */
+    private final PlatformModDeletion deletion;
+
     /** Strict bounded request codec. / 严格有界请求编解码。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
@@ -69,6 +72,13 @@ public final class PlatformModInstallation implements AutoCloseable {
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
                 new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+        deletion = new PlatformModDeletion(database, security, home);
+    }
+
+    /** Returns actual installed-version deletion for host composition. / 返回供宿主装配的实际安装版本删除。
+     * @return original deletion owner / 原删除所有者 */
+    public PlatformModDeletion deletion() {
+        return deletion;
     }
 
     /** Opaque single-use review of original bytes and the captured retention choice. / 原始字节及所捕获留存选择的不透明单次审阅。 */
@@ -210,7 +220,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                 var pending = maintenance(c);
                 var rows = new ArrayList<OriginalView>();
                 for (var value : observed) {
-                    boolean busy = inUse(pending, value.file(), value.stamp());
+                    boolean busy = inUse(pending, value.file(), value.stamp()) || PlatformModDeletion.originalBusy(c,
+                            home, value.file(), value.stamp() == null ? null : value.stamp().identity());
                     String state = value.inspection() == null ? "INVALID" : "AVAILABLE";
                     if (value.inspection() != null) {
                         var manifest = value.inspection().manifest();
@@ -283,7 +294,8 @@ public final class PlatformModInstallation implements AutoCloseable {
             originalPath(file);
             var stamp = stamp(file);
             return locked(c -> {
-                if (inUse(maintenance(c), file, stamp))
+                if (inUse(maintenance(c), file, stamp)
+                        || PlatformModDeletion.originalBusy(c, home, file, stamp.identity()))
                     throw new SQLException("Original package is retained by maintenance");
                 return new DeleteReview(file, stamp);
             });
@@ -304,7 +316,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                 throw new IOException("Original changed after deletion review");
             review.used = true;
             locked(c -> {
-                if (inUse(maintenance(c), review.file, review.stamp))
+                if (inUse(maintenance(c), review.file, review.stamp)
+                        || PlatformModDeletion.originalBusy(c, home, review.file, review.stamp.identity()))
                     throw new SQLException("Original package is in use");
                 try {
                     originalPath(review.file);
@@ -1362,6 +1375,7 @@ public final class PlatformModInstallation implements AutoCloseable {
     /** Closes only after synchronized accepted work returned. / 仅在同步已接纳工作返回后关闭。 */
     @Override
     public synchronized void close() {
+        deletion.close();
         closed = true;
     }
 
