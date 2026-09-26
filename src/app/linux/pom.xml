@@ -11,6 +11,11 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-windows</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
       <version>1.0.0-dev.1</version>
     </dependency>

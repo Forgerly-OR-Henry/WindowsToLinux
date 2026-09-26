@@ -306,7 +306,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 String sha256 = digest.group(1);
                 interaction.consume(grant, RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload),
                         task);
-                return connection.transfer(request, sha256, upload, transferTimeout, tasks.operationCancellation(task));
+                return connection.transfer(request, sha256, upload, transferTimeout, tasks.operationCancellation(task),
+                        conflict -> interaction.transferConflict(conflict, server, task));
             });
         }
 

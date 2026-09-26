@@ -30,6 +30,13 @@ class PlatformInteractionTest {
                 "Effect description");
     }
     static class Prompts implements PlatformInteractionService.Prompts {
+        public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
+                gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
+                gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                CancellationToken cancellation) {
+            return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.TERMINATE;
+        }
+
         public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
             return true;
         }

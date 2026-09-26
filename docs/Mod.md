@@ -1129,7 +1129,11 @@ public record RemoteFacts(String operatingSystem, String architecture, String fi
 public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes) {}
 public record CommandResult(Optional<Integer> exitCode, String stdout, String stderr, boolean truncated) {}
 public record TransferRequest(Path localPath, String remoteAbsolutePath, long maxBytes) {}
-public record TransferResult(long transferredBytes, String sha256) {}
+public record TransferResult(long transferredBytes, String sha256,
+    Path localPath, String remoteAbsolutePath) {}
+public enum TransferConflictChoice { OVERWRITE, KEEP_BOTH, TERMINATE }
+public record TransferConflict(TransferRequest request, boolean upload,
+    long incomingBytes, long existingBytes) {}
 public interface RemoteSession extends AutoCloseable {
     RemoteFacts facts();
     OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant)
@@ -1161,7 +1165,13 @@ public interface LinuxService {
 
 重试和续传须确认源身份、长度/摘要、所属临时文件及已完成内容仍匹配原传输，核对后才从可证明的断点继续；不拼接来历不明或校验不匹配的残留。原任务持有临时文件、连接及恢复记录至实际清理；断连或发布结果不明时保留 UNKNOWN，显式核对事实后再决定续传、清理或完成。该能力不授权自动重跑结果未知的部署命令。
 
-普通文件与父目录须通过不跟随链接的类型检查，远端还核对 SFTP 规范路径；客户端依赖所认证服务端提供的文件系统事实。本地路径授权仍由任务宿主校验，传输层检查不能替代授权。上述冲突处理、临时校验发布、无进展交互和可验证续传为 2026-09-26 新增目标；当前排他新建及固定总时限实现待替换。
+普通文件与父目录须通过不跟随链接的类型检查，远端还核对 SFTP 规范路径；客户端依赖所认证服务端提供的文件系统事实。本地路径授权仍由任务宿主校验，传输层检查不能替代授权。
+
+当前已接入上传/下载的真实三选项冲突窗口、同目录临时文件、校验后发布和发布后回读；`TransferResult` 返回实际本地与远端路径，业务必须使用该结果识别“保留两份”生成的新名称。备选名保留普通扩展名，按 `(1)`、`(2)` 顺序跳过已有文件、目录和链接；超长名称按 UTF-8 字节限制缩短主体。覆盖选择绑定原目标内容摘要及元数据，发布前变化则停止，不把旧决定套到新文件。
+
+临时文件名为 `.wtl-transfer-<UUID>.part`，放在目标同目录。Windows 发布使用不预删旧目标的原生同目录移动；新建发布不允许覆盖。远端覆盖使用 SFTP 5+ 的原子覆盖标志或 SFTP 3 的已广告 POSIX rename 扩展；不支持时明确拒绝。实际保证仍依赖已认证服务端正确实现协议，不据本机模拟测试外推任意 Linux 服务端。错误结果保留 `transferId`；此阶段不自动删除不完整文件或重发操作。
+
+**尚未完成：** 固定传输总时限仍待替换为有效进展/无进展提示；可验证续传、持久传输检查点和临时文件独立资源账本待接入，当前 UNKNOWN 仅由原任务保留并等待业务核对。人工冲突选择的等待已排除于现有总时限，不能将其视为完整新超时策略。三档平台授权及其偏好也仍待实现。
 
 ### 8.7 ai：通用模型调用
 

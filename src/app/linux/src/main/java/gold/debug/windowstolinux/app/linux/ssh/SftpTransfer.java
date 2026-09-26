@@ -16,7 +16,7 @@ import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.sftp.client.*;
 import org.apache.sshd.sftp.common.*;
 
-/** Transfers one reviewed regular file without overwriting any destination. / 传输一个已审核普通文件，不覆盖任何已有目标。 */
+/** Stages one reviewed regular file and publishes it only after content verification. / 暂存一个已审核普通文件，仅在内容验证后发布。 */
 final class SftpTransfer {
     /** Authenticated parent transport retained by its connection. / 由连接保留的已认证父传输。 */
     private final ClientSession session;
@@ -35,6 +35,18 @@ final class SftpTransfer {
 
     /** Original task cancellation source. / 原任务取消来源。 */
     private final CancellationToken cancellation;
+
+    /** Actual host-owned same-name choice. / 实际宿主所属同名选择。 */
+    private final TransferConflictResolver conflicts;
+
+    /** Unique temporary-file owner for this transfer. / 本次传输唯一临时文件所有者。 */
+    private final UUID transferId = UUID.randomUUID();
+
+    /** Whether the physical worker is waiting for the user's conflict decision. / 物理工作线程是否正在等待用户冲突决定。 */
+    private volatile long humanStarted;
+
+    /** Time spent waiting for conflict decisions. / 等待冲突决定花费的时间。 */
+    private volatile long humanElapsed;
 
     /** Actual worker, retained until it terminates. / 终止前保留的实际工作线程。 */
     private Thread worker;
@@ -65,15 +77,17 @@ final class SftpTransfer {
      * @param upload whether this is an upload / 是否为上传
      * @param timeout total host operation budget / 宿主操作总预算
      * @param cancellation original task cancellation / 原任务取消
+     * @param conflicts host-owned conflict presenter / 宿主所属冲突呈现器
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
-            CancellationToken cancellation) throws ApiException {
+            CancellationToken cancellation, TransferConflictResolver conflicts) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
         this.digest = Objects.requireNonNull(digest);
         this.upload = upload;
         this.cancellation = Objects.requireNonNull(cancellation);
+        this.conflicts = Objects.requireNonNull(conflicts);
         try {
             budget = timeout.toNanos();
             String path = request.remoteAbsolutePath();
@@ -108,7 +122,8 @@ final class SftpTransfer {
                     return pending.get();
                 if (cancellation.requested() || Thread.currentThread().isInterrupted())
                     return stopped("SFTP_CANCELLED", ProblemCode.CANCELLED);
-                long remaining = budget - (System.nanoTime() - started);
+                long now = System.nanoTime(), prompt = humanStarted;
+                long remaining = budget - (now - started - humanElapsed - (prompt == 0 ? 0 : now - prompt));
                 if (remaining <= 0)
                     return stopped("SFTP_TIMEOUT", ProblemCode.TIMEOUT);
                 return pending.get(Math.min(remaining, 50_000_000), TimeUnit.NANOSECONDS);
@@ -134,14 +149,18 @@ final class SftpTransfer {
             Path path = request.localPath();
             verifyLocalParents(path);
             BasicFileAttributes before = upload ? regularLocal(path) : null;
+            String sourceIdentity = upload
+                    ? gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity.read(path)
+                    : null;
             if (upload) {
                 bounded(before.size());
                 local = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
                 if (local.size() != before.size() || !digest.equals(hashLocal(before.size())))
                     throw new IOException("Source changed");
                 verifyUnchanged(before, regularLocal(path));
-            } else if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
-                throw new IOException("Destination already exists");
+                if (!sourceIdentity
+                        .equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity.read(path)))
+                    throw new IOException("Local source was replaced");
             }
             check();
             phase = "sftp-open";
@@ -149,23 +168,21 @@ final class SftpTransfer {
             sftp = SftpClientFactory.instance().createSftpClient(session);
             phase = "remote-validation";
             verifyRemoteParents();
+            var destination = new SftpDestination(sftp, request, upload, transferId, cancellation);
             SftpClient.CloseableHandle remote;
             long size;
             if (upload) {
-                try {
-                    sftp.lstat(request.remoteAbsolutePath());
-                    throw new IOException("Destination already exists");
-                } catch (SftpException absent) {
-                    if (absent.getStatus() != SftpConstants.SSH_FX_NO_SUCH_FILE)
-                        throw absent;
-                }
                 size = before.size();
+                destination.select(size, this::choose);
                 phase = "upload";
                 beginMutation();
-                remote = sftp.open(request.remoteAbsolutePath(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
+                remote = sftp.open(destination.remoteTemporary(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
                         SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive);
                 copyToRemote(remote, size);
                 verifyUnchanged(before, regularLocal(path));
+                if (!sourceIdentity
+                        .equals(gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity.read(path)))
+                    throw new IOException("Local source was replaced");
                 if (local.size() != size || !digest.equals(hashLocal(size)))
                     throw new IOException("Source changed");
                 regularRemote(sftp.stat(remote), size);
@@ -183,11 +200,12 @@ final class SftpTransfer {
                 regularRemote(sftp.stat(remote), size);
                 if (!digest.equals(hashRemote(remote, size)))
                     throw new IOException("Source digest mismatch");
+                destination.select(size, this::choose);
                 check();
                 verifyLocalParents(path);
                 beginMutation();
-                local = FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.READ,
-                        StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                local = FileChannel.open(destination.localTemporary(), StandardOpenOption.CREATE_NEW,
+                        StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
                 copyToLocal(remote, size);
                 local.force(true);
                 if (local.size() != size || !digest.equals(hashLocal(size)))
@@ -196,23 +214,57 @@ final class SftpTransfer {
             }
             verifyLocalParents(path);
             verifyRemoteParents();
-            regularRemote(sftp.lstat(request.remoteAbsolutePath()), size);
-            regularLocal(path);
             check();
             remote.close();
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(size, digest)),
+            local.close();
+            phase = "publish";
+            destination.publish();
+            regularRemote(sftp.lstat(destination.remote()), size);
+            regularLocal(destination.local());
+            phase = "published-verification";
+            if (upload) {
+                try (var published = sftp.open(destination.remote(), SftpClient.OpenMode.Read)) {
+                    if (!digest.equals(hashRemote(published, size)))
+                        throw new IOException("Published remote content changed");
+                }
+            } else {
+                local = FileChannel.open(destination.local(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+                if (!digest.equals(hashLocal(size)))
+                    throw new IOException("Published local content changed");
+                local.close();
+            }
+            return new OperationResult<>(Outcome.SUCCEEDED,
+                    Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
                     Optional.empty());
         } catch (Exception failure) {
             var result = problem("SFTP_NOT_VERIFIED",
-                    cancellation.requested() ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE);
+                    cancellation.requested() || failure instanceof CancellationException
+                            ? ProblemCode.CANCELLED
+                            : ProblemCode.IO_FAILURE);
             var problem = result.problem().orElseThrow();
             return new OperationResult<>(result.outcome(), result.value(),
                     Optional.of(new Problem(problem.code(), problem.eventCode(), problem.message(),
-                            Map.of("phase", phase, "providerType", failure.getClass().getSimpleName(), "status",
+                            Map.of("transferId", transferId.toString(), "phase", phase, "providerType",
+                                    failure.getClass().getSimpleName(), "status",
                                     failure instanceof SftpException sftpFailure
                                             ? Integer.toString(sftpFailure.getStatus())
                                             : "none"),
                             Optional.empty())));
+        }
+    }
+
+    /** Excludes explicit human decision time from transport waiting. / 从传输等待中排除明确人工决定时间。
+     * @param conflict actual same-name conflict / 实际同名冲突
+     * @return explicit user choice / 明确用户选择
+     * @throws Exception if the owned dialog fails / 所属对话框失败时 */
+    private TransferConflictChoice choose(TransferConflict conflict) throws Exception {
+        long started = System.nanoTime();
+        humanStarted = started;
+        try {
+            return conflicts.resolve(conflict);
+        } finally {
+            humanElapsed += System.nanoTime() - started;
+            humanStarted = 0;
         }
     }
 
@@ -415,7 +467,7 @@ final class SftpTransfer {
                         mutation
                                 ? "File transfer was not verified; destination effects require reconciliation"
                                 : "File transfer was rejected before destination creation",
-                        Map.of(), Optional.empty())));
+                        Map.of("transferId", transferId.toString()), Optional.empty())));
     }
 
     /**

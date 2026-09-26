@@ -60,7 +60,7 @@ public final class RemoteActions {
         return new ActionIntent(upload ? "platform.sftp.upload" : "platform.sftp.download", List.of(server.id()),
                 server.id(), revision, action,
                 upload
-                        ? "Upload by creating a new remote file; existing files are preserved."
-                        : "Download by creating a new local file; existing files are preserved.");
+                        ? "Upload through a verified temporary file; ask separately before replacing an existing target."
+                        : "Download through a verified temporary file; ask separately before replacing an existing target.");
     }
 }
