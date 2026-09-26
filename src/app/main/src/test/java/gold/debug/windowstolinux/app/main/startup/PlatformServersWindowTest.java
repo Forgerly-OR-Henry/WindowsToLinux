@@ -47,6 +47,7 @@ class PlatformServersWindowTest {
                     frame.set(window);
                     runtime.setInteractionPresenter(new TaskInteractionPresenter(window, messages));
                     window.installServers(runtime.servers());
+                    window.installRecovery(runtime.recovery());
                     ((JTabbedPane) named(window, "platform.pages"))
                             .setSelectedComponent(named(window, "platform.servers"));
                     window.setVisible(true);
@@ -97,6 +98,20 @@ class PlatformServersWindowTest {
                 assertEquals(0, remote.commands.get());
                 assertTrue(runtime.servers().checks().isEmpty());
                 onEdt(() -> {
+                    ((JButton) named(frame.get(), "servers.rescue")).doClick(0);
+                    return null;
+                });
+                var rescueService = runtime.recovery();
+                await(() -> dialog("recovery.dialog") != null && remote.commands.get() == 1
+                        && rescueService.pending().isEmpty());
+                await(() -> descendants(dialog("recovery.dialog")).filter(JTextArea.class::isInstance)
+                        .map(JTextArea.class::cast).anyMatch(area -> area.getText().contains("已验证 SSH 身份、认证和只读执行")));
+                onEdt(() -> {
+                    capture(dialog("recovery.dialog"), "platform-rescue.png");
+                    dialog("recovery.dialog").dispose();
+                    return null;
+                });
+                onEdt(() -> {
                     capture(frame.get(), "platform-servers.png");
                     return null;
                 });
@@ -133,8 +148,11 @@ class PlatformServersWindowTest {
             var ledger = new gold.debug.windowstolinux.app.db.task.TaskLedger(db);
             task = PlatformServerServiceTest.old(ledger, PlatformServerServiceTest.HOST,
                     PlatformServerServiceTest.TYPE);
-            ledger.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CONNECTION",
-                    UUID.randomUUID().toString(), PlatformServerServiceTest.HOST, false));
+            ledger.retain(task,
+                    new gold.debug.windowstolinux.app.db.task.TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(),
+                            PlatformServerServiceTest.HOST, false),
+                    new gold.debug.windowstolinux.app.db.task.ResourceRecovery("ssh.v1",
+                            Map.of("bootId", db.bootId().toString(), "serverId", "fixture")));
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());

@@ -81,6 +81,26 @@ record RecoveryProbeResult(StatusType status, Optional<FailureDescriptor> failur
         return new RecoveryProbeResult(StatusType.RECOVERED, Optional.empty());
     }
 
+    /** Classifies exact platform evidence for the remaining legacy display contract. / 为剩余旧显示契约分类精确平台证据。
+     * @param problem original safe platform evidence / 原安全平台证据
+     * @return explicit retry class and preserved diagnostic identity/code / 明确重试分类及保留的诊断身份和代码 */
+    static RecoveryProbeResult failed(gold.debug.windowstolinux.appapi.task.Problem problem) {
+        var status = problem.code() == gold.debug.windowstolinux.appapi.task.ProblemCode.CANCELLED
+                ? StatusType.INTERRUPTED
+                : switch (problem.eventCode()) {
+                    case "SSH_CONNECTION_FAILED", "SSH_CONNECT_TIMEOUT" -> StatusType.RETRYABLE_CONNECTION;
+                    case "SSH_AUTHENTICATION_FAILED" -> StatusType.AUTHENTICATION_REJECTED;
+                    case "SSH_HOST_KEY_REJECTED", "SSH_HOST_TRUST_FAILED" -> StatusType.IDENTITY_CONFLICT;
+                    case "SERVER_CREDENTIAL_MISSING" -> StatusType.CREDENTIAL_UNAVAILABLE;
+                    default -> StatusType.FAILED;
+                };
+        var identity = problem.diagnosticId().map(id -> OperationIdentity.from(id.toString()))
+                .orElseGet(OperationIdentity::create);
+        return new RecoveryProbeResult(status,
+                Optional.of(FailureDescriptor.create(ApplicationServiceFailureType.RECOVERY_PROBE_FAILED, identity,
+                        problem.eventCode() + ": " + problem.message())));
+    }
+
     /**
      * Preserves the first structured failure in the cause chain and separates interruption, authentication, host identity and credential failures. Only an explicit connection failure without interruption is retryable.
      * <p>保留原因链中的第一个结构化失败，并区分中断、认证、主机身份及凭据失败。仅未伴随中断的明确连接失败可重试。

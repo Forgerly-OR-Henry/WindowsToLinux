@@ -136,6 +136,17 @@ public final class PlatformFrame extends JFrame {
         servers.setLocked(!security.securityState().unlocked());
     }
 
+    /** Installs the independent rescue entry on the permanent server page. / 在常驻服务器页面安装独立救援入口。
+     * @param service actual original-task rescue coordinator / 实际原任务救援协调器 */
+    public void installRecovery(gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService service) {
+        if (!SwingUtilities.isEventDispatchThread() || servers == null)
+            throw new IllegalStateException("Rescue requires the installed server page on the EDT");
+        servers.installRecovery(service, () -> {
+            if (models != null)
+                content.setSelectedComponent(models);
+        });
+    }
+
     /** Mounts platform model settings independently of business extensions. / 独立于业务扩展挂载平台模型设置。
      * @param service real model configuration owner / 真实模型配置所有者 */
     public void installModels(gold.debug.windowstolinux.app.service.ai.PlatformModelService service) {

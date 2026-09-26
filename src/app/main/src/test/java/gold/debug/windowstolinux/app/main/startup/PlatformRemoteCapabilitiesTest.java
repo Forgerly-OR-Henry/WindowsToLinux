@@ -74,11 +74,16 @@ class PlatformRemoteCapabilitiesTest {
 
         final AtomicInteger authentications = new AtomicInteger();
         Remote(Path root) throws Exception {
+            this(root, 0);
+        }
+
+        Remote(Path root, int port) throws Exception {
             Files.createDirectories(root);
             files = Files.createDirectories(root.resolve("remote"));
             var bash = Path.of(System.getProperty("managed.test.bash", "/bin/bash"));
             assertTrue(Files.isRegularFile(bash), "Local integration requires managed.test.bash");
             listener = new LoopbackSshServer(root, server -> {
+                server.setPort(port);
                 server.setFileSystemFactory(new VirtualFileSystemFactory(files));
                 server.setSubsystemFactories(List.of(new SftpSubsystemFactory.Builder().build()));
                 server.setPasswordAuthenticator((user, password, session) -> {

@@ -113,12 +113,46 @@ public final class SshRecoveryDialog {
      */
     public SshRecoveryDialog(Component owner, ServerProfile server, SshRecoverySession session, AiApplicationFacade ai,
             DesktopComponentFactory components, PageMessagePresenter messages) {
+        this(owner, server, session, () -> {
+            session.pause();
+            var page = new gold.debug.windowstolinux.app.ui.ai.AiPage(ai, Optional::empty, components, messages);
+            JOptionPane.showMessageDialog(owner, page.panel(), messages.text("auto.ai.setup"),
+                    JOptionPane.PLAIN_MESSAGE);
+        }, components, messages);
+    }
+
+    /** Opens the original platform rescue with navigation to permanent model settings. / 打开原平台救援并导航到常驻模型设置。
+     * @param owner actual platform parent / 实际平台父级
+     * @param server admitted server / 准入服务器
+     * @param session original central-task session / 原中央任务会话
+     * @param settings model-settings navigation / 模型设置导航
+     * @param components themed controls / 主题控件
+     * @param messages localized messages / 本地化消息
+     * @return original modeless rescue view / 原非模态救援视图 */
+    public static SshRecoveryDialog platform(Component owner, ServerProfile server, SshRecoverySession session,
+            Runnable settings, DesktopComponentFactory components, PageMessagePresenter messages) {
+        return new SshRecoveryDialog(owner, server, session, () -> {
+            session.pause();
+            settings.run();
+        }, components, messages);
+    }
+
+    /** Builds one modeless view with the supplied settings navigation. / 使用给定设置导航构建一个非模态视图。
+     * @param owner actual parent / 实际父级
+     * @param server admitted server / 准入服务器
+     * @param session original rescue / 原救援
+     * @param settings settings navigation / 设置导航
+     * @param components themed controls / 主题控件
+     * @param messages localized messages / 本地化消息 */
+    private SshRecoveryDialog(Component owner, ServerProfile server, SshRecoverySession session, Runnable settings,
+            DesktopComponentFactory components, PageMessagePresenter messages) {
         this.server = server;
         this.session = session;
         this.messages = messages;
         dialog = new JDialog(SwingUtilities.getWindowAncestor(owner), messages.text("recovery.title"),
                 Dialog.ModalityType.MODELESS);
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        dialog.setName("recovery.dialog");
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         details.setLineWrap(true);
@@ -163,9 +197,9 @@ public final class SshRecoveryDialog {
             terminals.removeAllItems();
             consent.setSelected(false);
         });
-        JButton settings = components.secondaryButton(messages.text("auto.ai.setup"));
-        buttons.add(settings);
-        settings.addActionListener(event -> openSettings(ai, components));
+        JButton settingsButton = components.secondaryButton(messages.text("auto.ai.setup"));
+        buttons.add(settingsButton);
+        settingsButton.addActionListener(event -> settings.run());
         JButton end = components.secondaryButton(messages.text("recovery.end"));
         buttons.add(end);
         end.addActionListener(event -> close());
@@ -184,15 +218,13 @@ public final class SshRecoveryDialog {
             }
 
             /**
-             * Completes resource cleanup after the Swing window has closed.
-             * <p>在 Swing 窗口关闭后完成资源清理。
+             * Stops view polling after disposal; original task ownership remains with the service.
+             * <p>销毁后停止视图轮询；原任务归属仍由服务持有。
              *
              * @param event state or UI event being processed / 正在处理的状态或 UI 事件
              */
             @Override
             public void windowClosed(WindowEvent event) {
-                if (!gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
-                    session.close();
                 timer.stop();
             }
         });
@@ -216,19 +248,6 @@ public final class SshRecoveryDialog {
             consent.setSelected(false);
             reconciled.setSelected(false);
         }
-    }
-
-    /**
-     * Opens settings.
-     * <p>打开设置。
-     *
-     * @param ai the supplied ai application facade / 所提供的AI应用门面
-     * @param components reviewed components in the application graph / 应用图中的已审阅组件
-     */
-    private void openSettings(AiApplicationFacade ai, DesktopComponentFactory components) {
-        session.pause();
-        var page = new gold.debug.windowstolinux.app.ui.ai.AiPage(ai, Optional::empty, components, messages);
-        JOptionPane.showMessageDialog(dialog, page.panel(), messages.text("auto.ai.setup"), JOptionPane.PLAIN_MESSAGE);
     }
 
     /**
@@ -330,9 +349,13 @@ public final class SshRecoveryDialog {
     private void close() {
         if (gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor.isLocked())
             return;
-        session.close();
-        timer.stop();
-        details.setText("");
-        dialog.dispose();
+        DesktopTaskExecutor.run(() -> {
+            session.close();
+            return null;
+        }, ignored -> {
+            timer.stop();
+            details.setText("");
+            dialog.dispose();
+        }, failure -> details.setText(messages.safe(failure)));
     }
 }

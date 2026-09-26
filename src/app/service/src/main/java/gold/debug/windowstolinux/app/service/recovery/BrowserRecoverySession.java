@@ -29,7 +29,10 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * Current lifecycle or workflow state.
      * <p>当前生命周期或工作流状态。
      */
-    private final RecoverySessionState state = new RecoverySessionState();
+    private final RecoverySessionState state;
+
+    /** Central cooperative cancellation, absent only for the remaining legacy caller. / 中央协作取消，仅剩余旧调用方不提供。 */
+    private final gold.debug.windowstolinux.appapi.task.CancellationToken cancellation;
 
     /**
      * Browser.
@@ -95,7 +98,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * Immutable observation or configuration revision used by the operation.
      * <p>操作使用的不可变观测或配置修订。
      */
-    private volatile RecoverySnapshot snapshot = state.snapshot();
+    private volatile RecoverySnapshot snapshot;
 
     /**
      * Stop.
@@ -114,6 +117,15 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * <p>执行线程。
      */
     private volatile Thread runner;
+
+    /** Original platform evidence retained separately from the transitional legacy display. / 独立于过渡旧显示保留的原平台证据。 */
+    private volatile gold.debug.windowstolinux.appapi.task.Problem platformProblem;
+
+    /** Returns original platform evidence for central task completion. / 返回中央任务完成所用原平台证据。
+     * @return original structured problem, when present / 存在时的原结构化问题 */
+    Optional<gold.debug.windowstolinux.appapi.task.Problem> platformProblem() {
+        return Optional.ofNullable(platformProblem);
+    }
 
     /**
      * Initializes browser recovery session through its shared constructor contract.
@@ -145,6 +157,40 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      */
     BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
             Consumer<RecoverySnapshot> journal, ServerProfile server, ReentrantLock lock, LongSupplier clock) {
+        this(browser, ai, probe, journal, server, lock, clock, UUID.randomUUID(), null);
+    }
+
+    /** Runs directly on the original central task callback with cooperative cancellation. / 直接在原中央任务回调运行并协作取消。
+     * @param browser original task browser / 原任务浏览器
+     * @param ai original model capability / 原模型能力
+     * @param probe fixed authenticated verification / 固定认证复核
+     * @param journal original-task metadata journal / 原任务元数据记录
+     * @param server admitted server / 准入服务器
+     * @param task original central context / 原中央上下文 */
+    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai, Supplier<RecoveryProbeResult> probe,
+            Consumer<RecoverySnapshot> journal, ServerProfile server,
+            gold.debug.windowstolinux.appapi.task.TaskContext task) {
+        this(browser, ai, probe, journal, server, new ReentrantLock(), System::nanoTime, task.id(),
+                task.cancellation());
+    }
+
+    /** Binds one state machine without starting another worker. / 绑定一个状态机，不启动另一个工作线程。
+     * @param browser actual browser / 实际浏览器
+     * @param ai actual model capability / 实际模型能力
+     * @param probe fixed verification / 固定复核
+     * @param journal durable metadata observer / 持久元数据观察器
+     * @param server admitted server / 准入服务器
+     * @param lock legacy local serialization / 旧本地串行化
+     * @param clock monotonic observation clock / 单调观察时钟
+     * @param id original session identity / 原会话身份
+     * @param cancellation optional central cancellation / 可选中央取消 */
+    private BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
+            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, ServerProfile server,
+            ReentrantLock lock, LongSupplier clock, UUID id,
+            gold.debug.windowstolinux.appapi.task.CancellationToken cancellation) {
+        state = new RecoverySessionState(id);
+        snapshot = state.snapshot();
+        this.cancellation = cancellation;
         this.clock = clock;
         this.browser = browser;
         this.ai = ai;
@@ -273,7 +319,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         authorization.incrementAndGet();
         stop = true;
         Thread current = runner;
-        if (current != null && current != Thread.currentThread())
+        if (cancellation == null && current != null && current != Thread.currentThread())
             current.interrupt();
     }
 
@@ -309,7 +355,7 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         runner = Thread.currentThread();
         boolean acquired = lock.tryLock();
         try {
-            if (stop) {
+            if (stopping()) {
                 change(CANCELLED, "cancelled");
                 return;
             }
@@ -337,9 +383,9 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             }
             browser.open();
             change(WAITING_TERMINAL, "handoff");
-            while (!stop && !snapshot.ended())
+            while (!stopping() && !snapshot.ended())
                 tick();
-            if (stop && !snapshot.ended())
+            if (stopping() && !snapshot.ended())
                 change(CANCELLED, state.unknown ? "resultUnknown" : "cancelled");
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
@@ -377,11 +423,13 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         long start = clock.getAsLong();
         boolean activeBefore = state.active();
         Runnable request = requests.poll(300, TimeUnit.MILLISECONDS);
+        if (stopping())
+            return;
         if (clock.getAsLong() >= state.nextProbe && checkSsh())
             return;
         if (request != null && !snapshot.ended())
             request.run();
-        if (stop || snapshot.ended())
+        if (stopping() || snapshot.ended())
             return;
         if (handoff) {
             if (state.phase == WAITING_TERMINAL && !browser.available())
@@ -490,12 +538,12 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
         state.revoke();
         change(EXECUTING, "executing");
         try {
-            if (stop || handoff || epoch != authorization.get()) {
+            if (stopping() || handoff || epoch != authorization.get()) {
                 interrupt("paused");
                 return;
             }
             state.unknown = true;
-            if (!publish("submitted") || stop || handoff || epoch != authorization.get())
+            if (!publish("submitted") || stopping() || handoff || epoch != authorization.get())
                 return;
             browser.submit(state.generation, command);
             checkSsh();
@@ -542,6 +590,10 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
             return true;
         }
         if (result.status() != RecoveryProbeResult.StatusType.RETRYABLE_CONNECTION) {
+            if (cancellation != null) {
+                change(FAILED, result.messageCode());
+                return true;
+            }
             interrupt(result.messageCode());
         }
         return false;
@@ -570,8 +622,14 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     private void enqueue(Runnable request) {
-        if (!snapshot.ended() && !stop && !requests.offer(request))
+        if (!snapshot.ended() && !stopping() && !requests.offer(request))
             throw new IllegalStateException("recovery-busy");
+    }
+
+    /** Observes original cancellation without interrupting an executing physical operation. / 观察原取消请求，不中断正在执行的物理操作。
+     * @return whether no new rescue work may start / 是否不得启动新救援工作 */
+    private boolean stopping() {
+        return stop || cancellation != null && cancellation.requested();
     }
 
     /**
@@ -623,6 +681,11 @@ public final class BrowserRecoverySession implements SshRecoverySession, Runnabl
     private void recordFailure(Throwable exception, FailureDefinition fallback) {
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
+            if (cause instanceof gold.debug.windowstolinux.appapi.task.ApiException api) {
+                platformProblem = api.problem();
+                state.failure = RecoveryProbeResult.failed(api.problem()).failure().orElseThrow();
+                return;
+            }
             if (cause instanceof gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException browser) {
                 state.failure = FailureDescriptor.create(BrowserRecoveryFailureType.valueOf(browser.reason().name()),
                         OperationIdentity.from(browser.problem().diagnosticId().orElseThrow().toString()),
