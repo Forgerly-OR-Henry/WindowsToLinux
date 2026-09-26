@@ -2,7 +2,7 @@
 
 WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，正在改造为 APP 与 Mod 平台。
 
-**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、服务器配置、普通 SSH 认证检查及独立网页终端救援、模型清单/能力验证/用途配置、连接与传输阈值设置、独立平台授权偏好及任务范围授权、日志查看与清理、任务所属辅助进程及跨 Mod 同步服务底层能力、Mod 页面外壳，以及任务绑定的目录选择与 Source 快照底层能力。CLASS 默认入口已接已选 Mod 的依赖顺序启动、原意图归档和逆序退出；新发现的 Mod 默认关闭，当前只执行无数据或已有 READY 数据的启动。Mod 管理界面、构建描述自动生成、数据初始化/迁移、插件安装和业务迁移仍待完成。保存服务器不会自动连接，SSH 检查单独触发且不探测或修改远端环境。独立救援由服务器页启动，使用原中央任务、逐项命令批准及固定只读 SSH 复核；未确认命令不会重放。模型验证成功才保存配置和明确输出上限，用途需要单独选择；中断未知可从模型页核对，不自动重发。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
+**当前检出为 1.1 开发中间状态**：默认 `AppMain` 已使用 H2 平台库、主密码设置与锁定、服务器配置、普通 SSH 认证检查及独立网页终端救援、模型清单/能力验证/用途配置、连接与传输阈值设置、独立平台授权偏好及任务范围授权、日志查看与清理、任务所属辅助进程及跨 Mod 同步服务底层能力、Mod 页面外壳，以及任务绑定的目录选择与 Source 快照底层能力。CLASS 默认入口已接已选 Mod 的依赖顺序启动、原意图归档和逆序退出；新发现的 Mod 默认关闭，当前只执行无数据或已有 READY 数据的启动。Maven 构建描述自动生成已接通；Mod 管理界面、数据初始化/迁移、插件安装和业务迁移仍待完成。保存服务器不会自动连接，SSH 检查单独触发且不探测或修改远端环境。独立救援由服务器页启动，使用原中央任务、逐项命令批准及固定只读 SSH 复核；未确认命令不会重放。模型验证成功才保存配置和明确输出上限，用途需要单独选择；中断未知可从模型页核对，不自动重发。下方 0.x 功能说明及历史验证不代表当前新入口已可执行这些完整流程。旧源码冻结在 `history-src`，进度见 [1.1 工程](docs/development/PHASE-1.1.md)。
 
 > [!IMPORTANT]
 > 项目仍在开发中，尚未提供正式安装包。改造前的 0.x 标准部署与自主 Agent 结构及 helper v10 已通过当时本地验证；此前 helper v9 在 Ubuntu 24 上的八个多语言原生项目通过了代表性部署与业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他平台及备份迁移矩阵仍待验证。helper v7 的代表性部署和历史 helper v5 基线见[0.4 期验收](docs/development/PHASE-0.4.md#acceptance)；数据库、备份恢复和迁移仍为 `RUNTIME-PENDING`。证据仅覆盖记录中的精确夹具与环境。
@@ -114,7 +114,7 @@ npm.cmd run test:e2e
 5. VM 参数添加 `-Dwtl.workspace=<本仓库绝对路径>`；路径含空格时将整项放在双引号内。该参数用于核验开发 Mod 的来源，必须与实际 APP 及 DB 模块所在工作区一致；缺失或不匹配时，平台仍打开并显示 Mod 启动问题。
 6. 启动后，CLASS 模式的数据会写入 DB 模块下的 `src/app/db/data/`。
 
-CLASS 启动仅加载已保存为启用且选定版本、当前构建仍可核验的 Mod；发现本身不会启用新 Mod。窗口底部显示启动结果，解锁后可查看详细问题。构建描述自动生成及用户管理页面仍在开发，现阶段不能仅把源码目录放入 `src/mod` 就认为可以启用；开发描述规范见 [Mod CLASS 加载](docs/Mod.md#loading-modes)。
+CLASS 启动仅加载已保存为启用且选定版本、当前构建仍可核验的 Mod；发现本身不会启用新 Mod。窗口底部显示启动结果，解锁后可查看详细问题。主模块可继承 [.mvn/wtlmod-author-parent/pom.xml](.mvn/wtlmod-author-parent/pom.xml)，由 Maven 自动生成开发描述；用户管理页面仍在开发，编译成功不等于 Mod 已启用。构建接入见 [作者构建](docs/APP.md#82-作者构建和校验工具)。
 
 为避免日常启动触发全项目测试和打包，可把 `APP` 配置为“先增量编译，再直接启动”：
 
@@ -123,7 +123,7 @@ CLASS 启动仅加载已保存为启用且选定版本、当前构建仍可核�
 3. 选择根目录 `pom.xml`，目标填写 `-pl src/app/main -am compile`；保留主类、模块及其他运行设置。
 4. 通过 `APP` 的运行按钮启动。Maven 先检查桌面端及其依赖，复用未变化的编译结果；编译成功后，IDEA 直接从模块的 `target/classes` 启动，编译失败则停止启动。
 
-这项启动前任务只到 `compile`，不会执行测试、打包 JAR 或安装到本地仓库；需要完整测试和制品时仍执行 `mvn.cmd verify`。`compile` 生成 `.class`，`package` 阶段才生成 JAR；JAR 插件默认也会复用输入未变化的现有 JAR。配置与机制见 [JetBrains Before Launch 文档](https://www.jetbrains.com/help/idea/run-debug-configuration-java-application.html)、[Maven 生命周期](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)及 [JAR 增量打包说明](https://maven.apache.org/plugins/maven-jar-plugin/jar-mojo.html#forceCreation)。
+接入业务 Mod 主模块后，须把它加入 `-pl` 选择并将目标改为 `process-classes`，以完成资源处理和描述生成；单用 `compile` 不生成可加载描述。当前仅编译 APP 的启动前任务只到 `compile`，不会执行测试、打包 JAR 或安装到本地仓库；需要完整测试和制品时仍执行 `mvn.cmd verify`。`compile` 生成 `.class`，`package` 阶段才生成 JAR；JAR 插件默认也会复用输入未变化的现有 JAR。配置与机制见 [JetBrains Before Launch 文档](https://www.jetbrains.com/help/idea/run-debug-configuration-java-application.html)、[Maven 生命周期](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html)及 [JAR 增量打包说明](https://maven.apache.org/plugins/maven-jar-plugin/jar-mojo.html#forceCreation)。
 
 此设置只让 `APP` 启动绕过 IDEA 内置 JPS 构建，并不代表修复了 IDE 本身的“Finished, saving caches”等待问题；手动全项目构建与测试使用 Maven 工具窗口或上述命令。恢复原启动方式时，移除这项 Maven 前置任务并重新启用 **Build** 即可。
 

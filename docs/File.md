@@ -70,6 +70,7 @@ WindowsToLinux/
    │  │  └─ startup/
    │  ├─ mod/
    │  │  ├─ development/
+   │  │  ├─ installation/
    │  │  ├─ lifecycle/
    │  │  ├─ loader/
    │  │  ├─ manifest/

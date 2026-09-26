@@ -1277,8 +1277,9 @@ class PackageStructureArchitectureTest {
                 }.scan(declaration, null);
             }
         }
-        assertEquals(Set.of("AppMain.java:main", "WebMain.java:main"), new HashSet<>(entrypoints));
-        assertEquals(2, entrypoints.size());
+        assertEquals(Set.of("AppMain.java:main", "WebMain.java:main", "ModPackageTool.java:main"),
+                new HashSet<>(entrypoints));
+        assertEquals(3, entrypoints.size());
     }
 
     private static Set<String> fileNamesRecursively(Path directory) throws IOException {
