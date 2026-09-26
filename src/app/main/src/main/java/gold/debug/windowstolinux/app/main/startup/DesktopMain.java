@@ -166,6 +166,9 @@ public final class DesktopMain {
      * @throws Exception if original service or view cannot be installed / 无法安装原服务或视图时 */
     static void installModManagement(PlatformRuntime runtime, PlatformFrame frame) throws Exception {
         var service = runtime.modIntents();
+        var installation = RunModeResolver.resolve().mode() == RunModeResolver.RunMode.RUN_CLASS
+                ? java.util.Optional.<gold.debug.windowstolinux.app.service.mod.PlatformModInstallation>empty()
+                : java.util.Optional.of(runtime.modInstallation());
         var actions = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions() {
             /** Delegates exact source review to the original graph. / 将精确来源审阅交给原图。
              * @param owner selected owner / 已选所有者
@@ -198,8 +201,10 @@ public final class DesktopMain {
             }
         };
         onEdt(() -> {
-            if (frame.isDisplayable())
+            if (frame.isDisplayable()) {
                 frame.installMods(service, actions);
+                frame.installOriginalPackages(installation);
+            }
             return null;
         });
     }

@@ -129,6 +129,282 @@ public final class PlatformModInstallation implements AutoCloseable {
     public record Receipt(UUID operationId, String owner, String version, Path directory, String originalCleanup) {
     }
 
+    /** One discovered original, including malformed or already installed packages. / 一个已发现原包，包括损坏或已安装的包。
+     * @param file actual direct child / 实际直接子文件
+     * @param manifest readable author declaration / 可读取作者声明
+     * @param state AVAILABLE, INSTALLED, CONFLICT, BUSY or INVALID / 可安装、已安装、冲突、占用或无效
+     * @param problem bounded reading failure / 有界读取失败
+     * @param deletable whether current facts permit requesting a deletion review / 当前事实是否允许请求删除审阅 */
+    public record OriginalView(Path file, Optional<gold.debug.windowstolinux.app.mod.manifest.ModManifest> manifest,
+            String state, Optional<Problem> problem, boolean deletable) {
+    }
+
+    /** Retained installation displayed even when its original file has disappeared. / 即使原文件已消失也展示的保留安装。
+     * @param id original operation / 原操作
+     * @param owner exact owner / 精确所有者
+     * @param version original target release / 原目标发布
+     * @param type original maintenance type / 原维护类型
+     * @param state current operation state / 当前操作状态
+     * @param phase original checkpoint / 原检查点
+     * @param original validated source path when readable / 可读时已校验来源路径
+     * @param failure bounded original failure explanation / 有界原失败说明 */
+    public record PendingView(UUID id, String owner, String version, String type, String state, String phase,
+            Optional<Path> original, Optional<String> failure) {
+    }
+
+    /** One explicit scan with a current durable management snapshot. / 一次明确扫描及当前持久管理快照。
+     * @param originals all discovered originals / 全部发现原包
+     * @param pending original retained installations / 原保留安装
+     * @param keepOriginal current shared preference / 当前共用偏好 */
+    public record Inventory(List<OriginalView> originals, List<PendingView> pending, boolean keepOriginal) {
+        /** Copies observations without turning them into operation authority. / 复制观察，不将其转为操作权限。
+         * @param originals observed files / 观察文件
+         * @param pending retained operations / 保留操作
+         * @param keepOriginal current preference / 当前偏好 */
+        public Inventory {
+            originals = List.copyOf(originals);
+            pending = List.copyOf(pending);
+        }
+    }
+
+    /** Returns the fixed source folder without creating it. / 返回固定来源文件夹，不创建它。
+     * @return explicit original-package folder / 明示原包文件夹 */
+    public Path originalsDirectory() {
+        return home.resolve("mod-zip");
+    }
+
+    /** Scans direct originals without watching, extracting, enabling or hiding malformed packages. / 扫描直接原包，不监听、解压、启用或隐藏损坏包。
+     * @return current file and operation observations / 当前文件及操作观察
+     * @throws IOException if the root cannot be inspected / 无法检查根目录时
+     * @throws SQLException if durable status cannot be read / 无法读取持久状态时 */
+    public synchronized Inventory scan() throws IOException, SQLException {
+        requireOpen();
+        try (var ignored = security.enterOperation()) {
+            directory(home);
+            var observed = new ArrayList<Observed>();
+            if (exists(originalsDirectory())) {
+                directory(originalsDirectory());
+                try (var entries = Files.newDirectoryStream(originalsDirectory(), "*.wtlmod")) {
+                    for (Path path : entries) {
+                        if (!path.getFileName().toString().endsWith(".wtlmod"))
+                            continue;
+                        ModPackageReader.Inspection inspection = null;
+                        FileStamp stamp = null;
+                        Problem problem = null;
+                        try {
+                            stamp = stamp(path);
+                            inspection = ModPackageReader.read(path);
+                            if (!stamp.equals(stamp(path)))
+                                throw new IOException("Original changed while scanning");
+                        } catch (IOException failure) {
+                            problem = new Problem(ProblemCode.UNAVAILABLE, "MOD_PACKAGE_INVALID",
+                                    bounded(failure.getMessage()), Map.of(), Optional.empty());
+                            inspection = null;
+                        }
+                        observed.add(new Observed(path, inspection, stamp, problem));
+                    }
+                }
+            }
+            observed.sort(Comparator.comparing(o -> o.file().getFileName().toString()));
+            return locked(c -> {
+                var pending = maintenance(c);
+                var rows = new ArrayList<OriginalView>();
+                for (var value : observed) {
+                    boolean busy = inUse(pending, value.file(), value.stamp());
+                    String state = value.inspection() == null ? "INVALID" : "AVAILABLE";
+                    if (value.inspection() != null) {
+                        var manifest = value.inspection().manifest();
+                        try (var p = c.prepareStatement(
+                                "SELECT content_sha256 FROM mod_version WHERE mod_id=? AND version=?")) {
+                            p.setString(1, manifest.id());
+                            p.setString(2, manifest.version().toString());
+                            try (var r = p.executeQuery()) {
+                                if (r.next())
+                                    state = r.getString(1).equals(value.inspection().contentSha256())
+                                            ? "INSTALLED"
+                                            : "CONFLICT";
+                            }
+                        }
+                        try (var p = c.prepareStatement("SELECT 1 FROM mod_operation WHERE mod_id=?")) {
+                            p.setString(1, manifest.id());
+                            try (var r = p.executeQuery()) {
+                                if (r.next())
+                                    state = "BUSY";
+                            }
+                        }
+                    }
+                    if (busy)
+                        state = "BUSY";
+                    rows.add(new OriginalView(value.file(),
+                            Optional.ofNullable(value.inspection()).map(ModPackageReader.Inspection::manifest), state,
+                            Optional.ofNullable(value.problem()), value.stamp() != null && !busy));
+                }
+                return new Inventory(rows, pending.stream().map(Maintenance::view).toList(), keepOriginal(c));
+            });
+        }
+    }
+
+    /** Opaque deletion review bound to one exact ordinary original file. / 绑定一个精确普通原文件的不透明删除审阅。 */
+    public final class DeleteReview {
+        /** Original service authority. / 原服务权限。 */
+        private final PlatformModInstallation owner = PlatformModInstallation.this;
+
+        /** Exact reviewed file. / 精确审阅文件。 */
+        private final Path file;
+
+        /** Physical identity, size and modification time. / 物理身份、大小及修改时间。 */
+        private final FileStamp stamp;
+
+        /** Whether the deletion was already attempted. / 是否已尝试删除。 */
+        private boolean used;
+        /** Captures service-verified evidence only. / 仅捕获服务已核验依据。
+         * @param file exact original / 精确原文件
+         * @param stamp original physical facts / 原物理事实 */
+        private DeleteReview(Path file, FileStamp stamp) {
+            this.file = file;
+            this.stamp = stamp;
+        }
+
+        /** Returns the exact file for confirmation. / 返回供确认的精确文件。
+         * @return original file / 原文件 */
+        public Path file() {
+            return file;
+        }
+    }
+
+    /** Reviews deletion independently of manifest validity or installed state. / 独立于清单有效性及安装状态审阅删除。
+     * @param file explicitly selected original / 明确选定原文件
+     * @return bound single-use review / 已绑定单次审阅
+     * @throws IOException if absent, redirected or irregular / 缺失、重定向或不是普通文件时
+     * @throws SQLException if original use cannot be ruled out / 无法排除原包占用时 */
+    public synchronized DeleteReview reviewDelete(Path file) throws IOException, SQLException {
+        requireOpen();
+        try (var ignored = security.enterOperation()) {
+            originalPath(file);
+            var stamp = stamp(file);
+            return locked(c -> {
+                if (inUse(maintenance(c), file, stamp))
+                    throw new SQLException("Original package is retained by maintenance");
+                return new DeleteReview(file, stamp);
+            });
+        }
+    }
+
+    /** Deletes only the confirmed original, preserving installed code, settings and data. / 仅删除已确认原包，保留已安装代码、设置及数据。
+     * @param review original single-use deletion review / 原单次删除审阅
+     * @throws IOException if physical evidence changed before deletion / 删除前物理依据变化时
+     * @throws SQLException if use, deletion or transaction completion is unconfirmed; refresh rather than replay / 占用、删除或事务完成未确认时；刷新而非重放 */
+    public synchronized void deleteOriginal(DeleteReview review) throws IOException, SQLException {
+        requireOpen();
+        if (review == null || review.owner != this || review.used)
+            throw new IllegalArgumentException("Original deletion requires an unused review");
+        try (var ignored = security.enterOperation()) {
+            originalPath(review.file);
+            if (!review.stamp.equals(stamp(review.file)))
+                throw new IOException("Original changed after deletion review");
+            review.used = true;
+            locked(c -> {
+                if (inUse(maintenance(c), review.file, review.stamp))
+                    throw new SQLException("Original package is in use");
+                try {
+                    originalPath(review.file);
+                    if (!review.stamp.equals(stamp(review.file)))
+                        throw new IOException("Original changed before deletion");
+                    Files.delete(review.file);
+                } catch (IOException failure) {
+                    throw new SQLException("Original deletion could not be confirmed", failure);
+                }
+                return null;
+            });
+        }
+    }
+
+    /** Reads retained package use and preserves rows whose original evidence is unreadable. / 读取保留包占用，并保留原依据不可读的行。
+     * @param c locked transaction / 已锁事务
+     * @return original maintenance observations / 原维护观察
+     * @throws SQLException if operation storage cannot be read / 无法读取操作存储时 */
+    private List<Maintenance> maintenance(Connection c) throws SQLException {
+        var results = new ArrayList<Maintenance>();
+        try (var p = c.prepareStatement(
+                "SELECT operation_id,mod_id,target_version,state,phase,request_json,operation_type,failure_detail FROM mod_operation WHERE operation_type IN ('INSTALL','REINSTALL') AND state<>'ENDED' ORDER BY created_at,operation_id");
+                var r = p.executeQuery()) {
+            while (r.next()) {
+                Path path = null;
+                String identity = null;
+                try {
+                    String json = r.getString(6);
+                    if (json.length() > 4 * 1024 * 1024)
+                        throw new IOException("Oversized package use evidence");
+                    var node = JSON.readTree(json);
+                    if (!r.getString(7).equals("INSTALL") || !home.toString().equals(node.path("home").textValue()))
+                        throw new IOException("Unrecognized package use evidence");
+                    var source = Path.of(node.required("original").textValue());
+                    String nativeId = node.required("identity").textValue();
+                    if (!source.isAbsolute() || !source.equals(source.normalize())
+                            || !originalsDirectory().equals(source.getParent()) || nativeId == null
+                            || !nativeId.matches("[0-9a-f]{48}"))
+                        throw new IOException("Invalid package use evidence");
+                    path = source;
+                    identity = nativeId;
+                } catch (IOException | RuntimeException invalid) {
+                    // Unknown ownership must block deletion, not disappear from the view. / 未知归属必须阻止删除，不能从视图消失。
+                }
+                results.add(new Maintenance(new PendingView(r.getObject(1, UUID.class), r.getString(2), r.getString(3),
+                        r.getString(7), r.getString(4), r.getString(5), Optional.ofNullable(path),
+                        Optional.ofNullable(r.getString(8)).map(PlatformModInstallation::bounded)), identity));
+            }
+        }
+        return results;
+    }
+
+    /** Checks exact path or native identity, conservatively retaining unreadable maintenance. / 检查精确路径或原生身份，保守保留不可读维护。
+     * @param operations retained operations / 保留操作
+     * @param file selected original / 已选原包
+     * @param stamp actual physical evidence, if readable / 可读时的实际物理依据
+     * @return whether source removal is blocked / 是否阻止来源移除 */
+    private static boolean inUse(List<Maintenance> operations, Path file, FileStamp stamp) {
+        return operations.stream()
+                .anyMatch(o -> o.view().original().isEmpty() || o.identity() == null
+                        || o.view().original().orElseThrow().equals(file)
+                        || stamp != null && o.identity().equals(stamp.identity()));
+    }
+
+    /** Reads physical deletion evidence without requiring valid package bytes. / 读取物理删除依据，不要求包字节有效。
+     * @param file ordinary original / 普通原文件
+     * @return current file stamp / 当前文件事实
+     * @throws IOException if unreadable or changed during inspection / 不可读或检查中变化时 */
+    private static FileStamp stamp(Path file) throws IOException {
+        ordinary(file, false);
+        var before = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        String identity = WindowsFileIdentity.read(file);
+        var after = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
+                || !before.lastModifiedTime().equals(after.lastModifiedTime()))
+            throw new IOException("Original changed during inspection");
+        return new FileStamp(identity, after.size(), after.lastModifiedTime().toString());
+    }
+
+    /** Physical review facts for an original file. / 原文件的物理审阅事实。
+     * @param identity native file identity / 原生文件身份
+     * @param size original byte length / 原字节长度
+     * @param modified exact original modification time / 精确原修改时间 */
+    private record FileStamp(String identity, long size, String modified) {
+    }
+
+    /** Internal scan facts before durable status is combined. / 合并持久状态之前的内部扫描事实。
+     * @param file direct source / 直接来源
+     * @param inspection validated bytes or null / 已验证字节或空
+     * @param stamp physical facts or null / 物理事实或空
+     * @param problem original reading problem or null / 原读取问题或空 */
+    private record Observed(Path file, ModPackageReader.Inspection inspection, FileStamp stamp, Problem problem) {
+    }
+
+    /** Retained file use plus its safe view. / 保留文件占用及其安全视图。
+     * @param view original operation / 原操作
+     * @param identity original native source identity or null / 原生来源身份或空 */
+    private record Maintenance(PendingView view, String identity) {
+    }
+
     /** Reads the default-true retention preference without creating installation directories. / 读取默认真的留存偏好，不创建安装目录。
      * @return current preference / 当前偏好
      * @throws SQLException if the saved preference cannot be read / 无法读取已存偏好时 */
@@ -213,7 +489,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                 });
             } catch (SQLException unconfirmed) {
                 try {
-                    retain(pending);
+                    retain(pending, "Initial installation admission could not be confirmed");
                 } catch (SQLException unavailable) {
                     unconfirmed.addSuppressed(unavailable);
                 }
@@ -315,7 +591,11 @@ public final class PlatformModInstallation implements AutoCloseable {
             return success(receipt);
         } catch (Exception failure) {
             try {
-                retain(original);
+                retain(original,
+                        pending.phase() + ": "
+                                + (failure instanceof IOException
+                                        ? bounded(failure.getMessage())
+                                        : "Installation persistence or step completion could not be confirmed"));
             } catch (SQLException unavailable) {
                 failure.addSuppressed(unavailable);
             }
@@ -328,14 +608,23 @@ public final class PlatformModInstallation implements AutoCloseable {
 
     /** Retains only this exact original request after an unconfirmed write or physical step. / 写入或物理步骤未确认后，仅保留此精确原请求。
      * @param original original accepted identity and request / 原接纳身份及请求
+     * @param detail bounded safe host explanation / 有界安全宿主说明
      * @throws SQLException if the uncertainty marker itself cannot be saved / 不确定标记本身无法保存时 */
-    private void retain(Pending original) throws SQLException {
+    private void retain(Pending original, String detail) throws SQLException {
         locked(c -> {
             execute(c,
-                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_INSTALL_UNCONFIRMED',failure_detail='Original installation requires explicit reconciliation',updated_at=? WHERE operation_id=? AND request_json=? AND state='RUNNING' AND outcome IS NULL",
-                    System.currentTimeMillis(), original.id(), original.json());
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_INSTALL_UNCONFIRMED',failure_detail=?,updated_at=? WHERE operation_id=? AND request_json=? AND state='RUNNING' AND outcome IS NULL",
+                    bounded(detail), System.currentTimeMillis(), original.id(), original.json());
             return null;
         });
+    }
+
+    /** Bounds plain-text file diagnostics without exposing SQL statements or secret parameters. / 限制纯文本文件诊断，不暴露 SQL 语句或秘密参数。
+     * @param message non-secret filesystem explanation / 不含秘密的文件系统说明
+     * @return bounded printable explanation / 有界可打印说明 */
+    private static String bounded(String message) {
+        String text = Objects.toString(message, "Original is unavailable").replaceAll("[\\p{Cntrl}]", " ");
+        return text.length() <= 512 ? text : text.substring(0, 512);
     }
 
     /** Removes only the exact retained original after registration; failure is a separate warning. / 仅在登记后移除精确保留原包；失败是单独警告。

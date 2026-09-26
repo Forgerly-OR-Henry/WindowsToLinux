@@ -52,6 +52,15 @@ public final class PlatformFrame extends JFrame {
     /** Permanent installed Mod choices and explicit data maintenance. / 常驻已安装 Mod 选择及明确数据维护。 */
     private gold.debug.windowstolinux.app.ui.mod.PlatformModsPane mods;
 
+    /** Original-package view, absent in CLASS mode. / CLASS 模式下不存在的原包视图。 */
+    private gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane originals;
+
+    /** Permanent installed and original package tabs. / 常驻已安装及原包标签页。 */
+    private final JTabbedPane modManagement = new JTabbedPane();
+
+    /** Whether source-mode composition has been supplied. / 是否已提供来源模式装配。 */
+    private boolean originalsConfigured;
+
     /** Actual opened business and settings surfaces. / 实际已打开的业务及设置界面。 */
     private final ExtensionPagePane extensions;
 
@@ -144,6 +153,8 @@ public final class PlatformFrame extends JFrame {
                 navigation.setLocked(locked);
             if (mods != null)
                 mods.setLocked(locked);
+            if (originals != null)
+                originals.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -176,11 +187,43 @@ public final class PlatformFrame extends JFrame {
             if (logs != null)
                 content.setSelectedComponent(logs);
         }, navigation);
-        var management = new JTabbedPane();
-        management.addTab(messages.text("mods.installed"), mods);
-        content.addTab("Mod", management);
+        modManagement.setName("mods.management");
+        modManagement.addTab(messages.text("mods.installed"), mods);
+        content.addTab("Mod", modManagement);
         navigation.setLocked(!security.securityState().unlocked());
         mods.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts originals only for an actual installation layout, otherwise explains CLASS source use. / 仅为实际安装布局挂载原包，否则说明 CLASS 源码来源。
+     * @param service actual installation owner, absent in CLASS / 实际安装所有者，CLASS 时缺省 */
+    public void installOriginalPackages(
+            java.util.Optional<gold.debug.windowstolinux.app.service.mod.PlatformModInstallation> service) {
+        if (!SwingUtilities.isEventDispatchThread() || mods == null || originalsConfigured)
+            throw new IllegalStateException("Original management must be composed once after installed management");
+        originalsConfigured = true;
+        if (service.isEmpty()) {
+            var notice = new JTextArea(messages.text("originals.classMode"));
+            notice.setName("originals.classMode");
+            notice.setEditable(false);
+            notice.setLineWrap(true);
+            notice.setWrapStyleWord(true);
+            notice.setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
+            modManagement.addTab(messages.text("originals.title"), notice);
+            return;
+        }
+        originals = new gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane(service.orElseThrow(), components,
+                messages, mods::refresh, () -> {
+                    if (logs != null)
+                        content.setSelectedComponent(logs);
+                });
+        modManagement.addTab(messages.text("originals.title"), originals);
+        javax.swing.event.ChangeListener refresh = event -> {
+            if (content.getSelectedComponent() == modManagement && modManagement.getSelectedComponent() == originals)
+                originals.refresh();
+        };
+        content.addChangeListener(refresh);
+        modManagement.addChangeListener(refresh);
+        originals.setLocked(!security.securityState().unlocked());
     }
 
     /** Focuses the existing outer surface after an explicit page open, including author requests. / 明确打开页面后聚焦已有外层界面，包括作者请求。
@@ -364,6 +407,8 @@ public final class PlatformFrame extends JFrame {
             logs.close();
         if (mods != null)
             mods.close();
+        if (originals != null)
+            originals.close();
         if (navigation != null)
             navigation.close();
         if (logSubscription != null)

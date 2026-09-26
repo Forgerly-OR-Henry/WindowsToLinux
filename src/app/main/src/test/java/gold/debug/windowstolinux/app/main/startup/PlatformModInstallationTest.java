@@ -433,6 +433,92 @@ class PlatformModInstallationTest {
     }
 
     @Test
+    void scanIncludesInvalidAndInstalledOriginalsWithoutInstallingOrRecursing() throws Exception {
+        try (var runtime = runtime(); var installer = installer(runtime)) {
+            Files.delete(root.resolve("mod-zip"));
+            assertTrue(installer.scan().originals().isEmpty());
+            assertFalse(Files.exists(root.resolve("mod-zip")));
+            Files.createDirectory(root.resolve("mod-zip"));
+            var original = original("one.wtlmod", "1.0.0", "one");
+            Files.writeString(root.resolve("mod-zip/broken.wtlmod"), "incomplete");
+            Files.createDirectory(root.resolve("mod-zip/nested"));
+            Files.copy(original, root.resolve("mod-zip/nested/ignored.wtlmod"));
+            var first = installer.scan();
+            assertEquals(List.of("INVALID", "AVAILABLE"),
+                    first.originals().stream().map(PlatformModInstallation.OriginalView::state).toList());
+            assertTrue(first.originals().getFirst().deletable());
+            assertTrue(first.originals().getFirst().problem().isPresent());
+            assertFalse(Files.exists(root.resolve(".mod-staging")));
+            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            var different = original("different.wtlmod", "1.0.0", "changed");
+            var after = installer.scan();
+            assertEquals(List.of("INVALID", "CONFLICT", "INSTALLED"),
+                    after.originals().stream().map(PlatformModInstallation.OriginalView::state).toList());
+            assertTrue(after.originals().stream().anyMatch(v -> v.file().equals(different)));
+        }
+    }
+
+    @Test
+    void manualOriginalDeletionDoesNotAffectInstalledCodeAndRejectsChangedReview() throws Exception {
+        var original = original("one.wtlmod", "1.0.0", "one");
+        try (var runtime = runtime(); var installer = installer(runtime); var other = installer(runtime)) {
+            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            var review = installer.reviewDelete(original);
+            assertThrows(IllegalArgumentException.class, () -> other.deleteOriginal(review));
+            var saved = root.resolve("saved.wtlmod");
+            Files.move(original, saved);
+            Files.copy(saved, original);
+            assertThrows(IOException.class, () -> installer.deleteOriginal(review));
+            var fresh = installer.reviewDelete(original);
+            installer.deleteOriginal(fresh);
+            assertFalse(Files.exists(original));
+            assertTrue(Files.exists(saved));
+            assertEquals("one", Files.readString(target("1.0.0").resolve("README.md")));
+            assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
+            assertThrows(IllegalArgumentException.class, () -> installer.deleteOriginal(fresh));
+            var broken = root.resolve("mod-zip/broken.wtlmod");
+            Files.writeString(broken, "broken");
+            var stale = installer.reviewDelete(broken);
+            Files.writeString(broken, "new unrelated contents");
+            assertThrows(IOException.class, () -> installer.deleteOriginal(stale));
+            installer.deleteOriginal(installer.reviewDelete(broken));
+            assertFalse(Files.exists(broken));
+        }
+    }
+
+    @Test
+    void rawDeletionRespectsActualSourceIdentityAndUnknownMaintenanceRemainsVisible() throws Exception {
+        var original = original("one.wtlmod", "1.0.0", "one");
+        try (var runtime = runtime(); var installer = installer(runtime)) {
+            var deletion = installer.reviewDelete(original);
+            trap(runtime, "phase <> 'STAGED'");
+            var review = installer.review(original);
+            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertThrows(SQLException.class, () -> installer.deleteOriginal(deletion));
+            var linked = root.resolve("mod-zip/linked.wtlmod");
+            Files.createLink(linked, original);
+            assertThrows(SQLException.class, () -> installer.reviewDelete(linked));
+            var snapshot = installer.scan();
+            assertEquals(1, snapshot.pending().size());
+            assertTrue(snapshot.originals().stream().noneMatch(PlatformModInstallation.OriginalView::deletable));
+            assertEquals(review.id(), snapshot.pending().getFirst().id());
+            var broken = root.resolve("mod-zip/broken.wtlmod");
+            Files.writeString(broken, "broken");
+            assertNotNull(installer.reviewDelete(broken));
+            String json = text(runtime, "SELECT request_json FROM mod_operation");
+            sql(runtime.persistence().database(), "UPDATE mod_operation SET request_json='{}'");
+            var unknown = installer.scan();
+            assertEquals(review.id(), unknown.pending().getFirst().id());
+            assertTrue(unknown.pending().getFirst().original().isEmpty());
+            assertTrue(unknown.originals().stream().noneMatch(PlatformModInstallation.OriginalView::deletable));
+            assertThrows(SQLException.class, () -> installer.reviewDelete(broken));
+            sql(runtime.persistence().database(), "UPDATE mod_operation SET request_json=?", json);
+            untrap(runtime);
+            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+        }
+    }
+
+    @Test
     void rejectedInitialLedgerWriteNeverCreatesStagingOrReusesTheReview() throws Exception {
         var original = original("one.wtlmod", "1.0.0", "one");
         try (var runtime = runtime(); var installer = installer(runtime)) {
