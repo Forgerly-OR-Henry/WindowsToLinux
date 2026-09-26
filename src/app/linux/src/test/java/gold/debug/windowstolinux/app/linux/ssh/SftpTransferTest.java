@@ -146,11 +146,11 @@ class SftpTransferTest {
             Path source = Files.write(root.resolve("input"), bytes);
             var request = new TransferRequest(source, "/partial", bytes.length);
             assertEquals(Outcome.CANCELLED, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
-                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE).outcome());
+                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             cancelled.set(false);
             assertEquals(Outcome.UNKNOWN, connection.transfer(request, digest(bytes), true, Duration.ofSeconds(5),
-                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE).outcome());
+                    cancelled::get, conflict -> TransferConflictChoice.TERMINATE, journal()).outcome());
             assertEquals(1, writes.get());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             assertEquals(16384, Files.size(temporary(fixture.remote)));
@@ -191,7 +191,7 @@ class SftpTransferTest {
                 try {
                     var result = connection.transfer(new TransferRequest(source, "/partial", bytes.length),
                             digest(bytes), true, timeout ? Duration.ofMillis(400) : Duration.ofSeconds(5), () -> false,
-                            conflict -> TransferConflictChoice.TERMINATE);
+                            conflict -> TransferConflictChoice.TERMINATE, journal());
                     assertEquals(0, entered.getCount());
                     assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
                     if (timeout)
@@ -227,11 +227,22 @@ class SftpTransferTest {
         }
     }
 
+    static TransferJournal journal() {
+        return plan -> new ResourceLease() {
+            public java.util.UUID id() {
+                return plan.id();
+            }
+
+            public void close() {
+            }
+        };
+    }
+
     static OperationResult<gold.debug.windowstolinux.appapi.linux.TransferResult> transfer(
             SshConnector.Connection connection, Path local, String remote, long limit, String digest, boolean upload)
             throws ApiException {
         return connection.transfer(new TransferRequest(local, remote, limit), digest, upload, Duration.ofSeconds(5),
-                () -> false, conflict -> TransferConflictChoice.TERMINATE);
+                () -> false, conflict -> TransferConflictChoice.TERMINATE, journal());
     }
 
     @Test

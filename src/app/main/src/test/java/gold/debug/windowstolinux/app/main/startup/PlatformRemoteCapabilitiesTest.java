@@ -177,6 +177,74 @@ class PlatformRemoteCapabilitiesTest {
                 assertEquals(1, remote.commands.get());
                 assertEquals(0, runtime.security().securityState().activeTasks());
                 assertTrue(runtime.persistence().servers().findServer("server").isPresent());
+                try (var c = runtime.persistence().database().openConnection();
+                        var p = c.prepareStatement(
+                                "SELECT recovery_json,released_at,owner_id FROM platform_task_resource WHERE task_id=? AND resource_kind='FILE'")) {
+                    p.setObject(1, task.id());
+                    try (var rows = p.executeQuery()) {
+                        int checkpoints = 0;
+                        while (rows.next()) {
+                            var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(1));
+                            assertEquals("sftp.v1", data.path("protocol").asText());
+                            var fields = data.path("fields");
+                            assertEquals("server", fields.path("serverId").asText());
+                            assertTrue(fields.path("fingerprint").asText().startsWith("SHA256:"));
+                            assertEquals(digest(bytes), fields.path("source.sha256").asText());
+                            assertEquals(OWNER, rows.getString(3));
+                            assertNotNull(rows.getObject(2));
+                            checkpoints++;
+                        }
+                        assertEquals(2, checkpoints);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void failedDurableCheckpointNeverCreatesStagingAndOriginalTaskMustReconcile() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            runtime.setInteractionPresenter(new Reviews());
+            var source = Files.writeString(root.resolve("source"), "new");
+            try (var c = runtime.persistence().database().openConnection(); var s = c.createStatement()) {
+                s.execute("ALTER TABLE platform_task_resource ADD CONSTRAINT reject_sftp CHECK(resource_kind<>'FILE')");
+            }
+            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                var original = new AtomicReference<TaskContext>();
+                var binding = runtime.tasks().bind(OWNER, VERSION, false);
+                var handle = binding.submit(request("server"), task -> {
+                    original.set(task);
+                    try (var session = capabilities.linux().connect(SERVER, task)) {
+                        var request = new TransferRequest(source, "/file", 3);
+                        var grant = capabilities.interaction().approve(
+                                RemoteActions.transfer(SERVER, "revision", request, digest("new".getBytes()), true),
+                                task).value().orElseThrow();
+                        var result = session.upload(request, grant);
+                        assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+                        assertEquals("checkpoint", result.problem().orElseThrow().context().get("phase"));
+                    }
+                    return success(null);
+                });
+                state(handle, TaskState.UNKNOWN);
+                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                try (var files = Files.list(remote.files)) {
+                    assertEquals(0, files.count());
+                }
+                assertEquals(0, count(runtime.persistence().database(),
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE'"));
+                try (var c = runtime.persistence().database().openConnection(); var s = c.createStatement()) {
+                    s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT reject_sftp");
+                }
+                try (var recovery = binding.registerRecovery("fixture", (previous, task) -> {
+                    capabilities.closeTaskResources(task);
+                    return success(null);
+                })) {
+                    assertEquals(TaskState.ENDED, runtime.tasks().reconcile(handle.id()).toCompletableFuture()
+                            .get(10, TimeUnit.SECONDS).state());
+                }
+                assertEquals(0, remote.commands.get());
             }
         }
     }
@@ -224,6 +292,80 @@ class PlatformRemoteCapabilitiesTest {
                 assertEquals("new", Files.readString(remote.files.resolve("file (1).txt")));
                 assertEquals(0, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            }
+        }
+    }
+
+    @Test
+    void disconnectedStagingRetainsDurableFileFactsAfterGenericTaskReconciliation() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            runtime.setInteractionPresenter(new Reviews());
+            ((SftpSubsystemFactory) remote.listener.server().getSubsystemFactories().getFirst())
+                    .addSftpEventListener(new org.apache.sshd.sftp.server.SftpEventListener() {
+                        public void written(org.apache.sshd.server.session.ServerSession session, String handle,
+                                org.apache.sshd.sftp.server.FileHandle file, long offset, byte[] data, int start,
+                                int length, Throwable failure) {
+                            if (failure == null)
+                                session.close(true);
+                        }
+                    });
+            var source = Files.write(root.resolve("source"), new byte[100000]);
+            var binding = runtime.tasks().bind(OWNER, VERSION, false);
+            var original = new AtomicReference<TaskContext>();
+            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                var task = binding.submit(request("server"), context -> {
+                    original.set(context);
+                    try (var session = capabilities.linux().connect(SERVER, context)) {
+                        var request = new TransferRequest(source, "/file", 100000);
+                        var grant = capabilities.interaction().approve(
+                                RemoteActions.transfer(SERVER, "revision", request, digest(new byte[100000]), true),
+                                context).value().orElseThrow();
+                        assertEquals(Outcome.UNKNOWN, session.upload(request, grant).outcome());
+                    }
+                    return success(null);
+                });
+                state(task, TaskState.UNKNOWN);
+                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                UUID lease;
+                Path temporary;
+                try (var c = runtime.persistence().database().openConnection();
+                        var p = c.prepareStatement(
+                                "SELECT lease_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='FILE' AND released_at IS NULL")) {
+                    p.setObject(1, task.id());
+                    try (var row = p.executeQuery()) {
+                        assertTrue(row.next());
+                        lease = row.getObject(1, UUID.class);
+                        var facts = new com.fasterxml.jackson.databind.ObjectMapper().readTree(row.getString(2))
+                                .path("fields");
+                        assertEquals("server", facts.path("serverId").asText());
+                        assertEquals(digest(new byte[100000]), facts.path("source.sha256").asText());
+                        assertEquals("/file", facts.path("selectedRemote").asText());
+                        String name = ".wtl-transfer-" + UUID.fromString(facts.path("transferId").asText()) + ".part";
+                        assertEquals("/" + name, facts.path("temporaryPath").asText());
+                        temporary = remote.files.resolve(name);
+                        assertFalse(row.next());
+                    }
+                }
+                assertEquals(16384, Files.size(temporary));
+                assertFalse(Files.exists(remote.files.resolve("file")));
+                try (var registration = binding.registerRecovery("fixture", (previous, context) -> {
+                    capabilities.closeTaskResources(context);
+                    return success(null);
+                })) {
+                    assertEquals(TaskState.FINISHING, runtime.tasks().reconcile(task.id()).toCompletableFuture()
+                            .get(10, TimeUnit.SECONDS).state());
+                    assertFalse(task.completion().toCompletableFuture().isDone());
+                    assertTrue(Files.exists(temporary));
+                    assertThrows(java.sql.SQLException.class, runtime::close);
+                    // Fixture cleanup of the exact known local server file; not a product recovery implementation.
+                    Files.delete(temporary);
+                    new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
+                            .release(task.id(), lease);
+                    assertEquals(TaskState.ENDED, runtime.tasks().reconcile(task.id()).toCompletableFuture()
+                            .get(10, TimeUnit.SECONDS).state());
+                }
             }
         }
     }

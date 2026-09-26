@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.linux.ssh.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
@@ -307,7 +307,14 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 interaction.consume(grant, RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload),
                         task);
                 return connection.transfer(request, sha256, upload, transferTimeout, tasks.operationCancellation(task),
-                        conflict -> interaction.transferConflict(conflict, server, task));
+                        conflict -> interaction.transferConflict(conflict, server, task), plan -> {
+                            tasks.requireServer(task, owner, version, server.id());
+                            var facts = new TreeMap<>(plan.recoveryFields());
+                            facts.put("serverId", server.id());
+                            facts.put("fingerprint", connection.fingerprint());
+                            return tasks.retain(task, new TaskResource("FILE", "sftp:" + plan.id(), owner, true),
+                                    new ResourceRecovery("sftp.v1", facts));
+                        });
             });
         }
 

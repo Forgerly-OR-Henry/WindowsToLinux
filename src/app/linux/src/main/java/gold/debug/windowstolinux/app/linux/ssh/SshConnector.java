@@ -319,12 +319,13 @@ public final class SshConnector implements AutoCloseable {
          * @param timeout host total operation deadline / 宿主操作总期限
          * @param cancellation original task cancellation / 原任务取消
          * @param conflicts actual same-name decision / 实际同名决定
+         * @param journal durable staging ownership before file creation / 文件创建前的持久暂存归属
          * @return verified transfer or explicit uncertainty / 已核验传输或明确不确定性
          * @throws ApiException if admission fails before transfer / 传输前准入失败时
          */
         public OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
-                Duration timeout, CancellationToken cancellation, TransferConflictResolver conflicts)
-                throws ApiException {
+                Duration timeout, CancellationToken cancellation, TransferConflictResolver conflicts,
+                TransferJournal journal) throws ApiException {
             worker();
             if (!operating.compareAndSet(false, true))
                 throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
@@ -334,11 +335,16 @@ public final class SshConnector implements AutoCloseable {
                 if (uncertain || command != null || transfer != null)
                     throw failure(ProblemCode.BUSY, "SSH_CONNECTION_UNCERTAIN",
                             "SSH connection requires closure after unfinished work");
-                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts);
+                transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts,
+                        journal);
                 var result = transfer.run();
                 uncertain = result.outcome() == Outcome.UNKNOWN;
                 if (transfer.close())
                     transfer = null;
+                else {
+                    uncertain = true;
+                    return transfer.problem("SFTP_RELEASE_PENDING", ProblemCode.IO_FAILURE);
+                }
                 return result;
             } finally {
                 operating.set(false);

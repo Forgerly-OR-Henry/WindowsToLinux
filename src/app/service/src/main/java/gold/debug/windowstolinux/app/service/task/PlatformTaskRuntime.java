@@ -278,6 +278,17 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @throws ApiException if ownership or persistence fails / 归属或持久化失败时
      */
     public synchronized ResourceLease retain(TaskContext context, TaskResource resource) throws ApiException {
+        return retain(context, resource, null);
+    }
+
+    /** Persists host recovery facts before allowing a physical resource to be created. / 允许创建物理资源前持久化宿主恢复事实。
+     * @param context original accepted context / 原已接纳上下文
+     * @param resource exact host-owned resource / 精确宿主所属资源
+     * @param recovery optional non-secret recovery facts / 可选且不含秘密的恢复事实
+     * @return explicit release marker / 显式释放标记
+     * @throws ApiException if ownership or durable registration cannot be confirmed / 无法确认归属或持久登记时 */
+    public synchronized ResourceLease retain(TaskContext context, TaskResource resource, ResourceRecovery recovery)
+            throws ApiException {
         requireContext(context);
         var execution = executions.get(context.id());
         if (execution.returned && !execution.reconciling)
@@ -287,8 +298,12 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             if (resource.kind().equals("MOD") && blockedOwners.containsKey(resource.id())
                     && !ledger.holds(context.id(), resource))
                 throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(resource.id()));
-            return new OwnedLease(execution, ledger.retain(context.id(), resource));
+            return new OwnedLease(execution, ledger.retain(context.id(), resource, recovery));
         } catch (SQLException failure) {
+            if (recovery != null) {
+                execution.uncertainEffect = true;
+                uncertain(execution, "Recovery resource registration could not be confirmed");
+            }
             throw error(ProblemCode.IO_FAILURE, "TASK_RESOURCE", "Resource registration failed");
         }
     }
