@@ -226,7 +226,7 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 ### APP 网页控制台救援边界
 
-`app/windows/recovery` 独占 Playwright Java 1.58.0 对象，并在专用线程处理页面事件和终端输入；不接管个人浏览器配置。`app/service/recovery` 使用原有服务器锁，持有救援状态、预算、动作确认和 SSH 验证；`SshRecoveryApplicationFacade`、`SshRecoverySession` 与 `RecoverySnapshot` 是 UI 使用的救援契约。`shared/ai/recovery` 仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。
+`app/linux/recovery` 独占 Playwright Java 1.58.0 对象、终端契约与安全 Problem，并在专用线程处理页面事件和终端输入；不接管个人浏览器配置。`app/windows/window` 仅提供所属子进程窗口隐私适配，不持有 Playwright。该浏览器基础已迁移，以下旧救援状态机尚未接入新默认入口和中央任务账本。`app/service/recovery` 使用原有服务器锁，持有救援状态、预算、动作确认和 SSH 验证；`SshRecoveryApplicationFacade`、`SshRecoverySession` 与 `RecoverySnapshot` 是 UI 使用的救援契约。`shared/ai/recovery` 仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。
 
 桌面模型用途以 `AiPurposeType` 明确划分部署、审批和视觉；`AiCapabilityType` 区分文字/图像测试。显示排序与用途调用顺序分离，任务持有精确配置快照。视觉识别只返回受控观察，部署和审批保持独立上下文。APP SQLite v21 用 `ai_model` 保存用途、独立顺序和能力修订，任务及事件表保存非秘密历史。三模式自动部署不接入浏览器救援，独立救援继续要求用户逐项授权。
 
@@ -350,6 +350,6 @@ Web JSON 编解码由 `persistence/serialization/WebJsonCodec` 承担；`contrac
 
 ### 救援浏览器的锁定协作
 
-APP 救援浏览器通过安全服务登记原生隐私参与者；会话转换前由 `app/windows/recovery` 隐藏或恢复已验证归属的隔离浏览器窗口。失败时不提交锁定状态，后台浏览器仍由原有任务持有并清理。
+APP 救援浏览器通过安全服务登记原生隐私参与者；会话转换前由 `app/windows/window` 隐藏或恢复已验证归属的隔离浏览器窗口。失败时不提交锁定状态，后台浏览器仍由原有任务持有并清理。
 
 APP 打开的独立救援浏览器也随锁定隐藏并禁用原生窗口，自动化和已绑定终端继续运行；解锁后恢复原先窗口状态。此控制只针对私有 CDP 连接识别、且验证为 APP 子进程的隔离浏览器，不操作个人浏览器。若原生隐私切换失败，安全服务拒绝宣称锁定成功并提示结束救援后重试。

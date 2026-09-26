@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.shared.model.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 /**
  * Opaque terminal selection; URLs exclude credentials, queries and fragments. / 不透明终端选择，地址不含凭据、查询和片段。

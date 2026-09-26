@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import java.net.URI;
 import java.util.*;
@@ -6,14 +6,14 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.microsoft.playwright.*;
-import gold.debug.windowstolinux.shared.model.recovery.*;
+import gold.debug.windowstolinux.app.windows.window.WindowPrivacy;
 
 /**
  * Owns every Playwright object on one serial event-pumping thread. / 在单一串行事件线程上持有全部 Playwright 对象。
  */
 public final class PlaywrightTerminalSession implements BrowserTerminalSession {
     /** Native privacy state for this isolated browser process. / 隔离浏览器进程的原生隐私状态。 */
-    private final BrowserWindowPrivacy privacy = new BrowserWindowPrivacy();
+    private final WindowPrivacy privacy = new WindowPrivacy();
 
     /** Lock observation registration released after browser cleanup. / 浏览器清理后释放的锁定观察登记。 */
     private final AutoCloseable privacyRegistration;
@@ -332,9 +332,9 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 return new TerminalObservation(text, image, generation);
             });
         } catch (BrowserRecoveryException failure) {
-            if (failure.failure().definition() == BrowserRecoveryFailureType.INTERRUPTED)
+            if (failure.reason() == BrowserRecoveryException.Reason.INTERRUPTED)
                 throw failure;
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.OBSERVATION_FAILED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OBSERVATION_FAILED, failure);
         }
     }
 
@@ -493,14 +493,14 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
      */
     private <T> T call(Callable<T> action) {
         if (closed.get())
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.OPERATION_FAILED, null);
+            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
         try {
             return worker.submit(action).get();
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.INTERRUPTED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.INTERRUPTED, failure);
         } catch (ExecutionException failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.OPERATION_FAILED, failure.getCause());
+            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, failure.getCause());
         }
     }
 
@@ -540,7 +540,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 }
             }
         } catch (ExecutionException | TimeoutException failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.CLEANUP_FAILED, null);
+            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
         } finally {
             worker.shutdownNow();
             deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -548,7 +548,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 while (true) {
                     try {
                         if (!worker.awaitTermination(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
-                            throw new BrowserRecoveryException(BrowserRecoveryFailureType.CLEANUP_FAILED, null);
+                            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
                         break;
                     } catch (InterruptedException failure) {
                         interrupted = true;
@@ -559,7 +559,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 try {
                     privacyRegistration.close();
                 } catch (Exception failure) {
-                    throw new BrowserRecoveryException(BrowserRecoveryFailureType.CLEANUP_FAILED, null);
+                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
                 } finally {
                     if (interrupted)
                         Thread.currentThread().interrupt();

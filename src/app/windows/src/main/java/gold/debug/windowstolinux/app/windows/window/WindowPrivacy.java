@@ -1,24 +1,24 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.windows.window;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Hides only native windows belonging to this application's isolated Chromium. / 仅隐藏当前应用隔离 Chromium 的原生窗口。 */
-final class BrowserWindowPrivacy {
-    /** Browser process from the private CDP connection. / 私有 CDP 连接提供的浏览器进程。 */
+/** Hides only native windows belonging to this application's owned child process. / 仅隐藏当前应用所属子进程的原生窗口。 */
+public final class WindowPrivacy {
+    /** Explicit owned child process. / 显式所属子进程。 */
     private long processId;
 
-    /** Desired state before and after browser launch. / 浏览器启动前后的期望状态。 */
+    /** Desired state before and after the child process starts. / 子进程启动前后的期望状态。 */
     private boolean locked;
 
     /** Previously visible handles and minimized state. / 原先可见的句柄及最小化状态。 */
     private final Map<Long, Integer> hidden = new LinkedHashMap<>();
 
     /** Verifies process ownership before any native operation. / 原生操作前验证进程归属。
-     * @param pid isolated browser process / 隔离浏览器进程
+     * @param pid owned child process / 所属子进程
      */
-    synchronized void identify(long pid) {
+    public synchronized void identify(long pid) {
         var process = ProcessHandle.of(pid).orElseThrow();
         boolean owned = false;
         for (var parent = process.parent(); parent.isPresent(); parent = parent.get().parent())
@@ -27,16 +27,16 @@ final class BrowserWindowPrivacy {
                 break;
             }
         if (!owned)
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.OPERATION_FAILED, null);
+            throw new IllegalStateException("Owned window privacy operation failed");
         processId = pid;
         if (locked)
             hide();
     }
 
-    /** Applies privacy without stopping browser automation. / 应用隐私保护，不停止浏览器自动化。
+    /** Applies window privacy without stopping the owned process. / 应用窗口隐私保护，不停止所属进程。
      * @param value requested lock state / 请求锁定状态
      */
-    synchronized void setLocked(boolean value) {
+    public synchronized void setLocked(boolean value) {
         locked = value;
         if (processId == 0)
             return;
@@ -50,7 +50,7 @@ final class BrowserWindowPrivacy {
     }
 
     /** Covers new native popup windows while locked. / 锁定时处理新建原生弹窗。 */
-    synchronized void refresh() {
+    public synchronized void refresh() {
         if (locked && processId != 0)
             hide();
     }
@@ -58,17 +58,17 @@ final class BrowserWindowPrivacy {
     /** Counts visible owned windows for acceptance. / 为验收统计可见自有窗口。
      * @return visible top-level windows / 可见顶层窗口数
      */
-    synchronized int visibleWindows() {
+    public synchronized int visibleWindows() {
         return (int) invoke("query", "").lines().filter(line -> line.matches("[0-9]+:[0-9]+")).count();
     }
 
-    /** Discards handles after browser cleanup. / 浏览器清理后丢弃句柄。 */
-    synchronized void forget() {
+    /** Discards handles after child process cleanup. / 子进程清理后丢弃句柄。 */
+    public synchronized void forget() {
         processId = 0;
         hidden.clear();
     }
 
-    /** Records and hides visible browser windows. / 记录并隐藏可见浏览器窗口。 */
+    /** Records and hides visible owned windows. / 记录并隐藏可见所属窗口。 */
     private void hide() {
         for (String line : invoke("hide", "").lines().toList()) {
             if (!line.matches("[0-9]+:[0-9]+"))
@@ -85,7 +85,7 @@ final class BrowserWindowPrivacy {
      */
     private String invoke(String action, String handles) {
         Process command = null;
-        try (var input = BrowserWindowPrivacy.class.getResourceAsStream("window-privacy.ps1")) {
+        try (var input = WindowPrivacy.class.getResourceAsStream("window-privacy.ps1")) {
             if (processId == 0 || ProcessHandle.of(processId).filter(ProcessHandle::isAlive).isEmpty())
                 return "";
             if (input == null)
@@ -104,9 +104,9 @@ final class BrowserWindowPrivacy {
             return new String(output, StandardCharsets.UTF_8).strip();
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.INTERRUPTED, null);
+            throw new IllegalStateException("Owned window privacy operation interrupted", failure);
         } catch (Exception failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryFailureType.OPERATION_FAILED, null);
+            throw new IllegalStateException("Owned window privacy operation failed");
         } finally {
             if (command != null && command.isAlive()) {
                 command.descendants().forEach(ProcessHandle::destroyForcibly);

@@ -11,14 +11,14 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.linux.recovery.*;
+import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.app.windows.recovery.BrowserTerminalSession;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
-import gold.debug.windowstolinux.shared.model.recovery.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -161,8 +161,9 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
             @Override
             public void close() {
                 super.close();
-                throw new gold.debug.windowstolinux.app.windows.recovery.BrowserRecoveryException(
-                        gold.debug.windowstolinux.app.windows.recovery.BrowserRecoveryFailureType.CLEANUP_FAILED, null);
+                throw new gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException(
+                        gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException.Reason.CLEANUP_FAILED,
+                        null);
             }
         };
         var session = new BrowserRecoverySession(browser, null, () -> {
@@ -173,7 +174,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         session.run();
         assertEquals(1, calls.get());
         assertTrue(browser.closed);
-        assertEquals("windows.browser.cleanup-failed", session.await().failure().orElseThrow().code());
+        assertEquals("linux.browser.cleanup-failed", session.await().failure().orElseThrow().code());
     }
 
     private void until(java.util.function.BooleanSupplier predicate) throws Exception {

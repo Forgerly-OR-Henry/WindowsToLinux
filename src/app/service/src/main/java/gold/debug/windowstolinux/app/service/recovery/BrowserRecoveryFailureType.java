@@ -1,35 +1,34 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.service.recovery;
 
 import gold.debug.windowstolinux.shared.model.failure.*;
 
 /**
- * Failures owned by the isolated Windows browser terminal. / Windows 隔离浏览器终端持有的失败。
+ * Browser failures mapped for the existing rescue UI. / 旧救援界面所需的平台浏览器错误映射。
  */
 public enum BrowserRecoveryFailureType implements FailureDefinition {
     /**
      * OPERATION FAILED classification within browser recovery failure type.
      * <p>浏览器恢复失败类型中的操作失败分类。
      */
-    OPERATION_FAILED("windows.browser.operation-failed", "browser", "windows.error.browserOperationFailed",
+    OPERATION_FAILED("linux.browser.operation-failed", "browser", "linux.error.browserOperationFailed",
             FailureRecoveryAction.REQUEST_USER_CORRECTION),
     /**
      * OBSERVATION FAILED classification within browser recovery failure type.
      * <p>浏览器恢复失败类型中的观测失败分类。
      */
-    OBSERVATION_FAILED("windows.browser.observation-failed", "observation", "windows.error.browserObservationFailed",
+    OBSERVATION_FAILED("linux.browser.observation-failed", "observation", "linux.error.browserObservationFailed",
             FailureRecoveryAction.REQUEST_USER_CORRECTION),
     /**
      * CLEANUP FAILED classification within browser recovery failure type.
      * <p>浏览器恢复失败类型中的清理失败分类。
      */
-    CLEANUP_FAILED("windows.browser.cleanup-failed", "cleanup", "windows.error.browserCleanupFailed",
+    CLEANUP_FAILED("linux.browser.cleanup-failed", "cleanup", "linux.error.browserCleanupFailed",
             FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
     /**
      * INTERRUPTED classification within browser recovery failure type.
      * <p>浏览器恢复失败类型中的已中断分类。
      */
-    INTERRUPTED("windows.browser.interrupted", "browser", "windows.error.browserInterrupted",
-            FailureRecoveryAction.NONE);
+    INTERRUPTED("linux.browser.interrupted", "browser", "linux.error.browserInterrupted", FailureRecoveryAction.NONE);
     /**
      * Stable machine-readable classification code.
      * <p>稳定的机器可读分类码。
@@ -88,7 +87,7 @@ public enum BrowserRecoveryFailureType implements FailureDefinition {
      */
     @Override
     public String domain() {
-        return "windows";
+        return "linux";
     }
 
     /**

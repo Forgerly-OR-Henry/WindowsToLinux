@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.contract;
 import java.util.List;
 
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
-import gold.debug.windowstolinux.shared.model.recovery.TerminalTarget;
+import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
 
 /**
  * Controls one rescue without exposing browser or persistence internals. / 控制一次救援，不暴露浏览器和持久化内部对象。
@@ -21,7 +21,7 @@ public interface SshRecoverySession extends AutoCloseable {
      *
      * @return constructed or resolved list / 构造或解析得到的列表
      */
-    List<TerminalTarget> terminals();
+    List<RecoveryTerminal> terminals();
 
     /**
      * Confirms server identity, observation consent and completed manual handoff. / 确认服务器身份、观察授权及人工交接完成。

@@ -5,12 +5,12 @@ import java.util.concurrent.*;
 import java.util.function.*;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
+import gold.debug.windowstolinux.app.linux.recovery.PlaywrightTerminalSession;
 import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.app.windows.recovery.PlaywrightTerminalSession;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 
@@ -318,7 +318,7 @@ public final class SshRecoveryUseCase implements AutoCloseable {
             /** Lists recovery terminals only through the interactive authorization gate. / 仅通过交互授权门禁列出救援终端。
              * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
              */
-            public java.util.List<gold.debug.windowstolinux.shared.model.recovery.TerminalTarget> terminals() {
+            public java.util.List<gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal> terminals() {
                 return secrets.whileUnlocked(session::terminals);
             }
 

@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -51,10 +51,10 @@ class PlaywrightTerminalSessionTest {
             assertFalse(browser.valid(text));
             long stale = text;
             var staleFailure = assertThrows(BrowserRecoveryException.class, () -> browser.submit(stale, "stale"));
-            assertEquals(BrowserRecoveryFailureType.OPERATION_FAILED.code(), staleFailure.failure().code());
-            assertEquals("windows", staleFailure.failure().definition().domain());
-            assertNotNull(staleFailure.failure().operationIdentity());
-            assertFalse(staleFailure.failure().toString().contains("terminal-changed"));
+            assertEquals("linux.browser.operation-failed", staleFailure.problem().eventCode());
+            assertEquals(BrowserRecoveryException.Reason.OPERATION_FAILED, staleFailure.reason());
+            assertNotNull(staleFailure.problem().diagnosticId().orElseThrow());
+            assertFalse(staleFailure.problem().toString().contains("terminal-changed"));
             targets = browser.targets();
             long canvas = browser.bind(
                     targets.stream().filter(v -> v.description().endsWith("canvas")).findFirst().orElseThrow().id());

@@ -79,14 +79,14 @@ class RecoveryAiUseCaseTest extends SecurityTestFixture {
             });
             var ai = new RecoveryAiUseCase(db.aiProfiles(), secrets, client);
             var observed = ai.observe(
-                    new gold.debug.windowstolinux.shared.model.recovery.TerminalObservation("", new byte[]{1}, 1));
+                    new gold.debug.windowstolinux.app.linux.recovery.TerminalObservation("", new byte[]{1}, 1));
             assertEquals("ok", observed.code());
             assertEquals("ok", ai.decide(RecoveryModelClient.parseObservation(observed.content())).code());
             assertEquals(List.of("vision/true", "deployment/false"), calls);
             calls.clear();
-            assertEquals("text shell",
-                    ai.observe(new gold.debug.windowstolinux.shared.model.recovery.TerminalObservation("text shell",
-                            new byte[0], 1)).content());
+            assertEquals("text shell", ai.observe(
+                    new gold.debug.windowstolinux.app.linux.recovery.TerminalObservation("text shell", new byte[0], 1))
+                    .content());
             assertTrue(calls.isEmpty());
             db.aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, List.of());
             assertEquals("regularUnavailable", ai.decide("facts").code());

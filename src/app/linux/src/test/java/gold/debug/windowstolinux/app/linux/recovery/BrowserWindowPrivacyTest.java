@@ -1,10 +1,11 @@
-package gold.debug.windowstolinux.app.windows.recovery;
+package gold.debug.windowstolinux.app.linux.recovery;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.concurrent.atomic.*;
 import java.util.function.Consumer;
 
+import gold.debug.windowstolinux.app.windows.window.WindowPrivacy;
 import org.junit.jupiter.api.Test;
 
 class BrowserWindowPrivacyTest {
@@ -22,7 +23,7 @@ class BrowserWindowPrivacyTest {
             browser.open();
             var field = PlaywrightTerminalSession.class.getDeclaredField("privacy");
             field.setAccessible(true);
-            var privacy = (BrowserWindowPrivacy) field.get(browser);
+            var privacy = (WindowPrivacy) field.get(browser);
             var targets = browser.targets();
             assertEquals(1, targets.size());
             long generation = browser.bind(targets.getFirst().id());
@@ -39,7 +40,7 @@ class BrowserWindowPrivacyTest {
 
     @Test
     void rejectsUnownedNativeProcessBeforeWindowChanges() {
-        var privacy = new BrowserWindowPrivacy();
-        assertThrows(BrowserRecoveryException.class, () -> privacy.identify(ProcessHandle.current().pid()));
+        var privacy = new WindowPrivacy();
+        assertThrows(IllegalStateException.class, () -> privacy.identify(ProcessHandle.current().pid()));
     }
 }

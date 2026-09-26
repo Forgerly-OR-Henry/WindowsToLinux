@@ -294,11 +294,6 @@ src/  # 项目源码与模块根目录
 │  │           ├─ Messages.properties  # 提供桌面界面的英文基准消息目录
 │  │           └─ Messages_zh_CN.properties  # 提供与英文消息键一致的简体中文界面映射
 │  └─ windows/  # Windows 平台边界模块
-│     ├─ recovery/  # 网页控制台 SSH 救援职责包
-│     │  ├─ BrowserRecoveryException.java  # 不含终端正文的结构化浏览器失败
-│     │  ├─ BrowserRecoveryFailureType.java  # 浏览器操作、观察、中断和清理错误分类
-│     │  ├─ BrowserTerminalSession.java  # 受限的已绑定终端浏览器操作契约
-│     │  └─ PlaywrightTerminalSession.java  # 专用线程上的隔离浏览器观察、输入和资源清理
 │     ├─ uninstall/  # 无默认选择的本地受管卸载安全边界
 │     │  ├─ DesktopUninstallCoordinator.java  # 显式保留/删除分支、受管预检和精确残留编排
 │     │  ├─ DesktopUninstallDecisionType.java  # 保留或删除本地数据及凭据的显式决定
@@ -948,9 +943,7 @@ src/  # 项目源码与模块根目录
 │  │  │  ├─ SourceRevision.java  # 用于绑定分析、目标机构建和部署记录的不可变源码身份
 │  │  │  └─ ValidatedDeploymentTarget.java  # 由真实产品入口验收证据支撑的一个精确目标组合
 │  │  ├─ recovery/  # 网页控制台 SSH 救援职责包
-│  │  │  ├─ RecoveryAction.java  # 待批准的终端命令、理由与影响声明
-│  │  │  ├─ TerminalObservation.java  # 不持久化的终端文字或截图观察
-│  │  │  └─ TerminalTarget.java  # 用户选择的终端不透明标识
+│  │  │  └─ RecoveryAction.java  # 待批准的终端命令、理由与影响声明
 │  │  ├─ security/  # 主机安全与防火墙状态模型包
 │  │  │  └─ CredentialStorageMode.java  # 用户选择的平台凭据存储机制，其本身绝不是秘密
 │  │  ├─ server/  # 服务器配置与观测
@@ -1526,7 +1519,7 @@ src/  # 项目源码与模块根目录
 
 APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原实现，后续同步。
 
-- `app/windows/recovery/BrowserWindowPrivacy.java` 与 `window-privacy.ps1`：仅隐藏/恢复归属经过校验的 APP 隔离 Chromium 原生窗口。
+- `app/windows/window/WindowPrivacy.java` 与 `window-privacy.ps1`：仅隐藏/恢复归属经过校验的 APP 隔离 Chromium 原生窗口。
 
 ## 1.1 已落地新增节点
 
@@ -1722,3 +1715,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。
 - `app/service/mod/PlatformModServices.java`：真实加载器身份的服务登记、启动发布、依赖发现和原任务同步调用。
 - `app/main/mod/PlatformModContext.java`：同次真实 Mod 启用的完整能力装配、暂存发布、部分失败回收和实际上下文关闭归属。
+
+- `app/linux/recovery/`：迁入 PlaywrightTerminalSession、BrowserTerminalSession、TerminalTarget、TerminalObservation 和 BrowserRecoveryException；具体浏览器救援不再放在 Windows 或 shared/model。
+- `app/service/recovery/BrowserRecoveryFailureType.java`：尚在迁移的旧救援 UI 所用分类适配，保留新平台诊断身份；Linux 不依赖旧失败模型。
+- `app/service/contract/definition/RecoveryTerminal.java`：服务层终端选择快照，避免救援 UI 直接依赖 Linux 浏览器类型。
