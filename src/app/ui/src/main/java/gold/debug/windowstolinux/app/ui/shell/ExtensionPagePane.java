@@ -41,19 +41,24 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
     /** Localized current lock message. / 当前本地化锁定消息。 */
     private final Supplier<String> lockMessage;
 
+    /** Selects the actual outer business or settings surface after an explicit open. / 明确打开后选择实际外层业务或设置界面。 */
+    private final Consumer<Boolean> activate;
+
     /**
      * Creates both Swing surfaces on the EDT. / 在 EDT 创建两个 Swing 界面。
      * @param closeRequest tracked host close action / 跟踪的宿主关闭操作
      * @param ownerTitle current Mod display-name lookup / 当前 Mod 显示名称查询
      * @param lockMessage platform-localized lock message / 平台本地化锁定消息
+     * @param activate selects the outer settings or business surface / 选择外层设置或业务界面
      */
     public ExtensionPagePane(Consumer<PageKey> closeRequest, Function<String, String> ownerTitle,
-            Supplier<String> lockMessage) {
+            Supplier<String> lockMessage, Consumer<Boolean> activate) {
         super(new CardLayout());
         requireEdt();
         this.closeRequest = Objects.requireNonNull(closeRequest);
         this.ownerTitle = Objects.requireNonNull(ownerTitle);
         this.lockMessage = Objects.requireNonNull(lockMessage);
+        this.activate = Objects.requireNonNull(activate);
         add(pages, "pages");
         add(pageLock, "locked");
         settingSurface.add(settingGroups, "pages");
@@ -98,7 +103,9 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
         int index = target.indexOfComponent(component);
         var title = new JPanel(new FlowLayout(FlowLayout.LEADING, 4, 0));
         title.setOpaque(false);
-        title.add(new JLabel(spec.defaultTitle()));
+        var label = new JLabel(spec.defaultTitle());
+        label.putClientProperty("html.disable", true);
+        title.add(label);
         var close = new JButton("×");
         close.setFocusable(false);
         close.addActionListener(event -> closeRequest.accept(key));
@@ -120,6 +127,7 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
         if (view.tabs() != pages)
             settingGroups.setSelectedComponent(view.tabs());
         view.tabs().setSelectedComponent(view.component());
+        activate.accept(view.tabs() != pages);
     }
 
     /**

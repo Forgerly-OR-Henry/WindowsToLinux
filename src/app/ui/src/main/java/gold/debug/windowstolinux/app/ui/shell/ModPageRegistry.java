@@ -19,6 +19,12 @@ public final class ModPageRegistry {
     /** Current startup scopes, including unpublished and failed-cleanup scopes. / 当前启动作用域，包含未发布及清理失败的作用域。 */
     private final Map<String, PageScope> scopes = new LinkedHashMap<>();
 
+    /** Host-only publication observers, confined to the event thread. / 仅宿主使用且限定在事件线程的发布观察器。 */
+    private final Set<Runnable> listeners = new LinkedHashSet<>();
+
+    /** Coalesces publication notifications without running host callbacks inside author registration. / 合并发布通知，不在作者登记中执行宿主回调。 */
+    private boolean notificationQueued;
+
     /**
      * Binds the host surface and initial environment. / 绑定宿主界面及初始环境。
      * @param host actual mounting surface / 实际挂载界面
@@ -56,6 +62,47 @@ public final class ModPageRegistry {
         return onEdt(() -> scopes.values().stream().filter(PageScope::visible).flatMap(
                 scope -> scope.entries.values().stream().map(entry -> new PageContribution(entry.key, entry.spec)))
                 .toList());
+    }
+
+    /** Opens an exact published page through its original owner scope. / 经原所有者作用域打开精确已发布页面。
+     * @param key exact host-selected identity / 宿主选择的精确身份
+     * @throws ApiException if the page is unavailable or locked / 页面不可用或锁定时 */
+    public void openView(PageKey key) throws ApiException {
+        onEdt(() -> {
+            var scope = scopes.get(key.ownerId());
+            if (scope == null)
+                throw failure(ProblemCode.NOT_FOUND, "PAGE_NOT_FOUND", "The page owner is unavailable");
+            scope.open(key.pageId());
+            return null;
+        });
+    }
+
+    /** Observes published metadata without creating pages or retaining removed listeners. / 观察发布元数据，不创建页面或保留已移除监听器。
+     * @param listener host refresh callback on the EDT / EDT 上的宿主刷新回调
+     * @return removable host subscription / 可移除宿主订阅
+     * @throws ApiException if registration cannot reach the EDT / 登记无法到达 EDT 时 */
+    public AutoCloseable onChange(Runnable listener) throws ApiException {
+        Objects.requireNonNull(listener);
+        onEdt(() -> {
+            listeners.add(listener);
+            return null;
+        });
+        return () -> onEdt(() -> {
+            listeners.remove(listener);
+            return null;
+        });
+    }
+
+    /** Delivers the latest publication state after the current mutation returns. / 当前修改返回后交付最新发布状态。 */
+    private void changed() {
+        if (notificationQueued)
+            return;
+        notificationQueued = true;
+        SwingUtilities.invokeLater(() -> {
+            notificationQueued = false;
+            for (var listener : List.copyOf(listeners))
+                listener.run();
+        });
     }
 
     /**
@@ -235,6 +282,7 @@ public final class ModPageRegistry {
                 if (stopping)
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_SCOPE_STOPPING", "Page scope is stopping");
                 committed = true;
+                changed();
                 return null;
             });
         }
@@ -264,6 +312,8 @@ public final class ModPageRegistry {
                             "Page identity is empty, invalid or already registered");
                 var entry = new PageEntry(this, spec, factory);
                 entries.put(spec.id(), entry);
+                if (visible())
+                    changed();
                 return entry;
             });
         }
@@ -311,6 +361,7 @@ public final class ModPageRegistry {
                 if (closed)
                     return null;
                 stopping = true;
+                changed();
                 ApiException first = null;
                 var pending = new ArrayList<>(entries.values());
                 Collections.reverse(pending);
@@ -451,6 +502,7 @@ public final class ModPageRegistry {
             onEdt(() -> {
                 closeView();
                 scope.entries.remove(spec.id(), this);
+                changed();
                 return null;
             });
         }

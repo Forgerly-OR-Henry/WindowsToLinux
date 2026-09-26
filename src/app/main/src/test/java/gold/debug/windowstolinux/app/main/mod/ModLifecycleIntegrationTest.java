@@ -233,7 +233,8 @@ class ModLifecycleIntegrationTest {
                                 (connection, owner, version, request) -> claims(identity), security)) {
                     var pane = new AtomicReference<ExtensionPagePane>();
                     SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
-                    }, owner -> "Fixture", () -> "Locked")));
+                    }, owner -> "Fixture", () -> "Locked", settings -> {
+                    })));
                     var pages = new ModPageRegistry(pane.get(), new UiEnvironment(Locale.ENGLISH, "light", false));
                     var scope = pages.begin(identity.ownerId(), false);
                     var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", false);
@@ -294,7 +295,8 @@ class ModLifecycleIntegrationTest {
                             security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
-                }, owner -> "Fixture", () -> "Locked")));
+                }, owner -> "Fixture", () -> "Locked", settings -> {
+                })));
                 var pages = new ModPageRegistry(pane.get(), new UiEnvironment(Locale.ENGLISH, "light", false));
                 var scope = pages.begin(identity.ownerId(), false);
                 var context = context(scope, tasks.bind(identity.ownerId(), "1.0.0", false),
@@ -334,7 +336,8 @@ class ModLifecycleIntegrationTest {
                             security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
-                }, owner -> "Fixture", () -> "Locked")));
+                }, owner -> "Fixture", () -> "Locked", settings -> {
+                })));
                 var pages = new ModPageRegistry(pane.get(), new UiEnvironment(Locale.ENGLISH, "light", false));
                 var scope = pages.begin(identity.ownerId(), false);
                 var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", false);
@@ -382,7 +385,8 @@ class ModLifecycleIntegrationTest {
                         security)) {
             var pane = new AtomicReference<ExtensionPagePane>();
             SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
-            }, owner -> "Fixture", () -> "Locked")));
+            }, owner -> "Fixture", () -> "Locked", settings -> {
+            })));
             var pages = new ModPageRegistry(pane.get(), new UiEnvironment(Locale.ENGLISH, "light", false));
             var scope = pages.begin(identity.ownerId(), true);
             var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", true);

@@ -52,6 +52,15 @@ public final class PlatformFrame extends JFrame {
     /** Permanent installed Mod choices and explicit data maintenance. / 常驻已安装 Mod 选择及明确数据维护。 */
     private gold.debug.windowstolinux.app.ui.mod.PlatformModsPane mods;
 
+    /** Actual opened business and settings surfaces. / 实际已打开的业务及设置界面。 */
+    private final ExtensionPagePane extensions;
+
+    /** Explicit user pins on the permanent navigation. / 常驻导航上的明确用户固定项。 */
+    private gold.debug.windowstolinux.app.ui.mod.ModNavigationPane navigation;
+
+    /** Security controls and user-pinned navigation. / 安全控件及用户固定导航。 */
+    private final JPanel sidebar = new JPanel();
+
     /** Visible non-recursive diagnostic persistence feedback. / 可见非递归诊断持久化反馈。 */
     private final JLabel logIssue = new JLabel();
 
@@ -86,7 +95,8 @@ public final class PlatformFrame extends JFrame {
         this.security = Objects.requireNonNull(security);
         messages = new PageMessagePresenter(catalog, reports);
         components = new DesktopComponentFactory(palette);
-        var extensions = new ExtensionPagePane(this::closePage, owner -> owner, () -> catalog.text("security.locked"));
+        extensions = new ExtensionPagePane(this::closePage, owner -> owner, () -> catalog.text("security.locked"),
+                this::selectModSurface);
         pages = new ModPageRegistry(extensions, environment);
         var settings = new SecuritySettingsPane(security, components, messages);
         var settingsSurface = new JPanel(new BorderLayout());
@@ -100,7 +110,6 @@ public final class PlatformFrame extends JFrame {
         content.addTab(catalog.text("platform.modSettings"), extensions.settingsComponent());
         if (!security.securityState().configured())
             content.setSelectedComponent(settingsScroll);
-        var sidebar = new JPanel();
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
         getContentPane().add(sidebar, BorderLayout.WEST);
         getContentPane().add(content, BorderLayout.CENTER);
@@ -131,6 +140,8 @@ public final class PlatformFrame extends JFrame {
                 authorization.setLocked(locked);
             if (logs != null)
                 logs.setLocked(locked);
+            if (navigation != null)
+                navigation.setLocked(locked);
             if (mods != null)
                 mods.setLocked(locked);
             try {
@@ -152,19 +163,30 @@ public final class PlatformFrame extends JFrame {
 
     /** Mounts actual Mod management after the original startup graph has settled. / 原启动图稳定后挂载实际 Mod 管理。
      * @param service original serialized intent service / 原串行意图服务
-     * @param actions original graph maintenance / 原图维护 */
+     * @param actions original graph maintenance / 原图维护
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if publication observation is unavailable / 发布观察不可用时 */
     public void installMods(gold.debug.windowstolinux.app.service.mod.PlatformModIntents service,
-            gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions actions) {
+            gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions actions)
+            throws gold.debug.windowstolinux.appapi.task.ApiException {
         if (!SwingUtilities.isEventDispatchThread() || mods != null)
             throw new IllegalStateException("Mod management must be installed once on the EDT");
+        navigation = new gold.debug.windowstolinux.app.ui.mod.ModNavigationPane(service, pages, components, messages);
+        sidebar.add(navigation);
         mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, components, messages, () -> {
             if (logs != null)
                 content.setSelectedComponent(logs);
-        });
-        var navigation = new JTabbedPane();
-        navigation.addTab(messages.text("mods.installed"), mods);
-        content.addTab("Mod", navigation);
+        }, navigation);
+        var management = new JTabbedPane();
+        management.addTab(messages.text("mods.installed"), mods);
+        content.addTab("Mod", management);
+        navigation.setLocked(!security.securityState().unlocked());
         mods.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Focuses the existing outer surface after an explicit page open, including author requests. / 明确打开页面后聚焦已有外层界面，包括作者请求。
+     * @param settings whether the page belongs to settings / 页面是否属于设置 */
+    private void selectModSurface(boolean settings) {
+        content.setSelectedComponent(settings ? extensions.settingsComponent() : extensions);
     }
 
     /** Shows actual startup counts while retaining safe failure details behind the lock boundary. / 展示实际启动数量，将安全失败详情保留在锁定边界之后。
@@ -342,6 +364,8 @@ public final class PlatformFrame extends JFrame {
             logs.close();
         if (mods != null)
             mods.close();
+        if (navigation != null)
+            navigation.close();
         if (logSubscription != null)
             try {
                 logSubscription.close();

@@ -216,6 +216,104 @@ public final class PlatformModIntents implements AutoCloseable {
         }
     }
 
+    /** Stable navigation preference without author objects or runtime authority. / 不含作者对象及运行权限的稳定导航偏好。
+     * @param ownerId exact registered owner / 精确登记所有者
+     * @param pageId exact owner-local page identity / 精确所有者内部页面身份 */
+    public record PagePin(String ownerId, String pageId) {
+        /** Requires bounded literal identities, never paths or concatenated keys. / 要求有界原样身份，不使用路径或拼接键。
+         * @param ownerId exact owner / 精确所有者
+         * @param pageId local page / 内部页面 */
+        public PagePin {
+            if (ownerId == null || ownerId.isBlank() || ownerId.length() > 512 || ownerId.indexOf('\0') >= 0
+                    || pageId == null || pageId.isBlank() || pageId.length() > 1024 || pageId.indexOf('\0') >= 0)
+                throw new IllegalArgumentException("Invalid navigation identity");
+        }
+    }
+
+    /** Reads user-pinned identities without publishing or opening any page. / 读取用户固定身份，不发布或打开页面。
+     * @return saved order of exact identities / 已存精确身份顺序
+     * @throws ApiException if locked, closed or the preference is invalid / 锁定、关闭或偏好无效时 */
+    public synchronized List<PagePin> pins() throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                read(c);
+                return readPins(c);
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Saves an explicit pin change under the original platform admission lock. / 在原平台准入锁下保存明确固定变更。
+     * @param pin exact identity, whose publication is separately checked by the host / 精确身份，其发布另由宿主核验
+     * @param pinned whether to retain a navigation preference / 是否保留导航偏好
+     * @return committed preference order / 已提交偏好顺序
+     * @throws ApiException if the original owner is unavailable or persistence is unconfirmed / 原所有者不可用或持久化未确认时 */
+    public synchronized List<PagePin> pin(PagePin pin, boolean pinned) throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var state = read(c);
+                var owner = state.owners().get(pin.ownerId());
+                if (pinned && (owner == null || !"RUNNING".equals(owner.runtime()) || owner.actual() == null))
+                    throw rejected("MOD_PAGE_UNAVAILABLE", "Only an actually running Mod can add navigation entries");
+                var pins = new ArrayList<>(readPins(c));
+                if (pinned && !pins.contains(pin))
+                    pins.add(pin);
+                if (!pinned)
+                    pins.remove(pin);
+                if (pins.size() > 1024)
+                    throw rejected("MOD_NAVIGATION_FULL", "Navigation preference limit reached");
+                var node = JSON.createObjectNode().put("formatVersion", 1);
+                node.set("pages", JSON.valueToTree(pins));
+                if (node.toString().length() > 1024 * 1024)
+                    throw rejected("MOD_NAVIGATION_FULL", "Navigation preference limit reached");
+                try (var p = c.prepareStatement(
+                        "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES('mod_navigation_pins',?)")) {
+                    p.setString(1, node.toString());
+                    p.executeUpdate();
+                }
+                return List.copyOf(pins);
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Decodes the original bounded preferences and rejects corruption without replacing it. / 解码原有界偏好，拒绝损坏且不替换。
+     * @param c original serialized transaction / 原串行事务
+     * @return exact ordered identities / 精确有序身份
+     * @throws SQLException if retained data is invalid / 保留数据无效时 */
+    private static List<PagePin> readPins(Connection c) throws SQLException {
+        try (var p = c.prepareStatement(
+                "SELECT preference_value FROM desktop_preference WHERE preference_key='mod_navigation_pins'");
+                var r = p.executeQuery()) {
+            if (!r.next())
+                return List.of();
+            String stored = r.getString(1);
+            try {
+                if (stored.length() > 1024 * 1024)
+                    throw new IllegalArgumentException("Oversized pins");
+                var node = JSON.readTree(stored);
+                if (node == null || !node.isObject() || node.size() != 2 || !node.path("formatVersion").isInt()
+                        || node.path("formatVersion").asInt() != 1 || !node.path("pages").isArray()
+                        || node.path("pages").size() > 1024)
+                    throw new IllegalArgumentException("Invalid pins");
+                var pins = new LinkedHashSet<PagePin>();
+                for (var page : node.path("pages")) {
+                    if (!page.isObject() || page.size() != 2 || !page.path("ownerId").isTextual()
+                            || !page.path("pageId").isTextual() || !pins.add(
+                                    new PagePin(page.path("ownerId").textValue(), page.path("pageId").textValue())))
+                        throw new IllegalArgumentException("Invalid pin identity");
+                }
+                return List.copyOf(pins);
+            } catch (java.io.IOException | IllegalArgumentException invalid) {
+                throw rejected("MOD_NAVIGATION_INVALID", "Stored navigation preferences cannot be verified");
+            }
+        }
+    }
+
     /** Whole-Mod choice; an enabled choice always names one installed release. / 整个 Mod 的选择，启用选择始终指向一个已安装版本。
      * @param enabled desired whole-Mod switch / 期望的整个 Mod 开关
      * @param version desired selected release, possibly absent while disabled / 期望单选版本，禁用时可以为空 */

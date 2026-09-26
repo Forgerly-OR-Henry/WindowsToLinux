@@ -1649,7 +1649,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/resources/META-INF/maven/plugin.xml`：登记 development-inputs 构建目标及原 Maven 会话注入，不注册业务 Mod。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
-- `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档。
+- `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档；保存用户页面固定偏好。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
@@ -1669,10 +1669,11 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
 - `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
 - `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
-- `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项。
-- `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期。
+- `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，明确打开时聚焦实际外层页面；固定偏好由导航管理。
+- `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期；宿主打开复用原所有者作用域，发布变更只通知元数据。
 - `app/ui/shell/PlatformFrame.java`：承载平台安全、常驻管理和独立所属 Mod 视图的桌面。
-- `app/ui/mod/PlatformModsPane.java`：以原快照审阅选择、确认连带停用及来源、撤销整组请求，并明确核对/重试数据；锁定使旧确认失效。
+- `app/ui/mod/PlatformModsPane.java`：以原快照审阅选择、确认连带停用及来源、撤销整组请求，并明确核对/重试数据；选择已发布页面以打开或固定，锁定使旧确认失效。
+- `app/ui/mod/ModNavigationPane.java`：显示用户固定偏好与当前发布页面的交集；异步持久化、跨启动恢复、锁定隐藏与原作用域打开，不自动创建作者视图。
 - `app/ui/server/PlatformServersPane.java`：常驻服务器列表、配置与普通 SSH 认证检查，支持协作取消和显式中断恢复。
 - `app/windows/security/CurrentUserDataProtection.java`：使用 Windows 当前用户 DPAPI 保护引导材料。
 
