@@ -15,12 +15,11 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.shared.model.capability.ServerCapabilityFacts;
 import org.junit.jupiter.api.Test;
 
 class ServerProfileDialogTest {
     @Test
-    void savesAndChecksOnceInBackgroundAndKeepsFailedFormOpen() throws Exception {
+    void failedSaveKeepsFormAndRetrySavesOnceWithoutConnecting() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1);
         AtomicInteger saves = new AtomicInteger(), checks = new AtomicInteger(), notifications = new AtomicInteger();
@@ -32,6 +31,8 @@ class ServerProfileDialogTest {
                         assertEquals(0, ((char[]) args[1]).length, "editing can retain the saved credential");
                         started.countDown();
                         assertTrue(release.await(8, TimeUnit.SECONDS));
+                        if (saves.get() == 1)
+                            throw new java.sql.SQLException("save fixture failure");
                         yield null;
                     }
                     case "verifyServer" -> {
@@ -73,8 +74,18 @@ class ServerProfileDialogTest {
                         .anyMatch(field -> field.getText().equals("Production")));
             });
             assertEquals(1, saves.get());
-            assertEquals(1, checks.get());
+            assertEquals(0, checks.get());
             assertEquals(0, notifications.get());
+            SwingUtilities.invokeAndWait(() -> descendants(dialog.get()).filter(JButton.class::isInstance)
+                    .map(JButton.class::cast).filter(button -> "server.save".equals(button.getName())).findFirst()
+                    .orElseThrow().doClick(0));
+            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+            while (DesktopTaskExecutor.hasActiveTasks() && System.nanoTime() < deadline)
+                Thread.sleep(10);
+            SwingUtilities.invokeAndWait(() -> assertFalse(dialog.get().isDisplayable()));
+            assertEquals(2, saves.get());
+            assertEquals(0, checks.get());
+            assertEquals(1, notifications.get());
         } finally {
             release.countDown();
             SwingUtilities.invokeAndWait(() -> dialog.get().dispose());

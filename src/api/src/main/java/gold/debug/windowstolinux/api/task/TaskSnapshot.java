@@ -8,8 +8,8 @@ import java.util.UUID;
 /**
  * Immutable task state with terminal result consistency. / 终态结果保持一致的不可变任务状态。
  * @param id stable identity within the owning capability / 所属能力内的稳定身份
- * @param ownerId stable identity of the owning Mod / 所属插件的稳定身份
- * @param ownerVersion release version of the owning Mod / 所属插件的发布版本
+ * @param ownerId stable Mod identity or reserved platform identity / 稳定插件身份或保留平台身份
+ * @param ownerVersion actual owning Mod or application release / 所属插件或应用的实际版本
  * @param type owner-local task type / 所有者内部的任务类型
  * @param state observed lifecycle state / 已观察的生命周期状态
  * @param outcome observed business result independent of resource release / 独立于资源释放的已观察业务结果
@@ -24,8 +24,8 @@ public record TaskSnapshot(UUID id, String ownerId, String ownerVersion, String 
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param id stable identity within the owning capability / 所属能力内的稳定身份
-     * @param ownerId stable identity of the owning Mod / 所属插件的稳定身份
-     * @param ownerVersion release version of the owning Mod / 所属插件的发布版本
+     * @param ownerId stable Mod identity or reserved platform identity / 稳定插件身份或保留平台身份
+     * @param ownerVersion actual owning Mod or application release / 所属插件或应用的实际版本
      * @param type owner-local task type / 所有者内部的任务类型
      * @param state observed lifecycle state / 已观察的生命周期状态
      * @param outcome observed business result independent of resource release / 独立于资源释放的已观察业务结果

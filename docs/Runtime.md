@@ -1,7 +1,7 @@
 # WindowsToLinux 运行与行为约定
 
 - 职责：维护运行数据目录、部署与恢复行为、数据库、安全及已知验证边界；源码模块、包结构和命名以 [File.md](File.md) 为准。
-- 状态：1.1 改造进行中。默认入口已切换 H2 平台启动与安全外壳；本文后续部署、备份和 SQLite 行为属于待迁移的 0.x 业务实现，尚未全部接入新入口。1.1 数据库契约见 [Mod.md](Mod.md#mod-database)，进度见 [1.1 开发文档](development/PHASE-1.1.md)。
+- 状态：1.1 改造进行中。默认入口已切换 H2 平台启动、安全外壳及常驻服务器配置/SSH 认证检查；保存与连接分开，认证检查不发送远端命令。未结束检查保留任务占用，可显式清理并记录中断，不自动重连。本文后续部署、备份和 SQLite 行为属于待迁移的 0.x 业务实现，尚未全部接入新入口。1.1 数据库契约见 [Mod.md](Mod.md#mod-database)，进度见 [1.1 开发文档](development/PHASE-1.1.md)。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [APP 发布方案](APP.md) · [数据库与安全](Runtime.md#app-security-database)
 
 ## 1. 本地化与诊断行为

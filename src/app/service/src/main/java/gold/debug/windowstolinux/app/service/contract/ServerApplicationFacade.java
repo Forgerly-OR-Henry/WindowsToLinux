@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.shared.model.deployment.EnvironmentSetupResult;
 /**
  * Narrow application operations required by server management. / 服务器管理所需的窄应用操作。
  */
-public interface ServerApplicationFacade {
+public interface ServerApplicationFacade extends ServerProfileEditor {
     /**
      * Rechecks a read-only connection after a user-guided console rescue. / 用户通过控制台救援后重做只读连接检查。
      *

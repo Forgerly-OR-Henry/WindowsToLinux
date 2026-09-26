@@ -195,6 +195,28 @@ public final class SecurityRepository {
         }
     }
 
+    /**
+     * Checks all platform configuration owners and persistent business reservations. / 检查全部平台配置所有者及持久业务预留。
+     * @param id exact credential identity / 精确凭据身份
+     * @return whether any owner still requires the credential / 是否仍有所有者需要该凭据
+     * @throws SQLException if ownership cannot be verified / 无法核实归属时
+     */
+    public boolean hasOwners(String id) throws SQLException {
+        try (var connection = connections.open()) {
+            for (String query : java.util.List.of("SELECT 1 FROM server_profile WHERE credential_id=? LIMIT 1",
+                    "SELECT 1 FROM ai_model WHERE credential_id=? LIMIT 1", referenceQuery)) {
+                try (var statement = connection.prepareStatement(query)) {
+                    statement.setString(1, id);
+                    try (var rows = statement.executeQuery()) {
+                        if (rows.next())
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     /** Runs related repository and credential writes on one database transaction. / 在同一数据库事务中执行关联仓库及凭据写入。
      * @param work operation executed within the retained boundary / 保留边界内执行的操作
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时

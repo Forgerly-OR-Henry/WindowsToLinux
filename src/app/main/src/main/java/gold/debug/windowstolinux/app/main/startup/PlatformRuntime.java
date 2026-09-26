@@ -27,8 +27,14 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
     private final PlatformTaskRuntime tasks;
 
+    /** Actual Maven artifact version, also used by host-owned task recovery. / 实际 Maven 产物版本，同时用于宿主任务恢复。 */
+    private final String version;
+
     /** Actual desktop presenter, installed before author capabilities are constructed. / 实际桌面呈现器，在构造作者能力之前安装。 */
     private PlatformInteractionService.Prompts prompts;
+
+    /** Permanent server settings and authentication-check coordinator. / 常驻服务器设置及认证检查协调器。 */
+    private gold.debug.windowstolinux.app.service.server.PlatformServerService servers;
 
     /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
     private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
@@ -44,12 +50,15 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param persistence protected platform repositories / 受保护的平台仓库
      * @param security current boot security owner / 当前启动的安全所有者
      * @throws SQLException if retained tasks cannot be loaded / 无法加载保留任务时
+     * @throws java.io.IOException if build identity is missing or unfiltered / 构建身份缺失或未展开时
      */
-    private PlatformRuntime(PlatformPersistence persistence, DesktopSecurityService security) throws SQLException {
+    private PlatformRuntime(PlatformPersistence persistence, DesktopSecurityService security)
+            throws SQLException, java.io.IOException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
-        tasks = new PlatformTaskRuntime(persistence.database(), new PlatformTaskAdmission(persistence.database()),
-                security);
+        version = readVersion();
+        tasks = new PlatformTaskRuntime(persistence.database(),
+                new PlatformTaskAdmission(persistence.database(), version), security);
     }
 
     /**
@@ -101,6 +110,31 @@ public final class PlatformRuntime implements AutoCloseable {
         return tasks;
     }
 
+    /** Returns the actual application artifact identity. / 返回实际应用产物身份。
+     * @return current Maven version / 当前 Maven 版本 */
+    public String version() {
+        return version;
+    }
+
+    /**
+     * Reads build-generated identity independently of working directory or JAR manifest layout. / 独立于工作目录及 JAR 清单布局读取构建生成身份。
+     * @return actual non-secret artifact version / 实际不含秘密的产物版本
+     * @throws java.io.IOException if metadata is absent or not generated / 元数据缺失或未生成时
+     */
+    private static String readVersion() throws java.io.IOException {
+        var properties = new java.util.Properties();
+        try (var input = PlatformRuntime.class
+                .getResourceAsStream("/gold/debug/windowstolinux/app/main/build.properties")) {
+            if (input == null)
+                throw new java.io.IOException("Application build identity is missing");
+            properties.load(input);
+        }
+        String value = properties.getProperty("application.version", "");
+        if (value.isBlank() || value.length() > 512 || value.contains("${"))
+            throw new java.io.IOException("Application build identity is invalid");
+        return value;
+    }
+
     /**
      * Installs the actual window-owned human presenter exactly once. / 仅安装一次实际窗口所属人工呈现器。
      * @param prompts platform-owned human presentation / 平台所属人工呈现
@@ -109,6 +143,32 @@ public final class PlatformRuntime implements AutoCloseable {
         if (this.prompts != null || stopping || closed)
             throw new IllegalStateException("Platform interaction presenter is already installed or closing");
         this.prompts = Objects.requireNonNull(prompts);
+    }
+
+    /**
+     * Creates the permanent platform server capability after human presentation is installed. / 安装人工呈现后创建常驻平台服务器能力。
+     * @return current platform settings and check coordinator / 当前平台设置及检查协调器
+     * @throws gold.debug.windowstolinux.api.task.ApiException if recovery ownership cannot be registered / 无法登记恢复归属时
+     */
+    public synchronized gold.debug.windowstolinux.app.service.server.PlatformServerService servers()
+            throws gold.debug.windowstolinux.api.task.ApiException {
+        if (closed || stopping || prompts == null)
+            throw new IllegalStateException("Platform server settings are unavailable");
+        if (servers == null) {
+            var remote = remoteCapabilities(PlatformTaskAdmission.PLATFORM_OWNER, version);
+            try {
+                servers = new gold.debug.windowstolinux.app.service.server.PlatformServerService(persistence, security,
+                        tasks, version, remote.linux(), remote::closeTaskResources);
+            } catch (gold.debug.windowstolinux.api.task.ApiException | RuntimeException failure) {
+                try {
+                    remote.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+                throw failure;
+            }
+        }
+        return servers;
     }
 
     /**
@@ -227,6 +287,8 @@ public final class PlatformRuntime implements AutoCloseable {
             }
             stopping = true;
         }
+        if (servers != null)
+            servers.close();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         tasks.close();

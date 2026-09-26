@@ -12,15 +12,31 @@ import gold.debug.windowstolinux.app.db.task.TaskResource;
 
 /** Resolves task ownership from the current boot's authoritative platform registry. / 根据当前启动的权威平台登记解析任务归属。 */
 public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admission {
+    /** Reserved platform identity outside the valid Mod identifier syntax. / 不属于合法 Mod 标识语法的保留平台身份。 */
+    public static final String PLATFORM_OWNER = "@platform";
+
     /** Exact boot whose running Mod instances may accept business. / 可以接纳业务的运行 Mod 实例所属精确启动。 */
     private final UUID bootId;
+
+    /** Optional actual application release allowed to submit host-owned work. / 可提交宿主工作的实际应用版本，可为空以只接纳 Mod。 */
+    private final String platformVersion;
 
     /**
      * Binds the policy to the engine owning this desktop. / 将策略绑定到当前桌面所属引擎。
      * @param database exclusively owned platform database / 独占的平台数据库
      */
     public PlatformTaskAdmission(PlatformDatabase database) {
+        this(database, null);
+    }
+
+    /**
+     * Binds host task admission to the actual application artifact version. / 将宿主任务准入绑定到实际应用产物版本。
+     * @param database exclusively owned engine / 独占所属引擎
+     * @param platformVersion actual application release, or null for Mod-only admission / 实际应用版本，null 表示只接纳 Mod
+     */
+    public PlatformTaskAdmission(PlatformDatabase database, String platformVersion) {
         bootId = Objects.requireNonNull(database).bootId();
+        this.platformVersion = platformVersion;
     }
 
     /**
@@ -38,17 +54,29 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             throws ApiException, SQLException {
         if (connection.getAutoCommit())
             throw new SQLException("Task admission requires a platform transaction");
-        String schemaVersion;
-        try (var statement = connection.prepareStatement(
-                "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
-            statement.setString(1, version);
-            statement.setString(2, ownerId);
-            try (var rows = statement.executeQuery()) {
-                if (!rows.next() || !rows.getBoolean(1) || !version.equals(rows.getString(2))
-                        || !version.equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
-                        || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
-                    throw unavailable("MOD_NOT_RUNNING", "The bound Mod release is not running in this boot");
-                schemaVersion = rows.getString(7);
+        String schemaVersion = null;
+        if (ownerId.equals(PLATFORM_OWNER)) {
+            if (platformVersion == null || !platformVersion.equals(version))
+                throw unavailable("PLATFORM_VERSION", "The host task does not match the running application release");
+            try (var statement = connection
+                    .prepareStatement("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1");
+                    var rows = statement.executeQuery()) {
+                if (!rows.next() || !bootId.equals(rows.getObject(1, UUID.class))
+                        || !"RUNNING".equals(rows.getString(2)))
+                    throw unavailable("PLATFORM_NOT_RUNNING", "The platform has not completed startup");
+            }
+        } else {
+            try (var statement = connection.prepareStatement(
+                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                statement.setString(1, version);
+                statement.setString(2, ownerId);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next() || !rows.getBoolean(1) || !version.equals(rows.getString(2))
+                            || !version.equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
+                            || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
+                        throw unavailable("MOD_NOT_RUNNING", "The bound Mod release is not running in this boot");
+                    schemaVersion = rows.getString(7);
+                }
             }
         }
         var claims = new ArrayList<TaskResource>();

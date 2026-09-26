@@ -114,6 +114,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                                 + "\nSSH wire-key fingerprint=" + fingerprint,
                         "Trust this exact SSH host key for the selected saved server after successful authentication.");
                 var decision = interaction.approve(intent, task);
+                if (decision.outcome() == Outcome.CANCELLED)
+                    throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED", "SSH host trust review was cancelled");
                 if (decision.outcome() != Outcome.SUCCEEDED)
                     return false;
                 interaction.consume(decision.value().orElseThrow(), intent, task);
