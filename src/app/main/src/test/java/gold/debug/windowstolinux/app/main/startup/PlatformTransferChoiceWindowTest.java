@@ -72,6 +72,31 @@ class PlatformTransferChoiceWindowTest {
                     assertEquals(expected, completed(task));
                     await(() -> dialog(frame) == null);
                 }
+                var stall = new TransferStall(new TransferProgress(java.util.UUID.randomUUID(),
+                        TransferProgress.Stage.VERIFYING_STAGING, 25, 100), conflict.request(), true,
+                        java.time.Duration.ofMinutes(5));
+                for (var expected : TransferStallChoice.values()) {
+                    var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"),
+                            context -> success(interaction.transferStalled(stall, new ServerRef("server"), context)));
+                    await(() -> dialog(frame) != null);
+                    onEdt(() -> {
+                        var window = dialog(frame);
+                        assertEquals("终止", window.getRootPane().getDefaultButton().getText());
+                        var text = ((JTextArea) named(window, "transfer.stall.details")).getText();
+                        assertTrue(text.contains("校验暂存文件"));
+                        assertTrue(text.contains("25 / 100 字节"));
+                        assertTrue(text.contains("300"));
+                        assertTrue(text.contains("不代表文件操作已回滚"));
+                        if (expected == TransferStallChoice.RETRY)
+                            capture(window, "platform-transfer-stall.png");
+                        String label = expected == TransferStallChoice.RETRY ? "重试" : "终止";
+                        descendants(window).filter(c -> c instanceof JButton item && label.equals(item.getText()))
+                                .map(JButton.class::cast).findFirst().orElseThrow().doClick(0);
+                        return null;
+                    });
+                    assertEquals(expected, completed(task));
+                    await(() -> dialog(frame) == null);
+                }
             } finally {
                 onEdt(() -> {
                     for (Window window : frame.getOwnedWindows())

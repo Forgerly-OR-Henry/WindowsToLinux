@@ -41,7 +41,8 @@ class SftpJournalTest {
                     throw new IOException("fixture persistence failed");
                 };
                 var denied = connection.transfer(request, digest("new".getBytes()), upload, Duration.ofSeconds(5),
-                        () -> false, conflict -> TransferConflictChoice.OVERWRITE, reject);
+                        () -> false, progress -> {
+                        }, conflict -> TransferConflictChoice.OVERWRITE, reject);
                 assertEquals(Outcome.FAILED, denied.outcome(), denied.toString());
                 assertEquals("checkpoint", denied.problem().orElseThrow().context().get("phase"));
                 assertEquals(upload ? "old" : "new", Files.readString(remote));
@@ -80,7 +81,8 @@ class SftpJournalTest {
                     };
                 };
                 var result = connection.transfer(request, digest("new".getBytes()), upload, Duration.ofSeconds(5),
-                        () -> false, conflict -> TransferConflictChoice.OVERWRITE, journal);
+                        () -> false, progress -> {
+                        }, conflict -> TransferConflictChoice.OVERWRITE, journal);
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(1, released.get());
                 assertTrue(recorded.get().temporaryPath().contains(recorded.get().id().toString()));
@@ -102,7 +104,8 @@ class SftpJournalTest {
             var source = Files.write(root.resolve("source"), new byte[100000]);
             var connection = SshCommandExecutionTest.connect(connector, fixture.server);
             var result = connection.transfer(new TransferRequest(source, "/file", 100000), digest(new byte[100000]),
-                    true, Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.TERMINATE, plan -> {
+                    true, Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.TERMINATE, plan -> {
                         recorded.set(plan);
                         return new ResourceLease() {
                             public UUID id() {
@@ -130,8 +133,8 @@ class SftpJournalTest {
             var source = Files.writeString(root.resolve("source"), "new");
             var connection = SshCommandExecutionTest.connect(connector, fixture.server);
             var result = connection.transfer(new TransferRequest(source, "/file", 3), digest("new".getBytes()), true,
-                    Duration.ofSeconds(5), () -> false, conflict -> TransferConflictChoice.TERMINATE,
-                    plan -> new ResourceLease() {
+                    Duration.ofSeconds(5), () -> false, progress -> {
+                    }, conflict -> TransferConflictChoice.TERMINATE, plan -> new ResourceLease() {
                         public UUID id() {
                             return plan.id();
                         }

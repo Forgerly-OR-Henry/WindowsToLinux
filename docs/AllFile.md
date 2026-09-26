@@ -1555,6 +1555,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/linux/TransferRequest.java`：具有明确远端路径及容量限制的文件传输。
 - `appapi/linux/TransferResult.java`：已观察的传输大小及内容摘要。
 - `appapi/linux/TransferCheckpoint.java`：原任务的持久传输描述，供精确续传或丢弃审核；执行前由宿主重读原事实。
+- `appapi/linux/TransferProgress.java`：原传输当前物理阶段及已完成字节，进度比例仅针对已知的本阶段范围。
+- `appapi/linux/TransferStall.java`：实际尝试停止后的原路径、方向、最后进度及停滞阈值。
+- `appapi/linux/TransferStallChoice.java`：明确重试或终止，终止不推断未确认文件已回滚。
 - `appapi/mod/ModContext.java`：绑定真实启动插件身份的平台能力集合。
 - `appapi/mod/ModEntrypoint.java`：作者生命周期入口及部分启动失败的清理责任。
 - `appapi/mod/ModIdentity.java`：独立于显示名和包文件名的稳定插件身份。
@@ -1688,5 +1691,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SftpDestination.java`：在暂存期间保留旧目标，生成不冲突名称并核对用户选择后发布。
 - `app/linux/ssh/TransferConflictResolver.java`：由宿主提供的实际同名冲突决定接口。
 - `app/linux/ssh/TransferJournal.java`：创建暂存文件前原子登记持久恢复事实和文件占用的宿主接口。
+- `app/linux/ssh/SftpProgress.java`：仅以真实文件字节刷新计时，排除人工等待，区分传输与校验阶段。
+- `app/linux/ssh/TransferProgressListener.java`：由实际传输监控线程发布阶段与字节观测的宿主回调。
 - `app/linux/ssh/TransferPlan.java`：原传输的源/目标观测、选定端点和暂存名称，不含未核验续传偏移。
 - `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录发布，并拒绝未授权覆盖。

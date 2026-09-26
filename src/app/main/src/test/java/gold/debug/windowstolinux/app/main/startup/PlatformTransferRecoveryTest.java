@@ -154,8 +154,8 @@ class PlatformTransferRecoveryTest {
                     persistence.servers().saveServer(new ServerIdentity("server", "127.0.0.1",
                             remote.listener.server().getPort(), connection.fingerprint()));
                     var result = connection.transfer(new TransferRequest(source, "/file", 100000),
-                            digest(new byte[100000]), true, Duration.ofSeconds(5), () -> false,
-                            conflict -> TransferConflictChoice.TERMINATE, plan -> {
+                            digest(new byte[100000]), true, Duration.ofSeconds(5), () -> false, progress -> {
+                            }, conflict -> TransferConflictChoice.TERMINATE, plan -> {
                                 recorded.set(plan);
                                 var fields = new TreeMap<>(plan.recoveryFields());
                                 fields.put("serverId", "server");

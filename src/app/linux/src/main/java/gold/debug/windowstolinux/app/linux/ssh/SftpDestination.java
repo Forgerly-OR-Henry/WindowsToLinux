@@ -30,6 +30,9 @@ final class SftpDestination {
     /** Original transfer identity naming its temporary file. / 命名临时文件的原传输身份。 */
     private final UUID id;
 
+    /** Shared effective-byte progress across target checks and publication. / 目标检查与发布共用的有效字节进度。 */
+    private final SftpProgress progress;
+
     /** Actual selected remote endpoint. / 实际选定远端路径。 */
     private String remote;
 
@@ -47,13 +50,16 @@ final class SftpDestination {
      * @param request reviewed endpoints / 已审核端点
      * @param upload transfer direction / 传输方向
      * @param id unique original transfer / 唯一原传输
-     * @param cancellation original cancellation / 原取消 */
-    SftpDestination(SftpClient sftp, TransferRequest request, boolean upload, UUID id, CancellationToken cancellation) {
+     * @param cancellation original cancellation / 原取消
+     * @param progress shared byte progress / 共用字节进度 */
+    SftpDestination(SftpClient sftp, TransferRequest request, boolean upload, UUID id, CancellationToken cancellation,
+            SftpProgress progress) {
         this.sftp = Objects.requireNonNull(sftp);
         this.request = Objects.requireNonNull(request);
         this.upload = upload;
         this.id = Objects.requireNonNull(id);
         this.cancellation = Objects.requireNonNull(cancellation);
+        this.progress = Objects.requireNonNull(progress);
         remote = request.remoteAbsolutePath();
         local = request.localPath();
     }
@@ -61,9 +67,10 @@ final class SftpDestination {
     /** Restores only the recorded target decision for an original transfer. / 仅恢复原传输已记录的目标决定。
      * @param sftp authenticated transport / 已认证传输
      * @param plan validated original facts / 已校验原事实
-     * @param cancellation original task cancellation / 原任务取消 */
-    SftpDestination(SftpClient sftp, TransferPlan plan, CancellationToken cancellation) {
-        this(sftp, plan.request(), plan.upload(), plan.id(), cancellation);
+     * @param cancellation original task cancellation / 原任务取消
+     * @param progress shared byte progress / 共用字节进度 */
+    SftpDestination(SftpClient sftp, TransferPlan plan, CancellationToken cancellation, SftpProgress progress) {
+        this(sftp, plan.request(), plan.upload(), plan.id(), cancellation, progress);
         local = plan.localPath();
         remote = plan.remotePath();
         expected = plan.target();
@@ -158,6 +165,7 @@ final class SftpDestination {
     void publish(long size, String sha256) throws IOException {
         verifyStaged(size, sha256);
         verifyOriginal();
+        progress.begin(TransferProgress.Stage.PUBLISHING, -1, 0);
         if (!upload) {
             WindowsFilePublication.publish(localTemporary(), local, overwrite);
             return;
@@ -189,7 +197,8 @@ final class SftpDestination {
             if (!attrs.isRegularFile() || attrs.isOther() || attrs.isSymbolicLink() || attrs.size() != size)
                 throw new IOException("Named local staging changed");
         }
-        if (!sha256.equals(content(remoteTemporary(), localTemporary(), size)))
+        if (!sha256
+                .equals(content(remoteTemporary(), localTemporary(), size, TransferProgress.Stage.VERIFYING_STAGING)))
             throw new IOException("Named staging content differs from verified source");
     }
 
@@ -206,7 +215,7 @@ final class SftpDestination {
      * @return whether final content equals the original source / 最终内容是否等于原源
      * @throws IOException if final facts cannot be observed / 无法观察最终事实时 */
     boolean isPublished(TransferPlan.FileStamp source) throws IOException {
-        var actual = observe();
+        var actual = observe(TransferProgress.Stage.VERIFYING_RESULT);
         return actual != null && actual.size() == source.size() && actual.sha256().equals(source.sha256());
     }
 
@@ -214,6 +223,14 @@ final class SftpDestination {
      * @return current target observation, or null only for confirmed absence / 当前目标观测，仅确认缺失时为 null
      * @throws IOException if the target is linked, unreadable or not regular / 目标为链接、不可读或非普通文件时 */
     private TransferPlan.FileStamp observe() throws IOException {
+        return observe(TransferProgress.Stage.VERIFYING_TARGET);
+    }
+
+    /** Observes target bytes for the original choice or publication reconciliation. / 为原选择或发布核对观察目标字节。
+     * @param stage actual verification purpose / 实际核验用途
+     * @return ordinary target observation or confirmed absence / 普通目标观测或确认缺失
+     * @throws IOException if target facts cannot be read / 无法读取目标事实时 */
+    private TransferPlan.FileStamp observe(TransferProgress.Stage stage) throws IOException {
         check();
         if (upload) {
             try {
@@ -224,7 +241,7 @@ final class SftpDestination {
                         || !remote.equals(sftp.canonicalPath(remote)))
                     throw new IOException("Remote destination is not a stable regular file");
                 return new TransferPlan.FileStamp("remote", attrs.getSize(), attrs.getModifyTime().toString(),
-                        content(attrs.getSize()));
+                        content(remote, local, attrs.getSize(), stage));
             } catch (SftpException absent) {
                 if (absent.getStatus() == SftpConstants.SSH_FX_NO_SUCH_FILE)
                     return null;
@@ -236,7 +253,7 @@ final class SftpDestination {
             if (!attrs.isRegularFile() || attrs.isOther() || attrs.isSymbolicLink())
                 throw new IOException("Local destination is not a regular file");
             return new TransferPlan.FileStamp(WindowsFileIdentity.read(local), attrs.size(),
-                    attrs.lastModifiedTime().toString(), content(attrs.size()));
+                    attrs.lastModifiedTime().toString(), content(remote, local, attrs.size(), stage));
         } catch (NoSuchFileException absent) {
             return null;
         }
@@ -264,21 +281,16 @@ final class SftpDestination {
         }
     }
 
-    /** Binds replacement to observed content even when timestamps are coarse or preserved. / 即使时间戳精度低或被保留，也将替换绑定到已观察内容。
-     * @param size observed exact extent / 已观察精确范围
-     * @return content digest / 内容摘要
-     * @throws IOException if reading or length verification fails / 读取或长度核验失败时 */
-    private String content(long size) throws IOException {
-        return content(remote, local, size);
-    }
-
     /** Hashes the exact named final or staging path through a bounded read. / 经有界读取对精确已命名最终或暂存路径求摘要。
      * @param remotePath exact remote path / 精确远端路径
      * @param localPath exact local path / 精确本地路径
      * @param size observed file extent / 已观察文件区间
+     * @param stage actual verification purpose / 实际核验用途
      * @return verified extent digest / 已核验区间摘要
      * @throws IOException if reading or extent verification fails / 读取或区间核验失败时 */
-    private String content(String remotePath, Path localPath, long size) throws IOException {
+    private String content(String remotePath, Path localPath, long size, TransferProgress.Stage stage)
+            throws IOException {
+        progress.begin(stage, size, 0);
         java.security.MessageDigest digest;
         try {
             digest = java.security.MessageDigest.getInstance("SHA-256");
@@ -297,6 +309,7 @@ final class SftpDestination {
                     continue;
                 digest.update(buffer, 0, count);
                 read += count;
+                progress.advance(count);
             }
             check();
             if (input.read() != -1)
