@@ -188,7 +188,7 @@ public final class TaskLedger {
                         if (conflicts(c, taskId, claim))
                             return false;
                     for (var claim : claims)
-                        insertLease(c, taskId, claim, true);
+                        insertLease(c, taskId, claim, ResourceRecovery.TASK_END);
                 }
                 setState(c, taskId, "RUNNING");
                 return true;
@@ -226,6 +226,17 @@ public final class TaskLedger {
      * @throws SQLException if the task no longer executes or a conflict exists / 任务不再执行或存在冲突时
      */
     public UUID retain(UUID taskId, TaskResource resource) throws SQLException {
+        return retain(taskId, resource, null);
+    }
+
+    /** Retains a physical resource and its recovery facts in the same transaction. / 在同一事务中保留物理资源及其恢复事实。
+     * @param taskId original executing task / 原执行任务
+     * @param resource exact owned resource / 精确所属资源
+     * @param recovery optional host recovery facts / 可选宿主恢复事实
+     * @return durable lease identity / 持久占用身份
+     * @throws SQLException if ownership, metadata or persistence fails / 归属、元数据或持久化失败时 */
+    public UUID retain(UUID taskId, TaskResource resource, ResourceRecovery recovery) throws SQLException {
+        String metadata = recovery == null ? ResourceRecovery.EXPLICIT : recovery.encode();
         return locked(() -> {
             try (var c = connections.open()) {
                 String state = state(c, taskId);
@@ -236,21 +247,27 @@ public final class TaskLedger {
                 if (conflicts(c, taskId, resource))
                     throw new SQLException("Resource is busy");
                 try (var p = c.prepareStatement(
-                        "SELECT lease_id FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND owner_id=? AND released_at IS NULL AND recovery_json=?")) {
+                        "SELECT lease_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND released_at IS NULL")) {
                     p.setObject(1, taskId);
                     p.setString(2, resource.kind());
                     p.setString(3, resource.id());
-                    p.setString(4, resource.ownerId());
-                    p.setString(5, "{\"release\":\"EXPLICIT\"}");
                     try (var r = p.executeQuery()) {
                         if (r.next()) {
+                            String prior = r.getString(4);
+                            ResourceRecovery.requireExplicit(prior);
+                            if (!resource.ownerId().equals(r.getString(2))
+                                    || !r.getString(3).equals(resource.exclusive() ? "EXCLUSIVE" : "SHARED")
+                                    || !(recovery == null
+                                            ? ResourceRecovery.EXPLICIT.equals(prior)
+                                            : recovery.equals(ResourceRecovery.decode(prior))))
+                                throw new SQLException("Retained resource recovery facts cannot be replaced");
                             if (Set.of("UNKNOWN", "FINISHING").contains(state))
                                 return r.getObject(1, UUID.class);
                             throw new SQLException("Resource identity is already retained by this task");
                         }
                     }
                 }
-                return insertLease(c, taskId, resource, false);
+                return insertLease(c, taskId, resource, metadata);
             }
         });
     }
@@ -260,11 +277,11 @@ public final class TaskLedger {
      * @param c scoped platform connection / 作用域平台连接
      * @param taskId owning task / 所属任务
      * @param resource exact resource claim / 精确资源申请
-     * @param admission whether normal task ending releases this logical claim / 正常任务结束是否释放此逻辑申请
+     * @param metadata validated release and recovery envelope / 已校验释放及恢复封套
      * @return unique lease identity / 唯一占用身份
      * @throws SQLException if persistence fails / 持久化失败时
      */
-    private UUID insertLease(Connection c, UUID taskId, TaskResource resource, boolean admission) throws SQLException {
+    private UUID insertLease(Connection c, UUID taskId, TaskResource resource, String metadata) throws SQLException {
         UUID id = UUID.randomUUID();
         try (var p = c.prepareStatement(
                 "INSERT INTO platform_task_resource(lease_id,task_id,resource_kind,resource_id,owner_id,access_mode,acquired_at,recovery_json) VALUES(?,?,?,?,?,?,?,?)")) {
@@ -275,7 +292,7 @@ public final class TaskLedger {
             p.setString(5, resource.ownerId());
             p.setString(6, resource.exclusive() ? "EXCLUSIVE" : "SHARED");
             p.setLong(7, System.currentTimeMillis());
-            p.setString(8, admission ? "{\"release\":\"TASK_END\"}" : "{\"release\":\"EXPLICIT\"}");
+            p.setString(8, metadata);
             p.executeUpdate();
         }
         return id;
@@ -289,15 +306,25 @@ public final class TaskLedger {
      */
     public void release(UUID taskId, UUID leaseId) throws SQLException {
         locked(() -> {
-            try (var c = connections.open();
-                    var p = c.prepareStatement(
-                            "UPDATE platform_task_resource SET released_at=COALESCE(released_at,?) WHERE lease_id=? AND task_id=? AND recovery_json=?")) {
-                p.setLong(1, System.currentTimeMillis());
-                p.setObject(2, leaseId);
-                p.setObject(3, taskId);
-                p.setString(4, "{\"release\":\"EXPLICIT\"}");
-                if (p.executeUpdate() != 1)
-                    throw new SQLException("Resource lease is not explicitly owned by this task");
+            try (var c = connections.open()) {
+                try (var p = c.prepareStatement(
+                        "SELECT recovery_json FROM platform_task_resource WHERE lease_id=? AND task_id=?")) {
+                    p.setObject(1, leaseId);
+                    p.setObject(2, taskId);
+                    try (var row = p.executeQuery()) {
+                        if (!row.next())
+                            throw new SQLException("Resource lease is not owned by this task");
+                        ResourceRecovery.requireExplicit(row.getString(1));
+                    }
+                }
+                try (var p = c.prepareStatement(
+                        "UPDATE platform_task_resource SET released_at=COALESCE(released_at,?) WHERE lease_id=? AND task_id=?")) {
+                    p.setLong(1, System.currentTimeMillis());
+                    p.setObject(2, leaseId);
+                    p.setObject(3, taskId);
+                    if (p.executeUpdate() != 1)
+                        throw new SQLException("Resource lease is not owned by this task");
+                }
             }
             return null;
         });
@@ -405,9 +432,9 @@ public final class TaskLedger {
                     return false;
                 }
                 try (var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND recovery_json=?")) {
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND (recovery_json IS NULL OR recovery_json<>?)")) {
                     p.setObject(1, taskId);
-                    p.setString(2, "{\"release\":\"EXPLICIT\"}");
+                    p.setString(2, ResourceRecovery.TASK_END);
                     try (var r = p.executeQuery()) {
                         r.next();
                         if (r.getLong(1) != 0) {
@@ -485,9 +512,9 @@ public final class TaskLedger {
                         throw new SQLException("Task does not exist");
                     var blockers = new ArrayList<String>();
                     try (var leases = c.prepareStatement(
-                            "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND recovery_json=? ORDER BY resource_kind,resource_id")) {
+                            "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND (recovery_json IS NULL OR recovery_json<>?) ORDER BY resource_kind,resource_id")) {
                         leases.setObject(1, taskId);
-                        leases.setString(2, "{\"release\":\"EXPLICIT\"}");
+                        leases.setString(2, ResourceRecovery.TASK_END);
                         try (var rows = leases.executeQuery()) {
                             while (rows.next())
                                 blockers.add(rows.getString(1) + ": " + rows.getString(2));

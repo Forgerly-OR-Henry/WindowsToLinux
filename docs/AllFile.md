@@ -1629,6 +1629,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
+- `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
 - `app/db/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql`：H2 平台首版表与约束。
 - `app/linux/ssh/SshConnector.java`：明确凭据与指纹授权下的独立 SSH 连接、认证、取消及实际资源释放。
@@ -1685,4 +1686,6 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/linux/TransferConflictChoice.java`：覆盖、保留两份与终止的明确用户选择。
 - `app/linux/ssh/SftpDestination.java`：在暂存期间保留旧目标，生成不冲突名称并核对用户选择后发布。
 - `app/linux/ssh/TransferConflictResolver.java`：由宿主提供的实际同名冲突决定接口。
+- `app/linux/ssh/TransferJournal.java`：创建暂存文件前原子登记持久恢复事实和文件占用的宿主接口。
+- `app/linux/ssh/TransferPlan.java`：原传输的源/目标观测、选定端点和暂存名称，不含未核验续传偏移。
 - `app/windows/filesystem/WindowsFilePublication.java`：不预删旧文件的 Windows 原生同目录发布，并拒绝未授权覆盖。

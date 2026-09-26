@@ -40,7 +40,7 @@ final class SftpDestination {
     private boolean overwrite;
 
     /** Original destination identity and metadata, absent when creating. / 原目标身份及元数据，新建时不存在。 */
-    private Observation expected;
+    private TransferPlan.FileStamp expected;
 
     /** Binds destination selection to one actual transport. / 将目标选择绑定到一个实际传输。
      * @param sftp authenticated transport / 已认证传输
@@ -132,6 +132,13 @@ final class SftpDestination {
         return local;
     }
 
+    /** Captures the selected endpoints and original replacement observation before mutation. / 变更前捕获选定端点及原替换观测。
+     * @param source verified source observation / 已核验源观测
+     * @return immutable original transfer plan / 不可变原传输计划 */
+    TransferPlan plan(TransferPlan.FileStamp source) {
+        return new TransferPlan(id, request, upload, local, remote, source, expected);
+    }
+
     /** Rechecks the target and publishes only a completed sibling file. / 复核目标并仅发布已完成的同目录文件。
      * @throws IOException if the destination changed or publication failed / 目标变化或发布失败时 */
     void publish() throws IOException {
@@ -155,7 +162,7 @@ final class SftpDestination {
     /** Observes an ordinary target without following a final link. / 不跟随末级链接，观察普通目标。
      * @return current target observation, or null only for confirmed absence / 当前目标观测，仅确认缺失时为 null
      * @throws IOException if the target is linked, unreadable or not regular / 目标为链接、不可读或非普通文件时 */
-    private Observation observe() throws IOException {
+    private TransferPlan.FileStamp observe() throws IOException {
         check();
         if (upload) {
             try {
@@ -165,7 +172,7 @@ final class SftpDestination {
                         || !attrs.getFlags().contains(SftpClient.Attribute.ModifyTime)
                         || !remote.equals(sftp.canonicalPath(remote)))
                     throw new IOException("Remote destination is not a stable regular file");
-                return new Observation("remote", attrs.getSize(), attrs.getModifyTime().toString(),
+                return new TransferPlan.FileStamp("remote", attrs.getSize(), attrs.getModifyTime().toString(),
                         content(attrs.getSize()));
             } catch (SftpException absent) {
                 if (absent.getStatus() == SftpConstants.SSH_FX_NO_SUCH_FILE)
@@ -177,8 +184,8 @@ final class SftpDestination {
             var attrs = Files.readAttributes(local, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             if (!attrs.isRegularFile() || attrs.isOther() || attrs.isSymbolicLink())
                 throw new IOException("Local destination is not a regular file");
-            return new Observation(WindowsFileIdentity.read(local), attrs.size(), attrs.lastModifiedTime().toString(),
-                    content(attrs.size()));
+            return new TransferPlan.FileStamp(WindowsFileIdentity.read(local), attrs.size(),
+                    attrs.lastModifiedTime().toString(), content(attrs.size()));
         } catch (NoSuchFileException absent) {
             return null;
         }
@@ -241,12 +248,5 @@ final class SftpDestination {
     private void check() {
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
             throw new CancellationException("Transfer destination cancelled");
-    }
-    /** Metadata used to bind an explicit replacement choice. / 用于绑定明确替换选择的元数据。
-     * @param identity observed physical identity when available / 可用时的已观察物理身份
-     * @param size observed target bytes / 已观察目标字节数
-     * @param modified observed modification time / 已观察修改时间
-     * @param sha256 observed content identity / 已观察内容身份 */
-    private record Observation(String identity, long size, String modified, String sha256) {
     }
 }

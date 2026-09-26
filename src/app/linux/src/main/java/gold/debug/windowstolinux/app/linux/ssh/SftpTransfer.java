@@ -39,6 +39,15 @@ final class SftpTransfer {
     /** Actual host-owned same-name choice. / 实际宿主所属同名选择。 */
     private final TransferConflictResolver conflicts;
 
+    /** Durable ownership gate before any staging mutation. / 暂存变更前的持久归属门禁。 */
+    private final TransferJournal journal;
+
+    /** File occupancy independent of the live connection. / 独立于活动连接的文件占用。 */
+    private ResourceLease fileLease;
+
+    /** Whether publication and final content were both verified. / 发布及最终内容是否均已核验。 */
+    private boolean published;
+
     /** Unique temporary-file owner for this transfer. / 本次传输唯一临时文件所有者。 */
     private final UUID transferId = UUID.randomUUID();
 
@@ -78,16 +87,19 @@ final class SftpTransfer {
      * @param timeout total host operation budget / 宿主操作总预算
      * @param cancellation original task cancellation / 原任务取消
      * @param conflicts host-owned conflict presenter / 宿主所属冲突呈现器
+     * @param journal durable original-transfer ownership / 持久原传输归属
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
-            CancellationToken cancellation, TransferConflictResolver conflicts) throws ApiException {
+            CancellationToken cancellation, TransferConflictResolver conflicts, TransferJournal journal)
+            throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
         this.digest = Objects.requireNonNull(digest);
         this.upload = upload;
         this.cancellation = Objects.requireNonNull(cancellation);
         this.conflicts = Objects.requireNonNull(conflicts);
+        this.journal = Objects.requireNonNull(journal);
         try {
             budget = timeout.toNanos();
             String path = request.remoteAbsolutePath();
@@ -174,6 +186,10 @@ final class SftpTransfer {
             if (upload) {
                 size = before.size();
                 destination.select(size, this::choose);
+                phase = "checkpoint";
+                fileLease = Objects
+                        .requireNonNull(journal.prepare(destination.plan(new TransferPlan.FileStamp(sourceIdentity,
+                                size, before.lastModifiedTime().toString(), digest))));
                 phase = "upload";
                 beginMutation();
                 remote = sftp.open(destination.remoteTemporary(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
@@ -203,6 +219,12 @@ final class SftpTransfer {
                 destination.select(size, this::choose);
                 check();
                 verifyLocalParents(path);
+                phase = "checkpoint";
+                if (!attributes.getFlags().contains(SftpClient.Attribute.ModifyTime))
+                    throw new IOException("Remote source modification time is unavailable");
+                fileLease = Objects.requireNonNull(journal.prepare(destination.plan(
+                        new TransferPlan.FileStamp("remote", size, attributes.getModifyTime().toString(), digest))));
+                phase = "download";
                 beginMutation();
                 local = FileChannel.open(destination.localTemporary(), StandardOpenOption.CREATE_NEW,
                         StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
@@ -233,6 +255,7 @@ final class SftpTransfer {
                     throw new IOException("Published local content changed");
                 local.close();
             }
+            published = true;
             return new OperationResult<>(Outcome.SUCCEEDED,
                     Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
                     Optional.empty());
@@ -458,7 +481,7 @@ final class SftpTransfer {
      * @param code failure category before mutation / 变更前失败类别
      * @return result without file contents or provider exceptions / 不含文件内容或提供方异常的结果
      */
-    private synchronized OperationResult<TransferResult> problem(String event, ProblemCode code) {
+    synchronized OperationResult<TransferResult> problem(String event, ProblemCode code) {
         Outcome outcome = mutation
                 ? Outcome.UNKNOWN
                 : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED;
@@ -514,8 +537,14 @@ final class SftpTransfer {
                 return false;
             if (local != null)
                 local.close();
-            return (local == null || !local.isOpen()) && (sftp == null || sftp.getClientChannel().isClosed());
-        } catch (IOException | RuntimeException failure) {
+            if ((local != null && local.isOpen()) || (sftp != null && !sftp.getClientChannel().isClosed()))
+                return false;
+            if (fileLease != null && (!mutation || published)) {
+                fileLease.close();
+                fileLease = null;
+            }
+            return true;
+        } catch (IOException | ApiException | RuntimeException failure) {
             return false;
         } finally {
             if (interrupted)
