@@ -67,6 +67,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Bound source capabilities retaining actual snapshot files. / 保留实际快照文件的已绑定来源能力。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.source.PlatformSourceAccess> sourceServices = new java.util.LinkedHashSet<>();
 
+    /** Activation process owners retained until actual exit and durable release. / 保留至实际退出及持久释放的启用进程所有者。 */
+    private final java.util.Set<gold.debug.windowstolinux.app.service.task.PlatformProcessService> processServices = new java.util.LinkedHashSet<>();
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -327,6 +330,20 @@ public final class PlatformRuntime implements AutoCloseable {
         return ai;
     }
 
+    /** Creates an original-owner managed-process capability without starting a child. / 创建原所有者受管进程能力，不启动子进程。
+     * @param owner actual Mod identity / 实际 Mod 身份
+     * @param version loaded release / 加载发布版本
+     * @return bound process capability / 绑定进程能力 */
+    public synchronized gold.debug.windowstolinux.app.service.task.PlatformProcessService processes(String owner,
+            String version) {
+        if (closed || stopping)
+            throw new IllegalStateException("Platform process capabilities are closing");
+        var processes = new gold.debug.windowstolinux.app.service.task.PlatformProcessService(persistence.database(),
+                tasks, logs(owner, version, java.util.Optional.empty()), owner, version);
+        processServices.add(processes);
+        return processes;
+    }
+
     /**
      * Creates real task, credential, review and SSH adapters for one Mod activation. / 为一次 Mod 启用创建真实任务、凭据、审核及 SSH 适配。
      * @param ownerId exact activating Mod / 精确正在启用的 Mod
@@ -472,6 +489,9 @@ public final class PlatformRuntime implements AutoCloseable {
         for (var source : java.util.List.copyOf(sourceServices))
             source.close();
         sourceServices.clear();
+        for (var processes : java.util.List.copyOf(processServices))
+            processes.close();
+        processServices.clear();
         for (var capabilities : java.util.List.copyOf(remoteCapabilities))
             capabilities.close();
         transfers.close();
