@@ -294,6 +294,39 @@ public final class PlatformRuntime implements AutoCloseable {
         return coordinator.reconcileSchema(preparation);
     }
 
+    /** Reviews an explicitly selected source for rebuilding a failed unused target. / 审阅明确所选来源以重建失败未使用目标。
+     * @param owner selected Mod / 已选 Mod
+     * @param source explicitly confirmed source / 明确确认来源
+     * @return original concrete retry review / 原具体重试审阅
+     * @throws Exception if the graph or retry requirements are unavailable / 图或重试条件不可用时 */
+    public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview reviewModSchemaRetry(String owner,
+            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            if (stopping || closed || modCoordinator == null)
+                throw new IllegalStateException("Mod graph is unavailable");
+            coordinator = modCoordinator;
+        }
+        return coordinator.reviewSchemaRetry(owner, source);
+    }
+
+    /** Executes one explicit retry in this boot without changing the user's selection. / 在本次启动执行一次明确重试，不改变用户选择。
+     * @param review user-confirmed original review / 用户确认原审阅
+     * @return actual data result without starting business / 不启动业务的实际数据结果
+     * @throws Exception if original execution or cleanup remains unconfirmed / 原执行或清理仍未确认时 */
+    public gold.debug.windowstolinux.appapi.task.Outcome retryModSchema(
+            gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            if (stopping || closed || modCoordinator == null)
+                throw new IllegalStateException("Mod graph is unavailable");
+            coordinator = modCoordinator;
+        }
+        return coordinator.retrySchema(review);
+    }
+
     /** Reads the actual compiled appapi identity for both management and startup. / 为管理与启动读取实际编译 appapi 身份。
      * @return exact public API release / 精确公开 API 版本
      * @throws java.io.IOException if identity is unavailable / 身份不可用时 */

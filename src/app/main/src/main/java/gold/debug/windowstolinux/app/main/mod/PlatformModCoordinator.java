@@ -53,6 +53,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
     /** Explicit data inspections retaining original cleanup obligations. / 保留原清理义务的明确数据检查。 */
     private final Map<UUID, ModSchemaInspection> inspections = new LinkedHashMap<>();
 
+    /** Explicit retries retaining their original preparation cleanup. / 保留原准备清理的明确重试。 */
+    private final Map<gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview, ModSchemaPreparation> retries = new LinkedHashMap<>();
+
     /** Source and owner-specific safe startup feedback. / 来源及所有者专属安全启动反馈。 */
     private final Map<String, Problem> issues = new LinkedHashMap<>();
 
@@ -245,34 +248,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
             if (runtime.modContexts().containsKey(owner) || runtime.modSessions().containsKey(owner))
                 throw failure(owner, "MOD_RECONCILIATION_BUSY", "Original Mod session still owns resources",
                         ProblemCode.BUSY);
-            var discovered = new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
-            var builds = new HashMap<String, PlatformModCatalog.Build>();
-            discovered.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
-            var build = builds.get(owner);
-            if (build == null || !review.version().equals(build.candidate().manifest().version().toString())
-                    || !review.manifest().equals(build.candidate().manifest().json())
-                    || !review.digest().equals(build.contentDigest()))
-                throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
-                        ProblemCode.UNAVAILABLE);
-            PlatformModCatalog.verify(workspace, build);
-            var manifests = new ArrayList<ModManifest>();
-            manifests.add(build.candidate().manifest());
-            var providers = new HashMap<String, ModClassLoader>();
-            for (var entry : slots.entrySet()) {
-                var slot = entry.getValue();
-                if (slot.session != null && slot.session.state() == ModRuntimeSession.SessionState.RUNNING) {
-                    manifests.add(slot.loader.manifest());
-                    providers.put(entry.getKey(), slot.loader);
-                }
-            }
-            var plan = ModDependencyPlan.resolve(manifests, api, Runtime.version().feature());
-            if (plan.failures().containsKey(owner))
-                throw new ApiException(plan.failures().get(owner));
-            var sources = new ArrayList<URL>();
-            for (var path : build.candidate().descriptor().sources())
-                sources.add(path.toUri().toURL());
             var inspection = new ModSchemaInspection(runtime.persistence().database(), ledger, review,
-                    plan.createLoader(owner, sources, providers));
+                    maintenanceLoader(owner, review.version(), review.manifest(), review.digest()));
             inspections.put(preparation, inspection);
             try {
                 var outcome = inspection.inspect();
@@ -287,6 +264,115 @@ public final class PlatformModCoordinator implements AutoCloseable {
         } finally {
             operation.set(false);
         }
+    }
+
+    /** Refreshes the actual program and reviews a source-confirmed failed-target rebuild. / 刷新实际程序并审阅来源已确认的失败目标重建。
+     * @param owner selected Mod / 已选 Mod
+     * @param source explicitly confirmed retained source / 明确确认保留来源
+     * @return concrete review for explicit execution / 供明确执行的具体审阅
+     * @throws Exception if current graph, authorization or data is unavailable / 当前图、授权或数据不可用时 */
+    public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview reviewSchemaRetry(String owner,
+            Optional<SchemaIdentity> source) throws Exception {
+        enter();
+        try (var permission = runtime.security().enterOperation()) {
+            requireMaintenance(owner);
+            new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
+            return runtime.modIntents().reviewRetry(owner, source);
+        } finally {
+            operation.set(false);
+        }
+    }
+
+    /** Executes a freshly confirmed retry immediately, or only releases its retained original resources. / 立即执行新确认重试，或仅释放其保留原资源。
+     * @param review explicit original review / 明确原审阅
+     * @return original data preparation result without business startup / 不含业务启动的原数据准备结果
+     * @throws Exception if acceptance, physical release or archive remains unconfirmed / 接纳、物理释放或归档仍未确认时 */
+    public Outcome retrySchema(gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review)
+            throws Exception {
+        enter();
+        try (var permission = runtime.security().enterOperation()) {
+            String owner = review.target().ownerId();
+            requireMaintenance(owner);
+            var retained = retries.get(review);
+            if (retained != null) {
+                retained.close();
+                retries.remove(review);
+                return retained.outcome();
+            }
+            var loader = maintenanceLoader(owner, review.manifest().version().toString(), review.manifest().json(),
+                    review.contentDigest());
+            var preparation = new ModSchemaPreparation(runtime.persistence().database(), restarts, loader);
+            retries.put(review, preparation);
+            try {
+                var accepted = runtime.modIntents().acceptRetry(review);
+                try {
+                    preparation.retry(accepted);
+                } catch (Exception | LinkageError | AssertionError failure) {
+                    preparation.close();
+                }
+                retries.remove(review);
+                return preparation.outcome();
+            } catch (Exception | LinkageError | AssertionError unconfirmed) {
+                try {
+                    preparation.close();
+                    retries.remove(review);
+                } catch (Exception cleanup) {
+                    unconfirmed.addSuppressed(cleanup);
+                }
+                if (unconfirmed instanceof ApiException known && unconfirmed.getSuppressed().length == 0)
+                    throw known;
+                throw failure(owner, "MOD_SCHEMA_RETRY_UNCONFIRMED",
+                        "Original retry or cleanup remains; inspect its recorded state", ProblemCode.UNKNOWN);
+            }
+        } finally {
+            operation.set(false);
+        }
+    }
+
+    /** Requires the original open graph and fully closed target session for maintenance. / 维护要求原图开放且目标会话完全关闭。
+     * @param owner exact owner / 精确所有者
+     * @throws ApiException if original lifecycle ownership remains / 原生命周期归属残留时 */
+    private void requireMaintenance(String owner) throws ApiException {
+        if (!started || closed || runtime.modContexts().containsKey(owner) || runtime.modSessions().containsKey(owner))
+            throw failure(owner, "MOD_MAINTENANCE_BUSY", "Original graph must be open and target resources closed",
+                    ProblemCode.BUSY);
+    }
+
+    /** Loads one exact maintenance program using only currently running declared providers. / 仅使用当前运行的声明提供方加载一个精确维护程序。
+     * @param owner original owner / 原所有者
+     * @param version original version / 原版本
+     * @param manifest original declaration / 原声明
+     * @param digest original verified content / 原已验证内容
+     * @return isolated maintenance loader / 隔离维护加载器
+     * @throws Exception if program or providers are unavailable / 程序或提供方不可用时 */
+    private ModClassLoader maintenanceLoader(String owner, String version, String manifest, String digest)
+            throws Exception {
+        var discovered = new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
+        var builds = new HashMap<String, PlatformModCatalog.Build>();
+        discovered.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
+        var build = builds.get(owner);
+        if (build == null || !version.equals(build.candidate().manifest().version().toString())
+                || !manifest.equals(build.candidate().manifest().json()) || !digest.equals(build.contentDigest()))
+            throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
+                    ProblemCode.UNAVAILABLE);
+        PlatformModCatalog.verify(workspace, build);
+        var manifests = new ArrayList<ModManifest>();
+        manifests.add(build.candidate().manifest());
+        var providers = new HashMap<String, ModClassLoader>();
+        for (var entry : slots.entrySet()) {
+            var slot = entry.getValue();
+            if (slot.session != null && slot.session.state() == ModRuntimeSession.SessionState.RUNNING) {
+                manifests.add(slot.loader.manifest());
+                providers.put(entry.getKey(), slot.loader);
+            }
+        }
+        var plan = ModDependencyPlan.resolve(manifests, api, Runtime.version().feature());
+        if (plan.failures().containsKey(owner))
+            throw new ApiException(plan.failures().get(owner));
+        var sources = new ArrayList<URL>();
+        for (var path : build.candidate().descriptor().sources())
+            sources.add(path.toUri().toURL());
+        return plan.createLoader(owner, sources, providers);
     }
 
     /** Resolves original requests and READY data before dependency loading. / 在依赖加载前解析原请求及 READY 数据。
@@ -434,6 +520,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
             for (var inspection : List.copyOf(inspections.values()))
                 inspection.close();
             inspections.clear();
+            for (var retry : List.copyOf(retries.values()))
+                retry.close();
+            retries.clear();
             for (var pending : List.copyOf(rejected.values()))
                 confirmFailure(pending.prepared(), pending.problem());
             for (var slot : new ArrayList<>(slots.values()).reversed()) {

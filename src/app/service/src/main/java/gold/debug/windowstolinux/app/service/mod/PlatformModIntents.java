@@ -19,7 +19,7 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
 
-/** Reviews and atomically saves restart intentions without invoking or unloading author code. / 审阅并原子保存重启意图，不调用或卸载作者代码。 */
+/** Reviews and atomically claims restart intentions or explicit data retries without invoking author code. / 审阅并原子取得重启意图或明确数据重试，不调用作者代码。 */
 public final class PlatformModIntents implements AutoCloseable {
     /** Exact owning boot. / 精确所属启动。 */
     private final UUID boot;
@@ -38,6 +38,9 @@ public final class PlatformModIntents implements AutoCloseable {
 
     /** Fixed platform operation archive target. / 固定平台操作归档目标。 */
     private final LogRepository.Target archive;
+
+    /** Shared data preparation ledger used inside the same management transaction. / 在同一管理事务中使用的共用数据准备账本。 */
+    private final gold.debug.windowstolinux.app.db.mod.ModRestartLedger preparations;
 
     /** Strict durable request parser. / 严格持久请求解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -60,6 +63,7 @@ public final class PlatformModIntents implements AutoCloseable {
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
                 new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+        preparations = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(database);
     }
 
     /** Whole-Mod choice; an enabled choice always names one installed release. / 整个 Mod 的选择，启用选择始终指向一个已安装版本。
@@ -158,6 +162,130 @@ public final class PlatformModIntents implements AutoCloseable {
         try (var operation = security.enterOperation()) {
             return locked(
                     c -> calculate(read(c), Map.of(owner, target), source.map(s -> Map.of(owner, s)).orElse(Map.of())));
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Explicit retry review bound to one unchanged choice, failed target and confirmed source. / 绑定一个未改变选择、失败目标及已确认来源的明确重试审阅。 */
+    public final class RetryReview {
+        /** Exact original decision snapshot. / 精确原决策快照。 */
+        private final Snapshot before;
+
+        /** Exact failed and unused target. / 精确失败未使用目标。 */
+        private final SchemaIdentity target;
+
+        /** Selected original declaration. / 选定原声明。 */
+        private final ModManifest manifest;
+
+        /** Confirmed ordered data plan. / 已确认有序数据计划。 */
+        private final String dataPlan;
+
+        /** Prevents replay after any attempted acceptance. / 防止尝试接纳后的重放。 */
+        private boolean consumed;
+        /** Freezes the concrete reviewed retry. / 冻结具体已审阅重试。
+         * @param before decision snapshot / 决策快照
+         * @param target failed target / 失败目标
+         * @param manifest selected declaration / 选定声明
+         * @param dataPlan confirmed data plan / 已确认数据计划 */
+        private RetryReview(Snapshot before, SchemaIdentity target, ModManifest manifest, String dataPlan) {
+            this.before = before;
+            this.target = target;
+            this.manifest = manifest;
+            this.dataPlan = dataPlan;
+        }
+
+        /** Returns the original failed identity the user agrees to rebuild. / 返回用户同意重建的原失败身份。
+         * @return exact failed target / 精确失败目标 */
+        public SchemaIdentity target() {
+            return target;
+        }
+
+        /** Returns the original selected program. / 返回原选定程序。
+         * @return selected declaration / 选定声明 */
+        public ModManifest manifest() {
+            return manifest;
+        }
+
+        /** Returns the reviewed actual build digest. / 返回已审阅实际构建摘要。
+         * @return original content digest / 原内容摘要 */
+        public String contentDigest() {
+            return before.releases().get(target.ownerId()).get(manifest.version().toString()).digest();
+        }
+
+        /** Returns the confirmed source and ordered steps for host presentation. / 返回供宿主呈现的已确认来源及有序步骤。
+         * @return immutable data plan JSON / 不可变数据计划 JSON */
+        public String dataPlan() {
+            return dataPlan;
+        }
+
+        /** Returns the owning management service. / 返回所属管理服务。
+         * @return original service / 原服务 */
+        private PlatformModIntents owner() {
+            return PlatformModIntents.this;
+        }
+    }
+
+    /** Reviews a manual rebuild without changing the switch, selected version or failed data. / 审阅手动重建，不改变开关、单选版本或失败数据。
+     * @param owner exact selected Mod / 精确已选 Mod
+     * @param source explicitly confirmed source, absent only for empty initialization / 明确确认来源，仅空初始化时缺省
+     * @return concrete retry review / 具体重试审阅
+     * @throws ApiException if the target is usable, unknown, occupied or has no unique source path / 目标可用、未知、有占用或无唯一来源路径时 */
+    public synchronized RetryReview reviewRetry(String owner, Optional<SchemaIdentity> source) throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var state = read(c);
+                var entry = state.owners().get(owner);
+                if (entry == null || !entry.choice().enabled() || entry.actual() != null
+                        || !Set.of("STOPPED", "FAILED").contains(entry.runtime()))
+                    throw rejected("MOD_RETRY_UNAVAILABLE",
+                            "Retry requires an enabled selected Mod with closed previous work");
+                if (state.busy().contains(owner) || state.pending().containsKey(owner))
+                    throw rejected("MOD_MAINTENANCE_PENDING", "Original maintenance must finish before retry");
+                var manifest = selected(state, owner, entry.choice());
+                if (manifest.schemaVersion().isEmpty() || !manifest.platformApiRange().contains(api)
+                        || Runtime.version().feature() < manifest.minJavaVersion())
+                    throw rejected("MOD_RETRY_UNAVAILABLE", "The selected program cannot prepare data on this host");
+                String schema = manifest.schemaVersion().get();
+                var data = state.schemas().getOrDefault(owner, Map.of()).get(schema);
+                if (data == null || !"FAILED".equals(data.state()) || data.used() || data.validatedAt() != null
+                        || data.validationDigest() != null)
+                    throw rejected("MOD_RETRY_UNAVAILABLE", "Only the first failed unused target may be rebuilt");
+                requireCoordinates(owner, schema, data);
+                var schemas = new TreeMap<>(state.schemas());
+                var remaining = new TreeMap<>(schemas.get(owner));
+                remaining.remove(schema);
+                schemas.put(owner, Map.copyOf(remaining));
+                var withoutFailed = new Snapshot(state.revision(), state.owners(), state.releases(),
+                        Map.copyOf(schemas), state.pending(), state.busy());
+                return new RetryReview(state, new SchemaIdentity(owner, schema, data.generation()), manifest,
+                        dataPlan(withoutFailed, manifest, source.orElse(null)));
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Claims a concrete manual retry immediately under the original task-admission lock. / 在原任务准入锁下立即取得具体手动重试。
+     * @param review user-confirmed original retry / 用户确认原重试
+     * @return new exclusive preparation generation / 新独占准备代次
+     * @throws ApiException if review changed, was consumed, or original work remains / 审阅变化、已使用或原工作残留时 */
+    public synchronized gold.debug.windowstolinux.app.db.mod.ModRestartLedger.Preparation acceptRetry(
+            RetryReview review) throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            if (review == null || review.owner() != this || review.consumed)
+                throw new ApiException(new Problem(ProblemCode.UNAVAILABLE, "MOD_REVIEW_STALE",
+                        "Retry needs a fresh explicit review", Map.of(), Optional.empty()));
+            review.consumed = true;
+            return locked(c -> {
+                if (!read(c).equals(review.before))
+                    throw rejected("MOD_REVIEW_STALE", "Retry evidence changed; review again");
+                return preparations.beginRetry(c, review.target, review.manifest.version().toString(),
+                        review.before.owners().get(review.target.ownerId()).revision(), review.manifest.json(),
+                        review.contentDigest(), review.dataPlan);
+            });
         } catch (SQLException failure) {
             throw publicFailure(failure);
         }

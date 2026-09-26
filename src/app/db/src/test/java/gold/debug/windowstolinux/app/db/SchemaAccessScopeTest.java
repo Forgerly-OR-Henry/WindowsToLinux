@@ -15,6 +15,34 @@ class SchemaAccessScopeTest {
     @TempDir
     Path root;
 
+    @Test
+    void recordedReaderCleanupChecksActualH2SessionEvenOutsideTheOriginalScopeTag() throws Exception {
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var identity = prepare(db, "example.RecoveredReader", "1");
+            var target = new SchemaCoordinates(identity);
+            UUID scope = UUID.randomUUID();
+            String user = SchemaAccessScope.readerUser(scope);
+            try (var c = db.openConnection()) {
+                sql(c, "CREATE TABLE \"" + target.physicalName() + "\".items(id INT PRIMARY KEY)");
+                sql(c, "INSERT INTO \"" + target.physicalName() + "\".items VALUES(7)");
+                sql(c, "CREATE USER \"" + user + "\" PASSWORD 'fixture'");
+                sql(c, "GRANT SELECT ON \"" + target.physicalName() + "\".items TO \"" + user + "\"");
+            }
+            try (var original = db.openInternalConnection(target.physicalName(), user, "fixture",
+                    "fixture-other-scope")) {
+                assertEquals(0, db.openConnections(scope.toString()));
+                assertThrows(SQLException.class, () -> new SchemaProvisioner(db).releaseRecordedReader(scope, target));
+                assertEquals(7, count(original, "SELECT id FROM items"));
+            }
+            new SchemaProvisioner(db).releaseRecordedReader(scope, target);
+            try (var c = db.openConnection()) {
+                assertEquals(0,
+                        count(c, "SELECT COUNT(*) FROM information_schema.users WHERE user_name='" + user + "'"));
+                assertEquals(7, count(c, "SELECT id FROM \"" + target.physicalName() + "\".items"));
+            }
+        }
+    }
+
     SchemaIdentity prepare(PlatformDatabase database, String owner, String version) throws Exception {
         var identity = new SchemaIdentity(owner, version, UUID.randomUUID());
         var names = new SchemaCoordinates(identity);

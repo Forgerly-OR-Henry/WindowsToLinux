@@ -1617,14 +1617,14 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
 - `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
 - `app/db/mod/ModSchemaReconciliation.java`：核验原 UNKNOWN 数据身份、取得明确只读核对并原子归档已证明结果，不改变用户选择。
-- `app/db/mod/ModRestartLedger.java`：核验前次启动的已准备意图、推进 APPLYING，并按本次实际状态原子归档成功/失败及确认重启停用。
+- `app/db/mod/ModRestartLedger.java`：核验前次启动意图与明确失败重试，登记原准备/新代次并按实际状态原子归档，保留重启停用确认。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
 - `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
 - `app/db/persistence/repository/CredentialReferenceRepository.java`：签发 Mod/用途所属凭据身份，并事务化保护精确数据代次的业务引用。
 - `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
-- `app/db/schema/SchemaProvisioner.java`：创建明确登记的 Mod 数据结构，不接管已有数据库对象。
+- `app/db/schema/SchemaProvisioner.java`：创建明确登记的数据结构，或按独立重试记录重置从未可用的失败目标；核验实际所有权及会话。
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
@@ -1639,8 +1639,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
 - `app/main/mod/ModSchemaInspection.java`：持有原版本只读验证器、来源核验和资源收尾，核对不重放迁移或启动业务。
-- `app/main/mod/ModSchemaPreparation.java`：持有隔离初始化或已确认多步迁移、来源核验、目标验证及原资源收尾，不重放作者动作。
-- `app/main/mod/PlatformModCoordinator.java`：按真实开发构建装配已选依赖图，保留原启用失败和归档义务，并按依赖逆序关闭实际会话。
+- `app/main/mod/ModSchemaPreparation.java`：共用首次准备与明确重试的隔离初始化/多步迁移、来源核验、目标验证及原资源收尾。
+- `app/main/mod/PlatformModCoordinator.java`：按实际 CLASS 构建装配依赖图，协调明确数据核对/重试，保留原资源及归档义务并逆序停止。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
 - `app/mod/development/MavenDevelopmentInputs.java`：在 Maven 原构建会话中撤销旧描述，捕获真实解析的依赖、从模块和构建配置输入。
@@ -1649,7 +1649,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/resources/META-INF/maven/plugin.xml`：登记 development-inputs 构建目标及原 Maven 会话注入，不注册业务 Mod。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
-- `app/service/mod/PlatformModIntents.java`：审阅并原子保存开关、版本、连带禁用和迁移来源；撤销未执行请求时同事务归档，保留原修订及任务准入范围。
+- `app/service/mod/PlatformModIntents.java`：审阅并原子保存开关、版本、连带禁用和来源，或取得不改选择的明确数据重试；撤销未执行请求时同事务归档。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离。
 - `app/mod/loader/ModEntryFactory.java`：仅在启用期间检查公开形状与来源后构造入口。
