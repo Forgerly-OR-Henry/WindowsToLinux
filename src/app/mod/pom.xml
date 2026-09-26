@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-app-mod</artifactId>
   <dependencies>
     <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm</artifactId>
+      <version>${asm.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-compress</artifactId>
       <version>${commons.compress.version}</version>

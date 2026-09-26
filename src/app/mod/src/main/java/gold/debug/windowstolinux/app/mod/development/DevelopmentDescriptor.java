@@ -116,6 +116,8 @@ public record DevelopmentDescriptor(Path manifestPath, Path mainOutput, List<Pat
         var value = new DevelopmentDescriptor(manifestPath, mainOutput, authorOutputs, buildInputs, libraries, "");
         Path file = mainOutput.getParent().resolve("wtlmod-development.json");
         value.validate(root, file);
+        gold.debug.windowstolinux.app.mod.loader.ModCodeInspection.read(value.manifest(), value.sources())
+                .validate(false, Map.of());
         String digest = value.digest();
         var node = JSON.createObjectNode().put("formatVersion", 1).put("manifestPath", key(manifestPath))
                 .put("mainOutput", key(mainOutput));

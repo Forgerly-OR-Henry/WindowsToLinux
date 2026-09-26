@@ -5,6 +5,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
+import gold.debug.windowstolinux.app.mod.loader.ModCodeInspection;
 import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
 import gold.debug.windowstolinux.appapi.task.*;
 
@@ -50,6 +51,7 @@ public final class DevelopmentModDiscovery {
                         var compiled = DevelopmentDescriptor.read(root, descriptor);
                         if (!declared.json().equals(compiled.manifest().json()))
                             throw new IOException("Development manifest changed during discovery");
+                        ModCodeInspection.read(declared, compiled.sources()).validate(false, Map.of());
                         found.add(new Candidate(directory, declared, compiled));
                     } catch (IOException failure) {
                         failures.add(reject(directory, "MOD_DEVELOPMENT_INVALID",

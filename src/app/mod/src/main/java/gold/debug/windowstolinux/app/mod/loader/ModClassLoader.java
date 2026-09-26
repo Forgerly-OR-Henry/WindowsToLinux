@@ -74,6 +74,48 @@ public final class ModClassLoader extends PluginClassLoader {
         return manifest;
     }
 
+    /** Rechecks original code and exact provider signatures before author execution. / 作者执行前重检原代码及精确提供方签名。
+     * @return inspected owner metadata / 已检验所有者元数据
+     * @throws IOException if code admission fails / 代码准入失败时 */
+    public ModCodeInspection inspectCode() throws IOException {
+        return inspectCode(new IdentityHashMap<>(), Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    /** Visits each original provider once per inspection, retaining cycle and depth guards. / 每次检验仅访问各原提供方一次，并保留循环及深度保护。
+     * @param inspected already verified originals / 已验证原对象
+     * @param visiting active recursion path / 活动递归路径
+     * @return inspected metadata / 已检验元数据
+     * @throws IOException if unavailable, cyclic or invalid / 不可用、循环或无效时 */
+    private ModCodeInspection inspectCode(Map<ModClassLoader, ModCodeInspection> inspected,
+            Set<ModClassLoader> visiting) throws IOException {
+        if (isClosed())
+            throw new IOException("Mod loader is closed");
+        if (inspected.containsKey(this))
+            return inspected.get(this);
+        if (visiting.size() > 256 || !visiting.add(this))
+            throw new IOException("Cyclic or excessive provider graph");
+        try {
+            var sources = new ArrayList<Path>();
+            for (var source : getURLs()) {
+                try {
+                    sources.add(Path.of(source.toURI()));
+                } catch (java.net.URISyntaxException invalid) {
+                    throw new IOException("Invalid code source", invalid);
+                }
+            }
+            var bindings = new HashMap<String, ModCodeInspection>();
+            for (var entry : exports.entrySet()) {
+                bindings.put(entry.getKey(), entry.getValue().inspectCode(inspected, visiting));
+            }
+            var code = ModCodeInspection.read(manifest, sources);
+            code.validate(true, bindings);
+            inspected.put(this, code);
+            return code;
+        } finally {
+            visiting.remove(this);
+        }
+    }
+
     /** Verifies that the explicit main source defines an entry class. / 验证入口类由显式主来源定义。
      * @param type loaded entry candidate / 已加载的入口候选
      * @return whether the main source owns the type / 主来源是否持有此类型 */
