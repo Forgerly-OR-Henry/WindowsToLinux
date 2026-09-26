@@ -71,10 +71,10 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
     private final String initialUrl;
 
     /**
-     * Playwright.
-     * <p>Playwright 浏览器驱动。
+     * Original connection and physical driver owner.
+     * <p>原连接及物理驱动所有者。
      */
-    private Playwright playwright;
+    private PlaywrightDriver driver;
 
     /**
      * Browser.
@@ -191,17 +191,17 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                     context.newPage();
                 return null;
             }
-            if (playwright != null) {
-                playwright.close();
-                playwright = null;
+            if (driver != null) {
+                driver.close();
+                driver = null;
             }
             bound = null;
             generation++;
             candidates.clear();
             if (launchObserver != null)
                 launchObserver.preparing();
-            playwright = Playwright.create(new Playwright.CreateOptions()
-                    .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1", "DEBUG", "", "PWDEBUG", "0")));
+            driver = new PlaywrightDriver();
+            var playwright = driver.start();
             var launch = new BrowserType.LaunchOptions().setHeadless(headless);
             String channel = installedChannel();
             if (channel != null)
@@ -645,9 +645,9 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             }
             browser = null;
         }
-        if (playwright != null) {
-            playwright.close();
-            playwright = null;
+        if (driver != null) {
+            driver.close();
+            driver = null;
         }
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (processes.stream().anyMatch(BrowserProcess::alive)) {
