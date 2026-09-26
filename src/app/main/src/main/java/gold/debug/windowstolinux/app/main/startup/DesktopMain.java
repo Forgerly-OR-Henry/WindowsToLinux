@@ -104,6 +104,7 @@ public final class DesktopMain {
             var messages = MessageCatalog.forLanguageTag(appearance.localeTag());
             var theme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
             new DesktopUncaughtFailureBoundary(reports, messages).install();
+            var models = runtime.models();
             frame = onEdt(() -> {
                 DesktopThemeService.install(theme);
                 var window = new PlatformFrame(runtime.security(), messages,
@@ -115,6 +116,7 @@ public final class DesktopMain {
                 runtime.setInteractionPresenter(
                         new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages));
                 window.installServers(runtime.servers());
+                window.installModels(models);
                 return window;
             });
             runtime.started();

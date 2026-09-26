@@ -1,8 +1,12 @@
 # WindowsToLinux 运行与行为约定
 
 - 职责：维护运行数据目录、部署与恢复行为、数据库、安全及已知验证边界；源码模块、包结构和命名以 [File.md](File.md) 为准。
-- 状态：1.1 改造进行中。默认入口已切换 H2 平台启动、安全外壳及常驻服务器配置/SSH 认证检查；保存与连接分开，认证检查不发送远端命令。未结束检查保留任务占用，可显式清理并记录中断，不自动重连。本文后续部署、备份和 SQLite 行为属于待迁移的 0.x 业务实现，尚未全部接入新入口。1.1 数据库契约见 [Mod.md](Mod.md#mod-database)，进度见 [1.1 开发文档](development/PHASE-1.1.md)。
+- 状态：1.1 改造进行中。默认入口已切换 H2 平台启动、安全外壳、常驻模型配置/能力验证及服务器配置/SSH 认证检查；保存与连接分开，认证检查不发送远端命令。未结束检查保留任务占用，可显式清理并记录中断，不自动重连。本文后续部署、备份和 SQLite 行为属于待迁移的 0.x 业务实现，尚未全部接入新入口。1.1 数据库契约见 [Mod.md](Mod.md#mod-database)，进度见 [1.1 开发文档](development/PHASE-1.1.md)。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [APP 发布方案](APP.md) · [数据库与安全](Runtime.md#app-security-database)
+
+  1.1 模型配置使用 `platform.ai.probe.v1` 宿主任务：只对用户明确提交的单个端点和模型发送通用文字或图片挑战；不发送部署分析资料、不自动加入用途。端点仅接受远端 HTTPS 或本机回环 HTTP，禁用重定向。随机文字回显/三块颜色顺序用于检查当前请求是否被处理，不表示已全面认证模型质量。成功后在同一 H2 凭据事务重新核对原配置和上限，保存凭据、能力修订及输出上限；并发变化拒绝旧结果，保存应答不确定保留 UNKNOWN。已有模型留空 API Key 沿用原引用，不重新写密钥或使另一项能力无故失效。新模型凭据引用由宿主生成。
+
+原任务在锁定后可完成已接纳的验证和保存；新的配置操作仍要求解锁。中断核对保留原任务/版本，清理实际 HTTP 资源并记录中断，不重放或声称原提交一定回滚；用户须重新读取配置。前次独占启动只可释放该稳定协议可识别的进程内资源，不把任意未知占用视作已消失。
 
 ## 1. 本地化与诊断行为
 
@@ -43,7 +47,7 @@
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。
 - APP 模式下数据始终跟随 EXE 安装目录；升级和卸载时按 0.4 期文档定义的规则处理。
 
-1.1 默认启动仅打开 `platform.mv.db` 与 `db-access.bin`，使用 H2 2.5.250 和 Windows 当前用户 DPAPI；缺失配对、身份错误或材料损坏时拒绝打开，不覆盖重建。首次安全设置后可解锁，再次启动保持锁定。正常退出等待凭据操作、持久化非终态任务及物理连接释放；UNKNOWN 不视作已完成。平台子目录职责见 [Mod 数据布局](Mod.md#mod-database)。
+  1.1 默认启动仅打开 `platform.mv.db` 与 `db-access.bin`，使用 H2 2.5.250 和 Windows 当前用户 DPAPI；缺失配对、身份错误或材料损坏时拒绝打开，不覆盖重建。首次安全设置后可解锁，再次启动保持锁定。正常退出等待凭据操作、持久化非终态任务及物理连接释放；UNKNOWN 不视作已完成。平台子目录职责见 [Mod 数据布局](Mod.md#mod-database)。
 
 程序目录独立定位：JAR 使用 main.jar 所在目录，数据仍按 db.jar；APP 使用 EXE 目录。CLASS 程序根须是经 DB 模块 POM 和 main 模块位置验证的工作区，主模块输出须位于该工作区内；不从无关工作目录加载 Mod。
 
@@ -283,15 +287,15 @@ Web JSON 编解码由 `persistence/serialization/WebJsonCodec` 承担；`contrac
 
 字段顺序、类型及全部约束以 [desktop.sql](../src/app/db/src/main/resources/schema/desktop.sql) 为准。19 张业务表：
 
-| 范围 | 表 |
-| --- | --- |
-| 安全 | `security_profile`、`credential` |
-| 服务器 | `server_profile` |
-| 部署与应用 | `deployment_unit`、`managed_application`、`managed_application_component`、`managed_application_dependency`、`external_application` |
+| 范围           | 表                                                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 安全           | `security_profile`、`credential`                                                                                                                                                  |
+| 服务器         | `server_profile`                                                                                                                                                                  |
+| 部署与应用     | `deployment_unit`、`managed_application`、`managed_application_component`、`managed_application_dependency`、`external_application`                                               |
 | 配置与秘密版本 | `deployment_unit_configuration_snapshot`、`deployment_unit_configuration_entry`、`deployment_unit_release_binding`、`secret_revision`、`deployment_unit_release_secret_reference` |
-| 模型 | `ai_model` |
-| 任务历史 | `browser_recovery_task`、`browser_recovery_event`、`deployment_agent_task`、`deployment_agent_event` |
-| 偏好 | `desktop_preference` |
+| 模型           | `ai_model`                                                                                                                                                                        |
+| 任务历史       | `browser_recovery_task`、`browser_recovery_event`、`deployment_agent_task`、`deployment_agent_event`                                                                              |
+| 偏好           | `desktop_preference`                                                                                                                                                              |
 
 表名、列名、偏好键采用小写下划线。时间保存 UTC Unix 毫秒，修订为整数，布尔为 0/1。用户配置键、模型名称、路径、URL 和 shared 标识不改写。
 

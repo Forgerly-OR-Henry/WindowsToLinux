@@ -201,58 +201,8 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @throws SQLException if ownership or a resource cannot be proved / 无法证明归属或资源类型时
      */
     private boolean releasePreviousProcessResources(TaskSnapshot task) throws SQLException {
-        var database = persistence.database();
-        try (var connection = database.openConnection()) {
-            connection.setAutoCommit(false);
-            gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections.lockPlatformState(connection);
-            try (var statement = connection.prepareStatement(
-                    "SELECT boot_id,owner_id,owner_version,task_type,state FROM platform_task WHERE task_id=?")) {
-                statement.setObject(1, task.id());
-                try (var row = statement.executeQuery()) {
-                    if (!row.next() || !PlatformTaskAdmission.PLATFORM_OWNER.equals(row.getString(2))
-                            || !task.ownerVersion().equals(row.getString(3)) || !CHECK_TYPE.equals(row.getString(4))
-                            || !Set.of("UNKNOWN", "FINISHING").contains(row.getString(5)))
-                        throw new SQLException("Authentication recovery identity changed");
-                    if (database.bootId().equals(row.getObject(1, UUID.class)))
-                        return false;
-                }
-            }
-            var leases = new ArrayList<UUID>();
-            try (var statement = connection.prepareStatement(
-                    "SELECT lease_id,resource_kind,resource_id,owner_id,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
-                statement.setObject(1, task.id());
-                try (var rows = statement.executeQuery()) {
-                    while (rows.next()) {
-                        if ("{\"release\":\"TASK_END\"}".equals(rows.getString(5)))
-                            continue;
-                        String kind = rows.getString(2), id = rows.getString(3);
-                        if (!PlatformTaskAdmission.PLATFORM_OWNER.equals(rows.getString(4))
-                                || !"{\"release\":\"EXPLICIT\"}".equals(rows.getString(5))
-                                || !(kind.equals("CONNECTION")
-                                        || kind.equals("CUSTOM") && id.startsWith("interaction-")))
-                            throw new SQLException("Authentication recovery contains an unknown resource");
-                        try {
-                            UUID.fromString(kind.equals("CONNECTION") ? id : id.substring("interaction-".length()));
-                        } catch (IllegalArgumentException invalid) {
-                            throw new SQLException("Authentication resource identity is invalid", invalid);
-                        }
-                        leases.add(rows.getObject(1, UUID.class));
-                    }
-                }
-            }
-            try (var statement = connection.prepareStatement(
-                    "UPDATE platform_task_resource SET released_at=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
-                for (var lease : leases) {
-                    statement.setLong(1, System.currentTimeMillis());
-                    statement.setObject(2, lease);
-                    statement.setObject(3, task.id());
-                    if (statement.executeUpdate() != 1)
-                        throw new SQLException("Authentication resource changed during recovery");
-                }
-            }
-            connection.commit();
-            return true;
-        }
+        return HostTaskRecovery.releasePreviousProcess(persistence.database(), task,
+                Map.of("CONNECTION", "", "CUSTOM", "interaction-"));
     }
 
     /** Returns in-memory unfinished host checks without reading business tables. / 返回内存中的未结束宿主检查，不读取业务表。

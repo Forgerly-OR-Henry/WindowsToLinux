@@ -32,19 +32,11 @@ public record AiProviderProfile(String id, URI chatCompletionsEndpoint, String m
         if (!id.matches("[a-z][a-z0-9-]{0,63}")) {
             throw new IllegalArgumentException("id must be a lowercase provider identifier");
         }
-        if (chatCompletionsEndpoint == null || chatCompletionsEndpoint.getHost() == null
-                || chatCompletionsEndpoint.getUserInfo() != null || chatCompletionsEndpoint.getQuery() != null
-                || chatCompletionsEndpoint.getFragment() != null
-                || !("https".equalsIgnoreCase(chatCompletionsEndpoint.getScheme())
-                        || ("http".equalsIgnoreCase(chatCompletionsEndpoint.getScheme())
-                                && !isLoopback(chatCompletionsEndpoint.getHost())))) {
-            throw new IllegalArgumentException("chatCompletionsEndpoint must be a plain HTTP(S) URL");
-        }
-        String checkedModel = Objects.requireNonNull(model, "model").trim();
-        String checkedCredentialKey = Objects.requireNonNull(credentialKey, "credentialKey").trim();
+        gold.debug.windowstolinux.app.ai.transport.ModelHttpCall.validateEndpoint(chatCompletionsEndpoint);
+        model = Objects.requireNonNull(model, "model").trim();
+        credentialKey = Objects.requireNonNull(credentialKey, "credentialKey").trim();
 
-        if (!checkedModel.matches("[A-Za-z0-9._:/-]{1,128}")
-                || !checkedCredentialKey.matches("ai/[a-z0-9/_-]{1,127}")) {
+        if (!model.matches("[A-Za-z0-9._:/-]{1,128}") || !credentialKey.matches("ai/[a-z0-9/_-]{1,127}")) {
             throw new IllegalArgumentException("AI profile is invalid");
         }
     }
@@ -73,15 +65,4 @@ public record AiProviderProfile(String id, URI chatCompletionsEndpoint, String m
                 profile.credentialKey());
     }
 
-    /**
-     * Reports whether the loopback condition holds for this contract.
-     * <p>判断当前契约是否满足回环条件。
-     *
-     * @param host reviewed server hostname or IP address / 已审阅服务器主机名或 IP 地址
-     * @return true when loopback condition holds for this contract, false otherwise / 当前契约是否满足回环条件时为 true，否则为 false
-     */
-    private static boolean isLoopback(String host) {
-        String normalized = host.toLowerCase(java.util.Locale.ROOT);
-        return normalized.equals("localhost") || normalized.equals("127.0.0.1") || normalized.equals("::1");
-    }
 }

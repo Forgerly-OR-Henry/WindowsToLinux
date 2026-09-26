@@ -37,6 +37,9 @@ public final class PlatformFrame extends JFrame {
     /** Installed permanent server page, if composition has completed. / 已安装常驻服务器页面，装配完成后存在。 */
     private gold.debug.windowstolinux.app.ui.server.PlatformServersPane servers;
 
+    /** Permanent model inventory and capability checks. / 常驻模型清单及能力检查。 */
+    private gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane models;
+
     /** Prevents duplicate shutdown workers. / 防止重复启动关闭工作线程。 */
     private boolean closing;
 
@@ -79,6 +82,8 @@ public final class PlatformFrame extends JFrame {
         lock.onLockChange(locked -> {
             if (servers != null)
                 servers.setLocked(locked);
+            if (models != null)
+                models.setLocked(locked);
             try {
                 pages.environment(new UiEnvironment(environment.locale(), environment.themeId(), locked));
             } catch (Exception failure) {
@@ -106,6 +111,16 @@ public final class PlatformFrame extends JFrame {
         servers = new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(this, service, components, messages);
         content.insertTab(messages.text("platform.servers"), null, servers, null, 0);
         servers.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts platform model settings independently of business extensions. / 独立于业务扩展挂载平台模型设置。
+     * @param service real model configuration owner / 真实模型配置所有者 */
+    public void installModels(gold.debug.windowstolinux.app.service.ai.PlatformModelService service) {
+        if (!SwingUtilities.isEventDispatchThread() || models != null)
+            throw new IllegalStateException("Model page must be installed once on the EDT");
+        models = new gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane(this, service, components, messages);
+        content.insertTab(messages.text("platform.models"), null, models, null, servers == null ? 0 : 1);
+        models.setLocked(!security.securityState().unlocked());
     }
 
     /**
@@ -161,6 +176,8 @@ public final class PlatformFrame extends JFrame {
     public void dispose() {
         if (servers != null)
             servers.close();
+        if (models != null)
+            models.close();
         lock.close();
         super.dispose();
     }
