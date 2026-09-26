@@ -47,6 +47,12 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Owner gates shared by normal submissions and initial dependency claims. / 普通提交及初始依赖申请共用的所有者准入门。 */
     private final Map<String, String> blockedOwners = new HashMap<>();
 
+    /** Synchronous dependency authority, deliberately not inherited by child threads. / 同步依赖授权，刻意不由子线程继承。 */
+    private final ThreadLocal<Deque<DependencyScope>> dependencyStack = ThreadLocal.withInitial(ArrayDeque::new);
+
+    /** Actual or unconfirmed call groups retained through physical and durable cleanup. / 保留至物理及持久清理的实际或未确认调用组。 */
+    private final Map<UUID, DependencyScope> dependencyScopes = new HashMap<>();
+
     /** Whether the host has sealed new business admission. / 宿主是否已封闭新业务准入。 */
     private boolean sealed;
 
@@ -202,7 +208,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             throws ApiException {
         var snapshot = requireContext(context);
         var execution = executions.get(snapshot.id());
-        if (!snapshot.ownerId().equals(ownerId) || !snapshot.ownerVersion().equals(version))
+        if ((!snapshot.ownerId().equals(ownerId) || !snapshot.ownerVersion().equals(version))
+                && !delegated(context, ownerId, version))
             throw error(ProblemCode.ACCESS_DENIED, "TASK_CALLER", "The capability belongs to a different Mod release");
         if (execution.returned && !execution.reconciling || snapshot.state() == TaskState.QUEUED)
             throw error(ProblemCode.UNAVAILABLE, "TASK_NOT_EXECUTING", "The original task callback is not executing");
@@ -223,7 +230,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         if (serverId == null || serverId.isBlank() || serverId.length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "TASK_SERVER_ID", "Invalid saved server identity");
         try {
-            if (!ledger.holds(context.id(), new TaskResource("SERVER", serverId, ownerId, true)))
+            if (!ledger.holds(context.id(),
+                    new TaskResource("SERVER", serverId, requireContext(context).ownerId(), true)))
                 throw error(ProblemCode.ACCESS_DENIED, "TASK_SERVER_NOT_ADMITTED",
                         "The server was not admitted with this task");
         } catch (SQLException failure) {
@@ -302,7 +310,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             if (resource.kind().equals("MOD") && blockedOwners.containsKey(resource.id())
                     && !ledger.holds(context.id(), resource))
                 throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(resource.id()));
-            return new OwnedLease(execution, ledger.retain(context.id(), resource, recovery));
+            var lease = new OwnedLease(execution, ledger.retain(context.id(), resource, recovery));
+            for (var scope : dependencyStack.get())
+                if (scope.context == context && scope.recovery.provider().equals(resource.ownerId())) {
+                    scope.resources.add(lease.id);
+                    lease.dependency = scope;
+                    break;
+                }
+            return lease;
         } catch (SQLException failure) {
             if (recovery != null) {
                 execution.uncertainEffect = true;
@@ -339,9 +354,12 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         requireCleanup(context, ownerId, version);
         try {
             var records = ledger.recoveries(context.id(), kind, prefix);
-            if (records.keySet().stream().anyMatch(resource -> !resource.ownerId().equals(ownerId)))
-                throw error(ProblemCode.ACCESS_DENIED, "TASK_RESOURCE_OWNER", "Recovery resource owner differs");
-            return records;
+            var owned = new LinkedHashMap<TaskResource, ResourceRecovery>();
+            records.forEach((resource, facts) -> {
+                if (resource.ownerId().equals(ownerId))
+                    owned.put(resource, facts);
+            });
+            return Map.copyOf(owned);
         } catch (SQLException invalid) {
             throw error(ProblemCode.IO_FAILURE, "TASK_RECOVERY_FACTS", "Recovery facts cannot be verified");
         }
@@ -391,7 +409,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      */
     public synchronized ResourceLease retainSchemaConnection(TaskContext context,
             gold.debug.windowstolinux.appapi.db.SchemaIdentity identity) throws ApiException {
-        requireContext(context);
+        var caller = requireContext(context);
+        if (!caller.ownerId().equals(identity.ownerId()) && !delegated(context, identity.ownerId(), null))
+            throw error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_SCOPE",
+                    "Provider JDBC requires its synchronous service call");
         try {
             if (!ledger.holds(context.id(), new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
                     || !ledger.holds(context.id(),
@@ -402,6 +423,277 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false));
         } catch (SQLException failure) {
             throw error(ProblemCode.IO_FAILURE, "TASK_SCHEMA_CLAIM", "Schema admission could not be verified");
+        }
+    }
+
+    /** Checks only the current thread's actual synchronous provider scope. / 仅检查当前线程实际同步提供方作用域。
+     * @param context authentic original context / 真实原上下文
+     * @param owner exact provider / 精确提供方
+     * @param version required release, absent only for bound Schema validation / 所需发布，仅绑定 Schema 校验时可为空
+     * @return whether this caller currently holds provider authority / 此调用方当前是否持有提供方授权 */
+    private boolean delegated(TaskContext context, String owner, String version) {
+        return dependencyStack.get().stream()
+                .anyMatch(scope -> scope.context == context && scope.active && scope.recovery.provider().equals(owner)
+                        && (version == null || scope.recovery.version().equals(version)));
+    }
+
+    /** Captures authority for one host-owned callback that may run on a transport thread. / 为可能在传输线程运行的一个宿主回调捕获授权。
+     * @param <A> first transport observation / 第一个传输观测
+     * @param <B> second transport observation / 第二个传输观测
+     * @param <R> host decision / 宿主决定
+     * @param context original task / 原任务
+     * @param owner bound capability owner / 绑定能力所有者
+     * @param version actual loaded release / 实际加载发布
+     * @param callback exact host callback, never author work / 精确宿主回调，不是作者工作
+     * @return callback valid only while its original provider scope executes / 仅在原提供方作用域执行期间有效的回调
+     * @throws ApiException if the capture is outside admitted work / 捕获不在已准入工作内时 */
+    public synchronized <A, B, R> HostCallback<A, B, R> hostCallback(TaskContext context, String owner, String version,
+            HostCallback<A, B, R> callback) throws ApiException {
+        requireExecuting(context, owner, version);
+        var captured = List.copyOf(dependencyStack.get());
+        return (first, second) -> {
+            var previous = dependencyStack.get();
+            synchronized (PlatformTaskRuntime.this) {
+                for (var scope : captured)
+                    if (!scope.active || scope.context != context
+                            || dependencyScopes.get(scope.recovery.call()) != scope)
+                        throw error(ProblemCode.ACCESS_DENIED, "SERVICE_CALLBACK_EXPIRED",
+                                "The original host callback scope has ended");
+                dependencyStack.set(new ArrayDeque<>(captured));
+            }
+            try {
+                requireExecuting(context, owner, version);
+                return callback.apply(first, second);
+            } finally {
+                if (previous.isEmpty())
+                    dependencyStack.remove();
+                else
+                    dependencyStack.set(previous);
+            }
+        };
+    }
+
+    /** Checked host transport callback, absent from the public Mod API. / 不在公开 Mod API 中的受检宿主传输回调。
+     * @param <A> first observation / 第一个观测
+     * @param <B> second observation / 第二个观测
+     * @param <R> decision / 决定 */
+    @FunctionalInterface
+    public interface HostCallback<A, B, R> {
+        /** Evaluates exact transport observations within the retained host scope. / 在保留宿主作用域内评估精确传输观测。
+         * @param first first observation / 第一个观测
+         * @param second second observation / 第二个观测
+         * @return actual decision / 实际决定
+         * @throws ApiException if validation or review fails / 校验或审核失败时 */
+        R apply(A first, B second) throws ApiException;
+    }
+
+    /** Executes one admitted synchronous dependency call using the original credential and server scope. / 使用原凭据及服务器范围执行一次已准入同步依赖调用。
+     * @param <T> copied synchronous result / 复制的同步结果
+     * @param context original task / 原任务
+     * @param caller exact caller Mod / 精确调用方 Mod
+     * @param callerVersion actual caller release / 实际调用方发布
+     * @param provider exact provider / 精确提供方
+     * @param providerVersion loaded provider release / 加载的提供方发布
+     * @param schema provider data generation / 提供方数据代次
+     * @param recoveryOnly whether the binding is recovery-only / 绑定是否仅供恢复
+     * @param resolver actual provider admission inside the platform transaction / 平台事务内实际提供方准入
+     * @param work synchronous callback / 同步回调
+     * @return copied result / 复制结果
+     * @throws Exception if authority, work or complete cleanup fails / 授权、工作或完整清理失败时 */
+    public <T> T dependencyCall(TaskContext context, String caller, String callerVersion, String provider,
+            String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+            boolean recoveryOnly, DependencyAdmission resolver, Callable<T> work) throws Exception {
+        if (javax.swing.SwingUtilities.isEventDispatchThread())
+            throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+        DependencyScope scope;
+        synchronized (this) {
+            var snapshot = requireExecuting(context, caller, callerVersion);
+            var execution = executions.get(context.id());
+            if (recoveryOnly && !execution.reconciling)
+                throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
+                        "Recovery services require explicit original-task reconciliation");
+            if ((!recoveryOnly && (blockedOwners.containsKey(caller) || blockedOwners.containsKey(provider))) || closing
+                    || sealed && !execution.reconciling)
+                throw error(ProblemCode.BUSY, "SERVICE_ADMISSION_CLOSED", "Caller or provider admission is sealed");
+            if (provider.equals(snapshot.ownerId())
+                    || dependencyStack.get().stream().anyMatch(s -> s.recovery.provider().equals(provider))
+                    || dependencyStack.get().size() >= 64)
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_CYCLE",
+                        "Dependency call cycles or excessive nesting are not permitted");
+            var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
+            scope = new DependencyScope(context, facts);
+            dependencyScopes.put(facts.call(), scope);
+            try {
+                scope.leases = ledger.retainDependency(context.id(), facts, connection -> {
+                    try {
+                        return resolver.claims(connection);
+                    } catch (ApiException rejected) {
+                        throw new AdmissionRejected(rejected);
+                    }
+                });
+            } catch (AdmissionRejected rejected) {
+                dependencyScopes.remove(facts.call());
+                throw rejected.rejection;
+            } catch (TaskLedger.DependencyBusyException busy) {
+                dependencyScopes.remove(facts.call());
+                throw error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
+                        "Provider resources are held by maintenance or another exclusive operation");
+            } catch (SQLException failure) {
+                scope.active = false;
+                execution.uncertainEffect = true;
+                uncertain(execution, "Dependency admission could not be confirmed");
+                throw error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
+                        "Dependency admission requires reconciliation");
+            }
+        }
+        var stack = dependencyStack.get();
+        stack.push(scope);
+        try {
+            return authorized(context, caller, callerVersion, work);
+        } catch (Exception | Error failure) {
+            reportUncertainEffect(context);
+            throw failure;
+        } finally {
+            stack.pop();
+            if (stack.isEmpty())
+                dependencyStack.remove();
+            synchronized (this) {
+                scope.active = false;
+                var execution = executions.get(context.id());
+                if (!scope.resources.isEmpty() || execution.uncertainEffect) {
+                    execution.uncertainEffect = true;
+                    uncertain(execution, "Dependency call resources or effects require reconciliation");
+                    throw error(ProblemCode.UNKNOWN, "SERVICE_RELEASE_PENDING",
+                            "Dependency resources or effects remain unconfirmed");
+                }
+                releaseDependency(scope, scope.leases);
+            }
+        }
+    }
+
+    /** Releases one physically returned scope while preserving failed persistent cleanup. / 释放一个物理已返回作用域，保留失败持久清理。
+     * @param scope original actual call / 原实际调用
+     * @param leases exact acquired or reread original claims / 精确取得或重读的原申请
+     * @throws ApiException if durable release is unconfirmed / 持久释放未确认时 */
+    private void releaseDependency(DependencyScope scope, List<UUID> leases) throws ApiException {
+        try {
+            ledger.releaseDependency(scope.context.id(), scope.recovery, leases);
+            dependencyScopes.remove(scope.recovery.call());
+            executions.get(scope.context.id()).snapshot = ledger.snapshot(scope.context.id());
+        } catch (SQLException failure) {
+            var execution = executions.get(scope.context.id());
+            execution.uncertainEffect = true;
+            uncertain(execution, "Dependency resource release could not be confirmed");
+            throw error(ProblemCode.IO_FAILURE, "SERVICE_RELEASE_PERSISTENCE", "Dependency claims remain retained");
+        }
+    }
+
+    /** Exposes explicit original-task recovery state to trusted service assembly. / 向可信服务装配公开明确原任务恢复状态。
+     * @param context original task / 原任务
+     * @return whether explicit reconciliation is currently executing / 明确核对是否正在执行
+     * @throws ApiException if the context is invalid / 上下文无效时 */
+    public synchronized boolean reconciling(TaskContext context) throws ApiException {
+        requireContext(context);
+        return executions.get(context.id()).reconciling;
+    }
+
+    /** Verifies diagnostic attribution for an original owner or its retained exact provider release. / 为原所有者或保留的精确提供方发布核验诊断归属。
+     * @param taskId original task identity / 原任务身份
+     * @param owner diagnostic producer / 诊断生产方
+     * @param version actual producer release / 实际生产方发布
+     * @return whether the original task owns this producer / 原任务是否持有此生产方
+     * @throws ApiException if attribution cannot be read / 无法读取归属时 */
+    public synchronized boolean diagnosticOwner(UUID taskId, String owner, String version) throws ApiException {
+        var execution = executions.get(taskId);
+        if (execution == null)
+            return false;
+        if (execution.snapshot.ownerId().equals(owner) && execution.snapshot.ownerVersion().equals(version))
+            return true;
+        if (dependencyScopes.values().stream().anyMatch(scope -> scope.context.id().equals(taskId)
+                && scope.recovery.provider().equals(owner) && scope.recovery.version().equals(version)))
+            return true;
+        try {
+            return ledger.dependencies(taskId).keySet().stream()
+                    .anyMatch(call -> call.provider().equals(owner) && call.version().equals(version));
+        } catch (SQLException invalid) {
+            throw error(ProblemCode.IO_FAILURE, "SERVICE_LOG_OWNER",
+                    "Dependency diagnostic attribution cannot be verified");
+        }
+    }
+
+    /** Reconciles returned dependency groups only after their actual provider resources are gone. / 实际提供方资源消失后才核对已返回依赖组。
+     * @param context original explicit recovery context / 原明确恢复上下文
+     * @param caller original task owner / 原任务所有者
+     * @param version original release / 原发布
+     * @throws ApiException if any actual call, resource or commit remains / 任一实际调用、资源或提交仍未完成时 */
+    public synchronized void closeDependencyResources(TaskContext context, String caller, String version)
+            throws ApiException {
+        requireCleanup(context, caller, version);
+        if (!executions.get(context.id()).reconciling || !dependencyStack.get().isEmpty())
+            throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_CONTEXT",
+                    "Dependency cleanup requires the original outer recovery callback");
+        var scopes = dependencyScopes.values().stream().filter(scope -> scope.context == context).toList();
+        if (scopes.stream().anyMatch(scope -> scope.active || !scope.resources.isEmpty()))
+            throw error(ProblemCode.BUSY, "SERVICE_PHYSICAL_RESOURCES",
+                    "Dependency calls or actual provider resources remain active");
+        try {
+            var groups = ledger.dependencies(context.id());
+            var providers = groups.keySet().stream().map(DependencyRecovery::provider)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (ledger.hasDependencyResources(context.id(), providers))
+                throw error(ProblemCode.BUSY, "SERVICE_PHYSICAL_RESOURCES",
+                        "Original provider resources must be reconciled first");
+            for (var entry : groups.entrySet()) {
+                var scope = dependencyScopes.get(entry.getKey().call());
+                if (scope == null && entry.getKey().boot().equals(bootId))
+                    throw error(ProblemCode.UNKNOWN, "SERVICE_CALL_OWNER",
+                            "Current-boot call ownership cannot be confirmed");
+                ledger.releaseDependency(context.id(), entry.getKey(), entry.getValue());
+                dependencyScopes.remove(entry.getKey().call());
+            }
+            for (var scope : scopes)
+                dependencyScopes.remove(scope.recovery.call());
+            executions.get(context.id()).snapshot = ledger.snapshot(context.id());
+        } catch (SQLException uncertain) {
+            reportUncertainEffect(context);
+            throw error(ProblemCode.IO_FAILURE, "SERVICE_RECOVERY_PERSISTENCE",
+                    "Original dependency release remains unconfirmed");
+        }
+    }
+
+    /** Provider admission evaluated under the platform transaction and runtime gates. / 在平台事务及运行时门禁下计算的提供方准入。 */
+    @FunctionalInterface
+    public interface DependencyAdmission {
+        /** Resolves only the provider's exact Mod and Schema claims. / 仅解析提供方精确 Mod 及 Schema 申请。
+         * @param connection current locked transaction / 当前锁定事务
+         * @return complete provider claims / 完整提供方申请
+         * @throws ApiException if provider state rejects admission / 提供方状态拒绝准入时
+         * @throws SQLException if storage is unavailable / 存储不可用时 */
+        List<TaskResource> claims(java.sql.Connection connection) throws ApiException, SQLException;
+    }
+
+    /** One actual call's authority and physical resource ownership. / 一次实际调用的授权及物理资源归属。 */
+    private static final class DependencyScope {
+        /** Exact original task context. / 精确原任务上下文。 */
+        private final TaskContext context;
+
+        /** Persisted provider identity. / 持久提供方身份。 */
+        private final DependencyRecovery recovery;
+
+        /** Complete original Mod and Schema leases. / 完整原 Mod 及 Schema 占用。 */
+        private List<UUID> leases = List.of();
+
+        /** Physical capabilities acquired synchronously during this call. / 此调用内同步取得的物理能力。 */
+        private final Set<UUID> resources = new HashSet<>();
+
+        /** Whether author callback code is still executing. / 作者回调代码是否仍执行。 */
+        private boolean active = true;
+        /** Captures the original task and call facts before admission. / 准入前捕获原任务及调用事实。
+         * @param context original task / 原任务
+         * @param recovery exact call facts / 精确调用事实 */
+        private DependencyScope(TaskContext context, DependencyRecovery recovery) {
+            this.context = context;
+            this.recovery = recovery;
         }
     }
 
@@ -731,6 +1023,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         public <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException {
             Objects.requireNonNull(request);
             Objects.requireNonNull(work);
+            if (!dependencyStack.get().isEmpty())
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_TASK_REENTRY",
+                        "Dependency calls must use their original task rather than submit another task");
             var authorization = authorize();
             boolean retained = false;
             try {
@@ -1032,8 +1327,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             if (kind == null || !kind.matches("[a-z][a-z0-9_]{0,63}") || localId == null || localId.isBlank()
                     || localId.length() > 512 || description == null || description.length() > 4096)
                 throw error(ProblemCode.INVALID_INPUT, "TASK_RESOURCE_ID", "Invalid local resource identity");
-            return PlatformTaskRuntime.this.retain(this, new TaskResource("CUSTOM",
-                    execution.snapshot.ownerId() + "/" + kind + "/" + localId, execution.snapshot.ownerId(), false));
+            String owner = execution.snapshot.ownerId();
+            for (var scope : dependencyStack.get())
+                if (scope.context == this) {
+                    owner = scope.recovery.provider();
+                    break;
+                }
+            return PlatformTaskRuntime.this.retain(this,
+                    new TaskResource("CUSTOM", owner + "/" + kind + "/" + localId, owner, false));
         }
     }
 
@@ -1044,6 +1345,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
         /** Durable exact resource identity. / 持久化精确资源身份。 */
         private final UUID id;
+
+        /** Optional synchronous call that must not outlive this physical resource. / 不得先于此物理资源结束的可选同步调用。 */
+        private DependencyScope dependency;
         /**
          * Binds a persisted explicit resource. / 绑定已持久化显式资源。
          * @param execution original task / 原始任务
@@ -1071,6 +1375,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             synchronized (PlatformTaskRuntime.this) {
                 try {
                     ledger.release(execution.id(), id);
+                    if (dependency != null)
+                        dependency.resources.remove(id);
                     if (execution.returned && !execution.reconciling && execution.observed != null
                             && execution.snapshot.state() == TaskState.FINISHING)
                         ended = record(execution, false);

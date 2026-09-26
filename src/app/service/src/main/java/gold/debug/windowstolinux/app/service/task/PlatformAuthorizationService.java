@@ -248,7 +248,9 @@ public final class PlatformAuthorizationService implements AutoCloseable {
          * @param version exact caller release / 精确调用方发布版本
          * @throws ApiException if the workflow is absent, ended or foreign / 流程不存在、已结束或属于他方时 */
         private void validate(TaskContext task, String owner, String version) throws ApiException {
-            if (ended || this.task != task || !this.owner.equals(owner) || !this.version.equals(version))
+            var original = tasks.requireContext(task);
+            if (ended || this.task != task || !this.owner.equals(original.ownerId())
+                    || !this.version.equals(original.ownerVersion()))
                 throw failure(ProblemCode.ACCESS_DENIED, "WORKFLOW_SCOPE_ENDED",
                         "Original workflow scope is unavailable");
             tasks.requireExecuting(task, owner, version);

@@ -28,6 +28,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Central task owner including retained work from previous boots. / 包含前次启动保留工作的中央任务所有者。 */
     private final PlatformTaskRuntime tasks;
 
+    /** Shared service publication and synchronous provider ownership. / 共用服务发布及同步提供方归属。 */
+    private final gold.debug.windowstolinux.app.service.mod.PlatformModServices services;
+
     /** Independent platform permission preference and current workflow scopes. / 独立平台权限偏好及当前流程作用域。 */
     private final PlatformAuthorizationService authorization;
 
@@ -97,6 +100,7 @@ public final class PlatformRuntime implements AutoCloseable {
         }
         tasks = new PlatformTaskRuntime(persistence.database(),
                 new PlatformTaskAdmission(persistence.database(), version), security);
+        services = new gold.debug.windowstolinux.app.service.mod.PlatformModServices(persistence.database(), tasks);
         authorization = new PlatformAuthorizationService(persistence, security, tasks);
     }
 
@@ -147,6 +151,14 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return current boot task owner / 当前启动的任务所有者 */
     public PlatformTaskRuntime tasks() {
         return tasks;
+    }
+
+    /** Returns service graph assembly for trusted lifecycle composition. / 返回供可信生命周期装配使用的服务图。
+     * @return actual service publication owner / 实际服务发布所有者 */
+    public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModServices services() {
+        if (stopping || closed)
+            throw new IllegalStateException("Platform services are closing");
+        return services;
     }
 
     /** Returns platform permission settings for trusted host controls. / 返回供可信宿主控件使用的平台权限设置。
@@ -496,6 +508,7 @@ public final class PlatformRuntime implements AutoCloseable {
             capabilities.close();
         transfers.close();
         authorization.close();
+        services.close();
         logs.close();
         tasks.close();
         security.close();

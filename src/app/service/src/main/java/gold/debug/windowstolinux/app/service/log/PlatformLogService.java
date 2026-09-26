@@ -443,9 +443,7 @@ public final class PlatformLogService implements AutoCloseable {
                 }
                 if (target == null)
                     throw new IllegalArgumentException("Foreign diagnostic target");
-                if (event.taskId().isPresent()
-                        && tasks.snapshots().stream().noneMatch(task -> task.id().equals(event.taskId().get())
-                                && task.ownerId().equals(owner) && task.ownerVersion().equals(version)))
+                if (event.taskId().isPresent() && !tasks.diagnosticOwner(event.taskId().get(), owner, version))
                     throw new IllegalArgumentException("Foreign task attribution");
                 var record = LogRecordCodec.create(target, version, event);
                 if (truncated)
