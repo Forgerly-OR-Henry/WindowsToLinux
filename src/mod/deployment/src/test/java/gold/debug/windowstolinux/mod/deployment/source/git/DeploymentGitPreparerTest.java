@@ -16,6 +16,8 @@ import java.util.zip.GZIPInputStream;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRepository;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentProjectSourceRecorder;
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitPreparerTest extends DeploymentRuntimeFixture {
@@ -120,6 +122,45 @@ class DeploymentGitPreparerTest extends DeploymentRuntimeFixture {
 
     private gold.debug.windowstolinux.appapi.mod.ModContext activeContext() {
         return context;
+    }
+
+    @Test
+    void realPinnedGitMaterialPersistsItsSelectedRefCommitAndSourceDigest() throws Exception {
+        Path repo = repository();
+        String commit = git(repo, "rev-parse", "HEAD");
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            context = runtime.modContexts().get(OWNER).context();
+            var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
+                    new DeploymentGitReference.Tag("v1"), Set.of(), 2 * 1024 * 1024, true);
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("git-project", "Git project", List.of(), true),
+                    task -> {
+                        try {
+                            UUID id = UUID.randomUUID();
+                            var recorder = new DeploymentProjectSourceRecorder(context, GIT);
+                            try (var prepared = recorder.prepareGit(task, request, id, "Git 项目", Optional.empty(),
+                                    java.time.Instant.parse("2026-09-28T00:00:00Z"), 2 * 1024 * 1024, 100)) {
+                                var saved = new DeploymentProjectRepository(context.db()).find(task, id).orElseThrow();
+                                assertEquals(prepared.project(), saved);
+                                assertEquals("TAG:v1", saved.source().gitRef().orElseThrow());
+                                assertEquals(commit, saved.source().gitCommit().orElseThrow());
+                                assertEquals(prepared.material().source().snapshot().sha256(), saved.source().sha256());
+                                assertNotEquals(prepared.material().archive().sha256(), saved.source().sha256());
+                            }
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        } catch (Throwable problem) {
+                            failure.set(problem);
+                            return new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.empty());
+                        }
+                    });
+            handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
+            if (failure.get() != null)
+                throw new AssertionError(failure.get());
+            assertEquals(0, scalar(runtime,
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+        }
     }
 
     @Test

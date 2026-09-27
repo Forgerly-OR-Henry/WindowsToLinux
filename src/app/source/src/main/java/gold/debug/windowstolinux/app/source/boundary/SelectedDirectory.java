@@ -38,6 +38,17 @@ public final class SelectedDirectory {
         return root;
     }
 
+    /** Returns the original canonical file URI after checking the same physical root identity. / 核验相同物理根身份后返回原规范文件URI。
+     * @param cancellation original task cancellation / 原任务取消
+     * @return selected directory location metadata / 选定目录位置元数据
+     * @throws IOException if the selected root changed / 所选根发生变化时 */
+    public java.net.URI location(CancellationToken cancellation) throws IOException {
+        cancelled(cancellation);
+        checkRoot();
+        cancelled(cancellation);
+        return root.toUri();
+    }
+
     /** Validates portable slash-separated relative names without rewriting them. / 校验可移植的斜线分隔相对名称，不改写它们。
      * @param value explicit author-selected name / 作者明确选择的名称
      * @return unchanged validated name / 原样的已校验名称 */

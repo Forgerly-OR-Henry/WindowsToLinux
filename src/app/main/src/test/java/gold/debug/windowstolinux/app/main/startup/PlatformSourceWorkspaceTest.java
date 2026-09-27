@@ -48,6 +48,8 @@ class PlatformSourceWorkspaceTest {
                     Files.createDirectories(directory.resolve("src"));
                     Files.writeString(directory.resolve("src/中文.txt"), "original");
                     var selected = workspace.selection();
+                    assertEquals(ProblemCode.ACCESS_DENIED,
+                            assertThrows(ApiException.class, () -> source.location(selected, task)).problem().code());
                     assertSame(selected, workspace.selection());
                     assertEquals("original",
                             new String(source.read(selected, new SourceReadRequest("src/中文.txt", 8), task).content()));

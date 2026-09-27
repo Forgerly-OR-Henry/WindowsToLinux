@@ -47,6 +47,14 @@ class PlatformSourceServiceTest {
             var selected = completed(binding.submit(request(), task -> {
                 original.set(task);
                 var selection = source.selectDirectory("Source", task);
+                assertEquals(files.toRealPath().toUri(), source.location(selection, task));
+                assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,
+                        () -> source.location(new SourceSelection(selection.id(), selection.displayName()), task))
+                        .problem().code());
+                assertEquals(ProblemCode.ACCESS_DENIED,
+                        assertThrows(ApiException.class, () -> foreign.location(selection, task)).problem().code());
+                SwingUtilities.invokeAndWait(() -> assertEquals(ProblemCode.CONTRACT_VIOLATION,
+                        assertThrows(ApiException.class, () -> source.location(selection, task)).problem().code()));
                 assertEquals(List.of(new SourceDirectoryEntry(".env", SourceDirectoryEntry.EntryType.FILE, 7)),
                         source.list(selection, "", 1, task));
                 assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,
@@ -68,6 +76,8 @@ class PlatformSourceServiceTest {
             assertEquals(ProblemCode.ACCESS_DENIED,
                     assertThrows(ApiException.class, () -> source.list(selected, "", 1, original.get())).problem()
                             .code());
+            assertEquals(ProblemCode.ACCESS_DENIED,
+                    assertThrows(ApiException.class, () -> source.location(selected, original.get())).problem().code());
             completed(binding.submit(request(), task -> {
                 assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class, () -> source.list(selected, "", 1, task)).problem().code());

@@ -1568,7 +1568,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
 - `appapi/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
 - `appapi/source/SourceSelection.java`：用户批准的不透明来源选择。
-- `appapi/source/SourceService.java`：用户选定来源的有界单层列举、读取及受管不可变快照。
+- `appapi/source/SourceService.java`：原任务用户选定目录的位置元数据、有界单层列举、读取及受管不可变快照；工作目录选择不提供长期原位置。
 - `appapi/source/SourceDirectoryEntry.java`：原相对名称、普通文件/目录或非常规类别及观测长度，不暴露用户根路径。
 - `appapi/source/SourceWorkspace.java`：原执行任务的可写暂存目录及来源授权，实际清理后释放占用。
 - `appapi/source/SourceSnapshot.java`：实际关闭后释放的受管不可变来源目录。
@@ -1713,10 +1713,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
 
-- `app/source/boundary/SelectedDirectory.java`：校验用户目录身份与相对边界，有界列举直接子项并按内容和容量进行读取与复制。
+- `app/source/boundary/SelectedDirectory.java`：校验用户目录身份与相对边界，有界列举直接子项并按内容和容量进行读取与复制；原位置元数据在再次核验物理身份后返回。
 - `app/source/snapshot/SourceWorkDirectory.java`：快照与可写暂存共用的原任务目录身份、持久标记及安全清理。
 - `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
-- `app/service/source/PlatformSourceAccess.java`：把目录确认、读取和快照绑定原 Mod 任务，保留实际 FILE 占用并支持原身份恢复。
+- `app/service/source/PlatformSourceAccess.java`：把目录确认、位置元数据、读取和快照绑定原 Mod 任务，工作目录选择不得作为长期来源，保留实际 FILE 占用并支持原身份恢复。
 - `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 与扩展绝对路径读取 Windows 卷号和 128 位文件 ID，支持本机长路径并关闭实际原生句柄。
 
 - `appapi/linux/TransferConflict.java`：同名冲突的精确端点、方向与实测大小。
@@ -1803,6 +1803,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/model/DeploymentUnitRuntimeConfiguration.java`：部署单元的健康、访问、身份与工作负载组合。
 - `mod/deployment/service/core/model/DeploymentStorageLocation.java`：默认FHS、自定义或未确认的应用存储位置及边界校验。
 - `mod/deployment/service/core/model/DeploymentProjectKind.java`：运行类别的稳定业务判别值。
+- `mod/deployment/service/core/model/DeploymentProjectSource.java`：原本地/Git 位置、无歧义引用、固定提交与平台源码内容摘要的纯值校验。
+- `mod/deployment/service/core/DeploymentProjectSourceRecorder.java`：真实本地/Git 取材与正式项目保存编排，失败时释放原素材。
 - `mod/deployment/service/core/model/DeploymentRuntimeDefinition.java`：15类部署运行定义及已审阅工作负载、身份策略，不承担平台执行。
 - `mod/deployment/service/core/model/DeploymentIdentityMode.java`：保留受管进程动态或静态身份策略。
 - `mod/deployment/service/core/model/DeploymentCommand.java`：已审阅程序入口及字面argv，不解释为Shell脚本。
@@ -1827,7 +1829,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。
 - `mod/deployment/db/DeploymentReferenceIntent.java`：预留前保存的精确平台资源、秘密用途及业务键，不包含秘密值。
 - `mod/deployment/db/DeploymentExecutionRecord.java`：包含正式结果、独立提交/清理标记及原 JSON 文档的只读持久证据。
-- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 2 执行信封、精确身份/阶段/预留 UUID 及成功结果必需的整应用历史关联。
+- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 3 执行信封、审阅时完整项目修订、精确身份/阶段/预留 UUID 及成功结果必需的整应用历史关联；旧格式只读保留。
+- `mod/deployment/db/DeploymentProjectRecord.java`：稳定项目身份、完整来源事实与精确创建/更新观测时间。
+- `mod/deployment/db/DeploymentProjectRepository.java`：受管 H2 创建、读取、有界列表与完整旧记录乐观更新，并供原执行事务锁行核对。
 - `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
