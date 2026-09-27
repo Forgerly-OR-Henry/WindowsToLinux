@@ -1619,6 +1619,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/mod/ModSchemaReconciliation.java`：核验原 UNKNOWN 数据身份、取得明确只读核对并原子归档已证明结果，不改变用户选择。
 - `app/db/mod/ModRestartLedger.java`：核验前次启动意图与明确失败重试，登记原准备/新代次并按实际状态原子归档，保留重启停用确认。
 - `app/db/mod/ModDeletionLedger.java`：共用单版本与整 Mod 删除账本；捕获版本、Schema、所属诊断、导航及非共享自有凭据，核验实际文件缺失后按原阶段清理并归档；整 Mod 文件服务与默认管理入口均已接。
+- `app/db/mod/ModReinstallationLedger.java`：保存同版本程序修复的原范围、有序替换及明确恢复检查点，原子提交版本状态/原包摘要和固定终态；物理文件服务尚待接入。
+- `app/db/mod/ModProgramMaintenance.java`：删除与重装共用的已确认停用、任务/资源排空及启用依赖检查。
 - `app/db/mod/ModNavigationPreferences.java`：共用严格导航偏好读写，移除精确所有者条目时保留其余条目顺序，损坏内容不覆盖。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
