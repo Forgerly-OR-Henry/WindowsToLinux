@@ -270,9 +270,9 @@ class PlatformModCatalogTest {
             try (var loader = plan.createLoader(OWNER, urls, Map.of())) {
                 runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
                 runtime.setSourcePicker((title, task, cancel) -> root);
-                var pages = new gold.debug.windowstolinux.app.ui.shell.ModPageRegistry(
-                        new PlatformModContextTest.Host(), new gold.debug.windowstolinux.appapi.ui.UiEnvironment(
-                                Locale.SIMPLIFIED_CHINESE, "LIGHT", true));
+                var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new PlatformModContextTest.Host(),
+                        new gold.debug.windowstolinux.appapi.ui.UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT",
+                                true));
                 var session = runtime.modSession(loader, prepared.schema(),
                         gold.debug.windowstolinux.appapi.mod.ModLaunchMode.NORMAL, pages, api);
                 var entry = loader.loadClass("example.admission.Mod");

@@ -1686,7 +1686,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
 - `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
 - `app/ui/shell/ExtensionPagePane.java`：挂载已打开的 Mod 视图及按所有者分组的设置，明确打开时聚焦实际外层页面；固定偏好由导航管理。
-- `app/ui/shell/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期；宿主打开复用原所有者作用域，发布变更只通知元数据。
+- `app/ui/mod/ModPageRegistry.java`：持有暂存页面扩展及限定在 EDT 的作者视图生命周期；宿主打开复用原所有者作用域，发布变更只通知元数据，挂载界面由 shell 注入。
 - `app/ui/shell/PlatformFrame.java`：承载平台安全、常驻管理和独立所属 Mod 视图的桌面。
 - `app/ui/mod/PlatformModsPane.java`：以原快照审阅选择、确认连带停用及来源、撤销整组请求，并明确核对/重试数据；选择已发布页面以打开或固定，锁定使旧确认失效；提供单版本/整 Mod 文件范围确认及原删除核对，登记已移除的待清理项仍可继续。
 - `app/ui/mod/ModNavigationPane.java`：显示用户固定偏好与当前发布页面的交集；异步持久化、跨启动恢复、锁定隐藏与原作用域打开，不自动创建作者视图；整 Mod 清理后重读偏好并撤销旧在途观察。
@@ -1746,6 +1746,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。
 - `app/service/mod/PlatformModServices.java`：真实加载器身份的服务登记、启动发布、依赖发现和原任务同步调用。
 - `app/main/mod/PlatformModContext.java`：同次真实 Mod 启用的完整能力装配、暂存发布、部分失败回收和实际上下文关闭归属。
+- `app/main/mod/PlatformModHost.java`：Mod 装配所需的宿主能力与原会话访问端口；由 startup 的实际运行时实现，Mod 装配不反向引用启动实现。
 
 - `app/linux/recovery/`：迁入 PlaywrightTerminalSession、BrowserTerminalSession、TerminalTarget、TerminalObservation 和 BrowserRecoveryException；具体浏览器救援不再放在 Windows 或 shared/model。
 - `app/linux/recovery/BrowserRecoverySession.java`、`RecoverySessionState.java`：串行救援状态机、预算、精确动作批准和原任务协作取消。

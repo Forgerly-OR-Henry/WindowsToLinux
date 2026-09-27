@@ -10,13 +10,12 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.mod.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.app.mod.lifecycle.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.*;
@@ -24,7 +23,7 @@ import gold.debug.windowstolinux.appapi.task.*;
 /** Composes one boot's selected Mod graph and owns its reverse shutdown. / 装配一次启动的已选 Mod 图并持有其逆序关闭。 */
 public final class PlatformModCoordinator implements AutoCloseable {
     /** Actual platform and original capability factories. / 实际平台及原能力工厂。 */
-    private final PlatformRuntime runtime;
+    private final PlatformModHost runtime;
 
     /** Source-mode-specific verification shared by startup and maintenance. / 启动及维护共用的分模式来源核验。 */
     private final PlatformModPrograms programs;
@@ -76,7 +75,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @param pages actual window page registry / 实际窗口页面登记
      * @param api actual host API release / 实际宿主 API 版本
      * @throws SQLException if operation logging is unavailable / 操作日志不可用时 */
-    public PlatformModCoordinator(PlatformRuntime runtime, Path root, boolean development,
+    public PlatformModCoordinator(PlatformModHost runtime, Path root, boolean development,
             Map<String, ModRestartLedger.Disabled> initiallyDisabled, ModPageRegistry pages, SemanticVersion api)
             throws SQLException {
         this.runtime = Objects.requireNonNull(runtime);

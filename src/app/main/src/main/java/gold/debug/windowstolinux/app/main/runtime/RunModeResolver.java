@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.main.AppMain;
 
 /**
  * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
@@ -143,7 +142,7 @@ public final class RunModeResolver {
      */
     private static Optional<RuntimeLayout> resolveKnown() {
         return resolveStartupFromEvidence(currentProcessCommand(), codeSourcePath(PlatformDatabase.class),
-                codeSourcePath(AppMain.class), currentWorkingDirectory());
+                codeSourcePath(RunModeResolver.class), currentWorkingDirectory());
     }
 
     /**

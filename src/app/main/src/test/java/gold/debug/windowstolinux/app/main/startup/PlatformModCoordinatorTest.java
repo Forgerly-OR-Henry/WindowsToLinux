@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
 import gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.shell.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.*;

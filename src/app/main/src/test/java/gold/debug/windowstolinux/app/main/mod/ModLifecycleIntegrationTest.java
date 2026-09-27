@@ -26,6 +26,7 @@ import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.shell.*;
 import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.mod.*;

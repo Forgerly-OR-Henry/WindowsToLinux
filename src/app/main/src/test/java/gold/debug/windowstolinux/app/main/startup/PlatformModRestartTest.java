@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;

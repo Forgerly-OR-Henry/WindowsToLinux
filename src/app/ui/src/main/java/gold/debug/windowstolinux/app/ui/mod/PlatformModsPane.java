@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
 import gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.PageContribution;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageContribution;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.OperationResult;
 import gold.debug.windowstolinux.appapi.task.Outcome;

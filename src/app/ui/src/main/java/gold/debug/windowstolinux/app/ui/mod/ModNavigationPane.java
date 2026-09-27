@@ -11,8 +11,8 @@ import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.*;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
 import gold.debug.windowstolinux.appapi.task.ApiException;
 
 /** Shows only explicitly pinned and currently published page identities. / 仅展示明确固定且当前已发布的页面身份。 */
