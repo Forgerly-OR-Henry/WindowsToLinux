@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.service.deployment.automatic;
 
 import java.util.*;
 
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.transfer.RemoteWorkspace;

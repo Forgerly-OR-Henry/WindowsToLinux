@@ -13,6 +13,8 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.definition.AutomaticDeploymentRequest;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.AutonomousDeploymentUseCase;
 import gold.debug.windowstolinux.app.service.deployment.automatic.*;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;

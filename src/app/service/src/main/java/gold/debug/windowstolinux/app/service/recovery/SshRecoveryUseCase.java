@@ -12,6 +12,7 @@ import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;

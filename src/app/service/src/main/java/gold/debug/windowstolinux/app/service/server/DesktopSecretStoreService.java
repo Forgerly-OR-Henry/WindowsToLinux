@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import gold.debug.windowstolinux.app.secret.*;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.shared.linux.connection.SshCredential;
 

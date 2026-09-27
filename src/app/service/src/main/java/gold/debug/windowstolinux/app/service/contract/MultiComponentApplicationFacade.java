@@ -10,9 +10,9 @@ import java.util.function.Predicate;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
 import gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
 import gold.debug.windowstolinux.shared.deploy.contract.ApplicationHealthGate;

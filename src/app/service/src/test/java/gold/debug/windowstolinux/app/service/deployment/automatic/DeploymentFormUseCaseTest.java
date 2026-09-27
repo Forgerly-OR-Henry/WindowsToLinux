@@ -6,7 +6,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.git.GitReference;
 import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 import gold.debug.windowstolinux.shared.model.project.DeploymentProjectType;

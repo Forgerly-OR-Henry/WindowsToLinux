@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.app.service.ai;
 
 import java.util.*;
 
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
 import gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode;
 

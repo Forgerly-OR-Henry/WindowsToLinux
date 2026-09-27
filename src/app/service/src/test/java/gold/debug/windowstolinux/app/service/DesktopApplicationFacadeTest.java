@@ -18,10 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleOutcome;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
 import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
@@ -151,7 +151,7 @@ class DesktopApplicationFacadeTest extends SecurityTestFixture {
             database.aiProfiles().saveNamed(provider.stored());
 
             assertEquals(java.util.List.of(provider), service.listAiConfigurations().stream()
-                    .map(gold.debug.windowstolinux.app.service.ai.AiProviderSummary::profile).toList());
+                    .map(gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary::profile).toList());
         }
     }
 

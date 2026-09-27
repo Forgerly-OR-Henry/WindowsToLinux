@@ -4,8 +4,9 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiRoleInvocationResult;
 import gold.debug.windowstolinux.shared.ai.collaboration.role.AiRoleContext;
 import gold.debug.windowstolinux.shared.model.ai.*;

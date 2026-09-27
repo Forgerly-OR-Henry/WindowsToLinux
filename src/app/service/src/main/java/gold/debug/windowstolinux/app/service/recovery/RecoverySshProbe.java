@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.service.recovery;
 import java.util.function.Predicate;
 
 import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;
 import gold.debug.windowstolinux.shared.linux.error.*;

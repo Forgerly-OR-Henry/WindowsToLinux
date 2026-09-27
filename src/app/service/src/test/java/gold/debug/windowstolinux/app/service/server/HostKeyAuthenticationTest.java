@@ -7,6 +7,7 @@ import java.sql.DriverManager;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyDecision;
 import gold.debug.windowstolinux.shared.linux.connection.HostKeyObservation;
 import gold.debug.windowstolinux.shared.model.server.ServerIdentity;

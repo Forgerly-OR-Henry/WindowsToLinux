@@ -18,6 +18,8 @@ import javax.swing.*;
 import com.formdev.flatlaf.FlatLightLaf;
 import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;

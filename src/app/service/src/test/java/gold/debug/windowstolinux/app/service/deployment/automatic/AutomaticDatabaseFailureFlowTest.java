@@ -10,7 +10,7 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.DesktopApplicationFacade;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort;
 import gold.debug.windowstolinux.shared.linux.ecosystem.db.NativeDatabasePort.*;

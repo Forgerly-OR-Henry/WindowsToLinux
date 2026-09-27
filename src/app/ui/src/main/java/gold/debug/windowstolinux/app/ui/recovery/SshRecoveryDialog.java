@@ -9,7 +9,7 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapshot;
 import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 

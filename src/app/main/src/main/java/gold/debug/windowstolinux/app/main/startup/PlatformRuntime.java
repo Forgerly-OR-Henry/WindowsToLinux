@@ -74,7 +74,7 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
     private final java.util.Set<gold.debug.windowstolinux.app.service.server.PlatformServerAccess> serverAccesses = new java.util.LinkedHashSet<>();
 
     /** Bound secret capabilities retained until their actual operations end. / 保留至实际操作结束的已绑定秘密能力。 */
-    private final java.util.Set<gold.debug.windowstolinux.app.service.security.PlatformSecretService> secretServices = new java.util.LinkedHashSet<>();
+    private final java.util.Set<gold.debug.windowstolinux.app.service.secret.PlatformSecretService> secretServices = new java.util.LinkedHashSet<>();
 
     /** Bound model capabilities retaining their actual HTTP clients. / 保留实际 HTTP 客户端的已绑定模型能力。 */
     private final java.util.Set<gold.debug.windowstolinux.app.service.ai.PlatformAiService> aiServices = new java.util.LinkedHashSet<>();
@@ -83,7 +83,7 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
     private final java.util.Set<gold.debug.windowstolinux.app.service.source.PlatformSourceAccess> sourceServices = new java.util.LinkedHashSet<>();
 
     /** Activation process owners retained until actual exit and durable release. / 保留至实际退出及持久释放的启用进程所有者。 */
-    private final java.util.Set<gold.debug.windowstolinux.app.service.task.PlatformProcessService> processServices = new java.util.LinkedHashSet<>();
+    private final java.util.Set<gold.debug.windowstolinux.app.service.process.PlatformProcessService> processServices = new java.util.LinkedHashSet<>();
 
     /** Complete or partially prepared Mod contexts whose cleanup is still owned. / 仍持有清理责任的完整或部分已准备 Mod 上下文。 */
     private final java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts = new java.util.LinkedHashMap<>();
@@ -607,11 +607,11 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
      * @return host-owned secret adapter / 宿主持有的秘密适配器
      */
     @Override
-    public synchronized gold.debug.windowstolinux.app.service.security.PlatformSecretService secrets(String owner,
+    public synchronized gold.debug.windowstolinux.app.service.secret.PlatformSecretService secrets(String owner,
             String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
         if (closed || stopping)
             throw new IllegalStateException("Platform secret capabilities are closing");
-        var secrets = new gold.debug.windowstolinux.app.service.security.PlatformSecretService(persistence.database(),
+        var secrets = new gold.debug.windowstolinux.app.service.secret.PlatformSecretService(persistence.database(),
                 tasks, security, persistence.credentialReferences(), owner, version, schema);
         secretServices.add(secrets);
         return secrets;
@@ -638,11 +638,11 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
      * @param version loaded release / 加载发布版本
      * @return bound process capability / 绑定进程能力 */
     @Override
-    public synchronized gold.debug.windowstolinux.app.service.task.PlatformProcessService processes(String owner,
+    public synchronized gold.debug.windowstolinux.app.service.process.PlatformProcessService processes(String owner,
             String version) {
         if (closed || stopping)
             throw new IllegalStateException("Platform process capabilities are closing");
-        var processes = new gold.debug.windowstolinux.app.service.task.PlatformProcessService(persistence.database(),
+        var processes = new gold.debug.windowstolinux.app.service.process.PlatformProcessService(persistence.database(),
                 tasks, logs(owner, version, java.util.Optional.empty()), owner, version);
         processServices.add(processes);
         return processes;

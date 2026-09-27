@@ -10,6 +10,7 @@ import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.client.OpenAiCompatibleRoleClient;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;

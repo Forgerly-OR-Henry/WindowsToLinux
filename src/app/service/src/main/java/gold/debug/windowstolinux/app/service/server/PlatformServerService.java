@@ -8,7 +8,8 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.contract.ServerProfileEditor;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;

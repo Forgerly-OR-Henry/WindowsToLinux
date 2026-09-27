@@ -8,8 +8,8 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;

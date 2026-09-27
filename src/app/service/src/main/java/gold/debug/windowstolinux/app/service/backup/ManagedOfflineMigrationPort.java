@@ -11,9 +11,9 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentLifecycleUseCase;
 import gold.debug.windowstolinux.app.service.deployment.multi.ManagedMultiComponentApplication;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationPort;
 import gold.debug.windowstolinux.shared.backup.contract.spi.OfflineMigrationRequest;
 import gold.debug.windowstolinux.shared.backup.contract.validation.BackupException;

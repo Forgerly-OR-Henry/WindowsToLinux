@@ -5,6 +5,7 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiInvocationStatus;
 import gold.debug.windowstolinux.shared.ai.collaboration.invocation.AiProviderAttempt;

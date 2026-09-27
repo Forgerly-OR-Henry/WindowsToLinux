@@ -72,8 +72,6 @@ src/  # 项目源码与模块根目录
 │  │  ├─ ai/  # AI 模型功能
 │  │  │  ├─ AiConfigurationUseCase.java  # 桌面模型测试、保存与顺序编排
 │  │  │  ├─ AiProviderChain.java  # 按优先级验证 AI 建议并处理取消
-│  │  │  ├─ AiProviderProfile.java  # 一个显式选择的命名 AI 提供者；请求绝不回退到另一个提供者
-│  │  │  ├─ AiProviderSummary.java  # 非秘密 AI 模型卡片摘要
 │  │  │  ├─ AiUseCaseFacade.java  # 编排 AI Provider、角色绑定、结构化分析与解释用例
 │  │  │  ├─ AssistedDeploymentModelAdapter.java  # 独立辅助分析与登记恢复的模型适配
 │  │  │  ├─ DeploymentAgentModelAdapter.java  # 凭据适配器，部署与审批不共享会话状态
@@ -175,7 +173,6 @@ src/  # 项目源码与模块根目录
 │  │  │  └─ SshRecoveryUseCase.java  # 装配浏览器救援、服务器互斥及原任务衔接
 │  │  ├─ server/  # 服务器配置与观测
 │  │  │  ├─ DesktopSecretStoreService.java  # 为已接纳操作提供限定数据库凭据访问
-│  │  │  ├─ ServerProfile.java  # 已保存的非秘密桌面连接资料
 │  │  │  ├─ ServerSummary.java  # 服务器卡片与名称地址查询摘要
 │  │  │  └─ ServerUseCaseFacade.java  # 编排服务器资料、主机信任、连接验证与能力探测
 │  │  └─ source/  # 源码输入与静态快照
@@ -1678,8 +1675,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源及固定摘要归档；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
 - `app/service/task/TaskCapabilityScope.java`：跟踪服务器及秘密适配器的真实操作寿命、Schema 占用及失败释放重试。
-- `app/service/security/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。
-- `app/service/contract/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
+- `app/service/secret/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。
+- `app/service/contract/spi/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
 - `app/service/server/PlatformServerService.java`：平台服务器配置、受引用保护的删除及原身份 SSH 认证检查/中断收尾。
 - `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/核对及未完成释放重试。
 - `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
@@ -1700,7 +1697,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `app/ai/protocol/ModelCapabilityProbe.java`：与业务无关的随机文字/图片挑战及精确答案核验。
 - `app/service/ai/PlatformModelService.java`：平台模型验证后保存、明确用途配置及原任务中断核对。
-- `app/service/contract/AiInventoryAccess.java`：供平台清单控件使用的非秘密配置和用途窄接口。
+- `app/service/contract/spi/AiInventoryAccess.java`：供平台清单控件使用的非秘密配置和用途窄接口。
+- `app/service/contract/profile/ServerProfile.java`：已保存的非秘密桌面连接资料及纯记录转换。
+- `app/service/contract/profile/AiProviderProfile.java`：模型连接配置、不透明凭据键及纯记录转换。
+- `app/service/contract/result/AiProviderSummary.java`：非秘密模型清单摘要及独立能力验证证据。
 - `app/service/task/HostTaskRecovery.java`：核对已知宿主协议的前次启动资源；浏览器只承认原所有者持久化的关闭检查点，任一资源未确认则整次不释放。
 - `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
@@ -1740,7 +1740,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/process/ProcessProtocol.java`：严格 UTF-8 JSONL 封套、关联身份、容量和结果契约校验。
 - `app/mod/process/ProcessChannel.java`：实际子进程的有界双向管道、握手、请求、取消、停止及独立 stderr 消费。
 - `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间，以及保留原事实的 `browser.closed.v1` 明确关闭协议。
-- `app/service/task/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
+- `app/service/process/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
 
 - `app/mod/service/ServiceSnapshot.java`：跨 Mod 同步调用的有界值复制，拒绝活动句柄、闭包及异步对象。
 - `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。

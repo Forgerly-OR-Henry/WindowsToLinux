@@ -13,7 +13,7 @@ import javax.swing.event.DocumentListener;
 import com.formdev.flatlaf.FlatClientProperties;
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;

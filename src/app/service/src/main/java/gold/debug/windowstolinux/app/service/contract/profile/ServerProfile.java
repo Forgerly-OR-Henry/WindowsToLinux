@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.service.server;
+package gold.debug.windowstolinux.app.service.contract.profile;
 
 import java.util.Objects;
 

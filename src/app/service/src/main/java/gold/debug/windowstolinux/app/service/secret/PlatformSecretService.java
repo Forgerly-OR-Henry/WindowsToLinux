@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.service.security;
+package gold.debug.windowstolinux.app.service.secret;
 
 import java.sql.SQLException;
 import java.util.*;
@@ -6,6 +6,7 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
+import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;

@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;

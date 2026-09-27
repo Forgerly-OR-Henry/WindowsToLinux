@@ -10,9 +10,9 @@ import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.app.service.contract.AutomaticDeploymentApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.single.*;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.*;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsSourcePreparer;
 import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;

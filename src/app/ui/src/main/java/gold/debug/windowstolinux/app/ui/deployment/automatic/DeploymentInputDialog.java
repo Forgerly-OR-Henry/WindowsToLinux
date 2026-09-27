@@ -271,7 +271,7 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
      * @return true when offers recovery without replacing the original operation, false otherwise / 提供救援而不替换原操作时为 true，否则为 false
      */
     @Override
-    public boolean offerSshRecovery(gold.debug.windowstolinux.app.service.server.ServerProfile server) {
+    public boolean offerSshRecovery(gold.debug.windowstolinux.app.service.contract.profile.ServerProfile server) {
         return onEdt(() -> JOptionPane.showConfirmDialog(owner, messages.text("recovery.offer"),
                 messages.text("recovery.title"), JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION);
     }
@@ -283,7 +283,7 @@ public final class DeploymentInputDialog implements AutomaticDeploymentInteracti
      * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
      */
     @Override
-    public void showSshRecovery(gold.debug.windowstolinux.app.service.server.ServerProfile server,
+    public void showSshRecovery(gold.debug.windowstolinux.app.service.contract.profile.ServerProfile server,
             gold.debug.windowstolinux.app.service.contract.SshRecoverySession session) {
         onEdt(() -> new gold.debug.windowstolinux.app.ui.recovery.SshRecoveryDialog(owner, server, session, service,
                 components, messages));

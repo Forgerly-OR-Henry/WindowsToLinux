@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import gold.debug.windowstolinux.app.service.contract.definition.*;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.git.GitReference;
 import gold.debug.windowstolinux.shared.git.GitRemote;
 import gold.debug.windowstolinux.shared.git.GitSourceRequest;
