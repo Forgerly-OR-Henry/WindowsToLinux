@@ -1415,7 +1415,14 @@ public interface SourceSnapshot extends AutoCloseable {
     Path directory();
     @Override void close() throws ApiException;
 }
+public interface SourceWorkspace extends AutoCloseable {
+    UUID id();
+    Path directory() throws ApiException;
+    SourceSelection selection() throws ApiException;
+    void close() throws ApiException;
+}
 public interface SourceService {
+    SourceWorkspace workspace(TaskContext task) throws ApiException;
     List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory,
             int maxEntries, TaskContext task) throws ApiException;
     SourceSelection selectDirectory(String title, TaskContext task) throws ApiException;
@@ -1430,7 +1437,7 @@ public interface SourceService {
 
 选择由平台在 EDT 承载用户目录确认，后台调用等待交互；选择句柄绑定当前 Mod 和任务。相对路径使用 `/`，拒绝越界、绝对路径及指向根外的联接/链接；单次读取最多 8 MiB，快照最多 2 GiB/100,000 个文件，请求值可更小。快照文件集合由作者业务选择，平台不内置部署排除规则。生成到任务工作目录后冻结，摘要采用排序的路径＋长度＋文件 SHA-256，不把修改中源目录当作不可变快照；复制前后变化则失败并保留诊断。快照目录只在句柄有效期间可读，业务需要长期素材时必须另按所属数据生命周期保存。
 
-当前实现通过 `PlatformRuntime.source` 装配真实 `SourceService`，默认窗口提供可取消的目录选择器。选择仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
+当前实现通过 `PlatformRuntime.source` 装配真实 `SourceService`，默认窗口提供可取消的目录选择器。用户选择与工作目录授权仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
 
 路径保留原拼写，拒绝空段、`.`/`..`、反斜线、Windows 设备名/流名称和歧义结尾；解析后仍在选定根内的链接可读取。`.env`、`target` 等业务路径不被平台自动排除。快照清单拒绝重复路径；空清单可生成空快照。摘要按 Java 字符串自然顺序排列名称，以 `WTL-SOURCE-1\0` 开头，逐项写入大端 32 位 UTF-8 路径长度、路径字节、大端 64 位内容长度和 32 字节文件摘要，再计算 SHA-256。
 
@@ -1438,9 +1445,13 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 每个快照实际位于平台数据目录的 `work/source/<task UUID>/<snapshot UUID>/files`，对应明确 FILE 占用。`close()` 先清理真实文件，再释放账本；未关闭则任务保持收尾、阻止平台关闭。失败保留 UNKNOWN 和原身份供显式恢复，不重新选择或复制来源。前次启动恢复须核对持久任务、所有者、原生目录身份及独立标记；缺失可确认已清理，标记损坏或目录被替换则保留阻断。崩溃在标记完成前或移除标记后、目录移除前，可能留下无法自动证明归属的目录，需要人工核对；平台不接管并删除它。
 
+`workspace(task)` 创建原执行任务所属的可写暂存目录，供 Git 检出和生成归档等文件工作使用；路径固定在 `work/source-workspace/<task UUID>/<resource UUID>/files`，不得借此接管任意本地路径。平台先登记 FILE 占用，再创建带原生身份及标记的新容器，与不可变快照共用物理归属和清理实现。原生文件身份打开使用 Windows 扩展绝对路径，避免合法文件复制到较深的受管目录后受传统 MAX_PATH 限制，参见 [Microsoft 路径长度说明](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。`selection()` 返回同一原任务/启用可使用的来源授权，生成文件可经原有有界列举、读取和 snapshot 冻结；关闭即撤销授权。原执行回调返回、取消、启用封闭后不能再次取得可写目录；明确恢复只清理原目录，不创建新工作或恢复写入。路径是作者协作接口，不是文件系统沙箱，作者不得保留路径绕过生命周期，关闭前必须停止所有文件写入者及子进程。未清理的目录继续阻止任务结束和平台关闭，前次启动沿原 FILE 记录核验并删除，无法证明归属则保留 UNKNOWN。
+
 官方 deployment 已在自己的 `source` 包接入本地取材：通过原选择句柄有界发现文件，应用原部署排除规则，再调用平台 `snapshot`，分析与后续执行共用这一份冻结素材。目录排除沿用精确名称 `.git`、`.idea`、`target`、`node_modules`、`.m2`、`.gradle`、`logs`；敏感文件及扩展名按原不区分大小写规则排除，普通 `.log` 默认排除。根目录 `windowstolinux-application.properties` 最多 64 KiB，`source.include` 最多 32 个唯一相对普通文件，按实际列举的原路径精确匹配，可纳入样例日志，不能覆盖秘密、排除目录或链接边界；声明必须与实际冻结副本的摘要一致，变化则拒绝并关闭该快照。
 
-业务发现预算最多 100,000 个子项（包含已排除的直接子项；排除目录不继续遍历），纳入字节预算最多 2 GiB，调用方可减小；空目录得到明确空快照。名称发现按目录逐步消费，避免预先累计未处理目录的全部子项。返回素材持有原 SourceSnapshot，使用方结束后显式关闭，实际释放失败保留平台原占用及不确定结果。此闭环不把选择句柄当长期素材，也不重复实现平台文件清理；源码归档、Git 固定取材、持久项目记录及部署界面/引擎接线继续随 S5 迁入。
+业务发现预算最多 100,000 个子项（包含已排除的直接子项；排除目录不继续遍历），纳入字节预算最多 2 GiB，调用方可减小；空目录得到明确空快照。名称发现按目录逐步消费，避免预先累计未处理目录的全部子项。返回素材持有原 SourceSnapshot，使用方结束后显式关闭，实际释放失败保留平台原占用及不确定结果。此闭环不把选择句柄当长期素材，也不重复实现平台文件清理。
+
+官方 deployment 的归档器将同一份冻结素材写入受管可写目录，保持原 ustar/gzip 字节规则：原相对文件名排序、普通文件模式 0644、时间与所有者字段为零、不写目录条目，支持原 ustar 名称/前缀长度；超长名称明确失败。压缩输出（含 gzip 头尾）按调用方预算限制，最多 2 GiB；归档前后核对输入快照。完成后经平台再冻结 `source.tar.gz`，重新读取实际冻结字节核对长度和 SHA-256，并释放可写暂存目录后才返回。归档字节 SHA-256 与平台快照清单 SHA-256 分别保留，不混用；输入素材与输出归档各自持有原快照，分别关闭。取消、归档变化及清理未知不交付成功归档，残留由原平台资源句柄收尾。Git 固定取材、持久项目记录及部署界面/引擎接线继续随 S5 迁入。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 

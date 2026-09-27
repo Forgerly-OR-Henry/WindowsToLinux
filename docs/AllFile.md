@@ -1570,6 +1570,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/source/SourceSelection.java`：用户批准的不透明来源选择。
 - `appapi/source/SourceService.java`：用户选定来源的有界单层列举、读取及受管不可变快照。
 - `appapi/source/SourceDirectoryEntry.java`：原相对名称、普通文件/目录或非常规类别及观测长度，不暴露用户根路径。
+- `appapi/source/SourceWorkspace.java`：原执行任务的可写暂存目录及来源授权，实际清理后释放占用。
 - `appapi/source/SourceSnapshot.java`：实际关闭后释放的受管不可变来源目录。
 - `appapi/task/ActionIntent.java`：绑定任务资源的精确待审核副作用与修订。
 - `appapi/task/ApiException.java`：报告未接纳的请求或失败的本地能力访问。
@@ -1713,9 +1714,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
 
 - `app/source/boundary/SelectedDirectory.java`：校验用户目录身份与相对边界，有界列举直接子项并按内容和容量进行读取与复制。
+- `app/source/snapshot/SourceWorkDirectory.java`：快照与可写暂存共用的原任务目录身份、持久标记及安全清理。
 - `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
 - `app/service/source/PlatformSourceAccess.java`：把目录确认、读取和快照绑定原 Mod 任务，保留实际 FILE 占用并支持原身份恢复。
-- `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 读取 Windows 卷号和 128 位文件 ID，并关闭实际原生句柄。
+- `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 与扩展绝对路径读取 Windows 卷号和 128 位文件 ID，支持本机长路径并关闭实际原生句柄。
 
 - `appapi/linux/TransferConflict.java`：同名冲突的精确端点、方向与实测大小。
 - `appapi/linux/TransferConflictChoice.java`：覆盖、保留两份与终止的明确用户选择。
@@ -1839,3 +1841,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/source/DeploymentSourcePolicy.java`：原部署目录、敏感文件和日志排除规则及受限 source.include。
 - `mod/deployment/source/DeploymentSourcePreparer.java`：经公开 Source 列举/读取筛选明确文件并冻结，复核声明与实际快照一致。
 - `mod/deployment/source/DeploymentSourceMaterial.java`：供分析与部署共用的原平台快照及纳入/排除清单，按原句柄释放实际资源。
+
+- `mod/deployment/source/DeploymentSourceTar.java`：将冻结源码按原确定性 ustar/gzip 格式写入有界输出，分块检查取消。
+- `mod/deployment/source/DeploymentSourceArchiver.java`：受管暂存、归档输出限额、独立冻结及实际压缩字节摘要核验。
+- `mod/deployment/source/DeploymentSourceArchive.java`：独立原平台归档快照、压缩字节 SHA 与长度，显式释放实际资源。

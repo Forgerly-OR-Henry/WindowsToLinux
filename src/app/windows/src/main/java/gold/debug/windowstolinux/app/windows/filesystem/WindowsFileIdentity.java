@@ -19,7 +19,12 @@ public final class WindowsFileIdentity {
      * @throws IOException if the filesystem cannot prove identity or release the handle / 文件系统无法证明身份或释放句柄时 */
     public static String read(Path path) throws IOException {
         var nativeApi = Kernel32.INSTANCE;
-        var handle = nativeApi.CreateFile(path.toAbsolutePath().toString(), 0,
+        String nativePath = path.toAbsolutePath().normalize().toString();
+        if (!nativePath.startsWith("\\\\?\\"))
+            nativePath = nativePath.startsWith("\\\\")
+                    ? "\\\\?\\UNC\\" + nativePath.substring(2)
+                    : "\\\\?\\" + nativePath;
+        var handle = nativeApi.CreateFile(nativePath, 0,
                 WinNT.FILE_SHARE_READ | WinNT.FILE_SHARE_WRITE | WinNT.FILE_SHARE_DELETE, null, WinNT.OPEN_EXISTING,
                 WinNT.FILE_FLAG_BACKUP_SEMANTICS | WinNT.FILE_FLAG_OPEN_REPARSE_POINT, null);
         if (WinBase.INVALID_HANDLE_VALUE.equals(handle))

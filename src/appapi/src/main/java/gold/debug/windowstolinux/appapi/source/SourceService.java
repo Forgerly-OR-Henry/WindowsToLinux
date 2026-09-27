@@ -8,6 +8,12 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
  */
 public interface SourceService {
 
+    /** Creates an empty task-owned workspace for source staging and generated material. / 为来源暂存及生成素材创建空的任务所属工作目录。
+     * @param task authentic executing task; recovery cannot create new work / 真实执行任务，恢复不得创建新工作
+     * @return owned writable handle requiring explicit close / 需要明确关闭的所属可写句柄
+     * @throws ApiException if admission, creation or cleanup fails / 准入、创建或清理失败时 */
+    SourceWorkspace workspace(TaskContext task) throws ApiException;
+
     /** Lists one complete bounded directory without recursively reading its children. / 列出一个完整有界目录，不递归读取其子项。
      * @param selection original user-authorized selection / 原用户授权选择
      * @param relativeDirectory slash-separated relative directory, empty for the selected root / 斜线分隔的相对目录，空串表示所选根
