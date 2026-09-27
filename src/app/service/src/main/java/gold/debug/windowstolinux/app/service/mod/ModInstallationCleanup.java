@@ -311,22 +311,37 @@ final class ModInstallationCleanup {
      * @throws IOException if replacement, extras or deletion remain unconfirmed / 替代物、额外内容或删除未确认时 */
     static void removeInstalled(List<Entry> accepted, Path root) throws IOException {
         validateInstalled(accepted, root);
-        var indexed = new HashMap<String, Entry>();
-        accepted.forEach(e -> indexed.put(e.path(), e));
-        var remaining = installed(root);
-        for (var entry : remaining)
-            if (!entry.equals(indexed.get(entry.path())))
-                throw new IOException("Installed deletion scope changed after confirmation");
-        for (var entry : remaining) {
-            Path path = Path.of(entry.path());
-            for (Path parent = path.getParent(); indexed.containsKey(parent.toString()); parent = parent.getParent())
-                PlatformModInstallation.identity(parent, indexed.get(parent.toString()).identity());
-            if (!entry.equals(observe(path, entry.directory() ? -1 : entry.size())))
-                throw new IOException("Installed entry changed before deletion");
-            Files.delete(path);
-        }
+        removeEntries(accepted, installed(root), List.of());
         if (PlatformModInstallation.exists(root))
             throw new IOException("Installed program still remains");
+    }
+
+    /** Removes a verified remaining subset while rechecking all captured ancestor identities. / 移除已核验剩余子集，并复核全部捕获祖先身份。
+     * Callers validate the fixed layout and obtain current entries before invoking this helper. / 调用方须先校验固定布局并取得当前条目。
+     * @param accepted original authorized entries / 原授权条目
+     * @param remaining actually observed remaining entries / 实际观察剩余条目
+     * @param parents additional shared ancestors that must never be removed / 绝不移除的额外共用祖先
+     * @throws IOException if bytes, ancestry or deletion are unconfirmed / 字节、祖先或删除未确认时 */
+    static void removeEntries(List<Entry> accepted, List<Entry> remaining, List<Entry> parents) throws IOException {
+        var indexed = new HashMap<String, Entry>();
+        accepted.forEach(e -> indexed.put(e.path(), e));
+        for (var entry : remaining)
+            if (!entry.equals(indexed.get(entry.path())))
+                throw new IOException("Deletion scope changed after confirmation");
+        for (var parent : parents) {
+            var previous = indexed.putIfAbsent(parent.path(), parent);
+            if (previous != null && !previous.equals(parent))
+                throw new IOException("Conflicting deletion ancestor");
+        }
+        for (var entry : ordered(remaining)) {
+            Path path = Path.of(entry.path());
+            for (Path parent = path.getParent(); parent != null
+                    && indexed.containsKey(parent.toString()); parent = parent.getParent())
+                PlatformModInstallation.identity(parent, indexed.get(parent.toString()).identity());
+            if (!entry.equals(observe(path, entry.directory() ? -1 : entry.size())))
+                throw new IOException("Reviewed entry changed before deletion");
+            Files.delete(path);
+        }
     }
 
     /** Validates one exact ordinary native identity and bounded content record. / 校验一个精确普通原生身份及有界内容记录。
@@ -360,7 +375,7 @@ final class ModInstallationCleanup {
     /** Orders actual children before their empty parent directories. / 将实际子项排在其空父目录前。
      * @param entries observed entries / 观察条目
      * @return immutable deterministic deletion order / 不可变确定删除顺序 */
-    private static List<Entry> ordered(List<Entry> entries) {
+    static List<Entry> ordered(List<Entry> entries) {
         return entries.stream().sorted(Comparator.<Entry>comparingInt(e -> Path.of(e.path()).getNameCount()).reversed()
                 .thenComparing(Entry::path)).toList();
     }

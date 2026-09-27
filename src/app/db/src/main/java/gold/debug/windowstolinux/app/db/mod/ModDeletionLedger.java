@@ -219,9 +219,11 @@ public final class ModDeletionLedger {
      * @param program original installed version or whole-owner root / 原安装版本或整所有者根
      * @param phase last confirmed checkpoint / 最后确认检查点
      * @param state retained execution state / 保留执行状态
-     * @param files original host-reviewed physical scope / 原宿主审阅物理范围 */
+     * @param files original host-reviewed physical scope / 原宿主审阅物理范围
+     * @param versions exact requested installed releases / 精确请求安装版本
+     * @param targets original owned diagnostic categories / 原自有诊断类别 */
     public record Execution(UUID operation, String owner, String version, Path program, String phase, String state,
-            String files) {
+            String files, List<String> versions, List<LogRepository.Target> targets) {
     }
 
     /** Reads original evidence without granting permission to replay completed work. / 读取原证据，不授予重放已完成工作的权限。
@@ -234,7 +236,8 @@ public final class ModDeletionLedger {
             unchanged(c, row);
             var request = row.request();
             return new Execution(operation, request.owner(), request.version(), request.program(), row.phase(),
-                    row.state(), request.files());
+                    row.state(), request.files(), request.selected().stream().map(Release::version).toList(),
+                    request.targets());
         });
     }
 
