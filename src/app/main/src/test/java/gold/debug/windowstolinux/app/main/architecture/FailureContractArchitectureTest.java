@@ -44,9 +44,10 @@ import org.junit.jupiter.api.Test;
 
 /** Guards the shared failure vocabulary without centralizing module-specific interpretation. / 在不集中模块特定解释的前提下守护共用失败词汇。 */
 class FailureContractArchitectureTest {
-    // These two SQL rollback signals are translated by the task host before reaching callers. / 仅这两个 SQL 回滚信号在到达调用方前由任务宿主转换。
+    // These SQL rollback signals are translated by the task host before reaching callers. / 这些 SQL 回滚信号在到达调用方前由任务宿主转换。
     private static final Set<String> SQL_BRIDGE_TYPES = Set.of(
             "gold.debug.windowstolinux.app.db.task.TaskLedger.DependencyBusyException",
+            "gold.debug.windowstolinux.app.db.task.TaskLedger.FinalizationException",
             "gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime.AdmissionRejectedException");
 
     private static final Pattern CODE = Pattern.compile("^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$");

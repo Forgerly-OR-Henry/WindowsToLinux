@@ -6,11 +6,18 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Persists atomic admission and actual resource release independently of business SQL. / 独立于业务 SQL 持久化原子准入及实际资源释放。 */
 public final class TaskLedger {
+    /** Original storage generation for finalization receipts. / 终态收尾凭据所属的原存储代次。 */
+    private final PlatformDatabase database;
+
+    /** Fixed platform summary target, initialized before entering a task transaction. / 进入任务事务前初始化的固定平台摘要目标。 */
+    private LogRepository.Target summaryTarget;
+
     /** Engine boot identity used to refuse execution of previous-process tasks. / 用于拒绝执行前一进程任务的引擎启动身份。 */
     private final UUID bootId;
 
@@ -25,6 +32,7 @@ public final class TaskLedger {
      * @param database current platform engine / 当前平台引擎
      */
     public TaskLedger(PlatformDatabase database) {
+        this.database = database;
         bootId = database.bootId();
         connections = new RepositoryConnections(database::openConnection);
     }
@@ -850,6 +858,299 @@ public final class TaskLedger {
         });
     }
 
+    /** Original fully drained result retained when its archive transaction cannot be confirmed. / 归档事务无法确认时保留的原已排空结果。 */
+    public static final class Finalization {
+        /** Original database generation. / 原数据库代次。 */
+        private final UUID generation;
+
+        /** Original fixed summary identity. / 原固定摘要身份。 */
+        private final UUID archive;
+
+        /** Known result and original finalization time; not itself a commit receipt. / 已知结果及原收尾时间，本身不是提交凭据。 */
+        private final TaskSnapshot snapshot;
+
+        /** Original bounded public diagnostic evidence. / 原有界公开诊断依据。 */
+        private final String evidence;
+
+        /** Captures only facts obtained inside the original task transaction. / 仅捕获原任务事务取得的事实。
+         * @param generation original storage generation / 原存储代次
+         * @param archive fixed summary identity / 固定摘要身份
+         * @param snapshot original drained task / 原已排空任务
+         * @param evidence original diagnostic / 原诊断 */
+        private Finalization(UUID generation, UUID archive, TaskSnapshot snapshot, String evidence) {
+            this.generation = generation;
+            this.archive = archive;
+            this.snapshot = snapshot;
+            this.evidence = evidence;
+        }
+
+        /** Returns original observed facts without claiming durable archive completion. / 返回原观察事实，不声称持久归档完成。
+         * @return original drained snapshot / 原已排空快照 */
+        public TaskSnapshot snapshot() {
+            return snapshot;
+        }
+    }
+
+    /** Separates known business completion from unconfirmed platform archival. / 区分已知业务结束与未确认的平台归档。 */
+    public static final class FinalizationException extends SQLException {
+        /** Original host-only retry receipt. / 原仅宿主可用重试凭据。 */
+        private final Finalization finalization;
+
+        /** Retains the original facts after failed archive or commit acknowledgement. / 归档或提交确认失败后保留原事实。
+         * @param finalization original receipt / 原凭据
+         * @param cause original storage failure / 原存储失败 */
+        private FinalizationException(Finalization finalization, SQLException cause) {
+            super("Original task archive requires reconciliation", cause);
+            this.finalization = finalization;
+        }
+
+        /** Returns the original receipt for metadata-only retry. / 返回供仅元数据重试的原凭据。
+         * @return original finalization identity / 原收尾身份 */
+        public Finalization finalization() {
+            return finalization;
+        }
+    }
+
+    /** Commits actual completion, fixed summary and execution cleanup in one transaction. / 在一个事务内提交实际结束、固定摘要及执行清理。
+     * @param taskId accepted original task / 已接纳原任务
+     * @param outcome observed business result / 已观察业务结果
+     * @param evidence original public diagnostic / 原公开诊断
+     * @param reconciliation whether uncertainty was explicitly resolved / 是否显式核实不确定性
+     * @param beforeEnd nonblocking host cleanup / 非阻塞宿主清理
+     * @return committed current observation, including unfinished resources / 已提交当前观察，含未收尾资源
+     * @throws SQLException if the observation or archival cannot be confirmed / 观察或归档无法确认时 */
+    public TaskSnapshot completeAndArchive(UUID taskId, Outcome outcome, String evidence, boolean reconciliation,
+            Runnable beforeEnd) throws SQLException {
+        return finalizeTransaction(taskId, () -> complete(taskId, outcome, evidence, reconciliation, beforeEnd));
+    }
+
+    /** Archives queued cancellation without executing its business callback. / 归档排队取消，不执行其业务回调。
+     * @param taskId original accepted task / 原已接纳任务
+     * @param beforeEnd nonblocking host cleanup / 非阻塞宿主清理
+     * @return committed cancellation request or ended snapshot / 已提交取消请求或结束快照
+     * @throws SQLException if cancellation or archive is unconfirmed / 取消或归档未确认时 */
+    public TaskSnapshot cancelAndArchive(UUID taskId, Runnable beforeEnd) throws SQLException {
+        return finalizeTransaction(taskId, () -> cancel(taskId, beforeEnd));
+    }
+
+    /** Shares the original outer commit across conclusion and archive. / 结论及归档共用原最外层提交。
+     * @param taskId original identity / 原身份
+     * @param conclusion original state transition / 原状态转换
+     * @return committed observation / 已提交观察
+     * @throws SQLException if original conclusion or archive is unconfirmed / 原结论或归档未确认时 */
+    private TaskSnapshot finalizeTransaction(UUID taskId, Query<Boolean> conclusion) throws SQLException {
+        var target = summaryTarget();
+        Finalization[] original = {null};
+        try {
+            return locked(() -> {
+                boolean ended = conclusion.run();
+                var current = snapshot(taskId);
+                if (ended) {
+                    try (var c = connections.open()) {
+                        original[0] = finalization(c, current);
+                        archive(c, target, original[0]);
+                    }
+                }
+                return current;
+            });
+        } catch (SQLException failure) {
+            if (original[0] != null)
+                throw new FinalizationException(original[0], failure);
+            throw failure;
+        }
+    }
+
+    /** Obtains the stable summary category outside the outer task transaction. / 在最外层任务事务之外取得稳定摘要类别。
+     * @return verified platform category / 已验证平台类别
+     * @throws SQLException if registration cannot be confirmed / 登记无法确认时 */
+    private synchronized LogRepository.Target summaryTarget() throws SQLException {
+        if (summaryTarget == null)
+            summaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                    new LogCategory("platform_task", "platform_task", Optional.empty()));
+        return summaryTarget;
+    }
+
+    /** Captures fixed identity and original diagnostics for an actually ended row. / 为实际结束行捕获固定身份及原诊断。
+     * @param c original transaction / 原事务
+     * @param snapshot original terminal observation / 原终态观察
+     * @return opaque original receipt / 不透明原凭据
+     * @throws SQLException if original metadata is inconsistent / 原元数据不一致时 */
+    private Finalization finalization(Connection c, TaskSnapshot snapshot) throws SQLException {
+        if (snapshot.state() != TaskState.ENDED || snapshot.outcome().isEmpty() || snapshot.endedAt().isEmpty()
+                || !snapshot.blockers().isEmpty())
+            throw new SQLException("Task is not a fully drained known result");
+        try (var p = c.prepareStatement("SELECT archive_log_id,result_json FROM platform_task WHERE task_id=?")) {
+            p.setObject(1, snapshot.id());
+            try (var r = p.executeQuery()) {
+                if (!r.next())
+                    throw new SQLException("Original task disappeared before archival");
+                try {
+                    return new Finalization(database.generation(), UUID.fromString(r.getString(1)), snapshot,
+                            Objects.requireNonNullElse(r.getString(2), "{}"));
+                } catch (IllegalArgumentException invalid) {
+                    throw new SQLException("Invalid original task summary identity", invalid);
+                }
+            }
+        }
+    }
+
+    /** Stores a bounded fixed summary and removes only the fully released original execution. / 保存有界固定摘要，并仅移除完全释放的原执行。
+     * @param c original serialized transaction / 原串行事务
+     * @param target original platform category / 原平台类别
+     * @param original original concluded execution / 原已得出结论执行
+     * @throws SQLException if summary, retained ownership or cleanup fails / 摘要、保留归属或清理失败时 */
+    private void archive(Connection c, LogRepository.Target target, Finalization original) throws SQLException {
+        var value = original.snapshot;
+        try (var p = c.prepareStatement(
+                "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
+            p.setObject(1, value.id());
+            try (var r = p.executeQuery()) {
+                r.next();
+                if (r.getLong(1) != 0)
+                    throw new SQLException("Original task resources are still held");
+            }
+        }
+        var outcome = value.outcome().orElseThrow();
+        String details = encode(Map.of("taskType", LogRecordCodec.redact(value.type()), "startedAt",
+                value.startedAt().toEpochMilli(), "endedAt", value.endedAt().orElseThrow().toEpochMilli(),
+                "progressText", LogRecordCodec.redact(value.progressText()), "result",
+                LogRecordCodec.redact(original.evidence)));
+        LogRecordCodec.Record record;
+        try {
+            record = LogRecordCodec.createSummary(target, value.ownerVersion(),
+                    new LogEvent(outcome == Outcome.FAILED ? LogLevel.ERROR : LogLevel.INFO, "PLATFORM_TASK_" + outcome,
+                            "Platform task finished: " + outcome, Optional.of(details), Optional.of(value.id()),
+                            Optional.empty(), Optional.of(outcome)),
+                    original.archive, value.endedAt().orElseThrow().toEpochMilli(),
+                    value.ownerId().equals("@platform") ? null : value.ownerId());
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Original task summary cannot be encoded", invalid);
+        }
+        new LogRepository(database).store(c, target, List.of(record), 100);
+        try (var p = c
+                .prepareStatement("DELETE FROM platform_task_resource WHERE task_id=? AND released_at IS NOT NULL")) {
+            p.setObject(1, value.id());
+            p.executeUpdate();
+        }
+        try (var p = c
+                .prepareStatement("DELETE FROM platform_task WHERE task_id=? AND state='ENDED' AND archive_log_id=?")) {
+            p.setObject(1, value.id());
+            p.setString(2, original.archive.toString());
+            if (p.executeUpdate() != 1)
+                throw new SQLException("Original task cleanup could not be confirmed");
+        }
+    }
+
+    /** Retries only an original proven finalization, never a business callback or missing history. / 仅重试原已证明收尾，不调用业务回调或重建缺失历史。
+     * @param original original host receipt / 原宿主凭据
+     * @param beforeEnd idempotent nonblocking host cleanup / 幂等非阻塞宿主清理
+     * @return original committed terminal observation / 原已提交终态观察
+     * @throws SQLException if identity, resources or persistence is unconfirmed / 身份、资源或持久化未确认时 */
+    public TaskSnapshot retryFinalization(Finalization original, Runnable beforeEnd) throws SQLException {
+        if (!database.generation().equals(original.generation))
+            throw new SQLException("Finalization belongs to another database generation");
+        var target = summaryTarget();
+        try {
+            return locked(() -> {
+                try (var c = connections.open()) {
+                    if (!matches(c, original))
+                        return original.snapshot;
+                    complete(original.snapshot.id(), original.snapshot.outcome().orElseThrow(), original.evidence, true,
+                            beforeEnd);
+                    try (var p = c.prepareStatement(
+                            "UPDATE platform_task SET ended_at=? WHERE task_id=? AND state='ENDED'")) {
+                        p.setLong(1, original.snapshot.endedAt().orElseThrow().toEpochMilli());
+                        p.setObject(2, original.snapshot.id());
+                        if (p.executeUpdate() != 1)
+                            throw new SQLException("Original task is no longer drained");
+                    }
+                    archive(c, target, original);
+                    return original.snapshot;
+                }
+            });
+        } catch (SQLException failure) {
+            throw new FinalizationException(original, failure);
+        }
+    }
+
+    /** Preserves known physical completion as FINISHING after an unconfirmed archive. / 归档未确认后以 FINISHING 保留已知物理收尾。
+     * @param original original host receipt / 原宿主凭据
+     * @return true if retained, false if original execution was already removed / 已保留返回真，原执行已移除返回假
+     * @throws SQLException if original identity or persistence cannot be proven / 原身份或持久化无法证明时 */
+    public boolean retainFinalization(Finalization original) throws SQLException {
+        if (!database.generation().equals(original.generation))
+            throw new SQLException("Finalization belongs to another database generation");
+        return locked(() -> {
+            try (var c = connections.open()) {
+                if (!matches(c, original))
+                    return false;
+                try (var p = c.prepareStatement(
+                        "UPDATE platform_task SET state='FINISHING',outcome=?,ended_at=?,result_json=? WHERE task_id=?")) {
+                    p.setString(1, original.snapshot.outcome().orElseThrow().name());
+                    p.setLong(2, original.snapshot.endedAt().orElseThrow().toEpochMilli());
+                    p.setString(3, original.evidence);
+                    p.setObject(4, original.snapshot.id());
+                    if (p.executeUpdate() != 1)
+                        throw new SQLException("Original task disappeared");
+                }
+                return true;
+            }
+        });
+    }
+
+    /** Reads only a retained terminal row or explicitly persisted finalization marker. / 仅读取保留终态行或明确持久化的收尾标记。
+     * @param taskId original retained task / 原保留任务
+     * @return exact original finalization if known / 已知时返回精确原收尾
+     * @throws SQLException if marker or ownership is inconsistent / 标记或归属不一致时 */
+    public Optional<Finalization> pendingFinalization(UUID taskId) throws SQLException {
+        return locked(() -> {
+            try (var c = connections.open();
+                    var p = c.prepareStatement("SELECT state,outcome,ended_at FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, taskId);
+                try (var r = p.executeQuery()) {
+                    if (!r.next())
+                        throw new SQLException("Original task is absent");
+                    if (!Set.of("FINISHING", "ENDED").contains(r.getString(1)) || r.getString(2) == null
+                            || r.getObject(3) == null)
+                        return Optional.empty();
+                    var value = snapshot(taskId);
+                    if (!value.blockers().isEmpty())
+                        throw new SQLException("Finalization still has explicit resources");
+                    var terminal = new TaskSnapshot(value.id(), value.ownerId(), value.ownerVersion(), value.type(),
+                            TaskState.ENDED, Optional.of(Outcome.valueOf(r.getString(2))), value.progressText(),
+                            value.startedAt(), Optional.of(Instant.ofEpochMilli(r.getLong(3))), List.of());
+                    return Optional.of(finalization(c, terminal));
+                }
+            }
+        });
+    }
+
+    /** Compares immutable original execution identity without consulting retained log history. / 比较不可变原执行身份，不查询保留日志历史。
+     * @param c original transaction / 原事务
+     * @param original original receipt / 原凭据
+     * @return whether the original execution still exists / 原执行是否仍存在
+     * @throws SQLException if an existing identity differs / 已有身份不同时 */
+    private boolean matches(Connection c, Finalization original) throws SQLException {
+        try (var p = c.prepareStatement(
+                "SELECT owner_id,owner_version,task_type,started_at,archive_log_id,outcome,ended_at,result_json FROM platform_task WHERE task_id=?")) {
+            p.setObject(1, original.snapshot.id());
+            try (var r = p.executeQuery()) {
+                if (!r.next())
+                    return false;
+                var value = original.snapshot;
+                if (!value.ownerId().equals(r.getString(1)) || !value.ownerVersion().equals(r.getString(2))
+                        || !value.type().equals(r.getString(3)) || value.startedAt().toEpochMilli() != r.getLong(4)
+                        || !original.archive.toString().equals(r.getString(5)))
+                    throw new SQLException("Original task identity changed");
+                if (r.getObject(7) != null && (!value.outcome().orElseThrow().name().equals(r.getString(6))
+                        || value.endedAt().orElseThrow().toEpochMilli() != r.getLong(7)
+                        || !original.evidence.equals(Objects.requireNonNullElse(r.getString(8), "{}"))))
+                    throw new SQLException("Original task conclusion changed");
+                return true;
+            }
+        }
+    }
+
     /**
      * Completes logical claims and a known result in the same transaction. / 在同一事务中结束逻辑申请及已知结果。
      * @param c scoped platform connection / 作用域平台连接
@@ -922,8 +1223,8 @@ public final class TaskLedger {
                     }
                     if (r.getString(4).equals("UNKNOWN"))
                         blockers.add("Business result requires explicit reconciliation");
-                    Long ended = r.getObject(8, Long.class);
-                    String result = r.getString(5);
+                    Long ended = r.getString(4).equals("ENDED") ? r.getObject(8, Long.class) : null;
+                    String result = r.getString(4).equals("ENDED") ? r.getString(5) : null;
                     return new TaskSnapshot(taskId, r.getString(1), r.getString(2), r.getString(3),
                             TaskState.valueOf(r.getString(4)),
                             result == null ? Optional.empty() : Optional.of(Outcome.valueOf(result)), r.getString(6),
@@ -932,6 +1233,20 @@ public final class TaskLedger {
                 }
             }
         });
+    }
+
+    /** Lists execution rows requiring startup recovery or completion of retained archival. / 列出需要启动恢复或完成保留归档的执行行。
+     * @return original retained identities / 原保留身份
+     * @throws SQLException if storage cannot be read / 存储无法读取时 */
+    public List<UUID> retained() throws SQLException {
+        try (var c = connections.open();
+                var s = c.createStatement();
+                var r = s.executeQuery("SELECT task_id FROM platform_task ORDER BY started_at,task_id")) {
+            var ids = new ArrayList<UUID>();
+            while (r.next())
+                ids.add(r.getObject(1, UUID.class));
+            return List.copyOf(ids);
+        }
     }
 
     /**

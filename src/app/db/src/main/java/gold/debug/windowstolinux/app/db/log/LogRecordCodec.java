@@ -34,7 +34,24 @@ public final class LogRecordCodec {
      * @param event diagnostic supplied by its owner / 所有者提供的诊断
      * @return immutable record with its original identifier and timestamp / 带原标识及时间的不可变记录 */
     public static Record create(LogRepository.Target target, String version, LogEvent event) {
+        return createSummary(target, version, event, UUID.randomUUID(), System.currentTimeMillis(),
+                target.owner().equals("app") ? null : target.owner());
+    }
+
+    /** Bounds a host summary using its already persisted identity, timestamp and subject. / 按已持久身份、时间及主体限制宿主摘要。
+     * @param target original category / 原类别
+     * @param version original release / 原发布
+     * @param event original safe event / 原安全事件
+     * @param id original fixed summary identity / 原固定摘要身份
+     * @param recordedAt original recorded time / 原记录时间
+     * @param subject associated Mod or null for platform work / 关联 Mod，平台工作可为空
+     * @return bounded exact summary / 有界精确摘要 */
+    public static Record createSummary(LogRepository.Target target, String version, LogEvent event, UUID id,
+            long recordedAt, String subject) {
         Objects.requireNonNull(event);
+        Objects.requireNonNull(id);
+        if (recordedAt < 0 || subject != null && (subject.isBlank() || subject.length() > 512))
+            throw new IllegalArgumentException("Invalid summary attribution");
         if (!event.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || version == null || version.length() > 512
                 || version.isBlank() || event.outcome().orElse(null) == Outcome.UNKNOWN)
             throw new IllegalArgumentException("Invalid diagnostic identity or terminal outcome");
@@ -45,10 +62,9 @@ public final class LogRecordCodec {
         truncated |= !limited.equals(message);
         if (limited.isBlank())
             throw new IllegalArgumentException("Diagnostic message is empty");
-        var record = new Record(UUID.randomUUID(), System.currentTimeMillis(), target.owner(), target.category(),
-                event.level(), event.eventCode(), limited, details,
-                target.owner().equals("app") ? null : target.owner(), version, event.taskId().orElse(null),
-                event.operationId().orElse(null), event.outcome().orElse(null), truncated);
+        var record = new Record(id, recordedAt, target.owner(), target.category(), event.level(), event.eventCode(),
+                limited, details, subject, version, event.taskId().orElse(null), event.operationId().orElse(null),
+                event.outcome().orElse(null), truncated);
         if (encode(target.key(), record).length <= MAX_BYTES)
             return record;
         int low = 0, high = details == null ? 0 : details.codePointCount(0, details.length());

@@ -115,8 +115,9 @@ class PlatformRecoveryServiceTest {
                     TimeUnit.SECONDS);
             assertEquals(session.snapshot().failure(), completed.problem());
             assertTrue(remote.authentications.get() > 0);
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource"));
             assertEquals(1, count(runtime.persistence().database(),
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION'"));
+                    "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task' AND event_code='PLATFORM_TASK_FAILED'"));
             assertEquals(0, remote.commands.get());
             assertTrue(browser(session).processes().isEmpty());
         }
