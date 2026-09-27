@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.task;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
 
 /** Verifies vanished process-local resources of a known host protocol. / 核验已知宿主协议消失的进程内资源。 */

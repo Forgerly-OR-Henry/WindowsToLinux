@@ -8,8 +8,8 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.ai.protocol.ModelMessageCodec;
 import gold.debug.windowstolinux.app.ai.transport.ModelHttpCall;
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;

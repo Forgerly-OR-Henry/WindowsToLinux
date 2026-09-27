@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.db;
+package gold.debug.windowstolinux.app.db.persistence.connection;
 
 import java.nio.channels.*;
 import java.nio.file.*;
@@ -238,8 +238,7 @@ public final class PlatformDatabase implements AutoCloseable {
      * @throws SQLException if opening or default schema assignment fails / 打开或分配默认数据结构失败时
      */
     public Connection openInternalConnection(String schema, String user, String password, String ownerTag,
-            gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection.Release afterClose)
-            throws SQLException {
+            ManagedJdbcConnection.Release afterClose) throws SQLException {
         Objects.requireNonNull(schema);
         Objects.requireNonNull(user);
         Objects.requireNonNull(password);
@@ -252,11 +251,10 @@ public final class PlatformDatabase implements AutoCloseable {
             physical = DriverManager.getConnection(jdbcUrl, user, password);
             connections.put(physical, ownerTag);
         }
-        var managed = gold.debug.windowstolinux.app.db.persistence.connection.ManagedJdbcConnection
-                .wrapTracked(physical, () -> {
-                    released(physical);
-                    afterClose.run();
-                });
+        var managed = ManagedJdbcConnection.wrapTracked(physical, () -> {
+            released(physical);
+            afterClose.run();
+        });
         try {
             managed.setSchema(schema);
             return managed;
@@ -272,13 +270,12 @@ public final class PlatformDatabase implements AutoCloseable {
 
     /**
      * Derives the private non-administrator owner password for an encoded schema identity. / 为编码后的数据身份派生私有非管理员所有者口令。
-     * @param coordinates exact encoded identity / 精确编码身份
+     * @param databaseUser exact encoded schema owner name / 精确编码的数据结构所有者名称
      * @return private deterministic owner password / 私有确定性所有者口令
      * @throws java.security.GeneralSecurityException if the required HMAC is unavailable / 所需 HMAC 不可用时
      */
-    public String schemaPassword(gold.debug.windowstolinux.app.db.schema.SchemaCoordinates coordinates)
-            throws java.security.GeneralSecurityException {
-        return bootstrap.derive("WTL-SCHEMA-OWNER-1\0" + coordinates.databaseUser());
+    public String schemaPassword(String databaseUser) throws java.security.GeneralSecurityException {
+        return bootstrap.derive("WTL-SCHEMA-OWNER-1\0" + Objects.requireNonNull(databaseUser));
     }
 
     /**

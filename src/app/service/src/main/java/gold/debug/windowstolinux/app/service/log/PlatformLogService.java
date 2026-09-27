@@ -8,8 +8,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;

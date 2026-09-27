@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.database;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.db.*;
@@ -67,7 +67,7 @@ public final class TaskModDatabase implements ModDatabase, AutoCloseable {
         coordinates.requireRegistered(database, Set.of("READY"));
         String password;
         try {
-            password = database.schemaPassword(coordinates);
+            password = database.schemaPassword(coordinates.databaseUser());
         } catch (java.security.GeneralSecurityException failure) {
             throw new SQLException("Schema credentials are unavailable", failure);
         }

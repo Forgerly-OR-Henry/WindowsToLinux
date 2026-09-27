@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;

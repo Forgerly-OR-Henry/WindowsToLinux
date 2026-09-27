@@ -5,7 +5,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.appapi.db.SchemaAccess;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
@@ -98,7 +98,7 @@ public final class SchemaAccessScope implements SchemaAccess, AutoCloseable {
             Arrays.fill(bytes, (byte) 0);
             prepareReader();
         } else
-            password = database.schemaPassword(coordinates);
+            password = database.schemaPassword(coordinates.databaseUser());
     }
 
     /**

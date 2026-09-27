@@ -8,7 +8,7 @@ import java.util.concurrent.Callable;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;

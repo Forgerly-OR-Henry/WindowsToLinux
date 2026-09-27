@@ -4,7 +4,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;

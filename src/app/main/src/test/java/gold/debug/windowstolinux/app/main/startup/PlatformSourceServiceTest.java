@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.source.boundary.SelectedDirectory;

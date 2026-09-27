@@ -9,7 +9,7 @@ import java.security.ProtectionDomain;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.main.AppMain;
 
 /**

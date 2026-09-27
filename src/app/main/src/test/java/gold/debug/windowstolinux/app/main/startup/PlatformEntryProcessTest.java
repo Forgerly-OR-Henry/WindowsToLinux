@@ -12,7 +12,7 @@ import java.util.jar.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.main.AppMain;
 import gold.debug.windowstolinux.app.ui.shell.PlatformFrame;
 import org.junit.jupiter.api.io.TempDir;

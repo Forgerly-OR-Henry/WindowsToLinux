@@ -11,6 +11,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.mod.process.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
