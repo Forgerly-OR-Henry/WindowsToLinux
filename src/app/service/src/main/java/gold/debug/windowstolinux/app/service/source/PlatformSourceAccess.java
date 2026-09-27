@@ -2,6 +2,8 @@ package gold.debug.windowstolinux.app.service.source;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
@@ -193,12 +195,22 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
      * @throws ApiException if creation, admission or cleanup fails / 创建、准入或清理失败时 */
     @Override
     public SourceWorkspace workspace(TaskContext task) throws ApiException {
+        return workspace(task, UUID.randomUUID());
+    }
+
+    /** Creates only the first physical container for a preselected original UUID. / 只为原预选 UUID 首次创建物理容器。
+     * @param task original executing task / 原执行任务
+     * @param id persisted workspace identity / 已持久工作目录身份
+     * @return original writable handle / 原可写句柄
+     * @throws ApiException if identity was used or creation is unconfirmed / 身份已使用或创建未确认时 */
+    @Override
+    public SourceWorkspace workspace(TaskContext task, UUID id) throws ApiException {
+        Objects.requireNonNull(id);
         return access(task, () -> {
             if (tasks.reconciling(task))
                 throw error(ProblemCode.CONTRACT_VIOLATION, "SOURCE_RECOVERY_WRITE",
                         "Recovery cannot create new source work");
-            var id = UUID.randomUUID();
-            var lease = tasks.retain(task, new TaskResource("FILE", WORKSPACE_PREFIX + id, owner, false));
+            var lease = tasks.retain(task, new TaskResource("FILE", WORKSPACE_PREFIX + id, owner, false), null, true);
             var workspace = new Workspace(task, id, lease);
             synchronized (this) {
                 workspaces.add(workspace);
@@ -221,6 +233,73 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
                     workspace.close();
             }
         });
+    }
+
+    /** Reads only a bounded original file after checking the original lease and marked physical container. / 核对原占用及标记物理容器后才读取有界原文件。
+     * @param task original context / 原上下文
+     * @param workspaceId original workspace UUID / 原工作目录 UUID
+     * @param name simple evidence file name / 简单依据文件名
+     * @param maxBytes copied byte bound / 复制字节上限
+     * @return copied evidence or absent file / 独立依据或文件不存在
+     * @throws ApiException if ownership or physical evidence is unconfirmed / 归属或物理依据未确认时 */
+    @Override
+    public Optional<byte[]> readWorkspaceEvidence(TaskContext task, UUID workspaceId, String name, int maxBytes)
+            throws ApiException {
+        if (SwingUtilities.isEventDispatchThread())
+            throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+        if (closed)
+            throw error(ProblemCode.UNAVAILABLE, "SOURCE_CLOSED", "Source capability is closed");
+        if (workspaceId == null || name == null || !name.matches("[a-zA-Z][a-zA-Z0-9_.-]{0,127}") || maxBytes < 1
+                || maxBytes > 1_048_576)
+            throw error(ProblemCode.INVALID_INPUT, "SOURCE_EVIDENCE_INPUT", "Evidence identity or budget is invalid");
+        try {
+            return scope.call(task, true, () -> readOriginalEvidence(task, workspaceId, name, maxBytes));
+        } catch (SQLException failure) {
+            throw error(ProblemCode.UNKNOWN, "SOURCE_EVIDENCE_SCOPE",
+                    "Original workspace evidence operation could not be safely released");
+        }
+    }
+
+    /** Copies one original file inside the cleanup-scoped capability lifetime. / 在清理型能力寿命内复制一个原文件。
+     * @param task original context / 原上下文
+     * @param workspaceId original workspace identity / 原工作目录身份
+     * @param name simple file name / 简单文件名
+     * @param maxBytes bounded copy size / 有界复制大小
+     * @return copied original bytes or confirmed absence / 复制的原字节或已确认不存在
+     * @throws ApiException if original physical identity cannot be proven / 原物理身份无法证明时 */
+    private Optional<byte[]> readOriginalEvidence(TaskContext task, UUID workspaceId, String name, int maxBytes)
+            throws ApiException {
+        try (var connection = database.openConnection();
+                var query = connection.prepareStatement(
+                        "SELECT owner_id,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='FILE' AND resource_id=?")) {
+            query.setObject(1, task.id());
+            query.setString(2, WORKSPACE_PREFIX + workspaceId);
+            try (var rows = query.executeQuery()) {
+                if (!rows.next() || !owner.equals(rows.getString(1))
+                        || !"{\"release\":\"EXPLICIT\"}".equals(rows.getString(2)) || rows.getObject(3) != null)
+                    throw new java.io.IOException("Original workspace lease is unavailable");
+                if (rows.next())
+                    throw new java.io.IOException("Original workspace lease is duplicated");
+            }
+            var work = new SourceWorkDirectory(database.root().resolve("work/source-workspace"), task.id(), workspaceId,
+                    owner);
+            work.recover();
+            Path file = work.directory().resolve(name);
+            try {
+                Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS);
+            } catch (java.nio.file.NoSuchFileException absent) {
+                work.requireOwned();
+                return Optional.empty();
+            }
+            var copied = new SelectedDirectory(work.directory())
+                    .read(name, maxBytes, () -> Thread.currentThread().isInterrupted()).content();
+            work.requireOwned();
+            return Optional.of(copied);
+        } catch (Exception failure) {
+            throw error(ProblemCode.UNKNOWN, "SOURCE_EVIDENCE_UNCONFIRMED",
+                    "Original workspace evidence could not be safely read");
+        }
     }
 
     /** Authenticates original selection objects without deriving authority from copied UUIDs. / 认证原选择对象，不从复制 UUID 推导权限。
@@ -278,6 +357,7 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
     /** Reconciles only this original task's local resources without recopying sources. / 仅核对此原任务本地资源，不重新复制来源。
      * @param task original recovery context / 原恢复上下文
      * @throws ApiException if physical cleanup or durable ownership remains uncertain / 物理清理或持久归属仍不确定时 */
+    @Override
     public void closeTaskResources(TaskContext task) throws ApiException {
         scope.retryFinishedReleases(task);
         List<Snapshot> owned;

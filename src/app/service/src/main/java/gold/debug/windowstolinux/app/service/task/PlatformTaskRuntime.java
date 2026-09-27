@@ -17,6 +17,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Read-only original-task explicit resource observation. / 原任务显式资源只读观测。 */
     private final TaskResourceObservation resourceObservation;
 
+    /** Owner-bound author facts retained on the original task ledger. / 保留在原任务账本上的所有者绑定作者依据。 */
+    private final TaskAuthorCheckpoint authorCheckpoints;
+
     /** Actual boot that owns newly created physical clients, including recovery clients. / 持有新物理客户端的实际启动代次，包括恢复客户端。 */
     private final UUID bootId;
 
@@ -73,6 +76,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             throws SQLException {
         ledger = new TaskLedger(database);
         resourceObservation = new TaskResourceObservation(database);
+        authorCheckpoints = new TaskAuthorCheckpoint(database);
         bootId = database.bootId();
         this.admission = Objects.requireNonNull(admission);
         this.security = Objects.requireNonNull(security);
@@ -309,17 +313,18 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @throws ApiException if ownership or persistence fails / 归属或持久化失败时
      */
     public synchronized ResourceLease retain(TaskContext context, TaskResource resource) throws ApiException {
-        return retain(context, resource, null);
+        return retain(context, resource, null, false);
     }
 
     /** Persists host recovery facts before allowing a physical resource to be created. / 允许创建物理资源前持久化宿主恢复事实。
      * @param context original accepted context / 原已接纳上下文
      * @param resource exact host-owned resource / 精确宿主所属资源
      * @param recovery optional non-secret recovery facts / 可选且不含秘密的恢复事实
+     * @param firstCreation reject any prior row for this physical identity / 拒绝该物理身份的任一旧行
      * @return explicit release marker / 显式释放标记
      * @throws ApiException if ownership or durable registration cannot be confirmed / 无法确认归属或持久登记时 */
-    public synchronized ResourceLease retain(TaskContext context, TaskResource resource, ResourceRecovery recovery)
-            throws ApiException {
+    public synchronized ResourceLease retain(TaskContext context, TaskResource resource, ResourceRecovery recovery,
+            boolean firstCreation) throws ApiException {
         requireContext(context);
         var execution = executions.get(context.id());
         if (execution.returned && !execution.reconciling)
@@ -329,7 +334,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             if (resource.kind().equals("MOD") && blockedOwners.containsKey(resource.id())
                     && !ledger.holds(context.id(), resource))
                 throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED", blockedOwners.get(resource.id()));
-            var lease = new OwnedLease(execution, ledger.retain(context.id(), resource, recovery));
+            var lease = new OwnedLease(execution, ledger.retain(context.id(), resource, recovery, firstCreation));
             for (var scope : dependencyStack.get())
                 if (scope.context == context && scope.recovery.provider().equals(resource.ownerId())) {
                     scope.resources.add(lease.id);
@@ -357,7 +362,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             String serverId) throws ApiException {
         requireServer(context, owner, version, serverId);
         return retain(context, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), owner, false),
-                new ResourceRecovery("ssh.v1", Map.of("bootId", bootId.toString(), "serverId", serverId)));
+                new ResourceRecovery("ssh.v1", Map.of("bootId", bootId.toString(), "serverId", serverId)), false);
     }
 
     /** Lists recovery facts only for the bound original caller and active recovery context. / 仅为绑定原调用方及活动恢复上下文列出恢复事实。
@@ -1267,6 +1272,156 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 } catch (SQLException failure) {
                     throw error(ProblemCode.IO_FAILURE, "TASK_RESOURCE_OBSERVATION",
                             "Task resource release could not be confirmed");
+                }
+            }
+        }
+
+        /** Creates a bounded author fact as the task's first external-effect boundary. / 将有界作者依据作为任务首个外部效果边界创建。
+         * @param task original executing task / 原执行任务
+         * @param key stable owner-local key / 稳定所有者内部键
+         * @param initial non-secret object JSON / 非秘密对象 JSON
+         * @return original checkpoint / 原检查点
+         * @throws ApiException if admission or durable creation is unconfirmed / 准入或持久创建未确认时 */
+        @Override
+        public TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked || recoveryOnly)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation cannot start new checkpoint work");
+                requireExecuting(task, owner, version);
+                if (executions.get(task.id()).reconciling)
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "TASK_CHECKPOINT_RECOVERY_CREATE",
+                            "Recovery cannot create a new author checkpoint");
+                try {
+                    var entry = authorCheckpoints.begin(task.id(), owner, version, key, initial);
+                    return new BoundCheckpoint(task, key, entry.lease());
+                } catch (TaskAuthorCheckpoint.RejectedException rejected) {
+                    throw error(ProblemCode.INVALID_INPUT, "TASK_CHECKPOINT_INPUT",
+                            "Author checkpoint input is invalid");
+                } catch (SQLException failure) {
+                    reportUncertainEffect(task);
+                    throw error(ProblemCode.UNKNOWN, "TASK_CHECKPOINT_BEGIN",
+                            "Original author checkpoint creation could not be confirmed");
+                }
+            }
+        }
+
+        /** Finds only original facts, including released rows awaiting task archival. / 仅查原依据，包括待任务归档的已释放行。
+         * @param task original task / 原任务
+         * @param key owner-local key / 所有者内部键
+         * @return original checkpoint or absence / 原检查点或不存在
+         * @throws ApiException if authorization or durable read fails / 鉴权或持久读取失败时 */
+        @Override
+        public Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation has closed");
+                requireCleanup(task, owner, version);
+                try {
+                    return authorCheckpoints.find(task.id(), owner, version, key)
+                            .map(entry -> new BoundCheckpoint(task, key, entry.lease()));
+                } catch (SQLException failure) {
+                    throw error(ProblemCode.IO_FAILURE, "TASK_CHECKPOINT_READ",
+                            "Original author checkpoint could not be read");
+                }
+            }
+        }
+
+        /** Exact original-task author checkpoint handle. / 精确原任务作者检查点句柄。 */
+        private final class BoundCheckpoint implements TaskCheckpoint {
+            /** Original authentic context. / 原真实上下文。 */
+            private final TaskContext task;
+
+            /** Owner-local fixed key. / 所有者内部固定键。 */
+            private final String key;
+
+            /** Never-reused original lease. / 不可复用的原占用。 */
+            private final UUID lease;
+
+            /** Binds one actual persisted row. / 绑定一条实际持久行。
+             * @param task original context / 原上下文
+             * @param key owner-local key / 所有者内部键
+             * @param lease original lease / 原占用 */
+            private BoundCheckpoint(TaskContext task, String key, UUID lease) {
+                this.task = task;
+                this.key = key;
+                this.lease = lease;
+            }
+
+            /** Reads original durable evidence. / 读取原持久依据。
+             * @return exact snapshot / 精确快照
+             * @throws ApiException if original evidence differs / 原依据不符时 */
+            @Override
+            public Snapshot snapshot() throws ApiException {
+                if (javax.swing.SwingUtilities.isEventDispatchThread())
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+                synchronized (PlatformTaskRuntime.this) {
+                    if (revoked)
+                        throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                                "The owning Mod activation has closed");
+                    requireCleanup(task, owner, version);
+                    try {
+                        var entry = authorCheckpoints.find(task.id(), owner, version, key).orElseThrow();
+                        if (!entry.lease().equals(lease))
+                            throw new SQLException("Original checkpoint lease differs");
+                        return entry.snapshot();
+                    } catch (SQLException | NoSuchElementException failure) {
+                        throw error(ProblemCode.IO_FAILURE, "TASK_CHECKPOINT_READ",
+                                "Original author checkpoint could not be read");
+                    }
+                }
+            }
+
+            /** Advances only the original expected fact. / 仅推进原预期依据。
+             * @param expected exact old fact / 精确旧依据
+             * @param next next bounded object / 下一个有界对象
+             * @return confirmed next fact / 已确认下一依据
+             * @throws ApiException if compare-and-set cannot be confirmed / 比较更新未确认时 */
+            @Override
+            public Snapshot advance(Snapshot expected, String next) throws ApiException {
+                if (javax.swing.SwingUtilities.isEventDispatchThread())
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+                synchronized (PlatformTaskRuntime.this) {
+                    if (revoked)
+                        throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                                "The owning Mod activation has closed");
+                    requireCleanup(task, owner, version);
+                    try {
+                        return authorCheckpoints.advance(task.id(), owner, version, key, lease, expected, next);
+                    } catch (TaskAuthorCheckpoint.RejectedException rejected) {
+                        throw error(ProblemCode.CONTRACT_VIOLATION, "TASK_CHECKPOINT_COMPARE",
+                                "Original author checkpoint expected value differs");
+                    } catch (SQLException failure) {
+                        reportUncertainEffect(task);
+                        throw error(ProblemCode.UNKNOWN, "TASK_CHECKPOINT_ADVANCE",
+                                "Original author checkpoint update could not be confirmed");
+                    }
+                }
+            }
+
+            /** Releases original occupancy while the row remains readable until archive. / 释放原占用，行在归档前仍可读。
+             * @throws ApiException if original release is unconfirmed / 原释放未确认时 */
+            @Override
+            public void close() throws ApiException {
+                if (javax.swing.SwingUtilities.isEventDispatchThread())
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+                synchronized (PlatformTaskRuntime.this) {
+                    if (revoked)
+                        throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                                "The owning Mod activation has closed");
+                    requireCleanup(task, owner, version);
+                    try {
+                        authorCheckpoints.release(task.id(), owner, version, key, lease);
+                    } catch (SQLException failure) {
+                        reportUncertainEffect(task);
+                        throw error(ProblemCode.UNKNOWN, "TASK_CHECKPOINT_RELEASE",
+                                "Original author checkpoint release could not be confirmed");
+                    }
                 }
             }
         }

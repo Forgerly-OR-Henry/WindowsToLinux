@@ -21,6 +21,28 @@ public interface SourceService {
      * @throws ApiException if admission, creation or cleanup fails / 准入、创建或清理失败时 */
     SourceWorkspace workspace(TaskContext task) throws ApiException;
 
+    /** Creates one workspace using its previously persisted task-local identity. / 以预先持久化的任务内身份首次创建一个工作目录。
+     * @param task original executing task / 原执行任务
+     * @param workspaceId original preselected identity / 原预选身份
+     * @return original writable workspace / 原可写工作目录
+     * @throws ApiException if identity has been used or creation cannot be confirmed / 身份已使用或创建无法确认时 */
+    SourceWorkspace workspace(TaskContext task, java.util.UUID workspaceId) throws ApiException;
+
+    /** Copies bounded evidence from the original workspace without granting writable access. / 从原工作目录复制有界依据，不授予写权限。
+     * @param task original task or recovery context / 原任务或恢复上下文
+     * @param workspaceId original workspace identity / 原工作目录身份
+     * @param name one simple file name / 单个简单文件名
+     * @param maxBytes maximum copied bytes / 最大复制字节数
+     * @return copied bytes or absence / 独立字节或不存在
+     * @throws ApiException if the original identity or physical file cannot be verified / 原身份或物理文件无法核实时 */
+    java.util.Optional<byte[]> readWorkspaceEvidence(TaskContext task, java.util.UUID workspaceId, String name,
+            int maxBytes) throws ApiException;
+
+    /** Releases only physically verified work owned by this original task. / 仅释放此原任务物理已核实的工作素材。
+     * @param task original task or recovery context / 原任务或恢复上下文
+     * @throws ApiException if physical cleanup or ownership remains uncertain / 物理清理或归属仍不确定时 */
+    void closeTaskResources(TaskContext task) throws ApiException;
+
     /** Lists one complete bounded directory without recursively reading its children. / 列出一个完整有界目录，不递归读取其子项。
      * @param selection original user-authorized selection / 原用户授权选择
      * @param relativeDirectory slash-separated relative directory, empty for the selected root / 斜线分隔的相对目录，空串表示所选根

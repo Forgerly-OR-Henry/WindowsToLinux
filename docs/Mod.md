@@ -1021,7 +1021,15 @@ public interface TaskService {
     <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException;
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
     boolean resourcesReleased(TaskContext task) throws ApiException;
+    TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException;
+    Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
     RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException;
+}
+public interface TaskCheckpoint extends AutoCloseable {
+    record Snapshot(long revision, String payload, boolean released) {}
+    Snapshot snapshot() throws ApiException;
+    Snapshot advance(Snapshot expected, String next) throws ApiException;
+    @Override void close() throws ApiException;
 }
 public interface TaskRecovery {
     OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext originalTask) throws Exception;
@@ -1067,6 +1075,8 @@ public interface ManagedProcess extends AutoCloseable {
 }
 public interface ProcessService {
     ManagedProcess start(ProcessSpec spec, TaskContext task) throws ApiException;
+    ManagedProcess start(ProcessSpec spec, TaskContext task, UUID processId) throws ApiException;
+    void closeTaskResources(TaskContext task) throws ApiException;
 }
 ```
 
@@ -1076,9 +1086,11 @@ public interface ProcessService {
 
 `resourcesReleased(originalTask)` 只在原 Mod 仍启用、原对象身份匹配且处于原执行或显式恢复上下文时允许后台读取，不开启新的业务任务或安全解锁流程。它按平台任务账本扫描所有所有者与资源类别的未释放显式租约，仅精确 `TASK_END` 自动清理项可排除；NULL、未知恢复元数据和不存在的原任务都不能报告已释放。该观察不主动清理资源，也不能单独证明远端副作用结果；最终任务终态仍由平台任务运行时判定。
 
+`beginCheckpoint` 只允许原任务根所有者在执行时以未使用过的稳定键登记 UTF-8 最多 12,000 字节、无秘密的 JSON 作者事实；平台将固定 `author-checkpoint.v1` 封套作为 CUSTOM 显式资源保存，不解释 Git 业务状态。`findCheckpoint` 仅读取同一原任务的既有键，释放后的行在任务归档前仍可读。`advance` 要求精确旧修订和完整旧载荷匹配，提交不确定时保留 UNKNOWN 与原占用，不以作者内存状态推断成功。恢复不能新建检查点或凭 UUID 接管其他任务的资源；作者须先保存最终事实，再释放该检查点，最后由平台归档原任务。
+
 当前平台任务收尾已将固定 `archive_log_id` 的 `platform_task` 摘要、已释放资源行及原执行行移除放在同一 H2 事务。摘要仅保存有界脱敏诊断，不保存业务返回值；作者先提交正式业务结果，再返回已知结论。摘要或执行清理失败时保留原结论与 FINISHING，明确核对仅补平台归档，不重复调用业务或 TaskRecovery；跨启动已持久的完整收尾凭据可补归档，不恢复旧 Future。只有平台元数据待收尾的情况适用此路径，UNKNOWN 和实际残留资源仍须原恢复实现核对。正常结束的句柄保持终态及原返回值，显式核对后的 value 仍按上述契约为空；日志按类别保留 100 条、手动清到 10 条后，不由旧任务重建摘要。
 
-默认桌面已装配“任务与恢复”页，列出保留任务的原所有者/版本/类型、进度及资源阻塞，进入或刷新只读清单。协作取消仅对当前可取消的排队/运行任务开放；核对使用精确原身份的已登记 TaskRecovery。仅待平台元数据的任务提供“补齐归档”；宿主救援另须确认旧终端命令不再运行，经原救援服务核对。锁定或关闭清空观察并使旧确认失效，已接纳业务继续按原任务收尾。结束摘要由现有数据库管理页查看。跨启动自动建立原 Mod/依赖/Schema 的 RECOVERY 图尚待实现；缺原恢复登记时界面禁用核对并保留任务和占用，不按当前版本替代。
+默认桌面已装配“任务与恢复”页，列出保留任务的原所有者/版本/类型、进度及资源阻塞，进入或刷新只读清单。协作取消仅对当前可取消的排队/运行任务开放；核对使用精确原身份的已登记 TaskRecovery。仅待平台元数据的任务提供“补齐归档”；宿主救援另须确认旧终端命令不再运行，经原救援服务核对。锁定或关闭清空观察并使旧确认失效，已接纳业务继续按原任务收尾。结束摘要由现有数据库管理页查看。跨启动按保留的原 Mod/依赖/Schema 身份装配 RECOVERY 图；原图或恢复登记不完整时界面禁用核对并保留任务和占用，不按当前版本替代。
 
 平台网页终端救援另在 `browser_recovery` 类别保存固定摘要，并与中央任务摘要、救援事件/状态及执行记录清理同事务提交。仅已知结果且实际资源已释放可归档；摘要保留最后观察状态、命令摘要和事件数量，不保存终端内容。救援事件是未完成工作的恢复依据，普通日志清理不触碰；无原任务、归属异常及 UNKNOWN 记录仍保留。
 
@@ -1430,6 +1442,10 @@ public interface SourceWorkspace extends AutoCloseable {
 public interface SourceService {
     URI location(SourceSelection selection, TaskContext task) throws ApiException;
     SourceWorkspace workspace(TaskContext task) throws ApiException;
+    SourceWorkspace workspace(TaskContext task, UUID workspaceId) throws ApiException;
+    Optional<byte[]> readWorkspaceEvidence(TaskContext task, UUID workspaceId,
+        String name, int maxBytes) throws ApiException;
+    void closeTaskResources(TaskContext task) throws ApiException;
     List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory,
             int maxEntries, TaskContext task) throws ApiException;
     SourceSelection selectDirectory(String title, TaskContext task) throws ApiException;
@@ -1454,7 +1470,9 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 每个快照实际位于平台数据目录的 `work/source/<task UUID>/<snapshot UUID>/files`，对应明确 FILE 占用。`close()` 先清理真实文件，再释放账本；未关闭则任务保持收尾、阻止平台关闭。失败保留 UNKNOWN 和原身份供显式恢复，不重新选择或复制来源。前次启动恢复须核对持久任务、所有者、原生目录身份及独立标记；缺失可确认已清理，标记损坏或目录被替换则保留阻断。崩溃在标记完成前或移除标记后、目录移除前，可能留下无法自动证明归属的目录，需要人工核对；平台不接管并删除它。
 
-`workspace(task)` 创建原执行任务所属的可写暂存目录，供 Git 检出和生成归档等文件工作使用；路径固定在 `work/source-workspace/<task UUID>/<resource UUID>/files`，不得借此接管任意本地路径。平台先登记 FILE 占用，再创建带原生身份及标记的新容器，与不可变快照共用物理归属和清理实现。原生文件身份打开使用 Windows 扩展绝对路径，避免合法文件复制到较深的受管目录后受传统 MAX_PATH 限制，参见 [Microsoft 路径长度说明](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。`selection()` 返回同一原任务/启用可使用的来源授权，生成文件可经原有有界列举、读取和 snapshot 冻结；关闭即撤销授权。原执行回调返回、取消、启用封闭后不能再次取得可写目录；明确恢复只清理原目录，不创建新工作或恢复写入。路径是作者协作接口，不是文件系统沙箱，作者不得保留路径绕过生命周期，关闭前必须停止所有文件写入者及子进程。未清理的目录继续阻止任务结束和平台关闭，前次启动沿原 FILE 记录核验并删除，无法证明归属则保留 UNKNOWN。
+`workspace(task)` 创建原执行任务所属的可写暂存目录，供 Git 检出和生成归档等文件工作使用；路径固定在 `work/source-workspace/<task UUID>/<resource UUID>/files`，不得借此接管任意本地路径。平台先登记 FILE 占用，再创建带原生身份及标记的新容器，与不可变快照共用物理归属和清理实现。原生文件身份打开使用 Windows 扩展绝对路径，避免合法文件复制到较深的受管目录后受传统 MAX_PATH 限制，参见 [Microsoft 路径长度说明](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。`selection()` 返回同一原任务/启用可使用的来源授权，生成文件可经原有有界列举、读取和 snapshot 冻结；关闭即撤销授权。原执行回调返回、取消、启用封闭后不能再次取得可写目录；明确恢复仅复制有界原回执并清理原目录，不创建新工作或恢复写入。路径是作者协作接口，不是文件系统沙箱，作者不得保留路径绕过生命周期，关闭前必须停止所有文件写入者及子进程。未清理的目录继续阻止任务结束和平台关闭，前次启动沿原 FILE 记录核验并删除，无法证明归属则保留 UNKNOWN。
+
+`workspace(task, workspaceId)` 仅在执行中首次使用作者事先持久化的 UUID；账本中同一原任务的已释放历史行也阻止复用，不以调用 UUID 接管任意目录。恢复时 `readWorkspaceEvidence` 只在原任务/所有者及 FILE 与原生容器身份核验后复制一个简单文件名的独立字节，单次上限 1 MiB，不返回路径或可写句柄；原文件确实不存在才返回空，身份或读取不明为 UNKNOWN。`closeTaskResources` 复用原物理清理，不重新选择用户源码。预选 `ProcessService.start(..., processId)` 同样只允许执行阶段首次创建，原进程清理由 `closeTaskResources` 核验原 PID、启动代次、后代和管道后释放；恢复不启动新进程。
 
 官方 deployment 已在自己的 `source` 包接入本地取材：通过原选择句柄有界发现文件，应用原部署排除规则，再调用平台 `snapshot`，分析与后续执行共用这一份冻结素材。目录排除沿用精确名称 `.git`、`.idea`、`target`、`node_modules`、`.m2`、`.gradle`、`logs`；敏感文件及扩展名按原不区分大小写规则排除，普通 `.log` 默认排除。根目录 `windowstolinux-application.properties` 最多 64 KiB，`source.include` 最多 32 个唯一相对普通文件，按实际列举的原路径精确匹配，可纳入样例日志，不能覆盖秘密、排除目录或链接边界；声明必须与实际冻结副本的摘要一致，变化则拒绝并关闭该快照。
 
@@ -1462,7 +1480,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 官方 deployment 的归档器将同一份冻结素材写入受管可写目录，保持原 ustar/gzip 字节规则：原相对文件名排序、普通文件模式 0644、时间与所有者字段为零、不写目录条目，支持原 ustar 名称/前缀长度；超长名称明确失败。压缩输出（含 gzip 头尾）按调用方预算限制，最多 2 GiB；归档前后核对输入快照。完成后经平台再冻结 `source.tar.gz`，重新读取实际冻结字节核对长度和 SHA-256，并释放可写暂存目录后才返回。归档字节 SHA-256 与平台快照清单 SHA-256 分别保留，不混用；输入素材与输出归档各自持有原快照，分别关闭。取消、归档变化及清理未知不交付成功归档，残留由原平台资源句柄收尾。
 
-官方 deployment 的 `source/git` 已提供本机 CLASS 阶段的受管取材构件：显式无凭据 URI、主机允许列表与完整提交引用，经公开 ProcessService 启动仅含 Mod、公开 API 和所属 JSON 库的 Java worker；worker 用固定原生 Git 参数浅抓取一个引用、校验树，再检出固定提交。拒绝符号链接、gitlink、子模块元数据和 LFS 属性；源码筛选与归档复用上文的 Source 构件。原生 Git 的两分钟期限仅标记观察超时，父请求另有十二分钟观察期限；不强杀可能仍在退出的进程、不重放未知请求，两者都不保证到点物理清理完成。文件工作区和独立的 `git_processes` 占用在原 worker 实际退出、原任务/进程/操作身份的清理凭据匹配后才释放；缺失或冲突保留原占用和 UNKNOWN。本机回环 HTTPS 闩锁测试已证明真实 Git 发出 TLS ClientHello 后，原任务取消会先使平台请求观察为 UNKNOWN；闩锁未放行时原 worker/Git 与 FILE、CUSTOM、PROCESS 占用仍在。主动断开测试连接后，原生进程及管道自然退出，worker 原回执为 CANCELLED、物理目录及显式占用才释放，请求未重发。测试用截获回执作显式任务恢复，仅证明本机取消与清理边界；生产准备器目前在清理控制目录后仍返回平台 UNKNOWN，并无持久 Git TaskRecovery。当前 `closeTaskResources` 只能重试同一进程内原 TaskContext 的原 Attempt，尚无跨启动业务重开入口。正式项目库仅接受完成取材的记录，可保存本地/Git 原位置、明确 Git 引用与固定提交及平台源码快照摘要；同一项目可带完整旧记录与严格递增观测时间更新。正式执行首次入账在同一事务锁定并核对已审阅项目，把该修订冻结在现行格式 4 请求中；旧格式 1～3 只读，不能靠当前项目行补造旧执行来源。源码准备与项目保存的生产构件已接通，本轮不代表部署页面或引擎已调用。跨启动业务恢复还须保存原操作、工作目录、进程身份及最终回执并接入可审查的 TaskRecovery；现有公开 Source/Task 快照不能仅凭任务结束或 worker 退出证明原生后代已退出。SSH URI 暂拒绝，待平台凭据、主机信任和 SSH 配置隔离接线；HTTPS 远端与发行包/远端验证未在本机测试中证明。
+官方 deployment 的 `source/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；正式业务入口现为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。入口先以作者检查点持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再在原任务下只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。恢复只读原检查点和最多 1 MiB 的原工作区回执，核验原进程/FILE 资源、必要项目状态并清理原资源；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。直接准备器继续供调用方使用，但不代替上述生产原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成部署页面/引擎及远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结现行格式 4 的已审阅项目修订，旧格式 1～3 只读。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 

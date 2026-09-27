@@ -1568,7 +1568,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
 - `appapi/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
 - `appapi/source/SourceSelection.java`：用户批准的不透明来源选择。
-- `appapi/source/SourceService.java`：原任务用户选定目录的位置元数据、有界单层列举、读取及受管不可变快照；工作目录选择不提供长期原位置。
+- `appapi/source/SourceService.java`：原任务用户选定目录的位置元数据、有界列举/读取/快照，以及预选工作目录身份、原回执有界只读复制和实际清理。
 - `appapi/source/SourceDirectoryEntry.java`：原相对名称、普通文件/目录或非常规类别及观测长度，不暴露用户根路径。
 - `appapi/source/SourceWorkspace.java`：原执行任务的可写暂存目录及来源授权，实际清理后释放占用。
 - `appapi/source/SourceSnapshot.java`：实际关闭后释放的受管不可变来源目录。
@@ -1591,7 +1591,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/task/Problem.java`：不暴露实现异常的结构化失败或不确定原因。
 - `appapi/task/ProblemCode.java`：公开能力边界使用的稳定失败类别。
 - `appapi/task/ProcessMessage.java`：传输前需要校验 JSON 对象的协议消息。
-- `appapi/task/ProcessService.java`：不暴露平台凭据的任务所属进程启动。
+- `appapi/task/ProcessService.java`：不暴露平台凭据的任务所属进程启动、预选身份首次创建与原进程实际清理。
+- `appapi/task/TaskCheckpoint.java`：原任务作者事实的有界快照、精确修订 CAS 和释放句柄。
 - `appapi/task/ProcessSpec.java`：字面进程参数及有界握手配置。
 - `appapi/task/RecoveryRegistration.java`：允许人工核对保留任务的恢复注册。
 - `appapi/task/ResourceLease.java`：仅在实际清理后释放的受追踪资源占用。
@@ -1599,7 +1600,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/task/TaskHandle.java`：仅在必要清理完成后结束的可观察任务结果。
 - `appapi/task/TaskRecovery.java`：复用原资源且不重放未知副作用的结果核对。
 - `appapi/task/TaskRequest.java`：包含完整初始服务器资源集合的任务准入请求。
-- `appapi/task/TaskService.java`：绑定调用方的任务准入、观察与核对服务，并只读确认原任务全部显式资源已释放。
+- `appapi/task/TaskService.java`：绑定调用方的任务准入、观察与核对服务；创建/查找原作者检查点并只读确认全部显式资源释放。
 - `appapi/task/TaskSnapshot.java`：终态结果保持一致的不可变任务状态。
 - `appapi/task/TaskState.java`：区分取消请求与业务结果的任务进度状态。
 - `appapi/task/TaskWork.java`：观察取消并保留未完成资源的作者任务逻辑。
@@ -1632,7 +1633,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/BrowserRecoveryArchival.java`：核对原宿主任务/服务器，保存固定救援摘要，并在中央任务事务内清理所属救援事件与状态；拒绝迟到写入。
-- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；固定任务摘要与执行清理同事务，原归档凭据支持仅元数据重试及跨启动收尾。
+- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；预选物理资源身份拒绝同任务历史复用，固定任务摘要与执行清理同事务。
+- `app/db/task/TaskAuthorCheckpoint.java`：在既有 CUSTOM 资源恢复字段以宿主固定封套保存原作者事实，核对根任务身份并以修订和完整旧值 CAS 推进；已释放行在任务归档前仍可读。
 - `app/db/task/TaskResourceObservation.java`：按原任务及精确自动释放标记只读观测所有者和类别无关的显式资源占用。
 - `app/db/task/TaskRecoveryGraph.java`：保留任务准入时原所有者及全部传递提供方的版本、完整代码摘要与可选 Schema 代次；严格校验持久字段，不从当前单选补造原图。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
@@ -1678,7 +1680,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
-- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，原执行或恢复上下文可只读核对显式资源；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后运行绑定作者工作；原执行或恢复上下文可核对资源及作者检查点，未确认写入保留 UNKNOWN；已知归档失败仅补元数据。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、完整传递依赖、代码摘要、就绪 Schema 代次及完整服务器集合，并捕获原恢复图。
 - `app/service/contract/spi/TaskManagement.java`：平台内部的保留任务清单及原任务操作契约，区分不可核对、缺原恢复、原恢复、元数据归档及救援确认。
 - `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。
@@ -1717,7 +1719,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/source/boundary/SelectedDirectory.java`：校验用户目录身份与相对边界，有界列举直接子项并按内容和容量进行读取与复制；原位置元数据在再次核验物理身份后返回。
 - `app/source/snapshot/SourceWorkDirectory.java`：快照与可写暂存共用的原任务目录身份、持久标记及安全清理。
 - `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
-- `app/service/source/PlatformSourceAccess.java`：把目录确认、位置元数据、读取和快照绑定原 Mod 任务，工作目录选择不得作为长期来源，保留实际 FILE 占用并支持原身份恢复。
+- `app/service/source/PlatformSourceAccess.java`：绑定原 Mod 的选择、读取与快照；预选工作目录不得复用，恢复仅在原 FILE/物理身份核验后复制最多一 MiB 回执并清理原素材。
 - `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 与扩展绝对路径读取 Windows 卷号和 128 位文件 ID，支持本机长路径并关闭实际原生句柄。
 
 - `appapi/linux/TransferConflict.java`：同名冲突的精确端点、方向与实测大小。
@@ -1750,7 +1752,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/process/ProcessProtocol.java`：严格 UTF-8 JSONL 封套、关联身份、容量和结果契约校验。
 - `app/mod/process/ProcessChannel.java`：实际子进程的有界双向管道、握手、请求、取消、停止及独立 stderr 消费。
 - `app/db/task/ProcessRecovery.java`：STARTING/STARTED 的精确启动代次、进程 UUID、PID 和系统启动时间，以及保留原事实的 `browser.closed.v1` 明确关闭协议。
-- `app/service/process/PlatformProcessService.java`：创建前占用、握手前身份检查点、原任务未知保护及无重放进程核对。
+- `app/service/process/PlatformProcessService.java`：创建前占用、预选进程 UUID 首次使用、握手前 PID/启动时间检查点、原任务未知保护及无重放进程核对。
 
 - `app/mod/service/ServiceSnapshot.java`：跨 Mod 同步调用的有界值复制，拒绝活动句柄、闭包及异步对象。
 - `app/db/task/DependencyRecovery.java`：逐调用提供方原版本、可选 Schema 代次及严格 service.v1 恢复事实。
@@ -1773,7 +1775,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
 
-- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、独立日志类别及原任务发布恢复器；部署业务迁移仍在进行。
+- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、日志、发布引用及 Git 来源原任务恢复器；页面/引擎迁移仍在进行。
 - `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单、类型化配置内容摘要及发布绑定。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：官方部署 Schema 1 的固定 H2 DDL，含业务表及标准日志。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：只读列清单，用于发现缺表、缺列及多余表列。
@@ -1839,6 +1841,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/DeploymentPublication.java`：作者一次性返回的完整已核实应用图和单元发布事实。
 - `mod/deployment/service/core/DeploymentPublicationPlan.java`：预留前已审阅的原执行身份及完整引用意图，不接受外部伪造任务 UUID。
 - `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；UNKNOWN 不重放作者副作用。
+- `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
+- `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
 - `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。
@@ -1865,4 +1869,4 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/source/git/DeploymentGitWorker.java`：公开进程协议的单操作 Java worker 及原结果凭据。
 - `mod/deployment/source/git/DeploymentGitLaunch.java`：只收集 Mod、公开 API 和私有 JSON 库的 worker 启动参数。
 - `mod/deployment/source/git/DeploymentGitMaterial.java`：固定提交、原源码快照和独立归档句柄。
-- `mod/deployment/source/git/DeploymentGitPreparer.java`：原任务工作区、worker、进程组占用及清理次序。
+- `mod/deployment/source/git/DeploymentGitPreparer.java`：原任务工作区、worker 与原生清理次序；生产观察器使用预持久身份并在删除 control 前记录已核实回执，旧直接构件仍保留进程组占用。

@@ -279,4 +279,69 @@ class PlatformSourceWorkspaceTest {
             assertFalse(Files.exists(payload.getParent()));
         }
     }
+
+    @Test
+    void priorBootReadsOnlyBoundedOriginalWorkspaceEvidenceBeforePhysicalRelease() throws Exception {
+        Path data = root.resolve("data");
+        UUID id = UUID.randomUUID(), task = UUID.randomUUID();
+        byte[] receipt = "verified-original-receipt".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
+            var persistence = new PlatformPersistence(db);
+            try (var security = new DesktopSecurityService(persistence.security())) {
+                security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+            }
+            register(db, null);
+            var ledger = new TaskLedger(db);
+            ledger.enqueue(task, OWNER, VERSION, request(), List.of(new TaskResource("MOD", OWNER, OWNER, false)));
+            assertTrue(ledger.tryStart(task));
+            ledger.retain(task, new TaskResource("FILE", "source-workspace-v1:" + id, OWNER, false), null, true);
+            var work = new SourceWorkDirectory(data.resolve("work/source-workspace"), task, id, OWNER);
+            work.prepare();
+            Files.write(work.directory().resolve("git-result.json"), receipt);
+        }
+        try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
+            runtime.security().unlock(PASSWORD.toCharArray());
+            var source = source(runtime);
+            var binding = runtime.tasks().bind(OWNER, VERSION, true);
+            try (var registration = binding.registerRecovery("fixture", (previous, context) -> {
+                assertArrayEquals(receipt,
+                        source.readWorkspaceEvidence(context, id, "git-result.json", 1024).orElseThrow());
+                assertTrue(source.readWorkspaceEvidence(context, id, "absent.json", 1024).isEmpty());
+                assertEquals(ProblemCode.UNKNOWN,
+                        assertThrows(ApiException.class,
+                                () -> source.readWorkspaceEvidence(context, UUID.randomUUID(), "git-result.json", 1024))
+                                .problem().code());
+                assertEquals(ProblemCode.UNKNOWN,
+                        assertThrows(ApiException.class,
+                                () -> source.readWorkspaceEvidence(context, id, "git-result.json", 4)).problem()
+                                .code());
+                source.closeTaskResources(context);
+                return success(null);
+            })) {
+                assertEquals(TaskState.ENDED,
+                        runtime.tasks().reconcile(task).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+            }
+        }
+        assertFalse(
+                Files.exists(data.resolve("work/source-workspace").resolve(task.toString()).resolve(id.toString())));
+    }
+
+    @Test
+    void preselectedWorkspaceIdentityCannotBeRecreatedAfterOriginalRelease() throws Exception {
+        try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            var source = source(runtime);
+            var id = UUID.randomUUID();
+            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                try (var workspace = source.workspace(task, id)) {
+                    assertEquals(id, workspace.id());
+                }
+                assertEquals(ProblemCode.IO_FAILURE,
+                        assertThrows(ApiException.class, () -> source.workspace(task, id)).problem().code());
+                assertFalse(Files.exists(root.resolve("data/work/source-workspace").resolve(task.id().toString())
+                        .resolve(id.toString())));
+                return success(null);
+            }));
+        }
+    }
 }

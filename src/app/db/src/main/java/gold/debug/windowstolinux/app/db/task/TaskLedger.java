@@ -304,16 +304,18 @@ public final class TaskLedger {
      * @throws SQLException if the task no longer executes or a conflict exists / 任务不再执行或存在冲突时
      */
     public UUID retain(UUID taskId, TaskResource resource) throws SQLException {
-        return retain(taskId, resource, null);
+        return retain(taskId, resource, null, false);
     }
 
     /** Retains a physical resource and its recovery facts in the same transaction. / 在同一事务中保留物理资源及其恢复事实。
      * @param taskId original executing task / 原执行任务
      * @param resource exact owned resource / 精确所属资源
      * @param recovery optional host recovery facts / 可选宿主恢复事实
+     * @param firstCreation require this task/kind/identity to have no historical row / 要求本任务、类别及身份无历史行
      * @return durable lease identity / 持久占用身份
      * @throws SQLException if ownership, metadata or persistence fails / 归属、元数据或持久化失败时 */
-    public UUID retain(UUID taskId, TaskResource resource, ResourceRecovery recovery) throws SQLException {
+    public UUID retain(UUID taskId, TaskResource resource, ResourceRecovery recovery, boolean firstCreation)
+            throws SQLException {
         String metadata = recovery == null ? ResourceRecovery.EXPLICIT : recovery.encode();
         return locked(() -> {
             try (var c = connections.open()) {
@@ -324,6 +326,18 @@ public final class TaskLedger {
                     throw new SQLException("Servers must be declared in initial admission");
                 if (conflicts(c, taskId, resource))
                     throw new SQLException("Resource is busy");
+                if (firstCreation)
+                    try (var p = c.prepareStatement(
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=?")) {
+                        p.setObject(1, taskId);
+                        p.setString(2, resource.kind());
+                        p.setString(3, resource.id());
+                        try (var r = p.executeQuery()) {
+                            r.next();
+                            if (r.getLong(1) != 0)
+                                throw new SQLException("Owned resource identity was already used by this task");
+                        }
+                    }
                 try (var p = c.prepareStatement(
                         "SELECT lease_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND released_at IS NULL")) {
                     p.setObject(1, taskId);

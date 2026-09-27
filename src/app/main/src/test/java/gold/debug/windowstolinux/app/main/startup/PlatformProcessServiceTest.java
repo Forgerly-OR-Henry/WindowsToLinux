@@ -216,7 +216,7 @@ class PlatformProcessServiceTest {
                 var observed = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.of(child.pid()),
                         child.info().startInstant());
                 ledger.retain(task, new TaskResource("PROCESS", "process-v1:" + observed.process(), OWNER, false),
-                        observed.encode());
+                        observed.encode(), false);
             }
             try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
                 runtime.security().unlock(PASSWORD.toCharArray());
@@ -267,10 +267,11 @@ class PlatformProcessServiceTest {
             var original = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.of(current.pid()),
                     Optional.of(current.info().startInstant().orElseThrow().minusSeconds(1)));
             ledger.retain(task, new TaskResource("PROCESS", "process-v1:" + original.process(), OWNER, false),
-                    original.encode());
+                    original.encode(), false);
             var missing = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(), Optional.empty());
             missingLease = ledger.retain(missingTask,
-                    new TaskResource("PROCESS", "process-v1:" + missing.process(), OWNER, false), missing.encode());
+                    new TaskResource("PROCESS", "process-v1:" + missing.process(), OWNER, false), missing.encode(),
+                    false);
         }
         try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());
