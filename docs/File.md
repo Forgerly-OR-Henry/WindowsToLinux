@@ -8,7 +8,7 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source 及 service/core/config、model 包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model 与 service/standard/analyze 完整静态分析包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-27（1.1 增量实施；完整目标图仍待切换）
@@ -153,9 +153,66 @@ WindowsToLinux/
    │     ├─ db/
    │     ├─ secret/
    │     ├─ service/
-   │     │  └─ core/
-   │     │     ├─ config/
-   │     │     └─ model/
+   │     │  ├─ core/
+   │     │  │  ├─ config/
+   │     │  │  └─ model/
+   │     │  │     ├─ analysis/
+   │     │  │     ├─ assessment/
+   │     │  │     ├─ ecosystem/
+   │     │  │     │  └─ db/
+   │     │  │     ├─ language/
+   │     │  │     ├─ message/
+   │     │  │     ├─ project/
+   │     │  │     │  └─ component/
+   │     │  │     ├─ server/
+   │     │  │     └─ toolchain/
+   │     │  └─ standard/
+   │     │     └─ analyze/
+   │     │        ├─ component/
+   │     │        ├─ contract/
+   │     │        │  ├─ policy/
+   │     │        │  └─ spi/
+   │     │        ├─ core/
+   │     │        ├─ ecosystem/
+   │     │        │  ├─ c/
+   │     │        │  │  └─ cmake/
+   │     │        │  ├─ db/
+   │     │        │  ├─ dotnet/
+   │     │        │  │  └─ dotnetsdk/
+   │     │        │  ├─ go/
+   │     │        │  │  └─ gomodule/
+   │     │        │  ├─ java/
+   │     │        │  │  ├─ gradle/
+   │     │        │  │  ├─ jar/
+   │     │        │  │  ├─ jdk/
+   │     │        │  │  └─ maven/
+   │     │        │  ├─ kotlin/
+   │     │        │  │  ├─ gradle/
+   │     │        │  │  └─ kotlinc/
+   │     │        │  ├─ node/
+   │     │        │  │  ├─ npm/
+   │     │        │  │  ├─ pnpm/
+   │     │        │  │  └─ yarn/
+   │     │        │  ├─ php/
+   │     │        │  │  ├─ composer/
+   │     │        │  │  └─ phpcli/
+   │     │        │  ├─ python/
+   │     │        │  │  ├─ pip/
+   │     │        │  │  ├─ pipenv/
+   │     │        │  │  ├─ poetry/
+   │     │        │  │  └─ uv/
+   │     │        │  ├─ ruby/
+   │     │        │  │  ├─ bundler/
+   │     │        │  │  └─ rubycli/
+   │     │        │  └─ rust/
+   │     │        │     └─ cargo/
+   │     │        ├─ extension/
+   │     │        │  └─ registry/
+   │     │        ├─ preview/
+   │     │        ├─ service/
+   │     │        ├─ source/
+   │     │        ├─ toolchain/
+   │     │        └─ workload/
    │     └─ source/
    │        └─ git/
    ├─ shared/
@@ -1096,7 +1153,7 @@ deploy.execution.transaction  编排上传、构建、发布、健康检查和�
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不开放原始 SFTP 或不受控 systemd、Docker、Podman 操作；Agent 生成的命令只能经绑定任务、身份与修订的受限命令接口执行。
 11. `linux` 的接口、请求、结果和异常不得导入或暴露 Apache SSHD 类型；`linux-sshd` 可以依赖 Apache SSHD，但不得把具体客户端、会话、通道或 SFTP 类型传递给上层模块。
 12. 生产包依赖不得成环；组合门面只能依赖下游窄契约和实现，低层 command、SPI、不可变契约与错误类型不得反向依赖注册表、默认实现、会话或业务编排。
-13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。`contract.result.deployment`、`analyze.ecosystem.java.maven` 和 `execution.protocol.helper` 均属于标准三层结构；第四层或更深结构必须先修改本文并单独评审。总包数、单包类型数量和目录对称不作为硬门禁。
+13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。官方 deployment 已实施的 `service.standard.analyze` 是迁入旧完整静态分析的逻辑职责根，其后最多三层（如 `ecosystem.java.maven`）；`service.core.model` 是多个引擎共用纯值的逻辑职责根，其后最多两层（如 `project.component`、`ecosystem.db`）。这两个精确锚点不放宽其他包的三层上限，也不允许分析算法进入 core/model。旧 `shared.standard.analyze` 在根切换前继续受原模块根三层约束。第四层或更深结构若不属于这两个已审锚点，必须先修改本文并单独评审。总包数、单包类型数量和目录对称不作为硬门禁。
 14. `contract`、`generation`、`extension`、`execution`、`persistence` 的直接子包只能使用第 2.2 节允许的职责名；标准职责不得绕过父功能组。`shared/linux` 公共远程契约、`shared/model.capability`、`shared/model.lifecycle`、`linux-sshd.capability` 与 `linux-sshd.connection` 是经评审的语义例外；`ecosystem`、`workload`、`runtime`、`distro` 保持正交，尤其不得建立 `execution.runtime`。`PackageStructureArchitectureTest` 已同步检查三层深度、功能组职责、例外、物理路径、旧包和测试镜像。
 15. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationFacade` 只豁免直接声明方法数。
 16. 合并依据是行为完全一致且差异可由受校验数据表达，拆分依据是存在可独立测试和命名的职责；领域记录、枚举、状态类型和 SPI 不因文件短小而合并，类也不因行数较长而机械拆分。
@@ -1374,8 +1431,63 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     │  │  ├─ delivery/                # [包] 受管发布、候选健康验证、版本切换和回滚
 │  │     │  │  ├─ lifecycle/               # [包] 受管应用的状态、启停、重启及生命周期校验
 │  │     │  │  └─ model/                   # [包] 部署、应用、发布与业务状态的私有模型
+│  │     │  │     ├─ analysis/            # [包] 准入、证据及拒绝纯值
+│  │     │  │     ├─ assessment/          # [包] 单项目与多组件类型化评估
+│  │     │  │     ├─ ecosystem/           # [包] 纯生态声明
+│  │     │  │     │  └─ db/               # [包] 数据库要求与模式审阅纯值
+│  │     │  │     ├─ language/            # [包] 语言及版本事实
+│  │     │  │     ├─ message/             # [包] 非秘密本地化消息纯值
+│  │     │  │     ├─ project/             # [包] 项目构建与运行事实
+│  │     │  │     │  └─ component/        # [包] 独立分析组件纯值
+│  │     │  │     ├─ server/              # [包] 目标发行版纯值
+│  │     │  │     └─ toolchain/           # [包] 工具链要求纯值
 │  │     │  └─ standard/                   # [包] 标准部署流程，区分分析和执行
 │  │     │     ├─ analyze/                 # [包] 静态识别、证据提取、冲突和缺项分析
+│  │     │     │  ├─ component/           # [包] 多组件发现、检查与图准入
+│  │     │     │  ├─ contract/            # [包] 分析边界与类型检查器契约
+│  │     │     │  │  ├─ policy/           # [包] 静态源码安全策略
+│  │     │     │  │  └─ spi/              # [包] 类型检查器契约
+│  │     │     │  ├─ core/                # [包] 分析协调与语言汇总
+│  │     │     │  ├─ ecosystem/           # [包] 十种语言和数据库声明识别
+│  │     │     │  │  ├─ c/                # [包] C 与 C++ 语言识别
+│  │     │     │  │  │  └─ cmake/         # [包] CMake 固定架构检查
+│  │     │     │  │  ├─ db/               # [包] 数据库声明检查
+│  │     │     │  │  ├─ dotnet/           # [包] .NET 语言识别
+│  │     │     │  │  │  └─ dotnetsdk/     # [包] .NET SDK 固定架构检查
+│  │     │     │  │  ├─ go/               # [包] Go 语言识别
+│  │     │     │  │  │  └─ gomodule/      # [包] Go Module 固定架构检查
+│  │     │     │  │  ├─ java/             # [包] Java 语言识别
+│  │     │     │  │  │  ├─ gradle/        # [包] Gradle 构建检查
+│  │     │     │  │  │  ├─ jar/           # [包] JAR 交付检查
+│  │     │     │  │  │  ├─ jdk/           # [包] 纯 JDK 架构检查
+│  │     │     │  │  │  └─ maven/         # [包] Maven 构建检查
+│  │     │     │  │  ├─ kotlin/           # [包] Kotlin 语言识别
+│  │     │     │  │  │  ├─ gradle/        # [包] Kotlin Gradle 架构检查
+│  │     │     │  │  │  └─ kotlinc/       # [包] 原生编译器架构检查
+│  │     │     │  │  ├─ node/             # [包] Node.js 语言识别
+│  │     │     │  │  │  ├─ npm/           # [包] npm 架构检查
+│  │     │     │  │  │  ├─ pnpm/          # [包] pnpm 架构检查
+│  │     │     │  │  │  └─ yarn/          # [包] Yarn 架构检查
+│  │     │     │  │  ├─ php/              # [包] PHP 语言识别
+│  │     │     │  │  │  ├─ composer/      # [包] Composer 架构检查
+│  │     │     │  │  │  └─ phpcli/        # [包] PHP CLI 架构检查
+│  │     │     │  │  ├─ python/           # [包] Python 语言识别
+│  │     │     │  │  │  ├─ pip/           # [包] pip 架构检查
+│  │     │     │  │  │  ├─ pipenv/        # [包] Pipenv 架构检查
+│  │     │     │  │  │  ├─ poetry/        # [包] Poetry 架构检查
+│  │     │     │  │  │  └─ uv/            # [包] uv 架构检查
+│  │     │     │  │  ├─ ruby/             # [包] Ruby 语言识别
+│  │     │     │  │  │  ├─ bundler/       # [包] Bundler 架构检查
+│  │     │     │  │  │  └─ rubycli/       # [包] Ruby CLI 架构检查
+│  │     │     │  │  └─ rust/             # [包] Rust 语言识别
+│  │     │     │  │     └─ cargo/         # [包] Cargo 架构检查
+│  │     │     │  ├─ extension/           # [包] 默认检查器装配
+│  │     │     │  │  └─ registry/         # [包] 14种部署类型及预览登记
+│  │     │     │  ├─ preview/             # [包] 只识别预览
+│  │     │     │  ├─ service/             # [包] 通用服务事实组装
+│  │     │     │  ├─ source/              # [包] 有界遍历和元数据读取
+│  │     │     │  ├─ toolchain/           # [包] 工具链声明读取
+│  │     │     │  └─ workload/            # [包] 静态站点和容器工作负载检查
 │  │     │     └─ deploy/                  # [包] 标准计划、适配器、工具链及有界 assistance
 │  │     ├─ source/                        # [包] 部署取材、排除规则及平台快照的业务使用
 │  │     │  └─ git/                        # [包] Git 版本选择及固定来源准备
@@ -1408,7 +1520,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 | `deployment/source`                   | 平台 Source/任务契约、业务取材规则及 service/core/model 纯值                            | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包                           |
 | `deployment/windows`                  | 平台公开 Source/进程/交互等契约及本机业务适配                                           | 不依赖 app/windows 私有类，不接管平台更新、卸载和窗口隐私                                |
 | `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                                                    | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入                              |
-| `deployment/service/standard/analyze` | 平台 API、必要部署业务契约                                                              | 保持确定性静态分析，不依赖 agent 或 UI                                                   |
+| `deployment/service/standard/analyze` | 平台任务 API、原冻结素材句柄及 `service/core/model` 纯值                                | 保持确定性静态分析，不依赖 agent 或 UI；不接管原快照寿命                                 |
 | `deployment/service/standard/deploy`  | 标准分析、共用 core、部署 API、所需 ai/db/linux/secret/source/windows 及平台 API        | 不依赖 agent 或 UI，普通标准流程保持无 AI 路径                                           |
 | `deployment/service/agent`            | 共用 core、部署 API、所需 ai/db/linux/secret/source/windows 及平台 API                  | 不依赖 standard 或 UI；多轮业务决策和工具执行留在本包                                    |
 | `deployment/ui`                       | 本 Mod 的 service 及平台 UI 契约                                                        | 不直接访问 db 或调用 ai 执行业务                                                         |
@@ -1464,7 +1576,7 @@ API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serve
 
 ### 8.4 已确认的 Mod 源码结构与命名
 
-本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认，官方 deployment 的部分生产构件已迁入；完整接口与源码迁移尚未验收，也不改变第 1～7 节当前代码的结构门禁。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
+本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认；官方 deployment 已迁入固定取材、秘密修订和完整静态分析等生产构件，完整接口与源码迁移尚未验收，也不改变第 1～7 节当前代码的结构门禁。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
 
 #### 主模块结构
 
