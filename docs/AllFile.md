@@ -1674,6 +1674,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源及固定摘要归档；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
+- `app/service/contract/spi/TaskManagement.java`：平台内部的保留任务清单及原任务操作契约，区分不可核对、缺原恢复、原恢复、元数据归档及救援确认。
+- `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。
+- `app/ui/recovery/TaskRecoveryPane.java`：常驻任务页展示原身份、进度及资源阻塞，明确取消/核对/补归档并跳转现有日志页；锁定或关闭清空观察、使旧确认及迟到结果失效。
 - `app/service/task/TaskCapabilityScope.java`：跟踪服务器及秘密适配器的真实操作寿命、Schema 占用及失败释放重试。
 - `app/service/secret/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。
 - `app/service/contract/spi/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
