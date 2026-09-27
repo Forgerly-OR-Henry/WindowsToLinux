@@ -27,13 +27,16 @@ public final class DeploymentExecutionRepository {
      * @param identity immutable reviewed operation / 不可变审阅操作
      * @param operationType original operation name / 原操作名
      * @param references exact ordered resource associations / 精确有序资源关联
+     * @param reviewedProject complete source facts actually reviewed before this request / 本请求前实际审阅的完整来源事实
      * @param createdAt original creation time / 原创建时间
      * @throws SQLException if identity conflicts or persistence fails / 身份冲突或持久化失败时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
     public void begin(TaskContext task, DeploymentExecutionIdentity identity, String operationType,
-            List<DeploymentReferenceIntent> references, Instant createdAt) throws SQLException, ApiException {
+            List<DeploymentReferenceIntent> references, Optional<DeploymentProjectRecord> reviewedProject,
+            Instant createdAt) throws SQLException, ApiException {
         requireTask(task, identity);
-        var request = DeploymentExecutionCodec.request(identity, operationType, references);
+        Objects.requireNonNull(reviewedProject);
+        var request = DeploymentExecutionCodec.request(identity, operationType, references, reviewedProject);
         var initial = new DeploymentExecutionRecord(identity, "PREPARED", Optional.empty(), request,
                 DeploymentExecutionCodec.recovery(identity, "PREPARED", Map.of()), Optional.empty(), false, false,
                 millis(createdAt), millis(createdAt));
@@ -48,6 +51,12 @@ public final class DeploymentExecutionRepository {
                         || !original.createdAt().equals(initial.createdAt()))
                     throw new SQLException("Execution identity or request is immutable");
                 return;
+            }
+            if (reviewedProject.isPresent()) {
+                var current = DeploymentProjectRepository.read(connection, reviewedProject.get().id(), true)
+                        .orElseThrow(() -> new SQLException("Reviewed project is absent"));
+                if (!current.equals(reviewedProject.get()))
+                    throw new SQLException("Project changed after source review");
             }
             try (var statement = connection.prepareStatement(
                     "INSERT INTO deployment_execution(execution_id,platform_task_id,project_id,application_id,server_profile_id,mode,phase,reviewed_revision,request_payload,recovery_payload,created_at,updated_at) VALUES(?,?,?,?,?,?,'PREPARED',?,?,?,?,?)")) {
@@ -94,6 +103,14 @@ public final class DeploymentExecutionRepository {
                 return rows.next() ? Optional.of(row(rows)) : Optional.empty();
             }
         }
+    }
+
+    /** Reads the original reviewed project revision retained in a supported execution. / 读取受支持执行中保留的原已审阅项目修订。
+     * @param record original retained execution / 原留存执行
+     * @return frozen source facts or explicit absence / 冻结来源事实或明确不存在
+     * @throws SQLException if the format or facts are unsupported / 格式或事实不受支持时 */
+    public Optional<DeploymentProjectRecord> reviewedProject(DeploymentExecutionRecord record) throws SQLException {
+        return DeploymentExecutionCodec.project(Objects.requireNonNull(record));
     }
 
     /** Returns supported exact associations with any already observed reservation UUID. / 返回受支持的精确关联及已观察预留UUID。

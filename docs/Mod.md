@@ -1396,6 +1396,7 @@ public interface AiService {
 ```java
 package gold.debug.windowstolinux.appapi.source;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -1422,6 +1423,7 @@ public interface SourceWorkspace extends AutoCloseable {
     void close() throws ApiException;
 }
 public interface SourceService {
+    URI location(SourceSelection selection, TaskContext task) throws ApiException;
     SourceWorkspace workspace(TaskContext task) throws ApiException;
     List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory,
             int maxEntries, TaskContext task) throws ApiException;
@@ -1434,6 +1436,8 @@ public interface SourceService {
 ```
 
 `list` 只列举明确目录的一层直接子项，空字符串表示选定根，其他值遵守相对目录边界；返回按原相对路径排序的不可变完整列表，不暴露用户根路径、不递归、不读取文件内容、不应用业务排除。`maxEntries` 为 1～100,000，超出则失败，不把截断列表当成功。普通文件返回观测长度，目录和 OTHER 为零；链接、Windows 联接及非常规项归 OTHER，作者自行决定拒绝或省略，不自动遍历。用户显式请求的根内链接目录仍按实际解析边界检查，根外目标拒绝。列举前后核验原目录身份和时间，取消中止；列表是名称/类型的观测，跨多次列举并非原子快照，实际冻结仍以显式文件集合为准。和 read/snapshot 一样，复制的选择 UUID、其他任务/启用、过期上下文和 EDT 访问被拒绝。
+
+`location` 仅为原用户选定目录返回规范绝对 file URI 元数据，仍核验原选择对象、原执行任务、启用状态、非 EDT 调用、取消与物理根身份；`SourceWorkspace.selection()` 必须拒绝作为长期原来源。该 URI 不能重造 `SourceSelection` 或重新授权读取，源码清单的 `list` 仍不暴露根路径。
 
 选择由平台在 EDT 承载用户目录确认，后台调用等待交互；选择句柄绑定当前 Mod 和任务。相对路径使用 `/`，拒绝越界、绝对路径及指向根外的联接/链接；单次读取最多 8 MiB，快照最多 2 GiB/100,000 个文件，请求值可更小。快照文件集合由作者业务选择，平台不内置部署排除规则。生成到任务工作目录后冻结，摘要采用排序的路径＋长度＋文件 SHA-256，不把修改中源目录当作不可变快照；复制前后变化则失败并保留诊断。快照目录只在句柄有效期间可读，业务需要长期素材时必须另按所属数据生命周期保存。
 
@@ -1453,7 +1457,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 官方 deployment 的归档器将同一份冻结素材写入受管可写目录，保持原 ustar/gzip 字节规则：原相对文件名排序、普通文件模式 0644、时间与所有者字段为零、不写目录条目，支持原 ustar 名称/前缀长度；超长名称明确失败。压缩输出（含 gzip 头尾）按调用方预算限制，最多 2 GiB；归档前后核对输入快照。完成后经平台再冻结 `source.tar.gz`，重新读取实际冻结字节核对长度和 SHA-256，并释放可写暂存目录后才返回。归档字节 SHA-256 与平台快照清单 SHA-256 分别保留，不混用；输入素材与输出归档各自持有原快照，分别关闭。取消、归档变化及清理未知不交付成功归档，残留由原平台资源句柄收尾。
 
-官方 deployment 的 `source/git` 已提供本机 CLASS 阶段的受管取材构件：显式无凭据 URI、主机允许列表与完整提交引用，经公开 ProcessService 启动仅含 Mod、公开 API 和所属 JSON 库的 Java worker；worker 用固定原生 Git 参数浅抓取一个引用、校验树，再检出固定提交。拒绝符号链接、gitlink、子模块元数据和 LFS 属性；源码筛选与归档复用上文的 Source 构件。原生 Git 的两分钟期限仅标记观察超时，父请求另有十二分钟观察期限；不强杀可能仍在退出的进程、不重放未知请求，两者都不保证到点物理清理完成。文件工作区和独立的 `git_processes` 占用在原 worker 实际退出、原任务/进程/操作身份的清理凭据匹配后才释放；缺失或冲突保留原占用和 UNKNOWN。当前 `closeTaskResources` 只能重试同一进程内原 TaskContext 的原 Attempt，尚无跨启动业务重开入口。未来正式执行和项目持久化须保存原操作、工作目录及进程身份，接入可审查的 TaskRecovery；现有公开 Source/Task 快照不能仅凭任务结束或 worker 退出证明原生后代已退出。SSH URI 暂拒绝，待平台凭据、主机信任和 SSH 配置隔离接线；HTTPS 远端与发行包/远端验证未在本机测试中证明。持久项目记录、部署界面/引擎接线仍随 S5 完成。
+官方 deployment 的 `source/git` 已提供本机 CLASS 阶段的受管取材构件：显式无凭据 URI、主机允许列表与完整提交引用，经公开 ProcessService 启动仅含 Mod、公开 API 和所属 JSON 库的 Java worker；worker 用固定原生 Git 参数浅抓取一个引用、校验树，再检出固定提交。拒绝符号链接、gitlink、子模块元数据和 LFS 属性；源码筛选与归档复用上文的 Source 构件。原生 Git 的两分钟期限仅标记观察超时，父请求另有十二分钟观察期限；不强杀可能仍在退出的进程、不重放未知请求，两者都不保证到点物理清理完成。文件工作区和独立的 `git_processes` 占用在原 worker 实际退出、原任务/进程/操作身份的清理凭据匹配后才释放；缺失或冲突保留原占用和 UNKNOWN。当前 `closeTaskResources` 只能重试同一进程内原 TaskContext 的原 Attempt，尚无跨启动业务重开入口。正式项目库仅接受完成取材的记录，可保存本地/Git 原位置、明确 Git 引用与固定提交及平台源码快照摘要；同一项目可带完整旧记录与严格递增观测时间更新，正式执行首次入账在同一事务锁定并核对已审阅项目，把该修订冻结在格式 3 请求中。旧格式 2 留存只读，不能靠当前项目行补造旧执行来源。源码准备与项目保存的生产构件已接通，本轮不代表部署页面或引擎已调用。跨启动业务恢复还须保存原操作、工作目录及进程身份并接入可审查的 TaskRecovery；现有公开 Source/Task 快照不能仅凭任务结束或 worker 退出证明原生后代已退出。SSH URI 暂拒绝，待平台凭据、主机信任和 SSH 配置隔离接线；HTTPS 远端与发行包/远端验证未在本机测试中证明。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 

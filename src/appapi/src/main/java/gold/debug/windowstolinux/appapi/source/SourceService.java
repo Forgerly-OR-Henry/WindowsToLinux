@@ -8,6 +8,13 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
  */
 public interface SourceService {
 
+    /** Returns the original selected directory's canonical absolute file URI as metadata. / 将原选定目录的规范绝对文件URI作为元数据返回。
+     * @param selection original user-approved directory, never a workspace selection / 原用户批准的目录，不得为工作目录选择
+     * @param task original active task / 原活动任务
+     * @return original location metadata, not a reusable authorization / 原位置元数据，不是可重复使用的授权
+     * @throws ApiException if ownership or physical root identity cannot be confirmed / 无法确认归属或物理根身份时 */
+    java.net.URI location(SourceSelection selection, TaskContext task) throws ApiException;
+
     /** Creates an empty task-owned workspace for source staging and generated material. / 为来源暂存及生成素材创建空的任务所属工作目录。
      * @param task authentic executing task; recovery cannot create new work / 真实执行任务，恢复不得创建新工作
      * @return owned writable handle requiring explicit close / 需要明确关闭的所属可写句柄

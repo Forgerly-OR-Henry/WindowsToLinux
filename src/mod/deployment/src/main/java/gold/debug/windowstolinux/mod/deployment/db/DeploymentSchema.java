@@ -79,6 +79,11 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             if (violations.isEmpty()) {
                 validateBindings(connection, violations);
                 try {
+                    DeploymentProjectRepository.validate(connection);
+                } catch (SQLException invalid) {
+                    violations.add("Deployment project facts are invalid");
+                }
+                try {
                     DeploymentConfigurationRepository.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment configuration snapshots are invalid");

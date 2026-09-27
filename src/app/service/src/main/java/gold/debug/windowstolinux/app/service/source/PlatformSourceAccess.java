@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.service.source;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
@@ -55,6 +56,25 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
 
     /** Activation admission state. / 启用准入状态。 */
     private volatile boolean closed;
+
+    /** Reads original user-selection location without granting access from its URI. / 读取原用户选择位置，不允许凭URI获取访问权。
+     * @param selection original user-approved object / 原用户批准对象
+     * @param task original executing task / 原执行任务
+     * @return canonical absolute file URI / 规范绝对文件URI
+     * @throws ApiException if the task, selection or root is unavailable / 任务、选择或根不可用时 */
+    @Override
+    public URI location(SourceSelection selection, TaskContext task) throws ApiException {
+        return access(task, () -> {
+            Selection selected;
+            synchronized (this) {
+                selected = selections.get(selection);
+            }
+            if (selected == null || selected.task() != task || selected.workspace() != null)
+                throw error(ProblemCode.ACCESS_DENIED, "SOURCE_LOCATION_SELECTION",
+                        "Only an original user-selected directory has a persistent location");
+            return selected.directory().location(cancellation(task));
+        });
+    }
 
     /** Binds a real Mod activation to the platform source boundary. / 将真实 Mod 启用绑定到平台来源边界。
      * @param database current engine / 当前引擎

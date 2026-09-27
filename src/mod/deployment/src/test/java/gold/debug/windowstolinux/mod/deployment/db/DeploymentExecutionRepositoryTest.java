@@ -43,7 +43,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                         ReferenceResolution.REFERENCED, task);
                 journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
                 original.set(journal.find(task, id).orElseThrow());
-                journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
+                journal.begin(task, identity(task, id), "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 assertEquals(original.get(), journal.find(task, id).orElseThrow());
                 verify(runtime, task, graph, records);
                 return success();
@@ -83,7 +83,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 assertTrue(journal.findForTask(task).isEmpty());
                 var fault = new DeploymentExecutionRepository(commitFault(context.db()));
                 var failure = assertThrows(ApiException.class, () -> fault.begin(task,
-                        identity(task, UUID.randomUUID()), "deploy", List.of(intent()), OBSERVED));
+                        identity(task, UUID.randomUUID()), "deploy", List.of(intent()), Optional.empty(), OBSERVED));
                 assertEquals("DEPLOYMENT_COMMIT_UNKNOWN", failure.problem().eventCode());
                 var original = journal.findForTask(task).orElseThrow();
                 assertEquals(task.id(), original.identity().taskId());
@@ -184,7 +184,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 var secret = context.secrets().create("deployment.configuration", new byte[]{42}, task);
                 var secretIntent = DeploymentReferenceIntent.secret(secret, "secret:database:1");
                 var intents = List.of(intent(), secretIntent);
-                journal.begin(task, identity(task, id), "deploy", intents, OBSERVED);
+                journal.begin(task, identity(task, id), "deploy", intents, Optional.empty(), OBSERVED);
                 assertThrows(SQLException.class, () -> journal.startEffects(task, id, OBSERVED.plusSeconds(1)));
                 context.servers().reserve(new ServerRef("server"), intent().businessKey(), task);
                 context.secrets().reserve(secret, secretIntent.businessKey(), task);
@@ -225,7 +225,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 var secret = context.secrets().create("deployment.configuration", new byte[]{42}, task);
                 var secretIntent = DeploymentReferenceIntent.secret(secret, "secret:password:1");
                 journal.begin(task, identity(task, id), "deploy",
-                        included ? List.of(intent(), secretIntent) : List.of(intent()), OBSERVED);
+                        included ? List.of(intent(), secretIntent) : List.of(intent()), Optional.empty(), OBSERVED);
                 var server = context.servers().reserve(new ServerRef("server"), intent().businessKey(), task);
                 var reservation = context.secrets().reserve(secret, secretIntent.businessKey(), task);
                 journal.recordReference(task, id, intent(), server.id(), OBSERVED.plusSeconds(1));
@@ -274,11 +274,11 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
             run(runtime, task -> {
                 var journal = journal(runtime);
                 var identity = identity(task, id);
-                journal.begin(task, identity, "deploy", List.of(intent()), OBSERVED);
+                journal.begin(task, identity, "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 assertThrows(SQLException.class,
-                        () -> journal.begin(task, identity, "changed", List.of(intent()), OBSERVED));
+                        () -> journal.begin(task, identity, "changed", List.of(intent()), Optional.empty(), OBSERVED));
                 assertThrows(SQLException.class, () -> journal.begin(task, identity(task, UUID.randomUUID()), "deploy",
-                        List.of(intent()), OBSERVED));
+                        List.of(intent()), Optional.empty(), OBSERVED));
                 assertThrows(SQLException.class,
                         () -> journal.recordReference(task, id, intent(), UUID.randomUUID(), OBSERVED.minusMillis(1)));
                 var ready = new CountDownLatch(2);
@@ -305,7 +305,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                     assertEquals(1, successes);
                 }
                 original.set(journal.find(task, id).orElseThrow());
-                journal.begin(task, identity, "deploy", List.of(intent()), OBSERVED);
+                journal.begin(task, identity, "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 assertEquals(original.get(), journal.find(task, id).orElseThrow());
                 return success();
             });
@@ -313,8 +313,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 var journal = journal(runtime);
                 assertEquals(original.get(), journal.find(task, id).orElseThrow());
                 assertThrows(SQLException.class, () -> journal.startEffects(task, id, OBSERVED.plusSeconds(2)));
-                assertThrows(SQLException.class,
-                        () -> journal.begin(task, original.get().identity(), "deploy", List.of(intent()), OBSERVED));
+                assertThrows(SQLException.class, () -> journal.begin(task, original.get().identity(), "deploy",
+                        List.of(intent()), Optional.empty(), OBSERVED));
                 return success();
             });
         }
@@ -330,7 +330,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
             run(runtime, task -> {
                 UUID id = UUID.randomUUID();
                 var journal = journal(runtime);
-                journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
+                journal.begin(task, identity(task, id), "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 String future = "{\"formatVersion\":" + version + ",\"futureData\":{\"retained\":true}}";
                 replace(runtime, task, id, "recovery_payload", future.getBytes(StandardCharsets.UTF_8));
                 var record = journal.find(task, id).orElseThrow();
@@ -356,10 +356,10 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
             run(runtime, task -> {
                 UUID id = UUID.randomUUID();
                 var journal = journal(runtime);
-                journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
+                journal.begin(task, identity(task, id), "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 String json = journal.find(task, id).orElseThrow().recoveryJson();
                 byte[] bytes = switch (fault) {
-                    case "duplicate" -> json.replace("\"formatVersion\":2", "\"formatVersion\":2,\"formatVersion\":2")
+                    case "duplicate" -> json.replace("\"formatVersion\":3", "\"formatVersion\":3,\"formatVersion\":3")
                             .getBytes(StandardCharsets.UTF_8);
                     case "trailing" -> (json + " {}").getBytes(StandardCharsets.UTF_8);
                     case "missing" -> "{}".getBytes(StandardCharsets.UTF_8);

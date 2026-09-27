@@ -2,6 +2,8 @@
 
 ## 状态与阅读顺序
 
+- S5-01 正式项目来源：公开 SourceService 增加原用户选目录的规范 file URI 元数据读取，继续核验原对象/任务/启用/EDT/取消与物理根身份，工作目录选择不能作为长期来源，URI 不能重获授权。`deployment_project` 现在由真实本地/Git取材构件保存完整原位置、无歧义 Git 引用/固定提交与平台源码快照 SHA；本轮仓库仅接受完成取材的正式记录，SQL 可空列不等于已有草稿能力。同一项目可用预期完整旧记录和严格递增毫秒观测更新，冲突不覆盖；首次 `deployment_execution.begin` 在同一事务锁定并核对已审阅完整项目，把原事实写入格式 3 请求，后续项目更新不改变旧执行。原执行精确重试按原请求核对，不重放副作用；旧格式 2 保留只读，不从当前项目补造来源。已实现可调用的 local/Git 准备→保存构件，页面与执行引擎尚未接入。实际 CLASS/H2/Git 定向相关项 39 个独立测试通过、零跳过：平台 Source 14、旧正式执行 17、项目 3、Git 5；涵盖中文/空格目录、删除原目录后重启仍可读历史、全新任务的陈旧审阅拒绝、提交确认未知按原UUID核对、保存冲突后实际FILE租约释放、真实Git固定取材保存及Schema损坏行只读拒绝。证据 `s5-project-second-tests.log` 的平台 Source 14、`s5-project-third-tests.log` 的执行17和项目3、`s5-project-fourth-tests.log` 的项目3和Git5；前三次尝试中的编译遗漏与夹具重复选择器失败保留 `s5-project-first-tests.log`、`s5-project-second-tests.log`，不冒充单日志全过。四个生产模块 321 文件/3536 声明双语检查零违规，本轮改动生产类 AST 25字段/30方法/80语句上限内，JDK21 doclint 无错误；相关 5 模块 Spotless 与 4 文档 Prettier 通过。全局架构运行中本轮相关文档、错误、Javadoc 15 项通过，另 12 项旧结构/命名/依赖文档门禁未过，原失败保留 `s5-project-architecture-tests.log`，不宣称全局通过。冻结归档 2836 项经独立核验不变，证据 `s5-project-frozen-archive.json`。跨启动 Git 工作区/原生进程业务恢复、生产部署入口、S5其余阶段/S6与根活动图切换仍待完成；S7/远端暂缓。
+
 - S5-01 Git 固定取材构件：官方 deployment 的 `source/git` 新增 11 个实际生产类，在原任务下创建检出与控制 SourceWorkspace，经公开 ProcessService 启动只含 Mod、appapi 和私有 JSON 库的 worker。原生 Git 固定参数浅抓一个默认分支/分支/标签/完整提交，先拒绝链接、gitlink、子模块元数据及 LFS，再复用原 Source 筛选和独立 tar.gz 冻结。禁用环境凭据、Hook、系统/用户配置与 attributes、自动维护及 SSH 传输；SSH 需后续平台凭据和主机信任接线。原 worker 退出、精确原任务/进程/操作凭据与原生进程及已观察后代/管道退出均确认前，保留原工作目录与 `git_processes` 占用；缺失/冲突保留 UNKNOWN。当前清理重试仅覆盖内存中的原 TaskContext，跨启动项目/执行恢复与 TaskRecovery 尚未接入，进程观察不是 OS 级完整后代 containment。两分钟原生命令和十二分钟父请求是观察期限，不强杀、不重发。真实本机 CLASS/H2/Git 组合共 88 个独立相关项通过、零跳过：app/source 11、ProcessChannel 10、app/main 28（窗口单项在有桌面访问环境复验）、官方 Mod 39（Mod/Source 35 + 最终 Git 4）；证据为 `s5-git-final-tests2.log` 中除窗口外各 suite、`s5-git-window-retry.log`、`s5-git-mod-final-tests.log` 中的 Mod/Source 35 项及 `s5-git-archive-final-test.log` 中的 Git 4 项，初次 reactor 因窗口沙箱限制为 BUILD FAILURE，不冒充单日志全过。既有 ProcessChannel 用例首次在子 JVM 随机源播种阻塞超时，改测试夹具为确定不同的 UUID，未改协议/阈值；诊断栈与首次失败日志保留。Git 包 11 文件/128 声明双语零违规，嵌套类 AST 最大 11 实例字段/12 方法/45 非 Block 语句，Javadoc doclint 无错误。冻结归档 2836 项无变化。生产界面/引擎、正式项目持久化、跨启动业务恢复及 S5 后续/S6 与根活动图切换仍待完成；S7/远端暂缓，整体目标继续。
 
 - S5-01 归档与暂存：公开 SourceWorkspace 新增原任务可写目录及不可伪造来源授权，先登记 FILE 再创建，与冻结快照复用物理身份/标记/清理；恢复只清理原目录，取消或回调返回后拒绝可写访问。官方 deployment 归档在受管目录写原确定性 ustar/gzip，实际压缩预算最多 2 GiB；独立冻结后再次核对归档字节 SHA 与长度、释放暂存才交付，输入与输出各自关闭。实际长路径场景复现并修复 Windows 原生身份打开的 MAX_PATH 问题，不缩短合法源码路径；本机超过 260 字符的读取/冻结/清理通过。新增 15 项场景，相关 73 项本机检查全过、零跳过，包含真实 CLASS/H2 归属与跨启动清理、取消、替换、元数据释放失败、原归档字节对照、压缩头尾预算及冻结后变化。74 个相关生产文件 754 声明双语和原 AST 上限通过，JDK21 doclint 无错误（6 个既有隐式构造器警告），冻结 2836 项归档不变。无需新增依赖、数据表或空职责包；SDK 仍为未发行 dev 源码。Git 受管 worker 见后续独立闭环；持久项目、引用恢复编排、部署界面/引擎及后续 S5/S6 和根活动图切换仍待完成，S7/远端暂缓，整体目标继续。
@@ -1077,6 +1079,8 @@ CREATE TABLE deployment_project (
  updated_at BIGINT NOT NULL,
  CHECK(source_kind<>'GIT' OR git_ref IS NOT NULL)
 );
+-- 已完成取材的正式项目记录必须有 source_sha256；可空列保留给尚未实现的草稿设计。
+-- 同一 project_id 可更新，原执行须在 request_payload 冻结审阅时的完整项目事实。
 CREATE TABLE deployment_execution (
  execution_id UUID PRIMARY KEY,
  platform_task_id UUID NOT NULL UNIQUE,

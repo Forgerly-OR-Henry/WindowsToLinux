@@ -2,17 +2,20 @@ package gold.debug.windowstolinux.mod.deployment.db;
 
 import static gold.debug.windowstolinux.mod.deployment.db.DeploymentJsonDocument.*;
 
+import java.net.URI;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
 
 /** Strict bounded JSON for execution identity, reservation evidence and formal results. / 执行身份、预留证据及正式结果的严格有界JSON。 */
 final class DeploymentExecutionCodec {
-    /** Current journal version adds a mandatory application-release identity to successful results. / 当前账本版本为成功结果增加必需的应用发布身份。 */
-    static final int VERSION = 2;
+    /** Current journal version freezes the reviewed project's complete source revision. / 当前账本版本冻结已审阅项目的完整来源修订。 */
+    static final int VERSION = 3;
 
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
@@ -22,13 +25,30 @@ final class DeploymentExecutionCodec {
      * @param identity immutable operation identity / 不可变操作身份
      * @param operationType original operation name / 原操作名
      * @param intents exact resource associations / 精确资源关联
+     * @param project complete reviewed project or explicit absence / 完整已审阅项目或明确不存在
      * @return immutable bounded request text / 不可变有界请求文本
      * @throws SQLException if metadata is invalid or cannot be encoded / 元数据无效或无法编码时 */
     static String request(DeploymentExecutionIdentity identity, String operationType,
-            List<DeploymentReferenceIntent> intents) throws SQLException {
+            List<DeploymentReferenceIntent> intents, Optional<DeploymentProjectRecord> project) throws SQLException {
         if (operationType == null || !operationType.matches("[a-z][a-z0-9_]{0,63}"))
             throw new SQLException("Invalid original operation type");
         var node = envelope(identity).put("operationType", operationType);
+        if (project.isPresent()) {
+            var value = project.get();
+            if (!identity.projectId().equals(Optional.of(value.id())))
+                throw new SQLException("Reviewed project belongs to another execution");
+            var source = node.putObject("projectSource").put("displayName", value.displayName())
+                    .put("kind", value.source().kind().name()).put("location", value.source().location().toString())
+                    .put("sha256", value.source().sha256()).put("createdAt", value.createdAt().toEpochMilli())
+                    .put("updatedAt", value.updatedAt().toEpochMilli());
+            value.source().gitRef().ifPresentOrElse(ref -> source.put("gitRef", ref), () -> source.putNull("gitRef"));
+            value.source().gitCommit().ifPresentOrElse(commit -> source.put("gitCommit", commit),
+                    () -> source.putNull("gitCommit"));
+        } else {
+            if (identity.projectId().isPresent())
+                throw new SQLException("Execution lacks reviewed project facts");
+            node.putNull("projectSource");
+        }
         var array = node.putArray("references");
         for (var intent : List.copyOf(intents)) {
             var entry = array.addObject().put("kind", intent.kind().name()).put("resourceId", intent.resourceId())
@@ -114,7 +134,8 @@ final class DeploymentExecutionCodec {
         if (!supported(record))
             throw new SQLException("Execution format requires a matching reader", "0A000");
         var request = parse(record.requestJson());
-        identity(request, record.identity(), "operationType", "references");
+        identity(request, record.identity(), "operationType", "references", "projectSource");
+        project(request, record.identity());
         if (!string(request, "operationType").matches("[a-z][a-z0-9_]{0,63}"))
             throw new SQLException("Invalid original operation type");
         var intents = references(request, record.identity());
@@ -166,6 +187,49 @@ final class DeploymentExecutionCodec {
                 || !(node.path("projectId").isNull() ? Optional.<UUID>empty() : Optional.of(uuid(node, "projectId")))
                         .equals(identity.projectId()))
             throw new SQLException("Execution document belongs to another original operation");
+    }
+
+    /** Reads the immutable reviewed project facts from the original request. / 从原请求读取不可变已审阅项目事实。
+     * @param record retained original execution / 已留存原执行
+     * @return frozen project or explicit absence / 冻结项目或明确不存在
+     * @throws SQLException if format or stored facts are invalid / 格式或已存事实无效时 */
+    static Optional<DeploymentProjectRecord> project(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        return project(parse(record.requestJson()), record.identity());
+    }
+
+    /** Decodes and checks the exact original project snapshot. / 解码并核验精确原项目快照。
+     * @param request current-version original request / 当前版本原请求
+     * @param identity original execution identity / 原执行身份
+     * @return frozen project or explicit absence / 冻结项目或明确不存在
+     * @throws SQLException if facts differ or are malformed / 事实不符或无效时 */
+    private static Optional<DeploymentProjectRecord> project(JsonNode request, DeploymentExecutionIdentity identity)
+            throws SQLException {
+        var node = request.path("projectSource");
+        if (node.isNull()) {
+            if (identity.projectId().isPresent())
+                throw new SQLException("Execution project snapshot is absent");
+            return Optional.empty();
+        }
+        if (identity.projectId().isEmpty())
+            throw new SQLException("Execution project snapshot has no identity");
+        fields(node,
+                Set.of("displayName", "kind", "location", "gitRef", "gitCommit", "sha256", "createdAt", "updatedAt"));
+        try {
+            if (!node.path("createdAt").isIntegralNumber() || !node.path("createdAt").canConvertToLong()
+                    || !node.path("updatedAt").isIntegralNumber() || !node.path("updatedAt").canConvertToLong())
+                throw new IllegalArgumentException("Invalid project time");
+            var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.valueOf(string(node, "kind")),
+                    URI.create(string(node, "location")),
+                    node.path("gitRef").isNull() ? Optional.empty() : Optional.of(string(node, "gitRef")),
+                    node.path("gitCommit").isNull() ? Optional.empty() : Optional.of(string(node, "gitCommit")),
+                    string(node, "sha256"));
+            return Optional.of(new DeploymentProjectRecord(identity.projectId().orElseThrow(),
+                    string(node, "displayName"), source, Instant.ofEpochMilli(node.path("createdAt").longValue()),
+                    Instant.ofEpochMilli(node.path("updatedAt").longValue())));
+        } catch (IllegalArgumentException | NullPointerException invalid) {
+            throw new SQLException("Stored execution project snapshot is invalid", invalid);
+        }
     }
 
     /** Decodes exact resource intent order with no duplicate association keys. / 解码精确资源意图顺序，不允许重复关联键。

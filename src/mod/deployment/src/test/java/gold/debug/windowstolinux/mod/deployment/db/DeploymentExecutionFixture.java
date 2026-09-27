@@ -22,7 +22,7 @@ abstract class DeploymentExecutionFixture extends DeploymentGraphFixture {
 
     ServerReference prepare(PlatformRuntime runtime, TaskContext task, UUID id) throws Exception {
         var journal = journal(runtime);
-        journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
+        journal.begin(task, identity(task, id), "deploy", List.of(intent()), Optional.empty(), OBSERVED);
         var reference = runtime.modContexts().get(OWNER).context().servers().reserve(new ServerRef("server"),
                 intent().businessKey(), task);
         journal.recordReference(task, id, intent(), reference.id(), OBSERVED.plusSeconds(1));
