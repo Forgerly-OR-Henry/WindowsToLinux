@@ -2,6 +2,8 @@
 
 ## 状态与阅读顺序
 
+- S5-01 秘密修订生产入口：官方 Mod 的 `deployment-secret-revision` 原任务在创建前保存非秘密意图与副作用边界，真实 `SecretService.create` 返回的 ID、原引用 UUID 和不可变业务行分别持久核对；Mod.start 登记生产恢复器。明文只在已准入回调内取得，Mod 创建副本在调用结束清零，原调用方数组仍由调用方管理。原 ID 丢失不按用途猜测、不重新创建；业务提交不确定且缺完整行保持 UNKNOWN；恢复不再次调用明文来源、create 或 reserve。6 项新增真实 CLASS/H2/构造中断场景已通过：正常创建和预存修订拒绝、create 返回 ID 截断、原业务缺行状态、resolve 回执丢失的生产恢复、构造原中断任务后 H2 重开与 Mod.start 登记、值回调期间协作取消且未调用 create。截断 ID 用例的最终 FAILED 是测试夹具在验证真实 Flow UNKNOWN 后释放自有检查点，不是生产未知任务自动收尾；H2 重开用例使用构造持久状态，不代表实际断电。SSH、页面及部署引擎仍待后续，本项不宣称 S5-01 全部完成。
+
 - S5-01 Git 来源原任务持久恢复：固定 `deployment-git-source` 生产入口先持久化已审阅请求/预算、完整项目旧行与预选原 job/工作区/进程身份，再发唯一真实 Git 请求；实际 worker/原生进程及管道退出和回执身份核实后，先保存有界回执再删除 control。项目拟写完整行、写入边界、已知回滚/成功分开持久化；确认丢失只按原完整目标行的既有状态等价语义核对，不重发 Git、不恢复可写工作区或用户源码授权。Mod.start 登记原类型恢复器，原资源未释放或依据冲突保持 UNKNOWN。实际 CLASS/H2 本机验证现有 12 个独立新场景全部通过：检查点 4、真实 Git 正常保存/取消/原回执核对 3、构造中断 H2 重开与原工作区只读读取 2、项目保存确认丢失/已知回滚 2、预选工作区 UUID 禁复用 1；另 6 项既有受影响 Git 回归及 13 项指定架构门禁通过，数据库回执丢失和重开状态由测试构造，不是实际断电；物理退出证据限于已观察到的进程/后代及管道。正式部署页面/引擎、SSH 与远端仍待后续。
 
 - S5-01 原生 Git 协作取消专项：新增真实本机 CLASS/H2/公开 ProcessService 单项验证。仅回环 HTTPS 测试端点收到真实 Git 的 TLS ClientHello 后保持连接，使取消确定发生在原生 fetch 执行中；平台请求观察先为 UNKNOWN，原 worker/Git 与 FILE、CUSTOM、PROCESS 占用仍保留。测试主动断开连接后，Git、已观察后代和管道自然退出，原 worker 凭据记录 CANCELLED 且关联原 task/process/job，两个实际工作目录与四项显式资源才释放；请求次数仍为一次。该闭环当时由测试截获原回执并用夹具恢复原任务，尚未接入生产 Git TaskRecovery；当时准备器删除 control 凭据后返回平台 UNKNOWN，后续生产恢复见上条；未做系统强杀、远端、SSH 或实际断电验收。最终证据 `s5-git-cancellation-formatted-final.log`；初次按 Windows 子进程命令行反查不可靠的夹具失败保留 `s5-git-cancellation-initial.log`，后改由平台持久 ProcessRecovery 的 PID/启动时刻定位 worker。
