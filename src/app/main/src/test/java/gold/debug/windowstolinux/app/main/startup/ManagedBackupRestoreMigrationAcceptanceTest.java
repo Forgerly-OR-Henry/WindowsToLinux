@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive;
 import gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome;
 import gold.debug.windowstolinux.app.service.backup.ManagedRestoreControlState;
 import gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
 import gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationStatus;
 import gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus;

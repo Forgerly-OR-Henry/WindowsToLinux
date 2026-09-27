@@ -6,6 +6,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;

@@ -180,10 +180,20 @@ class PlatformServersWindowTest {
                 });
                 await(() -> ((JTextArea) named(frame, "servers.output")).getText().contains("检查已中断")
                         && ((JComboBox<?>) named(frame, "servers.checks")).getItemCount() == 0);
-                var snapshot = new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
-                        .snapshot(task);
-                assertEquals(gold.debug.windowstolinux.appapi.task.TaskState.ENDED, snapshot.state());
-                assertEquals("0.0.1-original", snapshot.ownerVersion());
+                assertTrue(runtime.tasks().snapshots().isEmpty());
+                assertEquals(0, PlatformTaskAdmissionIntegrationTest.count(runtime.persistence().database(),
+                        "SELECT COUNT(*) FROM platform_task_resource"));
+                try (var connection = runtime.persistence().database().openConnection();
+                        var query = connection.prepareStatement(
+                                "SELECT mod_version,outcome FROM runtime_log WHERE category='platform_task' AND task_id=?")) {
+                    query.setObject(1, task);
+                    try (var rows = query.executeQuery()) {
+                        assertTrue(rows.next());
+                        assertEquals("0.0.1-original", rows.getString(1));
+                        assertEquals("FAILED", rows.getString(2));
+                        assertFalse(rows.next());
+                    }
+                }
             } finally {
                 onEdt(() -> {
                     for (var owned : frame.getOwnedWindows())

@@ -1,9 +1,9 @@
-package gold.debug.windowstolinux.app.service.contract;
+package gold.debug.windowstolinux.app.service.contract.spi;
 
 import java.sql.SQLException;
 
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 
 /** Saves platform connection settings without invoking deployment or remote preparation. / 保存平台连接设置，不调用部署或远端准备。 */
 @FunctionalInterface

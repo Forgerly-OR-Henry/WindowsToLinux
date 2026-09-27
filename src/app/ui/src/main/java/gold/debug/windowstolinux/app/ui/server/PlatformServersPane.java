@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;

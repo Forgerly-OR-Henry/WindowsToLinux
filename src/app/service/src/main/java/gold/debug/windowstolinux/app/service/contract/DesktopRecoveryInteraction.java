@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.service.contract;
 
 import gold.debug.windowstolinux.app.service.contract.SshRecoverySession;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 
 /**
  * Optional desktop handoff during a safely resumable operation. / 可安全继续操作期间的桌面交接。

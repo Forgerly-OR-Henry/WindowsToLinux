@@ -1,9 +1,9 @@
-package gold.debug.windowstolinux.app.service.contract;
+package gold.debug.windowstolinux.app.service.contract.spi;
 
 import java.sql.SQLException;
 import java.util.List;
 
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.shared.model.ai.*;
 
 /** Non-secret platform inventory and explicit purpose selection. / 平台非秘密模型清单及明确用途选择。 */

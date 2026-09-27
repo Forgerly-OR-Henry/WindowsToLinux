@@ -11,6 +11,8 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
 import gold.debug.windowstolinux.app.service.contract.*;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.deployment.automatic.AutomaticDeploymentTaskService;
 import gold.debug.windowstolinux.app.service.failure.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;

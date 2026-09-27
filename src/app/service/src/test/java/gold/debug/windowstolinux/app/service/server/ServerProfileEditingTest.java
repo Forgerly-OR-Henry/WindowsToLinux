@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

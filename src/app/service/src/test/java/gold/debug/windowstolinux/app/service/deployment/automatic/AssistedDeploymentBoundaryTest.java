@@ -7,7 +7,7 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.deploy.approval.DeploymentApprovalGate;
 import gold.debug.windowstolinux.shared.deploy.contract.AutomaticDeploymentInteraction;
 import gold.debug.windowstolinux.shared.deploy.task.AgentTaskControl;

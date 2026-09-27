@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.execution.lifecycle;
 import java.util.List;
 import java.util.Map;
 
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.model.lifecycle.*;
 
 /**

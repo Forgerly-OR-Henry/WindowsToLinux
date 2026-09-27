@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.ui.server;
 
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 
 /**
  * Narrow server context consumed by deployment and lifecycle pages. / 部署与生命周期页面使用的窄服务器上下文。

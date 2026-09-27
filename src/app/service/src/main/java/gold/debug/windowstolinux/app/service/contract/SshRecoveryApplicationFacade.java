@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.service.contract;
 
 import java.util.function.Predicate;
 
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 
 /**
  * APP-only browser rescue entry point. / 仅 APP 使用的浏览器救援入口。

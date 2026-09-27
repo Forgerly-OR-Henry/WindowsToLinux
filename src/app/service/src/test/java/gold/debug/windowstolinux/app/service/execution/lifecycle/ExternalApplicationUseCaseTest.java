@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.service.SecurityTestFixture;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.shared.linux.connection.DeploymentLinuxGateway;

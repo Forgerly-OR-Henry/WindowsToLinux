@@ -83,7 +83,7 @@ public interface PlatformModHost {
      * @param schema selected optional business generation / 选定的可选业务代次
      * @return host-owned secret adapter / 宿主持有的秘密适配器
      */
-    gold.debug.windowstolinux.app.service.security.PlatformSecretService secrets(String owner, String version,
+    gold.debug.windowstolinux.app.service.secret.PlatformSecretService secrets(String owner, String version,
             java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
 
     /**
@@ -98,7 +98,7 @@ public interface PlatformModHost {
      * @param owner actual Mod identity / 实际 Mod 身份
      * @param version loaded release / 加载发布版本
      * @return bound process capability / 绑定进程能力 */
-    gold.debug.windowstolinux.app.service.task.PlatformProcessService processes(String owner, String version);
+    gold.debug.windowstolinux.app.service.process.PlatformProcessService processes(String owner, String version);
 
     /**
      * Creates real task, credential, review and SSH adapters for one Mod activation. / 为一次 Mod 启用创建真实任务、凭据、审核及 SSH 适配。

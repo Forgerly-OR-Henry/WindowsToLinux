@@ -8,8 +8,8 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
-import gold.debug.windowstolinux.app.service.contract.AiInventoryAccess;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.ai.*;

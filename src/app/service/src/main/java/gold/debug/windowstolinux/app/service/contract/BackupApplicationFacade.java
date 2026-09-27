@@ -36,7 +36,8 @@ public interface BackupApplicationFacade {
      * @return constructed or resolved list / 构造或解析得到的列表
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    java.util.List<gold.debug.windowstolinux.app.service.server.ServerProfile> listServerProfiles() throws SQLException;
+    java.util.List<gold.debug.windowstolinux.app.service.contract.profile.ServerProfile> listServerProfiles()
+            throws SQLException;
 
     /**
      * Assesses exact persisted inputs without connecting to the managed server. / 在不连接受管服务器的情况下评估精确持久化输入。

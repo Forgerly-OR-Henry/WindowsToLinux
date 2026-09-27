@@ -7,6 +7,7 @@ import java.util.function.BiFunction;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.db.persistence.repository.AiProfileRepository;
 import gold.debug.windowstolinux.app.linux.recovery.*;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
 import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
 import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;

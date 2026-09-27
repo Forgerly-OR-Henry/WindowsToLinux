@@ -6,7 +6,7 @@ import java.util.function.Consumer;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;

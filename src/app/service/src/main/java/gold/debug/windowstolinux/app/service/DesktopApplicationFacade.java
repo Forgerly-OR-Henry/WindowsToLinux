@@ -13,7 +13,6 @@ import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.AiUseCaseFacade;
 import gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection;
 import gold.debug.windowstolinux.app.service.backup.BackupUseCase;
@@ -38,6 +37,8 @@ import gold.debug.windowstolinux.app.service.contract.MultiComponentApplicationF
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.definition.*;
 import gold.debug.windowstolinux.app.service.contract.definition.MultiComponentReviewInput;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
 import gold.debug.windowstolinux.app.service.deployment.DeploymentInspectionUseCase;
 import gold.debug.windowstolinux.app.service.deployment.MultiComponentDeploymentUseCase;
@@ -52,7 +53,6 @@ import gold.debug.windowstolinux.app.service.execution.lifecycle.LifecycleUseCas
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot;
 import gold.debug.windowstolinux.app.service.lock.ServerOperationLockRegistry;
 import gold.debug.windowstolinux.app.service.server.DesktopSecretStoreService;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerUseCaseFacade;
 import gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource;
 import gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation;
@@ -1439,7 +1439,7 @@ public final class DesktopApplicationFacade
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     @Override
-    public java.util.List<gold.debug.windowstolinux.app.service.ai.AiProviderSummary> listAiConfigurations()
+    public java.util.List<gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary> listAiConfigurations()
             throws SQLException {
         try (var authorization = security.enterOperation()) {
             return ai.configurations();

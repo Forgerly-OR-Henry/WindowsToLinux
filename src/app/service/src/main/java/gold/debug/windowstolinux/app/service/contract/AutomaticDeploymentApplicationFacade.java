@@ -53,7 +53,7 @@ public interface AutomaticDeploymentApplicationFacade
      * @return typed source and deployment controls inside the service boundary / 在服务边界内解析源码与部署控件
      */
     AutomaticDeploymentRequest createAutomaticDeploymentRequest(DeploymentSourceInput source,
-            gold.debug.windowstolinux.app.service.server.ServerProfile server, DeploymentFormInput input);
+            gold.debug.windowstolinux.app.service.contract.profile.ServerProfile server, DeploymentFormInput input);
 
     /**
      * Completes missing reviewed database inputs through the supplied deployment interaction.
@@ -86,7 +86,7 @@ public interface AutomaticDeploymentApplicationFacade
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
     AutomaticDatabasePreparation prepareAutomaticDatabases(java.nio.file.Path root, String applicationId,
-            gold.debug.windowstolinux.app.service.server.ServerProfile server,
+            gold.debug.windowstolinux.app.service.contract.profile.ServerProfile server,
             gold.debug.windowstolinux.shared.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
             AutomaticDeploymentInteraction interaction, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception;
@@ -101,7 +101,7 @@ public interface AutomaticDeploymentApplicationFacade
      * @return true when offers APP rescue only when a desktop interaction is available, false otherwise / 仅在具有桌面交互时提供 APP 救援时为 true，否则为 false
      * @throws Exception if the delegated operation or caller-provided interaction fails / 被委派操作或调用方提供的交互失败时
      */
-    default boolean recoverSshForOperation(gold.debug.windowstolinux.app.service.server.ServerProfile server,
+    default boolean recoverSshForOperation(gold.debug.windowstolinux.app.service.contract.profile.ServerProfile server,
             Predicate<String> fingerprint, AutomaticDeploymentInteraction interaction, String operation)
             throws Exception {
 
@@ -136,7 +136,7 @@ public interface AutomaticDeploymentApplicationFacade
      */
     gold.debug.windowstolinux.app.service.deployment.single.DeploymentOutcome deployAutomaticallyReviewed(
             gold.debug.windowstolinux.shared.standard.deploy.contract.ReviewedDeploymentRequest request,
-            gold.debug.windowstolinux.app.service.server.ServerProfile profile, Predicate<String> fingerprint,
+            gold.debug.windowstolinux.app.service.contract.profile.ServerProfile profile, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception;
 
     /**
@@ -152,7 +152,7 @@ public interface AutomaticDeploymentApplicationFacade
      */
     gold.debug.windowstolinux.shared.deploy.contract.result.deployment.MultiComponentDeploymentResult deployAutomaticallyReviewed(
             gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication request,
-            gold.debug.windowstolinux.app.service.server.ServerProfile profile, Predicate<String> fingerprint,
+            gold.debug.windowstolinux.app.service.contract.profile.ServerProfile profile, Predicate<String> fingerprint,
             Consumer<LocalizedMessage> progress) throws Exception;
 
     /** Requests a safe task control transition. / 请求安全任务控制转换。

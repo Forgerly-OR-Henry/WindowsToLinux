@@ -1155,9 +1155,7 @@ class PackageStructureArchitectureTest {
 
     @Test
     void linuxAndUiHonorTheNarrowExecutionAndServiceBoundaries() throws Exception {
-        var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.ai.AiProviderProfile",
-                "gold.debug.windowstolinux.app.service.ai.AiProviderSummary",
-                "gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection",
+        var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection",
                 "gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive",
                 "gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment",
                 "gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome",
@@ -1170,7 +1168,6 @@ class PackageStructureArchitectureTest {
                 "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary",
                 "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan",
                 "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult",
-                "gold.debug.windowstolinux.app.service.server.ServerProfile",
                 "gold.debug.windowstolinux.app.service.server.ServerSummary",
                 "gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource",
                 "gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation");

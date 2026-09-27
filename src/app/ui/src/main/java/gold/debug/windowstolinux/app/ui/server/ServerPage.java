@@ -17,7 +17,7 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;

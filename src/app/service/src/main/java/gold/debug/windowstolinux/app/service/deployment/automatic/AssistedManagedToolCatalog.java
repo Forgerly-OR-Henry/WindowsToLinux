@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.deployment.automatic;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.model.agent.*;
 import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
 

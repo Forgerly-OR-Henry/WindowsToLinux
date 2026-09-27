@@ -7,14 +7,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.ManagedApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan;
 import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;

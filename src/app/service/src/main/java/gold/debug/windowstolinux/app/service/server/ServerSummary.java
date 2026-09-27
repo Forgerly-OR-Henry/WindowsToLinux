@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
 
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+
 /**
  * Credential-free server card and dated connectivity evidence. / 服务器卡片及带时间的连接证据，不含凭据。
  *

@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.app.service.ai;
+package gold.debug.windowstolinux.app.service.contract.profile;
 
 import java.net.URI;
 import java.util.Objects;

@@ -5,7 +5,7 @@ import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.*;
 
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.shared.deploy.approval.DeploymentApprovalGate;
 import gold.debug.windowstolinux.shared.deploy.contract.*;
 import gold.debug.windowstolinux.shared.deploy.task.AgentTaskControl;

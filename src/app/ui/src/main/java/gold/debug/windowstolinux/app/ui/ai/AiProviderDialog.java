@@ -9,9 +9,9 @@ import java.util.UUID;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
 import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 
