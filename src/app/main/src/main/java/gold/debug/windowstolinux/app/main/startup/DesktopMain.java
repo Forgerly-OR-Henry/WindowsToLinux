@@ -117,11 +117,14 @@ public final class DesktopMain {
                 runtime.setInteractionPresenter(presenter);
                 runtime.setSourcePicker(presenter);
                 window.installServers(runtime.servers());
-                window.installRecovery(runtime.recovery());
+                var recovery = runtime.recovery();
+                window.installRecovery(recovery);
                 window.installModels(models);
                 window.installTransfers(runtime.transfers());
                 window.installAuthorization(runtime.authorization());
                 window.installLogs(runtime.logs());
+                window.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(
+                        runtime.tasks(), runtime.security(), id -> recovery.reconcile(id, true)));
                 return window;
             });
             runtime.started();

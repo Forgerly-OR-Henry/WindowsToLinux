@@ -720,6 +720,50 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return executions.values().stream().map(t -> t.snapshot).toList();
     }
 
+    /** Observes exact original recovery registrations and live execution ownership. / 观察精确原恢复登记及活动执行归属。
+     * @return immutable host controls; actions recheck the actual state / 不可变宿主操作信息，执行时重查实际状态 */
+    synchronized List<gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.Entry> management() {
+        return executions.values().stream().map(task -> {
+            var state = gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState.NOT_READY;
+            if (!closing && !task.reconciling && task.returned
+                    && Set.of(TaskState.UNKNOWN, TaskState.FINISHING).contains(task.snapshot.state())) {
+                state = task.finalization != null
+                        ? gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState.ARCHIVE_ONLY
+                        : recoveries.containsKey(new RecoveryKey(task.snapshot.ownerId(), task.snapshot.ownerVersion(),
+                                task.snapshot.type()))
+                                        ? gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState.RECONCILE
+                                        : gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState.UNAVAILABLE;
+            }
+            return new gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.Entry(task.snapshot,
+                    cancellationAvailable(task), state);
+        }).toList();
+    }
+
+    /** Checks whether a host cancellation can affect only pending or executing work. / 核对宿主取消是否仅影响待执行或执行中的工作。
+     * @param task original execution / 原执行
+     * @return whether cooperative cancellation is currently available / 当前是否可协作取消 */
+    private boolean cancellationAvailable(Execution<?> task) {
+        return !closing && !task.reconciling && task.cancellable && task.finalization == null
+                && Set.of(TaskState.QUEUED, TaskState.RUNNING).contains(task.snapshot.state());
+    }
+
+    /** Requests cancellation after fresh host authorization, rechecking state inside the original handle. / 在重新取得宿主授权后请求取消，在原句柄内重查状态。
+     * @param taskId original task / 原任务
+     * @return actual cancellation state / 实际取消状态
+     * @throws ApiException if the original task, authorization or cancellation is unavailable / 原任务、授权或取消不可用时 */
+    TaskSnapshot requestCancellation(UUID taskId) throws ApiException {
+        try (var authorization = authorize()) {
+            final Execution<?> task;
+            synchronized (this) {
+                task = executions.get(taskId);
+                if (task == null)
+                    throw error(ProblemCode.NOT_FOUND, "TASK_MISSING", "Task does not exist");
+            }
+            task.cancel(true);
+            return task.snapshot();
+        }
+    }
+
     /**
      * Reconciles a retained task only after an explicit host action. / 仅在显式宿主操作后核对保留任务。
      * @param taskId original task identity / 原始任务身份
@@ -1278,8 +1322,18 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          */
         @Override
         public void requestCancel() throws ApiException {
+            cancel(false);
+        }
+
+        /** Uses the original cancellation path with an optional live host-action guard. / 使用原取消路径，可附加活动宿主操作校验。
+         * @param activeOnly whether only currently running or queued work may be cancelled / 是否仅允许取消当前执行或排队工作
+         * @throws ApiException if cancellation is unavailable or persistence fails / 取消不可用或持久化失败时 */
+        private void cancel(boolean activeOnly) throws ApiException {
             boolean ended;
             synchronized (PlatformTaskRuntime.this) {
+                if (activeOnly && !cancellationAvailable(this))
+                    throw error(ProblemCode.BUSY, "TASK_CANCEL_UNAVAILABLE",
+                            "The task is no longer available for cooperative cancellation");
                 if (!cancellable)
                     throw error(ProblemCode.UNAVAILABLE, "TASK_NOT_CANCELLABLE", "Task does not support cancellation");
                 try {

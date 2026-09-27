@@ -50,6 +50,9 @@ public final class PlatformFrame extends JFrame {
     /** Permanent diagnostic management page. / 常驻诊断管理页面。 */
     private gold.debug.windowstolinux.app.ui.setting.LogSettingsPane logs;
 
+    /** Permanent original-task inspection and recovery. / 常驻原任务检查及恢复。 */
+    private gold.debug.windowstolinux.app.ui.recovery.TaskRecoveryPane tasks;
+
     /** Permanent installed Mod choices and explicit data maintenance. / 常驻已安装 Mod 选择及明确数据维护。 */
     private gold.debug.windowstolinux.app.ui.mod.PlatformModsPane mods;
 
@@ -150,6 +153,8 @@ public final class PlatformFrame extends JFrame {
                 authorization.setLocked(locked);
             if (logs != null)
                 logs.setLocked(locked);
+            if (tasks != null)
+                tasks.setLocked(locked);
             if (navigation != null)
                 navigation.setLocked(locked);
             if (mods != null)
@@ -335,6 +340,21 @@ public final class PlatformFrame extends JFrame {
         logs.setLocked(!security.securityState().unlocked());
     }
 
+    /** Mounts retained tasks through a narrow host contract, reusing the existing log history page. / 通过窄宿主契约挂载保留任务，复用已有日志历史页。
+     * @param service original task-management service / 原任务管理服务 */
+    public void installTasks(gold.debug.windowstolinux.app.service.contract.spi.TaskManagement service) {
+        if (!SwingUtilities.isEventDispatchThread() || tasks != null || logs == null)
+            throw new IllegalStateException("Task management must be installed once after logs on the EDT");
+        tasks = new gold.debug.windowstolinux.app.ui.recovery.TaskRecoveryPane(service, components, messages,
+                () -> content.setSelectedComponent(logs));
+        content.addTab(messages.text("tasks.title"), tasks);
+        content.addChangeListener(event -> {
+            if (content.getSelectedComponent() == tasks)
+                tasks.refresh();
+        });
+        tasks.setLocked(!security.securityState().unlocked());
+    }
+
     /** Displays safe localized feedback outside the selected page. / 在所选页面之外显示安全本地化反馈。
      * @param problem structured storage issue / 结构化存储问题 */
     private void showLogIssue(gold.debug.windowstolinux.appapi.task.Problem problem) {
@@ -407,6 +427,8 @@ public final class PlatformFrame extends JFrame {
             authorization.close();
         if (logs != null)
             logs.close();
+        if (tasks != null)
+            tasks.close();
         if (mods != null)
             mods.close();
         if (originals != null)
