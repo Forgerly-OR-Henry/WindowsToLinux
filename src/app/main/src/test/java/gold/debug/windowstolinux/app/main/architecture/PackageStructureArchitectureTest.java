@@ -134,6 +134,8 @@ class PackageStructureArchitectureTest {
             "DistributionSupportEvaluator", "DistributionSupportEvaluatorTest", "DistributionSupportPolicy",
             "DistributionSupportRules", "HostSupportDecision", "HostSupportEvaluator", "HostSupportEvaluatorTest",
             "HostSupportStatus", "ManagedHelperBundle", "ManagedHelperBundleTest", "ManagedHelperProtocol",
+            "DeploymentManagedHelper", "DeploymentManagedHelperTest", "DeploymentManagedHelperRuntimeTest",
+            "DeploymentManagedHelperBundle", "DeploymentManagedHelperBundleTest", "DeploymentHelperInstallerScript",
             "ManagedHelperProtocolVersion", "MultiComponentDraftController", "OracleLinuxSupportPolicy",
             "PageNavigationController", "RockyLinuxSupportPolicy", "UbuntuSupportPolicy", "DesktopLockController",
             "WebAiController", "WebApplicationController", "WebBackupController", "WebErrorController",
@@ -391,6 +393,21 @@ class PackageStructureArchitectureTest {
         assertMaximumLines(deploymentMulti, 500);
         assertMaximumLines(repositories, 320);
         assertMaximumLinesRecursively(fragments, 300);
+    }
+
+    @Test
+    void deploymentHelperResourcesMatchTheExactMigratedContract() throws Exception {
+        Path resources = projectRoot()
+                .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux");
+        Set<String> expected = new HashSet<>(HELPER_FRAGMENTS);
+        expected.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh", "selinux-command-entry.sh",
+                "centos-source-repositories.py"));
+        assertEquals(46, expected.size());
+        assertEquals(expected, fileNamesRecursively(resources));
+        assertEquals(Set.of("source-operations.py"), fileNames(resources.resolve("workspace")));
+        assertEquals(Set.of("10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py",
+                "40-binding-protocol.py"), fileNames(resources.resolve("toolchain")));
+        assertMaximumLinesRecursively(resources, 300);
     }
 
     @Test

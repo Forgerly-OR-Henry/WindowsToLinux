@@ -2051,3 +2051,59 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
 - `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
 - `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。
+
+### S5-02 已迁入的受管 helper 与公开远端协议适配
+
+- `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装并核对固定 helper 身份，未知副作用不重放。
+- `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按原 40 片段、5 插入和独立 build-entry 组装协议 10 受管 helper，逐字节核对固定摘要。
+- `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、实际字节校验及最终回执。
+- `mod/deployment/service/core/model/toolchain/DeploymentToolchainSelectionPolicy.java`：按原纯策略从已审阅支持目录中选择精确候选发布。
+
+下列资源位于 `src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/`；每项与旧 helper 对应资源字节相同，由固定组装清单引用，不作为新 SSH 实现或独立协议版本。
+
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/distro/dnf/centos-source-repositories.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/00-protocol-foundation.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/70-command-dispatch.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/backup/67-managed-backup.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/10-native-instances.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/20-native-targets.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/64-database-client.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/65-database-backup.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/66-database-activation.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/input/15-deployment-input.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/input/16-application-input.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/input/17-managed-content.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/10-typed-release.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/12-container-image-input.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/18-container-storage.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/50-container-release.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/52-container-recovery.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/54-restore-candidate.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/56-restore-commit.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/57-application-restore.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/40-typed-runtime.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/41-application-runtime.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/42-application-job.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/43-application-container.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/44-application-health.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/45-application-container-contract.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/21-workspace-volume.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/22-restricted-build.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/23-container-builder.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/24-build-entry.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/25-workspace-recovery.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/26-build-output.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/27-agent-workspace.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/workspace/apparmor-namespace.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/runtime/container/helper/55-podman-quadlet.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/runtime/systemd/helper/60-lifecycle.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/runtime/systemd/helper/61-service-identity.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/runtime/systemd/helper/selinux-command-entry.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/runtime/systemd/helper/systemd-manager-isolation.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/10-release-metadata.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/20-installation-boundaries.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/30-managed-installation.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/40-binding-protocol.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/workspace/source-operations.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
