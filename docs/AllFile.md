@@ -1861,7 +1861,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `mod/deployment/source/DeploymentSourceTar.java`：将冻结源码按原确定性 ustar/gzip 格式写入有界输出，分块检查取消。
 - `mod/deployment/source/DeploymentSourceArchiver.java`：受管暂存、归档输出限额、独立冻结及实际压缩字节摘要核验。
-- `mod/deployment/source/DeploymentSourceArchive.java`：独立原平台归档快照、压缩字节 SHA 与长度，显式释放实际资源。
+- `mod/deployment/source/DeploymentSourceArchive.java`：原平台归档快照、压缩字节 SHA 与长度及原源码快照 UUID/清单摘要，显式释放实际资源。
 - `mod/deployment/source/git/DeploymentGitRemote.java`：无凭据且受限的 Git 远端 URI。
 - `mod/deployment/source/git/DeploymentGitReference.java`：默认分支、分支、标签及完整提交引用。
 - `mod/deployment/source/git/DeploymentGitRequest.java`：主机准入、本地文件许可及归档预算。
@@ -1989,3 +1989,65 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/analyze/toolchain/ToolchainDeclarationInspector.java`：不执行构建文件，在发布准入前收集有界版本声明。
 - `mod/deployment/service/standard/analyze/workload/ContainerDeploymentInspector.java`：检测单一 Dockerfile 工作负载、声明端口与受管卷候选项。
 - `mod/deployment/service/standard/analyze/workload/StaticWebDeploymentInspector.java`：区分纯静态内容与由锁文件支持的 Node 静态构建。
+
+### S5-02 已迁入的标准计划与固定构建渲染生产文件
+
+旧 `shared/standard/deploy` 在根切换前仍保留；以下仅索引当前实际迁入的无 AI 计划与脚本生成首批。
+
+- `mod/deployment/service/core/model/DeploymentBuildLimits.java`：固定受管构建入口经过审阅的明确限制。
+- `mod/deployment/service/core/model/DeploymentRemoteWorkspace.java`：仅根据已验证应用 ID 和压缩归档字节摘要推导的固定服务端路径。
+- `mod/deployment/service/core/model/toolchain/DeploymentResolvedToolchains.java`：发布级不可变工具身份，不随目录修订重新选择。
+- `mod/deployment/service/core/model/toolchain/DeploymentToolchainBindingCodec.java`：无配置解析依赖的确定性版本化发布绑定。
+- `mod/deployment/service/core/model/toolchain/DeploymentToolchainCatalog.java`：唯一可注入构建分支目录，补丁由官方发布发现提供。
+- `mod/deployment/service/standard/deploy/build/BuildCompatibilityPolicy.java`：根据构建输出判定有界工具链重试。
+- `mod/deployment/service/standard/deploy/build/contract/spi/DeploymentBuildRenderer.java`：通过固定且有界的目标机构建入口渲染一种经审阅项目类型。
+- `mod/deployment/service/standard/deploy/build/ecosystem/CargoBuildRenderer.java`：渲染固定 Cargo 构建架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/CmakeBuildRenderer.java`：渲染固定单目标 CMake 试验架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/DotNetSdkBuildRenderer.java`：渲染固定 .NET SDK 构建架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/GoBuildRenderer.java`：渲染固定 Go Module 构建架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/java/GradleBuildRenderer.java`：渲染经审阅的 Spring Boot Gradle 架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/java/JavaJarBuildRenderer.java`：渲染经审阅的预构建 Java JAR 边界。
+- `mod/deployment/service/standard/deploy/build/ecosystem/java/JdkBuildRenderer.java`：渲染无依赖 JDK 源码架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/java/MavenBuildRenderer.java`：渲染经审阅的 Spring Boot Maven 与 Maven Wrapper 入口。
+- `mod/deployment/service/standard/deploy/build/ecosystem/java/SpringBootArtifactBuildScript.java`：仅共享不变的 Spring Boot 可执行 JAR 验证。
+- `mod/deployment/service/standard/deploy/build/ecosystem/kotlin/KotlinCompilerBuildRenderer.java`：使用原生编译器渲染无依赖 Kotlin/JVM 源码。
+- `mod/deployment/service/standard/deploy/build/ecosystem/kotlin/KotlinGradleBuildRenderer.java`：渲染固定 Kotlin Gradle 扩展架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/node/NodeArchitectureBuildRenderer.java`：仅在具名架构 Renderer 间共享不变的 Node 服务外壳。
+- `mod/deployment/service/standard/deploy/build/ecosystem/node/NpmBuildRenderer.java`：渲染原生 npm Node 架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/node/PnpmBuildRenderer.java`：渲染 pnpm Node 架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/node/YarnBuildRenderer.java`：渲染 Yarn Node 架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/php/ComposerBuildRenderer.java`：渲染固定 Composer 扩展架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/php/PhpCliBuildRenderer.java`：通过 PHP CLI 语法验证渲染无依赖 PHP 源码。
+- `mod/deployment/service/standard/deploy/build/ecosystem/python/PipBuildRenderer.java`：渲染原生完整哈希 pip 架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/python/PipenvBuildRenderer.java`：渲染 Pipenv 锁定架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/python/PoetryBuildRenderer.java`：渲染 Poetry 锁定架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/python/PythonArchitectureBuildRenderer.java`：在具名 Python 架构 Renderer 间共享不变的隔离 venv 外壳。
+- `mod/deployment/service/standard/deploy/build/ecosystem/python/UvBuildRenderer.java`：渲染 uv 锁定架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/ruby/BundlerBuildRenderer.java`：渲染固定 Bundler 扩展架构。
+- `mod/deployment/service/standard/deploy/build/ecosystem/ruby/RubyCliBuildRenderer.java`：通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码。
+- `mod/deployment/service/standard/deploy/build/extension/registry/DeploymentBuildRendererRegistry.java`：为每种可部署项目架构恰好注册一个具名 Renderer。
+- `mod/deployment/service/standard/deploy/build/generation/script/CompanionBuildScript.java`：将配套制品保留在与所属组件相同的有界候选及封存发布中。
+- `mod/deployment/service/standard/deploy/build/generation/script/NodeDependencyToolPreparation.java`：准备项目固定包管理器，不改声明或锁文件。
+- `mod/deployment/service/standard/deploy/build/generation/script/NodePackageBuildScript.java`：渲染 Node 服务与构建型静态站点共享的包管理器部分。
+- `mod/deployment/service/standard/deploy/build/generation/script/SafeBuildScriptEnvelope.java`：持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明。
+- `mod/deployment/service/standard/deploy/build/workload/ContainerBuildRenderer.java`：渲染固定 Dockerfile 容器镜像构建。
+- `mod/deployment/service/standard/deploy/build/workload/StaticSiteBuildRenderer.java`：在不假设 Node 版本的情况下渲染纯静态或 Node 构建型站点产物。
+- `mod/deployment/service/standard/deploy/contract/DeploymentPlanAction.java`：部署短停机部署事务的可审计固定阶段。
+- `mod/deployment/service/standard/deploy/contract/DeploymentReviewConsent.java`：用户对精确来源和目标的审阅记录；远端副作用仍需宿主授权。
+- `mod/deployment/service/standard/deploy/contract/MultiComponentDeploymentPlan.java`：一个经审阅组件图的确定性构建与运行顺序。
+- `mod/deployment/service/standard/deploy/contract/ReviewedDeploymentPlan.java`：完全确定性的部署事务计划；不包含传输实现或原始命令。
+- `mod/deployment/service/standard/deploy/contract/ReviewedDeploymentRequest.java`：使用两种独立来源摘要及原平台句柄的完整已审阅标准候选。
+- `mod/deployment/service/standard/deploy/contract/spi/DeploymentAdapter.java`：为一个受支持的部署单组件项目类型生成一个确定性计划。
+- `mod/deployment/service/standard/deploy/DeploymentStandardPlanner.java`：对原仍受管源码规划全部确定性单组件及混合部署。
+- `mod/deployment/service/standard/deploy/extension/adapter/ContainerAdapter.java`：在策略验证后计划一个 Dockerfile 镜像和一个受管 Docker 或 Podman 容器。
+- `mod/deployment/service/standard/deploy/extension/adapter/DeploymentPlanFactory.java`：类型化部署适配器的内部共用顺序。
+- `mod/deployment/service/standard/deploy/extension/adapter/ServiceDeploymentAdapter.java`：计划一个由 Profile 选定的普通 systemd 服务，不接受命令字符串。
+- `mod/deployment/service/standard/deploy/extension/adapter/ServiceDeploymentProfile.java`：一个普通 systemd 服务项目类型的不可变 Profile。
+- `mod/deployment/service/standard/deploy/extension/adapter/StaticSiteAdapter.java`：只在验证声明的生成输出目录后计划静态站点发布。
+- `mod/deployment/service/standard/deploy/extension/registry/DeploymentAdapterRegistry.java`：持有完整且已验证的部署适配器装配。
+- `mod/deployment/service/standard/deploy/input/ApplicationDeclaration.java`：有界应用声明与补填值。
+- `mod/deployment/service/standard/deploy/input/DeploymentStoragePlan.java`：解析已审阅存储并拒绝原有重叠和保留路径。
+- `mod/deployment/service/standard/deploy/plan/MultiComponentDeploymentPlanner.java`：仅在混合项目通过安全准入后生成确定性图顺序。
+- `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
+- `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
+- `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。

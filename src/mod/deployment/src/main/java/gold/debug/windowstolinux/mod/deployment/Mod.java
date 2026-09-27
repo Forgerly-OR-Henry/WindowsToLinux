@@ -10,6 +10,7 @@ import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvision
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -27,6 +28,9 @@ public final class Mod implements ModEntrypoint {
 
     /** Borrowed-material standard analysis entrypoint. / 借用原素材的标准分析入口。 */
     private DeploymentStandardAnalyzer standardAnalyzer;
+
+    /** Borrowed-material deterministic deployment planning entrypoint. / 借用原素材的确定性部署规划入口。 */
+    private DeploymentStandardPlanner standardPlanner;
 
     /** Active original-task recovery registration. / 活动原任务恢复登记。 */
     private RecoveryRegistration recoveryRegistration;
@@ -81,6 +85,7 @@ public final class Mod implements ModEntrypoint {
         this.gitSourceFlow = gitFlow;
         this.secretProvisionFlow = secretFlow;
         this.standardAnalyzer = new DeploymentStandardAnalyzer();
+        this.standardPlanner = new DeploymentStandardPlanner();
         this.recoveryRegistration = registration;
         this.gitRecoveryRegistration = gitRegistration;
         this.secretRecoveryRegistration = secretRegistration;
@@ -117,6 +122,14 @@ public final class Mod implements ModEntrypoint {
         if (standardAnalyzer == null)
             throw new IllegalStateException("Deployment Mod is not started");
         return standardAnalyzer;
+    }
+
+    /** Returns the active deterministic standard planner. / 返回活动的确定性标准规划器。
+     * @return bound planner / 已绑定规划器 */
+    public DeploymentStandardPlanner standardPlanner() {
+        if (standardPlanner == null)
+            throw new IllegalStateException("Deployment Mod is not started");
+        return standardPlanner;
     }
 
     /** Releases the author reference; platform capabilities own their actual cleanup. / 释放作者引用，平台能力负责其实际清理。
@@ -159,6 +172,7 @@ public final class Mod implements ModEntrypoint {
             throw failure;
         secretProvisionFlow = null;
         standardAnalyzer = null;
+        standardPlanner = null;
         gitSourceFlow = null;
         publicationFlow = null;
         this.context = null;

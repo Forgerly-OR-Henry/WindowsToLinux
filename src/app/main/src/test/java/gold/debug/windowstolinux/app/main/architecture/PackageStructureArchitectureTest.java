@@ -946,10 +946,13 @@ class PackageStructureArchitectureTest {
         List<String> problems = new ArrayList<>();
         model.packages.values().forEach(info -> {
             String analysisRoot = "gold.debug.windowstolinux.mod.deployment.service.standard.analyze";
+            String deploymentRoot = "gold.debug.windowstolinux.mod.deployment.service.standard.deploy";
             String modelRoot = "gold.debug.windowstolinux.mod.deployment.service.core.model";
             int limit = info.name.equals(analysisRoot) || info.name.startsWith(analysisRoot + ".")
                     ? 6
-                    : info.name.equals(modelRoot) || info.name.startsWith(modelRoot + ".") ? 5 : 3;
+                    : info.name.equals(deploymentRoot) || info.name.startsWith(deploymentRoot + ".")
+                            ? 6
+                            : info.name.equals(modelRoot) || info.name.startsWith(modelRoot + ".") ? 5 : 3;
             if (info.depth > limit)
                 problems.add(info.name + " is deeper than its reviewed package limit of " + limit);
             verifyFunctionalGroupPackage(info.name, problems);
