@@ -1631,6 +1631,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的数据结构，或按独立重试记录重置从未可用的失败目标；核验实际所有权及会话。
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
+- `app/db/task/BrowserRecoveryArchival.java`：核对原宿主任务/服务器，保存固定救援摘要，并在中央任务事务内清理所属救援事件与状态；拒绝迟到写入。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；固定任务摘要与执行清理同事务，原归档凭据支持仅元数据重试及跨启动收尾。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。

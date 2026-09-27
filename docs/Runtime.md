@@ -258,6 +258,8 @@ linux-sshd 通过 linux 契约采集服务器已有环境
 
 默认 `DesktopMain` 的服务器页已装配独立救援：`platform.ssh.rescue.v1` 使用 `@platform`、实际宿主版本及完整 SERVER 占用，浏览器、模型和 SSH 都属于原中央任务，不创建旧独立执行器。固定 SSH 复核先验证保存的主机指纹和认证，再执行宿主固定回显（15 秒、1024 字节）；只有该平台任务类型可以调用此入口，不改变公开 Mod 命令审批。原控制器直接在中央回调运行、使用同一任务 UUID 记录状态和动作摘要，取消不强制中断线程。认证、主机身份及非连接错误停止本轮；只有明确连接失败可触发只读再查。未确认终端命令不重放，原任务核对要求用户确认旧动作已结束。
 
+救援临时状态与事件现在随原中央任务收尾：业务结论和实际资源确认后，在同一 H2 事务写入固定 `browser_recovery` 摘要、清理 `browser_recovery_event/task`，并提交平台任务摘要及执行清理。救援摘要 ID 按 `WTL-BROWSER-ARCHIVE-1:` 与原持久 `archive_log_id` 确定性派生；记录原协议、服务器、最后观察状态/事件、命令 SHA-256、事件及提交次数，不保存命令或终端正文。任一步失败整体回滚，原任务保留 FINISHING；补归档不再探测 SSH 或调用作者恢复。原状态记录不被日志清理直接删除，迟到回调不能重建已结束记录。没有原中央任务、协议/服务器不匹配的记录保留，不能仅凭 RECOVERED 字样自行清理。
+
 救援状态机、预算、动作确认、探测分类及核心快照现归 `app/linux/recovery`，只接收无凭据的救援端点和公开 `Problem`，不引用 service、db 或旧 shared 失败类型。该模块直接依赖既有 `app/ai` 的协议。`app/service/recovery` 负责中央任务、配置、模型、持久记录与 UI 值转换；剩余旧入口通过 `RecoveryProbeAdapter` 转换旧 SSH 失败，保留事件码和诊断身份，不把旧异常带回核心。`SshRecoveryApplicationFacade`、`SshRecoverySession` 与服务层 `RecoverySnapshot` 仍是 UI 契约，视图不直接引用 Linux 实现。
 
 救援固定提示、建议影响分类和严格 JSON 解析归 `app/ai/recovery`；旧 `shared/ai/recovery` 网络客户端继续复用该协议，待整体入口切换后移除。新 `PlatformRecoveryModels` 经原平台任务及实际 AiService 分别调用视觉/语言用途，不使用审批模型生成建议；宿主输出上限为 2048 Token，并按各候选模型已配置上限取较小值，每次调用期限为 60 秒。普通 Mod 显式 AiRequest 的超限拒绝规则不变。完整响应结构不合格不另换模型；发送后结果未知保留原任务，不请求下一条建议。该模型适配已接默认救援入口。模型仅生成观察和建议，不执行命令；`shared/linux` 与 `shared/deploy` 不引用 Windows。

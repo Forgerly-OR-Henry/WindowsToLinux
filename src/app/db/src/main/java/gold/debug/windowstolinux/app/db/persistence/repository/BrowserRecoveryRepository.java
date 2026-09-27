@@ -31,6 +31,26 @@ public final class BrowserRecoveryRepository {
         this.connections = java.util.Objects.requireNonNull(connections);
     }
 
+    /** Saves current platform rescue metadata only while its original task and server remain active. / 仅在原平台救援任务及服务器仍活动时保存元数据。
+     * @param id original platform task / 原平台任务
+     * @param server original held server / 原持有服务器
+     * @param state observed controller state / 已观察控制器状态
+     * @param digest last command hash without command text / 最后命令摘要，不含命令正文
+     * @param event observed metadata event / 已观察元数据事件
+     * @throws SQLException if original ownership or journal persistence fails / 原归属或记录持久化失败时
+     * @throws IllegalArgumentException if state, event or digest violates the metadata contract / 状态、事件或摘要违反元数据契约时 */
+    public void savePlatform(java.util.UUID id, String server, String state, String digest, String event)
+            throws SQLException {
+        connections.transaction(() -> {
+            try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
+                gold.debug.windowstolinux.app.db.task.BrowserRecoveryArchival.requireActive(c, id, server);
+                save(id.toString(), server, gold.debug.windowstolinux.app.db.task.BrowserRecoveryArchival.TASK_TYPE,
+                        state, digest, event);
+            }
+        });
+    }
+
     /**
      * Interrupts unfinished sessions at application startup. / 应用启动时中断未完成会话。
      *

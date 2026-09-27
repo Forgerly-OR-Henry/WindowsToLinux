@@ -867,6 +867,8 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 
 任务持久化的 `TaskLedger.DependencyBusyException`、`TaskLedger.FinalizationException` 与私有 `PlatformTaskRuntime.AdmissionRejectedException` 是明确的内部 SQL 回滚信号，分别保留依赖占用、原归档凭据与准入拒绝；均在任务宿主内转为公开失败或待收尾状态，它们不实现旧共享契约，也不是允许其他异常省略结构化原因的通用例外。架构检查按真实返回类型检查公开、非静态、无参数的 `problem()`，保留异常命名要求及旧错误枚举登记检查。
 
+平台救援的临时状态由 `app/db/persistence/repository/BrowserRecoveryRepository` 保存，平台写入入口先核对原活动任务与服务器；`app/db/task/BrowserRecoveryArchival` 在原中央任务事务内完成摘要及事件清理。其固定宿主协议由此数据边界定义，service 准入及救援总装共用，不产生新的作者 API 或 Maven 模块。
+
 | 枚举性质   | 统一后缀      | 示例                         |
 | ---------- | ------------- | ---------------------------- |
 | 可执行动作 | `Action`      | `LifecycleAction`            |

@@ -45,6 +45,20 @@ class PlatformRecoveryServiceTest {
         return ((TaskHandle<?>) field(session, "handle")).snapshot();
     }
 
+    static com.fasterxml.jackson.databind.JsonNode summary(PlatformRuntime runtime, UUID id) throws Exception {
+        try (var c = runtime.persistence().database().openConnection();
+                var p = c.prepareStatement(
+                        "SELECT details FROM runtime_log WHERE category='browser_recovery' AND task_id=?")) {
+            p.setObject(1, id);
+            try (var r = p.executeQuery()) {
+                assertTrue(r.next());
+                var details = new com.fasterxml.jackson.databind.ObjectMapper().readTree(r.getString(1));
+                assertFalse(r.next());
+                return details;
+            }
+        }
+    }
+
     static ServerProfile save(PlatformRuntime runtime, int port) throws Exception {
         PlatformServerServiceTest.setup(runtime);
         runtime.started();
@@ -75,15 +89,11 @@ class PlatformRecoveryServiceTest {
             assertTrue(browser(session).processes().isEmpty());
             assertTrue(browser(session).resourcesClosed());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
-            try (var connection = runtime.persistence().database().openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement
-                            .executeQuery("SELECT task_id,operation_id,task_state FROM browser_recovery_task")) {
-                assertTrue(rows.next());
-                assertEquals(session.snapshot().id(), rows.getString(1));
-                assertEquals(PlatformRecoveryService.TASK_TYPE, rows.getString(2));
-                assertEquals("RECOVERED", rows.getString(3));
-            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_task"));
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event"));
+            var archived = summary(runtime, UUID.fromString(session.snapshot().id()));
+            assertEquals(PlatformRecoveryService.TASK_TYPE, archived.path("protocol").asText());
+            assertEquals("RECOVERED", archived.path("lastObservedState").asText());
             var remoteCapability = runtime.remoteCapabilities("@platform", runtime.version());
             var linux = (gold.debug.windowstolinux.app.service.linux.PlatformLinuxService) remoteCapability.linux();
             var wrongType = runtime.tasks().bind("@platform", runtime.version(), false).submit(request("server"),
@@ -97,6 +107,36 @@ class PlatformRecoveryServiceTest {
             assertEquals(Outcome.SUCCEEDED,
                     wrongType.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
             assertEquals(1, remote.commands.get());
+        }
+    }
+
+    @Test
+    void summaryFailureRetriesOnlyOriginalMetadataWithoutRepeatingSuccessfulSshProbe() throws Exception {
+        try (var remote = new PlatformRemoteCapabilitiesTest.Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
+            var profile = save(runtime, remote.listener.server().getPort());
+            sql(runtime.persistence().database(),
+                    "ALTER TABLE runtime_log ADD CONSTRAINT rescue_archive_fixture CHECK(category<>'browser_recovery')");
+            var session = runtime.recovery().start(profile);
+            await(() -> task(runtime, session).state() == TaskState.FINISHING);
+            var id = UUID.fromString(session.snapshot().id());
+            assertEquals(1, remote.commands.get());
+            assertTrue(browser(session).resourcesClosed());
+            assertEquals(1, runtime.recovery().pending().size());
+            assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_task"));
+            assertTrue(count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event") > 0);
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM runtime_log WHERE task_id='"
+                    + id + "' AND category IN ('platform_task','browser_recovery')"));
+            assertThrows(java.sql.SQLException.class,
+                    () -> runtime.persistence().recovery().savePlatform(id, profile.id(), "RECOVERED", "", "late"));
+            sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT rescue_archive_fixture");
+            var ended = runtime.recovery().reconcile(id, true).toCompletableFuture().get(8, TimeUnit.SECONDS);
+            assertEquals(Optional.of(Outcome.SUCCEEDED), ended.outcome());
+            assertEquals(1, remote.commands.get());
+            assertEquals(1, remote.authentications.get());
+            assertEquals("RECOVERED", summary(runtime, id).path("lastObservedState").asText());
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event"));
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
         }
     }
 
@@ -224,9 +264,13 @@ class PlatformRecoveryServiceTest {
                             assertEquals(1, submitted.get());
                             assertEquals(1, model.calls.get());
                         }
-                        assertEquals(1, count(runtime.persistence().database(),
-                                "SELECT COUNT(*) FROM browser_recovery_event WHERE event_code='submitted'"));
+                        assertEquals(1, summary(runtime, UUID.fromString(session.snapshot().id()))
+                                .path("submittedCount").asInt());
                     }
+                    assertEquals(0,
+                            count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event"));
+                    assertEquals(0,
+                            count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_task"));
                     assertTrue(actual.processes().stream().noneMatch(BrowserProcess::alive));
                     assertEquals(0, count(runtime.persistence().database(),
                             "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
