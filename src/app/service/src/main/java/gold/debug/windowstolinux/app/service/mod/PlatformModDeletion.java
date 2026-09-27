@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
 import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
+import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
@@ -26,6 +27,9 @@ public final class PlatformModDeletion implements AutoCloseable {
 
     /** Original unlocked-operation gate. / 原解锁操作门。 */
     private final DesktopSecurityService security;
+
+    /** Actual runtime diagnostic owner used to exclude replay during deletion. / 用于删除期间排除回填的实际运行时诊断所有者。 */
+    private final PlatformLogService diagnostics;
 
     /** Exact durable deletion authority. / 精确持久删除权限。 */
     private final ModDeletionLedger ledger;
@@ -43,9 +47,12 @@ public final class PlatformModDeletion implements AutoCloseable {
      * @param database original database / 原数据库
      * @param security original authorization gate / 原授权门
      * @param home installed application root / 安装应用根
+     * @param diagnostics actual runtime logging owner / 实际运行时日志所有者
      * @throws SQLException if the ledger cannot be opened / 无法打开账本时 */
-    PlatformModDeletion(PlatformDatabase database, DesktopSecurityService security, Path home) throws SQLException {
+    PlatformModDeletion(PlatformDatabase database, DesktopSecurityService security, Path home,
+            PlatformLogService diagnostics) throws SQLException {
         this.database = database;
+        this.diagnostics = Objects.requireNonNull(diagnostics);
         this.security = security;
         this.home = home;
         ledger = new ModDeletionLedger(database, home);
@@ -144,7 +151,7 @@ public final class PlatformModDeletion implements AutoCloseable {
      * @throws SQLException if deletion admission is unavailable / 删除准入不可用时 */
     public synchronized Review review(String owner, String version) throws IOException, SQLException {
         requireOpen();
-        try (var permission = security.enterOperation()) {
+        try (var permission = security.enterOperation(); var logs = diagnostics.sealDeletion(owner)) {
             var catalog = ledger.review(owner, version);
             var program = ModInstallationCleanup.installed(catalog.program());
             List<ModInstallationCleanup.Entry> originals;
@@ -176,7 +183,7 @@ public final class PlatformModDeletion implements AutoCloseable {
         requireOpen();
         if (review == null || review.issuer != this || review.used)
             throw new IllegalArgumentException("Deletion requires an unused original review");
-        try (var permission = security.enterOperation()) {
+        try (var permission = security.enterOperation(); var logs = diagnostics.sealDeletion(review.owner())) {
             var original = review.evidence;
             var accepted = deleteOriginals
                     ? original
@@ -215,9 +222,11 @@ public final class PlatformModDeletion implements AutoCloseable {
             if (complete != null)
                 return success(complete);
             var original = ledger.execution(operation);
-            decode(original.files(), original.program(), home);
-            ledger.resume(operation);
-            return advance(operation);
+            try (var logs = diagnostics.sealDeletion(original.owner())) {
+                decode(original.files(), original.program(), home);
+                ledger.resume(operation);
+                return advance(operation);
+            }
         }
     }
 

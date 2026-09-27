@@ -130,6 +130,21 @@ public final class LogRepository {
         }
     }
 
+    /** Reads owners whose retained installed deletion must prevent diagnostic replay after restart. / 读取其保留安装删除必须阻止重启后诊断回填的所有者。
+     * @return exact retained owner identities / 精确保留所有者身份
+     * @throws SQLException if deletion evidence cannot be read / 无法读取删除证据时 */
+    public Set<String> deletingOwners() throws SQLException {
+        try (var c = database.openConnection();
+                var p = c.prepareStatement(
+                        "SELECT DISTINCT mod_id FROM mod_operation WHERE operation_type IN ('DELETE_MOD','DELETE_VERSION')");
+                var rows = p.executeQuery()) {
+            var owners = new HashSet<String>();
+            while (rows.next())
+                owners.add(rows.getString(1));
+            return Set.copyOf(owners);
+        }
+    }
+
     /** Commits exact deduplication and retention as one category transaction. / 以同一类别事务提交精确去重及保留。
      * @param target original registration / 原登记
      * @param records original records including emergency replays / 含应急回填的原记录

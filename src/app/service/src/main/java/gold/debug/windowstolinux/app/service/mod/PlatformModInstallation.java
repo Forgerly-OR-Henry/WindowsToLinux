@@ -60,10 +60,11 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param database actual platform database / 实际平台数据库
      * @param security original security service / 原安全服务
      * @param applicationHome explicit application root / 明示应用根
+     * @param diagnostics actual runtime logging owner / 实际运行时日志所有者
      * @throws IOException if the root is absent or redirected / 根缺失或重定向时
      * @throws SQLException if archive registration fails / 归档登记失败时 */
-    public PlatformModInstallation(PlatformDatabase database, DesktopSecurityService security, Path applicationHome)
-            throws IOException, SQLException {
+    public PlatformModInstallation(PlatformDatabase database, DesktopSecurityService security, Path applicationHome,
+            gold.debug.windowstolinux.app.service.log.PlatformLogService diagnostics) throws IOException, SQLException {
         directory(applicationHome);
         home = applicationHome;
         boot = database.bootId();
@@ -72,7 +73,7 @@ public final class PlatformModInstallation implements AutoCloseable {
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
                 new LogCategory("mod_operation", "mod_operation", Optional.empty()));
-        deletion = new PlatformModDeletion(database, security, home);
+        deletion = new PlatformModDeletion(database, security, home, diagnostics);
     }
 
     /** Returns actual installed-version deletion for host composition. / 返回供宿主装配的实际安装版本删除。

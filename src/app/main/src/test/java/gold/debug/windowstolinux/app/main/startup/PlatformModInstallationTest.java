@@ -75,7 +75,7 @@ class PlatformModInstallationTest {
     }
 
     PlatformModInstallation installer(PlatformRuntime runtime) throws Exception {
-        return new PlatformModInstallation(runtime.persistence().database(), runtime.security(), root);
+        return new PlatformModInstallation(runtime.persistence().database(), runtime.security(), root, runtime.logs());
     }
 
     Path original(String filename, String version, String readme) throws Exception {
