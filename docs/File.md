@@ -151,6 +151,7 @@ WindowsToLinux/
    │  └─ deployment/                         官方部署主模块；业务迁移进行中
    │     ├─ Mod.java
    │     ├─ db/
+   │     ├─ linux/
    │     ├─ secret/
    │     ├─ service/
    │     │  ├─ core/
@@ -1539,7 +1540,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 | `deployment/api`                      | 平台 API 的必要公共契约                                                                 | 不依赖或暴露部署私有实现、数据库实体及备份类型                                           |
 | `deployment/ai`                       | 平台公开 AI 契约、本包的请求与结果类型                                                  | 不直接依赖 APP 的 AI 实现、Provider 客户端、`db` 或业务流程                              |
 | `deployment/db`                       | 平台公开 JDBC/凭据契约、本包存储映射及 service/core 下 config/model 纯数据值            | 不依赖 core 业务编排、UI 或 AI，不访问其他 Mod 私有表                                    |
-| `deployment/linux`                    | 平台 Linux/服务器/任务契约及业务窄端口                                                  | 不接管 SSHD、连接、指纹或独立救援；不调用 UI 或两个部署引擎                              |
+| `deployment/linux`                    | 平台 Linux/服务器/任务审核契约、service/core 工具链纯值与固定 helper 业务协议适配       | 不接管 SSHD、连接、指纹或独立救援；不调用 UI 或两个部署引擎                              |
 | `deployment/secret`                   | 平台秘密/任务契约、本 Mod db 与 service/core/model 纯值、一次性秘密修订创建及原任务恢复 | 不持有 APP 主密钥，不持久化或长期留存明文，不绕过凭据归属/任务授权，不调用 UI 或部署引擎 |
 | `deployment/source`                   | 平台 Source/任务契约、业务取材规则及 service/core/model 纯值                            | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包                           |
 | `deployment/windows`                  | 平台公开 Source/进程/交互等契约及本机业务适配                                           | 不依赖 app/windows 私有类，不接管平台更新、卸载和窗口隐私                                |
