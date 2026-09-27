@@ -275,7 +275,7 @@ public final class DeploymentConfigurationRepository {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    private static String boundedIdentity(String value, String field) {
+    static String boundedIdentity(String value, String field) {
         value = Objects.requireNonNull(value, field).trim();
         if (!value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) {
             throw new IllegalArgumentException(field + " must be a bounded release identity");

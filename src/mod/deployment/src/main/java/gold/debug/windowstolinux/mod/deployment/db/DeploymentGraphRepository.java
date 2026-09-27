@@ -283,7 +283,7 @@ public final class DeploymentGraphRepository {
      * @param row original unit row / 原单元行
      * @return exact owned unit identity / 精确所属单元身份
      * @throws SQLException if stored columns are invalid / 存储列无效时 */
-    private static DeploymentUnitIdentity unit(ResultSet row) throws SQLException {
+    static DeploymentUnitIdentity unit(ResultSet row) throws SQLException {
         String id = row.getString("deployment_unit_id");
         var unit = new DeploymentUnitIdentity(id, new ServerRef(row.getString("server_profile_id")),
                 row.getString("systemd_unit_name"), row.getString("release_root_path"),
