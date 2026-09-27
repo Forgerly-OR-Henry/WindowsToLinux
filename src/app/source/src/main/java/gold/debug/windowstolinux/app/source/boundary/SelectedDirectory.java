@@ -9,6 +9,7 @@ import java.security.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity;
+import gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry;
 import gold.debug.windowstolinux.appapi.source.SourceFile;
 import gold.debug.windowstolinux.appapi.task.CancellationToken;
 
@@ -64,10 +65,7 @@ public final class SelectedDirectory {
      * @throws IOException if a link escapes the selected boundary or the file is unavailable / 链接越过所选边界或文件不可用时 */
     public Entry inspect(String name) throws IOException {
         relative(name);
-        var now = Files.readAttributes(root, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        if (!now.isDirectory() || now.isOther() || now.isSymbolicLink()
-                || !identity.equals(WindowsFileIdentity.read(root)) || !root.toRealPath().equals(root))
-            throw new IOException("Selected source directory changed");
+        checkRoot();
         Path resolved = root.resolve(name).toRealPath();
         if (!resolved.startsWith(root) || resolved.equals(root))
             throw new IOException("Source path escapes its selection");
@@ -75,6 +73,65 @@ public final class SelectedDirectory {
         if (!attributes.isRegularFile() || attributes.isSymbolicLink() || attributes.isOther())
             throw new IOException("Source path is not a stable regular file");
         return new Entry(name, resolved, attributes, WindowsFileIdentity.read(resolved));
+    }
+
+    /** Lists immediate observations without traversing links or returning a truncated success. / 列举直接观测，不遍历链接或把截断结果当成功。
+     * @param relativeDirectory exact directory or empty selected root / 精确目录或空的所选根
+     * @param maximum maximum immediate entries / 最大直接子项数
+     * @param cancellation original task cancellation / 原任务取消
+     * @return immutable complete sorted observations / 不可变完整有序观测
+     * @throws IOException if identity, containment, capacity or enumeration fails / 身份、包含边界、容量或枚举失败时 */
+    public List<SourceDirectoryEntry> list(String relativeDirectory, int maximum, CancellationToken cancellation)
+            throws IOException {
+        if (relativeDirectory == null || maximum < 1 || maximum > 100_000)
+            throw new IllegalArgumentException("Invalid source directory listing request");
+        checkRoot();
+        cancelled(cancellation);
+        Path directory = relativeDirectory.isEmpty() ? root : root.resolve(relative(relativeDirectory)).toRealPath();
+        if (!directory.startsWith(root))
+            throw new IOException("Source directory escapes its selection");
+        var before = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!before.isDirectory() || before.isOther() || before.isSymbolicLink())
+            throw new IOException("Source directory is not ordinary");
+        String directoryIdentity = WindowsFileIdentity.read(directory);
+        var entries = new ArrayList<SourceDirectoryEntry>();
+        try (var children = Files.newDirectoryStream(directory)) {
+            for (var child : children) {
+                cancelled(cancellation);
+                if (entries.size() == maximum)
+                    throw new IOException("Source directory exceeds its entry budget");
+                String name = relative(relativeDirectory.isEmpty()
+                        ? child.getFileName().toString()
+                        : relativeDirectory + "/" + child.getFileName());
+                var attributes = Files.readAttributes(child, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                var type = attributes.isSymbolicLink() || attributes.isOther()
+                        ? SourceDirectoryEntry.EntryType.OTHER
+                        : attributes.isDirectory()
+                                ? SourceDirectoryEntry.EntryType.DIRECTORY
+                                : attributes.isRegularFile()
+                                        ? SourceDirectoryEntry.EntryType.FILE
+                                        : SourceDirectoryEntry.EntryType.OTHER;
+                entries.add(new SourceDirectoryEntry(name, type,
+                        type == SourceDirectoryEntry.EntryType.FILE ? attributes.size() : 0));
+            }
+        }
+        checkRoot();
+        cancelled(cancellation);
+        var after = Files.readAttributes(directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        Path resolved = relativeDirectory.isEmpty() ? root : root.resolve(relativeDirectory).toRealPath();
+        if (!directory.equals(resolved) || !directoryIdentity.equals(WindowsFileIdentity.read(directory))
+                || !before.lastModifiedTime().equals(after.lastModifiedTime()))
+            throw new IOException("Source directory changed while listing");
+        return entries.stream().sorted(Comparator.comparing(SourceDirectoryEntry::relativePath)).toList();
+    }
+
+    /** Verifies the exact originally selected directory before and after access. / 在访问前后核验精确原选定目录。
+     * @throws IOException if the selected root was replaced / 所选根已被替换时 */
+    private void checkRoot() throws IOException {
+        var now = Files.readAttributes(root, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!now.isDirectory() || now.isOther() || now.isSymbolicLink()
+                || !identity.equals(WindowsFileIdentity.read(root)) || !root.toRealPath().equals(root))
+            throw new IOException("Selected source directory changed");
     }
 
     /** Reads a copied payload after confirming that the source stayed unchanged. / 确认源未变化后读取独立载荷。

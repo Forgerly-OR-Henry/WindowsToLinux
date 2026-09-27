@@ -111,6 +111,19 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
                 () -> selection(selection, task).read(request.relativePath(), request.maxBytes(), cancellation(task)));
     }
 
+    /** Lists only an original-task directory under the public entry ceiling. / 仅在公开子项上限内列举原任务目录。
+     * @param selection exact host selection / 精确宿主选择
+     * @param relativeDirectory original relative directory or empty root / 原相对目录或空根
+     * @param maxEntries explicit entry budget / 明确子项预算
+     * @param task original task / 原任务
+     * @return complete sorted immediate children / 完整有序直接子项
+     * @throws ApiException if authorization, path, budget or reading fails / 授权、路径、预算或读取失败时 */
+    @Override
+    public List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory, int maxEntries,
+            TaskContext task) throws ApiException {
+        return access(task, () -> selection(selection, task).list(relativeDirectory, maxEntries, cancellation(task)));
+    }
+
     /** Creates and registers a frozen copy of exactly the author-selected files. / 创建并登记精确作者选定文件的冻结副本。
      * @param selection original selection / 原选择
      * @param request explicit file collection / 明确文件集合

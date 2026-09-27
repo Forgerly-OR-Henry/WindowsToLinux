@@ -80,11 +80,13 @@ public class DeploymentRuntimeFixture {
                 throw new AssertionError("No input expected");
             }
         });
-        runtime.setSourcePicker((title, task, cancel) -> {
-            throw new AssertionError("No source selection expected");
-        });
+        runtime.setSourcePicker((title, task, cancel) -> selectedSourceDirectory());
         runtime.started();
         return runtime;
+    }
+
+    protected Path selectedSourceDirectory() {
+        throw new AssertionError("No source selection expected");
     }
 
     protected void start(PlatformRuntime runtime, boolean enabled) throws Exception {

@@ -220,6 +220,81 @@ class SourceBoundaryTest {
         assertTrue(Files.isDirectory(selected));
     }
 
+    @Test
+    void listingIsCompleteSortedNonrecursiveAndDoesNotApplyDeploymentExclusions() throws Exception {
+        Files.createDirectory(root.resolve("target"));
+        Files.writeString(root.resolve("target/child.txt"), "nested");
+        Files.writeString(root.resolve(".env"), "fixture");
+        Files.writeString(root.resolve("中文.txt"), "abc");
+        var source = new SelectedDirectory(root);
+        var entries = source.list("", 3, () -> false);
+        assertEquals(List.of(".env", "target", "中文.txt"), entries.stream()
+                .map(gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry::relativePath).toList());
+        assertEquals(gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry.EntryType.DIRECTORY,
+                entries.get(1).type());
+        assertEquals(3, entries.get(2).byteCount());
+        assertThrows(UnsupportedOperationException.class, () -> entries.clear());
+        assertEquals("target/child.txt", source.list("target", 1, () -> false).getFirst().relativePath());
+        assertThrows(IOException.class, () -> source.list("", 2, () -> false));
+        assertThrows(IOException.class, () -> source.list(".env", 3, () -> false));
+        assertThrows(IllegalArgumentException.class, () -> source.list("", 0, () -> false));
+        assertThrows(IllegalArgumentException.class, () -> source.list("", 100001, () -> false));
+        assertThrows(IllegalArgumentException.class, () -> source.list("../outside", 1, () -> false));
+        assertThrows(CancellationException.class, () -> source.list("", 3, () -> true));
+    }
+
+    @Test
+    void listingReportsJunctionsWithoutTraversingThemAndRejectsEscapingDirectoryRequests() throws Exception {
+        Path selected = Files.createDirectory(root.resolve("selected"));
+        Path inside = Files.createDirectory(selected.resolve("inside"));
+        Path outside = Files.createDirectory(root.resolve("outside"));
+        Files.writeString(inside.resolve("child"), "inside");
+        Files.writeString(outside.resolve("untouched"), "outside");
+        Path safe = selected.resolve("alias"), escape = selected.resolve("escape");
+        try {
+            junction(safe, inside);
+            junction(escape, outside);
+            var source = new SelectedDirectory(selected);
+            var entries = source.list("", 3, () -> false);
+            assertEquals(List.of("alias", "escape", "inside"), entries.stream()
+                    .map(gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry::relativePath).toList());
+            assertEquals(gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry.EntryType.OTHER,
+                    entries.getFirst().type());
+            assertEquals(gold.debug.windowstolinux.appapi.source.SourceDirectoryEntry.EntryType.OTHER,
+                    entries.get(1).type());
+            assertEquals("alias/child", source.list("alias", 1, () -> false).getFirst().relativePath());
+            assertThrows(IOException.class, () -> source.list("escape", 1, () -> false));
+        } finally {
+            Files.deleteIfExists(safe);
+            Files.deleteIfExists(escape);
+        }
+        assertEquals("outside", Files.readString(outside.resolve("untouched")));
+    }
+
+    @Test
+    void listingRejectsAReplacedRootOrDirectoryChangedDuringEnumeration() throws Exception {
+        Path selected = Files.createDirectory(root.resolve("selected"));
+        Files.writeString(selected.resolve("file"), "original");
+        var source = new SelectedDirectory(selected);
+        var signals = new java.util.concurrent.atomic.AtomicInteger();
+        FileTime before = Files.getLastModifiedTime(selected);
+        assertThrows(IOException.class, () -> source.list("", 1, () -> {
+            if (signals.incrementAndGet() == 2) {
+                try {
+                    Files.setLastModifiedTime(selected, FileTime.fromMillis(before.toMillis() + 5000));
+                } catch (IOException failure) {
+                    throw new AssertionError(failure);
+                }
+            }
+            return false;
+        }));
+        Files.move(selected, root.resolve("original"));
+        Files.createDirectory(selected);
+        Files.writeString(selected.resolve("file"), "replacement");
+        assertThrows(IOException.class, () -> source.list("", 1, () -> false));
+        assertEquals("original", Files.readString(root.resolve("original/file")));
+    }
+
     FrozenSourceWork work() {
         return new FrozenSourceWork(root.resolve("work"), UUID.randomUUID(), UUID.randomUUID(), "fixture.mod");
     }
