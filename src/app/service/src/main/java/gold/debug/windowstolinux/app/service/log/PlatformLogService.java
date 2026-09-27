@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.swing.SwingUtilities;
 
@@ -34,6 +35,21 @@ public final class PlatformLogService implements AutoCloseable {
     /** Per-category serialization shared by every binding and maintenance call. / 所有绑定及维护调用共用的逐类别串行化。 */
     private final Map<UUID, ReentrantLock> categoryLocks = new ConcurrentHashMap<>();
 
+    /** Coordinates complete owner deletion with every category's actual I/O. / 协调完整所有者删除与每个类别的实际 I/O。 */
+    private final Map<String, ReentrantReadWriteLock> ownerLocks = new ConcurrentHashMap<>();
+
+    /** Owners blocked by accepted or currently reviewed deletion, guarded by this service monitor. / 被已接纳或当前审阅删除封闭的所有者，由本服务监视器保护。 */
+    private final Set<String> blockedOwners = new HashSet<>();
+
+    /** Exact owners whose deletion scope is currently held by a worker. / 当前由工作线程持有删除作用域的精确所有者。 */
+    private final Set<String> deleting = new HashSet<>();
+
+    /** Known original category keys retained until deletion absence is confirmed. / 保留到确认删除不存在的已知原类别键。 */
+    private final Map<String, Set<UUID>> deletionKeys = new HashMap<>();
+
+    /** Removed keys cannot be revived by a previously captured maintenance snapshot. / 已移除键不能被之前捕获的维护快照复活。 */
+    private final Set<UUID> retiredKeys = new HashSet<>();
+
     /** Actual caller bindings owned by this boot. / 此启动持有的实际调用方绑定。 */
     private final Set<Binding> bindings = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -62,6 +78,7 @@ public final class PlatformLogService implements AutoCloseable {
         this.security = Objects.requireNonNull(security);
         for (String category : new TreeSet<>(LogRepository.PLATFORM_CATEGORIES))
             repository.register("app", Optional.empty(), new LogCategory(category, category, Optional.empty()));
+        blockedOwners.addAll(repository.deletingOwners());
     }
 
     /** Creates an activation-owned public logger without exposing table or file access. / 创建启用所属公开日志器，不暴露表或文件访问。
@@ -72,7 +89,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @return revocable caller logger / 可撤销调用方日志器 */
     public synchronized Binding bind(String owner, String version, Optional<SchemaIdentity> schema,
             PlatformTaskRuntime tasks) {
-        if (closed)
+        if (closed || blockedOwners.contains(owner))
             throw new IllegalStateException("Platform logs are closed");
         var binding = new Binding(owner, version, schema, tasks);
         bindings.add(binding);
@@ -170,7 +187,7 @@ public final class PlatformLogService implements AutoCloseable {
     public View inspect(UUID key) throws Exception {
         try (var operation = security.enterOperation()) {
             begin();
-            ReentrantLock lock = null;
+            CategoryAccess lock = null;
             try {
                 var target = repository.targets().stream().filter(t -> t.key().equals(key)).findFirst().orElseThrow();
                 lock = lock(target);
@@ -193,7 +210,7 @@ public final class PlatformLogService implements AutoCloseable {
                 return new View(target, List.copyOf(records), Optional.ofNullable(problem));
             } finally {
                 if (lock != null)
-                    lock.unlock();
+                    lock.close();
                 end();
             }
         }
@@ -215,7 +232,7 @@ public final class PlatformLogService implements AutoCloseable {
                 Long dbBefore = null, dbAfter = null, dbRemoved = null, fileBefore = null, fileAfter = null,
                         fileRemoved = null;
                 long confirmedRemoved = 0;
-                ReentrantLock lock = null;
+                CategoryAccess lock = null;
                 Problem problem = null;
                 try {
                     lock = lock(target);
@@ -257,11 +274,13 @@ public final class PlatformLogService implements AutoCloseable {
                         dbAfter = (long) repository.read(target).size();
                     dbRemoved = confirmedRemoved;
                 } catch (Exception failure) {
-                    problem = problem(ProblemCode.IO_FAILURE, "LOG_MAINTENANCE",
-                            "Diagnostic category remains partly unconfirmed");
+                    problem = failure instanceof ApiException api
+                            ? api.problem()
+                            : problem(ProblemCode.IO_FAILURE, "LOG_MAINTENANCE",
+                                    "Diagnostic category remains partly unconfirmed");
                 } finally {
                     if (lock != null)
-                        lock.unlock();
+                        lock.close();
                 }
                 results.add(new Maintenance(target, Optional.ofNullable(dbBefore), Optional.ofNullable(dbAfter),
                         Optional.ofNullable(dbRemoved), Optional.ofNullable(fileBefore), Optional.ofNullable(fileAfter),
@@ -280,7 +299,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @param record already bounded redacted record / 已有界脱敏记录
      * @return actual persistence destination and optional replay problem / 实际持久位置及可选回填问题 */
     private LogWriteResult write(LogRepository.Target target, LogRecordCodec.Record record) {
-        ReentrantLock lock = null;
+        CategoryAccess lock = null;
         try {
             lock = lock(target);
             Problem pendingProblem = null;
@@ -305,28 +324,153 @@ public final class PlatformLogService implements AutoCloseable {
                                 "Diagnostic saved only to its emergency file")));
             }
         } catch (Exception failure) {
-            return new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(), Optional.of(
-                    problem(ProblemCode.IO_FAILURE, "LOG_NOT_SAVED", "Diagnostic persistence could not be confirmed")));
+            return new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(),
+                    Optional.of(failure instanceof ApiException api
+                            ? api.problem()
+                            : problem(ProblemCode.IO_FAILURE, "LOG_NOT_SAVED",
+                                    "Diagnostic persistence could not be confirmed")));
         } finally {
             if (lock != null)
-                lock.unlock();
+                lock.close();
         }
     }
 
-    /** Acquires one bounded category coordination wait. / 取得一次有界类别协调等待。
+    /** Acquires owner admission before the category lock, holding both through all physical I/O. / 先取得所有者准入再取得类别锁，在全部物理 I/O 期间持有两者。
      * @param target actual category / 实际类别
-     * @return held lock / 已持有锁
-     * @throws Exception if the category cannot be acquired promptly / 无法及时取得类别时 */
-    private ReentrantLock lock(LogRepository.Target target) throws Exception {
-        var lock = categoryLocks.computeIfAbsent(target.key(), ignored -> new ReentrantLock());
+     * @return original access scope / 原访问作用域
+     * @throws Exception if deletion or existing storage prevents timely access / 删除或既有存储阻止及时访问时 */
+    private CategoryAccess lock(LogRepository.Target target) throws Exception {
+        var owner = ownerLocks.computeIfAbsent(target.owner(), ignored -> new ReentrantReadWriteLock(true));
+        boolean acquired = false;
         try {
-            if (!lock.tryLock(5, TimeUnit.SECONDS))
+            if (!owner.readLock().tryLock(5, TimeUnit.SECONDS))
+                throw new IllegalStateException("Diagnostic owner is busy");
+            acquired = true;
+            synchronized (this) {
+                if (blockedOwners.contains(target.owner()) || retiredKeys.contains(target.key()))
+                    throw new ApiException(problem(ProblemCode.BUSY, "LOG_OWNER_DELETING",
+                            "Diagnostic owner or original category is retained for deletion"));
+            }
+            var category = categoryLocks.computeIfAbsent(target.key(), ignored -> new ReentrantLock());
+            if (!category.tryLock(5, TimeUnit.SECONDS))
                 throw new IllegalStateException("Diagnostic category is busy");
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw interrupted;
+            return new CategoryAccess(owner, category);
+        } catch (Exception failure) {
+            if (acquired)
+                owner.readLock().unlock();
+            if (failure instanceof InterruptedException)
+                Thread.currentThread().interrupt();
+            throw failure;
         }
-        return lock;
+    }
+
+    /** Retains the exact owner and category locks in their acquisition order. / 按取得顺序保留精确所有者及类别锁。
+     * @param owner original owner lock / 原所有者锁
+     * @param category original category lock / 原类别锁 */
+    private record CategoryAccess(ReentrantReadWriteLock owner, ReentrantLock category) implements AutoCloseable {
+        /** Releases only completed I/O, in reverse acquisition order. / 仅释放已完成 I/O，按取得相反顺序。 */
+        @Override
+        public void close() {
+            category.unlock();
+            owner.readLock().unlock();
+        }
+    }
+
+    /** Seals one stopped owner before deletion review, admission or recovery; other owners remain available. / 在删除审阅、准入或恢复前封闭一个已停止所有者，其他所有者保持可用。
+     * @param owner exact installed Mod identity / 精确安装 Mod 身份
+     * @return worker-owned deletion scope, which must enclose all deletion I/O / 须覆盖全部删除 I/O 的工作线程所属删除作用域
+     * @throws SQLException if bindings, storage or lifecycle admission remain active / 绑定、存储或生命周期准入仍活动时 */
+    public DeletionScope sealDeletion(String owner) throws SQLException {
+        if (owner == null || owner.isBlank() || owner.equals("app") || owner.equals("@platform"))
+            throw new IllegalArgumentException("Only a Mod diagnostic owner can be deleted");
+        begin();
+        var gate = ownerLocks.computeIfAbsent(owner, ignored -> new ReentrantReadWriteLock(true));
+        boolean acquired = false, sealed = false, previous = false;
+        try {
+            if (!gate.writeLock().tryLock(5, TimeUnit.SECONDS))
+                throw new IllegalStateException("Diagnostic owner remains busy");
+            acquired = true;
+            synchronized (this) {
+                if (deleting.contains(owner)
+                        || bindings.stream().anyMatch(b -> b.logOwner.equals(owner) && (!b.closed || b.active != 0)))
+                    throw new IllegalStateException("Original diagnostic bindings must finish closing first");
+                previous = blockedOwners.contains(owner);
+                blockedOwners.add(owner);
+                deleting.add(owner);
+                sealed = true;
+            }
+            var keys = repository.targets().stream().filter(t -> t.owner().equals(owner)).map(LogRepository.Target::key)
+                    .toList();
+            synchronized (this) {
+                deletionKeys.computeIfAbsent(owner, ignored -> new HashSet<>()).addAll(keys);
+            }
+            return new DeletionScope(owner, gate);
+        } catch (Exception failure) {
+            synchronized (this) {
+                if (sealed) {
+                    deleting.remove(owner);
+                    if (!previous)
+                        blockedOwners.remove(owner);
+                }
+            }
+            if (acquired)
+                gate.writeLock().unlock();
+            end();
+            if (failure instanceof InterruptedException)
+                Thread.currentThread().interrupt();
+            throw new SQLException("Owned diagnostics could not be sealed for deletion", failure);
+        }
+    }
+
+    /** Holds physical owner exclusion while retaining durable pending-deletion and retired-category protection. / 持有物理所有者排他，同时保留持久待删除及已注销类别保护。 */
+    public final class DeletionScope implements AutoCloseable {
+        /** Exact sealed owner. / 精确封闭所有者。 */
+        private final String owner;
+
+        /** Original thread-bound lock. / 原线程绑定锁。 */
+        private final ReentrantReadWriteLock gate;
+
+        /** Prevents duplicate release. / 防止重复释放。 */
+        private boolean released;
+
+        /** Captures already acquired owner exclusion. / 捕获已取得的所有者排他。
+         * @param owner sealed identity / 封闭身份
+         * @param gate acquired exclusion / 已取得排他 */
+        private DeletionScope(String owner, ReentrantReadWriteLock gate) {
+            this.owner = owner;
+            this.gate = gate;
+        }
+
+        /** Releases actual I/O exclusion; unresolved durable deletion still blocks future replay and writes. / 释放实际 I/O 排他；未解决持久删除仍阻止后续回填及写入。
+         * @throws SQLException if absence of retained deletion cannot be confirmed / 无法确认保留删除不存在时 */
+        @Override
+        public synchronized void close() throws SQLException {
+            if (released)
+                return;
+            if (!gate.isWriteLockedByCurrentThread())
+                throw new IllegalStateException("Deletion scope belongs to its worker");
+            try {
+                if (!repository.deletingOwners().contains(owner)) {
+                    var remaining = repository.targets().stream().map(LogRepository.Target::key)
+                            .collect(java.util.stream.Collectors.toSet());
+                    synchronized (PlatformLogService.this) {
+                        var known = deletionKeys.remove(owner);
+                        if (known != null)
+                            for (UUID key : known)
+                                if (!remaining.contains(key))
+                                    retiredKeys.add(key);
+                        blockedOwners.remove(owner);
+                    }
+                }
+            } finally {
+                released = true;
+                synchronized (PlatformLogService.this) {
+                    deleting.remove(owner);
+                }
+                gate.writeLock().unlock();
+                end();
+            }
+        }
     }
 
     /** Retains storage lifetime before any blocking I/O. / 任一阻塞 I/O 前保留存储寿命。 */
@@ -464,7 +608,7 @@ public final class PlatformLogService implements AutoCloseable {
          * @throws ApiException if detached or called from the EDT / 已分离或从 EDT 调用时 */
         private void enter() throws ApiException {
             synchronized (PlatformLogService.this) {
-                if (closed)
+                if (closed || blockedOwners.contains(logOwner))
                     throw new ApiException(problem(ProblemCode.UNAVAILABLE, "LOGGER_CLOSED", "Logger is detached"));
                 try {
                     begin();
