@@ -298,9 +298,16 @@ class ProcessChannelTest {
                         continue;
                     }
                     var response = new ProcessProtocol.Frame(frame.process(),
-                            mode.equals("wrong-task") ? UUID.randomUUID() : frame.task(),
-                            mode.equals("unknown-request") ? UUID.randomUUID() : frame.request(), Kind.RESULT,
-                            frame.type(), "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":true},\"problem\":null}");
+                            mode.equals("wrong-task")
+                                    ? new UUID(frame.task().getMostSignificantBits() ^ 1L,
+                                            frame.task().getLeastSignificantBits())
+                                    : frame.task(),
+                            mode.equals("unknown-request")
+                                    ? new UUID(frame.request().getMostSignificantBits() ^ 1L,
+                                            frame.request().getLeastSignificantBits())
+                                    : frame.request(),
+                            Kind.RESULT, frame.type(),
+                            "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":true},\"problem\":null}");
                     send(response);
                     if (mode.equals("duplicate"))
                         send(new ProcessProtocol.Frame(response.process(), response.task(), response.request(),

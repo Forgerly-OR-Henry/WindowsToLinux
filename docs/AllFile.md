@@ -1845,3 +1845,14 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/source/DeploymentSourceTar.java`：将冻结源码按原确定性 ustar/gzip 格式写入有界输出，分块检查取消。
 - `mod/deployment/source/DeploymentSourceArchiver.java`：受管暂存、归档输出限额、独立冻结及实际压缩字节摘要核验。
 - `mod/deployment/source/DeploymentSourceArchive.java`：独立原平台归档快照、压缩字节 SHA 与长度，显式释放实际资源。
+- `mod/deployment/source/git/DeploymentGitRemote.java`：无凭据且受限的 Git 远端 URI。
+- `mod/deployment/source/git/DeploymentGitReference.java`：默认分支、分支、标签及完整提交引用。
+- `mod/deployment/source/git/DeploymentGitRequest.java`：主机准入、本地文件许可及归档预算。
+- `mod/deployment/source/git/DeploymentGitProtocol.java`：作者侧严格版本化进程帧编解码。
+- `mod/deployment/source/git/DeploymentGitMessages.java`：单次取材请求和原操作清理凭据。
+- `mod/deployment/source/git/DeploymentGitCommands.java`：受控原生 Git 参数、环境及进程/管道观察。
+- `mod/deployment/source/git/DeploymentGitCheckout.java`：浅抓取、树特性拒绝和固定提交检出。
+- `mod/deployment/source/git/DeploymentGitWorker.java`：公开进程协议的单操作 Java worker 及原结果凭据。
+- `mod/deployment/source/git/DeploymentGitLaunch.java`：只收集 Mod、公开 API 和私有 JSON 库的 worker 启动参数。
+- `mod/deployment/source/git/DeploymentGitMaterial.java`：固定提交、原源码快照和独立归档句柄。
+- `mod/deployment/source/git/DeploymentGitPreparer.java`：原任务工作区、worker、进程组占用及清理次序。
