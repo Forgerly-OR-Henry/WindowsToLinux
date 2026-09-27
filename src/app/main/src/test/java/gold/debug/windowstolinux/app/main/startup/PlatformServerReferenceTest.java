@@ -77,8 +77,8 @@ class PlatformServerReferenceTest {
             assertThrows(SQLException.class, () -> runtime.persistence().servers().deleteServerProfile("server"));
             sql(db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", OWNER);
             assertThrows(SQLException.class, () -> runtime.persistence().servers().deleteServerProfile("server"));
-            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'1.0.1','fixture','"
-                    + "0".repeat(64) + "','1','{}','CLASS',1,'READY')", OWNER);
+            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'1.0.1','fixture',?,'1',?,'CLASS',1,'READY')",
+                    OWNER, "0".repeat(64), PlatformModIntentsTest.manifest(OWNER, "1.0.1", Map.of(), "1", List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version='1.0.1',actual_version='1.0.1' WHERE mod_id=?",
                     OWNER);
             var next = runtime.serverAccess(OWNER, "1.0.1", Optional.of(schema));
@@ -175,6 +175,8 @@ class PlatformServerReferenceTest {
                 assertEquals(ProblemCode.CANCELLED,
                         assertThrows(ApiException.class, () -> access.reserve(SERVER, "unrelated-new-work", task))
                                 .problem().code());
+                assertEquals(reference, access.findReference(SERVER, "cancelled-draft", task).orElseThrow());
+                assertTrue(access.findReference(SERVER, "missing", task).isEmpty());
                 access.resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
                 return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
             });
@@ -283,7 +285,9 @@ class PlatformServerReferenceTest {
                 assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class, () -> wrong.reserve(SERVER, "invalid", task)).problem()
                                 .code());
-                var owned = access.reserve(SERVER, "owned-fixture", task);
+                assertTrue(access.findReference(SERVER, "foreign-fixture", task).isEmpty());
+                var owned = access.reserve(SERVER, "foreign-fixture", task);
+                assertEquals(owned, access.findReference(SERVER, "foreign-fixture", task).orElseThrow());
                 assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class,
                                 () -> wrong.resolve(owned.id(), ReferenceResolution.NOT_REFERENCED, task)).problem()

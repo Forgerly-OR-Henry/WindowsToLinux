@@ -227,6 +227,10 @@ class PlatformSecretServiceTest {
                         assertThrows(ApiException.class,
                                 () -> secrets.resolve(foreign.id(), ReferenceResolution.NOT_REFERENCED, task)).problem()
                                 .code());
+                assertTrue(secrets.findReference(secret, "other-schema", task).isEmpty());
+                var owned = secrets.reserve(secret, "other-schema", task);
+                assertEquals(owned, secrets.findReference(secret, "other-schema", task).orElseThrow());
+                secrets.resolve(owned.id(), ReferenceResolution.NOT_REFERENCED, task);
                 var wrong = runtime.secrets(OWNER, VERSION, Optional.of(otherSchema));
                 assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class, () -> wrong.reserve(secret, "wrong-claim", task)).problem()
@@ -262,6 +266,8 @@ class PlatformSecretServiceTest {
                 assertEquals(ProblemCode.CANCELLED,
                         assertThrows(ApiException.class, () -> secrets.use(secret, "cancelled", task, bytes -> 1))
                                 .problem().code());
+                assertEquals(reference, secrets.findReference(secret, "draft", task).orElseThrow());
+                assertTrue(secrets.findReference(secret, "missing", task).isEmpty());
                 secrets.resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
                 return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
             });

@@ -108,6 +108,24 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
     }
 
     /**
+     * Reads an exact owned association during execution or original-task recovery without replaying reserve. / 执行或原任务恢复时读取精确所属关联，不重放预留。
+     * @param secret original resource identity / 原资源身份
+     * @param businessKey exact original business key / 精确原业务键
+     * @param task authentic executing or reconciling task / 真实执行或核对任务
+     * @return current reference or absence, without proving a business outcome / 当前引用或空值，不证明业务结果
+     * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
+     */
+    @Override
+    public Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task)
+            throws ApiException {
+        requireSecret(secret);
+        if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
+            throw error(ProblemCode.INVALID_INPUT, "SECRET_REFERENCE_KEY", "Invalid secret business key");
+        var identity = requireSchema();
+        return access(task, true, false, () -> references.find(identity, secret, businessKey));
+    }
+
+    /**
      * Resolves only an existing association, including cancellation cleanup. / 仅核对已有关系，包括取消收尾。
      * @param referenceId original reservation / 原预留
      * @param result author-confirmed association result / 作者确认的关联结果
@@ -214,6 +232,9 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
             throws ApiException {
         try {
             return scope.call(task, cleanup, () -> {
+                if (writes && !cleanup && tasks.reconciling(task))
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "SECRET_RECOVERY_WRITE",
+                            "Recovery cannot create new secrets or reserve references");
                 try {
                     return work.run();
                 } catch (SQLException failure) {

@@ -1557,13 +1557,13 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/secret/SecretConsumer.java`：输入在使用后清零的短期秘密回调。
 - `appapi/secret/SecretRef.java`：绑定授权用途的不透明秘密引用。
 - `appapi/secret/SecretReference.java`：保护共享凭据的持久业务引用。
-- `appapi/secret/SecretService.java`：仅经授权临时回调提供所属秘密的服务。
+- `appapi/secret/SecretService.java`：经授权临时回调提供所属秘密，并按原资源/业务键只读找回持久引用。
 - `appapi/server/ReferenceResolution.java`：业务提交已经核实或仍然未知的结果。
 - `appapi/server/ReferenceState.java`：持续保护未知引用的预留状态。
 - `appapi/server/ServerInfo.java`：不含秘密的服务器配置与已观察信任信息。
 - `appapi/server/ServerRef.java`：平台管理服务器的稳定引用。
 - `appapi/server/ServerReference.java`：保护共享服务器的业务归属预留。
-- `appapi/server/ServerService.java`：绑定任务的服务器查询及持久引用管理。
+- `appapi/server/ServerService.java`：绑定任务的服务器查询、持久引用预留/核对及按原资源/业务键只读找回。
 - `appapi/source/SnapshotRequest.java`：明确的相对文件集合及总复制容量预算。
 - `appapi/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
 - `appapi/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
@@ -1622,8 +1622,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/mod/ModNavigationPreferences.java`：共用严格导航偏好读写，移除精确所有者条目时保留其余条目顺序，损坏内容不覆盖。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
-- `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存精确 Mod/Schema 代次的业务引用。
-- `app/db/persistence/repository/CredentialReferenceRepository.java`：签发 Mod/用途所属凭据身份，并事务化保护精确数据代次的业务引用。
+- `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存、只读查询精确 Mod/Schema 代次和原业务键的引用。
+- `app/db/persistence/repository/CredentialReferenceRepository.java`：签发 Mod/用途所属凭据身份，并事务化保护、只读查询精确数据代次/用途/业务键的引用。
 - `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的数据结构，或按独立重试记录重置从未可用的失败目标；核验实际所有权及会话。
@@ -1681,10 +1681,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。
 - `app/ui/recovery/TaskRecoveryPane.java`：常驻任务页展示原身份、进度及资源阻塞，明确取消/核对/补归档并跳转现有日志页；锁定或关闭清空观察、使旧确认及迟到结果失效。
 - `app/service/task/TaskCapabilityScope.java`：跟踪服务器及秘密适配器的真实操作寿命、Schema 占用及失败释放重试。
-- `app/service/secret/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。
+- `app/service/secret/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文；支持原引用查询，恢复中禁止创建和预留。
 - `app/service/contract/spi/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
 - `app/service/server/PlatformServerService.java`：平台服务器配置、受引用保护的删除及原身份 SSH 认证检查/中断收尾。
-- `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/核对及未完成释放重试。
+- `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/只读找回/核对及未完成释放重试；恢复中禁止预留。
 - `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
 - `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
 - `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
