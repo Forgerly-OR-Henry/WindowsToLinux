@@ -1770,6 +1770,15 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
 
 - `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份和独立日志类别；部署业务迁移仍在进行。
-- `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单和发布配置摘要绑定。
+- `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单、类型化配置内容摘要及发布绑定。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：官方部署 Schema 1 的固定 H2 DDL，含业务表及标准日志。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：只读列清单，用于发现缺表、缺列及多余表列。
+- `mod/deployment/db/DeploymentConfigurationRepository.java`：在原任务受管 H2 连接中保存不可变配置及精确发布绑定，读取时复核类型和摘要。
+- `mod/deployment/db/DeploymentDataTransaction.java`：所属业务事务的提交/回滚边界，无法确认时保留 UNKNOWN。
+- `mod/deployment/service/core/config/DeploymentConfigurationSnapshot.java`：保留原规范 SHA-256 算法的不可变配置修订。
+- `mod/deployment/service/core/config/DeploymentConfigurationEntry.java`：带消费范围的非秘密配置条目，拒绝秘密键及无效端口。
+- `mod/deployment/service/core/config/DeploymentConfigurationValue.java`：TEXT、NUMBER、FLAG 对应的类型化值及规范摘要文本。
+- `mod/deployment/service/core/config/DeploymentConfigurationScopeType.java`：BUILD/RUNTIME 两类配置消费范围。
+- `mod/deployment/service/core/config/DeploymentConfigurationInput.java`：分号配置文本和精确秘密修订引用的确定性解析。
+- `mod/deployment/service/core/config/DeploymentConfigurationException.java`：保留原配置事件码并提供公开 Problem 的非秘密输入失败。
+- `mod/deployment/service/core/config/DeploymentSecretReference.java`：只持有业务秘密标识及不可变修订号，不持有秘密内容。

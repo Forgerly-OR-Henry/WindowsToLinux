@@ -76,8 +76,14 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             }
             if (!tables(connection).equals(expected))
                 violations.add("Deployment table inventory differs from schema version 1");
-            if (violations.isEmpty())
+            if (violations.isEmpty()) {
                 validateBindings(connection, violations);
+                try {
+                    DeploymentConfigurationRepository.validate(connection);
+                } catch (SQLException invalid) {
+                    violations.add("Stored deployment configuration snapshots are invalid");
+                }
+            }
         }
         var digest = MessageDigest.getInstance("SHA-256")
                 .digest((resource("schema-v1.sql") + inventory).getBytes(StandardCharsets.UTF_8));

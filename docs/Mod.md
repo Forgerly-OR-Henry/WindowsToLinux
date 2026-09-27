@@ -1194,6 +1194,8 @@ public interface SchemaMigration {
 
 迁移图要求所选来源到目标存在唯一完整路径，多条路径拒绝歧义；不自动选择最短路径。多步迁移在操作专属临时 Schema 中逐步输出，第一步读保留源，后一步读前一步输出，最后一步写正式目标；中间 Schema 不登记成用户可选版本。先由首条迁移建立其中间结构，目标结构由最后一条迁移建立；空安装调用当前 `initialize`。每步关闭连接后记录结果，全部完成后用当前 `validate` 验证正式目标；目标达到 READY 前不运行业务。临时身份、授权及中间 Schema 在明确完成或已核实失败后清理，未知时保留定位依据。DDL 自提交的结果通过实际结构、平台记录和作者验证共同核对。[H2 命令](https://h2database.com/html/commands.html)、[JDBC Connection](https://docs.oracle.com/en/java/javase/21/docs/api/java.sql/java/sql/Connection.html)
 
+官方 deployment 当前的 `DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。本段仅说明已迁入的数据基础；秘密预留和完整部署业务恢复另随 S5 实施。
+
 ### 8.5 server 与 secret：共享配置引用
 
 ```java
