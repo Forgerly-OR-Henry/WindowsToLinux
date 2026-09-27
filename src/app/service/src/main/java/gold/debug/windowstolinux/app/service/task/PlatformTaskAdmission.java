@@ -16,7 +16,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
     public static final String PLATFORM_OWNER = "@platform";
 
     /** Host rescue protocol allowed to use the fixed read-only SSH verification. / 允许使用固定只读 SSH 复核的宿主救援协议。 */
-    public static final String RESCUE_TYPE = "platform.ssh.rescue.v1";
+    public static final String RESCUE_TYPE = gold.debug.windowstolinux.app.db.task.BrowserRecoveryArchival.TASK_TYPE;
 
     /** Exact boot whose running Mod instances may accept business. / 可以接纳业务的运行 Mod 实例所属精确启动。 */
     private final UUID bootId;

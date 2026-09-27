@@ -304,8 +304,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
                     digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                             .digest(snapshot.action().orElseThrow().command().getBytes(StandardCharsets.UTF_8)));
                 var event = snapshot.messageCode().replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
-                persistence.recovery().save(task.id().toString(), profile.id(), TASK_TYPE, snapshot.state().name(),
-                        digest, event);
+                persistence.recovery().savePlatform(task.id(), profile.id(), snapshot.state().name(), digest, event);
             } catch (Exception problem) {
                 failure = problem(ProblemCode.IO_FAILURE, "RESCUE_JOURNAL",
                         "The original rescue journal could not be committed");

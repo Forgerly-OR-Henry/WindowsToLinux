@@ -18,6 +18,9 @@ public final class TaskLedger {
     /** Fixed platform summary target, initialized before entering a task transaction. / 进入任务事务前初始化的固定平台摘要目标。 */
     private LogRepository.Target summaryTarget;
 
+    /** Rescue summary category initialized outside task transactions. / 在任务事务之外初始化的救援摘要类别。 */
+    private LogRepository.Target recoverySummaryTarget;
+
     /** Engine boot identity used to refuse execution of previous-process tasks. / 用于拒绝执行前一进程任务的引擎启动身份。 */
     private final UUID bootId;
 
@@ -940,6 +943,7 @@ public final class TaskLedger {
      * @throws SQLException if original conclusion or archive is unconfirmed / 原结论或归档未确认时 */
     private TaskSnapshot finalizeTransaction(UUID taskId, Query<Boolean> conclusion) throws SQLException {
         var target = summaryTarget();
+        var recoveryTarget = recoverySummaryTarget(snapshot(taskId));
         Finalization[] original = {null};
         try {
             return locked(() -> {
@@ -948,7 +952,7 @@ public final class TaskLedger {
                 if (ended) {
                     try (var c = connections.open()) {
                         original[0] = finalization(c, current);
-                        archive(c, target, original[0]);
+                        archive(c, target, recoveryTarget, original[0]);
                     }
                 }
                 return current;
@@ -968,6 +972,19 @@ public final class TaskLedger {
             summaryTarget = new LogRepository(database).register("app", Optional.empty(),
                     new LogCategory("platform_task", "platform_task", Optional.empty()));
         return summaryTarget;
+    }
+
+    /** Registers rescue summaries only for the original host protocol before its task lock. / 仅为原宿主协议在任务锁之前登记救援摘要。
+     * @param task original task observation / 原任务观察
+     * @return original rescue target, or null for other tasks / 原救援目标，其他任务为空
+     * @throws SQLException if original registration cannot be confirmed / 无法确认原登记时 */
+    private synchronized LogRepository.Target recoverySummaryTarget(TaskSnapshot task) throws SQLException {
+        if (!BrowserRecoveryArchival.owns(task))
+            return null;
+        if (recoverySummaryTarget == null)
+            recoverySummaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                    new LogCategory("browser_recovery", "browser_recovery", Optional.empty()));
+        return recoverySummaryTarget;
     }
 
     /** Captures fixed identity and original diagnostics for an actually ended row. / 为实际结束行捕获固定身份及原诊断。
@@ -997,9 +1014,11 @@ public final class TaskLedger {
     /** Stores a bounded fixed summary and removes only the fully released original execution. / 保存有界固定摘要，并仅移除完全释放的原执行。
      * @param c original serialized transaction / 原串行事务
      * @param target original platform category / 原平台类别
+     * @param recoveryTarget rescue category if applicable / 适用时的救援类别
      * @param original original concluded execution / 原已得出结论执行
      * @throws SQLException if summary, retained ownership or cleanup fails / 摘要、保留归属或清理失败时 */
-    private void archive(Connection c, LogRepository.Target target, Finalization original) throws SQLException {
+    private void archive(Connection c, LogRepository.Target target, LogRepository.Target recoveryTarget,
+            Finalization original) throws SQLException {
         var value = original.snapshot;
         try (var p = c.prepareStatement(
                 "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
@@ -1027,6 +1046,7 @@ public final class TaskLedger {
             throw new SQLException("Original task summary cannot be encoded", invalid);
         }
         new LogRepository(database).store(c, target, List.of(record), 100);
+        BrowserRecoveryArchival.archive(database, c, recoveryTarget, original.archive, value);
         try (var p = c
                 .prepareStatement("DELETE FROM platform_task_resource WHERE task_id=? AND released_at IS NOT NULL")) {
             p.setObject(1, value.id());
@@ -1050,6 +1070,7 @@ public final class TaskLedger {
         if (!database.generation().equals(original.generation))
             throw new SQLException("Finalization belongs to another database generation");
         var target = summaryTarget();
+        var recoveryTarget = recoverySummaryTarget(original.snapshot);
         try {
             return locked(() -> {
                 try (var c = connections.open()) {
@@ -1064,7 +1085,7 @@ public final class TaskLedger {
                         if (p.executeUpdate() != 1)
                             throw new SQLException("Original task is no longer drained");
                     }
-                    archive(c, target, original);
+                    archive(c, target, recoveryTarget, original);
                     return original.snapshot;
                 }
             });
