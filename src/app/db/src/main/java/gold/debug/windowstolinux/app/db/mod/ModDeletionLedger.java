@@ -529,16 +529,8 @@ public final class ModDeletionLedger {
      * @return original disabled choice / 原禁用选择
      * @throws SQLException if shutdown has not been acknowledged / 尚未确认停用时 */
     private static Owner owner(Connection c, String owner) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT enabled,selected_version,selection_initialized,revision,disable_ack_revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                require(r.next() && !r.getBoolean(1) && r.getObject(5) != null && r.getLong(4) == r.getLong(5)
-                        && r.getObject(6) != null && "STOPPED".equals(r.getString(7)) && r.getString(8) == null,
-                        "Whole Mod must be disabled and restart-stop acknowledged before deleting any release");
-                return new Owner(r.getLong(4), r.getString(2), r.getBoolean(3), r.getObject(6, UUID.class).toString());
-            }
-        }
+        var value = ModProgramMaintenance.stopped(c, owner);
+        return new Owner(value.revision(), value.selected(), value.initialized(), value.ackBoot());
     }
 
     /** Reads all retained versions, including unselected and previously failed activations. / 读取全部保留版本，包括未选中及过去启用失败版本。
@@ -675,13 +667,7 @@ public final class ModDeletionLedger {
      * @param operation current deletion, null before admission / 当前删除，准入前为空
      * @throws SQLException if unresolved occupancy exists / 存在未解决占用时 */
     private static void drained(Connection c, String owner, UUID operation) throws SQLException {
-        require(count(c, "SELECT COUNT(*) FROM platform_task WHERE owner_id=?", owner) == 0,
-                "Owned task records still require final cleanup");
-        require(count(c,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=? OR resource_kind='SCHEMA' AND resource_id IN (SELECT CAST(generation AS VARCHAR) FROM mod_schema WHERE mod_id=?))",
-                owner, owner, owner) == 0, "Owned or cross-Mod resources still require release");
-        require(count(c, "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND (? IS NULL OR operation_id<>?)", owner,
-                operation, operation) == 0, "Other retained maintenance still requires cleanup");
+        ModProgramMaintenance.drained(c, owner, operation);
     }
 
     /** Requires the existing explicit cascade-disable flow to have handled enabled consumers. / 要求既有明确连带禁用流程已处理开启的使用方。
@@ -689,30 +675,7 @@ public final class ModDeletionLedger {
      * @param owner removed provider / 被删除提供方
      * @throws SQLException if enabled declared consumers remain / 仍有开启的声明使用方时 */
     private static void dependents(Connection c, String owner) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT v.manifest_json FROM mod_registry r JOIN mod_version v ON r.mod_id=v.mod_id AND r.selected_version=v.version WHERE r.enabled AND r.mod_id<>?")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                while (r.next()) {
-                    try {
-                        String value = r.getString(1);
-                        require(value.length() <= 1024 * 1024, "Enabled dependency evidence exceeds bounds");
-                        var manifest = JSON.readTree(value);
-                        require(manifest != null && manifest.isObject()
-                                && (!manifest.has("dependencies") || manifest.path("dependencies").isArray()
-                                        && manifest.path("dependencies").size() <= 128),
-                                "Enabled dependency evidence is invalid");
-                        for (var dependency : manifest.path("dependencies")) {
-                            require(dependency.path("id").isTextual(), "Enabled dependency identity is invalid");
-                            require(!owner.equals(dependency.path("id").textValue()),
-                                    "Enabled dependents must first be explicitly disabled and restarted");
-                        }
-                    } catch (IOException invalid) {
-                        throw new SQLException("Invalid enabled dependency evidence", invalid);
-                    }
-                }
-            }
-        }
+        ModProgramMaintenance.dependents(c, owner);
     }
 
     /** Validates persisted request shape and trusted program/data coordinates. / 校验持久请求形状及可信程序与数据坐标。
