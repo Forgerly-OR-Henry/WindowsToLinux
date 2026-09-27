@@ -8,6 +8,16 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
  */
 public interface SourceService {
 
+    /** Lists one complete bounded directory without recursively reading its children. / 列出一个完整有界目录，不递归读取其子项。
+     * @param selection original user-authorized selection / 原用户授权选择
+     * @param relativeDirectory slash-separated relative directory, empty for the selected root / 斜线分隔的相对目录，空串表示所选根
+     * @param maxEntries maximum immediate children from one to one hundred thousand / 一到十万个直接子项的上限
+     * @param task original active task / 原活动任务
+     * @return immutable entries sorted by original relative path / 按原相对路径排序的不可变子项
+     * @throws ApiException if authorization, boundaries, capacity or actual reading fails / 授权、边界、容量或实际读取失败时 */
+    java.util.List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory, int maxEntries,
+            TaskContext task) throws ApiException;
+
     /**
      * Obtains an explicit user selection bound to the current task. / 取得绑定当前任务的明确用户选择。
      * @param title human-readable task title / 可读的任务标题

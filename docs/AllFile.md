@@ -1568,7 +1568,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
 - `appapi/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
 - `appapi/source/SourceSelection.java`：用户批准的不透明来源选择。
-- `appapi/source/SourceService.java`：用户选定来源的有界读取及受管不可变快照。
+- `appapi/source/SourceService.java`：用户选定来源的有界单层列举、读取及受管不可变快照。
+- `appapi/source/SourceDirectoryEntry.java`：原相对名称、普通文件/目录或非常规类别及观测长度，不暴露用户根路径。
 - `appapi/source/SourceSnapshot.java`：实际关闭后释放的受管不可变来源目录。
 - `appapi/task/ActionIntent.java`：绑定任务资源的精确待审核副作用与修订。
 - `appapi/task/ApiException.java`：报告未接纳的请求或失败的本地能力访问。
@@ -1711,7 +1712,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/ui/ai/PlatformModelDialog.java`：含明确输出上限的模型表单，观察实际任务并清空输入凭据。
 - `app/ui/ai/PlatformModelsPane.java`：常驻模型清单和用途编辑器，支持取消及明确中断核对。
 
-- `app/source/boundary/SelectedDirectory.java`：校验用户目录内的精确相对文件，按身份、内容和容量进行读取与复制。
+- `app/source/boundary/SelectedDirectory.java`：校验用户目录身份与相对边界，有界列举直接子项并按内容和容量进行读取与复制。
 - `app/source/snapshot/FrozenSourceWork.java`：生成明确文件集的只读任务快照，核验清单及原生归属后清理。
 - `app/service/source/PlatformSourceAccess.java`：把目录确认、读取和快照绑定原 Mod 任务，保留实际 FILE 占用并支持原身份恢复。
 - `app/windows/filesystem/WindowsFileIdentity.java`：使用既有 JNA 读取 Windows 卷号和 128 位文件 ID，并关闭实际原生句柄。
@@ -1834,3 +1835,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentReleaseCodec.java`：规范版本化整图/健康 JSON、原二进制格式封装和独立历史摘要。
 - `mod/deployment/db/DeploymentReleaseRepository.java`：同发布事务登记历史/退役旧版，相同内容复用原历史身份。
 - `mod/deployment/db/DeploymentReleaseValidation.java`：仅 SELECT 核验历史来源、不可变绑定、当前 ACTIVE 和正式结果关联。
+
+- `mod/deployment/source/DeploymentSourcePolicy.java`：原部署目录、敏感文件和日志排除规则及受限 source.include。
+- `mod/deployment/source/DeploymentSourcePreparer.java`：经公开 Source 列举/读取筛选明确文件并冻结，复核声明与实际快照一致。
+- `mod/deployment/source/DeploymentSourceMaterial.java`：供分析与部署共用的原平台快照及纳入/排除清单，按原句柄释放实际资源。

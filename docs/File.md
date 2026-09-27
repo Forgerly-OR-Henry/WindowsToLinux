@@ -8,7 +8,7 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db 及 service/core/config、model 包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、source 及 service/core/config、model 包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-27（1.1 增量实施；完整目标图仍待切换）
@@ -151,10 +151,11 @@ WindowsToLinux/
    │  └─ deployment/                         官方部署主模块；业务迁移进行中
    │     ├─ Mod.java
    │     ├─ db/
-   │     └─ service/
-   │        └─ core/
-   │           ├─ config/
-   │           └─ model/
+   │     ├─ service/
+   │     │  └─ core/
+   │     │     ├─ config/
+   │     │     └─ model/
+   │     └─ source/
    ├─ shared/
    │  ├─ pom.xml
    │  ├─ agent/
@@ -1402,7 +1403,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 | `deployment/db`                       | 平台公开 JDBC/凭据契约、本包存储映射及 service/core 下 config/model 纯数据值     | 不依赖 core 业务编排、UI 或 AI，不访问其他 Mod 私有表             |
 | `deployment/linux`                    | 平台 Linux/服务器/任务契约及业务窄端口                                           | 不接管 SSHD、连接、指纹或独立救援；不调用 UI 或两个部署引擎       |
 | `deployment/secret`                   | 平台秘密/任务契约及业务用途和引用值                                              | 不持有 APP 主密钥，不绕过凭据归属和任务授权，不调用 UI 或业务流程 |
-| `deployment/source`                   | 平台 Source/任务契约及业务取材规则                                               | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包    |
+| `deployment/source`                   | 平台 Source/任务契约、业务取材规则及 service/core/model 纯值                     | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包    |
 | `deployment/windows`                  | 平台公开 Source/进程/交互等契约及本机业务适配                                    | 不依赖 app/windows 私有类，不接管平台更新、卸载和窗口隐私         |
 | `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                                             | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入       |
 | `deployment/service/standard/analyze` | 平台 API、必要部署业务契约                                                       | 保持确定性静态分析，不依赖 agent 或 UI                            |
@@ -1446,6 +1447,8 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serverId，与 TaskRequest 的服务器身份一致；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
 
 官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 实现独立初始化和只读核验，固定 SQL 资源位于同名资源包；业务启动只绑定当前数据身份及 deployment 日志类别。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID，不解析或读取平台存储。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
+
+官方 deployment 的 `source` 当前包含实际本地筛选和冻结流程：经公开 SourceService 的原任务目录句柄逐层发现，业务排除与 source.include 由 Mod 决定，平台持有目录读取、不可变快照及释放。source 仅使用 appapi 和 service/core/model 的纯相对路径值规则，不引用 APP 私有实现；core/model 不反向依赖 source。素材返回原平台句柄和明确文件清单，后续分析/执行共享直到关闭；归档、Git 和项目持久化另随业务迁移接入。
 
 作者工具复用 `app/mod/installation` 的包读取/校验能力，以命令行模式运行，不启动 APP。构建配置和 SDK 父 POM 归 `.mvn/mod/` 维护，不新增业务叶子模块；正式源码任务才创建这些文件，AllFile 不提前登记工具类或示例。完整结构门禁映射见 [工程门禁](development/PHASE-1.1.md#129-工程门禁映射)。
 

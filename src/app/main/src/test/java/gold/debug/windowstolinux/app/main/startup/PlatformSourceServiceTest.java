@@ -34,6 +34,49 @@ class PlatformSourceServiceTest {
     }
 
     @Test
+    void listingUsesOriginalTaskSelectionAndActivationWithoutReturningRawPaths() throws Exception {
+        Path files = sourceFiles();
+        try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            runtime.setSourcePicker((title, task, cancel) -> files);
+            var source = runtime.source(OWNER, VERSION);
+            var foreign = runtime.source("foreign.mod", VERSION);
+            var another = runtime.source(OWNER, VERSION);
+            var binding = runtime.tasks().bind(OWNER, VERSION, false);
+            var original = new AtomicReference<TaskContext>();
+            var selected = completed(binding.submit(request(), task -> {
+                original.set(task);
+                var selection = source.selectDirectory("Source", task);
+                assertEquals(List.of(new SourceDirectoryEntry(".env", SourceDirectoryEntry.EntryType.FILE, 7)),
+                        source.list(selection, "", 1, task));
+                assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,
+                        () -> source.list(new SourceSelection(selection.id(), selection.displayName()), "", 1, task))
+                        .problem().code());
+                assertEquals(ProblemCode.ACCESS_DENIED,
+                        assertThrows(ApiException.class, () -> foreign.list(selection, "", 1, task)).problem().code());
+                assertEquals(ProblemCode.ACCESS_DENIED,
+                        assertThrows(ApiException.class, () -> another.list(selection, "", 1, task)).problem().code());
+                assertEquals(ProblemCode.INVALID_INPUT,
+                        assertThrows(ApiException.class, () -> source.list(selection, "../outside", 1, task)).problem()
+                                .code());
+                assertEquals(ProblemCode.INVALID_INPUT,
+                        assertThrows(ApiException.class, () -> source.list(selection, null, 1, task)).problem().code());
+                SwingUtilities.invokeAndWait(() -> assertEquals(ProblemCode.CONTRACT_VIOLATION,
+                        assertThrows(ApiException.class, () -> source.list(selection, "", 1, task)).problem().code()));
+                return success(selection);
+            }));
+            assertEquals(ProblemCode.ACCESS_DENIED,
+                    assertThrows(ApiException.class, () -> source.list(selected, "", 1, original.get())).problem()
+                            .code());
+            completed(binding.submit(request(), task -> {
+                assertEquals(ProblemCode.ACCESS_DENIED,
+                        assertThrows(ApiException.class, () -> source.list(selected, "", 1, task)).problem().code());
+                return success(null);
+            }));
+        }
+    }
+
+    @Test
     void originalSelectionIsTaskAndActivationBoundWithWorkerOnlyAccess() throws Exception {
         Path files = sourceFiles();
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
