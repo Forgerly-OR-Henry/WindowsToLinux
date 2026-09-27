@@ -15,6 +15,7 @@ import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.server.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
@@ -130,6 +131,47 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
                         });
             }
         };
+    }
+
+    List<DeploymentUnitCommit> publications(DeploymentApplicationGraph graph, int revision,
+            List<DeploymentSecretReference> secrets) {
+        return graph.components().stream()
+                .map(component -> new DeploymentUnitCommit(component.unit(), component.runtime(),
+                        new DeploymentCurrentRelease(component.unit().id(),
+                                String.valueOf((char) ('a' + revision - 1)).repeat(64), OBSERVED.plusSeconds(revision)),
+                        DeploymentConfigurationSnapshot.create(component.unit().id(), revision, "1",
+                                OBSERVED.plusSeconds(revision),
+                                DeploymentConfigurationInput.parse("PORT=" + (8080 + revision))),
+                        secrets))
+                .toList();
+    }
+
+    long count(PlatformRuntime runtime, TaskContext task, String sql) throws Exception {
+        try (var connection = runtime.modContexts().get(OWNER).context().db().openConnection(task);
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
+            assertTrue(rows.next());
+            return rows.getLong(1);
+        }
+    }
+
+    void verify(PlatformRuntime runtime, TaskContext task, DeploymentApplicationGraph graph,
+            List<DeploymentUnitCommit> records) throws Exception {
+        var context = runtime.modContexts().get(OWNER).context();
+        var publication = new DeploymentPublicationRepository(context.db());
+        var configuration = new DeploymentConfigurationRepository(context.db());
+        var secrets = new DeploymentSecretRepository(context.db());
+        assertEquals(graph,
+                new DeploymentGraphRepository(context.db()).find(task, graph.applicationId()).orElseThrow());
+        for (var record : records) {
+            assertEquals(record.unit(), publication.findUnit(task, record.unit().id()).orElseThrow());
+            assertEquals(record.runtime(), publication.findRuntime(task, record.unit().id()).orElseThrow());
+            assertEquals(record.release(), publication.findRelease(task, record.unit().id()).orElseThrow());
+            assertEquals(record.configuration(),
+                    configuration.findRelease(task, record.unit().id(), record.release().sha256()).orElseThrow());
+            assertEquals(Set.copyOf(record.secrets()),
+                    Set.copyOf(secrets.findRelease(task, record.unit().id(), record.release().sha256()).orElseThrow()));
+        }
     }
 
 }
