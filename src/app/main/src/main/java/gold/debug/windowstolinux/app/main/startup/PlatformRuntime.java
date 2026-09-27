@@ -6,9 +6,9 @@ import java.util.Objects;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.service.linux.PlatformLinuxService;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;

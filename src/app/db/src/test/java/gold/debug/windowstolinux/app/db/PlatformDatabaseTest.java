@@ -7,6 +7,7 @@ import java.sql.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,6 +31,40 @@ class PlatformDatabaseTest {
         try (var c = database.openConnection(); var s = c.createStatement(); var r = s.executeQuery(sql)) {
             assertTrue(r.next());
             return r.getLong(1);
+        }
+    }
+
+    @Test
+    void schemaOwnerCredentialsRemainCompatibleWithExistingUsersAcrossRestart() throws Exception {
+        var coordinates = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
+                new gold.debug.windowstolinux.appapi.db.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
+        UUID generation;
+        try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
+                var original = gold.debug.windowstolinux.app.db.bootstrap.DatabaseBootstrap.load(root, TEST_PROTECTION);
+                var connection = database.openConnection()) {
+            generation = database.generation();
+            String originalPassword = original.derive("WTL-SCHEMA-OWNER-1\0" + coordinates.databaseUser());
+            try (var statement = connection
+                    .prepareStatement("CREATE USER " + coordinates.databaseUser() + " PASSWORD ?")) {
+                statement.setString(1, originalPassword);
+                statement.execute();
+            }
+            try (var statement = connection.createStatement()) {
+                statement.execute(
+                        "CREATE SCHEMA " + coordinates.physicalName() + " AUTHORIZATION " + coordinates.databaseUser());
+                statement.execute("CREATE TABLE " + coordinates.physicalName() + ".retained(marker VARCHAR)");
+                statement.execute("INSERT INTO " + coordinates.physicalName() + ".retained VALUES('original')");
+            }
+            assertEquals(originalPassword, database.schemaPassword(coordinates.databaseUser()));
+        }
+        try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
+                var connection = database.openInternalConnection(coordinates.physicalName(), coordinates.databaseUser(),
+                        database.schemaPassword(coordinates.databaseUser()), "original-owner");
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT marker FROM retained")) {
+            assertEquals(generation, database.generation());
+            assertTrue(rows.next());
+            assertEquals("original", rows.getString(1));
         }
     }
 

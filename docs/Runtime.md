@@ -70,7 +70,7 @@
 | APP      | `jpackage` 启动器 EXE 所在目录下的 `data`。          |
 
 - `jpackage` 安装包启用按当前用户安装和安装目录选择，避免默认安装到普通用户不可写的 `Program Files`。
-- CLASS/JAR 模式固定使用 `app/db` 的 `PlatformDatabase` 类作为代码源锚点，不依据主入口模块的位置或固定 JAR 文件名猜测数据目录。
+- CLASS/JAR 模式固定使用 `app/db/persistence/connection/PlatformDatabase` 类作为代码源锚点，不依据主入口模块的位置或固定 JAR 文件名猜测数据目录。该类仍属于同一个 `app/db` Maven 模块，移包不改变代码源或数据根；Schema 所有者口令仍按原已编码数据库用户名派生。
 - CLASS 模式优先依据 DB 模块的 Maven `target/classes`/`target/test-classes` 定位模块；JetBrains 等 IDE 输出不在模块内时，只有验证工作区中的 `windowstolinux-app-db` POM 后才解析到 `src/app/db`，不会直接把工作目录当作数据基准目录。
 - 应用启动时必须验证解析出的 `data` 目录可以创建和写入；验证失败则停止启动并提示用户重新安装到可写目录。
 - 不得静默回退到用户目录、临时目录或其他位置，避免同一安装出现多个不一致的数据副本。

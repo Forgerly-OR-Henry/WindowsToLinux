@@ -5,8 +5,8 @@ import java.security.MessageDigest;
 import java.sql.SQLException;
 import java.util.HexFormat;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.mod.ModSchemaReconciliation;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.appapi.task.Outcome;

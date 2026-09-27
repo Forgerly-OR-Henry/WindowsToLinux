@@ -6,7 +6,7 @@ import java.security.*;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 
 /** Fingerprints H2-native structure and rows without creating export files or logs. / 对 H2 原生结构及行计算指纹，不创建导出文件或日志。 */
 public final class SchemaSnapshot {

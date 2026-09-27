@@ -869,6 +869,8 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 
 平台救援的临时状态由 `app/db/persistence/repository/BrowserRecoveryRepository` 保存，平台写入入口先核对原活动任务与服务器；`app/db/task/BrowserRecoveryArchival` 在原中央任务事务内完成摘要及事件清理。其固定宿主协议由此数据边界定义，service 准入及救援总装共用，不产生新的作者 API 或 Maven 模块。
 
+H2 引擎及实际连接所有权由 `app/db/persistence/connection/PlatformDatabase` 承担；模块根包的 `PlatformPersistence`、`DesktopPersistence` 只组合仓库。任务、日志和 Schema 实现依赖连接层，连接层不反向引用仓库、任务或 Schema 类型；口令派生只接收 Schema 层提供的精确已编码数据库用户名，沿用原命名空间和算法。
+
 | 枚举性质   | 统一后缀      | 示例                         |
 | ---------- | ------------- | ---------------------------- |
 | 可执行动作 | `Action`      | `LifecycleAction`            |

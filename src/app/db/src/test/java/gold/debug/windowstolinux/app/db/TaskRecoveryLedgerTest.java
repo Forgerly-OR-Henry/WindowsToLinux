@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import org.junit.jupiter.api.Test;

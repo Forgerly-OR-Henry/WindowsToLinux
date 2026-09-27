@@ -11,8 +11,8 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.mod.ModReinstallationLedger;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
 import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;

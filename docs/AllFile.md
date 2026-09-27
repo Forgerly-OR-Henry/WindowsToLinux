@@ -1610,7 +1610,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/ui/PageSpec.java`：不会自动固定主导航的本地页面定义。
 - `appapi/ui/UiEnvironment.java`：当前宿主语言、主题及锁定状态。
 - `appapi/ui/UiService.java`：不暴露宿主实现类型的所属页面挂载服务。
-- `app/db/PlatformDatabase.java`：持有唯一嵌入式 H2 引擎及受保护引导材料。
+- `app/db/persistence/connection/PlatformDatabase.java`：持有唯一嵌入式 H2 引擎及受保护引导材料。
 - `appapi/resources/gold/debug/windowstolinux/appapi/build.properties`：由 Maven 展开实际公开 API 版本，供宿主管理的兼容校验读取。
 - `app/db/PlatformPersistence.java`：在受保护 H2 引擎上装配平台所属配置仓库。
 - `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。

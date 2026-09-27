@@ -6,9 +6,9 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.entity.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.secret.crypto.PasswordKeyCrypto;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

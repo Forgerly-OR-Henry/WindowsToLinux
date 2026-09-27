@@ -272,7 +272,7 @@ class PlatformModSchemaRetryTest {
             var review = runtime.reviewModSchemaRetry(OWNER, Optional.empty());
             var target = new SchemaCoordinates(review.target());
             try (var old = db.openInternalConnection(target.physicalName(), target.databaseUser(),
-                    db.schemaPassword(target), "fixture-original-target")) {
+                    db.schemaPassword(target.databaseUser()), "fixture-original-target")) {
                 try (var s = old.createStatement(); var user = s.executeQuery("SELECT CURRENT_USER")) {
                     user.next();
                     assertEquals(target.databaseUser(), user.getString(1));

@@ -7,7 +7,7 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
 import gold.debug.windowstolinux.app.mod.manifest.*;
 import gold.debug.windowstolinux.appapi.task.Problem;

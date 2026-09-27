@@ -7,8 +7,8 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.*;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;

@@ -4,7 +4,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
 /** Creates explicitly registered Mod schemas without adopting preexisting database objects. / 创建明确登记的 Mod 数据结构，不接管已有数据库对象。 */
@@ -50,7 +50,7 @@ public final class SchemaProvisioner {
             try {
                 try (var p = c.prepareStatement(
                         "CREATE USER " + SchemaAccessScope.quote(coordinates.databaseUser()) + " PASSWORD ?")) {
-                    p.setString(1, database.schemaPassword(coordinates));
+                    p.setString(1, database.schemaPassword(coordinates.databaseUser()));
                     p.execute();
                 }
                 try (var s = c.createStatement()) {

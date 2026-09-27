@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.service.recovery;
 import java.util.*;
 import java.util.function.*;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;

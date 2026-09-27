@@ -5,8 +5,8 @@ import java.time.Instant;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.appapi.task.*;
 

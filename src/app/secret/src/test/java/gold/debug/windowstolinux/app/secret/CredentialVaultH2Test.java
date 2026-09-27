@@ -7,8 +7,8 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
 import org.junit.jupiter.api.Test;

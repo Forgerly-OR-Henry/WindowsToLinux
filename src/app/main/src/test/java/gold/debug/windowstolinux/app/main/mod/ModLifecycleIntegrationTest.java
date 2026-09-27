@@ -14,8 +14,8 @@ import java.util.jar.*;
 import javax.swing.*;
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.app.db.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.*;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;

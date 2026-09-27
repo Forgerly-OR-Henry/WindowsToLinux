@@ -8,6 +8,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import org.junit.jupiter.api.Test;

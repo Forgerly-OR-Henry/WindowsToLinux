@@ -139,7 +139,8 @@ class PlatformServersWindowTest {
     @Test
     void interruptedPreviousVersionCheckIsResolvedThroughThePermanentPage() throws Exception {
         UUID task;
-        try (var db = gold.debug.windowstolinux.app.db.PlatformDatabase.open(root, PlatformStartupTest.PROTECTION)) {
+        try (var db = gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase.open(root,
+                PlatformStartupTest.PROTECTION)) {
             var persistence = new gold.debug.windowstolinux.app.db.PlatformPersistence(db);
             try (var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
                     persistence.security())) {
