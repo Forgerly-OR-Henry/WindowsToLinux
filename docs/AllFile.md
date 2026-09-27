@@ -1816,3 +1816,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentPayloadReader.java`：统一有界 BLOB 流读取，保留 SQL NULL 并拒绝超过既有格式上限的载荷。
 - `mod/deployment/service/core/model/DeploymentApplicationGraph.java`：完整单服务器应用拓扑，校验组件唯一、依赖无环、健康归属及资源路径精确覆盖。
 - `mod/deployment/db/DeploymentGraphRepository.java`：在既有匹配部署单元上原子替换完整图，只返回 graph_ready=true 的一致快照，不查询平台私有表。
+- `mod/deployment/service/core/model/DeploymentSecretRevision.java`：精确秘密修订、不透明平台凭据 ID 和创建时间，不保存秘密值。
+- `mod/deployment/service/core/model/DeploymentCurrentRelease.java`：部署单元当前确认发布的摘要及时间。
+- `mod/deployment/db/DeploymentSecretRepository.java`：不可变秘密元数据及完整发布引用集合，区分未绑定与显式空集合，不覆盖普通配置绑定。
+- `mod/deployment/db/DeploymentUnitCommit.java`：数据库写入边界的单元成功记录，校验单元、配置、发布及秘密集合一致，不是公开 Mod API。
+- `mod/deployment/db/DeploymentPublicationRepository.java`：同事务保存整图所有单元、当前发布、配置、精确秘密集合及拓扑，保持原服务器归属与无关展示/观测字段。

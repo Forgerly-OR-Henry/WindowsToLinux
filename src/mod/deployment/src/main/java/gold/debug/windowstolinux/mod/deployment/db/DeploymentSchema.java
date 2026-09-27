@@ -84,6 +84,11 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                     violations.add("Stored deployment configuration snapshots are invalid");
                 }
                 try {
+                    DeploymentSecretRepository.validate(connection);
+                } catch (SQLException invalid) {
+                    violations.add("Stored deployment secret metadata or bindings are invalid");
+                }
+                try {
                     DeploymentPayloadValidation.validate(connection);
                 } catch (SQLException | IOException invalid) {
                     violations.add("Stored deployment runtime payloads are invalid");
@@ -93,6 +98,13 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                         DeploymentGraphRepository.validate(connection);
                     } catch (SQLException invalid) {
                         violations.add("Stored complete application graphs are invalid");
+                    }
+                }
+                if (violations.isEmpty()) {
+                    try {
+                        DeploymentPublicationRepository.validate(connection);
+                    } catch (SQLException invalid) {
+                        violations.add("Stored current publication facts are invalid");
                     }
                 }
             }
