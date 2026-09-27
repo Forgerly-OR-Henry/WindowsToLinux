@@ -1824,5 +1824,13 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。
 - `mod/deployment/db/DeploymentReferenceIntent.java`：预留前保存的精确平台资源、秘密用途及业务键，不包含秘密值。
 - `mod/deployment/db/DeploymentExecutionRecord.java`：包含正式结果、独立提交/清理标记及原 JSON 文档的只读持久证据。
-- `mod/deployment/db/DeploymentExecutionCodec.java`：一 MiB 有界 UTF-8/严格 JSON、精确身份/阶段/预留 UUID 校验及未来版本保留。
+- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 2 执行信封、精确身份/阶段/预留 UUID 及成功结果必需的整应用历史关联。
 - `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。
+
+- `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
+- `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。
+- `mod/deployment/db/DeploymentReleaseSnapshot.java`：完整原应用图及每个单元的不可变配置/秘密修订引用。
+- `mod/deployment/db/DeploymentReleaseRecord.java`：保留原历史文档、创建执行/时间及发布状态的只读记录。
+- `mod/deployment/db/DeploymentReleaseCodec.java`：规范版本化整图/健康 JSON、原二进制格式封装和独立历史摘要。
+- `mod/deployment/db/DeploymentReleaseRepository.java`：同发布事务登记历史/退役旧版，相同内容复用原历史身份。
+- `mod/deployment/db/DeploymentReleaseValidation.java`：仅 SELECT 核验历史来源、不可变绑定、当前 ACTIVE 和正式结果关联。

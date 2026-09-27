@@ -89,6 +89,11 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                     violations.add("Stored deployment secret metadata or bindings are invalid");
                 }
                 try {
+                    DeploymentReleaseValidation.validate(connection);
+                } catch (SQLException invalid) {
+                    violations.add("Stored deployment release history is invalid");
+                }
+                try {
                     DeploymentExecutionRepository.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment execution evidence is invalid");

@@ -16,30 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
-    DeploymentExecutionIdentity identity(TaskContext task, UUID id) {
-        return new DeploymentExecutionIdentity(id, task.id(), Optional.empty(), "application", new ServerRef("server"),
-                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64));
-    }
-
-    DeploymentReferenceIntent intent() {
-        return DeploymentReferenceIntent.server(new ServerRef("server"), "application:application");
-    }
-
-    DeploymentExecutionRepository journal(PlatformRuntime runtime) {
-        return new DeploymentExecutionRepository(runtime.modContexts().get(OWNER).context().db());
-    }
-
-    ServerReference prepare(PlatformRuntime runtime, TaskContext task, UUID id) throws Exception {
-        var journal = journal(runtime);
-        journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
-        var reference = runtime.modContexts().get(OWNER).context().servers().reserve(new ServerRef("server"),
-                intent().businessKey(), task);
-        journal.recordReference(task, id, intent(), reference.id(), OBSERVED.plusSeconds(1));
-        journal.startEffects(task, id, OBSERVED.plusSeconds(2));
-        return reference;
-    }
-
+class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
     @Test
     void formalResultAndActualPublicationCommitTogetherAndSurviveRestartWithPrivateJsonLibraries() throws Exception {
         enable();
@@ -139,7 +116,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
                         publications(graph("application"), 1, List.of()), OBSERVED.plusSeconds(3)));
                 assertEquals(before, journal.find(task, id).orElseThrow());
                 for (String table : List.of("deployment_unit", "managed_application", "managed_application_component",
-                        "deployment_unit_configuration_snapshot", "deployment_unit_release_binding"))
+                        "deployment_unit_configuration_snapshot", "deployment_unit_release_binding",
+                        "deployment_release"))
                     assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM " + table));
                 sql(runtime, task, "ALTER TABLE deployment_execution DROP CONSTRAINT fixture_commit_rejection");
                 journal.recordUncommittedOutcome(task, id, Outcome.FAILED, "PUBLICATION_ROLLED_BACK",
@@ -175,6 +153,11 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
                 var original = journal.find(task, id).orElseThrow();
                 assertTrue(original.businessCommitted());
                 assertFalse(original.cleanupComplete());
+                var link = DeploymentExecutionCodec.release(original).orElseThrow();
+                var history = new DeploymentReleaseRepository(runtime.modContexts().get(OWNER).context().db());
+                assertEquals(DeploymentReleaseSnapshot.capture(graph, records),
+                        history.snapshot(history.find(task, "application", link.id()).orElseThrow()));
+                assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
                 verify(runtime, task, graph, records);
                 assertThrows(SQLException.class, () -> journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
                         "NOT_ALLOWED", OBSERVED.plusSeconds(4)));
@@ -257,6 +240,10 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
                 if (included) {
                     journal.commitApplication(task, id, graph, records, OBSERVED.plusSeconds(3));
                     verify(runtime, task, graph, records);
+                    var release = DeploymentExecutionCodec.release(journal.find(task, id).orElseThrow()).orElseThrow();
+                    var history = new DeploymentReleaseRepository(context.db());
+                    var snapshot = history.snapshot(history.find(task, "application", release.id()).orElseThrow());
+                    assertTrue(snapshot.bindings().stream().allMatch(b -> b.secrets().equals(List.of(reference))));
                     context.servers().resolve(server.id(), ReferenceResolution.REFERENCED, task);
                     context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
                 } else {
@@ -333,8 +320,9 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
         }
     }
 
-    @Test
-    void unknownDocumentVersionsRemainReadableAndUnchangedButCannotReconcileOrMutate() throws Exception {
+    @ParameterizedTest
+    @ValueSource(ints = {1, 999})
+    void unknownDocumentVersionsRemainReadableAndUnchangedButCannotReconcileOrMutate(int version) throws Exception {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -343,7 +331,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
                 UUID id = UUID.randomUUID();
                 var journal = journal(runtime);
                 journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
-                String future = "{\"formatVersion\":2,\"futureData\":{\"retained\":true}}";
+                String future = "{\"formatVersion\":" + version + ",\"futureData\":{\"retained\":true}}";
                 replace(runtime, task, id, "recovery_payload", future.getBytes(StandardCharsets.UTF_8));
                 var record = journal.find(task, id).orElseThrow();
                 assertEquals(future, record.recoveryJson());
@@ -371,7 +359,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentGraphFixture {
                 journal.begin(task, identity(task, id), "deploy", List.of(intent()), OBSERVED);
                 String json = journal.find(task, id).orElseThrow().recoveryJson();
                 byte[] bytes = switch (fault) {
-                    case "duplicate" -> json.replace("\"formatVersion\":1", "\"formatVersion\":1,\"formatVersion\":1")
+                    case "duplicate" -> json.replace("\"formatVersion\":2", "\"formatVersion\":2,\"formatVersion\":2")
                             .getBytes(StandardCharsets.UTF_8);
                     case "trailing" -> (json + " {}").getBytes(StandardCharsets.UTF_8);
                     case "missing" -> "{}".getBytes(StandardCharsets.UTF_8);

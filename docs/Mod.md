@@ -1264,7 +1264,11 @@ public interface SecretService {
 
 官方 deployment 的执行账本在 `deployment_execution` 保存原执行 UUID、平台任务 UUID、目标应用/服务器、模式和审阅摘要。预留前的请求文档固定资源、用途和业务键，后续仅补原预留 UUID；所有关联均已取得 UUID 后才能进入副作用阶段。成功结果与单元/配置/秘密集合/拓扑同一 H2 事务提交，`business_committed` 与 `cleanup_complete` 分开，未知结果不能标清理完成或重新开始副作用。已知结果不可覆盖，另一平台任务只可读取旧记录，不能接管写入；执行记录创建确认丢失时，可按原平台任务查询原业务执行 UUID，不重新创建。
 
-本阶段执行文档为固定 `formatVersion=1` 的 UTF-8 JSON object，单份最大一 MiB、资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。请求/恢复/结果分别绑定原执行及任务身份；原阶段为 PREPARED、EXECUTING、COMMITTED、FINISHED，UNKNOWN 保留在 outcome 且不完成清理。未知版本保留原文只读检查，核对或变更明确拒绝，不按当前格式猜测。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。当前请求文档覆盖引用恢复范围；完整分析/取材/远端步骤及 `deployment_release` 历史随业务引擎继续迁移，不将账本存在视为完整部署恢复已接入。
+本阶段执行文档为固定 `formatVersion=2` 的 UTF-8 JSON object，单份最大一 MiB、资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。请求/恢复/结果分别绑定原执行及任务身份；原阶段为 PREPARED、EXECUTING、COMMITTED、FINISHED，UNKNOWN 保留在 outcome 且不完成清理。未知版本保留原文只读检查，核对或变更明确拒绝，不按当前格式猜测。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。当前请求文档覆盖引用恢复范围；完整分析/取材/远端步骤及生产恢复编排随业务引擎继续迁移，不将账本存在视为完整部署恢复已接入。
+
+官方 deployment 的成功结果在格式 2 中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；格式 1 及其他不支持版本保留原文，只读而不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；完整候选执行与恢复仍待后续业务编排。
+
+发布历史的两份 UTF-8 JSON object 固定 `formatVersion=1`：运行清单最大 16 MiB，独立整应用健康文档最大一 MiB。运行清单完整保留有序组件、单元身份、依赖、运行定义、路径/资源绑定，以及原组件摘要和不可变配置/秘密修订引用；二进制子载荷采用规范 Base64，沿用原格式和单项上限。两份规范 JSON 按独立 `windowstolinux-application-release-v1` 域和四字节大端长度前缀计算整应用 SHA-256，健康/依赖变化同样改变历史身份；原组件摘要和旧备份 release-set 算法不变。发布时间保留在正式执行结果，历史内容摘要不混入时间，秘密值不进入载荷。未知格式原文保留并阻止相关历史退役/激活；只读核验检查已知历史摘要、来源执行、配置/秘密引用、唯一 ACTIVE 与当前整图，以及成功执行的精确历史关联。16 MiB 是明确的整图容量上限，不保证 64 个均达到各自最大尺寸的组件能合并写入。
 
 ### 8.6 linux：受控 SSH 与文件操作
 

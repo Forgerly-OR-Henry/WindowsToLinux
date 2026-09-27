@@ -1,24 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.*;
+import static gold.debug.windowstolinux.mod.deployment.db.DeploymentJsonDocument.*;
+
 import java.sql.SQLException;
 import java.util.*;
 
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 
 /** Strict bounded JSON for execution identity, reservation evidence and formal results. / 执行身份、预留证据及正式结果的严格有界JSON。 */
 final class DeploymentExecutionCodec {
-    /** Existing project JSON implementation with duplicate and trailing input rejection. / 已有项目JSON实现，拒绝重复键及尾随输入。 */
-    private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-
-    /** Maximum persisted document size in UTF-8 bytes. / 持久文档的UTF-8字节上限。 */
-    private static final int LIMIT = 1_048_576;
+    /** Current journal version adds a mandatory application-release identity to successful results. / 当前账本版本为成功结果增加必需的应用发布身份。 */
+    static final int VERSION = 2;
 
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
@@ -64,13 +58,19 @@ final class DeploymentExecutionCodec {
      * @param outcome observed business result / 已观察业务结果
      * @param eventCode safe stable result code / 安全稳定结果码
      * @param publications successfully committed units, empty for failure / 成功提交单元，失败时为空
+     * @param release original whole-application history identity, absent for failure / 原整应用历史身份，失败时为空
      * @return bounded result document / 有界结果文档
      * @throws SQLException if encoding exceeds bounds / 编码超限时 */
     static String result(DeploymentExecutionIdentity identity, Outcome outcome, String eventCode,
-            List<DeploymentUnitCommit> publications) throws SQLException {
+            List<DeploymentUnitCommit> publications, Optional<DeploymentReleaseIdentity> release) throws SQLException {
         if (eventCode == null || !eventCode.matches("[A-Z][A-Z0-9_]{0,127}"))
             throw new SQLException("Invalid result event code");
         var node = envelope(identity).put("outcome", outcome.name()).put("eventCode", eventCode);
+        if (release.isPresent())
+            node.putObject("applicationRelease").put("id", release.get().id().toString()).put("sha256",
+                    release.get().sha256());
+        else
+            node.putNull("applicationRelease");
         var array = node.putArray("releases");
         publications.stream().sorted(Comparator.comparing(p -> p.unit().id()))
                 .forEach(p -> array.addObject().put("unitId", p.unit().id()).put("sha256", p.release().sha256())
@@ -83,7 +83,7 @@ final class DeploymentExecutionCodec {
      * @param identity original operation / 原操作
      * @return fixed versioned envelope / 固定版本化信封 */
     private static ObjectNode envelope(DeploymentExecutionIdentity identity) {
-        var node = JSON.createObjectNode().put("formatVersion", 1).put("executionId", identity.executionId().toString())
+        var node = object().put("formatVersion", VERSION).put("executionId", identity.executionId().toString())
                 .put("taskId", identity.taskId().toString()).put("applicationId", identity.applicationId())
                 .put("serverId", identity.server().id()).put("reviewedRevision", identity.reviewedRevision())
                 .put("mode", identity.mode().name());
@@ -94,62 +94,15 @@ final class DeploymentExecutionCodec {
         return node;
     }
 
-    /** Reads well-formed UTF-8 without interpreting a future format. / 读取合法UTF-8，不解释未来格式。
-     * @param bytes original bounded bytes / 原有界字节
-     * @return unchanged original JSON text / 未改写的原JSON文本
-     * @throws SQLException if bytes or JSON are malformed / 字节或JSON无效时 */
-    static String text(byte[] bytes) throws SQLException {
-        if (bytes == null || bytes.length > LIMIT)
-            throw new SQLException("Missing or oversized execution document");
-        try {
-            String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
-            parse(text);
-            return text;
-        } catch (CharacterCodingException invalid) {
-            throw new SQLException("Execution document is not UTF-8", invalid);
-        }
-    }
-
-    /** Parses only a bounded JSON object with an explicit positive format version. / 仅解析带明确正格式版本的有界JSON对象。
-     * @param text original JSON / 原JSON
-     * @return parsed object / 解析对象
-     * @throws SQLException if shape, size or syntax is invalid / 形状、大小或语法无效时 */
-    private static ObjectNode parse(String text) throws SQLException {
-        try {
-            if (text == null || text.getBytes(StandardCharsets.UTF_8).length > LIMIT)
-                throw new IOException("Execution document exceeds bound");
-            var node = JSON.readTree(text);
-            if (!(node instanceof ObjectNode object) || !object.path("formatVersion").isInt()
-                    || object.path("formatVersion").intValue() < 1)
-                throw new IOException("Execution document version is absent");
-            return object;
-        } catch (IOException invalid) {
-            throw new SQLException("Execution document is malformed", invalid);
-        }
-    }
-
-    /** Encodes an object under the same fixed bound as reads. / 在与读取相同的固定上限下编码对象。
-     * @param node original object / 原对象
-     * @return UTF-8 JSON text / UTF-8 JSON文本
-     * @throws SQLException if encoding fails or exceeds bounds / 编码失败或超限时 */
-    private static String encode(ObjectNode node) throws SQLException {
-        try {
-            return text(JSON.writeValueAsBytes(node));
-        } catch (IOException invalid) {
-            throw new SQLException("Execution document cannot be encoded", invalid);
-        }
-    }
-
     /** Determines whether all original documents use the supported format. / 判断全部原文档是否使用受支持格式。
      * @param record retained original row / 保留原行
      * @return whether semantic reconciliation is supported / 是否支持语义核对
      * @throws SQLException if a document is malformed / 文档无效时 */
     static boolean supported(DeploymentExecutionRecord record) throws SQLException {
-        boolean supported = parse(record.requestJson()).path("formatVersion").intValue() == 1;
-        supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == 1;
+        boolean supported = parse(record.requestJson()).path("formatVersion").intValue() == VERSION;
+        supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == VERSION;
         if (record.resultJson().isPresent())
-            supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == 1;
+            supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == VERSION;
         return supported;
     }
 
@@ -257,10 +210,12 @@ final class DeploymentExecutionCodec {
      * @param record original row / 原行
      * @throws SQLException if the result is inconsistent / 结果不一致时 */
     private static void validateResult(JsonNode result, DeploymentExecutionRecord record) throws SQLException {
-        identity(result, record.identity(), "outcome", "eventCode", "releases");
+        identity(result, record.identity(), "outcome", "eventCode", "releases", "applicationRelease");
         if (!string(result, "outcome").equals(record.outcome().orElseThrow().name())
                 || !string(result, "eventCode").matches("[A-Z][A-Z0-9_]{0,127}"))
             throw new SQLException("Formal execution result differs from its row");
+        if (record.businessCommitted() != release(result).isPresent())
+            throw new SQLException("Formal application release evidence is incomplete");
         var releases = array(result, "releases", 64);
         if (record.businessCommitted() == releases.isEmpty())
             throw new SQLException("Formal publication evidence is incomplete");
@@ -276,54 +231,28 @@ final class DeploymentExecutionCodec {
         }
     }
 
-    /** Requires a JSON array under a concrete bound. / 要求具体上限内的JSON数组。
-     * @param node source object / 来源对象
-     * @param field exact field / 精确字段
-     * @param limit maximum entries / 最大条目数
-     * @return original array / 原数组
-     * @throws SQLException if shape or size differs / 形状或大小不符时 */
-    private static ArrayNode array(JsonNode node, String field, int limit) throws SQLException {
-        if (!(node.path(field) instanceof ArrayNode array) || array.size() > limit)
-            throw new SQLException("Execution array is invalid");
-        return array;
+    /** Reads a supported execution's immutable history link. / 读取受支持执行的不可变历史关联。
+     * @param record original execution / 原执行
+     * @return history identity when business committed / 业务提交时的历史身份
+     * @throws SQLException if the evidence is unsupported or malformed / 证据不支持或无效时 */
+    static Optional<DeploymentReleaseIdentity> release(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        return record.resultJson().isEmpty() ? Optional.empty() : release(parse(record.resultJson().get()));
     }
 
-    /** Requires exact fields without implicit defaults or coercion. / 要求精确字段，不使用隐式默认或类型强转。
-     * @param node source object / 来源对象
-     * @param expected exact field names / 精确字段名
-     * @throws SQLException if fields differ / 字段不符时 */
-    private static void fields(JsonNode node, Set<String> expected) throws SQLException {
-        var actual = new HashSet<String>();
-        node.fieldNames().forEachRemaining(actual::add);
-        if (!node.isObject() || !actual.equals(expected))
-            throw new SQLException("Execution fields are invalid");
-    }
-
-    /** Reads a required text value without JSON coercion. / 读取必需文本，不进行JSON类型强转。
-     * @param node source object / 来源对象
-     * @param field exact field / 精确字段
-     * @return original string / 原字符串
-     * @throws SQLException if absent or not textual / 缺失或非文本时 */
-    private static String string(JsonNode node, String field) throws SQLException {
-        if (!node.path(field).isTextual())
-            throw new SQLException("Execution text is absent");
-        return node.path(field).textValue();
-    }
-
-    /** Reads a canonical original UUID. / 读取规范原UUID。
-     * @param node source object / 来源对象
-     * @param field exact field / 精确字段
-     * @return original identity / 原身份
-     * @throws SQLException if not canonical / 非规范值时 */
-    private static UUID uuid(JsonNode node, String field) throws SQLException {
-        String value = string(node, field);
+    /** Decodes the explicit link without inventing missing metadata. / 解码明确关联，不补造缺失元数据。
+     * @param result validated result envelope / 已校验结果信封
+     * @return original link or explicit absence / 原关联或明确不存在
+     * @throws SQLException if the link is malformed / 关联无效时 */
+    private static Optional<DeploymentReleaseIdentity> release(JsonNode result) throws SQLException {
+        var link = result.path("applicationRelease");
+        if (link.isNull())
+            return Optional.empty();
+        fields(link, Set.of("id", "sha256"));
         try {
-            UUID id = UUID.fromString(value);
-            if (!id.toString().equals(value))
-                throw new IllegalArgumentException();
-            return id;
+            return Optional.of(new DeploymentReleaseIdentity(uuid(link, "id"), string(link, "sha256")));
         } catch (IllegalArgumentException invalid) {
-            throw new SQLException("Execution UUID is invalid", invalid);
+            throw new SQLException("Invalid application release identity", invalid);
         }
     }
 
