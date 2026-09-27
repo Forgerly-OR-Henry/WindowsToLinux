@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -23,6 +24,9 @@ public final class Mod implements ModEntrypoint {
 
     /** Production secret revision task and original recovery. / 生产秘密修订任务及原恢复。 */
     private DeploymentSecretProvisionFlow secretProvisionFlow;
+
+    /** Borrowed-material standard analysis entrypoint. / 借用原素材的标准分析入口。 */
+    private DeploymentStandardAnalyzer standardAnalyzer;
 
     /** Active original-task recovery registration. / 活动原任务恢复登记。 */
     private RecoveryRegistration recoveryRegistration;
@@ -76,6 +80,7 @@ public final class Mod implements ModEntrypoint {
         this.publicationFlow = flow;
         this.gitSourceFlow = gitFlow;
         this.secretProvisionFlow = secretFlow;
+        this.standardAnalyzer = new DeploymentStandardAnalyzer();
         this.recoveryRegistration = registration;
         this.gitRecoveryRegistration = gitRegistration;
         this.secretRecoveryRegistration = secretRegistration;
@@ -104,6 +109,14 @@ public final class Mod implements ModEntrypoint {
         if (secretProvisionFlow == null)
             throw new IllegalStateException("Deployment Mod is not started");
         return secretProvisionFlow;
+    }
+
+    /** Returns the active deterministic standard analysis entrypoint. / 返回活动的确定性标准分析入口。
+     * @return bound analysis service / 已绑定分析服务 */
+    public DeploymentStandardAnalyzer standardAnalyzer() {
+        if (standardAnalyzer == null)
+            throw new IllegalStateException("Deployment Mod is not started");
+        return standardAnalyzer;
     }
 
     /** Releases the author reference; platform capabilities own their actual cleanup. / 释放作者引用，平台能力负责其实际清理。
@@ -145,6 +158,7 @@ public final class Mod implements ModEntrypoint {
         if (failure != null)
             throw failure;
         secretProvisionFlow = null;
+        standardAnalyzer = null;
         gitSourceFlow = null;
         publicationFlow = null;
         this.context = null;

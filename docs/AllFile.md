@@ -1873,3 +1873,119 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/source/git/DeploymentGitLaunch.java`：只收集 Mod、公开 API 和私有 JSON 库的 worker 启动参数。
 - `mod/deployment/source/git/DeploymentGitMaterial.java`：固定提交、原源码快照和独立归档句柄。
 - `mod/deployment/source/git/DeploymentGitPreparer.java`：原任务工作区、worker 与原生清理次序；生产观察器使用预持久身份并在删除 control 前记录已核实回执，旧直接构件仍保留进程组占用。
+
+### S5-02 已迁入的标准静态分析生产文件
+
+旧 `shared/standard/analyze` 在根切换前仍保留；以下仅索引实际迁入的 Mod 生产类型。
+
+- `mod/deployment/service/core/model/analysis/AnalysisEvidence.java`：单个确定性项目事实的紧凑、非秘密来源。
+- `mod/deployment/service/core/model/analysis/DeploymentAdmissionStatus.java`：项目进入部署计划前的确定性部署准入结果。
+- `mod/deployment/service/core/model/analysis/EvidenceConfidenceLevel.java`：单个确定性事实的置信度，与任何 AI 建议相互独立。
+- `mod/deployment/service/core/model/analysis/RejectionReason.java`：项目无法进入受管部署流程的确定性原因。
+- `mod/deployment/service/core/model/assessment/ComponentIssue.java`：一个组件范围的输入要求或硬安全拒绝。
+- `mod/deployment/service/core/model/assessment/DeploymentProjectAssessment.java`：将缺失用户决定与硬性安全拒绝分开的部署静态分析结果。
+- `mod/deployment/service/core/model/assessment/MultiComponentProjectAssessment.java`：具有组件范围原因的确定性混合项目分析。
+- `mod/deployment/service/core/model/ecosystem/db/DatabaseRequirement.java`：从组件提取或由用户补齐的非秘密数据库声明。
+- `mod/deployment/service/core/model/ecosystem/db/DatabaseSchemaReview.java`：与源码绑定的验证结果，来自已验证初始化或单独获批的现有模式操作。
+- `mod/deployment/service/core/model/ecosystem/db/DatabaseVersionRequirement.java`：显式数据库版本约束，较新版本兼容最低版本要求。
+- `mod/deployment/service/core/model/language/LanguageEcosystemType.java`：不含主要语言排序的确定性语言生态观测。
+- `mod/deployment/service/core/model/language/LanguageFactKind.java`：可用于预填审阅表单的稳定确定性语言相关值。
+- `mod/deployment/service/core/model/language/ProjectLanguageFacts.java`：在不执行源码且不选择主要语言的情况下收集的确定性语言事实。
+- `mod/deployment/service/core/model/language/SourceLanguageType.java`：由有界文件路径或元数据条目证实的源码语言。
+- `mod/deployment/service/core/model/message/LocalizedMessage.java`：不将领域代码与显示语言耦合的用户可见消息；消息键与命名参数由展示层按语言解析，参数值仅为纯文本。
+- `mod/deployment/service/core/model/project/component/ComponentIsolationSpecification.java`：一个组件显式请求的不安全执行能力。
+- `mod/deployment/service/core/model/project/component/DeploymentComponent.java`：混合项目中一个组件的完整静态记录。
+- `mod/deployment/service/core/model/project/DeploymentArchitectureType.java`：一个精确且可部署的项目类型与构建工具架构组合。
+- `mod/deployment/service/core/model/project/DeploymentBuildToolType.java`：固定的目标机构建工具入口，绝不是任意命令行。
+- `mod/deployment/service/core/model/project/DeploymentProjectFacts.java`：一个用户选定的部署项目类型的不可变确定性事实；未执行任何项目代码。
+- `mod/deployment/service/core/model/project/DeploymentRuntimeAssessment.java`：在不运行项目内容的情况下推导出的、可审阅的源码依据运行时值。
+- `mod/deployment/service/core/model/project/DeploymentSupportCatalog.java`：为精确项目类型与架构组合提供证据支撑的支持声明。
+- `mod/deployment/service/core/model/project/DeploymentSupportLevel.java`：由证据支撑并由分析、计划和结果公开的支持等级。
+- `mod/deployment/service/core/model/project/DeploymentSupportProfile.java`：一个已分析路径的精确语言、架构、框架、支持等级、验证矩阵、证据与限制。
+- `mod/deployment/service/core/model/project/ValidatedDeploymentTarget.java`：由真实产品入口验收证据支撑的一个精确目标组合。
+- `mod/deployment/service/core/model/server/LinuxDistroType.java`：部署为其保留独立证据和兼容性决策的发行版系列。
+- `mod/deployment/service/core/model/toolchain/ToolchainRequirement.java`：即使没有构建候选也保留源码声明。
+- `mod/deployment/service/standard/analyze/component/ComponentAnalysisRequest.java`：提供给确定性混合项目分析的用户审阅组件边界。
+- `mod/deployment/service/standard/analyze/component/ComponentGraphValidator.java`：验证跨组件所有权、依赖、端口、制品及数据路径约束。
+- `mod/deployment/service/standard/analyze/component/DiscoveredProjectComponent.java`：声明可部署根目录及可能类型，保留歧义供输入解析处理。
+- `mod/deployment/service/standard/analyze/component/MixedProjectInspector.java`：分析显式组件根，并在修改目标机前拒绝跨组件矛盾。
+- `mod/deployment/service/standard/analyze/component/ProjectComponentDiscovery.java`：有界静态发现，目录和声明仅作为证据，不作为可执行指令。
+- `mod/deployment/service/standard/analyze/contract/policy/SourceMutationPolicy.java`：拒绝可能自动修改受管数据库的源码声明。
+- `mod/deployment/service/standard/analyze/contract/spi/DeploymentTypeAssessment.java`：由一个类型检查器返回的局部事实与运行时建议。
+- `mod/deployment/service/standard/analyze/contract/spi/DeploymentTypeInspector.java`：面向一个用户选定部署类型的单一有界检查器。
+- `mod/deployment/service/standard/analyze/core/DeploymentAnalysisCoordinator.java`：仅协调有界遍历、安全策略、类型分派与结果汇总。
+- `mod/deployment/service/standard/analyze/core/ProjectLanguageInspector.java`：合并独立语言检查器，不进行排序或选择项目类型。
+- `mod/deployment/service/standard/analyze/DeploymentStandardAnalyzer.java`：借用一份仍受管的不可变素材进行确定性标准分析。
+- `mod/deployment/service/standard/analyze/ecosystem/c/CLanguageInspector.java`：独立于 CMake 识别 C 与 C++ 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/c/cmake/CmakeDeploymentInspector.java`：在不执行 CMake 的情况下检查固定 preset 的单可执行服务。
+- `mod/deployment/service/standard/analyze/ecosystem/c/cmake/CmakeFacts.java`：固定的 CMake preset、目标、源码语言与拒绝事实。
+- `mod/deployment/service/standard/analyze/ecosystem/db/DatabaseProjectInspector.java`：读取显式数据库声明和常规 Spring 端点，不保留凭据。
+- `mod/deployment/service/standard/analyze/ecosystem/dotnet/DotNetLanguageInspector.java`：独立于构建架构识别 .NET/C# 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/dotnet/dotnetsdk/DotNetSdkDeploymentInspector.java`：在不执行 dotnet 的情况下检查一个锁定的 .NET Web SDK 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/dotnet/dotnetsdk/DotNetSdkFacts.java`：服务分析使用的固定 .NET SDK 项目元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/go/GoLanguageInspector.java`：独立于构建架构识别 Go 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/go/gomodule/GoModuleDeploymentInspector.java`：在不执行 Go 的情况下检查一个锁定的 Go Module 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/go/gomodule/GoModuleFacts.java`：服务分析使用的固定 Go Module 元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/java/gradle/GradleBuildFacts.java`：固定的 Gradle 构建脚本与 Wrapper 事实。
+- `mod/deployment/service/standard/analyze/ecosystem/java/gradle/GradleBuildInspector.java`：读取一个固定 Gradle 构建脚本与 Wrapper 布局，但不调用 Gradle。
+- `mod/deployment/service/standard/analyze/ecosystem/java/jar/JavaJarDeploymentInspector.java`：在不加载归档的情况下生成 Java JAR 事实与清单依据运行时建议。
+- `mod/deployment/service/standard/analyze/ecosystem/java/jar/JavaJarManifestInspector.java`：读取有界 JAR 运行元数据，不加载类。
+- `mod/deployment/service/standard/analyze/ecosystem/java/JavaLanguageInspector.java`：识别 Java 源码与 JAR 生态标记，不打开归档。
+- `mod/deployment/service/standard/analyze/ecosystem/java/jdk/JavaJdkDeploymentInspector.java`：使用显式 JDK 构建元数据检查无依赖 Java 源码。
+- `mod/deployment/service/standard/analyze/ecosystem/java/jdk/JavaJdkFacts.java`：固定的无依赖 Java 源码架构事实。
+- `mod/deployment/service/standard/analyze/ecosystem/java/maven/MavenBuildFacts.java`：框架及部署支持检查所需的根 Maven 事实。
+- `mod/deployment/service/standard/analyze/ecosystem/java/maven/MavenBuildInspector.java`：读取根 POM 和 Maven 入口，但不调用 Maven 或其 Wrapper。
+- `mod/deployment/service/standard/analyze/ecosystem/java/SpringBootDeploymentInspector.java`：在不调用构建的前提下检查一个 Maven 或 Gradle Spring Boot 可执行 JAR 项目。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/gradle/KotlinGradleDeploymentInspector.java`：在不执行 Gradle 的情况下检查一个锁定的 Kotlin Gradle 应用。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/gradle/KotlinGradleFacts.java`：服务分析使用的固定 Kotlin Gradle 应用元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/kotlinc/KotlinCompilerDeploymentInspector.java`：使用显式编译器元数据检查无依赖 Kotlin/JVM 源码。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/kotlinc/KotlinCompilerFacts.java`：固定的无依赖 Kotlin 编译器架构事实。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/KotlinLanguageInspector.java`：独立于构建架构识别 Kotlin 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/kotlin/KotlinServiceDeploymentInspector.java`：恰好选择一个经审阅的 Kotlin 构建架构。
+- `mod/deployment/service/standard/analyze/ecosystem/node/NodeBuildArchitectureFacts.java`：选中的 Node 包管理器架构及其锁文件。
+- `mod/deployment/service/standard/analyze/ecosystem/node/NodeBuildFacts.java`：来自 package.json 的固定包管理器、锁文件和脚本事实。
+- `mod/deployment/service/standard/analyze/ecosystem/node/NodeBuildInspector.java`：读取 package.json、受支持锁文件和固定脚本名称，但不调用包管理器。
+- `mod/deployment/service/standard/analyze/ecosystem/node/NodeLanguageInspector.java`：从路径与包元数据检测 Node.js、JavaScript 和 TypeScript 事实。
+- `mod/deployment/service/standard/analyze/ecosystem/node/NodeServiceDeploymentInspector.java`：生成 Node 服务构建事实与精确版本运行时建议。
+- `mod/deployment/service/standard/analyze/ecosystem/node/npm/NpmBuildInspector.java`：检查 npm package-lock 架构。
+- `mod/deployment/service/standard/analyze/ecosystem/node/pnpm/PnpmBuildInspector.java`：检查 pnpm 锁文件架构。
+- `mod/deployment/service/standard/analyze/ecosystem/node/yarn/YarnBuildInspector.java`：检查 Yarn 锁文件架构。
+- `mod/deployment/service/standard/analyze/ecosystem/php/composer/PhpComposerDeploymentInspector.java`：在不执行 PHP 的情况下检查一个 Composer 锁定的 PHP 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/php/composer/PhpComposerFacts.java`：PHP 服务分析使用的固定 Composer 元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/php/phpcli/PhpCliDeploymentInspector.java`：在不执行 PHP 的情况下检查一个无依赖 PHP CLI 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/php/phpcli/PhpCliFacts.java`：固定的无依赖 PHP CLI 架构事实。
+- `mod/deployment/service/standard/analyze/ecosystem/php/PhpLanguageInspector.java`：独立于构建架构识别 PHP 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/php/PhpServiceDeploymentInspector.java`：恰好选择一个经审阅的 PHP 架构。
+- `mod/deployment/service/standard/analyze/ecosystem/python/pip/PipBuildInspector.java`：检查使用哈希锁定的 pip 架构。
+- `mod/deployment/service/standard/analyze/ecosystem/python/pipenv/PipenvBuildInspector.java`：检查 Pipenv 锁文件架构。
+- `mod/deployment/service/standard/analyze/ecosystem/python/poetry/PoetryBuildInspector.java`：检查 Poetry 锁文件架构。
+- `mod/deployment/service/standard/analyze/ecosystem/python/PythonBuildArchitectureFacts.java`：选中的 Python 依赖架构及其锁文件。
+- `mod/deployment/service/standard/analyze/ecosystem/python/PythonBuildFacts.java`：固定的 Python 项目与锁文件事实。
+- `mod/deployment/service/standard/analyze/ecosystem/python/PythonBuildInspector.java`：读取 pyproject.toml 与固定锁文件名称，但不调用 Python。
+- `mod/deployment/service/standard/analyze/ecosystem/python/PythonLanguageInspector.java`：检测 Python 源码、精确版本元数据和唯一模块入口。
+- `mod/deployment/service/standard/analyze/ecosystem/python/PythonServiceDeploymentInspector.java`：生成 Python 构建事实与精确版本/模块运行时建议。
+- `mod/deployment/service/standard/analyze/ecosystem/python/uv/UvBuildInspector.java`：检查 uv 锁文件架构。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/bundler/RubyBundlerDeploymentInspector.java`：在不执行 Ruby 的情况下检查一个 Bundler 锁定的 Rack 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/bundler/RubyBundlerFacts.java`：Ruby 服务分析使用的固定 Bundler 元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/rubycli/RubyCliDeploymentInspector.java`：在不执行 Ruby 的情况下检查一个无依赖 Ruby CLI 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/rubycli/RubyCliFacts.java`：固定的无依赖 Ruby CLI 架构事实。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/RubyLanguageInspector.java`：独立于构建架构识别 Ruby 语言标记。
+- `mod/deployment/service/standard/analyze/ecosystem/ruby/RubyServiceDeploymentInspector.java`：恰好选择一个经审阅的 Ruby 架构。
+- `mod/deployment/service/standard/analyze/ecosystem/rust/cargo/RustCargoDeploymentInspector.java`：在不执行 Rust 工具的情况下检查一个锁定的 Cargo 服务。
+- `mod/deployment/service/standard/analyze/ecosystem/rust/cargo/RustCargoFacts.java`：Rust 服务分析使用的固定 Cargo 元数据。
+- `mod/deployment/service/standard/analyze/ecosystem/rust/RustLanguageInspector.java`：独立于构建架构识别 Rust 语言标记。
+- `mod/deployment/service/standard/analyze/extension/registry/DeploymentTypeInspectorRegistry.java`：持有完整且已验证的源码类型检查器装配。
+- `mod/deployment/service/standard/analyze/preview/PreviewInspector.java`：生成无法进入归档准备或部署的静态识别结果。
+- `mod/deployment/service/standard/analyze/preview/PreviewLanguageMarkerCatalog.java`：仅收集尚无独立生态检查器的语言标记，不求值文件内容。
+- `mod/deployment/service/standard/analyze/service/ServiceInspectionAssembler.java`：组装语言无关的服务事实与运行时建议。
+- `mod/deployment/service/standard/analyze/service/ServiceMetadataInspector.java`：不包含语言特定规则的公共有界元数据操作。
+- `mod/deployment/service/standard/analyze/service/ServiceProjectFacts.java`：单个语言检查器返回的公共有界服务元数据。
+- `mod/deployment/service/standard/analyze/source/ApplicationBundleInspector.java`：在组件发现前读取构建归属，不执行声明。
+- `mod/deployment/service/standard/analyze/source/BoundedMetadataInspector.java`：只在静态检查边界内读取固定项目元数据。
+- `mod/deployment/service/standard/analyze/source/BoundedSourceInspector.java`：对源码树执行有界只读安全遍历。
+- `mod/deployment/service/standard/analyze/source/ProjectIdentityResolver.java`：从经审阅元数据或选定根目录推导有界受管项目标识。
+- `mod/deployment/service/standard/analyze/source/SourceInspectionFacts.java`：在不执行任何项目可控内容的前提下采集的有界事实。
+- `mod/deployment/service/standard/analyze/source/SourceLanguageEvidence.java`：按调用方提供的语言规则收集首个路径证据。
+- `mod/deployment/service/standard/analyze/toolchain/ToolchainDeclarationInspector.java`：不执行构建文件，在发布准入前收集有界版本声明。
+- `mod/deployment/service/standard/analyze/workload/ContainerDeploymentInspector.java`：检测单一 Dockerfile 工作负载、声明端口与受管卷候选项。
+- `mod/deployment/service/standard/analyze/workload/StaticWebDeploymentInspector.java`：区分纯静态内容与由锁文件支持的 Node 静态构建。

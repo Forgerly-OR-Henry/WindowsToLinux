@@ -911,30 +911,32 @@ class PackageStructureArchitectureTest {
 
     @Test
     void languageInspectorsStayAtEcosystemRootsAndDoNotDependOnBuildArchitectures() throws Exception {
-        String root = "gold.debug.windowstolinux.shared.standard.analyze.ecosystem.";
         Map<String, String> inspectors = Map.of("c", "CLanguageInspector", "dotnet", "DotNetLanguageInspector", "go",
                 "GoLanguageInspector", "java", "JavaLanguageInspector", "kotlin", "KotlinLanguageInspector", "node",
                 "NodeLanguageInspector", "php", "PhpLanguageInspector", "python", "PythonLanguageInspector", "ruby",
                 "RubyLanguageInspector", "rust", "RustLanguageInspector");
-        Set<String> found = new HashSet<>();
         List<String> problems = new ArrayList<>();
-        for (SourceUnit unit : sourceModel().units) {
-            String file = unit.path.getFileName().toString();
-            if (!unit.packageName.startsWith(root) || !file.endsWith("LanguageInspector.java"))
-                continue;
-            String ecosystem = unit.packageName.substring(root.length());
-            if (!file.equals(inspectors.get(ecosystem) + ".java")) {
-                problems.add(unit.path + " must be the language inspector at its ecosystem root");
-            }
-            found.add(ecosystem);
-            for (String dependency : unit.imports) {
-                if ((dependency.startsWith(root) && dependency.substring(root.length()).split("\\.").length > 2)
-                        || dependency.startsWith("java.util.jar.")) {
-                    problems.add(unit.path + " depends on build or archive parsing: " + dependency);
+        for (String root : List.of("gold.debug.windowstolinux.shared.standard.analyze.ecosystem.",
+                "gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.")) {
+            Set<String> found = new HashSet<>();
+            for (SourceUnit unit : sourceModel().units) {
+                String file = unit.path.getFileName().toString();
+                if (!unit.packageName.startsWith(root) || !file.endsWith("LanguageInspector.java"))
+                    continue;
+                String ecosystem = unit.packageName.substring(root.length());
+                if (!file.equals(inspectors.get(ecosystem) + ".java")) {
+                    problems.add(unit.path + " must be the language inspector at its ecosystem root");
+                }
+                found.add(ecosystem);
+                for (String dependency : unit.imports) {
+                    if ((dependency.startsWith(root) && dependency.substring(root.length()).split("\\.").length > 2)
+                            || dependency.startsWith("java.util.jar.")) {
+                        problems.add(unit.path + " depends on build or archive parsing: " + dependency);
+                    }
                 }
             }
+            assertEquals(ECOSYSTEM_CLASSIFICATION_PACKAGES, found, root + " requires every language inspector");
         }
-        assertEquals(ECOSYSTEM_CLASSIFICATION_PACKAGES, found, "every language ecosystem needs its own inspector");
         assertTrue(problems.isEmpty(), () -> "language/build boundary violations: " + problems);
     }
 
@@ -943,24 +945,31 @@ class PackageStructureArchitectureTest {
         SourceModel model = sourceModel();
         List<String> problems = new ArrayList<>();
         model.packages.values().forEach(info -> {
-            if (info.depth > 3)
-                problems.add(info.name + " is deeper than three package levels");
+            String analysisRoot = "gold.debug.windowstolinux.mod.deployment.service.standard.analyze";
+            String modelRoot = "gold.debug.windowstolinux.mod.deployment.service.core.model";
+            int limit = info.name.equals(analysisRoot) || info.name.startsWith(analysisRoot + ".")
+                    ? 6
+                    : info.name.equals(modelRoot) || info.name.startsWith(modelRoot + ".") ? 5 : 3;
+            if (info.depth > limit)
+                problems.add(info.name + " is deeper than its reviewed package limit of " + limit);
             verifyFunctionalGroupPackage(info.name, problems);
-            Set<String> segments = Set.of(info.name.split("\\."));
+            Set<String> segments = new HashSet<>(List.of(info.name.split("\\.")));
             Set<String> forbidden = new HashSet<>(segments);
             forbidden.retainAll(FORBIDDEN_PACKAGE_SEGMENTS);
             if (!forbidden.isEmpty())
                 problems.add(info.name + " uses forbidden package segments " + forbidden);
-            String ecosystemRoot = "gold.debug.windowstolinux.shared.standard.analyze.ecosystem.";
-            if (info.name.startsWith(ecosystemRoot)) {
-                String[] classification = info.name.substring(ecosystemRoot.length()).split("\\.");
-                String axis = classification[0];
-                if (!axis.equals("db") && !ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(axis)) {
-                    problems.add(info.name + " creates an unapproved analysis ecosystem axis");
-                }
-                if (!axis.equals("db") && classification.length == 2
-                        && !BUILD_ARCHITECTURE_PACKAGE_NAMES.contains(classification[1])) {
-                    problems.add(info.name + " does not use a reviewed build architecture package name");
+            for (String ecosystemRoot : List.of("gold.debug.windowstolinux.shared.standard.analyze.ecosystem.",
+                    analysisRoot + ".ecosystem.")) {
+                if (info.name.startsWith(ecosystemRoot)) {
+                    String[] classification = info.name.substring(ecosystemRoot.length()).split("\\.");
+                    String axis = classification[0];
+                    if (!axis.equals("db") && !ECOSYSTEM_CLASSIFICATION_PACKAGES.contains(axis)) {
+                        problems.add(info.name + " creates an unapproved analysis ecosystem axis");
+                    }
+                    if (!axis.equals("db") && classification.length == 2
+                            && !BUILD_ARCHITECTURE_PACKAGE_NAMES.contains(classification[1])) {
+                        problems.add(info.name + " does not use a reviewed build architecture package name");
+                    }
                 }
             }
             for (String module : List.of("model", "linux")) {
@@ -1141,8 +1150,21 @@ class PackageStructureArchitectureTest {
     void responsibilityPackagesDoNotReverseTheirDependencyDirection() throws Exception {
         SourceModel model = sourceModel();
         List<String> problems = new ArrayList<>();
+        String deployment = "gold.debug.windowstolinux.mod.deployment.service.";
         for (SourceUnit unit : model.units) {
             for (String imported : unit.imports) {
+                if ((unit.packageName.equals(deployment + "core") || unit.packageName.startsWith(deployment + "core."))
+                        && (imported.startsWith(deployment + "standard.") || imported.startsWith(deployment + "agent.")
+                                || imported.startsWith("gold.debug.windowstolinux.mod.deployment.ui.")))
+                    problems.add(unit.path + " reverses core model dependency direction to " + imported);
+                if ((unit.packageName.equals(deployment + "standard")
+                        || unit.packageName.startsWith(deployment + "standard."))
+                        && imported.startsWith(deployment + "agent."))
+                    problems.add(unit.path + " makes standard analysis depend on agent policy: " + imported);
+                if ((unit.packageName.equals(deployment + "agent")
+                        || unit.packageName.startsWith(deployment + "agent."))
+                        && imported.startsWith(deployment + "standard."))
+                    problems.add(unit.path + " makes agent policy depend on standard analysis: " + imported);
                 resolveImportedPackage(imported, model.packages.keySet())
                         .ifPresent(target -> FORBIDDEN_RESPONSIBILITY_DEPENDENCIES.stream()
                                 .filter(rule -> rule.sourcePackage.equals(unit.packageName))
