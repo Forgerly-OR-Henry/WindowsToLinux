@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.mod.deployment.service.core.config;
+package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
 import java.util.Objects;
 

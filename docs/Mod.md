@@ -1620,6 +1620,8 @@ public final class NotesSchema implements ModSchemaLifecycle {
 
 ### 8.12 部署公开 API 与备份协作
 
+部署私有数据中的运行定义、工作负载、健康契约、数据路径及资源绑定使用既有版本化格式，存于 deployment 自有 Schema。只读数据验证采用有界载荷读取，不修复原字节；组件审阅运行必须使用原部署单元的健康契约，不能以默认健康策略替代缺失事实。不存在的可选草稿载荷与格式损坏的非空载荷分别处理。私有模型和编解码器不作为备份的调用接口；当前迁移及本机验证范围见[开发进度](development/PHASE-1.1.md)。
+
 以下类型属于 `gold.debug.windowstolinux.mod.deployment.api`，由部署 Mod 实现，备份通过已声明依赖和 `ModServices.require` 调用。它们不进入通用平台 API，也不暴露部署私有实体。业务页面的部署模式、配置编辑等内部用例继续由部署 service 提供，公开接口只覆盖应用检查、生命周期和备份协作的实际需要。
 
 ```java

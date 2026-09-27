@@ -1780,5 +1780,36 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/config/DeploymentConfigurationValue.java`：TEXT、NUMBER、FLAG 对应的类型化值及规范摘要文本。
 - `mod/deployment/service/core/config/DeploymentConfigurationScopeType.java`：BUILD/RUNTIME 两类配置消费范围。
 - `mod/deployment/service/core/config/DeploymentConfigurationInput.java`：分号配置文本和精确秘密修订引用的确定性解析。
-- `mod/deployment/service/core/config/DeploymentConfigurationException.java`：保留原配置事件码并提供公开 Problem 的非秘密输入失败。
-- `mod/deployment/service/core/config/DeploymentSecretReference.java`：只持有业务秘密标识及不可变修订号，不持有秘密内容。
+- `mod/deployment/service/core/model/DeploymentConfigurationException.java`：保留原配置事件码并提供公开 Problem 的非秘密输入失败。
+- `mod/deployment/service/core/model/DeploymentSecretReference.java`：只持有业务秘密标识及不可变修订号，不持有秘密内容。
+- `mod/deployment/db/DeploymentDataPathCodec.java`：组件审阅路径的版本1有界编码，拒绝重复和非规范路径。
+- `mod/deployment/db/DeploymentResourceCodec.java`：文件与数据库绑定版本2编码，保留未知与明确空审阅以及秘密修订引用。
+- `mod/deployment/db/DeploymentUnitRuntimeCodec.java`：部署单元激活信息版本1/2，保存健康、访问URL、身份策略和工作负载。
+- `mod/deployment/db/DeploymentWorkloadCodec.java`：运行与激活载荷共用的字面参数、端点、输入、配套单元和工作进程编码。
+- `mod/deployment/db/DeploymentRuntimeCodec.java`：运行定义版本5/6/7的持久化编码，健康契约由原部署单元单独提供。
+- `mod/deployment/db/DeploymentHealthCodec.java`：独立健康检查载荷，保留HTTP/TCP/进程/命令/UDP的判别与字段。
+- `mod/deployment/service/core/model/DeploymentResourceBindings.java`：文件绑定和可选数据库审阅清单。
+- `mod/deployment/service/core/model/DeploymentDatabaseBinding.java`：逻辑数据库身份与精确连接绑定。
+- `mod/deployment/service/core/model/DeploymentDatabaseConnection.java`：数据库服务器或SQLite文件的已审阅连接事实，仅含秘密引用。
+- `mod/deployment/service/core/model/DeploymentDatabaseEngineType.java`：受支持数据库引擎判别值。
+- `mod/deployment/service/core/model/DeploymentFileBinding.java`：业务文件位置及权限绑定。
+- `mod/deployment/service/core/model/DeploymentSqliteRequirement.java`：部署应用使用的SQLite文件、种子及初始化声明。
+- `mod/deployment/service/core/model/DeploymentHealthCheck.java`：受限健康探测及成功条件的纯值模型。
+- `mod/deployment/service/core/model/DeploymentAccessUrl.java`：用户访问地址的显式声明，不从健康检查猜测服务暴露。
+- `mod/deployment/service/core/model/DeploymentUnitIdentity.java`：应用部署单元、服务器、systemd及发布目录的归属事实。
+- `mod/deployment/service/core/model/DeploymentUnitRuntimeConfiguration.java`：部署单元的健康、访问、身份与工作负载组合。
+- `mod/deployment/service/core/model/DeploymentStorageLocation.java`：默认FHS、自定义或未确认的应用存储位置及边界校验。
+- `mod/deployment/service/core/model/DeploymentProjectKind.java`：运行类别的稳定业务判别值。
+- `mod/deployment/service/core/model/DeploymentRuntimeDefinition.java`：15类部署运行定义及已审阅工作负载、身份策略，不承担平台执行。
+- `mod/deployment/service/core/model/DeploymentIdentityMode.java`：保留受管进程动态或静态身份策略。
+- `mod/deployment/service/core/model/DeploymentCommand.java`：已审阅程序入口及字面argv，不解释为Shell脚本。
+- `mod/deployment/service/core/model/DeploymentCompanion.java`：工作负载配套进程及用途。
+- `mod/deployment/service/core/model/DeploymentEndpoint.java`：传输协议、绑定地址、端口及内外暴露范围。
+- `mod/deployment/service/core/model/DeploymentInputField.java`：明确只读输入及部署路径。
+- `mod/deployment/service/core/model/DeploymentWorker.java`：受管工作进程身份与命令。
+- `mod/deployment/service/core/model/DeploymentWorkload.java`：常驻/按需任务、端点、验证、输入及工作进程的审阅事实。
+- `mod/deployment/service/core/model/DeploymentDataPath.java`：组件数据路径、读写范围、版本和保留要求。
+- `mod/deployment/service/core/model/DeploymentServerIdentity.java`：部署时服务器端点和主机指纹快照，不是连接授权。
+- `mod/deployment/service/core/model/DeploymentToolchainType.java`：运行版本规则对应的工具链类别。
+- `mod/deployment/service/core/model/DeploymentToolchainVersion.java`：版本数值及预览状态解析与同类别比较。
+- `mod/deployment/db/DeploymentPayloadValidation.java`：通过SELECT-only和有界LOB流核验原运行、健康、路径及资源载荷，不修复或重写原数据。
