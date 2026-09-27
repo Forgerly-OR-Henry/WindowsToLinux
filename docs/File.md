@@ -8,10 +8,10 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model 与 service/standard/analyze 完整静态分析包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model、service/standard/analyze 完整静态分析，以及 service/standard/deploy 已审阅计划与固定构建渲染首批；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-09-27（1.1 增量实施；完整目标图仍待切换）
+- 更新日期：2026-09-28（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
 - 功能分工：[分析与 Linux 部署链](development/PHASE-0.3.md#architecture)
 
@@ -167,52 +167,76 @@ WindowsToLinux/
    │     │  │     ├─ server/
    │     │  │     └─ toolchain/
    │     │  └─ standard/
-   │     │     └─ analyze/
-   │     │        ├─ component/
+   │     │     ├─ analyze/
+   │     │     │  ├─ component/
+   │     │     │  ├─ contract/
+   │     │     │  │  ├─ policy/
+   │     │     │  │  └─ spi/
+   │     │     │  ├─ core/
+   │     │     │  ├─ ecosystem/
+   │     │     │  │  ├─ c/
+   │     │     │  │  │  └─ cmake/
+   │     │     │  │  ├─ db/
+   │     │     │  │  ├─ dotnet/
+   │     │     │  │  │  └─ dotnetsdk/
+   │     │     │  │  ├─ go/
+   │     │     │  │  │  └─ gomodule/
+   │     │     │  │  ├─ java/
+   │     │     │  │  │  ├─ gradle/
+   │     │     │  │  │  ├─ jar/
+   │     │     │  │  │  ├─ jdk/
+   │     │     │  │  │  └─ maven/
+   │     │     │  │  ├─ kotlin/
+   │     │     │  │  │  ├─ gradle/
+   │     │     │  │  │  └─ kotlinc/
+   │     │     │  │  ├─ node/
+   │     │     │  │  │  ├─ npm/
+   │     │     │  │  │  ├─ pnpm/
+   │     │     │  │  │  └─ yarn/
+   │     │     │  │  ├─ php/
+   │     │     │  │  │  ├─ composer/
+   │     │     │  │  │  └─ phpcli/
+   │     │     │  │  ├─ python/
+   │     │     │  │  │  ├─ pip/
+   │     │     │  │  │  ├─ pipenv/
+   │     │     │  │  │  ├─ poetry/
+   │     │     │  │  │  └─ uv/
+   │     │     │  │  ├─ ruby/
+   │     │     │  │  │  ├─ bundler/
+   │     │     │  │  │  └─ rubycli/
+   │     │     │  │  └─ rust/
+   │     │     │  │     └─ cargo/
+   │     │     │  ├─ extension/
+   │     │     │  │  └─ registry/
+   │     │     │  ├─ preview/
+   │     │     │  ├─ service/
+   │     │     │  ├─ source/
+   │     │     │  ├─ toolchain/
+   │     │     │  └─ workload/
+   │     │     └─ deploy/
+   │     │        ├─ build/
+   │     │        │  ├─ contract/
+   │     │        │  │  └─ spi/
+   │     │        │  ├─ ecosystem/
+   │     │        │  │  ├─ java/
+   │     │        │  │  ├─ kotlin/
+   │     │        │  │  ├─ node/
+   │     │        │  │  ├─ php/
+   │     │        │  │  ├─ python/
+   │     │        │  │  └─ ruby/
+   │     │        │  ├─ extension/
+   │     │        │  │  └─ registry/
+   │     │        │  ├─ generation/
+   │     │        │  │  └─ script/
+   │     │        │  └─ workload/
    │     │        ├─ contract/
-   │     │        │  ├─ policy/
    │     │        │  └─ spi/
-   │     │        ├─ core/
-   │     │        ├─ ecosystem/
-   │     │        │  ├─ c/
-   │     │        │  │  └─ cmake/
-   │     │        │  ├─ db/
-   │     │        │  ├─ dotnet/
-   │     │        │  │  └─ dotnetsdk/
-   │     │        │  ├─ go/
-   │     │        │  │  └─ gomodule/
-   │     │        │  ├─ java/
-   │     │        │  │  ├─ gradle/
-   │     │        │  │  ├─ jar/
-   │     │        │  │  ├─ jdk/
-   │     │        │  │  └─ maven/
-   │     │        │  ├─ kotlin/
-   │     │        │  │  ├─ gradle/
-   │     │        │  │  └─ kotlinc/
-   │     │        │  ├─ node/
-   │     │        │  │  ├─ npm/
-   │     │        │  │  ├─ pnpm/
-   │     │        │  │  └─ yarn/
-   │     │        │  ├─ php/
-   │     │        │  │  ├─ composer/
-   │     │        │  │  └─ phpcli/
-   │     │        │  ├─ python/
-   │     │        │  │  ├─ pip/
-   │     │        │  │  ├─ pipenv/
-   │     │        │  │  ├─ poetry/
-   │     │        │  │  └─ uv/
-   │     │        │  ├─ ruby/
-   │     │        │  │  ├─ bundler/
-   │     │        │  │  └─ rubycli/
-   │     │        │  └─ rust/
-   │     │        │     └─ cargo/
    │     │        ├─ extension/
+   │     │        │  ├─ adapter/
    │     │        │  └─ registry/
-   │     │        ├─ preview/
-   │     │        ├─ service/
-   │     │        ├─ source/
-   │     │        ├─ toolchain/
-   │     │        └─ workload/
+   │     │        ├─ input/
+   │     │        ├─ plan/
+   │     │        └─ toolchain/
    │     └─ source/
    │        └─ git/
    ├─ shared/
@@ -1153,7 +1177,7 @@ deploy.execution.transaction  编排上传、构建、发布、健康检查和�
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不开放原始 SFTP 或不受控 systemd、Docker、Podman 操作；Agent 生成的命令只能经绑定任务、身份与修订的受限命令接口执行。
 11. `linux` 的接口、请求、结果和异常不得导入或暴露 Apache SSHD 类型；`linux-sshd` 可以依赖 Apache SSHD，但不得把具体客户端、会话、通道或 SFTP 类型传递给上层模块。
 12. 生产包依赖不得成环；组合门面只能依赖下游窄契约和实现，低层 command、SPI、不可变契约与错误类型不得反向依赖注册表、默认实现、会话或业务编排。
-13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。官方 deployment 已实施的 `service.standard.analyze` 是迁入旧完整静态分析的逻辑职责根，其后最多三层（如 `ecosystem.java.maven`）；`service.core.model` 是多个引擎共用纯值的逻辑职责根，其后最多两层（如 `project.component`、`ecosystem.db`）。这两个精确锚点不放宽其他包的三层上限，也不允许分析算法进入 core/model。旧 `shared.standard.analyze` 在根切换前继续受原模块根三层约束。第四层或更深结构若不属于这两个已审锚点，必须先修改本文并单独评审。总包数、单包类型数量和目录对称不作为硬门禁。
+13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。官方 deployment 已实施的 `service.standard.analyze` 与 `service.standard.deploy` 是各自迁入旧标准分析及确定性部署的逻辑职责根，其后分别最多三层（如 `ecosystem.java.maven`、`build.generation.script`）；`service.core.model` 是多个引擎共用纯值的逻辑职责根，其后最多两层（如 `project.component`、`ecosystem.db`）。三个精确锚点不放宽其他包的三层上限，标准算法不得进入 core/model。旧 `shared.standard.analyze`、`shared.standard.deploy` 在根切换前继续受原模块根三层约束。第四层或更深结构若不属于这些已审锚点，必须先修改本文并单独评审。总包数、单包类型数量和目录对称不作为硬门禁。
 14. `contract`、`generation`、`extension`、`execution`、`persistence` 的直接子包只能使用第 2.2 节允许的职责名；标准职责不得绕过父功能组。`shared/linux` 公共远程契约、`shared/model.capability`、`shared/model.lifecycle`、`linux-sshd.capability` 与 `linux-sshd.connection` 是经评审的语义例外；`ecosystem`、`workload`、`runtime`、`distro` 保持正交，尤其不得建立 `execution.runtime`。`PackageStructureArchitectureTest` 已同步检查三层深度、功能组职责、例外、物理路径、旧包和测试镜像。
 15. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationFacade` 只豁免直接声明方法数。
 16. 合并依据是行为完全一致且差异可由受校验数据表达，拆分依据是存在可独立测试和命名的职责；领域记录、枚举、状态类型和 SPI 不因文件短小而合并，类也不因行数较长而机械拆分。
@@ -1576,7 +1600,7 @@ API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serve
 
 ### 8.4 已确认的 Mod 源码结构与命名
 
-本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认；官方 deployment 已迁入固定取材、秘密修订和完整静态分析等生产构件，完整接口与源码迁移尚未验收，也不改变第 1～7 节当前代码的结构门禁。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
+本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认；官方 deployment 已迁入固定取材、秘密修订、完整静态分析和确定性计划/固定构建渲染首批生产构件，完整接口与源码迁移尚未验收，也不改变第 1～7 节当前代码的结构门禁。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
 
 #### 主模块结构
 

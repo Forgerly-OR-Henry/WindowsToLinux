@@ -112,6 +112,8 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
                         assertEquals(expected.contentSha256(), archive.sha256());
                         assertEquals(expected.byteCount(), archive.byteCount());
                         assertEquals(expected.uncompressedByteCount(), archive.uncompressedByteCount());
+                        assertEquals(material.snapshot().id(), archive.originSnapshotId());
+                        assertEquals(material.snapshot().sha256(), archive.sourceManifestSha256());
                         assertNotEquals(archive.snapshot().sha256(), archive.sha256());
                         assertTrue(Files.readAttributes(archive.path(), DosFileAttributes.class).isReadOnly());
                         assertEquals(2, files(runtime));

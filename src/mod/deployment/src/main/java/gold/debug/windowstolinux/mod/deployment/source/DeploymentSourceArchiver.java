@@ -35,6 +35,8 @@ public final class DeploymentSourceArchiver {
         boolean published = false;
         try {
             cancelled(task);
+            UUID originSnapshotId = material.snapshot().id();
+            String sourceManifestSha256 = material.snapshot().sha256();
             workspace = source.workspace(task);
             Path file = workspace.directory().resolve("source.tar.gz");
             var digest = digest();
@@ -49,8 +51,12 @@ public final class DeploymentSourceArchiver {
                     task);
             verify(frozen.directory().resolve("source.tar.gz"), sha256, bytes, task);
             cancelled(task);
+            if (!originSnapshotId.equals(material.snapshot().id())
+                    || !sourceManifestSha256.equals(material.snapshot().sha256()))
+                throw new IOException("Original source snapshot identity changed");
             workspace.close();
-            var archive = new DeploymentSourceArchive(frozen, sha256, bytes, originalBytes);
+            var archive = new DeploymentSourceArchive(frozen, sha256, bytes, originalBytes, originSnapshotId,
+                    sourceManifestSha256);
             published = true;
             return archive;
         } catch (IOException | IllegalStateException failure) {
