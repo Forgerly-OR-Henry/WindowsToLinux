@@ -21,9 +21,9 @@ class PlatformAuthorizationTest {
     @TempDir
     Path root;
 
-    static final ActionTarget APP = new ActionTarget(SERVER, "application", "/srv/app-a");
+    static final ActionTarget APP = new ActionTarget(SERVER.id(), "application", "/srv/app-a");
 
-    static final ActionTarget OTHER = new ActionTarget(SERVER, "application", "/srv/app-b");
+    static final ActionTarget OTHER = new ActionTarget(SERVER.id(), "application", "/srv/app-b");
 
     static ActionIntent action(CommandRequest request, String operation, ActionTarget target) {
         return RemoteActions.command(SERVER, "revision", request)
@@ -111,8 +111,8 @@ class PlatformAuthorizationTest {
                                     assertEquals(Outcome.SUCCEEDED, session.execute(command, nextGrant).outcome());
                                 }
                                 assertEquals(3, prompts(reviews));
-                                for (var target : List.of(new ActionTarget(SERVER, "application", "/srv/app-c"),
-                                        new ActionTarget(new ServerRef("foreign-server"), "application", APP.id()))) {
+                                for (var target : List.of(new ActionTarget(SERVER.id(), "application", "/srv/app-c"),
+                                        new ActionTarget("foreign-server", "application", APP.id()))) {
                                     var denied = assertThrows(ApiException.class, () -> capabilities.interaction()
                                             .approve(action(command, "application.restart", target), task));
                                     assertEquals("AUTHORIZATION_TARGET", denied.problem().eventCode());

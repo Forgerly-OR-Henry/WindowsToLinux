@@ -1029,7 +1029,7 @@ public interface RecoveryRegistration extends AutoCloseable {
     @Override void close() throws ApiException;
 }
 public enum AuthorizationMode { ONCE, GENERAL, FULL }
-public record ActionTarget(gold.debug.windowstolinux.appapi.server.ServerRef server,
+public record ActionTarget(String serverId,
     String kind, String id) {}
 public record ActionSemantics(String operation, java.util.Set<ActionTarget> targets) {}
 public record ActionIntent(String type, List<String> serverIds, String target,
@@ -1097,7 +1097,7 @@ public interface ProcessService {
 
 AI 审批继续决定 AI 提议的动作是否获准，平台授权决定获准动作是否可在平台执行。平台完全授权不能绕过 AI 审批；静态部署使用平台授权，不引入 AI 审批。两层都需要人工确认时可合并为一次交互，但必须清楚展示 AI 动作审核和平台操作授权两层含义。
 
-当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
+当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。ActionTarget 保存与 ServerRef.id 相同的精确 String serverId，task 契约仅依赖 JDK；目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
 
 作者在 `RemoteActions` 生成的精确意图上调用 `withSemantics`，提供从已校验业务操作与目标派生的含义。业务 Mod 负责证明其请求与该含义相符，不能用自由文本标签替代业务校验；平台不解析任意 Bash 来证明业务语义，也不把可信本地 Mod 当作恶意代码沙箱。宿主只保留已审核的语义元数据，仍从实际命令/传输请求重建并逐字段核对精确副作用，然后单次消费原对象令牌。未分类操作逐次人工确认；首次主机信任、同名冲突和停滞选择独立处理。
 

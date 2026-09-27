@@ -101,7 +101,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             if (intent.semantics().isEmpty())
                 return new Permit(task, scope, human.approve());
             var semantics = intent.semantics().orElseThrow();
-            var servers = semantics.targets().stream().map(target -> target.server().id())
+            var servers = semantics.targets().stream().map(target -> target.serverId())
                     .collect(java.util.stream.Collectors.toSet());
             if (!servers.equals(Set.copyOf(intent.serverIds())) || !scope.targets.containsAll(semantics.targets()))
                 throw failure(ProblemCode.ACCESS_DENIED, "AUTHORIZATION_TARGET",
@@ -144,7 +144,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             Objects.requireNonNull(request);
             Objects.requireNonNull(work);
             targets = Set.copyOf(targets);
-            if (targets.isEmpty() || targets.size() > 128 || !targets.stream().map(target -> target.server().id())
+            if (targets.isEmpty() || targets.size() > 128 || !targets.stream().map(target -> target.serverId())
                     .collect(java.util.stream.Collectors.toSet()).equals(Set.copyOf(request.serverIds())))
                 throw new IllegalArgumentException("Workflow targets must match the complete admitted server set");
         }
@@ -189,7 +189,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
                     requireOpen();
                     tasks.requireExecuting(task, owner, version);
                     for (var target : launch.targets())
-                        tasks.requireServer(task, owner, version, target.server().id());
+                        tasks.requireServer(task, owner, version, target.serverId());
                     if (scopes.putIfAbsent(task, scope) != null)
                         throw failure(ProblemCode.CONTRACT_VIOLATION, "WORKFLOW_SCOPE_EXISTS",
                                 "Original task already owns a workflow");
