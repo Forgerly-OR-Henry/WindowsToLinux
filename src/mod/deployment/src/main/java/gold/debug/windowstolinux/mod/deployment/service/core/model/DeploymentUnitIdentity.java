@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentServerIdentity;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
 
 /**
  * Immutable identity of an application owned by WindowsToLinux.
@@ -10,19 +10,19 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSer
  *  <p>由 WindowsToLinux 拥有的应用不可变身份。
  *
  * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
- * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+ * @param server exact platform reference, not a stored endpoint or trust observation / 精确平台引用，不是存储的端点或信任观测
  * @param systemdUnit systemd unit / systemd单元
  * @param releaseRoot release root / 发布根目录
  * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
  */
-public record DeploymentUnitIdentity(String id, DeploymentServerIdentity server, String systemdUnit, String releaseRoot,
+public record DeploymentUnitIdentity(String id, ServerRef server, String systemdUnit, String releaseRoot,
         String ownershipManifestSha256) {
     /**
      * Validates and binds the inputs required by managed application.
      * <p>校验并绑定受管应用所需输入。
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param server exact platform server reference / 精确平台服务器引用
      * @param systemdUnit systemd unit / systemd单元
      * @param releaseRoot release root / 发布根目录
      * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
@@ -32,6 +32,8 @@ public record DeploymentUnitIdentity(String id, DeploymentServerIdentity server,
     public DeploymentUnitIdentity {
         id = DeploymentServerIdentity.requireIdentifier(id, "id");
         server = Objects.requireNonNull(server, "server");
+        if (server.id().isBlank() || server.id().length() > 512)
+            throw new IllegalArgumentException("server must be an exact bounded platform reference");
         systemdUnit = requireUnit(systemdUnit);
         releaseRoot = Objects.requireNonNull(releaseRoot, "releaseRoot");
         if (!releaseRoot.equals(DeploymentStorageLocation.installationRoot(id))) {
@@ -48,12 +50,11 @@ public record DeploymentUnitIdentity(String id, DeploymentServerIdentity server,
      * <p>根据所提供对应受管输入构建受管应用。
      *
      * @param id stable identifier within the owning registry / 所属登记表内的稳定标识
-     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
+     * @param server exact platform server reference / 精确平台服务器引用
      * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
      * @return the operation result / 操作结果
      */
-    public static DeploymentUnitIdentity forManaged(String id, DeploymentServerIdentity server,
-            String ownershipManifestSha256) {
+    public static DeploymentUnitIdentity forManaged(String id, ServerRef server, String ownershipManifestSha256) {
         String normalizedId = DeploymentServerIdentity.requireIdentifier(id, "id");
         return new DeploymentUnitIdentity(normalizedId, server, "windowstolinux-" + normalizedId + ".service",
                 DeploymentStorageLocation.installationRoot(normalizedId), ownershipManifestSha256);

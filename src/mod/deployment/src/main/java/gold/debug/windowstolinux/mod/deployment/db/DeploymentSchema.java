@@ -88,6 +88,13 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                 } catch (SQLException | IOException invalid) {
                     violations.add("Stored deployment runtime payloads are invalid");
                 }
+                if (violations.isEmpty()) {
+                    try {
+                        DeploymentGraphRepository.validate(connection);
+                    } catch (SQLException invalid) {
+                        violations.add("Stored complete application graphs are invalid");
+                    }
+                }
             }
         }
         var digest = MessageDigest.getInstance("SHA-256")

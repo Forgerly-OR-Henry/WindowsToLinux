@@ -1796,7 +1796,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/model/DeploymentSqliteRequirement.java`：部署应用使用的SQLite文件、种子及初始化声明。
 - `mod/deployment/service/core/model/DeploymentHealthCheck.java`：受限健康探测及成功条件的纯值模型。
 - `mod/deployment/service/core/model/DeploymentAccessUrl.java`：用户访问地址的显式声明，不从健康检查猜测服务暴露。
-- `mod/deployment/service/core/model/DeploymentUnitIdentity.java`：应用部署单元、服务器、systemd及发布目录的归属事实。
+- `mod/deployment/service/core/model/DeploymentUnitIdentity.java`：应用部署单元、精确平台 ServerRef、systemd及发布目录的归属事实，不复制服务器端点或信任观测。
 - `mod/deployment/service/core/model/DeploymentUnitRuntimeConfiguration.java`：部署单元的健康、访问、身份与工作负载组合。
 - `mod/deployment/service/core/model/DeploymentStorageLocation.java`：默认FHS、自定义或未确认的应用存储位置及边界校验。
 - `mod/deployment/service/core/model/DeploymentProjectKind.java`：运行类别的稳定业务判别值。
@@ -1813,3 +1813,6 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/model/DeploymentToolchainType.java`：运行版本规则对应的工具链类别。
 - `mod/deployment/service/core/model/DeploymentToolchainVersion.java`：版本数值及预览状态解析与同类别比较。
 - `mod/deployment/db/DeploymentPayloadValidation.java`：通过SELECT-only和有界LOB流核验原运行、健康、路径及资源载荷，不修复或重写原数据。
+- `mod/deployment/db/DeploymentPayloadReader.java`：统一有界 BLOB 流读取，保留 SQL NULL 并拒绝超过既有格式上限的载荷。
+- `mod/deployment/service/core/model/DeploymentApplicationGraph.java`：完整单服务器应用拓扑，校验组件唯一、依赖无环、健康归属及资源路径精确覆盖。
+- `mod/deployment/db/DeploymentGraphRepository.java`：在既有匹配部署单元上原子替换完整图，只返回 graph_ready=true 的一致快照，不查询平台私有表。
