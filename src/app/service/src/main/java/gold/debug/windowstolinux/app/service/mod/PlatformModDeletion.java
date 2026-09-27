@@ -9,6 +9,7 @@ import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.log.LogRepository;
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
 import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
@@ -17,7 +18,7 @@ import gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
 
-/** Deletes reviewed installed releases through the original durable ledger and physical file scope. / 经原持久账本及物理文件范围删除已审阅安装版本。 */
+/** Deletes reviewed installed releases or complete owners through original durable and physical scopes. / 经原持久及物理范围删除已审阅安装版本或完整所有者。 */
 public final class PlatformModDeletion implements AutoCloseable {
     /** Original trusted application home. / 原可信程序根。 */
     private final Path home;
@@ -79,7 +80,7 @@ public final class PlatformModDeletion implements AutoCloseable {
          * @param catalog original catalog / 原目录
          * @param evidence actual files / 实际文件
          * @param owner exact Mod / 精确 Mod
-         * @param version exact release / 精确版本 */
+         * @param version exact release, null for the whole owner / 精确版本，整所有者为空 */
         private Review(ModDeletionLedger.Review catalog, Evidence evidence, String owner, String version) {
             this.catalog = catalog;
             this.evidence = evidence;
@@ -99,10 +100,60 @@ public final class PlatformModDeletion implements AutoCloseable {
             return owner;
         }
 
-        /** Returns the exact release. / 返回精确版本。
-         * @return original release / 原版本 */
+        /** Returns the exact release or the whole-owner marker. / 返回精确版本或整所有者标记。
+         * @return original release, null for the whole owner / 原版本，整所有者为空 */
         public String version() {
             return version;
+        }
+
+        /** Returns whether this review removes the complete registered owner. / 返回此审阅是否移除完整登记所有者。
+         * @return whole-owner scope / 整所有者范围 */
+        public boolean whole() {
+            return version == null;
+        }
+
+        /** Lists every selected registered release. / 列出全部选定登记发布。
+         * @return exact selected releases / 精确选定发布 */
+        public List<String> versions() {
+            return catalog.versions();
+        }
+
+        /** Lists auxiliary and emergency paths explicitly covered by whole-owner confirmation. / 列出整所有者确认明确覆盖的辅助及应急路径。
+         * @return actual owned file and directory paths / 实际自有文件及目录路径 */
+        public List<Path> ownedFiles() {
+            if (evidence.owned() == null)
+                return List.of();
+            return java.util.stream.Stream
+                    .concat(evidence.owned().auxiliary().stream(), evidence.owned().emergency().stream())
+                    .map(entry -> Path.of(entry.path())).toList();
+        }
+
+        /** Returns actual auxiliary and emergency byte counts, excluding optional original packages. / 返回实际辅助及应急字节数，不含可选原包。
+         * @return observed owned bytes / 观察自有字节 */
+        public long ownedBytes() {
+            if (evidence.owned() == null)
+                return 0;
+            return java.util.stream.Stream
+                    .concat(evidence.owned().auxiliary().stream(), evidence.owned().emergency().stream())
+                    .mapToLong(ModInstallationCleanup.Entry::size).sum();
+        }
+
+        /** Lists all generations that this exact deletion removes. / 列出此精确删除移除的全部代次。
+         * @return exact original data identities / 精确原数据身份 */
+        public List<SchemaIdentity> removedSchemas() {
+            return catalog.removedSchemas();
+        }
+
+        /** Lists owned credentials removed when no shared consumer protects them. / 列出无共享使用方保护时移除的自有凭据。
+         * @return identities without any secret payload / 不含任何秘密载荷的身份 */
+        public List<String> removedSecrets() {
+            return catalog.removedSecrets();
+        }
+
+        /** Lists owned credentials retained for shared consumers. / 列出为共享使用方保留的自有凭据。
+         * @return retained identities / 保留身份 */
+        public List<String> retainedSecrets() {
+            return catalog.retainedSecrets();
         }
 
         /** Lists actual program files and directories that confirmation authorizes. / 列出确认所授权的实际程序文件及目录。
@@ -111,7 +162,7 @@ public final class PlatformModDeletion implements AutoCloseable {
             return evidence.program().stream().map(e -> Path.of(e.path())).toList();
         }
 
-        /** Lists originals whose manifest matches this exact Mod and release. / 列出清单匹配此精确 Mod 及版本的原包。
+        /** Lists originals matching the exact owner and, for a single release, its version. / 列出匹配精确所有者的原包，单版本删除还须匹配版本。
          * @return immutable optional original paths / 不可变可选原包路径 */
         public List<Path> originals() {
             return evidence.originals().stream().map(e -> Path.of(e.path())).toList();
@@ -139,13 +190,22 @@ public final class PlatformModDeletion implements AutoCloseable {
     /** Verified completion independent of current catalog rows. / 独立于当前目录行的已核验完成。
      * @param operationId original operation / 原操作
      * @param owner original Mod / 原 Mod
-     * @param version deleted release / 已删版本 */
+     * @param version deleted release, null for the complete owner / 已删版本，完整所有者为空 */
     public record Receipt(UUID operationId, String owner, String version) {
+    }
+
+    /** Reviews the complete disabled owner, including all installed releases and private data paths. / 审阅完整已禁用所有者，包含全部安装发布及私有数据路径。
+     * @param owner exact registered Mod identity / 精确登记 Mod 身份
+     * @return exact one-use whole-owner review / 精确一次性整所有者审阅
+     * @throws IOException if physical ownership or range is unconfirmed / 物理归属或范围未确认时
+     * @throws SQLException if original deletion admission is unavailable / 原删除准入不可用时 */
+    public synchronized Review review(String owner) throws IOException, SQLException {
+        return review(owner, null);
     }
 
     /** Captures actual installed contents and valid matching originals without mutation or code execution. / 捕获实际安装内容及有效匹配原包，不修改或执行代码。
      * @param owner exact installed owner / 精确安装所有者
-     * @param version exact installed release / 精确安装版本
+     * @param version exact installed release, null for whole-owner deletion / 精确安装版本，整所有者删除为空
      * @return one-use scope review / 一次性范围审阅
      * @throws IOException if file ownership or range is uncertain / 文件归属或范围不确定时
      * @throws SQLException if deletion admission is unavailable / 删除准入不可用时 */
@@ -153,7 +213,10 @@ public final class PlatformModDeletion implements AutoCloseable {
         requireOpen();
         try (var permission = security.enterOperation(); var logs = diagnostics.sealDeletion(owner)) {
             var catalog = ledger.review(owner, version);
-            var program = ModInstallationCleanup.installed(catalog.program());
+            var program = version == null
+                    ? ModOwnedCleanup.programs(catalog.program(), catalog.versions())
+                    : ModInstallationCleanup.installed(catalog.program());
+            var owned = version == null ? ModOwnedCleanup.inspect(database.root(), owner, catalog.logTargets()) : null;
             List<ModInstallationCleanup.Entry> originals;
             String originalsId;
             try {
@@ -164,9 +227,10 @@ public final class PlatformModDeletion implements AutoCloseable {
                 originals = List.of();
                 originalsId = null;
             }
-            var evidence = new Evidence(1, nativeId(home), nativeId(home.resolve("mod")),
-                    nativeId(catalog.program().getParent()), originalsId, program, originals);
-            validate(evidence, catalog.program(), home);
+            var evidence = new Evidence(2, nativeId(home), nativeId(home.resolve("mod")),
+                    nativeId(version == null ? catalog.program() : catalog.program().getParent()), originalsId, program,
+                    originals, owned);
+            validate(evidence, catalog.program(), owner, version, catalog.versions(), catalog.logTargets());
             parents(evidence, catalog.program());
             return new Review(catalog, evidence, owner, version);
         }
@@ -188,10 +252,16 @@ public final class PlatformModDeletion implements AutoCloseable {
             var accepted = deleteOriginals
                     ? original
                     : new Evidence(original.format(), original.homeId(), original.modId(), original.ownerId(), null,
-                            original.program(), List.of());
+                            original.program(), List.of(), original.owned());
             parents(accepted, review.catalog.program());
-            if (!accepted.program().equals(ModInstallationCleanup.installed(review.catalog.program())))
+            var currentPrograms = review.whole()
+                    ? ModOwnedCleanup.programs(review.catalog.program(), review.versions())
+                    : ModInstallationCleanup.installed(review.catalog.program());
+            if (!accepted.program().equals(currentPrograms))
                 throw new IOException("Installed files changed after review");
+            if (review.whole() && !accepted.owned()
+                    .equals(ModOwnedCleanup.inspect(database.root(), review.owner(), review.catalog.logTargets())))
+                throw new IOException("Owned files changed after review");
             for (var file : accepted.originals())
                 unchanged(file);
             String json = JSON.writeValueAsString(accepted);
@@ -223,7 +293,8 @@ public final class PlatformModDeletion implements AutoCloseable {
                 return success(complete);
             var original = ledger.execution(operation);
             try (var logs = diagnostics.sealDeletion(original.owner())) {
-                decode(original.files(), original.program(), home);
+                decode(original.files(), original.program(), original.owner(), original.version(), original.versions(),
+                        original.targets());
                 ledger.resume(operation);
                 return advance(operation);
             }
@@ -236,15 +307,30 @@ public final class PlatformModDeletion implements AutoCloseable {
     private OperationResult<Receipt> advance(UUID operation) {
         try {
             var execution = ledger.execution(operation);
-            var evidence = decode(execution.files(), execution.program(), home);
+            var evidence = decode(execution.files(), execution.program(), execution.owner(), execution.version(),
+                    execution.versions(), execution.targets());
             parents(evidence, execution.program());
             switch (execution.phase()) {
                 case "QUIESCENT" :
-                    ModInstallationCleanup.removeInstalled(evidence.program(), execution.program());
+                    if (execution.version() == null) {
+                        ModOwnedCleanup.validatePrograms(evidence.program(), execution.program(), execution.versions());
+                        var parentEntries = new ArrayList<ModInstallationCleanup.Entry>();
+                        parentEntries.add(
+                                new ModInstallationCleanup.Entry(home.toString(), evidence.homeId(), true, 0, null));
+                        if (evidence.modId() != null)
+                            parentEntries.add(new ModInstallationCleanup.Entry(home.resolve("mod").toString(),
+                                    evidence.modId(), true, 0, null));
+                        ModInstallationCleanup.removeEntries(evidence.program(),
+                                ModOwnedCleanup.programs(execution.program(), execution.versions()), parentEntries);
+                    } else
+                        ModInstallationCleanup.removeInstalled(evidence.program(), execution.program());
                     ledger.programRemoved(operation);
                 case "PROGRAM_REMOVED" :
                     ledger.removeData(operation);
                 case "DATA_REMOVED" :
+                    if (evidence.owned() != null)
+                        ModOwnedCleanup.remove(evidence.owned(), database.root(), execution.owner(),
+                                execution.targets());
                     ledger.removeReferences(operation);
                 case "REFERENCES_REMOVED" :
                     ledger.removeRegistry(operation);
@@ -277,7 +363,7 @@ public final class PlatformModDeletion implements AutoCloseable {
             }
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_DELETE_UNCONFIRMED",
-                            "Installed release cleanup requires its original operation and file scope",
+                            "Mod cleanup requires its original operation and file scope",
                             Map.of("operationId", operation.toString()), Optional.empty())));
         }
     }
@@ -289,7 +375,7 @@ public final class PlatformModDeletion implements AutoCloseable {
     private Receipt receipt(UUID operation) throws SQLException {
         try (var c = database.openConnection();
                 var p = c.prepareStatement(
-                        "SELECT subject_mod_id,mod_version FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND event_code='MOD_VERSION_DELETED' AND outcome='SUCCEEDED' AND operation_id=?")) {
+                        "SELECT subject_mod_id,mod_version FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND event_code IN ('MOD_VERSION_DELETED','MOD_DELETED') AND outcome='SUCCEEDED' AND operation_id=?")) {
             p.setObject(1, operation);
             try (var r = p.executeQuery()) {
                 return r.next() ? new Receipt(operation, r.getString(1), r.getString(2)) : null;
@@ -299,7 +385,7 @@ public final class PlatformModDeletion implements AutoCloseable {
 
     /** Finds readable exact-ID/version originals without guessing ownership from their names. / 查找可读且精确 ID/版本匹配的原包，不从名称猜归属。
      * @param owner installed identity / 安装身份
-     * @param version installed release / 安装版本
+     * @param version installed release, null for all owner originals / 安装版本，所有者全部原包为空
      * @return immutable proven original observations / 不可变已证明原包观察
      * @throws IOException if the source directory or matched scope exceeds bounds / 来源目录或匹配范围超出界限时 */
     private List<ModInstallationCleanup.Entry> originals(String owner, String version) throws IOException {
@@ -317,7 +403,7 @@ public final class PlatformModDeletion implements AutoCloseable {
                     var entry = ModInstallationCleanup.observe(path, ModPackageReader.MAX_BYTES);
                     var source = ModPackageReader.read(path);
                     if (!source.manifest().id().equals(owner)
-                            || !source.manifest().version().toString().equals(version))
+                            || version != null && !source.manifest().version().toString().equals(version))
                         continue;
                     unchanged(entry);
                     results.add(entry);
@@ -356,8 +442,11 @@ public final class PlatformModDeletion implements AutoCloseable {
      * @throws IOException if redirected or replaced / 重定向或替代时 */
     private void parents(Evidence evidence, Path program) throws IOException {
         PlatformModInstallation.identity(home, evidence.homeId());
-        parent(home.resolve("mod"), evidence.modId());
-        parent(program.getParent(), evidence.ownerId());
+        if (evidence.owned() == null || !evidence.program().isEmpty())
+            parent(home.resolve("mod"), evidence.modId());
+        parent(evidence.owned() == null ? program.getParent() : program, evidence.ownerId());
+        if (evidence.owned() != null)
+            ModOwnedCleanup.parents(evidence.owned());
         if (!evidence.originals().isEmpty())
             parent(home.resolve("mod-zip"), evidence.originalsId());
     }
@@ -374,15 +463,26 @@ public final class PlatformModDeletion implements AutoCloseable {
     /** Decodes only bounded original evidence and validates all paths before any physical action. / 仅解码有界原证据，在物理动作前校验全部路径。
      * @param json original evidence / 原证据
      * @param program registered directory / 登记目录
-     * @param home original application home / 原程序根
+     * @param owner original owner / 原所有者
+     * @param version original release, null for whole owner / 原发布，整所有者为空
+     * @param versions original registered versions / 原登记版本
+     * @param targets original registered diagnostic targets / 原登记诊断目标
      * @return validated physical range / 已验证物理范围
      * @throws IOException if malformed or out of scope / 畸形或越界时 */
-    private static Evidence decode(String json, Path program, Path home) throws IOException {
+    private Evidence decode(String json, Path program, String owner, String version, List<String> versions,
+            List<LogRepository.Target> targets) throws IOException {
         try {
             if (json == null || json.length() > 4 * 1024 * 1024)
                 throw new IOException("Oversized physical deletion evidence");
-            var evidence = JSON.readValue(json, Evidence.class);
-            validate(evidence, program, home);
+            var node = JSON.readTree(json);
+            Evidence evidence;
+            if (node != null && node.path("format").isInt() && node.path("format").intValue() == 1) {
+                var original = JSON.treeToValue(node, OriginalEvidence.class);
+                evidence = new Evidence(2, original.homeId(), original.modId(), original.ownerId(),
+                        original.originalsId(), original.program(), original.originals(), null);
+            } else
+                evidence = JSON.treeToValue(node, Evidence.class);
+            validate(evidence, program, owner, version, versions, targets);
             return evidence;
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new IOException("Invalid physical deletion evidence", invalid);
@@ -392,17 +492,27 @@ public final class PlatformModDeletion implements AutoCloseable {
     /** Validates original coordinates, cardinality and native identity framing. / 校验原坐标、数量及原生身份格式。
      * @param evidence original scope / 原范围
      * @param program registered root / 登记根
-     * @param home trusted application home / 可信程序根
+     * @param owner original owner / 原所有者
+     * @param version original release, null for whole owner / 原发布，整所有者为空
+     * @param versions original registered versions / 原登记版本
+     * @param targets original registered diagnostic targets / 原登记诊断目标
      * @throws IOException if original evidence is invalid / 原证据无效时 */
-    private static void validate(Evidence evidence, Path program, Path home) throws IOException {
-        if (evidence == null || evidence.format() != 1 || evidence.homeId() == null || evidence.originals() == null
+    private void validate(Evidence evidence, Path program, String owner, String version, List<String> versions,
+            List<LogRepository.Target> targets) throws IOException {
+        if (evidence == null || evidence.format() != 2 || evidence.homeId() == null || evidence.originals() == null
                 || evidence.originals().size() > 128)
             throw new IOException("Invalid deletion scope");
         for (String identity : Arrays.asList(evidence.homeId(), evidence.modId(), evidence.ownerId(),
                 evidence.originalsId()))
             if (identity != null && !identity.matches("[0-9a-f]{48}"))
                 throw new IOException("Invalid deletion ancestor");
-        ModInstallationCleanup.validateInstalled(evidence.program(), program);
+        if ((evidence.owned() != null) != (version == null))
+            throw new IOException("Deletion scope type differs");
+        if (version == null) {
+            ModOwnedCleanup.validatePrograms(evidence.program(), program, versions);
+            ModOwnedCleanup.validate(evidence.owned(), database.root(), owner, targets);
+        } else
+            ModInstallationCleanup.validateInstalled(evidence.program(), program);
         if (!evidence.program().isEmpty() && (evidence.modId() == null || evidence.ownerId() == null)
                 || !evidence.originals().isEmpty() && evidence.originalsId() == null)
             throw new IOException("Missing deletion ancestor");
@@ -419,14 +529,13 @@ public final class PlatformModDeletion implements AutoCloseable {
 
     /** Protects originals retained by accepted deletions, including unreadable ownership evidence. / 保护已接纳删除保留的原包，包括不可读归属证据。
      * @param c serialized platform transaction / 串行平台事务
-     * @param home original application home / 原程序根
      * @param path original being considered / 被考虑原包
      * @param identity current native identity, if available / 当前原生身份，如可用
      * @return whether another cleanup owns it / 是否归其他清理持有
      * @throws SQLException if operations cannot be read / 无法读取操作时 */
-    static boolean originalBusy(Connection c, Path home, Path path, String identity) throws SQLException {
+    boolean originalBusy(Connection c, Path path, String identity) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT mod_id,source_version,request_json FROM mod_operation WHERE operation_type='DELETE_VERSION' AND state<>'ENDED'");
+                "SELECT mod_id,source_version,request_json FROM mod_operation WHERE operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state<>'ENDED'");
                 var r = p.executeQuery()) {
             while (r.next()) {
                 try {
@@ -436,8 +545,28 @@ public final class PlatformModDeletion implements AutoCloseable {
                     var node = JSON.readTree(json);
                     if (!home.toString().equals(node.path("home").textValue()))
                         return true;
-                    var evidence = decode(node.path("files").textValue(),
-                            home.resolve("mod").resolve(r.getString(1)).resolve(r.getString(2)), home);
+                    String owner = r.getString(1), version = r.getString(2);
+                    if (!owner.equals(node.path("owner").textValue())
+                            || !Objects.equals(version, node.path("version").textValue()))
+                        return true;
+                    var versions = new ArrayList<String>();
+                    if (!node.path("versions").isArray() || node.path("versions").size() > 1024)
+                        return true;
+                    for (var release : node.path("versions")) {
+                        if (!release.path("version").isTextual())
+                            return true;
+                        versions.add(release.path("version").textValue());
+                    }
+                    List<LogRepository.Target> targets = List.of();
+                    if (version == null) {
+                        if (!node.path("targets").isArray() || node.path("targets").size() > 4096)
+                            return true;
+                        targets = JSON.readerForListOf(LogRepository.Target.class).readValue(node.path("targets"));
+                    }
+                    Path program = home.resolve("mod").resolve(owner);
+                    if (version != null)
+                        program = program.resolve(version);
+                    var evidence = decode(node.path("files").textValue(), program, owner, version, versions, targets);
                     for (var entry : evidence.originals())
                         if (entry.path().equals(path.toString()) || entry.identity().equals(identity))
                             return true;
@@ -468,6 +597,18 @@ public final class PlatformModDeletion implements AutoCloseable {
         closed = true;
     }
 
+    /** Previously persisted version-only physical scope, interpreted without rewriting its request. / 先前持久单版本物理范围，不重写请求地解释。
+     * @param format original evidence version / 原证据版本
+     * @param homeId original home identity / 原程序根身份
+     * @param modId original installation parent identity / 原安装父目录身份
+     * @param ownerId original owner directory identity / 原所有者目录身份
+     * @param originalsId original archive directory identity / 原原包目录身份
+     * @param program original program evidence / 原程序证据
+     * @param originals originally selected archives / 原选定归档 */
+    private record OriginalEvidence(int format, String homeId, String modId, String ownerId, String originalsId,
+            List<ModInstallationCleanup.Entry> program, List<ModInstallationCleanup.Entry> originals) {
+    }
+
     /** Original immutable physical scope stored within the deletion request. / 存于删除请求中的原不可变物理范围。
      * @param format evidence version / 证据版本
      * @param homeId original home identity / 原程序根身份
@@ -475,8 +616,10 @@ public final class PlatformModDeletion implements AutoCloseable {
      * @param ownerId original owner-directory identity / 原所有者目录身份
      * @param originalsId original archive-directory identity / 原原包目录身份
      * @param program original program observations / 原程序观察
-     * @param originals explicitly accepted originals / 明确接纳原包 */
+     * @param originals explicitly accepted originals / 明确接纳原包
+     * @param owned exact whole-owner private scope, absent for a version-only request / 精确整所有者私有范围，单版本请求为空 */
     private record Evidence(int format, String homeId, String modId, String ownerId, String originalsId,
-            List<ModInstallationCleanup.Entry> program, List<ModInstallationCleanup.Entry> originals) {
+            List<ModInstallationCleanup.Entry> program, List<ModInstallationCleanup.Entry> originals,
+            ModOwnedCleanup.Scope owned) {
     }
 }

@@ -221,8 +221,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                 var pending = maintenance(c);
                 var rows = new ArrayList<OriginalView>();
                 for (var value : observed) {
-                    boolean busy = inUse(pending, value.file(), value.stamp()) || PlatformModDeletion.originalBusy(c,
-                            home, value.file(), value.stamp() == null ? null : value.stamp().identity());
+                    boolean busy = inUse(pending, value.file(), value.stamp()) || deletion.originalBusy(c, value.file(),
+                            value.stamp() == null ? null : value.stamp().identity());
                     String state = value.inspection() == null ? "INVALID" : "AVAILABLE";
                     if (value.inspection() != null) {
                         var manifest = value.inspection().manifest();
@@ -295,8 +295,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             originalPath(file);
             var stamp = stamp(file);
             return locked(c -> {
-                if (inUse(maintenance(c), file, stamp)
-                        || PlatformModDeletion.originalBusy(c, home, file, stamp.identity()))
+                if (inUse(maintenance(c), file, stamp) || deletion.originalBusy(c, file, stamp.identity()))
                     throw new SQLException("Original package is retained by maintenance");
                 return new DeleteReview(file, stamp);
             });
@@ -318,7 +317,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             review.used = true;
             locked(c -> {
                 if (inUse(maintenance(c), review.file, review.stamp)
-                        || PlatformModDeletion.originalBusy(c, home, review.file, review.stamp.identity()))
+                        || deletion.originalBusy(c, review.file, review.stamp.identity()))
                     throw new SQLException("Original package is in use");
                 try {
                     originalPath(review.file);

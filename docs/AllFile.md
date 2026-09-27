@@ -1618,7 +1618,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
 - `app/db/mod/ModSchemaReconciliation.java`：核验原 UNKNOWN 数据身份、取得明确只读核对并原子归档已证明结果，不改变用户选择。
 - `app/db/mod/ModRestartLedger.java`：核验前次启动意图与明确失败重试，登记原准备/新代次并按实际状态原子归档，保留重启停用确认。
-- `app/db/mod/ModDeletionLedger.java`：共用单版本与整 Mod 删除账本；捕获版本、Schema、所属诊断、导航及非共享自有凭据，核验实际文件缺失后按原阶段清理并归档；整 Mod 文件服务与界面总装仍待完成。
+- `app/db/mod/ModDeletionLedger.java`：共用单版本与整 Mod 删除账本；捕获版本、Schema、所属诊断、导航及非共享自有凭据，核验实际文件缺失后按原阶段清理并归档；整 Mod 文件服务已接，默认整 Mod 界面总装仍待完成。
 - `app/db/mod/ModNavigationPreferences.java`：共用严格导航偏好读写，移除精确所有者条目时保留其余条目顺序，损坏内容不覆盖。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
@@ -1655,7 +1655,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/lifecycle/ModDependencyPlan.java`：校验启用选择的依赖图、兼容性和导出冲突，生成依赖优先顺序，并绑定原提供方加载器。
 - `app/ui/mod/ModOriginalsPane.java`：JAR/APP 原包搜索/刷新、明确安装及原包删除、共用留存设置与原中断核对；锁定撤销确认，读取失败封闭修改，保留安装/清理的分别结果。
 - `app/service/mod/ModInstallationCleanup.java`：为未登记安装撤销及已安装版本删除审阅有界的精确剩余文件，校验原目录身份与持久清理范围，继续删除原子集并拒绝额外或变化内容。
-- `app/service/mod/PlatformModDeletion.java`：审阅并持久保存安装版本的精确原生文件范围；串联程序、共享 Schema、引用及登记删除，按明确勾选清理清单匹配原包，保留中断原范围并提供终态凭据。
+- `app/service/mod/ModOwnedCleanup.java`：整 Mod 登记程序、专属数据根及原类别应急文件的有界审阅、原身份验证和剩余子集清理；共享父目录只作身份依据。
+- `app/service/mod/PlatformModDeletion.java`：审阅并持久保存单版本或整 Mod 的精确原生文件范围；串联程序、Schema、专属及应急文件、引用与登记删除，按明确勾选清理清单匹配原包，保留中断原范围并提供终态凭据。
 - `app/service/mod/PlatformModInstallation.java`：绑定原包审阅及留存选择；按原 INSTALL 阶段暂存、不覆盖发布、登记、清理和归档，以 Windows 原身份及逐文件摘要恢复；支持明确撤销未登记安装及原 CANCELLING 清理/归档；提供含无效包的只读扫描、独立待处理清单及原包删除审阅，不自动启用或接管替代目录。
 - `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档；保存用户页面固定偏好。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
