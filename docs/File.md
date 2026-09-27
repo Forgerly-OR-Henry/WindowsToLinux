@@ -8,7 +8,7 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，目前没有业务子模块或空职责包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口和 db 包；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-27（1.1 增量实施；完整目标图仍待切换）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
@@ -145,8 +145,11 @@ WindowsToLinux/
    │  ├─ source/
    │  ├─ task/
    │  └─ ui/
-   ├─ mod/                                  业务 Mod 聚合；当前仅有工作区锚点
-   │  └─ pom.xml
+   ├─ mod/                                  业务 Mod 聚合
+   │  ├─ pom.xml
+   │  └─ deployment/                         官方部署主模块；业务迁移进行中
+   │     ├─ Mod.java
+   │     └─ db/
    ├─ shared/
    │  ├─ pom.xml
    │  ├─ agent/
@@ -1436,6 +1439,8 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 | mod/backup     | appapi、mod/deployment（均为 provided，后者仅导出 API 包）；运行由 Mod 加载器解析。 |
 
 API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serverId，与 TaskRequest 的服务器身份一致；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
+
+官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖仅 `appapi`（provided）。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 实现独立初始化和只读核验，固定 SQL 资源位于同名资源包；业务启动只绑定当前数据身份及 deployment 日志类别。
 
 作者工具复用 `app/mod/installation` 的包读取/校验能力，以命令行模式运行，不启动 APP。构建配置和 SDK 父 POM 归 `.mvn/mod/` 维护，不新增业务叶子模块；正式源码任务才创建这些文件，AllFile 不提前登记工具类或示例。完整结构门禁映射见 [工程门禁](development/PHASE-1.1.md#129-工程门禁映射)。
 

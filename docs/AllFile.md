@@ -1768,3 +1768,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/recovery/TaskBrowserSession.java`：原中央任务的浏览器归属；创建前登记 `browser.v1`，真实清理完成后经 `TaskLedger.confirmBrowserClosed` 提交关闭检查点，再释放 H2 占用。默认救援由 PlatformRecoveryService 接入；跨启动只能核对已确认关闭的记录，不推定未知资源已退出。
 
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
+
+- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份和独立日志类别；部署业务迁移仍在进行。
+- `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单和发布配置摘要绑定。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：官方部署 Schema 1 的固定 H2 DDL，含业务表及标准日志。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：只读列清单，用于发现缺表、缺列及多余表列。
