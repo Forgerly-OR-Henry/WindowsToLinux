@@ -92,7 +92,7 @@ public final class PlatformModIntents implements AutoCloseable {
     /** Immutable host-only management facts, without SQL or recovery payloads. / 不含 SQL 或恢复载荷的不可变宿主管理事实。
      * @param owner stable Mod identity / 稳定 Mod 身份
      * @param choice saved user choice / 已存用户选择
-     * @param runtime actual runtime state / 实际运行状态
+     * @param runtime actual runtime state, or UNREGISTERED for retained whole-owner cleanup / 实际运行状态，整所有者保留清理为 UNREGISTERED
      * @param actual actual loaded release / 实际加载发布
      * @param failure original safe diagnostic / 原安全诊断
      * @param versions registered releases in descending semantic order / 按语义版本降序的登记发布
@@ -176,6 +176,13 @@ public final class PlatformModIntents implements AutoCloseable {
                             Optional.ofNullable(failures.get(owner)), versions, data,
                             operations.getOrDefault(owner, List.of())));
                 }
+                for (var entry : operations.entrySet()) {
+                    if (!state.owners().containsKey(entry.getKey())
+                            && entry.getValue().stream().anyMatch(o -> o.type().equals("DELETE_MOD")))
+                        result.add(new ModView(entry.getKey(), new Choice(false, Optional.empty()), "UNREGISTERED",
+                                Optional.empty(), Optional.empty(), List.of(), List.of(), entry.getValue()));
+                }
+                result.sort(Comparator.comparing(ModView::owner));
                 return List.copyOf(result);
             });
         } catch (SQLException failure) {

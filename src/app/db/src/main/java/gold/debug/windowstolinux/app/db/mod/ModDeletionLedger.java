@@ -110,6 +110,12 @@ public final class ModDeletionLedger {
             return request.targets();
         }
 
+        /** Lists exact owner-local pinned pages removed with the whole owner. / 列出随整所有者移除的精确所有者内部固定页面。
+         * @return reviewed page identities, empty for a version-only request / 已审阅页面身份，单版本请求为空 */
+        public List<String> removedNavigationPages() {
+            return request.pins().stream().map(ModNavigationPreferences.PagePin::pageId).toList();
+        }
+
         /** Lists owned credentials that have no outside consumers. / 列出没有外部使用方的自有凭据。
          * @return identities only, never secret values / 仅身份，从不包含秘密值 */
         public List<String> removedSecrets() {

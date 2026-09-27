@@ -147,6 +147,16 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
             load(service::pins, false);
     }
 
+    /** Reloads preferences after host-owned cleanup, invalidating older in-flight observations. / 宿主所属清理后重读偏好，使较早的在途观察失效。 */
+    public void refreshPreferences() {
+        if (closed)
+            return;
+        epoch++;
+        pins = List.of();
+        publicationChanged();
+        load(service::pins, false);
+    }
+
     /** Reloads publication metadata without opening or pinning new registrations. / 重读发布元数据，不打开或固定新登记。 */
     private void publicationChanged() {
         if (closed)

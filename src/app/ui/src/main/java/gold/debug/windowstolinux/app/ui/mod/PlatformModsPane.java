@@ -82,12 +82,12 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private final JPanel versions = new JPanel();
 
     /** Explicit management actions. / 明确管理操作。 */
-    private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, reconcileDeletion;
+    private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, deleteMod, reconcileDeletion;
 
     /** Actual installed-layout deletion, absent for CLASS. / 实际安装布局删除，CLASS 缺省。 */
     private PlatformModDeletion deletion;
 
-    /** Refreshes the original-package observation after version cleanup. / 版本清理后刷新原包观察。 */
+    /** Refreshes the original-package observation after accepted cleanup. / 已接纳清理后刷新原包观察。 */
     private Runnable refreshOriginals;
 
     /** Safe operation feedback outside the retained snapshot. / 保留快照之外的安全操作反馈。 */
@@ -202,8 +202,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         logs = button("logs", showLogs);
         deleteVersion = button("deleteVersion", this::deleteVersion);
         deleteVersion.setToolTipText(messages.text("mods.deleteNotice"));
+        deleteMod = button("deleteMod", () -> reviewDeletion(null));
+        deleteMod.setToolTipText(messages.text("mods.deleteNotice"));
         reconcileDeletion = button("reconcileDeletion", this::reconcileDeletion);
-        for (var button : List.of(refresh, save, cancel, reconcile, retry, deleteVersion, reconcileDeletion, logs))
+        for (var button : List.of(refresh, save, cancel, reconcile, retry, deleteVersion, deleteMod, reconcileDeletion,
+                logs))
             actions.add(button);
         var footer = new JPanel(new BorderLayout(8, 8));
         footer.add(actions);
@@ -273,7 +276,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                     inventory.setSelectedIndex(i);
             if (inventory.getSelectedIndex() < 0 && !rows.isEmpty())
                 inventory.setSelectedIndex(0);
-            if (rows.isEmpty())
+            if (rows.isEmpty() && status.getText().isBlank())
                 status.setText(messages.text("mods.empty"));
             render();
         });
@@ -379,11 +382,12 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         boolean active = !locked && !closed && !busy;
         progress.setVisible(busy && !locked && !closed);
         var value = inventory.getSelectedValue();
+        boolean deleting = value != null && value.operations().stream().anyMatch(PlatformModsPane::deletionOperation);
         inventory.setEnabled(active);
-        enabled.setEnabled(active && value != null);
+        enabled.setEnabled(active && value != null && !deleting);
         refresh.setEnabled(active);
         logs.setEnabled(active);
-        save.setEnabled(active && value != null && (!enabled.isSelected() || selectedVersion != null)
+        save.setEnabled(active && value != null && !deleting && (!enabled.isSelected() || selectedVersion != null)
                 && (enabled.isSelected() != value.choice().enabled()
                         || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
         cancel.setVisible(value != null && value.operations().stream().anyMatch(o -> o.request().isPresent()));
@@ -401,12 +405,14 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         deleteVersion.setVisible(deletion != null);
         deleteVersion.setEnabled(active && deletion != null && value != null && !value.choice().enabled()
                 && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty());
-        reconcileDeletion.setVisible(deletion != null && value != null
-                && value.operations().stream().anyMatch(o -> o.type().equals("DELETE_VERSION")));
-        reconcileDeletion.setEnabled(active && value != null && value.operations().stream()
-                .anyMatch(o -> o.type().equals("DELETE_VERSION") && o.state().equals("UNKNOWN")));
+        deleteMod.setVisible(deletion != null);
+        deleteMod.setEnabled(active && deletion != null && value != null && !value.choice().enabled()
+                && !enabled.isSelected() && value.operations().isEmpty());
+        reconcileDeletion.setVisible(deletion != null && deleting);
+        reconcileDeletion.setEnabled(active && value != null
+                && value.operations().stream().anyMatch(o -> deletionOperation(o) && o.state().equals("UNKNOWN")));
         for (var child : versions.getComponents())
-            child.setEnabled(active);
+            child.setEnabled(active && !deleting);
         pageControls();
     }
 
@@ -456,16 +462,38 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Reviews actual installed bytes and data impact before explicit removal. / 明确移除前审阅实际安装字节及数据影响。 */
     private void deleteVersion() {
-        String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
+        reviewDeletion(selectedVersion);
+    }
+
+    /** Reviews a concrete installed release or the entire selected owner before confirmation. / 确认前审阅具体安装发布或完整已选所有者。
+     * @param version selected release, null for the complete owner / 已选发布，完整所有者为空 */
+    private void reviewDeletion(String version) {
+        String owner = inventory.getSelectedValue().owner();
         run(() -> deletion.review(owner, version), review -> {
-            var text = new StringBuilder(messages.text("mods.confirmDeleteVersion",
-                    Map.of("owner", review.owner(), "version", review.version(), "bytes", review.bytes())));
-            text.append('\n')
-                    .append(review.removedSchema()
-                            .map(s -> messages.text("mods.deleteSchema", Map.of("schema", s.schemaVersion())))
-                            .orElseGet(() -> messages.text("mods.keepSchema",
-                                    Map.of("versions", String.join(", ", review.retainedSchemaVersions())))));
+            var text = new StringBuilder(review.whole()
+                    ? messages.text("mods.confirmDeleteMod",
+                            Map.of("owner", review.owner(), "versions", String.join(", ", review.versions()), "bytes",
+                                    review.bytes(), "ownedBytes", review.ownedBytes()))
+                    : messages.text("mods.confirmDeleteVersion",
+                            Map.of("owner", review.owner(), "version", review.version(), "bytes", review.bytes())));
+            if (review.whole()) {
+                for (var schema : review.removedSchemas())
+                    text.append('\n')
+                            .append(messages.text("mods.deleteOwnedSchema", Map.of("schema", schema.schemaVersion())));
+                text.append('\n')
+                        .append(messages.text("mods.deleteOwnedReferences",
+                                Map.of("logs", String.join(", ", review.removedLogCategories()), "pages",
+                                        String.join(", ", review.removedNavigationPages()), "removed",
+                                        review.removedSecrets().size(), "retained", review.retainedSecrets().size())));
+            } else
+                text.append('\n')
+                        .append(review.removedSchema()
+                                .map(s -> messages.text("mods.deleteSchema", Map.of("schema", s.schemaVersion())))
+                                .orElseGet(() -> messages.text("mods.keepSchema",
+                                        Map.of("versions", String.join(", ", review.retainedSchemaVersions())))));
             for (var path : review.programs())
+                text.append('\n').append(path);
+            for (var path : review.ownedFiles())
                 text.append('\n').append(path);
             text.append("\n\n").append(messages.text("mods.deleteOriginalCandidates"));
             for (var path : review.originals())
@@ -483,7 +511,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             panel.add(originals, BorderLayout.SOUTH);
             if (confirm(panel)) {
                 boolean selected = originals.isSelected();
-                run(() -> deletion.delete(review, selected), result -> deleted(result.outcome()), true);
+                run(() -> deletion.delete(review, selected), result -> deleted(result.outcome(), review.whole()), true);
             }
         });
     }
@@ -491,16 +519,26 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Continues an original accepted deletion without choosing a fresh file scope. / 继续原已接纳删除，不选择新的文件范围。 */
     private void reconcileDeletion() {
         var operation = inventory.getSelectedValue().operations().stream()
-                .filter(o -> o.type().equals("DELETE_VERSION") && o.state().equals("UNKNOWN")).findFirst()
-                .orElseThrow();
+                .filter(o -> deletionOperation(o) && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
         if (confirm(messages.text("mods.confirmDeletionReconcile")))
-            run(() -> deletion.reconcile(operation.id()), result -> deleted(result.outcome()), true);
+            run(() -> deletion.reconcile(operation.id()),
+                    result -> deleted(result.outcome(), operation.type().equals("DELETE_MOD")), true);
+    }
+
+    /** Recognizes the two installed cleanup operations without interpreting their recovery payload. / 识别两类安装清理操作，不解释其恢复载荷。
+     * @param operation retained management fact / 保留管理事实
+     * @return whether the original deletion service owns continuation / 是否由原删除服务持有继续权限 */
+    private static boolean deletionOperation(OperationView operation) {
+        return operation.type().equals("DELETE_VERSION") || operation.type().equals("DELETE_MOD");
     }
 
     /** Reports actual cleanup and refreshes both durable catalog and original observations. / 报告实际清理并刷新持久目录及原包观察。
-     * @param result observed deletion result / 观察删除结果 */
-    private void deleted(Outcome result) {
-        completed(result == Outcome.SUCCEEDED ? "mods.deleted" : "mods.deletePending");
+     * @param result observed deletion result / 观察删除结果
+     * @param whole whether the complete owner was selected / 是否选择完整所有者 */
+    private void deleted(Outcome result, boolean whole) {
+        completed(result == Outcome.SUCCEEDED ? whole ? "mods.deletedMod" : "mods.deleted" : "mods.deletePending");
+        if (whole)
+            navigation.refreshPreferences();
         refreshOriginals.run();
     }
 
