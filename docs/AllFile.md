@@ -1821,3 +1821,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentSecretRepository.java`：不可变秘密元数据及完整发布引用集合，区分未绑定与显式空集合，不覆盖普通配置绑定。
 - `mod/deployment/db/DeploymentUnitCommit.java`：数据库写入边界的单元成功记录，校验单元、配置、发布及秘密集合一致，不是公开 Mod API。
 - `mod/deployment/db/DeploymentPublicationRepository.java`：同事务保存整图所有单元、当前发布、配置、精确秘密集合及拓扑，保持原服务器归属与无关展示/观测字段。
+- `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。
+- `mod/deployment/db/DeploymentReferenceIntent.java`：预留前保存的精确平台资源、秘密用途及业务键，不包含秘密值。
+- `mod/deployment/db/DeploymentExecutionRecord.java`：包含正式结果、独立提交/清理标记及原 JSON 文档的只读持久证据。
+- `mod/deployment/db/DeploymentExecutionCodec.java`：一 MiB 有界 UTF-8/严格 JSON、精确身份/阶段/预留 UUID 校验及未来版本保留。
+- `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。

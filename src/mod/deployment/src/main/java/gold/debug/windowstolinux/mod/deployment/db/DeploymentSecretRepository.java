@@ -41,7 +41,7 @@ public final class DeploymentSecretRepository {
             throws SQLException, ApiException {
         requireRevision(reference);
         try (var connection = connection(task)) {
-            return findRevision(connection, reference);
+            return readRevision(connection, reference);
         }
     }
 
@@ -112,7 +112,7 @@ public final class DeploymentSecretRepository {
      * @param revision original metadata / 原元数据
      * @throws SQLException if metadata cannot be saved exactly / 元数据无法精确保存时 */
     private static void saveRevision(Connection connection, DeploymentSecretRevision revision) throws SQLException {
-        var existing = findRevision(connection, revision.reference());
+        var existing = readRevision(connection, revision.reference());
         if (existing.isPresent()) {
             var stored = existing.orElseThrow();
             if (!stored.credentialId().equals(revision.credentialId())
@@ -135,8 +135,8 @@ public final class DeploymentSecretRepository {
      * @param reference exact business revision / 精确业务修订
      * @return original metadata or absent / 原元数据或不存在
      * @throws SQLException if a stored value is invalid / 存储值无效时 */
-    private static Optional<DeploymentSecretRevision> findRevision(Connection connection,
-            DeploymentSecretReference reference) throws SQLException {
+    static Optional<DeploymentSecretRevision> readRevision(Connection connection, DeploymentSecretReference reference)
+            throws SQLException {
         try (var statement = connection.prepareStatement(
                 "SELECT credential_id,created_at FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
             statement.setString(1, reference.identifier());
@@ -164,7 +164,7 @@ public final class DeploymentSecretRepository {
             throw new SQLException("Secret binding requires a business transaction");
         for (var reference : expected) {
             requireRevision(reference);
-            if (findRevision(connection, reference).isEmpty())
+            if (readRevision(connection, reference).isEmpty())
                 throw new SQLException("Release secret revision has not been registered");
         }
         boolean exists;

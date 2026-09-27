@@ -32,17 +32,30 @@ public final class DeploymentPublicationRepository {
         var records = validateInputs(graph, publications);
         Objects.requireNonNull(observedAt);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> {
-            for (var record : records)
-                saveUnit(connection, record);
-            for (var record : records) {
-                DeploymentConfigurationRepository.saveAndBindRelease(connection, record.configuration(),
-                        record.release().sha256());
-                DeploymentSecretRepository.bindRelease(connection, record.unit().id(), record.release().sha256(),
-                        Set.copyOf(record.secrets()));
-            }
-            DeploymentGraphRepository.save(connection, graph, observedAt);
-        });
+        DeploymentDataTransaction.execute(connection, () -> save(connection, graph, records, observedAt));
+    }
+
+    /** Writes publication facts inside the journal's original transaction. / 在账本原事务内写入发布事实。
+     * @param connection original business transaction / 原业务事务
+     * @param graph complete reviewed graph / 完整审阅图
+     * @param publications exact component records / 精确组件记录
+     * @param observedAt successful observation time / 成功观测时间
+     * @throws SQLException if transaction ownership, inputs or writes fail / 事务归属、输入或写入失败时 */
+    static void save(Connection connection, DeploymentApplicationGraph graph, List<DeploymentUnitCommit> publications,
+            Instant observedAt) throws SQLException {
+        if (connection.getAutoCommit())
+            throw new SQLException("Publication requires the original business transaction");
+        var records = validateInputs(graph, publications);
+        Objects.requireNonNull(observedAt);
+        for (var record : records)
+            saveUnit(connection, record);
+        for (var record : records) {
+            DeploymentConfigurationRepository.saveAndBindRelease(connection, record.configuration(),
+                    record.release().sha256());
+            DeploymentSecretRepository.bindRelease(connection, record.unit().id(), record.release().sha256(),
+                    Set.copyOf(record.secrets()));
+        }
+        DeploymentGraphRepository.save(connection, graph, observedAt);
     }
 
     /** Reads persisted identity without manufacturing endpoint or trust data. / 读取持久身份，不补造端点或信任数据。
