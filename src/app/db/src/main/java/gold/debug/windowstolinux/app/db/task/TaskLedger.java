@@ -28,7 +28,9 @@ public final class TaskLedger {
     private final RepositoryConnections connections;
 
     /** Fixed internal JSON encoding, never arbitrary business serialization. / 固定内部 JSON 编码，不序列化任意业务对象。 */
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json = new ObjectMapper()
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /**
      * Binds the ledger to the exclusive engine owner. / 将账本绑定到引擎独占所有者。
@@ -83,6 +85,19 @@ public final class TaskLedger {
                 for (var claim : ordered)
                     if (!Set.of("MOD", "SCHEMA", "SERVER").contains(claim.kind()))
                         throw new SQLException("Invalid initial resource kind");
+                var graph = resolver.recoveryGraph(connection);
+                if (graph.isPresent()) {
+                    try {
+                        graph.get().requireOwner(ownerId, ownerVersion, ordered);
+                    } catch (IllegalArgumentException invalid) {
+                        throw new SQLException("Invalid task recovery graph", invalid);
+                    }
+                }
+                String recovery = encode(graph.isPresent()
+                        ? Map.of("formatVersion", 2, "initialClaims", ordered, "graph", graph.get().encode())
+                        : Map.of("formatVersion", 1, "initialClaims", ordered));
+                if (recovery.length() > 1024 * 1024)
+                    throw new SQLException("Task recovery metadata is too large");
                 long now = System.currentTimeMillis();
                 try (var c = connections.open();
                         var p = c.prepareStatement(
@@ -95,7 +110,7 @@ public final class TaskLedger {
                     p.setObject(6, bootId);
                     p.setString(7, encode(Map.of("type", request.type(), "title", request.title(), "serverIds",
                             request.serverIds(), "cancellable", request.cancellable())));
-                    p.setString(8, encode(Map.of("formatVersion", 1, "initialClaims", ordered)));
+                    p.setString(8, recovery);
                     p.setString(9, UUID.randomUUID().toString());
                     p.setString(10, request.title());
                     p.setLong(11, now);
@@ -116,6 +131,14 @@ public final class TaskLedger {
          * @throws SQLException if validation or queries fail / 校验或查询失败时
          */
         List<TaskResource> resolve(Connection connection) throws SQLException;
+
+        /** Supplies original Mod identities in the same admission transaction; host protocols may omit them. / 在同一准入事务提供原 Mod 身份，宿主协议可省略。
+         * @param connection original serialized transaction / 原串行事务
+         * @return original graph when this policy admits Mod business / 此策略接纳 Mod 业务时的原图
+         * @throws SQLException if original identities cannot be read / 无法读取原身份时 */
+        default Optional<TaskRecoveryGraph> recoveryGraph(Connection connection) throws SQLException {
+            return Optional.empty();
+        }
     }
 
     /**
@@ -176,7 +199,7 @@ public final class TaskLedger {
         return locked(() -> {
             try (var c = connections.open();
                     var p = c.prepareStatement(
-                            "SELECT state,boot_id,recovery_json FROM platform_task WHERE task_id=?")) {
+                            "SELECT state,boot_id,recovery_json,owner_id,owner_version FROM platform_task WHERE task_id=?")) {
                 p.setObject(1, taskId);
                 try (var r = p.executeQuery()) {
                     if (!r.next())
@@ -187,9 +210,7 @@ public final class TaskLedger {
                         return false;
                     List<TaskResource> claims;
                     try {
-                        var node = json.readTree(r.getString(3));
-                        if (node.path("formatVersion").asInt() != 1)
-                            throw new SQLException("Unsupported task recovery format");
+                        var node = admissionDocument(r.getString(3), r.getString(4), r.getString(5));
                         claims = orderedClaims(
                                 Arrays.asList(json.treeToValue(node.required("initialClaims"), TaskResource[].class)));
                     } catch (java.io.IOException | IllegalArgumentException failure) {
@@ -205,6 +226,52 @@ public final class TaskLedger {
                 return true;
             }
         });
+    }
+
+    /** Reads retained original code and data without using current Mod selection. / 不使用当前 Mod 选择，读取保留原代码及数据。
+     * @param taskId original task / 原任务
+     * @return captured graph, absent for host or pre-capture records / 捕获图，宿主或捕获能力加入前的记录不存在
+     * @throws SQLException if the record is missing or malformed / 记录缺失或损坏时 */
+    public Optional<TaskRecoveryGraph> recoveryGraph(UUID taskId) throws SQLException {
+        try (var c = connections.open();
+                var p = c.prepareStatement(
+                        "SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
+            p.setObject(1, taskId);
+            try (var r = p.executeQuery()) {
+                if (!r.next())
+                    throw new SQLException("Original task does not exist");
+                var node = admissionDocument(r.getString(3), r.getString(1), r.getString(2));
+                return node.path("formatVersion").intValue() == 1
+                        ? Optional.empty()
+                        : Optional.of(TaskRecoveryGraph.decode(node.path("graph")));
+            }
+        }
+    }
+
+    /** Validates admission metadata before execution or recovery. / 执行或恢复前校验准入元数据。
+     * @param value original stored document / 原存储文档
+     * @param owner original task owner / 原任务所有者
+     * @param version original task version / 原任务版本
+     * @return validated original document / 已校验原文档
+     * @throws SQLException if the shape or identity is inconsistent / 形状或身份不一致时 */
+    private com.fasterxml.jackson.databind.JsonNode admissionDocument(String value, String owner, String version)
+            throws SQLException {
+        try {
+            if (value == null || value.length() > 1024 * 1024)
+                throw new IllegalArgumentException("Invalid task metadata size");
+            var node = json.readTree(value);
+            if (node == null || !node.isObject() || !node.path("formatVersion").isInt()
+                    || !Set.of(1, 2).contains(node.path("formatVersion").intValue())
+                    || !node.path("initialClaims").isArray()
+                    || node.size() != (node.path("formatVersion").intValue() == 1 ? 2 : 3))
+                throw new IllegalArgumentException("Unsupported task admission document");
+            if (node.path("formatVersion").intValue() == 2)
+                TaskRecoveryGraph.decode(node.path("graph")).requireOwner(owner, version,
+                        Arrays.asList(json.treeToValue(node.path("initialClaims"), TaskResource[].class)));
+            return node;
+        } catch (java.io.IOException | IllegalArgumentException invalid) {
+            throw new SQLException("Invalid original task admission metadata", invalid);
+        }
     }
 
     /**

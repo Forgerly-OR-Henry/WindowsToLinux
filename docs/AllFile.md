@@ -1630,6 +1630,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/BrowserRecoveryArchival.java`：核对原宿主任务/服务器，保存固定救援摘要，并在中央任务事务内清理所属救援事件与状态；拒绝迟到写入。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；固定任务摘要与执行清理同事务，原归档凭据支持仅元数据重试及跨启动收尾。
+- `app/db/task/TaskRecoveryGraph.java`：保留任务准入时原所有者及全部传递提供方的版本、完整代码摘要与可选 Schema 代次；严格校验持久字段，不从当前单选补造原图。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
 - `app/db/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql`：H2 平台首版表与约束。
@@ -1673,7 +1674,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
 - `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源及固定摘要归档；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
-- `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
+- `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、完整传递依赖、代码摘要、就绪 Schema 代次及完整服务器集合，并捕获原恢复图。
 - `app/service/contract/spi/TaskManagement.java`：平台内部的保留任务清单及原任务操作契约，区分不可核对、缺原恢复、原恢复、元数据归档及救援确认。
 - `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。
 - `app/ui/recovery/TaskRecoveryPane.java`：常驻任务页展示原身份、进度及资源阻塞，明确取消/核对/补归档并跳转现有日志页；锁定或关闭清空观察、使旧确认及迟到结果失效。
