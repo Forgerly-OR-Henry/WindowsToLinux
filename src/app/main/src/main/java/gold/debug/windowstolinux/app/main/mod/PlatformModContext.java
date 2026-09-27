@@ -6,12 +6,11 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
@@ -25,7 +24,7 @@ import gold.debug.windowstolinux.appapi.ui.UiService;
 /** Owns complete capabilities and staged contributions of one actual Mod activation. / 持有一次实际 Mod 启用的完整能力及暂存扩展。 */
 public final class PlatformModContext implements ContextLease {
     /** Actual host capability factory. / 实际宿主能力工厂。 */
-    private final PlatformRuntime runtime;
+    private final PlatformModHost runtime;
 
     /** Original prepared loader, owned by the surrounding runtime session. / 原已准备加载器，由外围运行会话持有。 */
     private final ModClassLoader loader;
@@ -64,7 +63,7 @@ public final class PlatformModContext implements ContextLease {
      * @param mode activation mode / 启用模式
      * @param pages actual desktop page registry / 实际桌面页面登记
      * @param released host release bookkeeping / 宿主释放登记 */
-    public PlatformModContext(PlatformRuntime runtime, ModClassLoader loader, Optional<SchemaIdentity> schema,
+    public PlatformModContext(PlatformModHost runtime, ModClassLoader loader, Optional<SchemaIdentity> schema,
             ModLaunchMode mode, ModPageRegistry pages, Runnable released) {
         this.runtime = Objects.requireNonNull(runtime);
         this.loader = Objects.requireNonNull(loader);

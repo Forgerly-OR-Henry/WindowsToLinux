@@ -17,6 +17,7 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.shell.*;
 import gold.debug.windowstolinux.appapi.ui.*;
 import org.junit.jupiter.api.Test;

@@ -217,7 +217,7 @@ public final class DesktopMain {
      * @return safe startup facts without making the platform shell unavailable / 安全启动事实，不使平台外壳不可用 */
     static gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(PlatformRuntime runtime,
             RunModeResolver.RuntimeLayout layout, String declared,
-            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) {
+            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) {
         try {
             if (!runtime.persistence().database().root().equals(layout.dataDirectory().toRealPath()))
                 throw new java.io.IOException("Layout does not match the running platform database");

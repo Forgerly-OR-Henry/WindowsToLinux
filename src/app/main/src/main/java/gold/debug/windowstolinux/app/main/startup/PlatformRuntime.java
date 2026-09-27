@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
 /** Owns platform storage, task execution and security for one desktop boot. / 为一次桌面启动持有平台存储、任务执行及安全会话。 */
-public final class PlatformRuntime implements AutoCloseable {
+public final class PlatformRuntime implements AutoCloseable, gold.debug.windowstolinux.app.main.mod.PlatformModHost {
     /** Protected platform storage retained until actual shutdown. / 实际关闭前保留的受保护平台存储。 */
     private final PlatformPersistence persistence;
 
@@ -160,18 +160,21 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Returns the platform repositories for startup composition. / 返回供启动装配使用的平台仓库。
      * @return owned platform repositories / 所属平台仓库 */
+    @Override
     public PlatformPersistence persistence() {
         return persistence;
     }
 
     /** Returns the current security boundary without key material. / 返回不含密钥材料的当前安全边界。
      * @return security session owner / 安全会话所有者 */
+    @Override
     public DesktopSecurityService security() {
         return security;
     }
 
     /** Returns the central task executor for trusted host composition. / 返回供可信宿主装配使用的中央任务执行器。
      * @return current boot task owner / 当前启动的任务所有者 */
+    @Override
     public PlatformTaskRuntime tasks() {
         return tasks;
     }
@@ -187,7 +190,7 @@ public final class PlatformRuntime implements AutoCloseable {
             gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
             java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
             gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
-            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         requireWorker();
         final gold.debug.windowstolinux.app.main.mod.PlatformModContext prepared;
         synchronized (this) {
@@ -215,6 +218,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Exposes retained context leases to trusted lifecycle cleanup, including failed preparation. / 向可信生命周期清理公开保留上下文占用，包括失败准备。
      * @return exact original context ownership / 精确原上下文归属 */
+    @Override
     public synchronized java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts() {
         return java.util.Map.copyOf(modContexts);
     }
@@ -227,11 +231,12 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param platformApi actual host API release / 实际宿主 API 版本
      * @return retained original lifecycle session / 保留的原生命周期会话
      * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
+    @Override
     public gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession modSession(
             gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
             java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
             gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
-            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages,
+            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
             gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception {
         Objects.requireNonNull(platformApi);
         synchronized (this) {
@@ -249,6 +254,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Exposes original sessions for host cleanup retries without replaying author startup. / 向宿主清理重试提供原会话，不重放作者启动。
      * @return retained session identities / 保留会话身份 */
+    @Override
     public synchronized java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions() {
         return java.util.Map.copyOf(modSessions);
     }
@@ -256,6 +262,7 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Returns host-only Mod intent management using the actual compiled public API identity. / 使用实际编译公开 API 身份返回仅供宿主的 Mod 意图管理。
      * @return original management service / 原管理服务
      * @throws Exception if build identity or archive registration is unavailable / 构建身份或归档登记不可用时 */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents() throws Exception {
         requireWorker();
         if (stopping || closed)
@@ -290,7 +297,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return original graph's startup facts / 原图启动事实
      * @throws Exception if ownership or build identity prevents composition / 归属或构建身份阻止装配时 */
     public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startDevelopmentMods(Path workspace,
-            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         return startMods(workspace, true, pages);
     }
 
@@ -300,7 +307,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return actual graph facts / 实际图事实
      * @throws Exception if graph ownership or installed code is unavailable / 图归属或安装代码不可用时 */
     public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startInstalledMods(Path home,
-            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         return startMods(home, false, pages);
     }
 
@@ -311,7 +318,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @return actual startup facts / 实际启动事实
      * @throws Exception if ownership or source verification fails / 归属或来源核验失败时 */
     private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(Path root,
-            boolean development, gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+            boolean development, gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         requireWorker();
         final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
         synchronized (this) {
@@ -403,6 +410,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Returns service graph assembly for trusted lifecycle composition. / 返回供可信生命周期装配使用的服务图。
      * @return actual service publication owner / 实际服务发布所有者 */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModServices services() {
         if (stopping || closed)
             throw new IllegalStateException("Platform services are closing");
@@ -430,6 +438,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param version loaded release / 加载发布版本
      * @param schema optional business generation / 可选业务代次
      * @return original activation's logger / 原启用日志器 */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner,
             String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
         return logs().bind(owner, version, schema, tasks);
@@ -491,6 +500,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param owner exact Mod identity / 精确 Mod 身份
      * @param version actual loaded release / 实际已加载版本
      * @return host-owned source capability / 宿主持有的来源能力 */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.source.PlatformSourceAccess source(String owner,
             String version) {
         if (closed || stopping || sourcePicker == null)
@@ -564,6 +574,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param schema selected business generation, if present / 选定业务代次，可不存在
      * @return host-owned server adapter / 宿主持有的服务器适配器
      */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.server.PlatformServerAccess serverAccess(String owner,
             String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
         if (closed || stopping)
@@ -595,6 +606,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param schema selected optional business generation / 选定的可选业务代次
      * @return host-owned secret adapter / 宿主持有的秘密适配器
      */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.security.PlatformSecretService secrets(String owner,
             String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
         if (closed || stopping)
@@ -611,6 +623,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param version actual loaded release / 实际已加载版本
      * @return host-owned model capability / 宿主持有的模型能力
      */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.ai.PlatformAiService ai(String owner, String version) {
         if (closed || stopping)
             throw new IllegalStateException("Platform model capabilities are closing");
@@ -624,6 +637,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param owner actual Mod identity / 实际 Mod 身份
      * @param version loaded release / 加载发布版本
      * @return bound process capability / 绑定进程能力 */
+    @Override
     public synchronized gold.debug.windowstolinux.app.service.task.PlatformProcessService processes(String owner,
             String version) {
         if (closed || stopping)
@@ -640,6 +654,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param version exact loaded release / 精确已加载版本
      * @return host-owned capability pair / 宿主持有的能力组合
      */
+    @Override
     public synchronized RemoteCapabilities remoteCapabilities(String ownerId, String version) {
         if (closed || stopping || prompts == null)
             throw new IllegalStateException("Platform remote capabilities are unavailable");
@@ -652,7 +667,7 @@ public final class PlatformRuntime implements AutoCloseable {
     }
 
     /** Remote capabilities whose concrete implementations never cross into author code. / 具体实现不越界交给作者代码的远端能力。 */
-    public final class RemoteCapabilities implements AutoCloseable {
+    public final class RemoteCapabilities implements gold.debug.windowstolinux.app.main.mod.PlatformModHost.Remote {
         /** Same activation's human review authority. / 同次启用的人工审核授权方。 */
         private final PlatformInteractionService interaction;
 

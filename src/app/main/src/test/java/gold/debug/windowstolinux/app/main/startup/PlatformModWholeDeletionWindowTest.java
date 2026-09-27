@@ -12,7 +12,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.ui.mod.ModNavigationPane;
-import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.PageKey;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;

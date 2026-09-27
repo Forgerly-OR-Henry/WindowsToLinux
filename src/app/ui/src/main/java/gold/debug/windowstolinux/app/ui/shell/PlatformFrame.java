@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.setting.SecuritySettingsPane;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 
