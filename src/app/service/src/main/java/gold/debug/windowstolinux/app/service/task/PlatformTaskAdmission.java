@@ -6,6 +6,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
@@ -57,7 +58,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             throws ApiException, SQLException {
         if (connection.getAutoCommit())
             throw new SQLException("Task admission requires a platform transaction");
-        String schemaVersion = null;
+        Optional<SchemaIdentity> schema = Optional.empty();
         if (ownerId.equals(PLATFORM_OWNER)) {
             if (platformVersion == null || !platformVersion.equals(version))
                 throw unavailable("PLATFORM_VERSION", "The host task does not match the running application release");
@@ -70,27 +71,12 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             }
         } else {
             requireNoPendingIntent(connection, ownerId);
-            schemaVersion = requireRunningGraph(connection, ownerId, version);
+            schema = requireRunningGraph(connection, ownerId, version).release(ownerId).schema();
         }
         var claims = new ArrayList<TaskResource>();
         claims.add(new TaskResource("MOD", ownerId, ownerId, false));
-        if (schemaVersion != null) {
-            try (var statement = connection.prepareStatement(
-                    "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
-                statement.setString(1, ownerId);
-                statement.setString(2, schemaVersion);
-                try (var rows = statement.executeQuery()) {
-                    if (!rows.next() || !"READY".equals(rows.getString(4)))
-                        throw unavailable("SCHEMA_NOT_READY", "The Mod data generation is not ready");
-                    var identity = new SchemaIdentity(ownerId, schemaVersion, rows.getObject(1, UUID.class));
-                    var coordinates = new SchemaCoordinates(identity);
-                    if (!coordinates.physicalName().equals(rows.getString(2))
-                            || !coordinates.databaseUser().equals(rows.getString(3)))
-                        throw unavailable("SCHEMA_IDENTITY", "The registered data identity does not match its owner");
-                    claims.add(new TaskResource("SCHEMA", identity.generation().toString(), ownerId, false));
-                }
-            }
-        }
+        schema.ifPresent(
+                identity -> claims.add(new TaskResource("SCHEMA", identity.generation().toString(), ownerId, false)));
         try (var statement = connection.prepareStatement(
                 "SELECT s.host,s.ssh_port,s.username,s.credential_id FROM server_profile s JOIN credential c ON c.credential_id=s.credential_id WHERE s.server_profile_id=?")) {
             for (var id : request.serverIds()) {
@@ -106,26 +92,43 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
         return List.copyOf(claims);
     }
 
+    /** Captures the complete original running Mod graph in the same transaction as task admission. / 在任务准入同一事务捕获完整原运行 Mod 图。
+     * @param connection original serialized transaction / 原串行事务
+     * @param ownerId exact admitted owner / 精确准入所有者
+     * @param version original running release / 原运行发布
+     * @return original code and data graph, absent for host tasks / 原代码及数据图，宿主任务不存在
+     * @throws ApiException if any original provider is unavailable / 任一原提供方不可用时
+     * @throws SQLException if graph state cannot be read / 无法读取图状态时 */
+    @Override
+    public Optional<TaskRecoveryGraph> recoveryGraph(Connection connection, String ownerId, String version)
+            throws ApiException, SQLException {
+        if (connection.getAutoCommit())
+            throw new SQLException("Recovery capture requires a platform admission transaction");
+        return ownerId.equals(PLATFORM_OWNER)
+                ? Optional.empty()
+                : Optional.of(requireRunningGraph(connection, ownerId, version));
+    }
+
     /** Rechecks every declared provider's actual state before accepting new consumer work. / 接纳使用方新工作前重新检查每个声明提供方的实际状态。
      * @param connection original admission transaction / 原准入事务
      * @param owner original consumer / 原使用方
      * @param version exact loaded consumer release / 精确已加载使用方版本
-     * @return the consumer's declared data version / 使用方声明数据版本
+     * @return original releases and data generations / 原发布及数据代次
      * @throws SQLException if the graph cannot be read / 无法读取图时
      * @throws ApiException if any original provider is unavailable or incompatible / 任一原提供方不可用或不兼容时 */
-    private String requireRunningGraph(Connection connection, String owner, String version)
+    private TaskRecoveryGraph requireRunningGraph(Connection connection, String owner, String version)
             throws SQLException, ApiException {
         var remaining = new ArrayDeque<Map.Entry<String, String>>();
         remaining.add(Map.entry(owner, version));
         var visited = new HashSet<String>();
-        String schema = null;
+        var releases = new ArrayList<TaskRecoveryGraph.Release>();
         while (!remaining.isEmpty()) {
             var selected = remaining.removeFirst();
             if (!visited.add(selected.getKey()))
                 continue;
             gold.debug.windowstolinux.app.mod.manifest.ModManifest manifest;
             try (var statement = connection.prepareStatement(
-                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version,v.manifest_json FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version,v.manifest_json,v.content_sha256 FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
                 statement.setString(1, selected.getValue());
                 statement.setString(2, selected.getKey());
                 try (var rows = statement.executeQuery()) {
@@ -142,12 +145,12 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                                 || !manifest.version().toString().equals(selected.getValue())
                                 || !manifest.schemaVersion().equals(Optional.ofNullable(rows.getString(7))))
                             throw new IllegalArgumentException("Original declaration identity changed");
+                        releases.add(new TaskRecoveryGraph.Release(selected.getKey(), selected.getValue(),
+                                rows.getString(9), schema(connection, selected.getKey(), rows.getString(7))));
                     } catch (java.io.IOException | IllegalArgumentException malformed) {
                         throw unavailable("MOD_RUNNING_GRAPH_UNVERIFIED",
                                 "The original running dependency graph cannot be verified");
                     }
-                    if (selected.getKey().equals(owner))
-                        schema = rows.getString(7);
                 }
             }
             for (var dependency : manifest.dependencies()) {
@@ -171,7 +174,35 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                 }
             }
         }
-        return schema;
+        return new TaskRecoveryGraph(owner, releases);
+    }
+
+    /** Reads the exact ready data generation of an original release. / 读取原发布的精确就绪数据代次。
+     * @param connection original serialized transaction / 原串行事务
+     * @param owner exact Mod / 精确 Mod
+     * @param version declared schema version, or null for stateless code / 声明数据版本，无状态代码为 null
+     * @return original optional data identity / 原可选数据身份
+     * @throws SQLException if state cannot be read / 无法读取状态时
+     * @throws ApiException if the original data is unavailable or inconsistent / 原数据不可用或不一致时 */
+    private static Optional<SchemaIdentity> schema(Connection connection, String owner, String version)
+            throws SQLException, ApiException {
+        if (version == null)
+            return Optional.empty();
+        try (var statement = connection.prepareStatement(
+                "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+            statement.setString(1, owner);
+            statement.setString(2, version);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next() || !"READY".equals(rows.getString(4)))
+                    throw unavailable("SCHEMA_NOT_READY", "The Mod data generation is not ready");
+                var identity = new SchemaIdentity(owner, version, rows.getObject(1, UUID.class));
+                var coordinates = new SchemaCoordinates(identity);
+                if (!coordinates.physicalName().equals(rows.getString(2))
+                        || !coordinates.databaseUser().equals(rows.getString(3)))
+                    throw unavailable("SCHEMA_IDENTITY", "The registered data identity does not match its owner");
+                return Optional.of(identity);
+            }
+        }
     }
 
     /** Rejects new work in any retained restart-request scope without changing accepted tasks. / 拒绝保留重启请求范围内的新工作，不改变已接纳任务。

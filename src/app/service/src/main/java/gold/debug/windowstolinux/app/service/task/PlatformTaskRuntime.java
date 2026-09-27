@@ -1061,6 +1061,18 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          */
         List<TaskResource> claims(java.sql.Connection connection, String ownerId, String version, TaskRequest request)
                 throws ApiException, SQLException;
+
+        /** Captures original Mod code and data before insertion, without changing admission resources. / 插入前捕获原 Mod 代码及数据，不改变准入资源。
+         * @param connection original admission transaction / 原准入事务
+         * @param ownerId exact caller / 精确调用方
+         * @param version exact running release / 精确运行发布
+         * @return original graph, absent for policies without Mod code / 原图，不含 Mod 代码的策略不存在
+         * @throws ApiException if original code cannot be established / 无法确立原代码时
+         * @throws SQLException if persistence cannot be read / 无法读取持久化时 */
+        default Optional<gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph> recoveryGraph(
+                java.sql.Connection connection, String ownerId, String version) throws ApiException, SQLException {
+            return Optional.empty();
+        }
     }
 
     /** Carries a rejected policy through repository rollback without inventing uncertain work. / 跨仓库回滚传递策略拒绝，不虚构未知工作。 */
@@ -1138,16 +1150,37 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         throw error(ProblemCode.BUSY, "MOD_ADMISSION_CLOSED", blockedOwners.get(owner));
                     UUID id = UUID.randomUUID();
                     try {
-                        ledger.enqueue(id, owner, version, request, connection -> {
-                            try {
-                                var claims = List.copyOf(admission.claims(connection, owner, version, request));
-                                for (var claim : claims)
-                                    if (claim.kind().equals("MOD") && blockedOwners.containsKey(claim.id()))
-                                        throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED",
-                                                blockedOwners.get(claim.id()));
-                                return claims;
-                            } catch (ApiException rejected) {
-                                throw new AdmissionRejectedException(rejected);
+                        ledger.enqueue(id, owner, version, request, new TaskLedger.InitialClaims() {
+                            /** Rechecks original resource admission before insertion. / 插入前重新核对原资源准入。
+                             * @param connection locked admission transaction / 锁定准入事务
+                             * @return complete original claims / 完整原申请
+                             * @throws SQLException if admission or persistence is rejected / 准入或持久化被拒绝时 */
+                            @Override
+                            public List<TaskResource> resolve(java.sql.Connection connection) throws SQLException {
+                                try {
+                                    var claims = List.copyOf(admission.claims(connection, owner, version, request));
+                                    for (var claim : claims)
+                                        if (claim.kind().equals("MOD") && blockedOwners.containsKey(claim.id()))
+                                            throw error(ProblemCode.BUSY, "MOD_DEPENDENCY_CLOSED",
+                                                    blockedOwners.get(claim.id()));
+                                    return claims;
+                                } catch (ApiException rejected) {
+                                    throw new AdmissionRejectedException(rejected);
+                                }
+                            }
+
+                            /** Captures the same locked graph before any author callback. / 任一作者回调前捕获同一锁定图。
+                             * @param connection original admission transaction / 原准入事务
+                             * @return retained original graph / 保留原图
+                             * @throws SQLException if identities cannot be proven / 无法证明身份时 */
+                            @Override
+                            public Optional<gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph> recoveryGraph(
+                                    java.sql.Connection connection) throws SQLException {
+                                try {
+                                    return admission.recoveryGraph(connection, owner, version);
+                                } catch (ApiException rejected) {
+                                    throw new AdmissionRejectedException(rejected);
+                                }
                             }
                         });
                         var task = new Execution<>(ledger.snapshot(id), work, request.cancellable());
