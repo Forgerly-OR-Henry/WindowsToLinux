@@ -27,6 +27,15 @@ public interface TaskService {
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
 
     /**
+     * Observes whether every explicit resource of the original running or reconciling task was actually released.
+     * / 观察原执行或核对任务的全部显式资源是否确已释放。
+     * @param task authentic original task context / 真实原任务上下文
+     * @return true only when no explicit resource remains / 仅无显式资源残留时为真
+     * @throws ApiException if the caller, task, or persisted observation is unavailable / 调用者、任务或持久观测不可用时
+     */
+    boolean resourcesReleased(TaskContext task) throws ApiException;
+
+    /**
      * Registers manual reconciliation for retained tasks of the given type. / 为指定类型保留任务登记人工核对逻辑。
      * @param taskType owner-local type of recoverable task / 所有者内部可恢复任务的类型
      * @param recovery callback for explicit reconciliation of retained tasks / 显式核对保留任务的回调

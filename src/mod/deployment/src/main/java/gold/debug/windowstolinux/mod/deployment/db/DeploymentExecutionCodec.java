@@ -9,13 +9,13 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
 
 /** Strict bounded JSON for execution identity, reservation evidence and formal results. / 执行身份、预留证据及正式结果的严格有界JSON。 */
 final class DeploymentExecutionCodec {
     /** Current journal version freezes the reviewed project's complete source revision. / 当前账本版本冻结已审阅项目的完整来源修订。 */
-    static final int VERSION = 3;
+    static final int VERSION = 4;
 
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
@@ -30,7 +30,7 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if metadata is invalid or cannot be encoded / 元数据无效或无法编码时 */
     static String request(DeploymentExecutionIdentity identity, String operationType,
             List<DeploymentReferenceIntent> intents, Optional<DeploymentProjectRecord> project) throws SQLException {
-        if (operationType == null || !operationType.matches("[a-z][a-z0-9_]{0,63}"))
+        if (operationType == null || !operationType.matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
         var node = envelope(identity).put("operationType", operationType);
         if (project.isPresent()) {
@@ -76,16 +76,23 @@ final class DeploymentExecutionCodec {
     /** Encodes the formal outcome independently of actual cleanup. / 编码独立于实际收尾的正式结果。
      * @param identity original operation / 原操作
      * @param outcome observed business result / 已观察业务结果
+     * @param problemCode original public failure category, absent for success / 原公开失败类别，成功时为空
      * @param eventCode safe stable result code / 安全稳定结果码
      * @param publications successfully committed units, empty for failure / 成功提交单元，失败时为空
      * @param release original whole-application history identity, absent for failure / 原整应用历史身份，失败时为空
      * @return bounded result document / 有界结果文档
      * @throws SQLException if encoding exceeds bounds / 编码超限时 */
-    static String result(DeploymentExecutionIdentity identity, Outcome outcome, String eventCode,
-            List<DeploymentUnitCommit> publications, Optional<DeploymentReleaseIdentity> release) throws SQLException {
-        if (eventCode == null || !eventCode.matches("[A-Z][A-Z0-9_]{0,127}"))
+    static String result(DeploymentExecutionIdentity identity, Outcome outcome, Optional<ProblemCode> problemCode,
+            String eventCode, List<DeploymentUnitCommit> publications, Optional<DeploymentReleaseIdentity> release)
+            throws SQLException {
+        if (eventCode == null || !eventCode.matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
+                || (outcome == Outcome.SUCCEEDED) == problemCode.isPresent())
             throw new SQLException("Invalid result event code");
         var node = envelope(identity).put("outcome", outcome.name()).put("eventCode", eventCode);
+        if (problemCode.isPresent())
+            node.put("problemCode", problemCode.orElseThrow().name());
+        else
+            node.putNull("problemCode");
         if (release.isPresent())
             node.putObject("applicationRelease").put("id", release.get().id().toString()).put("sha256",
                     release.get().sha256());
@@ -136,7 +143,7 @@ final class DeploymentExecutionCodec {
         var request = parse(record.requestJson());
         identity(request, record.identity(), "operationType", "references", "projectSource");
         project(request, record.identity());
-        if (!string(request, "operationType").matches("[a-z][a-z0-9_]{0,63}"))
+        if (!string(request, "operationType").matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
         var intents = references(request, record.identity());
         var recovery = parse(record.recoveryJson());
@@ -274,10 +281,20 @@ final class DeploymentExecutionCodec {
      * @param record original row / 原行
      * @throws SQLException if the result is inconsistent / 结果不一致时 */
     private static void validateResult(JsonNode result, DeploymentExecutionRecord record) throws SQLException {
-        identity(result, record.identity(), "outcome", "eventCode", "releases", "applicationRelease");
+        identity(result, record.identity(), "outcome", "problemCode", "eventCode", "releases", "applicationRelease");
         if (!string(result, "outcome").equals(record.outcome().orElseThrow().name())
-                || !string(result, "eventCode").matches("[A-Z][A-Z0-9_]{0,127}"))
+                || !string(result, "eventCode").matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
             throw new SQLException("Formal execution result differs from its row");
+        if (record.outcome().orElseThrow() == Outcome.SUCCEEDED) {
+            if (!result.path("problemCode").isNull())
+                throw new SQLException("Successful execution has a failure category");
+        } else {
+            try {
+                ProblemCode.valueOf(string(result, "problemCode"));
+            } catch (IllegalArgumentException invalid) {
+                throw new SQLException("Unknown formal problem category", invalid);
+            }
+        }
         if (record.businessCommitted() != release(result).isPresent())
             throw new SQLException("Formal application release evidence is incomplete");
         var releases = array(result, "releases", 64);
@@ -293,6 +310,19 @@ final class DeploymentExecutionCodec {
                     || !release.path("publishedAt").canConvertToLong())
                 throw new SQLException("Formal publication metadata is invalid");
         }
+    }
+
+    /** Restores only bounded original problem category and event, never a discarded message. / 仅恢复有界原问题类别及事件，不补造已舍弃消息。
+     * @param record supported original execution / 受支持原执行
+     * @return original public failure metadata or absence / 原公开失败元数据或空
+     * @throws SQLException if the result is unsupported or malformed / 结果不受支持或无效时 */
+    static Optional<Problem> problem(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        if (record.outcome().orElse(null) == Outcome.SUCCEEDED || record.resultJson().isEmpty())
+            return Optional.empty();
+        var result = parse(record.resultJson().orElseThrow());
+        return Optional.of(new Problem(ProblemCode.valueOf(string(result, "problemCode")), string(result, "eventCode"),
+                "Deployment result requires review", Map.of(), Optional.empty()));
     }
 
     /** Reads a supported execution's immutable history link. / 读取受支持执行的不可变历史关联。

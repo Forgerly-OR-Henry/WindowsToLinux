@@ -90,7 +90,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 assertEquals("PREPARED", original.phase());
                 assertEquals(Map.of(intent(), Optional.empty()), journal.references(original));
                 journal.recordUncommittedOutcome(task, original.identity().executionId(), Outcome.CANCELLED,
-                        "CANCELLED_BEFORE_RESERVATION", OBSERVED.plusSeconds(1));
+                        problem(Outcome.CANCELLED, "CANCELLED_BEFORE_RESERVATION"), OBSERVED.plusSeconds(1));
                 journal.finishCleanup(task, original.identity().executionId(), OBSERVED.plusSeconds(2));
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_execution"));
                 return success();
@@ -120,8 +120,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                         "deployment_release"))
                     assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM " + table));
                 sql(runtime, task, "ALTER TABLE deployment_execution DROP CONSTRAINT fixture_commit_rejection");
-                journal.recordUncommittedOutcome(task, id, Outcome.FAILED, "PUBLICATION_ROLLED_BACK",
-                        OBSERVED.plusSeconds(3));
+                journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
+                        problem(Outcome.FAILED, "PUBLICATION_ROLLED_BACK"), OBSERVED.plusSeconds(3));
                 runtime.modContexts().get(OWNER).context().servers().resolve(reference.id(),
                         ReferenceResolution.NOT_REFERENCED, task);
                 journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
@@ -160,7 +160,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
                 verify(runtime, task, graph, records);
                 assertThrows(SQLException.class, () -> journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
-                        "NOT_ALLOWED", OBSERVED.plusSeconds(4)));
+                        problem(Outcome.FAILED, "NOT_ALLOWED"), OBSERVED.plusSeconds(4)));
                 runtime.modContexts().get(OWNER).context().servers().resolve(reference.id(),
                         ReferenceResolution.REFERENCED, task);
                 journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
@@ -188,8 +188,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 assertThrows(SQLException.class, () -> journal.startEffects(task, id, OBSERVED.plusSeconds(1)));
                 context.servers().reserve(new ServerRef("server"), intent().businessKey(), task);
                 context.secrets().reserve(secret, secretIntent.businessKey(), task);
-                journal.recordUncommittedOutcome(task, id, Outcome.UNKNOWN, "RESERVATION_ACKNOWLEDGEMENT_LOST",
-                        OBSERVED.plusSeconds(1));
+                journal.recordUncommittedOutcome(task, id, Outcome.UNKNOWN,
+                        problem(Outcome.UNKNOWN, "RESERVATION_ACKNOWLEDGEMENT_LOST"), OBSERVED.plusSeconds(1));
                 var retained = journal.find(task, id).orElseThrow();
                 assertTrue(journal.references(retained).values().stream().allMatch(Optional::isEmpty));
                 var serverRef = context.servers().findReference(new ServerRef("server"), intent().businessKey(), task)
@@ -199,8 +199,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 journal.recordReference(task, id, secretIntent, secretRef.id(), OBSERVED.plusSeconds(2));
                 assertThrows(SQLException.class, () -> journal.finishCleanup(task, id, OBSERVED.plusSeconds(3)));
                 assertThrows(SQLException.class, () -> journal.startEffects(task, id, OBSERVED.plusSeconds(3)));
-                journal.recordUncommittedOutcome(task, id, Outcome.CANCELLED, "CANCELLED_BEFORE_EFFECTS",
-                        OBSERVED.plusSeconds(3));
+                journal.recordUncommittedOutcome(task, id, Outcome.CANCELLED,
+                        problem(Outcome.CANCELLED, "CANCELLED_BEFORE_EFFECTS"), OBSERVED.plusSeconds(3));
                 context.servers().resolve(serverRef.id(), ReferenceResolution.NOT_REFERENCED, task);
                 context.secrets().resolve(secretRef.id(), ReferenceResolution.NOT_REFERENCED, task);
                 journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
@@ -223,7 +223,8 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 var journal = journal(runtime);
                 var context = runtime.modContexts().get(OWNER).context();
                 var secret = context.secrets().create("deployment.configuration", new byte[]{42}, task);
-                var secretIntent = DeploymentReferenceIntent.secret(secret, "secret:password:1");
+                var secretIntent = DeploymentReferenceKey.secretRevision(new ServerRef("server"), secret,
+                        new DeploymentSecretReference("password", 1));
                 journal.begin(task, identity(task, id), "deploy",
                         included ? List.of(intent(), secretIntent) : List.of(intent()), Optional.empty(), OBSERVED);
                 var server = context.servers().reserve(new ServerRef("server"), intent().businessKey(), task);
@@ -250,12 +251,56 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                     assertThrows(SQLException.class,
                             () -> journal.commitApplication(task, id, graph, records, OBSERVED.plusSeconds(3)));
                     assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_unit"));
-                    journal.recordUncommittedOutcome(task, id, Outcome.FAILED, "MISSING_REFERENCE_FACT",
-                            OBSERVED.plusSeconds(3));
+                    journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
+                            problem(Outcome.FAILED, "MISSING_REFERENCE_FACT"), OBSERVED.plusSeconds(3));
                     sql(runtime, task, "DELETE FROM secret_revision");
                     context.servers().resolve(server.id(), ReferenceResolution.NOT_REFERENCED, task);
                     context.secrets().resolve(reservation.id(), ReferenceResolution.NOT_REFERENCED, task);
                 }
+                journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
+                return success();
+            });
+            valid(runtime);
+        }
+    }
+
+    @Test
+    void publishedSecretMustMatchItsOwnOriginalKeyAndCredentialPair() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context();
+                var journal = journal(runtime);
+                var first = context.secrets().create("deployment.configuration", new byte[]{1}, task);
+                var second = context.secrets().create("deployment.configuration", new byte[]{2}, task);
+                var published = new DeploymentSecretReference("password", 1);
+                var other = new DeploymentSecretReference("other", 1);
+                var firstIntent = DeploymentReferenceKey.secretRevision(new ServerRef("server"), first, published);
+                var secondIntent = DeploymentReferenceKey.secretRevision(new ServerRef("server"), second, other);
+                UUID id = UUID.randomUUID();
+                journal.begin(task, identity(task, id), "deploy", List.of(intent(), firstIntent, secondIntent),
+                        Optional.empty(), OBSERVED);
+                var serverRef = context.servers().reserve(new ServerRef("server"), intent().businessKey(), task);
+                var firstRef = context.secrets().reserve(first, firstIntent.businessKey(), task);
+                var secondRef = context.secrets().reserve(second, secondIntent.businessKey(), task);
+                journal.recordReference(task, id, intent(), serverRef.id(), OBSERVED.plusSeconds(1));
+                journal.recordReference(task, id, firstIntent, firstRef.id(), OBSERVED.plusSeconds(1));
+                journal.recordReference(task, id, secondIntent, secondRef.id(), OBSERVED.plusSeconds(1));
+                new DeploymentSecretRepository(context.db()).saveRevision(task,
+                        new DeploymentSecretRevision(published, second.id(), OBSERVED));
+                journal.startEffects(task, id, OBSERVED.plusSeconds(2));
+                var graph = graph("application");
+                assertThrows(SQLException.class, () -> journal.commitApplication(task, id, graph,
+                        publications(graph, 1, List.of(published)), OBSERVED.plusSeconds(3)));
+                assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_unit"));
+                journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
+                        problem(Outcome.FAILED, "EXACT_SECRET_PAIR_CONFLICT"), OBSERVED.plusSeconds(3));
+                sql(runtime, task, "DELETE FROM secret_revision WHERE secret_id='password' AND secret_revision=1");
+                context.servers().resolve(serverRef.id(), ReferenceResolution.NOT_REFERENCED, task);
+                context.secrets().resolve(firstRef.id(), ReferenceResolution.NOT_REFERENCED, task);
+                context.secrets().resolve(secondRef.id(), ReferenceResolution.NOT_REFERENCED, task);
                 journal.finishCleanup(task, id, OBSERVED.plusSeconds(4));
                 return success();
             });
@@ -359,7 +404,9 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 journal.begin(task, identity(task, id), "deploy", List.of(intent()), Optional.empty(), OBSERVED);
                 String json = journal.find(task, id).orElseThrow().recoveryJson();
                 byte[] bytes = switch (fault) {
-                    case "duplicate" -> json.replace("\"formatVersion\":3", "\"formatVersion\":3,\"formatVersion\":3")
+                    case "duplicate" -> json.replace("\"formatVersion\":" + DeploymentExecutionCodec.VERSION,
+                            "\"formatVersion\":" + DeploymentExecutionCodec.VERSION + ",\"formatVersion\":"
+                                    + DeploymentExecutionCodec.VERSION)
                             .getBytes(StandardCharsets.UTF_8);
                     case "trailing" -> (json + " {}").getBytes(StandardCharsets.UTF_8);
                     case "missing" -> "{}".getBytes(StandardCharsets.UTF_8);

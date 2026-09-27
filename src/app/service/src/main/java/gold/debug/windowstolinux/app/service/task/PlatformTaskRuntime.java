@@ -14,6 +14,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Authoritative persistent resource and result ledger. / 权威的持久化资源及结果账本。 */
     private final TaskLedger ledger;
 
+    /** Read-only original-task explicit resource observation. / 原任务显式资源只读观测。 */
+    private final TaskResourceObservation resourceObservation;
+
     /** Actual boot that owns newly created physical clients, including recovery clients. / 持有新物理客户端的实际启动代次，包括恢复客户端。 */
     private final UUID bootId;
 
@@ -69,6 +72,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     public PlatformTaskRuntime(PlatformDatabase database, Admission admission, DesktopSecurityService security)
             throws SQLException {
         ledger = new TaskLedger(database);
+        resourceObservation = new TaskResourceObservation(database);
         bootId = database.bootId();
         this.admission = Objects.requireNonNull(admission);
         this.security = Objects.requireNonNull(security);
@@ -1240,6 +1244,30 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 int end = (int) Math.min((long) start + limit, all.size());
                 return new PageSlice<>(all.subList(start, end),
                         end < all.size() ? Optional.of(Integer.toString(end)) : Optional.empty());
+            }
+        }
+
+        /** Observes original explicit leases without releasing them. / 只观察原任务显式占用，不执行释放。
+         * @param task authentic running or reconciling task / 真实执行或核对任务
+         * @return whether the finalization predicate sees no explicit lease / 收尾判据是否未见显式占用
+         * @throws ApiException if authorization or durable observation fails / 授权或持久观测失败时 */
+        @Override
+        public boolean resourcesReleased(TaskContext task) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation has closed");
+                var original = requireCleanup(task, owner, version);
+                if (!original.ownerId().equals(owner) || !original.ownerVersion().equals(version))
+                    throw error(ProblemCode.ACCESS_DENIED, "TASK_CALLER", "The task belongs to another Mod release");
+                try {
+                    return resourceObservation.released(original.id());
+                } catch (SQLException failure) {
+                    throw error(ProblemCode.IO_FAILURE, "TASK_RESOURCE_OBSERVATION",
+                            "Task resource release could not be confirmed");
+                }
             }
         }
 

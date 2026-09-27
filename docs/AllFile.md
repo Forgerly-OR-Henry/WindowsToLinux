@@ -1599,7 +1599,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/task/TaskHandle.java`：仅在必要清理完成后结束的可观察任务结果。
 - `appapi/task/TaskRecovery.java`：复用原资源且不重放未知副作用的结果核对。
 - `appapi/task/TaskRequest.java`：包含完整初始服务器资源集合的任务准入请求。
-- `appapi/task/TaskService.java`：绑定调用方的任务准入、观察与核对服务。
+- `appapi/task/TaskService.java`：绑定调用方的任务准入、观察与核对服务，并只读确认原任务全部显式资源已释放。
 - `appapi/task/TaskSnapshot.java`：终态结果保持一致的不可变任务状态。
 - `appapi/task/TaskState.java`：区分取消请求与业务结果的任务进度状态。
 - `appapi/task/TaskWork.java`：观察取消并保留未完成资源的作者任务逻辑。
@@ -1633,6 +1633,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/BrowserRecoveryArchival.java`：核对原宿主任务/服务器，保存固定救援摘要，并在中央任务事务内清理所属救援事件与状态；拒绝迟到写入。
 - `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；固定任务摘要与执行清理同事务，原归档凭据支持仅元数据重试及跨启动收尾。
+- `app/db/task/TaskResourceObservation.java`：按原任务及精确自动释放标记只读观测所有者和类别无关的显式资源占用。
 - `app/db/task/TaskRecoveryGraph.java`：保留任务准入时原所有者及全部传递提供方的版本、完整代码摘要与可选 Schema 代次；严格校验持久字段，不从当前单选补造原图。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
@@ -1677,7 +1678,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
-- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源及固定摘要归档；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，原执行或恢复上下文可只读核对显式资源；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、完整传递依赖、代码摘要、就绪 Schema 代次及完整服务器集合，并捕获原恢复图。
 - `app/service/contract/spi/TaskManagement.java`：平台内部的保留任务清单及原任务操作契约，区分不可核对、缺原恢复、原恢复、元数据归档及救援确认。
 - `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。
@@ -1772,7 +1773,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
 
-- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份和独立日志类别；部署业务迁移仍在进行。
+- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、独立日志类别及原任务发布恢复器；部署业务迁移仍在进行。
 - `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单、类型化配置内容摘要及发布绑定。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：官方部署 Schema 1 的固定 H2 DDL，含业务表及标准日志。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：只读列清单，用于发现缺表、缺列及多余表列。
@@ -1829,10 +1830,15 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。
 - `mod/deployment/db/DeploymentReferenceIntent.java`：预留前保存的精确平台资源、秘密用途及业务键，不包含秘密值。
 - `mod/deployment/db/DeploymentExecutionRecord.java`：包含正式结果、独立提交/清理标记及原 JSON 文档的只读持久证据。
-- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 3 执行信封、审阅时完整项目修订、精确身份/阶段/预留 UUID 及成功结果必需的整应用历史关联；旧格式只读保留。
+- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 4 执行信封、审阅项目、原引用 UUID、成功历史与非成功结果的公开 ProblemCode/eventCode；旧格式只读保留。
+- `mod/deployment/db/DeploymentReferenceKey.java`：原应用、单元及服务器作用域秘密修订的平台引用业务键，精确核对原意图。
+- `mod/deployment/db/DeploymentReferenceAssociations.java`：只读检查当前与保留发布历史、秘密修订的原业务引用，冲突不当作缺失。
 - `mod/deployment/db/DeploymentProjectRecord.java`：稳定项目身份、完整来源事实与精确创建/更新观测时间。
 - `mod/deployment/db/DeploymentProjectRepository.java`：受管 H2 创建、读取、有界列表与完整旧记录乐观更新，并供原执行事务锁行核对。
 - `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。
+- `mod/deployment/service/core/DeploymentPublication.java`：作者一次性返回的完整已核实应用图和单元发布事实。
+- `mod/deployment/service/core/DeploymentPublicationPlan.java`：预留前已审阅的原执行身份及完整引用意图，不接受外部伪造任务 UUID。
+- `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；UNKNOWN 不重放作者副作用。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
 - `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。

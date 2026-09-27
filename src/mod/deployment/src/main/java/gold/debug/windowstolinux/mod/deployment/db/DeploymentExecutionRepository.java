@@ -189,11 +189,11 @@ public final class DeploymentExecutionRepository {
                     || !record.identity().applicationId().equals(graph.applicationId())
                     || graph.components().stream().anyMatch(c -> !c.unit().server().equals(record.identity().server())))
                 throw new SQLException("Publication differs from the original unfinished operation");
-            requireSecretIntents(connection, records, checkpoint);
+            requireSecretIntents(connection, record.identity(), records, checkpoint);
             DeploymentPublicationRepository.save(connection, graph, records, observedAt);
             var release = DeploymentReleaseRepository.activate(connection, record.identity(),
                     DeploymentReleaseSnapshot.capture(graph, records), observedAt);
-            var result = DeploymentExecutionCodec.result(record.identity(), Outcome.SUCCEEDED,
+            var result = DeploymentExecutionCodec.result(record.identity(), Outcome.SUCCEEDED, Optional.empty(),
                     "DEPLOYMENT_PUBLICATION_COMMITTED", records, Optional.of(release));
             update(connection, record, checkpoint, checkpoint.ids(), "COMMITTED", Optional.of(Outcome.SUCCEEDED),
                     Optional.of(result), true, false, observedAt);
@@ -202,20 +202,25 @@ public final class DeploymentExecutionRepository {
 
     /** Requires every published secret identity to have been included before effects. / 要求每个发布秘密身份在副作用前已被包含。
      * @param connection original transaction / 原事务
+     * @param identity exact original server scope / 精确原服务器作用域
      * @param records complete component publications / 完整组件发布
      * @param checkpoint original reserved associations / 原预留关联
      * @throws SQLException if a secret lacks original reservation evidence / 秘密缺少原预留证据时 */
-    private static void requireSecretIntents(Connection connection, List<DeploymentUnitCommit> records,
-            DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException {
-        var retained = new HashSet<String>();
-        for (var intent : checkpoint.intents())
-            if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET)
-                retained.add(intent.resourceId());
+    private static void requireSecretIntents(Connection connection, DeploymentExecutionIdentity identity,
+            List<DeploymentUnitCommit> records, DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException {
         for (var record : records)
             for (var reference : record.secrets()) {
                 var revision = DeploymentSecretRepository.readRevision(connection, reference)
                         .orElseThrow(() -> new SQLException("Publication secret revision is absent"));
-                if (!retained.contains(revision.credentialId()))
+                if (checkpoint.intents().stream()
+                        .noneMatch(intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET
+                                && intent.resourceId().equals(revision.credentialId())
+                                && intent.businessKey().equals(DeploymentReferenceKey
+                                        .secretRevision(identity.server(),
+                                                new gold.debug.windowstolinux.appapi.secret.SecretRef(
+                                                        intent.resourceId(), intent.purpose().orElseThrow()),
+                                                reference)
+                                        .businessKey())))
                     throw new SQLException("Publication secret was not in the original reserved intent");
             }
     }
@@ -224,23 +229,32 @@ public final class DeploymentExecutionRepository {
      * @param task original task / 原任务
      * @param executionId original operation / 原操作
      * @param outcome checked non-success result / 已核实非成功结果
-     * @param eventCode stable non-secret result code / 稳定非秘密结果码
+     * @param problem original bounded public failure category and event / 原有界公开失败类别及事件
      * @param observedAt observation time / 观测时间
      * @throws SQLException if a known result would be overwritten / 将覆盖已知结果时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
-    public void recordUncommittedOutcome(TaskContext task, UUID executionId, Outcome outcome, String eventCode,
+    public void recordUncommittedOutcome(TaskContext task, UUID executionId, Outcome outcome, Problem problem,
             Instant observedAt) throws SQLException, ApiException {
         if (outcome == null || outcome == Outcome.SUCCEEDED)
             throw new IllegalArgumentException("Success requires atomic publication");
+        Objects.requireNonNull(problem);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (record.businessCommitted() || record.cleanupComplete()
                     || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
                 throw new SQLException("Known business outcome is immutable");
-            var result = DeploymentExecutionCodec.result(record.identity(), outcome, eventCode, List.of(),
-                    Optional.empty());
+            var result = DeploymentExecutionCodec.result(record.identity(), outcome, Optional.of(problem.code()),
+                    problem.eventCode(), List.of(), Optional.empty());
             update(connection, record, checkpoint, checkpoint.ids(), record.phase(), Optional.of(outcome),
                     Optional.of(result), false, false, observedAt);
         });
+    }
+
+    /** Reads the retained public failure category and event without inventing the old message. / 读取留存公开失败类别及事件，不补造旧消息。
+     * @param record supported original result / 受支持原结果
+     * @return retained problem metadata or absence / 留存问题元数据或空
+     * @throws SQLException if its format is unsupported / 格式不受支持时 */
+    public Optional<Problem> problem(DeploymentExecutionRecord record) throws SQLException {
+        return DeploymentExecutionCodec.problem(record);
     }
 
     /** Marks actual cleanup only after a known formal result; uncertainty never becomes finished. / 仅在正式结果已知后标记实际收尾，未知结果不能结束。
