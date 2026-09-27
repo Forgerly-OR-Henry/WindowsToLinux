@@ -9,4 +9,7 @@
   </parent>
   <artifactId>windowstolinux-mod</artifactId>
   <packaging>pom</packaging>
+  <modules>
+    <module>deployment</module>
+  </modules>
 </project>
