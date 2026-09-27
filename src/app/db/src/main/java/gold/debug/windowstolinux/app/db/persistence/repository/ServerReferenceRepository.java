@@ -84,20 +84,10 @@ public final class ServerReferenceRepository {
                 RepositoryConnections.lockPlatformState(connection);
                 new SchemaCoordinates(identity).requireRegistered(connection, Set.of("READY"));
                 lockServer(connection, serverId);
-                try (var statement = connection.prepareStatement(
-                        "SELECT reference_id,state FROM mod_server_reference WHERE mod_id=? AND schema_version=? AND schema_generation=? AND server_profile_id=? AND business_key=?")) {
-                    statement.setString(1, identity.ownerId());
-                    statement.setString(2, identity.schemaVersion());
-                    statement.setObject(3, identity.generation());
-                    statement.setString(4, serverId);
-                    statement.setString(5, businessKey);
-                    try (var rows = statement.executeQuery()) {
-                        if (rows.next()) {
-                            result.set(new ServerReference(rows.getObject(1, UUID.class), new ServerRef(serverId),
-                                    businessKey, ReferenceState.valueOf(rows.getString(2))));
-                            return;
-                        }
-                    }
+                var existing = find(connection, identity, serverId, businessKey);
+                if (existing.isPresent()) {
+                    result.set(existing.orElseThrow());
+                    return;
                 }
                 UUID id = UUID.randomUUID();
                 try (var statement = connection.prepareStatement(
@@ -115,6 +105,50 @@ public final class ServerReferenceRepository {
             }
         });
         return result.get();
+    }
+
+    /**
+     * Reads the original business-key association without locks or reference mutation. / 按原业务键读取关联，不加引用行锁或修改引用。
+     * @param identity exact admitted data generation / 精确已准入数据代次
+     * @param serverId original resource identity / 原资源身份
+     * @param businessKey exact association key / 精确关联键
+     * @return original reference or absence / 原引用或空值
+     * @throws SQLException if ownership, generation or reading fails / 归属、代次或读取失败时
+     */
+    public Optional<ServerReference> find(SchemaIdentity identity, String serverId, String businessKey)
+            throws SQLException {
+        try (var connection = connections.open()) {
+            new SchemaCoordinates(identity).requireRegistered(connection, Set.of("READY"));
+            return find(connection, identity, serverId, businessKey);
+        }
+    }
+
+    /**
+     * Reads one exact association in the caller's existing connection scope. / 在调用方已有连接作用域中读取一个精确关联。
+     * @param connection caller-owned connection / 调用方所属连接
+     * @param identity exact generation / 精确代次
+     * @param serverId original resource / 原资源
+     * @param businessKey exact association key / 精确关联键
+     * @return matching reference or absence / 匹配引用或空值
+     * @throws SQLException if reading or stored identity validation fails / 读取或存储身份校验失败时
+     */
+    private static Optional<ServerReference> find(Connection connection, SchemaIdentity identity, String serverId,
+            String businessKey) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "SELECT reference_id,state FROM mod_server_reference WHERE mod_id=? AND schema_version=? AND schema_generation=? AND server_profile_id=? AND business_key=?")) {
+            statement.setString(1, identity.ownerId());
+            statement.setString(2, identity.schemaVersion());
+            statement.setObject(3, identity.generation());
+            statement.setString(4, serverId);
+            statement.setString(5, businessKey);
+            try (var rows = statement.executeQuery()) {
+                if (rows.next()) {
+                    return Optional.of(new ServerReference(rows.getObject(1, UUID.class), new ServerRef(serverId),
+                            businessKey, ReferenceState.valueOf(rows.getString(2))));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /**

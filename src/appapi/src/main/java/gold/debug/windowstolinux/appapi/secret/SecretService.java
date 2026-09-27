@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.appapi.secret;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
@@ -30,6 +31,16 @@ public interface SecretService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     SecretReference reserve(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
+
+    /**
+     * Looks up an existing association without reserving or changing it, including original-task recovery. / 只读查询已有关联，支持原任务恢复，不预留或改变引用。
+     * @param secret original secret identity with its admitted scope / 原秘密身份及其已准入范围
+     * @param businessKey exact original association key / 精确原关联键
+     * @param task authentic executing or reconciling task / 真实执行或核对任务
+     * @return current owned reference, or empty when absent; not proof of business rollback / 当前所属引用，不存在时为空；不证明业务已回滚
+     * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
+     */
+    Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
 
     /**
      * Records a reconciled business reference result without guessing unknown commits. / 登记已核对的业务引用结果，不猜测未知提交。

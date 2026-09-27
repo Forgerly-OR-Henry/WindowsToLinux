@@ -119,22 +119,10 @@ public final class CredentialReferenceRepository {
                 RepositoryConnections.lockPlatformState(connection);
                 new SchemaCoordinates(schema).requireRegistered(connection, Set.of("READY"));
                 lockCredential(connection, secret.id());
-                try (var statement = connection.prepareStatement(
-                        "SELECT reference_id,purpose,state FROM mod_credential_reference WHERE mod_id=? AND schema_version=? AND schema_generation=? AND credential_id=? AND business_key=?")) {
-                    statement.setString(1, schema.ownerId());
-                    statement.setString(2, schema.schemaVersion());
-                    statement.setObject(3, schema.generation());
-                    statement.setString(4, secret.id());
-                    statement.setString(5, businessKey);
-                    try (var rows = statement.executeQuery()) {
-                        if (rows.next()) {
-                            if (!secret.purpose().equals(rows.getString(2)))
-                                throw new SQLException("Credential purpose is inconsistent", "55000");
-                            result.set(new SecretReference(rows.getObject(1, UUID.class), secret, businessKey,
-                                    ReferenceState.valueOf(rows.getString(3))));
-                            return;
-                        }
-                    }
+                var existing = find(connection, schema, secret, businessKey);
+                if (existing.isPresent()) {
+                    result.set(existing.orElseThrow());
+                    return;
                 }
                 UUID id = UUID.randomUUID();
                 try (var statement = connection.prepareStatement(
@@ -153,6 +141,53 @@ public final class CredentialReferenceRepository {
             }
         });
         return result.get();
+    }
+
+    /**
+     * Reads the original business-key association without locks or reference mutation. / 按原业务键读取关联，不加引用行锁或修改引用。
+     * @param schema exact admitted data generation / 精确已准入数据代次
+     * @param secret original resource identity / 原资源身份
+     * @param businessKey exact association key / 精确关联键
+     * @return original reference or absence / 原引用或空值
+     * @throws SQLException if ownership, generation or reading fails / 归属、代次或读取失败时
+     */
+    public Optional<SecretReference> find(SchemaIdentity schema, SecretRef secret, String businessKey)
+            throws SQLException {
+        requireOwned(schema.ownerId(), secret);
+        try (var connection = connections.open()) {
+            new SchemaCoordinates(schema).requireRegistered(connection, Set.of("READY"));
+            return find(connection, schema, secret, businessKey);
+        }
+    }
+
+    /**
+     * Reads one exact association in the caller's existing connection scope. / 在调用方已有连接作用域中读取一个精确关联。
+     * @param connection caller-owned connection / 调用方所属连接
+     * @param schema exact generation / 精确代次
+     * @param secret original resource / 原资源
+     * @param businessKey exact association key / 精确关联键
+     * @return matching reference or absence / 匹配引用或空值
+     * @throws SQLException if reading or stored identity validation fails / 读取或存储身份校验失败时
+     */
+    private static Optional<SecretReference> find(Connection connection, SchemaIdentity schema, SecretRef secret,
+            String businessKey) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "SELECT reference_id,purpose,state FROM mod_credential_reference WHERE mod_id=? AND schema_version=? AND schema_generation=? AND credential_id=? AND business_key=?")) {
+            statement.setString(1, schema.ownerId());
+            statement.setString(2, schema.schemaVersion());
+            statement.setObject(3, schema.generation());
+            statement.setString(4, secret.id());
+            statement.setString(5, businessKey);
+            try (var rows = statement.executeQuery()) {
+                if (rows.next()) {
+                    if (!secret.purpose().equals(rows.getString(2)))
+                        throw new SQLException("Credential purpose is inconsistent", "55000");
+                    return Optional.of(new SecretReference(rows.getObject(1, UUID.class), secret, businessKey,
+                            ReferenceState.valueOf(rows.getString(3))));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /**

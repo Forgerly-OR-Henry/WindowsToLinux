@@ -1218,6 +1218,7 @@ public interface ServerService {
     PageSlice<ServerInfo> list(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
     ServerInfo get(ServerRef server, TaskContext task) throws ApiException;
     ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException;
+    Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task) throws ApiException;
     void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
 }
 ```
@@ -1225,6 +1226,7 @@ public interface ServerService {
 ```java
 package gold.debug.windowstolinux.appapi.secret;
 
+import java.util.Optional;
 import java.util.UUID;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ReferenceState;
@@ -1237,6 +1239,7 @@ public interface SecretConsumer<T> { T use(byte[] value) throws Exception; }
 public interface SecretService {
     SecretRef create(String purpose, byte[] value, TaskContext task) throws ApiException;
     SecretReference reserve(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
+    Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
     void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
     <T> T use(SecretRef secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
         throws ApiException;
@@ -1249,11 +1252,15 @@ public interface SecretService {
 
 引用操作以拥有者＋Schema 代次＋资源 ID＋业务键幂等登记。**先 reserve，再提交自己的业务关联，最后 resolve(REFERENCED)**；提交未知则登记 UNKNOWN，不能释放。业务引用删除提交已知成功后才能 resolve(NOT_REFERENCED)；切换版本不释放保留 Schema 引用。保留、有效和未知引用均阻止平台删除资源；禁用时照样保护。重新核对由所属 Mod 读取自己的业务记录后提交结论，平台不直接读取其私有表；Schema 确认删除后平台才能统一注销该代次引用。
 
+`findReference` 按精确拥有者、Schema 版本/代次、原资源 ID 和原业务键只读查询已有预留，保留原 UUID、状态和更新时间；秘密还核对原用途，服务器必须属于原任务已准入集合。业务键非空白、最多 512 个 UTF-16 码元，按原值匹配，不裁剪。查询适用于正常执行、取消/结果未知但回调尚未返回的收尾，以及显式原任务恢复；不访问秘密值，不新增、激活或释放引用。无业务 Schema 时不可查询持久引用。查不到返回空值，不能据此推断业务事务已回滚。
+
+作者必须在预留前持久保存原任务、资源身份、用途和业务键，返回 UUID 未保存时才有依据找回原预留；不能推测 UUID 或靠再次 reserve 恢复。显式恢复禁止 reserve（包括相同键）和 create，只能核对原事实再 resolve；原引用状态仍不足以单独证明业务提交。若连 `create` 返回的秘密 ID 都未保存，查询接口无法按用途重建该身份，应保留未知结果，不能自动重建秘密。
+
 `SecretService.create` 仅创建本 Mod 用途的秘密，平台保护持久化值；输入在复制后由调用者自行清零。`use` 校验任务、用途及引用归属，平台只在回调期间提供临时字节数组并在结束后清零；作者不保留数组、不返回秘密或写日志，不能获得 APP 主密钥。跨 Mod 业务不转交原始秘密，传必要引用由平台重新授权。归档密码由备份任务直接取得和短暂持有，不默认为 APP 主密码，也不自动持久化。
 
 单个秘密允许 0～1 MiB 的字节，用途非空白且 `purpose.length() <= 128`，按原值精确校验；改变引用中的用途不能取得其他用途的值。`create` 返回的 ID 由平台签发，作者只保存并传回，不自行拼接。没有业务 Schema 的 Mod 仍可创建和使用自己的秘密，但不能 `reserve` 持久业务关联。秘密属于 Mod 和用途；发布版本切换不改变其身份，业务关联仍分别绑定 Schema 代次。`resolve(NOT_REFERENCED)` 只移除该业务关联，不隐式删除凭据值；平台资源清理须另行核实其他关联及活动占用。
 
-锁定后已接纳任务继续使用原凭据作用域，新任务拒绝准入。取消或结果未知时可 `resolve` 已有关联，不能新建、预留或读取秘密；显式原任务恢复仍须通过平台授权核验。回调抛异常或返回原始明文数组时同样清零平台缓冲，回调异常的原始文本不带出公开接口；作者仍须遵守不保留副本和不返回秘密的约定。
+锁定后已接纳任务继续使用原凭据作用域，新任务拒绝准入。取消或结果未知且仍处于原回调时可 `findReference`/`resolve` 已有关联，不能新建、预留或读取秘密；显式原任务恢复仍须通过平台授权核验，禁止 create/reserve，读取既有秘密仍沿用原授权与用途检查。回调抛异常或返回原始明文数组时同样清零平台缓冲，回调异常的原始文本不带出公开接口；作者仍须遵守不保留副本和不返回秘密的约定。
 
 ### 8.6 linux：受控 SSH 与文件操作
 

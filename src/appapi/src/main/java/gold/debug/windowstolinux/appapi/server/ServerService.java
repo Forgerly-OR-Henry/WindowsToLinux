@@ -42,6 +42,16 @@ public interface ServerService {
     ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException;
 
     /**
+     * Looks up an existing association without reserving or changing it, including original-task recovery. / 只读查询已有关联，支持原任务恢复，不预留或改变引用。
+     * @param server original server identity with its admitted scope / 原服务器身份及其已准入范围
+     * @param businessKey exact original association key / 精确原关联键
+     * @param task authentic executing or reconciling task / 真实执行或核对任务
+     * @return current owned reference, or empty when absent; not proof of business rollback / 当前所属引用，不存在时为空；不证明业务已回滚
+     * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
+     */
+    Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task) throws ApiException;
+
+    /**
      * Records a reconciled business reference result without guessing unknown commits. / 登记已核对的业务引用结果，不猜测未知提交。
      * @param referenceId identity of the existing reference reservation / 已有引用预留的身份
      * @param result observed result used to resolve retained state / 用于处理保留状态的已观察结果
