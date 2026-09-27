@@ -49,7 +49,7 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
             try (var statement = connection.prepareStatement(
                     """
                             INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload)
-                            VALUES('unit','server','unit.service','/opt/windowstolinux/apps/unit',?,?)
+                            VALUES('unit','server','windowstolinux-unit.service','/opt/windowstolinux/apps/unit',?,?)
                             """)) {
                 statement.setString(1, "a".repeat(64));
                 statement.setBytes(2, DeploymentCodecCompatibility.write(unit));
@@ -66,8 +66,7 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
                             VALUES('application','component','unit',?,?,?)
                             """)) {
                 statement.setBytes(1, DeploymentCodecCompatibility.write(definition));
-                statement.setBytes(2, DeploymentCodecCompatibility.write(List.of(new DeploymentDataPath("uploads",
-                        DeploymentDataPath.AccessMode.READ_WRITE, "uploads-v1", false))));
+                statement.setBytes(2, DeploymentCodecCompatibility.write(List.<DeploymentDataPath>of()));
                 statement.setBytes(3, DeploymentCodecCompatibility
                         .write(new DeploymentResourceBindings(List.of(), Optional.empty())));
                 statement.executeUpdate();
