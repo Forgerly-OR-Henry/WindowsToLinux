@@ -174,10 +174,13 @@ public final class ModReinstallationLedger {
      * @param program original program directory / 原程序目录
      * @param phase confirmed original stage / 已确认原阶段
      * @param state current execution state / 当前执行状态
+     * @param manifest original catalog manifest / 原目录清单
+     * @param contentHash immutable release content / 不可变发布内容
+     * @param archiveHash exact selected package bytes / 精确选定包字节
      * @param files immutable host scope / 不可变宿主范围
      * @param checkpoint last host physical observations / 最后宿主物理观察 */
     public record Execution(UUID id, String owner, String version, Path program, String phase, String state,
-            String files, String checkpoint) {
+            String manifest, String contentHash, String archiveHash, String files, String checkpoint) {
     }
 
     /** Reads only original validated evidence without claiming execution ownership. / 仅读取原已验证依据，不取得执行归属。
@@ -189,8 +192,9 @@ public final class ModReinstallationLedger {
             var row = load(c, operation);
             unchanged(c, row);
             return new Execution(operation, row.request().owner(), row.request().release().version(),
-                    Path.of(row.request().release().path()), row.phase(), row.state(), row.request().files(),
-                    row.recovery().files());
+                    Path.of(row.request().release().path()), row.phase(), row.state(),
+                    row.request().release().manifest(), row.request().release().content(), row.request().archiveHash(),
+                    row.request().files(), row.recovery().files());
         });
     }
 
@@ -229,7 +233,7 @@ public final class ModReinstallationLedger {
      * @param files host proof identifying complete saved old files and any new files / 宿主证明，标识完整保留旧文件及所有新文件
      * @throws SQLException if new registration already committed or scope is unavailable / 新登记已提交或范围不可用时 */
     public void beginRestore(UUID operation, String from, String files) throws SQLException {
-        require(Set.of("STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(from),
+        require(Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(from),
                 "Registered replacement cannot restore old files");
         transition(operation, from, "RESTORING", files, false);
     }
@@ -277,6 +281,17 @@ public final class ModReinstallationLedger {
      * @return true when this call archived it, false when no working row remains / 本次归档为真，无工作行残留为假
      * @throws SQLException if physical presence, final catalog or archive is unconfirmed / 物理存在、最终目录或归档未确认时 */
     public boolean finish(UUID operation) throws SQLException {
+        return finish(operation, "UNTOUCHED");
+    }
+
+    /** Archives the verified result and the separately observed original-package cleanup. / 归档已验证结果及单独观察的原包清理。
+     * @param operation original repair / 原修复
+     * @param originalCleanup confirmed bounded source result / 已确认有界来源结果
+     * @return whether this call archived the operation / 本调用是否归档操作
+     * @throws SQLException if completion or cleanup evidence is unconfirmed / 完成或清理依据未确认时 */
+    public boolean finish(UUID operation, String originalCleanup) throws SQLException {
+        require(Set.of("RETAINED", "ABSENT", "DELETED", "RETAINED_UNCONFIRMED", "UNTOUCHED").contains(originalCleanup),
+                "Invalid original cleanup result");
         try {
             return locked(c -> {
                 if (count(c, "SELECT COUNT(*) FROM mod_operation WHERE operation_id=?", operation) == 0)
@@ -293,8 +308,9 @@ public final class ModReinstallationLedger {
                         restored
                                 ? "Repair failed; original program restored and data retained"
                                 : "Original release repaired; data and choices retained",
-                        null, row.request().owner(), row.request().release().version(), null, operation, outcome,
-                        false)), 100);
+                        JSON.createObjectNode().put("originalCleanup", originalCleanup).toString(),
+                        row.request().owner(), row.request().release().version(), null, operation, outcome, false)),
+                        100);
                 update(c, "DELETE FROM mod_operation WHERE operation_id=?", operation);
                 return true;
             });

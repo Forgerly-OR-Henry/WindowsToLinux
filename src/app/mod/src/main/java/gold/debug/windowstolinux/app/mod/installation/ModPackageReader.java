@@ -140,6 +140,25 @@ public final class ModPackageReader {
      * @return current reverified archive facts / 当前重新验证的归档事实
      * @throws IOException if evidence changed, destination exists or copying is unconfirmed / 依据变化、目标已存在或复制未确认时 */
     public static Inspection extract(Inspection expected, Path destination) throws IOException {
+        return extract(expected, destination, false);
+    }
+
+    /** Expands into an empty directory whose native identity the host already persisted. / 展开到宿主已持久保存原生身份的空目录。
+     * @param expected original verified package / 原已验证包
+     * @param destination existing empty owned staging directory / 已有空的自有暂存目录
+     * @return current reverified archive facts / 当前重新验证的归档事实
+     * @throws IOException if the directory is not empty or extraction is unconfirmed / 目录非空或展开未确认时 */
+    public static Inspection extractIntoEmpty(Inspection expected, Path destination) throws IOException {
+        return extract(expected, destination, true);
+    }
+
+    /** Shares byte verification while allowing ownership to be persisted before the first output file. / 共用字节验证，允许在首个输出文件前持久保存归属。
+     * @param expected original facts / 原事实
+     * @param destination exact staging root / 精确暂存根
+     * @param ownedEmpty whether the host already created and claimed an empty root / 宿主是否已创建并取得空根
+     * @return verified current facts / 已验证当前事实
+     * @throws IOException if ownership or bytes are unconfirmed / 归属或字节未确认时 */
+    private static Inspection extract(Inspection expected, Path destination, boolean ownedEmpty) throws IOException {
         var current = read(expected.archive());
         if (!current.archiveSha256().equals(expected.archiveSha256())
                 || !current.contentSha256().equals(expected.contentSha256()))
@@ -154,7 +173,14 @@ public final class ModPackageReader {
                 var outer = new ModZip(file, 0, file.size(), MAX_ENTRIES, true)) {
             if (!hash(file).equals(current.archiveSha256()))
                 throw new IOException("Package changed before staging");
-            Files.createDirectory(destination);
+            if (ownedEmpty) {
+                unredirected(destination);
+                try (var children = Files.newDirectoryStream(destination)) {
+                    if (children.iterator().hasNext())
+                        throw new IOException("Owned extraction directory is not empty");
+                }
+            } else
+                Files.createDirectory(destination);
             for (var entry : current.files()) {
                 Path target = destination.resolve(entry.path());
                 if (!target.getParent().equals(destination)

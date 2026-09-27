@@ -75,7 +75,8 @@ class PlatformModInstallationTest {
     }
 
     PlatformModInstallation installer(PlatformRuntime runtime) throws Exception {
-        return new PlatformModInstallation(runtime.persistence().database(), runtime.security(), root, runtime.logs());
+        return new PlatformModInstallation(runtime.persistence().database(), runtime.security(), root, runtime.logs(),
+                gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1"));
     }
 
     Path original(String filename, String version, String readme) throws Exception {
