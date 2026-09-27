@@ -46,7 +46,7 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
 
     /** Encodes only original identities, never business values or credentials. / 仅编码原身份，不编码业务值或凭据。
      * @return fixed graph document / 固定图文档 */
-    Map<String, Object> encode() {
+    public Map<String, Object> encode() {
         return Map.of("owner", owner, "releases", releases.stream()
                 .map(value -> Map.of("owner", value.owner(), "version", value.version(), "digest", value.digest(),
                         "schemaVersion", value.schema().map(SchemaIdentity::schemaVersion).orElse(""),
@@ -57,7 +57,7 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
     /** Decodes the exact supported shape without inferring missing versions or data. / 解码精确受支持形状，不推断缺失版本或数据。
      * @param graph original JSON graph / 原 JSON 图
      * @return validated retained identities / 已校验保留身份 */
-    static TaskRecoveryGraph decode(JsonNode graph) {
+    public static TaskRecoveryGraph decode(JsonNode graph) {
         if (!graph.isObject() || graph.size() != 2 || !graph.path("owner").isTextual()
                 || !graph.path("releases").isArray())
             throw new IllegalArgumentException("Invalid original task graph");

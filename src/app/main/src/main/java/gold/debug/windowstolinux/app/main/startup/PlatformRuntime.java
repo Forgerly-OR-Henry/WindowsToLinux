@@ -331,6 +331,27 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
         return coordinator.start();
     }
 
+    /** Releases drained original Mod sessions after explicit task reconciliation. / 在明确任务核对后释放已排空原 Mod 会话。
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍残留时 */
+    public void releaseModRecovery() throws gold.debug.windowstolinux.appapi.task.ApiException {
+        requireWorker();
+        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        synchronized (this) {
+            coordinator = modCoordinator;
+        }
+        if (coordinator == null)
+            return;
+        try {
+            coordinator.releaseRecovery();
+        } catch (Exception failure) {
+            throw new gold.debug.windowstolinux.appapi.task.ApiException(
+                    new gold.debug.windowstolinux.appapi.task.Problem(
+                            gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN, "MOD_RECOVERY_CLEANUP_PENDING",
+                            "The task ended but original Mod cleanup remains; closing the application retries retained cleanup",
+                            java.util.Map.of(), java.util.Optional.empty()));
+        }
+    }
+
     /** Runs an explicit original schema inspection through the retained original graph. / 经保留原图运行明确原数据检查。
      * @param preparation original retained preparation / 原保留准备
      * @return observed data outcome without business startup / 不含业务启动的已观察数据结果

@@ -40,6 +40,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
     /** Original restart execution ledger. / 原重启执行账本。 */
     private final ModRestartLedger restarts;
 
+    /** Isolated original sessions retained independently of task rows. / 独立于任务行保留的隔离原会话。 */
+    private final PlatformModRecovery recovery;
+
     /** Lifecycle ownership without holding a monitor across author callbacks. / 不跨作者回调持有监视器的生命周期归属。 */
     private final AtomicBoolean operation = new AtomicBoolean();
 
@@ -84,6 +87,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         this.api = Objects.requireNonNull(api);
         this.initiallyDisabled = Map.copyOf(initiallyDisabled);
         restarts = new ModRestartLedger(runtime.persistence().database());
+        recovery = new PlatformModRecovery(runtime, programs, pages, api);
     }
 
     /** Startup facts; registered or enabled does not mean running. / 启动事实；已登记或已启用不表示正在运行。
@@ -112,8 +116,11 @@ public final class PlatformModCoordinator implements AutoCloseable {
             try {
                 for (var issue : programs.refresh())
                     issues.put("source:" + issues.size(), issue);
+                issues.putAll(recovery.start());
                 var ready = new LinkedHashMap<String, Prepared>();
                 for (var selected : selections()) {
+                    if (recovery.blocks(selected.owner()))
+                        continue;
                     Prepared prepared = null;
                     try {
                         prepared = prepare(selected);
@@ -556,7 +563,20 @@ public final class PlatformModCoordinator implements AutoCloseable {
             }
             for (var owner : List.copyOf(archives.keySet()))
                 archive(owner);
+            recovery.close();
             closed = true;
+        } finally {
+            operation.set(false);
+        }
+    }
+
+    /** Releases drained original recovery sessions after an explicit task reconciliation. / 在明确任务核对后释放已排空原恢复会话。
+     * @throws Exception if original cleanup or acknowledgement remains / 原清理或确认残留时 */
+    public void releaseRecovery() throws Exception {
+        enter();
+        try {
+            if (!closed)
+                recovery.releaseReady();
         } finally {
             operation.set(false);
         }

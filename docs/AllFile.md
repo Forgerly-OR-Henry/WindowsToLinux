@@ -1613,6 +1613,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/bootstrap/DatabaseBootstrap.java`：持有受保护引导字节，不将缺失或损坏状态转换为新数据库。
 - `app/db/bootstrap/DatabaseProtection.java`：宿主注入的当前用户保护能力，独立于数据库实现。
 - `app/db/mod/ModActivationLedger.java`：按原启动及发布版本记录实际启用、Schema 使用和最终关闭，保护用户意图及未结束资源。
+- `app/db/mod/ModRecoveryLedger.java`：在既有 RECONCILE 操作中保留原恢复图和旧运行凭据；实际会话关闭后持久 VERIFIED，原摘要与旧状态确认同事务完成，保留未应用重启意图。
 - `app/db/mod/ModSchemaReconciliation.java`：核验原 UNKNOWN 数据身份、取得明确只读核对并原子归档已证明结果，不改变用户选择。
 - `app/db/mod/ModRestartLedger.java`：核验前次启动意图与明确失败重试，登记原准备/新代次并按实际状态原子归档，保留重启停用确认。
 - `app/db/mod/ModDeletionLedger.java`：共用单版本与整 Mod 删除账本；捕获版本、Schema、所属诊断、导航及非共享自有凭据，核验实际文件缺失后按原阶段清理并归档；整 Mod 文件服务与默认管理入口均已接。
@@ -1643,6 +1644,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
 - `app/main/mod/ModSchemaInspection.java`：持有原版本只读验证器、来源核验和资源收尾，核对不重放迁移或启动业务。
 - `app/main/mod/ModSchemaPreparation.java`：共用首次准备与明确重试的隔离初始化/多步迁移、来源核验、目标验证及原资源收尾。
+- `app/main/mod/PlatformModRecovery.java`：在普通启动前核验原代码及数据图、合并共享提供方并装配隔离恢复会话；保留失败资源，整组任务结束后逆序释放，当前启动不热切换业务。
 - `app/main/mod/PlatformModCoordinator.java`：按实际 CLASS 构建装配依赖图，协调明确数据核对/重试，保留原资源及归档义务并逆序停止。
 - `app/main/resources/gold/debug/windowstolinux/app/main/build.properties`：由 Maven 展开实际应用版本，供宿主任务及恢复核验。
 - `app/mod/development/DevelopmentDescriptor.java`：生成并核对 CLASS 编译来源、明示构建输入摘要及输出标记，不重新解析 Maven 依赖。
