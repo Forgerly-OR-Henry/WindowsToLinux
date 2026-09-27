@@ -1095,6 +1095,32 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
+    void publicApiPackagesFollowTheDocumentedDependencyDirection() throws Exception {
+        var allowed = Map.of("task", Set.<String>of(), "server", Set.of("task"), "ui", Set.of("task"), "db",
+                Set.of("task"), "ai", Set.of("task"), "source", Set.of("task"), "secret", Set.of("task", "server"),
+                "linux", Set.of("task", "server"), "mod",
+                Set.of("task", "server", "ui", "db", "ai", "source", "secret", "linux"));
+        String prefix = "gold.debug.windowstolinux.appapi.";
+        var model = sourceModel();
+        var violations = new ArrayList<String>();
+        for (var unit : model.units) {
+            if (!unit.packageName.startsWith(prefix))
+                continue;
+            String owner = unit.packageName.substring(prefix.length());
+            assertTrue(allowed.containsKey(owner), unit.path.toString());
+            for (var imported : unit.imports) {
+                if (imported.startsWith("java.") || imported.startsWith("javax."))
+                    continue;
+                var target = resolveImportedPackage(imported, model.packages.keySet());
+                if (target.isEmpty() || !target.get().equals(unit.packageName) && (!target.get().startsWith(prefix)
+                        || !allowed.get(owner).contains(target.get().substring(prefix.length()))))
+                    violations.add(unit.path + " -> " + imported);
+            }
+        }
+        assertTrue(violations.isEmpty(), () -> "public API dependency direction violations: " + violations);
+    }
+
+    @Test
     void productionPackageDependenciesAreAcyclic() throws Exception {
         SourceModel model = sourceModel();
         Map<String, Set<String>> graph = new LinkedHashMap<>();
