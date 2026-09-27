@@ -146,6 +146,7 @@ class PlatformModDeletionWindowTest {
     void classCompositionDoesNotExposeInstalledDirectoryDeletion() throws Exception {
         ui.window(true);
         assertFalse(onEdt(() -> named(ui.frame, "mods.deleteVersion").isVisible()));
+        assertFalse(onEdt(() -> named(ui.frame, "mods.deleteMod").isVisible()));
         assertFalse(onEdt(() -> named(ui.frame, "mods.reconcileDeletion").isVisible()));
     }
 }

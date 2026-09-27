@@ -144,6 +144,18 @@ public final class PlatformModDeletion implements AutoCloseable {
             return catalog.removedSchemas();
         }
 
+        /** Lists owned diagnostic categories removed by a whole-owner confirmation. / 列出整所有者确认移除的自有诊断类别。
+         * @return original category names, without log contents / 原类别名称，不含日志正文 */
+        public List<String> removedLogCategories() {
+            return catalog.logTargets().stream().map(LogRepository.Target::category).toList();
+        }
+
+        /** Lists owner-local pinned pages removed by the same confirmation. / 列出同一确认移除的所有者内部固定页面。
+         * @return original page identities / 原页面身份 */
+        public List<String> removedNavigationPages() {
+            return catalog.removedNavigationPages();
+        }
+
         /** Lists owned credentials removed when no shared consumer protects them. / 列出无共享使用方保护时移除的自有凭据。
          * @return identities without any secret payload / 不含任何秘密载荷的身份 */
         public List<String> removedSecrets() {

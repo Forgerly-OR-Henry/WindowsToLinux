@@ -324,7 +324,9 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
         @Override
         public void waiting(boolean acknowledged) {
             try {
-                task.progress(acknowledged ? "辅助进程已确认停止请求，仍在等待实际退出" : "仍在等待辅助进程协作停止及实际退出", Optional.empty());
+                task.progress(acknowledged
+                        ? "Helper acknowledged the stop request; waiting for actual exit"
+                        : "Waiting for cooperative helper shutdown and actual exit", Optional.empty());
             } catch (ApiException ignored) {
                 /* Durable process occupancy still exposes the blocker. / 持久进程占用仍披露阻塞。 */ }
         }
