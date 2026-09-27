@@ -203,20 +203,90 @@ public final class ModPackageReader {
         return current;
     }
 
+    /** Verifies installed bytes against the registered digest without requiring the original archive. / 无需原包，按登记摘要核验安装字节。
+     * @param directory exact registered program root / 精确登记程序根
+     * @param manifest original registered declaration / 原登记声明
+     * @param digest original complete content digest / 原完整内容摘要
+     * @return verified JAR paths in loading order / 按加载顺序验证的 JAR 路径
+     * @throws IOException if paths, bytes or code admission changed / 路径、字节或代码准入变化时 */
+    public static List<Path> installedSources(Path directory, ModManifest manifest, String digest) throws IOException {
+        if (!directory.isAbsolute() || !directory.equals(directory.normalize()))
+            throw new IOException("Explicit installed directory required");
+        unredirected(directory);
+        var files = new ArrayList<FileEntry>();
+        long[] total = {0};
+        int[] count = {0};
+        int[] directories = {0};
+        Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+            /** Rejects extra containers before inspecting their descendants. / 检验后代前拒绝额外容器。
+             * @param path observed directory / 已观察目录
+             * @param attrs original attributes / 原属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if redirected or unexpected / 重定向或意外目录时 */
+            @Override
+            public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {
+                unredirected(path);
+                String name = directory.relativize(path).toString();
+                if ((!name.isEmpty() && !Set.of("main", "lib").contains(name)) || ++directories[0] > 3)
+                    throw new IOException("Unexpected installed directory");
+                return FileVisitResult.CONTINUE;
+            }
+
+            /** Captures bounded ordinary bytes for comparison with the original registration. / 捕获有界普通字节以比较原登记。
+             * @param path observed file / 已观察文件
+             * @param before original attributes / 原属性
+             * @return continued traversal / 继续遍历
+             * @throws IOException if unexpected, changed or excessive / 意外、变化或超限时 */
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes before) throws IOException {
+                String name = directory.relativize(path).toString().replace('\\', '/');
+                if ((!ROOT_FILES.contains(name) && !name.matches("(?:main|lib)/[^/]+\\.jar")) || !before.isRegularFile()
+                        || before.size() > MAX_BYTES || ++count[0] > MAX_ENTRIES
+                        || (total[0] += before.size()) > MAX_BYTES)
+                    throw new IOException("Unexpected installed file or excessive payload");
+                ordinary(path);
+                String hash;
+                try (var file = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                    hash = hash(file);
+                }
+                var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
+                        || !before.lastModifiedTime().equals(after.lastModifiedTime()))
+                    throw new IOException("Installed file changed during inspection");
+                ordinary(path);
+                files.add(new FileEntry(name, before.size(), hash));
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return verifyDirectory(manifest, digest, files, directory);
+    }
+
     /** Verifies the entire extracted tree against retained file evidence without needing the archive. / 无需原包，按保留文件依据核验整个展开目录树。
      * This proves bytes, not ownership or permission to publish/delete the directory. / 此方法证明字节，不证明目录归属或发布、删除权限。
      * @param expected original inspected file facts / 原检验文件事实
      * @param directory explicit extracted root / 明示展开根目录
      * @throws IOException if evidence, paths or bytes differ / 依据、路径或字节不一致时 */
     public static void verifyDirectory(Inspection expected, Path directory) throws IOException {
+        verifyDirectory(expected.manifest(), expected.contentSha256(), expected.files(), directory);
+    }
+
+    /** Shares full byte and code checks for staged and registered programs. / 暂存和登记程序共用完整字节及代码检查。
+     * @param manifest original declaration / 原声明
+     * @param digest original content hash / 原内容摘要
+     * @param files observed or retained file evidence / 已观察或保留文件依据
+     * @param directory exact program directory / 精确程序目录
+     * @return verified ordered sources / 已验证有序来源
+     * @throws IOException if the original program cannot be proven / 无法证明原程序时 */
+    private static List<Path> verifyDirectory(ModManifest manifest, String digest, List<FileEntry> files,
+            Path directory) throws IOException {
         if (!directory.isAbsolute() || !directory.equals(directory.normalize()))
             throw new IOException("Explicit extracted directory required");
         unredirected(directory);
         var remaining = new HashMap<String, FileEntry>();
-        if (expected.files().isEmpty() || expected.files().size() > MAX_ENTRIES)
+        if (files.isEmpty() || files.size() > MAX_ENTRIES)
             throw new IOException("Invalid retained file count");
         long total = 0;
-        for (var entry : expected.files()) {
+        for (var entry : files) {
             if (entry.path() == null || entry.size() < 0 || entry.size() > MAX_BYTES || entry.sha256() == null
                     || !entry.sha256().matches("[0-9a-f]{64}")
                     || (!ROOT_FILES.contains(entry.path()) && !entry.path().matches("(?:main|lib)/[^/\\\\:]+\\.jar"))
@@ -226,9 +296,9 @@ public final class ModPackageReader {
             if (total > MAX_BYTES)
                 throw new IOException("Retained payload exceeds limit");
         }
-        var sorted = new ArrayList<>(expected.files());
+        var sorted = new ArrayList<>(files);
         sorted.sort((a, b) -> comparePaths(a.path(), b.path()));
-        if (!content(sorted).equals(expected.contentSha256())
+        if (!content(sorted).equals(digest)
                 || !remaining.keySet().containsAll(Set.of("mod.json", "README.md", "LICENSE")))
             throw new IOException("Retained content evidence is inconsistent");
         Files.walkFileTree(directory, new SimpleFileVisitor<>() {
@@ -269,17 +339,17 @@ public final class ModPackageReader {
                 return FileVisitResult.CONTINUE;
             }
         });
-        if (!remaining.isEmpty() || !Files.readString(directory.resolve("mod.json"), StandardCharsets.UTF_8)
-                .equals(expected.manifest().json()))
+        if (!remaining.isEmpty()
+                || !Files.readString(directory.resolve("mod.json"), StandardCharsets.UTF_8).equals(manifest.json()))
             throw new IOException("Extracted files or manifest do not match original evidence");
         var jars = new ArrayList<String>();
-        jars.add(expected.manifest().mainJar());
+        jars.add(manifest.mainJar());
         sorted.stream().map(FileEntry::path)
-                .filter(name -> name.startsWith("main/") && !name.equals(expected.manifest().mainJar()))
-                .forEach(jars::add);
+                .filter(name -> name.startsWith("main/") && !name.equals(manifest.mainJar())).forEach(jars::add);
         sorted.stream().map(FileEntry::path).filter(name -> name.startsWith("lib/")).forEach(jars::add);
-        ModCodeInspection.read(expected.manifest(), jars.stream().map(directory::resolve).toList()).validate(false,
-                Map.of());
+        var sources = jars.stream().map(directory::resolve).toList();
+        ModCodeInspection.read(manifest, sources).validate(false, Map.of());
+        return sources;
     }
 
     /** Indexes nested class names without expanding resources or linking author types. / 不展开资源或链接作者类型地索引嵌套类名。

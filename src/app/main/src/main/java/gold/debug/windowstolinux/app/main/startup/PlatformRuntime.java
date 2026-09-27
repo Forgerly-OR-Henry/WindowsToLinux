@@ -91,6 +91,9 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Original loaders and lifecycle journals retained beyond physical context closure. / 超出物理上下文关闭阶段仍保留的原加载器及生命周期记录器。 */
     private final java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions = new java.util.LinkedHashMap<>();
 
+    /** Disabled revisions captured before this runtime accepts any new actions. / 本运行时接纳任何新操作前捕获的禁用修订。 */
+    private final java.util.Map<String, gold.debug.windowstolinux.app.db.mod.ModRestartLedger.Disabled> initiallyDisabled;
+
     /** Whether executor teardown has started and admission must remain sealed. / 执行器拆除是否已开始且准入必须保持封闭。 */
     private boolean stopping;
 
@@ -108,6 +111,8 @@ public final class PlatformRuntime implements AutoCloseable {
             throws SQLException, java.io.IOException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
+        initiallyDisabled = gold.debug.windowstolinux.app.db.mod.ModRestartLedger
+                .initiallyDisabled(persistence.database());
         transfers = new gold.debug.windowstolinux.app.service.linux.TransferSettingsService(persistence, security);
         version = readVersion();
         logs = new gold.debug.windowstolinux.app.service.log.PlatformLogService(persistence.database(), security);
@@ -286,19 +291,40 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if ownership or build identity prevents composition / 归属或构建身份阻止装配时 */
     public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startDevelopmentMods(Path workspace,
             gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+        return startMods(workspace, true, pages);
+    }
+
+    /** Starts installed code from the explicit executable home using the same lifecycle. / 使用相同生命周期从明示程序根启动安装代码。
+     * @param home verified executable home / 已验证程序根
+     * @param pages actual desktop registry / 实际桌面登记
+     * @return actual graph facts / 实际图事实
+     * @throws Exception if graph ownership or installed code is unavailable / 图归属或安装代码不可用时 */
+    public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startInstalledMods(Path home,
+            gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
+        return startMods(home, false, pages);
+    }
+
+    /** Owns exactly one graph while keeping author callbacks outside the runtime monitor. / 持有唯一图，使作者回调离开运行时监视器。
+     * @param root original source root / 原来源根
+     * @param development whether CLASS discovery applies / 是否应用 CLASS 发现
+     * @param pages actual desktop registry / 实际桌面登记
+     * @return actual startup facts / 实际启动事实
+     * @throws Exception if ownership or source verification fails / 归属或来源核验失败时 */
+    private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(Path root,
+            boolean development, gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) throws Exception {
         requireWorker();
         final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
         synchronized (this) {
             if (stopping || closed || modCoordinator != null || !modContexts.isEmpty() || !modSessions.isEmpty())
                 throw new IllegalStateException("Mod startup already has an owner or the platform is closing");
-            coordinator = new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator(this, workspace, pages,
-                    readApiVersion());
+            coordinator = new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator(this, root, development,
+                    initiallyDisabled, pages, readApiVersion());
             modCoordinator = coordinator;
         }
         return coordinator.start();
     }
 
-    /** Runs an explicit original schema inspection through the retained development graph. / 经保留开发图运行明确原数据检查。
+    /** Runs an explicit original schema inspection through the retained original graph. / 经保留原图运行明确原数据检查。
      * @param preparation original retained preparation / 原保留准备
      * @return observed data outcome without business startup / 不含业务启动的已观察数据结果
      * @throws Exception if authorization, graph or original cleanup is unavailable / 授权、图或原清理不可用时 */

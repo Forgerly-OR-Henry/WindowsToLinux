@@ -209,7 +209,7 @@ public final class DesktopMain {
         });
     }
 
-    /** Applies default CLASS startup only to the explicit workspace matching the verified program layout. / 仅对与已验证程序布局匹配的明示工作区应用默认 CLASS 启动。
+    /** Applies default startup to the verified source-mode-specific program root. / 对已验证的对应来源模式程序根应用默认启动。
      * @param runtime original platform runtime / 原平台运行时
      * @param layout verified executable and data anchors / 已验证程序及数据锚点
      * @param declared literal wtl.workspace value / 原样 wtl.workspace 值
@@ -218,10 +218,11 @@ public final class DesktopMain {
     static gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(PlatformRuntime runtime,
             RunModeResolver.RuntimeLayout layout, String declared,
             gold.debug.windowstolinux.app.ui.shell.ModPageRegistry pages) {
-        if (layout.mode() != RunModeResolver.RunMode.RUN_CLASS)
-            return new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report(java.util.Set.of(),
-                    java.util.List.of());
         try {
+            if (!runtime.persistence().database().root().equals(layout.dataDirectory().toRealPath()))
+                throw new java.io.IOException("Layout does not match the running platform database");
+            if (layout.mode() != RunModeResolver.RunMode.RUN_CLASS)
+                return runtime.startInstalledMods(layout.applicationHome(), pages);
             if (declared == null || declared.isBlank())
                 throw new java.io.IOException("Explicit CLASS workspace is missing");
             Path root = gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor
@@ -235,7 +236,7 @@ public final class DesktopMain {
                     ? api.problem()
                     : new gold.debug.windowstolinux.appapi.task.Problem(
                             gold.debug.windowstolinux.appapi.task.ProblemCode.UNAVAILABLE, "MOD_WORKSPACE_UNAVAILABLE",
-                            "Mod startup is unavailable; verify the explicit workspace and original lifecycle state",
+                            "Mod startup is unavailable; verify the program layout and original lifecycle state",
                             java.util.Map.of(), java.util.Optional.of(java.util.UUID.randomUUID()));
             return new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report(java.util.Set.of(),
                     java.util.List.of(problem));

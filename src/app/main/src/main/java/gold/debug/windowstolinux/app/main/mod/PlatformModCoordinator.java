@@ -15,19 +15,22 @@ import gold.debug.windowstolinux.app.mod.lifecycle.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
-import gold.debug.windowstolinux.app.service.mod.PlatformModCatalog;
+import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;
 import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.*;
 
-/** Composes one boot's selected CLASS graph and owns its reverse shutdown. / 装配一次启动的已选 CLASS 图并持有其逆序关闭。 */
+/** Composes one boot's selected Mod graph and owns its reverse shutdown. / 装配一次启动的已选 Mod 图并持有其逆序关闭。 */
 public final class PlatformModCoordinator implements AutoCloseable {
     /** Actual platform and original capability factories. / 实际平台及原能力工厂。 */
     private final PlatformRuntime runtime;
 
-    /** Validated explicit source root. / 已验证明示源码根。 */
-    private final Path workspace;
+    /** Source-mode-specific verification shared by startup and maintenance. / 启动及维护共用的分模式来源核验。 */
+    private final PlatformModPrograms programs;
+
+    /** Original disabled revisions observed before the runtime exposed new actions. / 运行时开放新操作前观察到的原禁用修订。 */
+    private final Map<String, ModRestartLedger.Disabled> initiallyDisabled;
 
     /** Actual visible window's page registry. / 实际可见窗口的页面登记。 */
     private final ModPageRegistry pages;
@@ -67,16 +70,20 @@ public final class PlatformModCoordinator implements AutoCloseable {
 
     /** Binds the selected graph after the desktop presenters exist. / 桌面呈现器存在后绑定已选图。
      * @param runtime original host runtime / 原宿主运行时
-     * @param workspace explicit verified workspace / 明示已验证工作区
+     * @param root verified workspace or installed home / 已验证工作区或安装根
+     * @param development whether the source is CLASS / 来源是否为 CLASS
+     * @param initiallyDisabled stopped revisions at runtime open / 运行时打开时的已停止修订
      * @param pages actual window page registry / 实际窗口页面登记
      * @param api actual host API release / 实际宿主 API 版本
      * @throws SQLException if operation logging is unavailable / 操作日志不可用时 */
-    public PlatformModCoordinator(PlatformRuntime runtime, Path workspace, ModPageRegistry pages, SemanticVersion api)
+    public PlatformModCoordinator(PlatformRuntime runtime, Path root, boolean development,
+            Map<String, ModRestartLedger.Disabled> initiallyDisabled, ModPageRegistry pages, SemanticVersion api)
             throws SQLException {
         this.runtime = Objects.requireNonNull(runtime);
-        this.workspace = Objects.requireNonNull(workspace);
+        programs = new PlatformModPrograms(runtime.persistence().database(), root, development);
         this.pages = Objects.requireNonNull(pages);
         this.api = Objects.requireNonNull(api);
+        this.initiallyDisabled = Map.copyOf(initiallyDisabled);
         restarts = new ModRestartLedger(runtime.persistence().database());
     }
 
@@ -104,10 +111,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
                         "This Mod graph cannot start again in the same boot", ProblemCode.UNAVAILABLE);
             started = true;
             try {
-                var discovered = new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
-                discovered.rejections().forEach(r -> issues.put(r.source().toString(), r.problem()));
-                var builds = new HashMap<String, PlatformModCatalog.Build>();
-                discovered.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
+                for (var issue : programs.refresh())
+                    issues.put("source:" + issues.size(), issue);
                 var ready = new LinkedHashMap<String, Prepared>();
                 for (var selected : selections()) {
                     Prepared prepared = null;
@@ -115,32 +120,33 @@ public final class PlatformModCoordinator implements AutoCloseable {
                         prepared = prepare(selected);
                         if (!selected.enabled())
                             continue;
-                        var build = builds.get(selected.owner());
-                        if (build == null
-                                || !Objects.equals(selected.version(),
-                                        build.candidate().manifest().version().toString())
-                                || !selected.manifest().equals(build.candidate().manifest().json())
+                        var build = programs.read(selected.owner(), selected.version());
+                        if (!Objects.equals(selected.version(), build.manifest().version().toString())
+                                || !selected.manifest().equals(build.manifest().json())
                                 || !selected.digest().equals(build.contentDigest())) {
                             reject(prepared,
                                     failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
-                                            "The selected release has no matching current development build",
+                                            "The selected release has no matching current program",
                                             ProblemCode.UNAVAILABLE).problem());
                             continue;
                         }
-                        PlatformModCatalog.verify(workspace, build);
+                        programs.verify(build);
                         ready.put(selected.owner(),
                                 new Prepared(selected, prepared.schema(), prepared.intent(), build));
                     } catch (Exception | LinkageError | AssertionError failure) {
-                        var issue = problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
+                        var issue = failure instanceof java.io.IOException
+                                ? failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
+                                        "The selected program could not be verified against its original registration",
+                                        ProblemCode.UNAVAILABLE).problem()
+                                : problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
                         if (prepared != null && selected.enabled())
                             reject(prepared, issue);
                         else
                             issues.put(selected.owner(), issue);
                     }
                 }
-                var plan = ModDependencyPlan.resolve(
-                        ready.values().stream().map(p -> p.build().candidate().manifest()).toList(), api,
-                        Runtime.version().feature());
+                var plan = ModDependencyPlan.resolve(ready.values().stream().map(p -> p.build().manifest()).toList(),
+                        api, Runtime.version().feature());
                 for (var entry : plan.failures().entrySet())
                     reject(ready.get(entry.getKey()), entry.getValue());
                 var providers = new HashMap<String, ModClassLoader>();
@@ -155,9 +161,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     }
                     Slot slot = null;
                     try {
-                        PlatformModCatalog.verify(workspace, prepared.build());
+                        programs.verify(prepared.build());
                         var sources = new ArrayList<URL>();
-                        for (var source : prepared.build().candidate().descriptor().sources())
+                        for (var source : prepared.build().sources())
                             sources.add(source.toUri().toURL());
                         var loader = plan.createLoader(manifest.id(), sources, providers);
                         slot = new Slot(prepared, loader);
@@ -276,7 +282,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         enter();
         try (var permission = runtime.security().enterOperation()) {
             requireMaintenance(owner);
-            new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
+            programs.refresh();
             return runtime.modIntents().reviewRetry(owner, source);
         } finally {
             operation.set(false);
@@ -347,17 +353,15 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @throws Exception if program or providers are unavailable / 程序或提供方不可用时 */
     private ModClassLoader maintenanceLoader(String owner, String version, String manifest, String digest)
             throws Exception {
-        var discovered = new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
-        var builds = new HashMap<String, PlatformModCatalog.Build>();
-        discovered.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
-        var build = builds.get(owner);
-        if (build == null || !version.equals(build.candidate().manifest().version().toString())
-                || !manifest.equals(build.candidate().manifest().json()) || !digest.equals(build.contentDigest()))
+        programs.refresh();
+        var build = programs.read(owner, version);
+        if (!version.equals(build.manifest().version().toString()) || !manifest.equals(build.manifest().json())
+                || !digest.equals(build.contentDigest()))
             throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
                     ProblemCode.UNAVAILABLE);
-        PlatformModCatalog.verify(workspace, build);
+        programs.verify(build);
         var manifests = new ArrayList<ModManifest>();
-        manifests.add(build.candidate().manifest());
+        manifests.add(build.manifest());
         var providers = new HashMap<String, ModClassLoader>();
         for (var entry : slots.entrySet()) {
             var slot = entry.getValue();
@@ -370,7 +374,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         if (plan.failures().containsKey(owner))
             throw new ApiException(plan.failures().get(owner));
         var sources = new ArrayList<URL>();
-        for (var path : build.candidate().descriptor().sources())
+        for (var path : build.sources())
             sources.add(path.toUri().toURL());
         return plan.createLoader(owner, sources, providers);
     }
@@ -403,6 +407,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 archives.put(selected.owner(), new Archive(applying.operation(), false));
                 archive(selected.owner());
             }
+        } else if (!selected.enabled() && initiallyDisabled.containsKey(selected.owner())) {
+            restarts.acknowledgeIdleDisabled(selected.owner(), initiallyDisabled.get(selected.owner()));
         } else if (selected.enabled() && selected.schema() != null) {
             try (var c = runtime.persistence().database().openConnection();
                     var p = c.prepareStatement(
@@ -609,7 +615,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @param intent original pending execution / 原待执行操作
      * @param build current source, absent before source validation / 当前来源，来源核验前可不存在 */
     private record Prepared(Selection selection, Optional<SchemaIdentity> schema, Optional<UUID> intent,
-            PlatformModCatalog.Build build) {
+            PlatformModPrograms.Program build) {
     }
 
     /** Original archive obligation. / 原归档义务。

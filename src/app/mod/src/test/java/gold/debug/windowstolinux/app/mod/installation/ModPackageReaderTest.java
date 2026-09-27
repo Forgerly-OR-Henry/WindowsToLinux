@@ -86,6 +86,26 @@ class ModPackageReaderTest {
     }
 
     @Test
+    void installedFileLimitDoesNotCountImplicitContainersAsArchiveEntries() throws Exception {
+        var values = files();
+        byte[] library = jar(Map.of());
+        for (int i = values.size(); i < ModPackageReader.MAX_ENTRIES; i++)
+            values.put("lib/library-" + i + ".jar", library);
+        var inspected = ModPackageReader.read(archive("limit.wtlmod", values));
+        Path program = root.resolve("limit-program");
+        Files.createDirectories(program.resolve("main"));
+        Files.createDirectory(program.resolve("lib"));
+        for (var entry : values.entrySet())
+            Files.write(program.resolve(entry.getKey()), entry.getValue());
+        assertEquals(ModPackageReader.MAX_ENTRIES - 3,
+                ModPackageReader.installedSources(program, inspected.manifest(), inspected.contentSha256()).size());
+        Files.write(program.resolve("lib/over-limit.jar"), library);
+        assertThrows(IOException.class,
+                () -> ModPackageReader.installedSources(program, inspected.manifest(), inspected.contentSha256()));
+        assertNull(System.getProperty(MARK));
+    }
+
+    @Test
     void hostClaimedEmptyDirectoryAcceptsExtractionButExistingContentIsNeverOverwritten() throws Exception {
         var source = archive("owned.wtlmod", files());
         var inspection = ModPackageReader.read(source);

@@ -1019,6 +1019,52 @@ public final class ModRestartLedger {
         return actual.equals(expected);
     }
 
+    /** Original disabled registry identity observed at runtime creation. / 创建运行时时观察到的原禁用登记身份。
+     * @param revision original desired revision / 原期望修订
+     * @param updatedAt original registry update stamp / 原登记更新时间
+     * @param previousBoot original lifecycle boot if any / 原生命周期启动，如有 */
+    public record Disabled(long revision, long updatedAt, Optional<UUID> previousBoot) {
+    }
+
+    /** Captures already disabled revisions before the runtime is exposed to new user actions. / 运行时暴露给新用户操作前捕获已禁用修订。
+     * @param database original newly opened platform / 原新打开平台
+     * @return exact previously stopped revisions / 精确前次已停止修订
+     * @throws SQLException if the initial inventory is unavailable / 初始清单不可用时 */
+    public static Map<String, Disabled> initiallyDisabled(PlatformDatabase database) throws SQLException {
+        var result = new HashMap<String, Disabled>();
+        try (var c = database.openConnection();
+                var s = c.createStatement();
+                var r = s.executeQuery(
+                        "SELECT mod_id,revision,updated_at,last_boot_id FROM mod_registry WHERE NOT enabled AND actual_version IS NULL AND last_runtime_state='STOPPED'")) {
+            while (r.next())
+                result.put(r.getString(1),
+                        new Disabled(r.getLong(2), r.getLong(3), Optional.ofNullable(r.getObject(4, UUID.class))));
+        }
+        return Map.copyOf(result);
+    }
+
+    /** Acknowledges a never-loaded disabled revision observed before this runtime opened to actions. / 确认本运行时开放操作前观察到的未加载禁用修订。
+     * @param owner original disabled owner / 原禁用所有者
+     * @param original original boot snapshot / 原启动快照
+     * @throws SQLException if choice, prior state or retained ownership changed / 选择、前次状态或保留归属变化时 */
+    public void acknowledgeIdleDisabled(String owner, Disabled original) throws SQLException {
+        locked(c -> {
+            ModProgramMaintenance.drained(c, owner, null);
+            try (var p = c.prepareStatement(
+                    "UPDATE mod_registry SET last_boot_id=?,disable_ack_revision=revision,updated_at=? WHERE mod_id=? AND NOT enabled AND revision=? AND actual_version IS NULL AND last_runtime_state='STOPPED' AND (last_boot_id IS NULL OR last_boot_id<>?) AND updated_at=? AND last_boot_id IS NOT DISTINCT FROM ?")) {
+                p.setObject(1, boot);
+                p.setLong(2, System.currentTimeMillis());
+                p.setString(3, owner);
+                p.setLong(4, original.revision());
+                p.setObject(5, boot);
+                p.setLong(6, original.updatedAt());
+                p.setObject(7, original.previousBoot().orElse(null));
+                require(p.executeUpdate() == 1, "Original disabled revision or prior lifecycle changed");
+            }
+            return null;
+        });
+    }
+
     /** Archives actual success, or confirms a never-loaded disabled Mod in this new boot. / 归档实际成功，或确认本次新启动未加载的关闭 Mod。
      * @param id original operation identity / 原操作身份
      * @return true if archived now; false if no execution remains, without reconstructing its history / 本次归档返回真，无执行行则返回假且不重建历史
