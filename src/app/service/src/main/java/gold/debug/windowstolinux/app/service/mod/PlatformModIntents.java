@@ -97,10 +97,11 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param failure original safe diagnostic / 原安全诊断
      * @param versions registered releases in descending semantic order / 按语义版本降序的登记发布
      * @param data retained exact data generations / 保留的精确数据代次
-     * @param operations unfinished original operations / 未结束原操作 */
+     * @param operations unfinished original operations / 未结束原操作
+     * @param stopAcknowledged whether the original revision completed restart shutdown / 原修订是否完成重启停用 */
     public record ModView(String owner, Choice choice, String runtime, Optional<String> actual,
-            Optional<Problem> failure, List<ReleaseView> versions, List<DataView> data,
-            List<OperationView> operations) {
+            Optional<Problem> failure, List<ReleaseView> versions, List<DataView> data, List<OperationView> operations,
+            boolean stopAcknowledged) {
         /** Copies the management collections without granting mutation authority. / 复制管理集合，不授予修改权限。
          * @param owner stable identity / 稳定身份
          * @param choice saved choice / 已存选择
@@ -109,7 +110,8 @@ public final class PlatformModIntents implements AutoCloseable {
          * @param failure original diagnostic / 原诊断
          * @param versions registered releases / 登记发布
          * @param data retained data / 保留数据
-         * @param operations retained operations / 保留操作 */
+         * @param operations retained operations / 保留操作
+         * @param stopAcknowledged durable original shutdown observation / 持久原停用观察 */
         public ModView {
             versions = List.copyOf(versions);
             data = List.copyOf(data);
@@ -174,19 +176,35 @@ public final class PlatformModIntents implements AutoCloseable {
                     }
                     result.add(new ModView(owner, saved.choice(), saved.runtime(), Optional.ofNullable(saved.actual()),
                             Optional.ofNullable(failures.get(owner)), versions, data,
-                            operations.getOrDefault(owner, List.of())));
+                            operations.getOrDefault(owner, List.of()), stopAcknowledged(c, owner)));
                 }
                 for (var entry : operations.entrySet()) {
                     if (!state.owners().containsKey(entry.getKey())
                             && entry.getValue().stream().anyMatch(o -> o.type().equals("DELETE_MOD")))
                         result.add(new ModView(entry.getKey(), new Choice(false, Optional.empty()), "UNREGISTERED",
-                                Optional.empty(), Optional.empty(), List.of(), List.of(), entry.getValue()));
+                                Optional.empty(), Optional.empty(), List.of(), List.of(), entry.getValue(), false));
                 }
                 result.sort(Comparator.comparing(ModView::owner));
                 return List.copyOf(result);
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
+        }
+    }
+
+    /** Reads the original revision's completed restart shutdown for management controls. / 为管理控件读取原修订的已完成重启停用。
+     * @param c original serialized snapshot / 原串行快照
+     * @param owner exact installed owner / 精确安装所有者
+     * @return whether shutdown is durably acknowledged, independent of remaining resources / 停用是否持久确认，与剩余资源独立
+     * @throws SQLException if the observation is unavailable / 观察不可用时 */
+    private static boolean stopAcknowledged(Connection c, String owner) throws SQLException {
+        try (var p = c.prepareStatement(
+                "SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND NOT enabled AND disable_ack_revision=revision AND last_boot_id IS NOT NULL AND last_runtime_state='STOPPED' AND actual_version IS NULL")) {
+            p.setString(1, owner);
+            try (var r = p.executeQuery()) {
+                r.next();
+                return r.getInt(1) == 1;
+            }
         }
     }
 

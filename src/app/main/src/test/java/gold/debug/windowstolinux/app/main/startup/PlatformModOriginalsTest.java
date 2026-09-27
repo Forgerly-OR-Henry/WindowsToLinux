@@ -485,6 +485,8 @@ class PlatformModOriginalsTest {
         window(true);
         assertTrue(onEdt(() -> ((JTextArea) named(frame, "originals.classMode")).getText()).contains("CLASS"));
         assertTrue(onEdt(() -> descendants(frame).noneMatch(c -> "originals.inventory".equals(c.getName()))));
+        for (String action : java.util.List.of("mods.repair", "mods.reconcileRepair", "mods.restoreProgram"))
+            assertFalse(onEdt(() -> named(frame, action).isVisible()));
         assertFalse(Files.exists(root.resolve(".mod-staging")));
         assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
     }

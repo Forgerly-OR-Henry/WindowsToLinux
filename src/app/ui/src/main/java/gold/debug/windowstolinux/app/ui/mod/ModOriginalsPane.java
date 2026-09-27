@@ -315,8 +315,8 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         logs.setEnabled(available);
         install.setEnabled(available && current && selected != null && selected.state().equals("AVAILABLE"));
         delete.setEnabled(available && current && selected != null && selected.deletable());
-        reconcile.setEnabled(available && current && operation != null && operation.type().equals("INSTALL")
-                && operation.state().equals("UNKNOWN"));
+        reconcile.setEnabled(available && current && operation != null
+                && Set.of("INSTALL", "REINSTALL").contains(operation.type()) && operation.state().equals("UNKNOWN"));
         cancelInstall.setEnabled(available && current && operation != null && operation.type().equals("INSTALL")
                 && operation.state().equals("UNKNOWN")
                 && Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(operation.phase()));
@@ -366,6 +366,14 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     /** Reconciles the selected original operation independently of current file selection. / 独立于当前文件选择核对选定原操作。 */
     private void reconcile() {
         var operation = (PendingView) pending.getSelectedItem();
+        if (operation.type().equals("REINSTALL")) {
+            if (confirm(messages.text("mods.confirmRepairReconcile", Map.of("id", operation.id().toString()))))
+                run(() -> service.reinstallation().reconcile(operation.id()), result -> {
+                    status.setText(PlatformModsPane.repairMessage(messages, result));
+                    changed();
+                }, true);
+            return;
+        }
         boolean cancellation = operation.phase().equals("CANCELLING");
         if (confirm(messages.text(cancellation ? "originals.confirmCancelContinue" : "originals.confirmReconcile",
                 Map.of("owner", operation.owner(), "version", operation.version(), "id", operation.id().toString(),
