@@ -19,6 +19,28 @@ class SourceBoundaryTest {
     Path root;
 
     @Test
+    void extendedWindowsPathsKeepNativeIdentityThroughFreezeAndCleanup() throws Exception {
+        Path selected = Files.createDirectory(root.resolve("selected"));
+        String name = "a".repeat(90) + "/" + "b".repeat(90) + "/" + "c".repeat(70);
+        Path file = selected.resolve(name);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "long path");
+        assertTrue(file.toString().length() > 260);
+        var source = new SelectedDirectory(selected);
+        assertEquals("long path", new String(source.read(name, 9, () -> false).content()));
+        Path payload;
+        try (var work = work()) {
+            work.prepare();
+            work.capture(source, new SnapshotRequest(List.of(name), 9), () -> false);
+            payload = work.directory();
+            assertEquals("long path", Files.readString(payload.resolve(name)));
+            work.verify(() -> false);
+        }
+        assertFalse(Files.exists(payload));
+        assertEquals("long path", Files.readString(file));
+    }
+
+    @Test
     void portablePathsAndRequestedReadBudgetsAreEnforcedWithoutDeploymentExclusions() throws Exception {
         Files.createDirectories(root.resolve("target"));
         Files.writeString(root.resolve(".env"), "local-fixture");

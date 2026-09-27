@@ -14,6 +14,7 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.app.source.boundary.SelectedDirectory;
 import gold.debug.windowstolinux.app.source.snapshot.FrozenSourceWork;
+import gold.debug.windowstolinux.app.source.snapshot.SourceWorkDirectory;
 import gold.debug.windowstolinux.appapi.source.*;
 import gold.debug.windowstolinux.appapi.task.*;
 
@@ -21,6 +22,9 @@ import gold.debug.windowstolinux.appapi.task.*;
 public final class PlatformSourceAccess implements SourceService, AutoCloseable {
     /** Durable identity prefix for owned source work. / 所属来源工作的持久身份前缀。 */
     private static final String PREFIX = "source-snapshot-v1:";
+
+    /** Durable identity prefix for writable task files. / 可写任务文件的持久身份前缀。 */
+    private static final String WORKSPACE_PREFIX = "source-workspace-v1:";
 
     /** Current exclusive storage owner. / 当前独占存储所有者。 */
     private final PlatformDatabase database;
@@ -45,6 +49,9 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
 
     /** Actual snapshots retained until physical and durable cleanup. / 保留至物理及持久清理完成的实际快照。 */
     private final Set<Snapshot> snapshots = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** Writable handles retained until physical and durable cleanup. / 保留至物理及持久清理完成的可写句柄。 */
+    private final Set<Workspace> workspaces = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Activation admission state. / 启用准入状态。 */
     private volatile boolean closed;
@@ -91,7 +98,7 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
                 var active = tasks.snapshots().stream().map(TaskSnapshot::id)
                         .collect(java.util.stream.Collectors.toSet());
                 selections.entrySet().removeIf(entry -> !active.contains(entry.getValue().task().id()));
-                selections.put(grant, new Selection(task, directory));
+                selections.put(grant, new Selection(task, directory, null));
             }
             return grant;
         });
@@ -160,15 +167,56 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
         });
     }
 
+    /** Creates writable task material with ownership recorded before filesystem changes. / 文件系统变化前登记归属并创建可写任务素材。
+     * @param task original executing task / 原执行任务
+     * @return original writable handle / 原可写句柄
+     * @throws ApiException if creation, admission or cleanup fails / 创建、准入或清理失败时 */
+    @Override
+    public SourceWorkspace workspace(TaskContext task) throws ApiException {
+        return access(task, () -> {
+            if (tasks.reconciling(task))
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SOURCE_RECOVERY_WRITE",
+                        "Recovery cannot create new source work");
+            var id = UUID.randomUUID();
+            var lease = tasks.retain(task, new TaskResource("FILE", WORKSPACE_PREFIX + id, owner, false));
+            var workspace = new Workspace(task, id, lease);
+            synchronized (this) {
+                workspaces.add(workspace);
+            }
+            boolean published = false;
+            try {
+                workspace.work.prepare();
+                var directory = new SelectedDirectory(workspace.work.directory());
+                synchronized (this) {
+                    selections.put(workspace.grant, new Selection(task, directory, workspace));
+                }
+                SelectedDirectory.cancelled(cancellation(task));
+                published = true;
+                return workspace;
+            } finally {
+                synchronized (workspace) {
+                    workspace.building = false;
+                }
+                if (!published)
+                    workspace.close();
+            }
+        });
+    }
+
     /** Authenticates original selection objects without deriving authority from copied UUIDs. / 认证原选择对象，不从复制 UUID 推导权限。
      * @param value original selection / 原选择
      * @param task original task / 原任务
      * @return selected directory / 选定目录
      * @throws ApiException if selection belongs to another task or activation / 选择属于其他任务或启用时 */
-    private synchronized SelectedDirectory selection(SourceSelection value, TaskContext task) throws ApiException {
-        var selected = selections.get(value);
+    private SelectedDirectory selection(SourceSelection value, TaskContext task) throws ApiException {
+        Selection selected;
+        synchronized (this) {
+            selected = selections.get(value);
+        }
         if (selected == null || selected.task() != task)
             throw error(ProblemCode.ACCESS_DENIED, "SOURCE_SELECTION", "Source selection is foreign or expired");
+        if (selected.workspace() != null)
+            selected.workspace().directory();
         return selected.directory();
     }
 
@@ -213,12 +261,17 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
     public void closeTaskResources(TaskContext task) throws ApiException {
         scope.retryFinishedReleases(task);
         List<Snapshot> owned;
+        List<Workspace> writable;
         synchronized (this) {
             owned = List.copyOf(snapshots);
+            writable = List.copyOf(workspaces);
         }
         for (var snapshot : owned)
             if (snapshot.task == task)
                 snapshot.close();
+        for (var workspace : writable)
+            if (workspace.task == task)
+                workspace.close();
         try {
             var releases = new LinkedHashMap<UUID, String>();
             try (var connection = database.openConnection();
@@ -232,8 +285,9 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
                         if (!owner.equals(rows.getString(4)) || !"{\"release\":\"EXPLICIT\"}".equals(rows.getString(5)))
                             continue;
                         String kind = rows.getString(2), resource = rows.getString(3);
-                        if (kind.equals("FILE") && resource.startsWith(PREFIX))
-                            releases.put(rows.getObject(1, UUID.class), resource.substring(PREFIX.length()));
+                        if (kind.equals("FILE")
+                                && (resource.startsWith(PREFIX) || resource.startsWith(WORKSPACE_PREFIX)))
+                            releases.put(rows.getObject(1, UUID.class), resource);
                         else if (kind.equals("CUSTOM") && resource.startsWith("source-access-")) {
                             resourceId(resource.substring("source-access-".length()));
                             releases.put(rows.getObject(1, UUID.class), null);
@@ -243,8 +297,12 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
             }
             for (var entry : releases.entrySet()) {
                 if (entry.getValue() != null) {
-                    var work = new FrozenSourceWork(database.root().resolve("work/source"), task.id(),
-                            resourceId(entry.getValue()), owner);
+                    String resource = entry.getValue();
+                    boolean writableWork = resource.startsWith(WORKSPACE_PREFIX);
+                    String prefix = writableWork ? WORKSPACE_PREFIX : PREFIX;
+                    var work = new SourceWorkDirectory(
+                            database.root().resolve(writableWork ? "work/source-workspace" : "work/source"), task.id(),
+                            resourceId(resource.substring(prefix.length())), owner);
                     work.recover();
                     work.close();
                 }
@@ -273,8 +331,8 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
         scope.close();
         synchronized (this) {
             selections.clear();
-            if (!snapshots.isEmpty())
-                throw error(ProblemCode.BUSY, "SOURCE_SNAPSHOTS_OPEN", "Source snapshots still retain task files");
+            if (!snapshots.isEmpty() || !workspaces.isEmpty())
+                throw error(ProblemCode.BUSY, "SOURCE_SNAPSHOTS_OPEN", "Source handles still retain task files");
         }
     }
 
@@ -289,8 +347,9 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
 
     /** Exact original selection ownership. / 精确原选择归属。
      * @param task original object / 原对象
-     * @param directory confirmed boundary / 已确认边界 */
-    private record Selection(TaskContext task, SelectedDirectory directory) {
+     * @param directory confirmed boundary / 已确认边界
+     * @param workspace optional generated-file owner / 可选生成文件所有者 */
+    private record Selection(TaskContext task, SelectedDirectory directory, Workspace workspace) {
     }
 
     /** Host-owned directory chooser implementation. / 宿主持有的目录选择器实现。 */
@@ -302,6 +361,105 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
          * @param cancellation cooperative cancellation / 协作取消
          * @return chosen directory or null on cancellation / 选定目录或取消时 null */
         Path select(String title, TaskSnapshot task, CancellationToken cancellation);
+    }
+
+    /** Writable staging handle with the same original-task lifetime as its file lease. / 与文件租约共用原任务寿命的可写暂存句柄。 */
+    private final class Workspace implements SourceWorkspace {
+        /** Authentic original task. / 真实原任务。 */
+        private final TaskContext task;
+
+        /** Stable resource identity. / 稳定资源身份。 */
+        private final UUID id;
+
+        /** Original opaque source grant. / 原不透明来源授权。 */
+        private final SourceSelection grant;
+
+        /** Exact physical ownership. / 精确物理归属。 */
+        private final SourceWorkDirectory work;
+
+        /** Durable task occupancy. / 持久任务占用。 */
+        private final ResourceLease lease;
+
+        /** Whether creation is still active. / 创建是否仍在活动。 */
+        private boolean building = true;
+
+        /** Whether the grant has been revoked for cleanup. / 授权是否已为清理撤销。 */
+        private boolean closing;
+
+        /** Whether physical and durable release completed. / 物理及持久释放是否完成。 */
+        private boolean released;
+
+        /** Captures the original lease before creating files. / 创建文件前捕获原租约。
+         * @param task original task / 原任务
+         * @param id exact resource identity / 精确资源身份
+         * @param lease durable lease / 持久租约 */
+        private Workspace(TaskContext task, UUID id, ResourceLease lease) {
+            this.task = task;
+            this.id = id;
+            this.lease = lease;
+            grant = new SourceSelection(UUID.randomUUID(), "Task source workspace");
+            work = new SourceWorkDirectory(database.root().resolve("work/source-workspace"), task.id(), id, owner);
+        }
+
+        /** Returns the original resource identity. / 返回原资源身份。
+         * @return original resource identity / 原资源身份 */
+        @Override
+        public UUID id() {
+            return id;
+        }
+
+        /** Rechecks the executing task and physical directory before writable access. / 可写访问前复核执行任务及物理目录。
+         * @return original writable payload / 原可写载荷
+         * @throws ApiException if admission or physical identity fails / 准入或物理身份失败时 */
+        @Override
+        public synchronized Path directory() throws ApiException {
+            return access(task, () -> {
+                if (building || closing || released)
+                    throw error(ProblemCode.ACCESS_DENIED, "SOURCE_WORKSPACE_CLOSED",
+                            "Source workspace is unavailable");
+                if (tasks.reconciling(task))
+                    throw error(ProblemCode.CONTRACT_VIOLATION, "SOURCE_RECOVERY_WRITE",
+                            "Recovery cannot reopen writable source work");
+                SelectedDirectory.cancelled(cancellation(task));
+                return work.directory();
+            });
+        }
+
+        /** Revalidates before returning the original source grant. / 返回原来源授权前重新核验。
+         * @return exact original grant / 精确原授权
+         * @throws ApiException if access is unavailable / 访问不可用时 */
+        @Override
+        public synchronized SourceSelection selection() throws ApiException {
+            directory();
+            return grant;
+        }
+
+        /** Revokes the grant and deletes physical files before releasing durable occupancy. / 释放持久占用前撤销授权并删除物理文件。
+         * @throws ApiException if physical or durable cleanup remains uncertain / 物理或持久清理仍不确定时 */
+        @Override
+        public synchronized void close() throws ApiException {
+            if (released)
+                return;
+            if (SwingUtilities.isEventDispatchThread() || building)
+                throw error(ProblemCode.BUSY, "SOURCE_WORKSPACE_ACTIVE",
+                        "Workspace cleanup requires returned creation on a worker");
+            closing = true;
+            synchronized (PlatformSourceAccess.this) {
+                selections.remove(grant);
+            }
+            try {
+                work.close();
+                lease.close();
+            } catch (IOException failure) {
+                tasks.reportUncertainEffect(task);
+                throw error(ProblemCode.UNKNOWN, "SOURCE_WORKSPACE_CLOSE",
+                        "Source work files remain pending safe cleanup");
+            }
+            released = true;
+            synchronized (PlatformSourceAccess.this) {
+                workspaces.remove(this);
+            }
+        }
     }
 
     /** Snapshot handle whose lifetime extends beyond the synchronous capture callback. / 寿命超过同步捕获回调的快照句柄。 */
