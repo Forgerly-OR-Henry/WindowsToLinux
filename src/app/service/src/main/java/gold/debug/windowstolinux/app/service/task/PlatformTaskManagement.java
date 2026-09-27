@@ -18,15 +18,20 @@ public final class PlatformTaskManagement implements TaskManagement {
     /** Host-injected rescue reconciliation after explicit confirmation. / 明确确认后由宿主注入的救援核对。 */
     private final RescueReconciliation rescue;
 
+    /** Host-owned session cleanup after the original task has ended. / 原任务结束后的宿主所属会话清理。 */
+    private final RecoveryCleanup cleanup;
+
     /** Binds existing platform owners without registering new recovery implementations. / 绑定已有平台所有者，不登记新的恢复实现。
      * @param tasks original central runtime / 原中央运行时
      * @param security current desktop authorization / 当前桌面授权
-     * @param rescue original rescue-service action after human confirmation / 人工确认后的原救援服务操作 */
+     * @param rescue original rescue-service action after human confirmation / 人工确认后的原救援服务操作
+     * @param cleanup original Mod session cleanup after task completion / 任务完成后的原 Mod 会话清理 */
     public PlatformTaskManagement(PlatformTaskRuntime tasks, DesktopSecurityService security,
-            RescueReconciliation rescue) {
+            RescueReconciliation rescue, RecoveryCleanup cleanup) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.rescue = Objects.requireNonNull(rescue);
+        this.cleanup = Objects.requireNonNull(cleanup);
     }
 
     /** Reads current action availability without changing task state. / 读取当前可用操作，不改变任务状态。
@@ -67,9 +72,25 @@ public final class PlatformTaskManagement implements TaskManagement {
             if (!actionReconciled)
                 throw failure(ProblemCode.ACCESS_DENIED, "RESCUE_RECONCILIATION_REQUIRED",
                         "Confirm that the original rescue command is no longer running");
-            return rescue.reconcile(id);
+            return completed(rescue.reconcile(id));
         }
-        return tasks.reconcile(id);
+        return completed(tasks.reconcile(id));
+    }
+
+    /** Releases drained sessions outside the task runtime monitor after known completion. / 在已知完成后于任务运行时监视器之外释放排空会话。
+     * @param original original task reconciliation / 原任务核对
+     * @return task observation after host cleanup / 宿主清理后的任务观察
+     */
+    private CompletionStage<TaskSnapshot> completed(CompletionStage<TaskSnapshot> original) {
+        return original.thenApply(snapshot -> {
+            if (snapshot.state() == TaskState.ENDED)
+                try {
+                    cleanup.release();
+                } catch (ApiException failure) {
+                    throw new java.util.concurrent.CompletionException(failure);
+                }
+            return snapshot;
+        });
     }
 
     /** Matches only the fixed host rescue identity, never a Mod's similarly named type. / 仅匹配固定宿主救援身份，不匹配 Mod 的同名类型。
@@ -109,5 +130,13 @@ public final class PlatformTaskManagement implements TaskManagement {
          * @return actual cleanup attempt / 实际清理尝试
          * @throws ApiException if the original service cannot reconcile / 原服务无法核对时 */
         CompletionStage<TaskSnapshot> reconcile(UUID id) throws ApiException;
+    }
+
+    /** Existing host graph cleanup without new business execution. / 不进行新业务执行的已有宿主图清理。 */
+    @FunctionalInterface
+    public interface RecoveryCleanup {
+        /** Releases only completely drained original groups. / 仅释放完全排空的原组。
+         * @throws ApiException if actual cleanup remains / 实际清理仍残留时 */
+        void release() throws ApiException;
     }
 }

@@ -39,6 +39,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             var release = new CountDownLatch(1);
             var entered = new CountDownLatch(1);
@@ -80,6 +81,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             var release = new CountDownLatch(1);
             var task = runtime.bind("example.owner", "1.0.0", false).submit(request("fixture", false), context -> {
@@ -105,6 +107,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             var resource = new AtomicReference<ResourceLease>();
             var task = runtime.bind("example.owner", "1.0.0", false).submit(request("fixture", true), context -> {
@@ -150,6 +153,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             PlatformTaskArchivalTest.trap(db);
             var calls = new AtomicInteger();
@@ -178,6 +182,7 @@ class PlatformTaskManagementTest {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 routed.add(id);
                 return runtime.reconcile(id);
+            }, () -> {
             });
             for (String owner : List.of(PlatformTaskAdmission.PLATFORM_OWNER, "example.owner")) {
                 var tasks = runtime.bind(owner, "1.0.0", false);
@@ -212,6 +217,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             var release = new CountDownLatch(1);
             var task = runtime.bind("example.owner", "1.0.0", false).submit(request("fixture", true), context -> {
@@ -240,6 +246,7 @@ class PlatformTaskManagementTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
+            }, () -> {
             });
             var tasks = runtime.bind("example.owner", "1.0.0", false);
             var task = tasks.submit(request("fixture", true), context -> unknown());

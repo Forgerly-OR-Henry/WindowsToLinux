@@ -123,8 +123,9 @@ public final class DesktopMain {
                 window.installTransfers(runtime.transfers());
                 window.installAuthorization(runtime.authorization());
                 window.installLogs(runtime.logs());
-                window.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(
-                        runtime.tasks(), runtime.security(), id -> recovery.reconcile(id, true)));
+                window.installTasks(
+                        new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
+                                runtime.security(), id -> recovery.reconcile(id, true), runtime::releaseModRecovery));
                 return window;
             });
             runtime.started();
