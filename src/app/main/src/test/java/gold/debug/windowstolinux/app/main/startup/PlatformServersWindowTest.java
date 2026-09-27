@@ -153,7 +153,8 @@ class PlatformServersWindowTest {
                     new gold.debug.windowstolinux.app.db.task.TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(),
                             PlatformServerServiceTest.HOST, false),
                     new gold.debug.windowstolinux.app.db.task.ResourceRecovery("ssh.v1",
-                            Map.of("bootId", db.bootId().toString(), "serverId", "fixture")));
+                            Map.of("bootId", db.bootId().toString(), "serverId", "fixture")),
+                    false);
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());

@@ -13,4 +13,17 @@ public interface ProcessService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     ManagedProcess start(ProcessSpec spec, TaskContext task) throws ApiException;
+
+    /** Starts the first and only process for a previously persisted task-local identity. / 使用预先持久化的任务内身份首次且仅首次启动进程。
+     * @param spec exact launch specification / 精确启动规格
+     * @param task original executing task / 原执行任务
+     * @param processId persisted process identity / 已持久化进程身份
+     * @return original managed process / 原受管进程
+     * @throws ApiException if this capability cannot prove first creation / 此能力无法证明首次创建时 */
+    ManagedProcess start(ProcessSpec spec, TaskContext task, java.util.UUID processId) throws ApiException;
+
+    /** Releases only the original task's physically verified process resources. / 仅释放原任务物理已核实的进程资源。
+     * @param task original execution or recovery context / 原执行或恢复上下文
+     * @throws ApiException if any process or ownership remains uncertain / 任一进程或归属仍不确定时 */
+    void closeTaskResources(TaskContext task) throws ApiException;
 }

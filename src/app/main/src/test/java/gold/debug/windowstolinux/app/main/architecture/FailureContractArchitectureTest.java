@@ -48,6 +48,7 @@ class FailureContractArchitectureTest {
     private static final Set<String> SQL_BRIDGE_TYPES = Set.of(
             "gold.debug.windowstolinux.app.db.task.TaskLedger.DependencyBusyException",
             "gold.debug.windowstolinux.app.db.task.TaskLedger.FinalizationException",
+            "gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint.RejectedException",
             "gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime.AdmissionRejectedException");
 
     private static final Pattern CODE = Pattern.compile("^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$");

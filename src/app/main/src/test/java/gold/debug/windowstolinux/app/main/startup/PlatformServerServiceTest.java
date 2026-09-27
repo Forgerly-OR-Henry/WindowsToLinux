@@ -219,7 +219,8 @@ class PlatformServerServiceTest {
             var ledger = new TaskLedger(db);
             known = old(ledger, HOST, TYPE);
             ledger.retain(known, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), HOST, false),
-                    new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "fixture")));
+                    new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "fixture")),
+                    false);
             ledger.retain(known, new TaskResource("CUSTOM", "interaction-" + UUID.randomUUID(), HOST, false));
             unexpected = old(ledger, HOST, TYPE);
             extra = ledger.retain(unexpected, new TaskResource("CUSTOM", "unrecognized-resource", HOST, false));

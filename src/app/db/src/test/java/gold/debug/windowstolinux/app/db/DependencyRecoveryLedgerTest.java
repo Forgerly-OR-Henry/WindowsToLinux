@@ -75,7 +75,8 @@ class DependencyRecoveryLedgerTest {
             ledger.retainDependency(task, original, c -> original.claims());
             for (String owner : List.of("caller", "provider"))
                 ledger.retain(task, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), owner, false),
-                        new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")));
+                        new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")),
+                        false);
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);

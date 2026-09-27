@@ -431,7 +431,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 var reviewed = interaction.reviewed(grant, task);
                 interaction.consumeRemote(grant,
                         RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
-                return new TransferRun(record.plan(), plan -> tasks.retain(task, record.resource(), record.metadata()))
+                return new TransferRun(record.plan(),
+                        plan -> tasks.retain(task, record.resource(), record.metadata(), false))
                         .run(record.plan().request(), record.plan().source().sha256(), record.plan().upload(), !resume);
             });
         }
@@ -462,7 +463,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     facts.put("serverId", server.id());
                     facts.put("fingerprint", connection.fingerprint());
                     return tasks.retain(task, new TaskResource("FILE", "sftp:" + plan.id(), owner, true),
-                            new ResourceRecovery("sftp.v1", facts));
+                            new ResourceRecovery("sftp.v1", facts), false);
                 }).run(request, sha256, upload, false);
             });
         }

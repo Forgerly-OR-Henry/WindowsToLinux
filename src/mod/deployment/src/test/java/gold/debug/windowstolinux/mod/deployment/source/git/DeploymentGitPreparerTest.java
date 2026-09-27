@@ -296,43 +296,59 @@ class DeploymentGitPreparerTest extends DeploymentRuntimeFixture {
             var receiptPath = new AtomicReference<Path>();
             var receiptBytes = new AtomicReference<byte[]>();
             var requests = new AtomicInteger();
-            ProcessService processes = (spec, task) -> {
-                Path receipt = Path.of(spec.arguments().get(8)).resolve("git-result.json");
-                receiptPath.set(receipt);
-                ManagedProcess actual = original.processes().start(spec, task);
-                return new ManagedProcess() {
-                    private boolean changed;
-                    public UUID id() {
-                        return actual.id();
-                    }
+            ProcessService processes = new ProcessService() {
+                public ManagedProcess start(ProcessSpec spec, TaskContext task) throws ApiException {
+                    return started(spec, task, null);
+                }
 
-                    public CompletionStage<OperationResult<ProcessMessage>> request(ProcessMessage message,
-                            Duration timeout) throws ApiException {
-                        requests.incrementAndGet();
-                        return actual.request(message, timeout);
-                    }
+                public ManagedProcess start(ProcessSpec spec, TaskContext task, UUID id) throws ApiException {
+                    return started(spec, task, id);
+                }
 
-                    public void requestCancel() throws ApiException {
-                        actual.requestCancel();
-                    }
+                public void closeTaskResources(TaskContext task) throws ApiException {
+                    original.processes().closeTaskResources(task);
+                }
 
-                    public CompletionStage<Integer> exitCode() {
-                        return actual.exitCode();
-                    }
+                private ManagedProcess started(ProcessSpec spec, TaskContext task, UUID id) throws ApiException {
+                    Path receipt = Path.of(spec.arguments().get(8)).resolve("git-result.json");
+                    receiptPath.set(receipt);
+                    ManagedProcess actual = id == null
+                            ? original.processes().start(spec, task)
+                            : original.processes().start(spec, task, id);
+                    return new ManagedProcess() {
+                        private boolean changed;
+                        public UUID id() {
+                            return actual.id();
+                        }
 
-                    public void close() throws ApiException {
-                        actual.close();
-                        if (!changed && Files.isRegularFile(receipt)) {
-                            try {
-                                receiptBytes.set(Files.readAllBytes(receipt));
-                                Files.writeString(receipt, "{}\n");
-                                changed = true;
-                            } catch (java.io.IOException failure) {
-                                throw new AssertionError(failure);
+                        public CompletionStage<OperationResult<ProcessMessage>> request(ProcessMessage message,
+                                Duration timeout) throws ApiException {
+                            requests.incrementAndGet();
+                            return actual.request(message, timeout);
+                        }
+
+                        public void requestCancel() throws ApiException {
+                            actual.requestCancel();
+                        }
+
+                        public CompletionStage<Integer> exitCode() {
+                            return actual.exitCode();
+                        }
+
+                        public void close() throws ApiException {
+                            actual.close();
+                            if (!changed && Files.isRegularFile(receipt)) {
+                                try {
+                                    receiptBytes.set(Files.readAllBytes(receipt));
+                                    Files.writeString(receipt, "{}\n");
+                                    changed = true;
+                                } catch (java.io.IOException failure) {
+                                    throw new AssertionError(failure);
+                                }
                             }
                         }
-                    }
-                };
+                    };
+                }
             };
             ModContext intercepted = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                     new Class<?>[]{ModContext.class}, (proxy, method, args) -> {

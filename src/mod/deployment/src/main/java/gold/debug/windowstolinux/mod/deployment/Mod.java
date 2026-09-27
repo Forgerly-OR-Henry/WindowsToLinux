@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.LogCategory;
 import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
@@ -16,8 +17,14 @@ public final class Mod implements ModEntrypoint {
     /** Actual publication task and recovery implementation. / 实际发布任务及恢复实现。 */
     private DeploymentReferenceFlow publicationFlow;
 
+    /** Production Git project source task and original recovery. / 生产 Git 项目来源任务及原恢复。 */
+    private DeploymentGitSourceFlow gitSourceFlow;
+
     /** Active original-task recovery registration. / 活动原任务恢复登记。 */
     private RecoveryRegistration recoveryRegistration;
+
+    /** Original Git source recovery registration. / 原 Git 来源恢复登记。 */
+    private RecoveryRegistration gitRecoveryRegistration;
 
     /** Binds owned diagnostics after the platform has prepared the exact business generation. / 平台准备精确业务代次后绑定所属诊断。
      * @param context actual host-created context / 实际宿主创建的上下文
@@ -30,8 +37,18 @@ public final class Mod implements ModEntrypoint {
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
         var flow = new DeploymentReferenceFlow(context);
         var registration = context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE, flow);
+        var gitFlow = new DeploymentGitSourceFlow(context);
+        RecoveryRegistration gitRegistration;
+        try {
+            gitRegistration = context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow);
+        } catch (Exception failure) {
+            registration.close();
+            throw failure;
+        }
         this.publicationFlow = flow;
+        this.gitSourceFlow = gitFlow;
         this.recoveryRegistration = registration;
+        this.gitRecoveryRegistration = gitRegistration;
         this.context = context;
     }
 
@@ -43,14 +60,26 @@ public final class Mod implements ModEntrypoint {
         return publicationFlow;
     }
 
+    /** Returns the active production Git project source entrypoint. / 返回活动的生产 Git 项目来源入口。
+     * @return bound task flow / 已绑定任务流程 */
+    public DeploymentGitSourceFlow gitSourceFlow() {
+        if (gitSourceFlow == null)
+            throw new IllegalStateException("Deployment Mod is not started");
+        return gitSourceFlow;
+    }
+
     /** Releases the author reference; platform capabilities own their actual cleanup. / 释放作者引用，平台能力负责其实际清理。
      * @param context original stop reason / 原停止原因
      * @throws Exception if recovery registration cannot close / 恢复登记无法关闭时 */
     @Override
     public void stop(StopContext context) throws Exception {
+        if (gitRecoveryRegistration != null)
+            gitRecoveryRegistration.close();
         if (recoveryRegistration != null)
             recoveryRegistration.close();
+        gitRecoveryRegistration = null;
         recoveryRegistration = null;
+        gitSourceFlow = null;
         publicationFlow = null;
         this.context = null;
     }

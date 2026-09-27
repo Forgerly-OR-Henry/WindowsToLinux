@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Exact business messages and exit receipts for one Git preparation request. / 一次 Git 准备请求的精确业务消息及退出凭据。 */
-final class DeploymentGitMessages {
+public final class DeploymentGitMessages {
     /** Versioned author-local request type. / 版本化作者内部请求类型。 */
     static final String TYPE = "deployment.git.prepare.v1";
     /** Prevents utility construction. / 禁止构造工具实例。 */
@@ -18,7 +18,7 @@ final class DeploymentGitMessages {
     /** Encodes an explicit credential-free request. / 编码明确的不含凭据请求。
      * @param request original selection / 原选择
      * @return exact business JSON / 精确业务 JSON */
-    static String encode(DeploymentGitRequest request) {
+    public static String encode(DeploymentGitRequest request) {
         String kind = switch (request.reference()) {
             case DeploymentGitReference.DefaultBranch ignored -> "DEFAULT";
             case DeploymentGitReference.Branch ignored -> "BRANCH";
@@ -37,7 +37,7 @@ final class DeploymentGitMessages {
      * @param text bounded protocol JSON / 有界协议 JSON
      * @return validated request / 已验证请求
      * @throws IOException if the request is malformed / 请求无效时 */
-    static DeploymentGitRequest decode(String text) throws IOException {
+    public static DeploymentGitRequest decode(String text) throws IOException {
         try {
             var node = DeploymentGitProtocol.object(text);
             DeploymentGitProtocol.fields(node, Set.of("remote", "kind", "reference", "allowedHosts",

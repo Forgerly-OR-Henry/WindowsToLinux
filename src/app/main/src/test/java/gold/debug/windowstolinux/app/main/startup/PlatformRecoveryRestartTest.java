@@ -51,7 +51,7 @@ class PlatformRecoveryRestartTest {
                     var before = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(),
                             Optional.empty());
                     var resource = new TaskResource("PROCESS", "browser-v1:" + before.process(), owner, false);
-                    leases.add(ledger.retain(task, resource, before.encode("browser.v1")));
+                    leases.add(ledger.retain(task, resource, before.encode("browser.v1"), false));
                     // This fixture allocated no physical browser; confirmed closure has no remaining process. / 此夹具未分配物理浏览器，确认关闭后无剩余进程。
                     ledger.confirmBrowserClosed(task, resource, before);
                 }
@@ -73,7 +73,7 @@ class PlatformRecoveryRestartTest {
                         facts = new ResourceRecovery("browser.closed.v1", fields);
                     }
                     leases.add(ledger.retain(task,
-                            new TaskResource("PROCESS", "browser-v1:" + before.process(), owner, false), facts));
+                            new TaskResource("PROCESS", "browser-v1:" + before.process(), owner, false), facts, false));
                 }
             }
             try (var runtime = PlatformRuntime.open(directory, PlatformStartupTest.PROTECTION)) {

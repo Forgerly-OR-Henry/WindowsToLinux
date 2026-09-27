@@ -65,8 +65,23 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
      * @throws ApiException if admission, creation, handshake or cleanup is unconfirmed / 准入、创建、握手或清理未确认时 */
     @Override
     public ManagedProcess start(ProcessSpec spec, TaskContext task) throws ApiException {
+        return start(spec, task, UUID.randomUUID());
+    }
+
+    /** Starts a process only once for its original preselected resource identity. / 只为原预选资源身份启动一次进程。
+     * @param spec exact launch specification / 精确启动规格
+     * @param task original executing task / 原执行任务
+     * @param id persisted process UUID / 已持久进程 UUID
+     * @return original managed process / 原受管进程
+     * @throws ApiException if creation or identity cannot be confirmed / 创建或身份无法确认时 */
+    @Override
+    public ManagedProcess start(ProcessSpec spec, TaskContext task, UUID id) throws ApiException {
         worker();
         tasks.requireExecuting(task, owner, version);
+        if (tasks.reconciling(task))
+            throw error(ProblemCode.CONTRACT_VIOLATION, "PROCESS_RECOVERY_CREATE",
+                    "Recovery cannot create a new process");
+        Objects.requireNonNull(id);
         Objects.requireNonNull(spec);
         if (!Files.isRegularFile(spec.executable()) || !Files.isDirectory(spec.workingDirectory()))
             throw error(ProblemCode.INVALID_INPUT, "PROCESS_PATH",
@@ -82,10 +97,9 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                 if (target == null)
                     target = logs.register(new LogCategory("runtime", "Runtime", Optional.empty()));
             }
-            var id = UUID.randomUUID();
             var resource = new TaskResource("PROCESS", PREFIX + id, owner, false);
             var before = new ProcessRecovery(database.bootId(), id, OptionalLong.empty(), Optional.empty());
-            var lease = tasks.retain(task, resource, before.encode());
+            var lease = tasks.retain(task, resource, before.encode(), true);
             owned = new Owned(task, id, lease);
             synchronized (this) {
                 children.add(owned);
@@ -139,6 +153,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
     /** Releases only original-task children or previous-boot identities proved to be gone. / 仅释放原任务子进程或已证明消失的前次启动身份。
      * @param task authentic original recovery context / 真实原恢复上下文
      * @throws ApiException if an original process, unknown identity or physical resource remains / 原进程、未知身份或物理资源仍存在时 */
+    @Override
     public void closeTaskResources(TaskContext task) throws ApiException {
         worker();
         tasks.requireCleanup(task, owner, version);
@@ -175,7 +190,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                     throw error(ProblemCode.BUSY, "PROCESS_PREVIOUS_ALIVE",
                             "The original previous-boot child is still alive");
             }
-            tasks.retain(task, entry.getKey(), entry.getValue()).close();
+            tasks.retain(task, entry.getKey(), entry.getValue(), false).close();
         }
     }
 

@@ -71,7 +71,7 @@ public final class TaskBrowserSession implements BrowserTerminalSession {
             var before = new ProcessRecovery(database.bootId(), UUID.randomUUID(), OptionalLong.empty(),
                     Optional.empty());
             var resource = new TaskResource("PROCESS", PREFIX + before.process(), owner, false);
-            current = new Claim(resource, before, tasks.retain(task, resource, before.encode("browser.v1")));
+            current = new Claim(resource, before, tasks.retain(task, resource, before.encode("browser.v1"), false));
             synchronized (claims) {
                 claims.add(current);
             }

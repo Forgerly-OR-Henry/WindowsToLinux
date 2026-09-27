@@ -143,7 +143,8 @@ class PlatformTransferRecoveryTest {
                 assertTrue(ledger.tryStart(task));
                 var connectionLease = ledger.retain(task,
                         new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), OWNER, false),
-                        new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")));
+                        new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")),
+                        false);
                 ledger.releasePreviousSshConnections(task, OWNER, VERSION);
                 assertTrue(ledger.soleSshConnection(task, connectionLease),
                         "Current boot must retain the actual client");
@@ -163,7 +164,7 @@ class PlatformTransferRecoveryTest {
                                 fields.put("fingerprint", connection.fingerprint());
                                 var lease = ledger.retain(task,
                                         new TaskResource("FILE", "sftp:" + plan.id(), OWNER, true),
-                                        new ResourceRecovery("sftp.v1", fields));
+                                        new ResourceRecovery("sftp.v1", fields), false);
                                 return new ResourceLease() {
                                     public UUID id() {
                                         return lease;

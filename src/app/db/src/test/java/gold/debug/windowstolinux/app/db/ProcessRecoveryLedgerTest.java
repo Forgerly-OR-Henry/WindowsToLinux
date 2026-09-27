@@ -30,7 +30,7 @@ class ProcessRecoveryLedgerTest {
             observed = new ProcessRecovery(original.boot(), original.process(), OptionalLong.of(123),
                     Optional.of(Instant.now()));
             resource = new TaskResource("PROCESS", "process-v1:" + original.process(), "one", false);
-            ledger.retain(task, resource, original.encode());
+            ledger.retain(task, resource, original.encode(), false);
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
                         "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_checkpoint CHECK(resource_kind<>'PROCESS' OR recovery_json NOT LIKE '%STARTED%')");
@@ -73,7 +73,7 @@ class ProcessRecoveryLedgerTest {
             started = new ProcessRecovery(before.boot(), before.process(), OptionalLong.of(current.pid()),
                     current.info().startInstant());
             browser = new TaskResource("PROCESS", "browser-v1:" + before.process(), "one", false);
-            ledger.retain(task, browser, before.encode("browser.v1"));
+            ledger.retain(task, browser, before.encode("browser.v1"), false);
             assertThrows(SQLException.class, () -> ledger.checkpointProcess(task, browser, before, started));
             ledger.checkpointBrowser(task, browser, before, started);
             ledger.checkpointBrowser(task, browser, before, started);
@@ -104,7 +104,7 @@ class ProcessRecoveryLedgerTest {
             started = new ProcessRecovery(before.boot(), before.process(), OptionalLong.of(123),
                     Optional.of(Instant.now()));
             browser = new TaskResource("PROCESS", "browser-v1:" + before.process(), "one", false);
-            ledger.retain(task, browser, before.encode("browser.v1"));
+            ledger.retain(task, browser, before.encode("browser.v1"), false);
             ledger.checkpointBrowser(task, browser, before, started);
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
@@ -130,7 +130,7 @@ class ProcessRecoveryLedgerTest {
                     () -> ProcessRecovery.decodeBrowserClosed(new ResourceRecovery("browser.closed.v1", invalid)));
             var unstarted = new ProcessRecovery(db.bootId(), UUID.randomUUID(), OptionalLong.empty(), Optional.empty());
             var unused = new TaskResource("PROCESS", "browser-v1:" + unstarted.process(), "one", false);
-            var lease = ledger.retain(task, unused, unstarted.encode("browser.v1"));
+            var lease = ledger.retain(task, unused, unstarted.encode("browser.v1"), false);
             ledger.confirmBrowserClosed(task, unused, unstarted);
             ledger.release(task, lease);
             ledger.confirmBrowserClosed(task, unused, unstarted);
