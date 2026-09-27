@@ -169,6 +169,12 @@ class PlatformInstalledModGraphTest {
             assertEquals(Set.of(P), start(runtime, false).running());
             assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(archive(P, "2.0.0"))).outcome());
             assertEquals(VERSION, text(runtime, "SELECT actual_version FROM mod_registry"));
+            var task = runtime.tasks().bind(P, VERSION, false).submit(request(), context -> success("completed"));
+            assertEquals("completed", task.completion().toCompletableFuture()
+                    .get(8, java.util.concurrent.TimeUnit.SECONDS).value().orElseThrow());
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
+            assertEquals(1, count(runtime.persistence().database(),
+                    "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task' AND subject_mod_id='" + P + "'"));
             runtime.modIntents().apply(runtime.modIntents().review(P, choice(false, VERSION), Optional.empty()), false);
             assertFalse(runtime.modIntents().list().getFirst().stopAcknowledged());
         }

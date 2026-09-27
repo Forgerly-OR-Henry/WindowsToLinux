@@ -219,6 +219,28 @@ class PlatformRemoteCapabilitiesTest {
                                         context)
                                 .value().orElseThrow();
                         assertEquals(Outcome.SUCCEEDED, session.download(download, downloadGrant).outcome());
+
+                        try (var c = runtime.persistence().database().openConnection();
+                                var p = c.prepareStatement(
+                                        "SELECT recovery_json,released_at,owner_id FROM platform_task_resource WHERE task_id=? AND resource_kind='FILE'")) {
+                            p.setObject(1, context.id());
+                            try (var rows = p.executeQuery()) {
+                                int checkpoints = 0;
+                                while (rows.next()) {
+                                    var data = new com.fasterxml.jackson.databind.ObjectMapper()
+                                            .readTree(rows.getString(1));
+                                    assertEquals("sftp.v1", data.path("protocol").asText());
+                                    var fields = data.path("fields");
+                                    assertEquals("server", fields.path("serverId").asText());
+                                    assertTrue(fields.path("fingerprint").asText().startsWith("SHA256:"));
+                                    assertEquals(digest(bytes), fields.path("source.sha256").asText());
+                                    assertEquals(OWNER, rows.getString(3));
+                                    assertNotNull(rows.getObject(2));
+                                    checkpoints++;
+                                }
+                                assertEquals(2, checkpoints);
+                            }
+                        }
                         return success(null);
                     }
                 });
@@ -229,26 +251,11 @@ class PlatformRemoteCapabilitiesTest {
                 assertEquals(1, remote.commands.get());
                 assertEquals(0, runtime.security().securityState().activeTasks());
                 assertTrue(runtime.persistence().servers().findServer("server").isPresent());
-                try (var c = runtime.persistence().database().openConnection();
-                        var p = c.prepareStatement(
-                                "SELECT recovery_json,released_at,owner_id FROM platform_task_resource WHERE task_id=? AND resource_kind='FILE'")) {
-                    p.setObject(1, task.id());
-                    try (var rows = p.executeQuery()) {
-                        int checkpoints = 0;
-                        while (rows.next()) {
-                            var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(1));
-                            assertEquals("sftp.v1", data.path("protocol").asText());
-                            var fields = data.path("fields");
-                            assertEquals("server", fields.path("serverId").asText());
-                            assertTrue(fields.path("fingerprint").asText().startsWith("SHA256:"));
-                            assertEquals(digest(bytes), fields.path("source.sha256").asText());
-                            assertEquals(OWNER, rows.getString(3));
-                            assertNotNull(rows.getObject(2));
-                            checkpoints++;
-                        }
-                        assertEquals(2, checkpoints);
-                    }
-                }
+                assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource"));
+                assertEquals(1,
+                        count(runtime.persistence().database(),
+                                "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task' AND task_id='"
+                                        + task.id() + "'"));
             }
         }
     }

@@ -865,7 +865,7 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 | E-09 | 恢复判断使用 `[Operation]FailureRecoveryPolicy` 与 `[Operation]FailureRecoveryDecision`。                                | `DeploymentFailureRecoveryPolicy`          | `RecoveryProcessor`                    |
 | E-10 | 业务类型不得使用 `Error`、`Manager`、`Processor` 等泛化错误治理名称。                                                    | `DesktopFailurePresenter`                  | `ErrorManager`、`FailureProcessor`     |
 
-任务持久化的 `TaskLedger.DependencyBusyException` 与私有 `PlatformTaskRuntime.AdmissionRejectedException` 是两个明确的 SQL 回滚信号，均在任务宿主内转换为公开失败；它们不实现旧共享契约，也不是允许其他异常省略结构化原因的通用例外。架构检查按真实返回类型检查公开、非静态、无参数的 `problem()`，保留异常命名要求及旧错误枚举登记检查。
+任务持久化的 `TaskLedger.DependencyBusyException`、`TaskLedger.FinalizationException` 与私有 `PlatformTaskRuntime.AdmissionRejectedException` 是明确的内部 SQL 回滚信号，分别保留依赖占用、原归档凭据与准入拒绝；均在任务宿主内转为公开失败或待收尾状态，它们不实现旧共享契约，也不是允许其他异常省略结构化原因的通用例外。架构检查按真实返回类型检查公开、非静态、无参数的 `problem()`，保留异常命名要求及旧错误枚举登记检查。
 
 | 枚举性质   | 统一后缀      | 示例                         |
 | ---------- | ------------- | ---------------------------- |

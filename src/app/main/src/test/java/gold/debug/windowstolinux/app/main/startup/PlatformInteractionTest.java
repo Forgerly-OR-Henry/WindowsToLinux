@@ -165,13 +165,16 @@ class PlatformInteractionTest {
                 assertEquals(2, calls.get());
                 assertArrayEquals(new char[discarded.length], discarded);
                 assertArrayEquals(new char[accepted.length], accepted);
+                assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
                 try (var connection = runtime.persistence().database().openConnection();
                         var statement = connection.createStatement();
-                        var rows = statement
-                                .executeQuery("SELECT request_json,result_json,recovery_json FROM platform_task")) {
+                        var rows = statement.executeQuery(
+                                "SELECT message,details FROM runtime_log WHERE category='platform_task' AND task_id='"
+                                        + task.id() + "'")) {
                     assertTrue(rows.next());
-                    for (int column = 1; column <= 3; column++)
+                    for (int column = 1; column <= 2; column++)
                         assertFalse(rows.getString(column).contains("private-value"));
+                    assertFalse(rows.next());
                 }
             }
         }

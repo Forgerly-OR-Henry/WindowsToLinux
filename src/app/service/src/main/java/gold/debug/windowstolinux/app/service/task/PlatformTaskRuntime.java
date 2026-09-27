@@ -72,7 +72,22 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         bootId = database.bootId();
         this.admission = Objects.requireNonNull(admission);
         this.security = Objects.requireNonNull(security);
-        for (var id : ledger.unfinished()) {
+        for (var id : ledger.retained()) {
+            var finalization = ledger.pendingFinalization(id);
+            if (finalization.isPresent()) {
+                var original = finalization.get();
+                var execution = new Execution<Void>(original.snapshot(), null, true);
+                execution.observed = recordedConclusion(original.snapshot().outcome().orElseThrow());
+                execution.returned = true;
+                try {
+                    ledger.retryFinalization(original, () -> {
+                    });
+                } catch (SQLException unconfirmed) {
+                    if (!retainFinalization(execution, original))
+                        executions.put(id, execution);
+                }
+                continue;
+            }
             ledger.uncertain(id);
             var snapshot = ledger.snapshot(id);
             var execution = new Execution<Void>(snapshot, null, true);
@@ -724,7 +739,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     throw error(ProblemCode.BUSY, "TASK_RECOVERY_BUSY", "Task is not ready for reconciliation");
                 var recovery = recoveries.get(
                         new RecoveryKey(task.snapshot.ownerId(), task.snapshot.ownerVersion(), task.snapshot.type()));
-                if (recovery == null)
+                if (recovery == null && task.finalization == null)
                     throw error(ProblemCode.UNAVAILABLE, "TASK_RECOVERY_MISSING",
                             "The original task recovery implementation is unavailable");
                 if (task.authorization == null) {
@@ -738,8 +753,11 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 workers.execute(() -> {
                     OperationResult<Void> result;
                     try {
-                        result = task.authorization
-                                .execute(() -> Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context)));
+                        result = task.finalization != null
+                                ? new OperationResult<>(task.observed.outcome(), Optional.empty(),
+                                        task.observed.problem())
+                                : task.authorization.execute(
+                                        () -> Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context)));
                     } catch (Exception | LinkageError | AssertionError failure) {
                         result = unknown("TASK_RECOVERY_FAILED", "Recovery did not establish a known result");
                     }
@@ -814,15 +832,54 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             if (task.uncertainEffect)
                 task.observed = unknown("TASK_EFFECT_UNCERTAIN",
                         "A platform operation requires explicit reconciliation");
-            boolean ended = ledger.complete(task.snapshot.id(), task.observed.outcome(), evidence(task.observed),
-                    reconciliation, task::releaseAuthorization);
-            task.snapshot = ledger.snapshot(task.snapshot.id());
+            task.snapshot = task.finalization == null
+                    ? ledger.completeAndArchive(task.snapshot.id(), task.observed.outcome(), evidence(task.observed),
+                            reconciliation, task::releaseAuthorization)
+                    : ledger.retryFinalization(task.finalization, task::releaseAuthorization);
+            task.finalization = null;
             refreshAuthorizationBlockers();
-            return ended;
+            return task.snapshot.state() == TaskState.ENDED;
+        } catch (TaskLedger.FinalizationException failure) {
+            return retainFinalization(task, failure.finalization());
         } catch (SQLException failure) {
             uncertain(task, "Task completion persistence requires reconciliation");
             return false;
         }
+    }
+
+    /** Retains only platform archival work after the original business and physical resources concluded. / 原业务及物理资源结束后仅保留平台归档工作。
+     * @param task original execution / 原执行
+     * @param original original drained result receipt / 原已排空结果凭据
+     * @return whether rereading proved the original execution was already removed / 重读是否证明原执行已移除 */
+    private boolean retainFinalization(Execution<?> task, TaskLedger.Finalization original) {
+        task.finalization = original;
+        try {
+            if (!ledger.retainFinalization(original)) {
+                task.snapshot = original.snapshot();
+                task.finalization = null;
+                refreshAuthorizationBlockers();
+                return true;
+            }
+        } catch (SQLException unconfirmed) {
+            /* The in-memory receipt remains owned even when storage is unavailable. / 存储不可用时仍持有内存原凭据。 */
+        }
+        var previous = original.snapshot();
+        task.snapshot = new TaskSnapshot(previous.id(), previous.ownerId(), previous.ownerVersion(), previous.type(),
+                TaskState.FINISHING, Optional.empty(), previous.progressText(), previous.startedAt(), Optional.empty(),
+                List.of("Original platform task summary requires finalization"));
+        refreshAuthorizationBlockers();
+        return false;
+    }
+
+    /** Recreates no business payload when completing a prior boot's known result. / 完成前次启动已知结果时不重建业务载荷。
+     * @param outcome original committed business conclusion / 原已提交业务结论
+     * @return keyless observation; original diagnostics remain in the summary / 无密钥观察，原诊断仍保存在摘要中 */
+    private static OperationResult<Void> recordedConclusion(Outcome outcome) {
+        return new OperationResult<>(outcome, Optional.empty(),
+                outcome == Outcome.FAILED
+                        ? Optional.of(new Problem(ProblemCode.UNKNOWN, "TASK_RECORDED_FAILURE",
+                                "The recorded task failed; consult its original summary", Map.of(), Optional.empty()))
+                        : Optional.empty());
     }
 
     /**
@@ -1177,6 +1234,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Authentic host context associated with this execution. / 与此执行关联的真实宿主上下文。 */
         private final ExecutionContext context = new ExecutionContext(this);
 
+        /** Original known result awaiting only platform archival. / 仅等待平台归档的原已知结果。 */
+        private TaskLedger.Finalization finalization;
+
         /** Private completion promise exposed only as a minimal stage. / 仅以最小阶段暴露的私有完成承诺。 */
         private final CompletableFuture<OperationResult<T>> completion = new CompletableFuture<>();
         /**
@@ -1223,14 +1283,22 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 if (!cancellable)
                     throw error(ProblemCode.UNAVAILABLE, "TASK_NOT_CANCELLABLE", "Task does not support cancellation");
                 try {
-                    ended = ledger.cancel(id(), this::releaseAuthorization);
+                    if (snapshot.state() == TaskState.ENDED)
+                        return;
+                    snapshot = ledger.cancelAndArchive(id(), this::releaseAuthorization);
+                    ended = snapshot.state() == TaskState.ENDED;
                     cancelled = true;
-                    snapshot = ledger.snapshot(id());
                     refreshAuthorizationBlockers();
                     if (ended) {
                         returned = true;
                         observed = new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
                     }
+                    dispatch();
+                } catch (TaskLedger.FinalizationException failure) {
+                    cancelled = true;
+                    returned = true;
+                    observed = new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                    ended = retainFinalization(this, failure.finalization());
                     dispatch();
                 } catch (SQLException failure) {
                     if (authorization == null) {
@@ -1373,6 +1441,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         public void close() throws ApiException {
             boolean ended = false;
             synchronized (PlatformTaskRuntime.this) {
+                if (execution.snapshot.state() == TaskState.ENDED)
+                    return;
                 try {
                     ledger.release(execution.id(), id);
                     if (dependency != null)

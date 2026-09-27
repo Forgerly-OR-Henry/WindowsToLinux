@@ -1631,7 +1631,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaProvisioner.java`：创建明确登记的数据结构，或按独立重试记录重置从未可用的失败目标；核验实际所有权及会话。
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
-- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放。
+- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；固定任务摘要与执行清理同事务，原归档凭据支持仅元数据重试及跨启动收尾。
 - `app/db/task/ResourceRecovery.java`：显式资源的有界恢复事实封套，严格拒绝损坏或未知格式。
 - `app/db/task/TaskResource.java`：由平台适配器确定归属的内部资源申请。
 - `app/db/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql`：H2 平台首版表与约束。
@@ -1674,7 +1674,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
-- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源收尾并保留未完成归属。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后使用保留凭据运行绑定调用方的作者工作，核对资源及固定摘要归档；已知归档失败保留 FINISHING，原元数据重试不重放作者，完成句柄保留终态。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、就绪 Schema 代次及完整服务器集合。
 - `app/service/task/TaskCapabilityScope.java`：跟踪服务器及秘密适配器的真实操作寿命、Schema 占用及失败释放重试。
 - `app/service/security/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文。

@@ -97,19 +97,25 @@ class PlatformRecoveryRestartTest {
                                 assertThrows(ApiException.class, () -> service.start(profile)).problem().code());
                         assertThrows(SQLException.class, () -> runtime.servers().delete(profile.id()));
                     }
-                    assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
+                    assertEquals(scenario.equals("closed") ? 0 : 1,
+                            count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
+                    assertEquals(scenario.equals("closed") ? 1 : 0,
+                            count(runtime.persistence().database(),
+                                    "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task' AND task_id='"
+                                            + task + "'"));
                     assertEquals(0,
                             count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event"));
                     assertEquals(0, count(runtime.persistence().database(),
                             "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION'"));
                 } finally {
                     // Remove only synthetic fixture claims after assertions so the test runtime can close. / 断言后仅移除模拟夹具申请，便于关闭测试运行时。
-                    var ledger = new TaskLedger(runtime.persistence().database());
-                    for (var lease : leases)
-                        ledger.release(task, lease);
-                    if (!service.pending().isEmpty())
+                    if (!service.pending().isEmpty()) {
+                        var ledger = new TaskLedger(runtime.persistence().database());
+                        for (var lease : leases)
+                            ledger.release(task, lease);
                         assertEquals(TaskState.ENDED,
                                 service.reconcile(task, true).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                    }
                 }
             }
         }
