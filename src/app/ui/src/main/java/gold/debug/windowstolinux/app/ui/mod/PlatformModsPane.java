@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
 import java.awt.*;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -9,13 +10,16 @@ import java.util.function.Consumer;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.mod.PlatformModDeletion;
+import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
+import gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.shell.ModPageRegistry.PageContribution;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 
 /** Manages saved Mod choices and explicit data maintenance through the original host. / 经原宿主管理 Mod 已存选择及明确数据维护。 */
@@ -83,6 +87,16 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Explicit management actions. / 明确管理操作。 */
     private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, deleteMod, reconcileDeletion;
+
+    /** Explicit same-release repair and original recovery actions. / 明确同版本修复及原恢复操作。 */
+    private final JButton repair, reconcileRepair, restoreProgram;
+
+    /** Installed-only program and retained-operation rows. / 仅安装模式的程序及保留操作行。 */
+    private final JPanel programActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0)),
+            cleanupActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+
+    /** Installed source inventory and same-release repair owner, absent in CLASS. / 安装来源清单及同版本修复所有者，CLASS 缺省。 */
+    private PlatformModInstallation installation;
 
     /** Actual installed-layout deletion, absent for CLASS. / 实际安装布局删除，CLASS 缺省。 */
     private PlatformModDeletion deletion;
@@ -205,11 +219,23 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         deleteMod = button("deleteMod", () -> reviewDeletion(null));
         deleteMod.setToolTipText(messages.text("mods.deleteNotice"));
         reconcileDeletion = button("reconcileDeletion", this::reconcileDeletion);
-        for (var button : List.of(refresh, save, cancel, reconcile, retry, deleteVersion, deleteMod, reconcileDeletion,
-                logs))
+        repair = button("repair", this::chooseRepair);
+        repair.setToolTipText(messages.text("mods.repairNotice"));
+        reconcileRepair = button("reconcileRepair", this::reconcileRepair);
+        restoreProgram = button("restoreProgram", this::restoreProgram);
+        for (var button : List.of(refresh, save, cancel, reconcile, retry, logs))
             actions.add(button);
+        for (var button : List.of(repair, deleteVersion, deleteMod))
+            programActions.add(button);
+        for (var button : List.of(reconcileDeletion, reconcileRepair, restoreProgram))
+            cleanupActions.add(button);
+        var actionRows = new JPanel();
+        actionRows.setLayout(new BoxLayout(actionRows, BoxLayout.Y_AXIS));
+        actionRows.add(actions);
+        actionRows.add(programActions);
+        actionRows.add(cleanupActions);
         var footer = new JPanel(new BorderLayout(8, 8));
-        footer.add(actions);
+        footer.add(actionRows);
         status.setName("mods.status");
         footer.add(status, BorderLayout.SOUTH);
         progress.setIndeterminate(true);
@@ -221,12 +247,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     }
 
     /** Adds installed-layout maintenance after actual installation services are composed. / 实际安装服务装配后加入安装布局维护。
-     * @param deletion original installed deletion owner / 原安装删除所有者
+     * @param installation original installed program owner / 原安装程序所有者
      * @param refreshOriginals original observation refresh / 原包观察刷新 */
-    public void installDeletion(PlatformModDeletion deletion, Runnable refreshOriginals) {
-        if (!SwingUtilities.isEventDispatchThread() || this.deletion != null)
-            throw new IllegalStateException("Installed deletion must be composed once on the EDT");
-        this.deletion = Objects.requireNonNull(deletion);
+    public void installMaintenance(PlatformModInstallation installation, Runnable refreshOriginals) {
+        if (!SwingUtilities.isEventDispatchThread() || this.installation != null)
+            throw new IllegalStateException("Installed maintenance must be composed once on the EDT");
+        this.installation = Objects.requireNonNull(installation);
+        this.deletion = installation.deletion();
         this.refreshOriginals = Objects.requireNonNull(refreshOriginals);
         controls();
     }
@@ -295,6 +322,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                             value.choice().version().orElse("—"))));
             text.append('\n').append(messages.text("mods.actual",
                     Map.of("state", state(value.runtime()), "version", value.actual().orElse("—"))));
+            if (installation != null && !value.choice().enabled() && !value.stopAcknowledged())
+                text.append('\n').append(messages.text("mods.repairNotice"));
             value.failure().ifPresent(problem -> text.append('\n').append(messages.safe(problem)));
             for (var data : value.data())
                 text.append('\n').append("Schema ").append(data.identity().schemaVersion()).append(" · ")
@@ -383,11 +412,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         progress.setVisible(busy && !locked && !closed);
         var value = inventory.getSelectedValue();
         boolean deleting = value != null && value.operations().stream().anyMatch(PlatformModsPane::deletionOperation);
+        boolean repairing = value != null && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL"));
+        boolean maintaining = deleting || repairing;
         inventory.setEnabled(active);
-        enabled.setEnabled(active && value != null && !deleting);
+        enabled.setEnabled(active && value != null && !maintaining);
         refresh.setEnabled(active);
         logs.setEnabled(active);
-        save.setEnabled(active && value != null && !deleting && (!enabled.isSelected() || selectedVersion != null)
+        save.setEnabled(active && value != null && !maintaining && (!enabled.isSelected() || selectedVersion != null)
                 && (enabled.isSelected() != value.choice().enabled()
                         || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
         cancel.setVisible(value != null && value.operations().stream().anyMatch(o -> o.request().isPresent()));
@@ -403,16 +434,31 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                                 && v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
         retry.setEnabled(active);
         deleteVersion.setVisible(deletion != null);
-        deleteVersion.setEnabled(active && deletion != null && value != null && !value.choice().enabled()
-                && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty());
+        deleteVersion.setEnabled(
+                active && deletion != null && value != null && !value.choice().enabled() && value.stopAcknowledged()
+                        && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty());
         deleteMod.setVisible(deletion != null);
         deleteMod.setEnabled(active && deletion != null && value != null && !value.choice().enabled()
-                && !enabled.isSelected() && value.operations().isEmpty());
+                && value.stopAcknowledged() && !enabled.isSelected() && value.operations().isEmpty());
         reconcileDeletion.setVisible(deletion != null && deleting);
         reconcileDeletion.setEnabled(active && value != null
                 && value.operations().stream().anyMatch(o -> deletionOperation(o) && o.state().equals("UNKNOWN")));
+        repair.setVisible(installation != null);
+        repair.setEnabled(active && installation != null && value != null && value.stopAcknowledged()
+                && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty()
+                && value.versions().stream().anyMatch(
+                        v -> v.manifest().version().toString().equals(selectedVersion) && v.state().equals("READY")));
+        reconcileRepair.setVisible(installation != null && repairing);
+        reconcileRepair.setEnabled(active && value != null && value.operations().stream()
+                .anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")));
+        restoreProgram.setVisible(installation != null && repairing);
+        restoreProgram.setEnabled(active && value != null
+                && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")
+                        && Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(o.phase())));
+        programActions.setVisible(installation != null);
+        cleanupActions.setVisible(installation != null && maintaining);
         for (var child : versions.getComponents())
-            child.setEnabled(active && !deleting);
+            child.setEnabled(active && !maintaining);
         pageControls();
     }
 
@@ -540,6 +586,153 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         if (whole)
             navigation.refreshPreferences();
         refreshOriginals.run();
+    }
+
+    /** Lists matching managed archives before allowing an explicit external file selection. / 允许明确选择外部文件前列出匹配受管归档。 */
+    private void chooseRepair() {
+        String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
+        run(installation::scan, observation -> {
+            var paths = observation.originals().stream()
+                    .filter(o -> o.state().equals("INSTALLED") && o.manifest().isPresent()
+                            && o.manifest().orElseThrow().id().equals(owner)
+                            && o.manifest().orElseThrow().version().toString().equals(version))
+                    .map(PlatformModInstallation.OriginalView::file).toList();
+            Path selected = null;
+            if (!paths.isEmpty()) {
+                var choices = new JComboBox<Path>();
+                choices.setName("mods.repairSources");
+                paths.forEach(choices::addItem);
+                choices.addItem(null);
+                choices.setRenderer((list, value, index, chosen, focus) -> {
+                    var renderer = new DefaultListCellRenderer();
+                    renderer.putClientProperty("html.disable", true);
+                    return renderer.getListCellRendererComponent(list,
+                            value == null ? messages.text("mods.chooseRepairFile") : value.toString(), index, chosen,
+                            focus);
+                });
+                var panel = new JPanel(new BorderLayout(8, 8));
+                var notice = new JTextArea(
+                        messages.text("mods.chooseRepairSource", Map.of("owner", owner, "version", version)), 3, 58);
+                notice.setEditable(false);
+                notice.setLineWrap(true);
+                notice.setWrapStyleWord(true);
+                panel.add(notice, BorderLayout.NORTH);
+                panel.add(choices);
+                if (!confirm(panel))
+                    return;
+                selected = (Path) choices.getSelectedItem();
+            }
+            if (selected == null)
+                selected = chooseRepairFile();
+            if (selected != null)
+                reviewRepair(owner, version, selected);
+        });
+    }
+
+    /** Owns the file picker so locking also revokes a pending external source selection. / 持有文件选择器，使锁定同样撤销待定外部来源选择。
+     * @return explicitly selected input or null / 明确选定输入或 null */
+    private Path chooseRepairFile() {
+        long original = epoch;
+        var chooser = new JFileChooser();
+        chooser.setName("mods.repairFile");
+        chooser.setDialogType(JFileChooser.OPEN_DIALOG);
+        chooser.setApproveButtonText(messages.text("mods.selectRepairFile"));
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(
+                new javax.swing.filechooser.FileNameExtensionFilter(messages.text("mods.repairFileType"), "wtlmod"));
+        Path[] selected = {null};
+        var dialog = new JDialog(SwingUtilities.getWindowAncestor(this), messages.text("mods.chooseRepairFile"),
+                Dialog.ModalityType.APPLICATION_MODAL);
+        confirmation = dialog;
+        chooser.addActionListener(event -> {
+            if (JFileChooser.APPROVE_SELECTION.equals(event.getActionCommand()) && chooser.getSelectedFile() != null)
+                selected[0] = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            dialog.dispose();
+        });
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.setContentPane(chooser);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        try {
+            dialog.setVisible(true);
+            return !locked && !closed && original == epoch ? selected[0] : null;
+        } finally {
+            dialog.dispose();
+            confirmation = null;
+        }
+    }
+
+    /** Reviews exact replacement bytes and retention before showing destructive confirmation. / 展示替换确认前审阅精确字节及留存选择。
+     * @param owner selected installed owner / 选定安装所有者
+     * @param version selected release, independent of saved choice / 选定发布，独立于已存选择
+     * @param original selected archive / 选定归档 */
+    private void reviewRepair(String owner, String version, Path original) {
+        run(() -> installation.reinstallation().review(owner, version, original), review -> {
+            var text = new StringBuilder(messages.text("mods.confirmRepair",
+                    Map.of("owner", owner, "version", version, "path", review.inspection().archive().toString(),
+                            "retention",
+                            messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter"))));
+            text.append("\n\n").append(messages.text("mods.repairOldFiles"));
+            if (review.oldFiles().isEmpty())
+                text.append('\n').append(messages.text("mods.repairNoOldFiles"));
+            else
+                review.oldFiles().forEach(path -> text.append('\n').append(path));
+            if (confirm(text.toString()))
+                run(() -> installation.reinstallation().reinstall(review), this::repaired, true);
+        });
+    }
+
+    /** Continues the original durable replacement or already selected restoration. / 继续原持久替换或已选定恢复。 */
+    private void reconcileRepair() {
+        var operation = repairOperation();
+        if (confirm(messages.text("mods.confirmRepairReconcile", Map.of("id", operation.id().toString()))))
+            run(() -> installation.reinstallation().reconcile(operation.id()), this::repaired, true);
+    }
+
+    /** Reviews exactly which new files will be removed before restoring the saved old program. / 恢复保留旧程序前审阅精确将移除的新文件。 */
+    private void restoreProgram() {
+        var operation = repairOperation();
+        run(() -> installation.reinstallation().reviewRestore(operation.id()), review -> {
+            var text = new StringBuilder(messages.text("mods.confirmRestoreProgram",
+                    Map.of("owner", review.owner(), "version", review.version(), "id", review.id().toString())));
+            if (review.discardedFiles().isEmpty())
+                text.append('\n').append(messages.text("mods.restoreNoFiles"));
+            else
+                review.discardedFiles().forEach(path -> text.append('\n').append(path));
+            if (confirm(text.toString()))
+                run(() -> installation.reinstallation().restore(review), this::repaired, true);
+        });
+    }
+
+    /** Selects the original unknown repair, without inferring its version from the current radio choice. / 选择原未知修复，不从当前单选推断其版本。
+     * @return original maintenance identity / 原维护身份 */
+    private OperationView repairOperation() {
+        return inventory.getSelectedValue().operations().stream()
+                .filter(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
+    }
+
+    /** Refreshes saved state and original inventory after an actual repair outcome. / 实际修复结果后刷新已存状态和原包清单。
+     * @param result actual original repair result / 实际原修复结果 */
+    private void repaired(OperationResult<PlatformModReinstallation.Receipt> result) {
+        status.setText(repairMessage(messages, result));
+        refresh();
+        refreshOriginals.run();
+    }
+
+    /** Shares truthful repair and separate archive-cleanup feedback across both management pages. / 两个管理页共用准确修复及独立原包清理反馈。
+     * @param messages localized safe presenter / 本地化安全呈现器
+     * @param result original backend result / 原后端结果
+     * @return localized actual outcome / 本地化实际结果 */
+    static String repairMessage(PageMessagePresenter messages,
+            OperationResult<PlatformModReinstallation.Receipt> result) {
+        if (result.outcome() == Outcome.SUCCEEDED)
+            return messages.text("mods.repaired") + " "
+                    + messages.text("originals.cleanup." + result.value().orElseThrow().originalCleanup());
+        if (result.outcome() == Outcome.FAILED
+                && result.value().map(PlatformModReinstallation.Receipt::restored).orElse(false))
+            return messages.text("mods.restoredProgram");
+        return messages.text("mods.repairPending");
     }
 
     /** Reviews a draft without changing persistent choice before confirmation. / 在确认前不改变持久选择地审阅草稿。 */

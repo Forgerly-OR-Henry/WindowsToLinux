@@ -237,6 +237,18 @@ public final class PlatformModReinstallation implements AutoCloseable {
         public UUID id() {
             return pending.execution().id();
         }
+
+        /** Returns the owner of the original repair, independent of the current selection. / 返回原修复所有者，独立于当前选择。
+         * @return exact original owner / 精确原所有者 */
+        public String owner() {
+            return pending.execution().owner();
+        }
+
+        /** Returns the release restored by this original operation. / 返回此原操作恢复的发布。
+         * @return exact original release / 精确原发布 */
+        public String version() {
+            return pending.execution().version();
+        }
     }
 
     /** Reviews restoration only while complete original old files remain identifiable. / 仅在完整原旧文件仍可识别时审阅恢复。
