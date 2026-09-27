@@ -85,6 +85,24 @@ class ModPackageReaderTest {
         return archive(name, values, false, false);
     }
 
+    @Test
+    void hostClaimedEmptyDirectoryAcceptsExtractionButExistingContentIsNeverOverwritten() throws Exception {
+        var source = archive("owned.wtlmod", files());
+        var inspection = ModPackageReader.read(source);
+        var stage = Files.createDirectory(root.resolve("owned-stage"));
+        Object key = Files.readAttributes(stage, java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+        ModPackageReader.extractIntoEmpty(inspection, stage);
+        assertEquals(key, Files.readAttributes(stage, java.nio.file.attribute.BasicFileAttributes.class).fileKey());
+        ModPackageReader.verifyDirectory(inspection, stage);
+        Files.writeString(stage.resolve("README.md"), "preserved existing bytes");
+        assertThrows(IOException.class, () -> ModPackageReader.extractIntoEmpty(inspection, stage));
+        assertEquals("preserved existing bytes", Files.readString(stage.resolve("README.md")));
+        assertThrows(IOException.class,
+                () -> ModPackageReader.extractIntoEmpty(inspection, root.resolve("absent-stage")));
+        assertFalse(Files.exists(root.resolve("absent-stage")));
+        assertNull(System.getProperty(MARK));
+    }
+
     Path archive(String name, Map<String, byte[]> values, boolean compressed, boolean zip64) throws Exception {
         Path path = root.resolve(name);
         try (var output = new ZipArchiveOutputStream(path)) {

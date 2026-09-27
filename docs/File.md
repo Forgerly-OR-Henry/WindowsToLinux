@@ -1428,7 +1428,7 @@ API 包保持无环：task 只依赖 JDK；server、ui、db、ai、source 依赖
 
 当前 app/db/mod/ModDeletionLedger 已实现普通安装版本删除的持久阶段、停用确认、最后 Schema 引用判断、独立 DDL 清理、引用释放和固定摘要归档。账本自身不删除程序文件，推进前核验登记安装目录实际不存在；CLASS 源码不是安装目录。PlatformModDeletion 现已由安装服务持有，接入单版本程序文件清理、可选原包清理及默认已下载页。整 Mod 删除数据库范围现与单版本共用账本，增加全部版本及孤立 Schema、专属诊断、非共享自有凭据和固定导航的原范围清理；ModNavigationPreferences 是导航入口和删除事务的共同持久化实现。安装服务已复用实际运行时日志实例的按所有者删除作用域，阻止旧回填快照重建文件；ModOwnedCleanup 已接整 Mod 登记程序、专属数据根及原日志类别文件的有界审阅和剩余子集清理，原 DELETE_MOD 保存原文件证据并支持跨启动恢复；默认已下载页已接整 Mod 范围确认与继续原清理，PlatformModIntents 在登记已移除时仍展示原 DELETE_MOD；界面分别刷新原包和导航偏好。
 
-`app/db/mod/ModProgramMaintenance` 复用删除和重装的已停止所有者、任务/资源与依赖准入；`ModReinstallationLedger` 保存同版本修复原范围和有序检查点，只提交原版本程序状态/原包摘要及固定终态，不修改数据和选择。账本不执行物理文件替换，文件服务与重装入口仍待接入。
+`app/db/mod/ModProgramMaintenance` 复用删除和重装的已停止所有者、任务/资源与依赖准入；`ModReinstallationLedger` 保存同版本修复原范围和有序检查点，只提交原版本程序状态/原包摘要及固定终态，不修改数据和选择。账本不执行物理文件替换；`app/service/mod/PlatformModReinstallation` 已由安装服务持有，复用原包读取、原生目录发布和精确范围清理，实际替换、保留旧副本、明确恢复及独立原包清理均已接通。默认重装入口与安装版真实启动图仍待接入。
 
 当前 `app/mod/installation` 已实现原包读取、嵌套 JAR 索引与新目录暂存，直接复用工程集中管理的 Commons Compress 1.26.1；包内 ZIP 视图借用原文件句柄，不生成临时 JAR 副本。读取结果不代表已安装或可启用。`app/service/mod/PlatformModInstallation` 已串联原 INSTALL 记录、原生目录发布、版本登记、留存设置和明确中断核对，CLASS 装配不使用该安装来源；`app/ui/mod/ModOriginalsPane` 已接 JAR/APP 原包扫描、搜索、确认安装、原包删除、留存设置及原操作核对；`app/mod/loader` 使用 Maven 集中管理的 ASM 9.10.1，在原包、原安装恢复、CLASS 构建/发现和启用前共用入口继承与公开签名静态准入；`app/service/mod/ModInstallationCleanup` 为未登记安装的明确撤销捕获和复核原文件范围；原 INSTALL 保存 CANCELLING 后才删除，UI 接原清理核对，完整行为见 [Mod 包校验](Mod.md#package-installation)。
 

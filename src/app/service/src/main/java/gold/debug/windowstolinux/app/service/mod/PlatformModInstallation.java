@@ -44,6 +44,9 @@ public final class PlatformModInstallation implements AutoCloseable {
     /** Installed-version cleanup bound to the same root and security owner. / 绑定同一根及安全所有者的安装版本清理。 */
     private final PlatformModDeletion deletion;
 
+    /** Same-release repair bound to this installed root and gate. / 绑定此安装根和操作门的同版本修复。 */
+    private final PlatformModReinstallation reinstallation;
+
     /** Strict bounded request codec. / 严格有界请求编解码。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
@@ -61,10 +64,12 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param security original security service / 原安全服务
      * @param applicationHome explicit application root / 明示应用根
      * @param diagnostics actual runtime logging owner / 实际运行时日志所有者
+     * @param api actual compiled public API version / 实际编译公开 API 版本
      * @throws IOException if the root is absent or redirected / 根缺失或重定向时
      * @throws SQLException if archive registration fails / 归档登记失败时 */
     public PlatformModInstallation(PlatformDatabase database, DesktopSecurityService security, Path applicationHome,
-            gold.debug.windowstolinux.app.service.log.PlatformLogService diagnostics) throws IOException, SQLException {
+            gold.debug.windowstolinux.app.service.log.PlatformLogService diagnostics, SemanticVersion api)
+            throws IOException, SQLException {
         directory(applicationHome);
         home = applicationHome;
         boot = database.bootId();
@@ -74,12 +79,19 @@ public final class PlatformModInstallation implements AutoCloseable {
         archive = logs.register("app", Optional.empty(),
                 new LogCategory("mod_operation", "mod_operation", Optional.empty()));
         deletion = new PlatformModDeletion(database, security, home, diagnostics);
+        reinstallation = new PlatformModReinstallation(database, security, home, api);
     }
 
     /** Returns actual installed-version deletion for host composition. / 返回供宿主装配的实际安装版本删除。
      * @return original deletion owner / 原删除所有者 */
     public PlatformModDeletion deletion() {
         return deletion;
+    }
+
+    /** Returns the original installed repair service for host composition. / 返回供宿主装配的原安装修复服务。
+     * @return original repair service / 原修复服务 */
+    public PlatformModReinstallation reinstallation() {
+        return reinstallation;
     }
 
     /** Opaque single-use review of original bytes and the captured retention choice. / 原始字节及所捕获留存选择的不透明单次审阅。 */
@@ -346,15 +358,17 @@ public final class PlatformModInstallation implements AutoCloseable {
                 String identity = null;
                 try {
                     String json = r.getString(6);
-                    if (json.length() > 4 * 1024 * 1024)
+                    if (json.length() > 8 * 1024 * 1024)
                         throw new IOException("Oversized package use evidence");
                     var node = JSON.readTree(json);
-                    if (!r.getString(7).equals("INSTALL") || !home.toString().equals(node.path("home").textValue()))
+                    if (!home.toString().equals(node.path("home").textValue()))
                         throw new IOException("Unrecognized package use evidence");
-                    var source = Path.of(node.required("original").textValue());
-                    String nativeId = node.required("identity").textValue();
+                    boolean repair = r.getString(7).equals("REINSTALL");
+                    var retained = repair ? reinstallation.original(node, r.getString(2), r.getString(3)) : null;
+                    var source = Path.of(repair ? retained.path() : node.required("original").textValue());
+                    String nativeId = repair ? retained.identity() : node.required("identity").textValue();
                     if (!source.isAbsolute() || !source.equals(source.normalize())
-                            || !originalsDirectory().equals(source.getParent()) || nativeId == null
+                            || !repair && !originalsDirectory().equals(source.getParent()) || nativeId == null
                             || !nativeId.matches("[0-9a-f]{48}"))
                         throw new IOException("Invalid package use evidence");
                     path = source;
@@ -424,7 +438,7 @@ public final class PlatformModInstallation implements AutoCloseable {
     public synchronized boolean keepOriginal() throws SQLException {
         requireOpen();
         try (var ignored = security.enterOperation()) {
-            return locked(this::keepOriginal);
+            return locked(PlatformModInstallation::keepOriginal);
         }
     }
 
@@ -1197,7 +1211,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param c locked transaction / 已锁事务
      * @return default-true preference / 默认真的偏好
      * @throws SQLException if malformed or unreadable / 格式错误或不可读时 */
-    private boolean keepOriginal(Connection c) throws SQLException {
+    static boolean keepOriginal(Connection c) throws SQLException {
         try (var p = c.prepareStatement("SELECT preference_value FROM desktop_preference WHERE preference_key=?")) {
             p.setString(1, KEEP);
             try (var r = p.executeQuery()) {
@@ -1375,6 +1389,7 @@ public final class PlatformModInstallation implements AutoCloseable {
     /** Closes only after synchronized accepted work returned. / 仅在同步已接纳工作返回后关闭。 */
     @Override
     public synchronized void close() {
+        reinstallation.close();
         deletion.close();
         closed = true;
     }

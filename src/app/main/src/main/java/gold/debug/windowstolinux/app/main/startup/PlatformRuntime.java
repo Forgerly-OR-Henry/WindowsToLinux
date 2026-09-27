@@ -275,7 +275,7 @@ public final class PlatformRuntime implements AutoCloseable {
             throw new IllegalStateException("CLASS mode uses source builds, not installed package directories");
         if (modInstallation == null)
             modInstallation = new gold.debug.windowstolinux.app.service.mod.PlatformModInstallation(
-                    persistence.database(), security, layout.applicationHome(), logs);
+                    persistence.database(), security, layout.applicationHome(), logs, readApiVersion());
         return modInstallation;
     }
 
