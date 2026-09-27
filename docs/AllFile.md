@@ -1843,6 +1843,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；UNKNOWN 不重放作者副作用。
 - `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
 - `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
+- `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
+- `mod/deployment/secret/DeploymentSecretProvisionJournal.java`：宿主作者检查点中的原服务器/用途/修订、创建 ID、引用 UUID 与已知业务结果；不保存秘密值。
+- `mod/deployment/secret/SecretValueSource.java`：已准入任务内一次性取得调用方自有明文数组的窄回调。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
 - `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。

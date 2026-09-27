@@ -6,6 +6,7 @@ import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.LogCategory;
 import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
+import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 
@@ -20,11 +21,17 @@ public final class Mod implements ModEntrypoint {
     /** Production Git project source task and original recovery. / 生产 Git 项目来源任务及原恢复。 */
     private DeploymentGitSourceFlow gitSourceFlow;
 
+    /** Production secret revision task and original recovery. / 生产秘密修订任务及原恢复。 */
+    private DeploymentSecretProvisionFlow secretProvisionFlow;
+
     /** Active original-task recovery registration. / 活动原任务恢复登记。 */
     private RecoveryRegistration recoveryRegistration;
 
     /** Original Git source recovery registration. / 原 Git 来源恢复登记。 */
     private RecoveryRegistration gitRecoveryRegistration;
+
+    /** Original secret revision recovery registration. / 原秘密修订恢复登记。 */
+    private RecoveryRegistration secretRecoveryRegistration;
 
     /** Binds owned diagnostics after the platform has prepared the exact business generation. / 平台准备精确业务代次后绑定所属诊断。
      * @param context actual host-created context / 实际宿主创建的上下文
@@ -42,13 +49,36 @@ public final class Mod implements ModEntrypoint {
         try {
             gitRegistration = context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow);
         } catch (Exception failure) {
-            registration.close();
+            try {
+                registration.close();
+            } catch (Exception cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
+        var secretFlow = new DeploymentSecretProvisionFlow(context);
+        RecoveryRegistration secretRegistration;
+        try {
+            secretRegistration = context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow);
+        } catch (Exception failure) {
+            try {
+                gitRegistration.close();
+            } catch (Exception cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            try {
+                registration.close();
+            } catch (Exception cleanup) {
+                failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
         this.publicationFlow = flow;
         this.gitSourceFlow = gitFlow;
+        this.secretProvisionFlow = secretFlow;
         this.recoveryRegistration = registration;
         this.gitRecoveryRegistration = gitRegistration;
+        this.secretRecoveryRegistration = secretRegistration;
         this.context = context;
     }
 
@@ -68,17 +98,53 @@ public final class Mod implements ModEntrypoint {
         return gitSourceFlow;
     }
 
+    /** Returns the active production secret revision entrypoint. / 返回活动生产秘密修订入口。
+     * @return bound task flow / 已绑定任务流程 */
+    public DeploymentSecretProvisionFlow secretProvisionFlow() {
+        if (secretProvisionFlow == null)
+            throw new IllegalStateException("Deployment Mod is not started");
+        return secretProvisionFlow;
+    }
+
     /** Releases the author reference; platform capabilities own their actual cleanup. / 释放作者引用，平台能力负责其实际清理。
      * @param context original stop reason / 原停止原因
      * @throws Exception if recovery registration cannot close / 恢复登记无法关闭时 */
     @Override
     public void stop(StopContext context) throws Exception {
-        if (gitRecoveryRegistration != null)
-            gitRecoveryRegistration.close();
-        if (recoveryRegistration != null)
-            recoveryRegistration.close();
-        gitRecoveryRegistration = null;
-        recoveryRegistration = null;
+        Exception failure = null;
+        if (secretRecoveryRegistration != null) {
+            try {
+                secretRecoveryRegistration.close();
+                secretRecoveryRegistration = null;
+            } catch (Exception unclosed) {
+                failure = unclosed;
+            }
+        }
+        if (gitRecoveryRegistration != null) {
+            try {
+                gitRecoveryRegistration.close();
+                gitRecoveryRegistration = null;
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        }
+        if (recoveryRegistration != null) {
+            try {
+                recoveryRegistration.close();
+                recoveryRegistration = null;
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        }
+        if (failure != null)
+            throw failure;
+        secretProvisionFlow = null;
         gitSourceFlow = null;
         publicationFlow = null;
         this.context = null;
