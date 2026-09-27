@@ -1020,6 +1020,7 @@ public interface TaskHandle<T> {
 public interface TaskService {
     <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException;
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
+    boolean resourcesReleased(TaskContext task) throws ApiException;
     RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException;
 }
 public interface TaskRecovery {
@@ -1072,6 +1073,8 @@ public interface ProcessService {
 `OperationResult` 成功时 `problem` 为空；失败、未知必须有 `problem`，取消可附收尾信息。`value` 只包含可信的已知结果或证据，存在值不代表成功。任务同服务器资源首次申请按 ID 排序、原子取得，冲突排队；跨 Mod 调用沿用原任务，不再新建争抢同服务器的任务。`retain` 只登记本 Mod 的自定义本地资源，不允许声明任意服务器锁；JDBC、进程与跨 Mod 服务由对应平台适配自动登记。`progress` 的比例若有则为 0～1。
 
 `TaskService.list` 仅返回当前 Mod 的活动任务内存快照；平台任务页使用内部聚合及历史查询接口。任务尚有资源或补偿时进入 `FINISHING`；结果未知保留 `UNKNOWN`，提供者核对后才提交终态，`completion` 只在资源收尾后完成。回调异常转为结构化失败，若副作用不能核实则为未知；不能只依据异常类型猜测远端结果。作者在 start 为有持久副作用的任务类型登记 TaskRecovery；用户从任务页选择“重新核对”后，平台在后台传入原任务身份及保留资源，不新建同服务器竞争任务。回调只核对并完成必要收尾，不重发未知业务；返回 UNKNOWN 则继续保留。核实为终态时原句柄若仍存在，以核实结果完成且 value 为空，业务对象按操作 ID 重新查询；重启后不恢复旧 Java Future。恢复实现不可用时保留状态和阻塞原因，不自动清除任务。
+
+`resourcesReleased(originalTask)` 只在原 Mod 仍启用、原对象身份匹配且处于原执行或显式恢复上下文时允许后台读取，不开启新的业务任务或安全解锁流程。它按平台任务账本扫描所有所有者与资源类别的未释放显式租约，仅精确 `TASK_END` 自动清理项可排除；NULL、未知恢复元数据和不存在的原任务都不能报告已释放。该观察不主动清理资源，也不能单独证明远端副作用结果；最终任务终态仍由平台任务运行时判定。
 
 当前平台任务收尾已将固定 `archive_log_id` 的 `platform_task` 摘要、已释放资源行及原执行行移除放在同一 H2 事务。摘要仅保存有界脱敏诊断，不保存业务返回值；作者先提交正式业务结果，再返回已知结论。摘要或执行清理失败时保留原结论与 FINISHING，明确核对仅补平台归档，不重复调用业务或 TaskRecovery；跨启动已持久的完整收尾凭据可补归档，不恢复旧 Future。只有平台元数据待收尾的情况适用此路径，UNKNOWN 和实际残留资源仍须原恢复实现核对。正常结束的句柄保持终态及原返回值，显式核对后的 value 仍按上述契约为空；日志按类别保留 100 条、手动清到 10 条后，不由旧任务重建摘要。
 
@@ -1264,9 +1267,11 @@ public interface SecretService {
 
 官方 deployment 的执行账本在 `deployment_execution` 保存原执行 UUID、平台任务 UUID、目标应用/服务器、模式和审阅摘要。预留前的请求文档固定资源、用途和业务键，后续仅补原预留 UUID；所有关联均已取得 UUID 后才能进入副作用阶段。成功结果与单元/配置/秘密集合/拓扑同一 H2 事务提交，`business_committed` 与 `cleanup_complete` 分开，未知结果不能标清理完成或重新开始副作用。已知结果不可覆盖，另一平台任务只可读取旧记录，不能接管写入；执行记录创建确认丢失时，可按原平台任务查询原业务执行 UUID，不重新创建。
 
-本阶段执行文档为固定 `formatVersion=2` 的 UTF-8 JSON object，单份最大一 MiB、资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。请求/恢复/结果分别绑定原执行及任务身份；原阶段为 PREPARED、EXECUTING、COMMITTED、FINISHED，UNKNOWN 保留在 outcome 且不完成清理。未知版本保留原文只读检查，核对或变更明确拒绝，不按当前格式猜测。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。当前请求文档覆盖引用恢复范围；完整分析/取材/远端步骤及生产恢复编排随业务引擎继续迁移，不将账本存在视为完整部署恢复已接入。
+现行执行文档固定 `formatVersion=4` 的 UTF-8 JSON object，单份最大一 MiB、资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。请求保存已审阅完整项目来源，结果仅保存有界公开 `ProblemCode` 和符合 `[A-Za-z][A-Za-z0-9_.-]{0,127}` 的 `eventCode`，成功的 `problemCode` 为 null；不持久化任意消息、上下文或异常文本。请求/恢复/结果分别绑定原执行及任务身份；原阶段为 PREPARED、EXECUTING、COMMITTED、FINISHED，UNKNOWN 保留在 outcome 且不完成清理。旧版本保留原文只读检查，核对或变更明确拒绝，不按当前格式猜测。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。
 
-官方 deployment 的成功结果在格式 2 中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；格式 1 及其他不支持版本保留原文，只读而不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；完整候选执行与恢复仍待后续业务编排。
+正式发布入口固定 `deployment-publication` 平台任务类型，`Mod.start` 登记原版本 `TaskRecovery`，`stop` 释放登记。`DeploymentReferenceFlow` 先持久化原执行及全部引用意图，再按原任务查找或预留并记录原 UUID；全部落账且持久化 `startEffects` 后才调用作者一次。核实成功后，原单元、配置、秘密修订、完整图、发布历史及成功结果同事务提交；秘密修订业务键含原服务器作用域，提交事务逐一核对业务键与凭据 ID。已知失败或取消保留公开问题类别与事件；直接回调结果可带原内存问题，恢复只重建安全的类别与事件。作者异常或 EXECUTING 未知不重放。PREPARED 可以在原业务行、原平台 UUID 和所有显式资源已释放都得到证明后标记未开始失败；冲突和缺证据维持 UNKNOWN。引用确认依原业务表及包括 RETIRED 的发布历史，原 UUID 消失后的 NOT_REFERENCED 可幂等收尾；全部显式资源真实释放后才记录 `cleanup_complete`。当前只接入发布引用任务入口和恢复回调，页面及部署引擎仍待接线，不能据此宣称远端发布全流程可用。
+
+官方 deployment 的成功结果在现行格式 4 中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；格式 1～3 及其他不支持版本保留原文，只读而不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；完整候选执行与恢复仍待后续业务编排。
 
 发布历史的两份 UTF-8 JSON object 固定 `formatVersion=1`：运行清单最大 16 MiB，独立整应用健康文档最大一 MiB。运行清单完整保留有序组件、单元身份、依赖、运行定义、路径/资源绑定，以及原组件摘要和不可变配置/秘密修订引用；二进制子载荷采用规范 Base64，沿用原格式和单项上限。两份规范 JSON 按独立 `windowstolinux-application-release-v1` 域和四字节大端长度前缀计算整应用 SHA-256，健康/依赖变化同样改变历史身份；原组件摘要和旧备份 release-set 算法不变。发布时间保留在正式执行结果，历史内容摘要不混入时间，秘密值不进入载荷。未知格式原文保留并阻止相关历史退役/激活；只读核验检查已知历史摘要、来源执行、配置/秘密引用、唯一 ACTIVE 与当前整图，以及成功执行的精确历史关联。16 MiB 是明确的整图容量上限，不保证 64 个均达到各自最大尺寸的组件能合并写入。
 

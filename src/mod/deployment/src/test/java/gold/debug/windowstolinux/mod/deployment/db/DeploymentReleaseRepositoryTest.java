@@ -143,8 +143,8 @@ class DeploymentReleaseRepositoryTest extends DeploymentExecutionFixture {
                 assertEquals(2, count(runtime, task, "SELECT COUNT(*) FROM deployment_unit_configuration_snapshot"));
                 verify(runtime, task, graph("application"), publications(graph("application"), 1, List.of()));
                 sql(runtime, task, "ALTER TABLE deployment_execution DROP CONSTRAINT fixture_history_failure");
-                journal.recordUncommittedOutcome(task, id, Outcome.FAILED, "CONFIRMED_ROLLBACK",
-                        OBSERVED.plusSeconds(10));
+                journal.recordUncommittedOutcome(task, id, Outcome.FAILED,
+                        problem(Outcome.FAILED, "CONFIRMED_ROLLBACK"), OBSERVED.plusSeconds(10));
                 runtime.modContexts().get(OWNER).context().servers().resolve(reference.id(),
                         ReferenceResolution.REFERENCED, task);
                 assertEquals(gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE,
@@ -187,8 +187,8 @@ class DeploymentReleaseRepositoryTest extends DeploymentExecutionFixture {
                 assertEquals(record, releases(runtime).find(task, "application", record.identity().id()).orElseThrow());
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
                 verify(runtime, task, graph("application"), publications(graph("application"), 1, List.of()));
-                journal(runtime).recordUncommittedOutcome(task, id, Outcome.FAILED, "UNSUPPORTED_HISTORY",
-                        OBSERVED.plusSeconds(10));
+                journal(runtime).recordUncommittedOutcome(task, id, Outcome.FAILED,
+                        problem(Outcome.FAILED, "UNSUPPORTED_HISTORY"), OBSERVED.plusSeconds(10));
                 runtime.modContexts().get(OWNER).context().servers().resolve(reference.id(),
                         ReferenceResolution.REFERENCED, task);
                 assertEquals(gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE,
@@ -224,8 +224,8 @@ class DeploymentReleaseRepositoryTest extends DeploymentExecutionFixture {
                 assertEquals(DeploymentReleaseState.valueOf(state), releases(runtime)
                         .find(task, "application", original.get().identity().id()).orElseThrow().state());
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
-                journal(runtime).recordUncommittedOutcome(task, id, Outcome.FAILED, "UNRESOLVED_ORIGINAL_RELEASE",
-                        OBSERVED.plusSeconds(10));
+                journal(runtime).recordUncommittedOutcome(task, id, Outcome.FAILED,
+                        problem(Outcome.FAILED, "UNRESOLVED_ORIGINAL_RELEASE"), OBSERVED.plusSeconds(10));
                 runtime.modContexts().get(OWNER).context().servers().resolve(reference.id(),
                         ReferenceResolution.REFERENCED, task);
                 assertEquals(gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE,

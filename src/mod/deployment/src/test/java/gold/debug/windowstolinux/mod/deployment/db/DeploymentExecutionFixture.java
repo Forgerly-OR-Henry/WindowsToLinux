@@ -7,6 +7,11 @@ import gold.debug.windowstolinux.appapi.server.*;
 import gold.debug.windowstolinux.appapi.task.*;
 
 abstract class DeploymentExecutionFixture extends DeploymentGraphFixture {
+    Problem problem(Outcome outcome, String event) {
+        return new Problem(outcome == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.UNKNOWN, event,
+                "Retained test outcome", Map.of(), Optional.empty());
+    }
+
     DeploymentExecutionIdentity identity(TaskContext task, UUID id) {
         return new DeploymentExecutionIdentity(id, task.id(), Optional.empty(), "application", new ServerRef("server"),
                 DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64));
