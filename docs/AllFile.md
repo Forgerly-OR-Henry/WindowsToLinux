@@ -1650,7 +1650,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/development/MavenDevelopmentInputs.java`：在 Maven 原构建会话中撤销旧描述，捕获真实解析的依赖、从模块和构建配置输入。
 - `app/mod/development/DevelopmentModDiscovery.java`：在明示工作区发现开发 Mod，保留逐来源错误并拒绝重复身份，不执行作者入口。
 - `app/mod/installation/ModPackageTool.java`：独立 Java 构建命令，当前执行 CLASS describe，复用正式开发描述校验并输出有界输入的结构化结果。
-- `app/mod/installation/ModPackageReader.java`：核验原包布局、实际外层字节、两类摘要及嵌套 JAR 类归属；审阅后重验再展开到新暂存目录，并可在原包不存在时按保留证据核验完整展开树；本读取器不登记安装。
+- `app/mod/installation/ModPackageReader.java`：核验原包布局、实际外层字节、两类摘要及嵌套 JAR 类归属；审阅后重验再展开到新暂存目录，并可在原包不存在时按保留证据核验完整展开树；支持按登记摘要核验安装目录并返回有序代码来源，本读取器不登记安装。
 - `app/mod/installation/ModZip.java`：在分配条目前检查 ZIP/ZIP64 中央目录，核对原路径、本地头与有界嵌套视图，拒绝链接及冲突。
 - `app/mod/resources/META-INF/maven/plugin.xml`：登记 development-inputs 构建目标及原 Maven 会话注入，不注册业务 Mod。
 - `app/mod/lifecycle/ModRuntimeSession.java`：启用一个已准备的 Mod，先记录启动再调用作者；原会话保留至物理清理与最终持久确认完成。
@@ -1663,6 +1663,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/mod/PlatformModInstallation.java`：绑定原包审阅及留存选择；按原 INSTALL 阶段暂存、不覆盖发布、登记、清理和归档，以 Windows 原身份及逐文件摘要恢复；支持明确撤销未登记安装及原 CANCELLING 清理/归档；提供含无效包的只读扫描、独立待处理清单及原包删除审阅，不自动启用或接管替代目录。
 - `app/service/mod/PlatformModIntents.java`：读取选择、运行和数据管理快照；审阅并原子保存开关、版本、连带禁用和来源，或取得明确数据重试；撤销原组同事务归档；保存用户页面固定偏好；已注销所有者的原 DELETE_MOD 仍进入管理观察。
 - `app/service/mod/PlatformModCatalog.java`：将已验证 CLASS 构建原子登记为可选择版本，保留用户意图，以实际输出摘要防止待执行依据被重新编译替换。
+- `app/service/mod/PlatformModPrograms.java`：为共用生命周期解析当前 CLASS 构建或安装根中精确 READY 登记，加载前复核原清单、来源、固定路径、完整内容和代码准入；不扫描接管未登记程序。
 - `app/mod/loader/ModClassLoader.java`：共享声明的公开类型，同时将作者代码与宿主实现隔离；原包及 CLASS/JAR 共用 JAR 隐式 Class-Path 拒绝规则。
 - `app/mod/loader/ModClassShape.java`：用 ASM 读取类声明、泛型、嵌套可见性及注解引用；核对成员/属性边界，不读取方法体或初始化作者类。
 - `app/mod/loader/ModCodeInspection.java`：有界索引原包与 CLASS 来源，证明入口继承关系及导出签名归属，处理多版本覆盖和安装/启用的依赖可用性差异。
