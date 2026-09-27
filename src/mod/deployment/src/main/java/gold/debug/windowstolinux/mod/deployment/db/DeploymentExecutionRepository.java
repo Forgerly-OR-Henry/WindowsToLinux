@@ -174,8 +174,10 @@ public final class DeploymentExecutionRepository {
                 throw new SQLException("Publication differs from the original unfinished operation");
             requireSecretIntents(connection, records, checkpoint);
             DeploymentPublicationRepository.save(connection, graph, records, observedAt);
+            var release = DeploymentReleaseRepository.activate(connection, record.identity(),
+                    DeploymentReleaseSnapshot.capture(graph, records), observedAt);
             var result = DeploymentExecutionCodec.result(record.identity(), Outcome.SUCCEEDED,
-                    "DEPLOYMENT_PUBLICATION_COMMITTED", records);
+                    "DEPLOYMENT_PUBLICATION_COMMITTED", records, Optional.of(release));
             update(connection, record, checkpoint, checkpoint.ids(), "COMMITTED", Optional.of(Outcome.SUCCEEDED),
                     Optional.of(result), true, false, observedAt);
         });
@@ -217,7 +219,8 @@ public final class DeploymentExecutionRepository {
             if (record.businessCommitted() || record.cleanupComplete()
                     || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
                 throw new SQLException("Known business outcome is immutable");
-            var result = DeploymentExecutionCodec.result(record.identity(), outcome, eventCode, List.of());
+            var result = DeploymentExecutionCodec.result(record.identity(), outcome, eventCode, List.of(),
+                    Optional.empty());
             update(connection, record, checkpoint, checkpoint.ids(), record.phase(), Optional.of(outcome),
                     Optional.of(result), false, false, observedAt);
         });
@@ -304,7 +307,7 @@ public final class DeploymentExecutionRepository {
      * @param lock whether this transaction mutates the row / 本事务是否变更该行
      * @return validated row or absence / 已校验行或不存在
      * @throws SQLException if data or JSON cannot be read / 数据或JSON无法读取时 */
-    private static Optional<DeploymentExecutionRecord> read(Connection connection, UUID executionId, boolean lock)
+    static Optional<DeploymentExecutionRecord> read(Connection connection, UUID executionId, boolean lock)
             throws SQLException {
         try (var statement = connection.prepareStatement(
                 "SELECT * FROM deployment_execution WHERE execution_id=?" + (lock ? " FOR UPDATE" : ""))) {
@@ -319,7 +322,7 @@ public final class DeploymentExecutionRepository {
      * @param row current stored row / 当前存储行
      * @return original immutable evidence / 原不可变证据
      * @throws SQLException if columns or supported payloads are invalid / 列或受支持载荷无效时 */
-    private static DeploymentExecutionRecord row(ResultSet row) throws SQLException {
+    static DeploymentExecutionRecord row(ResultSet row) throws SQLException {
         try {
             var identity = new DeploymentExecutionIdentity(row.getObject("execution_id", UUID.class),
                     row.getObject("platform_task_id", UUID.class),
@@ -330,9 +333,9 @@ public final class DeploymentExecutionRepository {
             byte[] result = DeploymentPayloadReader.read(row, "result_payload");
             var record = new DeploymentExecutionRecord(identity, row.getString("phase"),
                     Optional.ofNullable(row.getString("outcome")).map(Outcome::valueOf),
-                    DeploymentExecutionCodec.text(DeploymentPayloadReader.read(row, "request_payload")),
-                    DeploymentExecutionCodec.text(DeploymentPayloadReader.read(row, "recovery_payload")),
-                    result == null ? Optional.empty() : Optional.of(DeploymentExecutionCodec.text(result)),
+                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "request_payload")),
+                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "recovery_payload")),
+                    result == null ? Optional.empty() : Optional.of(DeploymentJsonDocument.text(result)),
                     row.getBoolean("business_committed"), row.getBoolean("cleanup_complete"),
                     Instant.ofEpochMilli(row.getLong("created_at")), Instant.ofEpochMilli(row.getLong("updated_at")));
             if (DeploymentExecutionCodec.supported(record))
