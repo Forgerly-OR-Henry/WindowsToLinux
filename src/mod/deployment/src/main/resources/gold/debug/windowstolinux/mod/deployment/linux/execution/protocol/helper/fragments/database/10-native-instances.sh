@@ -9,19 +9,22 @@ wrap_database_runtime() {
 
 native_database() {
     [ "$#" -eq 1 ] || reject native-db-arguments
-    case "$1" in inspect | install | start | resume | target | prepare | initialize) ;; *) reject native-db-operation ;; esac
+    case "$1" in inspect | install | start | resume | target | prepare | initialize | status) ;; *) reject native-db-operation ;; esac
     cd /
     /usr/bin/python3 -I - "$1" 3<&0 <<'WTL_NATIVE_DB_PY'
-import base64, contextlib, fcntl, hashlib, json, os, pathlib, re, secrets, shlex, shutil, stat, subprocess, sys, tempfile
+import base64, contextlib, fcntl, hashlib, json, os, pathlib, re, secrets, shlex, shutil, stat, subprocess, sys, tempfile, uuid
 
 class Failure(Exception):
     def __init__(self, code="ACTION_FAILED"): self.code = code
+
+class Uncertain(Exception): pass
 
 def run(args, *, data=None, env=None, checked=True, timeout=60):
     try:
         result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=timeout,
                                 env=dict(os.environ, **(env or {})))
-    except (OSError, subprocess.TimeoutExpired): raise Failure()
+    except (OSError, subprocess.TimeoutExpired): raise Uncertain()
+    if result.returncode < 0: raise Uncertain()
     if checked and result.returncode != 0: raise Failure()
     if len(result.stdout) > 1048576: raise Failure()
     return result
@@ -241,7 +244,7 @@ def install(request):
     if replacing:
         previous = select(request)
         if len(before['instances']) != 1 or request.get('replacementApproved') != 'true': raise Failure("STATE_CHANGED")
-        safe_app(request['approvedServer'])
+        if server_id(request['approvedServer']) != server_id(request['serverId']): raise Failure('STATE_CHANGED')
         if not re.fullmatch(r'[0-9a-f-]{36}',request.get('operation','')): raise Failure()
         write_state(replacement_path(engine), {'phase':'WAITING_FOR_RESTORE','previous':previous,
                                              'target':candidate,'operation':request['operation']})

@@ -818,7 +818,7 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                     String script = ((CommandRequest) args[0]).script();
                     if (script.contains("managed-helper' probe")) {
                         actions.add("helper-probe");
-                        return reply("HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
+                        return reply("HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
                                 + "\n");
                     }
                     if (script.contains("DISTRO_ID=")) {

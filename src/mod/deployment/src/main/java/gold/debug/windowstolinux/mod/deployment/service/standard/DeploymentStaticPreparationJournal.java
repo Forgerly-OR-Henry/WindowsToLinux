@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.appapi.task.TaskService;
 
-/** Bounded proof that this original static review has not dispatched a remote or secret-creation effect. / 有界证明本次原静态审阅尚未发送远端或秘密创建副作用。 */
+/** Bounded original static preparation identity; native database effects require their separate original receipt. / 有界原静态准备身份；原生数据库效果另须原操作回执核对。 */
 public final class DeploymentStaticPreparationJournal {
     /** One owner-local marker separate from publication effect checkpoints. / 与发布效果检查点分开的所有者内部标记。 */
     public static final String KEY = "deployment-static-preparation";
@@ -47,7 +47,7 @@ public final class DeploymentStaticPreparationJournal {
         this.serverId = Objects.requireNonNull(serverId);
     }
 
-    /** Persists no-remote-effect intent before user selection or any source access. / 用户选材与任何源码访问之前持久无远端效果意图。
+    /** Persists original preparation intent before user selection or any source access. / 用户选材与任何源码访问之前持久原准备意图。
      * @param tasks original platform tasks / 原平台任务
      * @param task admitted publication task / 已准入发布任务
      * @param server exact selected server / 精确选定服务器
@@ -96,7 +96,7 @@ public final class DeploymentStaticPreparationJournal {
         return decode(checkpoint.snapshot().payload()).get("stage").equals("CANCELLED");
     }
 
-    /** Releases only this no-effect marker after actual local cleanup or before formal execution. / 仅在实际本机清理后或正式执行前释放无效果标记。
+    /** Releases only this marker after original local and database-effect cleanup or before formal execution. / 仅在原本机及数据库效果收尾后或正式执行前释放此标记。
      * @throws ApiException if release cannot be confirmed / 释放无法确认时 */
     public void close() throws ApiException {
         checkpoint.close();
@@ -128,10 +128,10 @@ public final class DeploymentStaticPreparationJournal {
         }
     }
 
-    /** Encodes only task, exact server and no-effect stage. / 仅编码任务、精确服务器与无效果阶段。
+    /** Encodes only the preparation identity and stage. / 仅编码准备身份与阶段。
      * @param taskId original task / 原任务
      * @param serverId exact server / 精确服务器
-     * @param stage no-effect state / 无效果状态
+     * @param stage preparation state / 准备状态
      * @return bounded JSON object / 有界 JSON 对象 */
     private static String encode(UUID taskId, String serverId, String stage) {
         try {

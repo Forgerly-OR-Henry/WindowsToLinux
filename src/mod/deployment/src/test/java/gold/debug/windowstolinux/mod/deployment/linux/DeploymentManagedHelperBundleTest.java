@@ -68,7 +68,7 @@ class DeploymentManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = DeploymentManagedHelperBundle.renderScript();
 
-        assertEquals(11, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(12, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
