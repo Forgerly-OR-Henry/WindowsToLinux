@@ -47,6 +47,20 @@ class PublicValueContractTest {
     }
 
     @Test
+    void commandExecutionSnapshotSurvivesOriginalInputRelease() {
+        byte[] original = {4, 5, 6};
+        var request = new CommandRequest("cat", original, Duration.ofSeconds(2), 16);
+        original[0] = 9;
+        var stable = request.snapshot();
+        request.close();
+        request.close();
+        assertArrayEquals(new byte[]{0, 0, 0}, request.stdin());
+        assertArrayEquals(new byte[]{4, 5, 6}, stable.stdin());
+        stable.close();
+        assertArrayEquals(new byte[]{0, 0, 0}, stable.stdin());
+    }
+
+    @Test
     void uncertaintyCannotBeMisrepresentedAsSuccessOrAReasonlessFailure() {
         assertThrows(IllegalArgumentException.class,
                 () -> new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.empty()));

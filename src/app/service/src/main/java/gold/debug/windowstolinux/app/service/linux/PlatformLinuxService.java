@@ -356,9 +356,11 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         @Override
         public OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant) throws ApiException {
             return operate(() -> {
-                var reviewed = interaction.reviewed(grant, task);
-                interaction.consumeRemote(grant, RemoteActions.command(server, reviewed.revision(), request), task);
-                return connection.execute(request, tasks.operationCancellation(task));
+                try (var stable = request.snapshot()) {
+                    var reviewed = interaction.reviewed(grant, task);
+                    interaction.consumeRemote(grant, RemoteActions.command(server, reviewed.revision(), stable), task);
+                    return connection.execute(stable, tasks.operationCancellation(task));
+                }
             });
         }
 

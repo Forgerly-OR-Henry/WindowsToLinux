@@ -116,6 +116,22 @@ class DeploymentPublicationChannelTest {
         assertEquals(1, requests.size());
     }
 
+    /** The channel releases its request copy after original secret staging while leaving the borrowed value to its caller. / 原秘密暂存后通道清零请求副本，而暂借值仍归调用方。 */
+    @Test
+    void secretStagingReleasesOnlyItsOwnedCommandInput() throws Exception {
+        var captured = new java.util.concurrent.atomic.AtomicReference<CommandRequest>();
+        byte[] borrowed = {11, 12, 13};
+        var peer = channel(request -> {
+            captured.set(request);
+            assertArrayEquals(borrowed, request.stdin());
+            return reply(0, "INPUT_STAGED=1\n");
+        }, new ArrayList<>());
+        assertEquals(Outcome.SUCCEEDED, peer.stageSecret(unit(), "db-secret", 2, borrowed).outcome());
+        assertArrayEquals(new byte[]{11, 12, 13}, borrowed);
+        assertArrayEquals(new byte[3], captured.get().stdin());
+        java.util.Arrays.fill(borrowed, (byte) 0);
+    }
+
     /** On-demand container needs only its helper identity; malformed native numbers remain unresolved. / 按需容器只需helper身份；畸形原生数值保持未决。 */
     @Test
     void runtimeObservationKeepsOnDemandAndNativeBoundaries() throws Exception {

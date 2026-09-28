@@ -261,6 +261,72 @@ class PlatformRemoteCapabilitiesTest {
     }
 
     @Test
+    void originalInputReleaseCannotChangePlatformApprovedExecutionSnapshot() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+                var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            runtime.setInteractionPresenter(new Reviews());
+            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                    try (var session = capabilities.linux().connect(SERVER, task)) {
+                        byte[] payload = "wire-data".getBytes(StandardCharsets.UTF_8);
+                        String script = "IFS= read -r -N 9 content; builtin printf '%s' \"$content\"";
+                        try (var command = new CommandRequest(script, payload, Duration.ofSeconds(5), 8192)) {
+                            Arrays.fill(payload, (byte) 0);
+                            var grant = approve(capabilities, command, task);
+                            var observed = new CompletableFuture<OperationResult<CommandResult>>();
+                            Thread worker = null;
+                            try {
+                                synchronized (capabilities.interaction()) {
+                                    worker = Thread.ofPlatform().start(() -> {
+                                        try {
+                                            observed.complete(session.execute(command, grant));
+                                        } catch (Throwable failure) {
+                                            observed.completeExceptionally(failure);
+                                        }
+                                    });
+                                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                                    boolean atReview = false;
+                                    while (System.nanoTime() < deadline) {
+                                        atReview = worker.getState() == Thread.State.BLOCKED
+                                                && Arrays.stream(worker.getStackTrace())
+                                                        .anyMatch(frame -> frame.getClassName()
+                                                                .equals(PlatformInteractionService.class.getName())
+                                                                && frame.getMethodName().equals("reviewed"));
+                                        if (atReview)
+                                            break;
+                                        Thread.sleep(5);
+                                    }
+                                    assertTrue(atReview, "Execution did not reach original grant review monitor");
+                                    command.close();
+                                    assertArrayEquals(new byte[payload.length], command.stdin());
+                                }
+                                assertEquals("wire-data",
+                                        observed.get(10, TimeUnit.SECONDS).value().orElseThrow().stdout());
+                            } finally {
+                                if (worker != null)
+                                    worker.join(TimeUnit.SECONDS.toMillis(7));
+                            }
+                            assertFalse(worker.isAlive());
+                        }
+                        try (var premature = new CommandRequest("cat", new byte[]{1, 2, 3}, Duration.ofSeconds(5),
+                                8192)) {
+                            var grant = approve(capabilities, premature, task);
+                            premature.close();
+                            assertEquals(ProblemCode.ACCESS_DENIED,
+                                    assertThrows(ApiException.class, () -> session.execute(premature, grant)).problem()
+                                            .code());
+                        }
+                        return success(null);
+                    }
+                });
+                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(1, remote.commands.get());
+            }
+        }
+    }
+
+    @Test
     void failedDurableCheckpointNeverCreatesStagingAndOriginalTaskMustReconcile() throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {

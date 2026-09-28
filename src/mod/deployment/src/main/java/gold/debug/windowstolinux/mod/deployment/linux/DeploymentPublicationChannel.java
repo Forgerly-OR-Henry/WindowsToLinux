@@ -719,22 +719,24 @@ public final class DeploymentPublicationChannel {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
     private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
             CommandRequest request) throws ApiException {
-        var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(operation,
-                Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
-        var grant = interaction.approve(intent, task);
-        if (grant.outcome() != Outcome.SUCCEEDED)
-            return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
-        try {
-            var executed = session.execute(request, grant.value().orElseThrow());
-            if (executed.outcome() == Outcome.CANCELLED
-                    || executed.outcome() == Outcome.FAILED && executed.value().isEmpty())
+        try (request) {
+            var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
+                    operation, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
+            var grant = interaction.approve(intent, task);
+            if (grant.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            try {
+                var executed = session.execute(request, grant.value().orElseThrow());
+                if (executed.outcome() == Outcome.CANCELLED
+                        || executed.outcome() == Outcome.FAILED && executed.value().isEmpty())
+                    return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+                return executed;
+            } catch (ApiException failure) {
+                if (failure.problem().code() == ProblemCode.ACCESS_DENIED
+                        || failure.problem().code() == ProblemCode.INVALID_INPUT)
+                    throw failure;
                 return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
-            return executed;
-        } catch (ApiException failure) {
-            if (failure.problem().code() == ProblemCode.ACCESS_DENIED
-                    || failure.problem().code() == ProblemCode.INVALID_INPUT)
-                throw failure;
-            return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+            }
         }
     }
 

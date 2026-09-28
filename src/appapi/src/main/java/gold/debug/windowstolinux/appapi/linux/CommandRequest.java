@@ -9,7 +9,8 @@ import java.time.Duration;
  * @param timeout strictly positive operation deadline / 严格为正的操作期限
  * @param outputLimitBytes nonnegative captured-output byte limit / 非负的捕获输出字节上限
  */
-public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes) {
+public record CommandRequest(String script, byte[] stdin, Duration timeout,
+        long outputLimitBytes) implements AutoCloseable {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param script exact remote script covered by the request / 请求覆盖的精确远端脚本
@@ -32,7 +33,19 @@ public record CommandRequest(String script, byte[] stdin, Duration timeout, long
      * @return the owned result described by this capability / 此能力约定的所属结果
      */
     @Override
-    public byte[] stdin() {
+    public synchronized byte[] stdin() {
         return stdin.clone();
+    }
+
+    /** Copies one stable execution request before approval verification and transport. / 在审批核验及传输前复制一份稳定的执行请求。
+     * @return independently owned request with identical reviewed fields / 带相同已审阅字段且独立持有的请求 */
+    public synchronized CommandRequest snapshot() {
+        return new CommandRequest(script, stdin, timeout, outputLimitBytes);
+    }
+
+    /** Wipes only this request's owned input copy; repeated close is safe. / 仅清零本请求持有的输入副本；重复关闭安全。 */
+    @Override
+    public synchronized void close() {
+        java.util.Arrays.fill(stdin, (byte) 0);
     }
 }
