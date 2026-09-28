@@ -20,8 +20,14 @@ final class DeploymentExecutionCodec {
     /** Publication request version adds one full non-secret original business template. / 发布请求版本增加完整非秘密原业务模板。 */
     static final int PUBLICATION_VERSION = 5;
 
-    /** A complete bounded publication template plus original references and request framing. / 完整有界发布模板加原引用与请求信封。 */
-    static final int REQUEST_LIMIT = 40 * 1_048_576;
+    /** Whole-graph publication request with one immutable non-secret graph proposal. / 含一份不可变非秘密整图提案的整图发布请求。 */
+    static final int GRAPH_PUBLICATION_VERSION = 6;
+
+    /** Original single-unit request limit retained for stored version five. / 为已存第五版保留原单单元请求上限。 */
+    static final int SINGLE_REQUEST_LIMIT = 40 * 1_048_576;
+
+    /** Complete bounded graph template plus original references and request framing. / 完整有界整图模板加原引用与请求信封。 */
+    static final int REQUEST_LIMIT = 144 * 1_048_576;
 
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
@@ -38,9 +44,15 @@ final class DeploymentExecutionCodec {
             List<DeploymentReferenceIntent> intents, Optional<DeploymentProjectRecord> project) throws SQLException {
         if (operationType == null || !operationType.matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
-        int version = operationType.equals("deployment-publication") ? PUBLICATION_VERSION : VERSION;
+        long unitCount = intents.stream()
+                .filter(intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER && !intent
+                        .businessKey().equals(DeploymentReferenceKey.applicationKey(identity.applicationId())))
+                .count();
+        int version = operationType.equals("deployment-publication")
+                ? unitCount > 1 ? GRAPH_PUBLICATION_VERSION : PUBLICATION_VERSION
+                : VERSION;
         var node = envelope(identity, version).put("operationType", operationType);
-        if (version == PUBLICATION_VERSION)
+        if (version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
             node.putNull("publicationTemplate");
         if (project.isPresent()) {
             var value = project.get();
@@ -65,7 +77,10 @@ final class DeploymentExecutionCodec {
             intent.purpose().ifPresent(value -> entry.put("purpose", value));
         }
         references(node, identity);
-        return encode(node, version == PUBLICATION_VERSION ? REQUEST_LIMIT : 1_048_576);
+        return encode(node,
+                version == GRAPH_PUBLICATION_VERSION
+                        ? REQUEST_LIMIT
+                        : version == PUBLICATION_VERSION ? SINGLE_REQUEST_LIMIT : 1_048_576);
     }
 
     /** Records UUIDs only after they have been observed for original indexed intents. / 仅在观察到原索引意图的UUID后记录。
@@ -166,7 +181,8 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if a document is malformed / 文档无效时 */
     static boolean supported(DeploymentExecutionRecord record) throws SQLException {
         int version = parse(record.requestJson(), REQUEST_LIMIT).path("formatVersion").intValue();
-        boolean supported = version == VERSION || version == PUBLICATION_VERSION;
+        boolean supported = version == VERSION || version == PUBLICATION_VERSION
+                || version == GRAPH_PUBLICATION_VERSION;
         supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == version;
         if (record.resultJson().isPresent())
             supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == version;
@@ -185,15 +201,23 @@ final class DeploymentExecutionCodec {
         if (version == VERSION
                 && record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1_048_576)
             throw new SQLException("Legacy execution request exceeds its original bound");
-        if (version == PUBLICATION_VERSION)
+        if (version == PUBLICATION_VERSION
+                && record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > SINGLE_REQUEST_LIMIT)
+            throw new SQLException("Single-unit execution request exceeds its original bound");
+        if (version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
             identity(request, record.identity(), "operationType", "references", "projectSource", "publicationTemplate");
         else
             identity(request, record.identity(), "operationType", "references", "projectSource");
-        if (version == PUBLICATION_VERSION && !"deployment-publication".equals(string(request, "operationType")))
+        if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
+                && !"deployment-publication".equals(string(request, "operationType")))
             throw new SQLException("Publication template format belongs to another operation");
-        if (version == PUBLICATION_VERSION && !request.path("publicationTemplate").isNull())
-            DeploymentPublicationTemplateCodec.decodeTemplate(request.path("publicationTemplate").toString(),
-                    record.identity().executionId());
+        if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
+                && !request.path("publicationTemplate").isNull()) {
+            var proposal = DeploymentPublicationTemplateCodec
+                    .decodeTemplate(request.path("publicationTemplate").toString(), record.identity().executionId());
+            if ((version == PUBLICATION_VERSION) != (proposal.units().size() == 1))
+                throw new SQLException("Publication template graph differs from original format");
+        }
         project(request, record.identity());
         if (!string(request, "operationType").matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
@@ -253,6 +277,7 @@ final class DeploymentExecutionCodec {
         known(record);
         var request = parse(record.requestJson(), REQUEST_LIMIT);
         if (request.path("formatVersion").intValue() != PUBLICATION_VERSION
+                && request.path("formatVersion").intValue() != GRAPH_PUBLICATION_VERSION
                 || request.path("publicationTemplate").isNull())
             return Optional.empty();
         return Optional.of(DeploymentPublicationTemplateCodec
@@ -268,7 +293,9 @@ final class DeploymentExecutionCodec {
             throws SQLException {
         known(record);
         var request = parse(record.requestJson(), REQUEST_LIMIT);
-        if (request.path("formatVersion").intValue() != PUBLICATION_VERSION)
+        int version = request.path("formatVersion").intValue();
+        if (version != PUBLICATION_VERSION && version != GRAPH_PUBLICATION_VERSION
+                || (version == PUBLICATION_VERSION) != (publication.units().size() == 1))
             throw new SQLException("Original execution cannot store a publication template");
         String template = DeploymentPublicationTemplateCodec.encodeTemplate(publication);
         if (!request.path("publicationTemplate").isNull()) {
@@ -277,7 +304,7 @@ final class DeploymentExecutionCodec {
             return record.requestJson();
         }
         request.set("publicationTemplate", parse(template, DeploymentPublicationTemplateCodec.LIMIT));
-        return encode(request, REQUEST_LIMIT);
+        return encode(request, version == PUBLICATION_VERSION ? SINGLE_REQUEST_LIMIT : REQUEST_LIMIT);
     }
 
     /** Checks the immutable identity envelope and exact current-version fields. / 检查不可变身份信封及当前版本精确字段。
