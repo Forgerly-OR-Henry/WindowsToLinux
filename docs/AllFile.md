@@ -1830,6 +1830,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/model/DeploymentApplicationGraph.java`：完整单服务器应用拓扑，校验组件唯一、依赖无环、健康归属及资源路径精确覆盖。
 - `mod/deployment/db/DeploymentGraphRepository.java`：在既有匹配部署单元上原子替换完整图，只返回 graph_ready=true 的一致快照，不查询平台私有表。
 - `mod/deployment/service/core/model/DeploymentSecretRevision.java`：精确秘密修订、不透明平台凭据 ID、创建时间及原用途；旧行用途缺失明示为未知，不保存秘密值。
+- `mod/deployment/service/core/model/DeploymentSecretSelection.java`：仅含精确业务修订及原始用途的可选纯值，不含平台凭据 ID 或明文。
 - `mod/deployment/service/core/model/DeploymentCurrentRelease.java`：部署单元当前确认发布的摘要及时间。
 - `mod/deployment/db/DeploymentSecretRepository.java`：新修订须保存不可变精确用途，旧 NULL 只读保留；完整发布引用集合区分未绑定与显式空集合，不覆盖普通配置绑定。
 - `mod/deployment/db/DeploymentUnitCommit.java`：数据库写入边界的单元成功记录，校验单元、配置、发布及秘密集合一致，不是公开 Mod API。
@@ -1853,7 +1854,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
 - `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
 - `mod/deployment/secret/DeploymentSecretProvisionJournal.java`：宿主作者检查点中的原服务器/用途/修订、创建 ID、引用 UUID 与已知业务结果；不保存秘密值。
-- `mod/deployment/secret/SecretValueSource.java`：已准入任务内一次性取得调用方自有明文数组的窄回调。
+- `mod/deployment/secret/SecretValueSource.java`：已准入任务内一次性取得明文数组的窄回调，由 `submit` 或 `submitOwned` 明确原数组所有权。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
 - `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。
@@ -2065,14 +2066,16 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticInputParser.java`：解析确定性运行及数据库审阅输入。
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAnswers.java`：保留显式审阅值、资源及原确认事实。
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上组装单组件或整图计划。
-- `mod/deployment/service/standard/DeploymentStaticPageService.java`：为惰性页面提供原任务静态发布、只读服务器发现及持久任务状态读取。
+- `mod/deployment/service/standard/DeploymentStaticPageService.java`：为惰性页面提供原任务静态发布、只读服务器/秘密修订发现、独立受保护秘密创建及持久任务状态读取。
 - `mod/deployment/service/standard/DeploymentStaticPreparationJournal.java`：在原选材前保存无远端效果的准备标记，已观测取消另行持久化。
 - `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机/Git 准备清理与已有执行的原发布恢复，缺失、未核实或损坏依据保持未知。
 - `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
 - `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内从本地目录或固定 Git 提供冻结来源、发现、审阅、重分析、逐组件归档并交给原单/多执行器；源码结构变更缺独立数据库依据时拒绝。
 - `mod/deployment/ui/DeploymentGitSourceForm.java`：仅 Git 模式可见的来源、引用和本机可执行文件输入，任务准入前构造无凭据的类型化请求。
+- `mod/deployment/ui/DeploymentSecretReferenceField.java`：运行审阅中选择已有业务秘密修订并追加精确引用，同时保留高级非秘密输入。
 - `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。
 - `mod/deployment/ui/DeploymentStaticPageReviewer.java`：在所属 Swing 对话框中收集组件、运行与绑定输入，并确认原清单、归档和目标。
+- `mod/deployment/ui/DeploymentStaticSecretControls.java`：发布前应用秘密表单、准入后密码交接、独立原创建任务观察和已有修订列表。
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticRuntimeResolver.java`：推导静态运行默认值、缺项与类型化运行定义。
 - `mod/deployment/service/standard/deploy/input/DeploymentStoragePlan.java`：解析已审阅存储并拒绝原有重叠和保留路径。
 - `mod/deployment/service/standard/deploy/plan/MultiComponentDeploymentPlanner.java`：仅在混合项目通过安全准入后生成确定性图顺序。

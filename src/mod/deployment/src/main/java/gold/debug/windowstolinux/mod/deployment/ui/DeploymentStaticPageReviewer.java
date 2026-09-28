@@ -327,9 +327,11 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 String key = field.id().substring(field.id().indexOf('/') + 1);
                 if (fields.containsKey(key))
                     continue;
-                JComponent input = field.choices().isEmpty()
-                        ? new JTextField(field.value())
-                        : new JComboBox<>(field.choices().toArray(String[]::new));
+                JComponent input = key.equals("secrets")
+                        ? new DeploymentSecretReferenceField(page, field.value(), page.secretChoices())
+                        : field.choices().isEmpty()
+                                ? new JTextField(field.value())
+                                : new JComboBox<>(field.choices().toArray(String[]::new));
                 if (input instanceof JComboBox<?> box && !field.value().isBlank())
                     box.setSelectedItem(field.value());
                 fields.put(key, input);
@@ -378,7 +380,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             fields.forEach((key, control) -> {
                 String value = control instanceof JTextField field
                         ? field.getText().trim()
-                        : String.valueOf(((JComboBox<?>) control).getSelectedItem());
+                        : control instanceof DeploymentSecretReferenceField secret
+                                ? secret.value()
+                                : String.valueOf(((JComboBox<?>) control).getSelectedItem());
                 values.put(key, value);
             });
             return new DeploymentStaticWorkflow.Answers(values, files.stream().map(FileRow::binding).toList(),

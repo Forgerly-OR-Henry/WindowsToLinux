@@ -47,7 +47,27 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT");
         }
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Secret revision", List.of(server.id()), true),
-                task -> execute(task, server, revision, purpose, createdAt, value));
+                task -> execute(task, server, revision, purpose, createdAt, value, false));
+    }
+
+    /** Transfers a page-owned plaintext buffer to one admitted task and clears it on every outcome. / 将页面所属明文缓冲区转交一项已准入任务，并在所有结果下清零。
+     * @param server original server scope / 原服务器作用域
+     * @param revision reviewed immutable identity / 经审阅不可变身份
+     * @param purpose exact business purpose / 精确业务用途
+     * @param createdAt reviewed creation time / 经审阅创建时间
+     * @param value one-shot callback creating a newly owned byte array only after admission / 仅准入后新建所属字节数组的一次性回调
+     * @return original task handle / 原任务句柄
+     * @throws ApiException if admission fails / 准入失败时 */
+    public TaskHandle<DeploymentSecretRevision> submitOwned(ServerRef server, DeploymentSecretReference revision,
+            String purpose, Instant createdAt, SecretValueSource value) throws ApiException {
+        Objects.requireNonNull(value);
+        try {
+            DeploymentSecretProvisionJournal.validateInput(server, revision, purpose, createdAt);
+        } catch (RuntimeException invalid) {
+            throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT");
+        }
+        return context.tasks().submit(new TaskRequest(TASK_TYPE, "Secret revision", List.of(server.id()), true),
+                task -> execute(task, server, revision, purpose, createdAt, value, true));
     }
 
     /** Reconciles the original task without creating a credential or reservation. / 不创建凭据或预留地核对原任务。
@@ -73,9 +93,11 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param purpose reviewed purpose / 已审阅用途
      * @param createdAt reviewed time / 已审阅时间
      * @param value one-shot plaintext source / 一次性明文来源
+     * @param ownsOriginal whether the flow clears the returned source array / 流程是否清零返回的来源数组
      * @return observed result / 已观察结果 */
     private OperationResult<DeploymentSecretRevision> execute(TaskContext task, ServerRef server,
-            DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value) {
+            DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value,
+            boolean ownsOriginal) {
         try {
             if (revisions.findRevision(task, revision).isPresent())
                 return failed("DEPLOYMENT_SECRET_REVISION_EXISTS");
@@ -96,50 +118,56 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             try {
                 original = Objects.requireNonNull(value.obtain(task));
             } catch (Exception | LinkageError | AssertionError invalid) {
-                journal.knownFailure(task.cancellation().requested()
-                        ? new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
-                                "Secret creation was cancelled before it began", Map.of(), Optional.empty())
-                        : new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_INPUT_FAILED",
-                                "Secret input could not be obtained", Map.of(), Optional.empty()));
+                journal.knownFailure(
+                        task.cancellation().requested() || invalid instanceof java.util.concurrent.CancellationException
+                                ? new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
+                                        "Secret creation was cancelled before it began", Map.of(), Optional.empty())
+                                : new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_INPUT_FAILED",
+                                        "Secret input could not be obtained", Map.of(), Optional.empty()));
                 return result(settle(task, journal), journal);
             }
-            if (task.cancellation().requested()) {
-                journal.knownFailure(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
-                        "Secret creation was cancelled before it began", Map.of(), Optional.empty()));
-                return result(settle(task, journal), journal);
-            }
-            if (original.length > 1024 * 1024) {
-                journal.knownFailure(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT_SIZE",
-                        "Secret input exceeds the platform bound", Map.of(), Optional.empty()));
-                return result(settle(task, journal), journal);
-            }
-            byte[] copy = original.clone();
-            SecretRef created;
             try {
-                journal.createStarted();
-                created = context.secrets().create(purpose, copy, task);
+                if (task.cancellation().requested()) {
+                    journal.knownFailure(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
+                            "Secret creation was cancelled before it began", Map.of(), Optional.empty()));
+                    return result(settle(task, journal), journal);
+                }
+                if (original.length > 1024 * 1024) {
+                    journal.knownFailure(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT_SIZE",
+                            "Secret input exceeds the platform bound", Map.of(), Optional.empty()));
+                    return result(settle(task, journal), journal);
+                }
+                byte[] copy = original.clone();
+                SecretRef created;
+                try {
+                    journal.createStarted();
+                    created = context.secrets().create(purpose, copy, task);
+                } finally {
+                    Arrays.fill(copy, (byte) 0);
+                }
+                journal.created(created);
+                journal.reserveStarted();
+                var intent = journal.intent();
+                var existing = context.secrets().findReference(created, intent.businessKey(), task);
+                var reference = existing.isPresent()
+                        ? existing.orElseThrow()
+                        : context.secrets().reserve(created, intent.businessKey(), task);
+                journal.reserved(reference.id());
+                journal.writeStarted();
+                try {
+                    revisions.saveRevision(task,
+                            new DeploymentSecretRevision(revision, created.id(), createdAt, Optional.of(purpose)));
+                } catch (SQLException knownRollback) {
+                    journal.knownFailure(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_SAVE_FAILED",
+                            "Secret revision was not saved", Map.of(), Optional.empty()));
+                    return result(settle(task, journal), journal);
+                }
+                journal.saved();
+                return result(settle(task, journal), journal);
             } finally {
-                Arrays.fill(copy, (byte) 0);
+                if (ownsOriginal)
+                    Arrays.fill(original, (byte) 0);
             }
-            journal.created(created);
-            journal.reserveStarted();
-            var intent = journal.intent();
-            var existing = context.secrets().findReference(created, intent.businessKey(), task);
-            var reference = existing.isPresent()
-                    ? existing.orElseThrow()
-                    : context.secrets().reserve(created, intent.businessKey(), task);
-            journal.reserved(reference.id());
-            journal.writeStarted();
-            try {
-                revisions.saveRevision(task,
-                        new DeploymentSecretRevision(revision, created.id(), createdAt, Optional.of(purpose)));
-            } catch (SQLException knownRollback) {
-                journal.knownFailure(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_SAVE_FAILED",
-                        "Secret revision was not saved", Map.of(), Optional.empty()));
-                return result(settle(task, journal), journal);
-            }
-            journal.saved();
-            return result(settle(task, journal), journal);
         } catch (Exception | LinkageError | AssertionError unconfirmed) {
             if (journal == null)
                 return unknownValue();

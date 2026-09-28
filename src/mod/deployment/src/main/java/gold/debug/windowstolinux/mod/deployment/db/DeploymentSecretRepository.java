@@ -47,6 +47,34 @@ public final class DeploymentSecretRepository {
         }
     }
 
+    /** Lists bounded selectable revisions with a recorded purpose, without exposing credential IDs. / 列出有已记录用途的有界可选修订，不暴露凭据 ID。
+     * @param task original read-only author task / 原只读作者任务
+     * @param limit maximum returned references / 最多返回引用数
+     * @return exact immutable business references / 精确不可变业务引用
+     * @throws SQLException if storage is unavailable or the list exceeds the bound / 存储不可用或列表超过上限时
+     * @throws ApiException if task access is unavailable / 任务访问不可用时 */
+    public List<DeploymentSecretSelection> listReferences(TaskContext task, int limit)
+            throws SQLException, ApiException {
+        if (limit < 1 || limit > 1000)
+            throw new IllegalArgumentException("Secret list limit is invalid");
+        try (var connection = connection(task);
+                var statement = connection.prepareStatement(
+                        "SELECT secret_id,secret_revision,purpose FROM secret_revision WHERE purpose IS NOT NULL AND TRIM(purpose)<>'' ORDER BY secret_id,secret_revision FETCH FIRST ? ROWS ONLY")) {
+            statement.setInt(1, limit + 1);
+            try (var rows = statement.executeQuery()) {
+                var references = new ArrayList<DeploymentSecretSelection>();
+                while (rows.next())
+                    references.add(new DeploymentSecretSelection(
+                            new DeploymentSecretReference(rows.getString(1), rows.getLong(2)), rows.getString(3)));
+                if (references.size() > limit)
+                    throw new SQLException("Selectable secret revision list exceeds its bound");
+                return List.copyOf(references);
+            }
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Stored selectable secret metadata is invalid", invalid);
+        }
+    }
+
     /** Binds a complete immutable set, including an explicit empty set. / 绑定完整不可变集合，包括显式空集合。
      * @param task original author task / 原作者任务
      * @param unitId exact unit identity / 精确单元身份

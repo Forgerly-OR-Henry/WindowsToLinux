@@ -1572,6 +1572,8 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 
 默认静态页面的 Git 表单只解析明确的 URL、引用和本机工具路径；原任务持久检查点、实际取材、项目来源保存及发布编排仍在 deployment 的 `source/git` 与 `service` 职责中。页面不启动 Git 子进程，也不凭工作目录重新取得 Source 授权。
 
+默认页面的秘密输入组件只在独立 `deployment-secret-revision` 原任务准入后显示密码框；`ui` 只持有业务标识、修订和已存用途的纯值，不直接读取 `db` 或平台不透明凭据。只读修订列表经 `service` 查询，创建由 `secret` 流程保护并清零明文；发布审阅仅选择已保存的精确修订，原 `deployment-publication` 任务不另开同服务器的创建任务。
+
 Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各自的 POM，也不是插件。救援依赖随 APP 预备，UI 和服务层留有固定入口；通用 Windows 窗口处理可以由 `app/windows` 提供，但具体救援流程统一归 `app/linux/recovery`。
 
 `gold.debug.windowstolinux` 仍为项目包前缀。后续活动代码按所属 `app`、`appapi`、`mod` 职责命名；公开接口以平台 API 契约为边界。冻结归档中的旧 `shared.*` 等包声明不改名。API 不另建第二套平台实现，不为尚无调用方的扩展点或通用 Agent 创建空模块。
