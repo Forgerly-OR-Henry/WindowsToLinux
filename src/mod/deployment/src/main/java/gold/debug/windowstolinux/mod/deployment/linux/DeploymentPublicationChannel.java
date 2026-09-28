@@ -16,6 +16,7 @@ import gold.debug.windowstolinux.appapi.linux.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
@@ -311,16 +312,15 @@ public final class DeploymentPublicationChannel {
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
-    /** Runs the sealed release's reviewed health probe. / 运行已封存发布的审阅健康探测。
-     * @param unit exact owned target / 精确所属目标
-     * @param runtime reviewed health contract / 已审阅健康契约
-     * @return confirmed health, known unhealthy or uncertainty / 已确认健康、已知不健康或未知
-     * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
-    public OperationResult<Void> health(DeploymentUnitIdentity unit, DeploymentRuntimeDefinition runtime)
+    /** Runs a reviewed component probe or independent whole-application gate against its owned unit. / 对受管单元运行已审阅组件探测或独立整应用门禁。
+     * @param unit exact selected owner / 精确选定归属
+     * @param check reviewed component or whole-application probe / 已审阅组件或整应用探测
+     * @return confirmed health or its actual non-success / 已确认健康或实际非成功
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    public OperationResult<Void> healthCheck(DeploymentUnitIdentity unit, DeploymentHealthCheck check)
             throws ApiException {
         requireUnit(unit);
-        Objects.requireNonNull(runtime);
-        var check = runtime.healthCheck();
+        Objects.requireNonNull(check);
         var observed = send("deployment.publication.health.v1", unit, "application-health",
                 List.of(unit.id(), unit.ownershipManifestSha256(), DeploymentWorkloadArguments.healthPayload(check)),
                 Duration.ofSeconds(check.timeoutSeconds() + 45L), 4096);
@@ -336,6 +336,40 @@ public final class DeploymentPublicationChannel {
         if (!"HEALTHY=1\n".equals(observed.value().orElseThrow().stdout()))
             return unknown("DEPLOYMENT_HEALTH_RECEIPT_INVALID");
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+    }
+
+    /** Stops one previously running managed runtime only after its original snapshot is durable. / 仅在原快照持久后停止旧受管运行时。
+     * @param unit exact old owner / 精确旧归属
+     * @param snapshot original task snapshot / 原任务快照
+     * @return verified stopped state or uncertainty / 已核实停止状态或未知
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    public OperationResult<Void> stopPrevious(DeploymentUnitIdentity unit, DeploymentRemoteReleaseSnapshot snapshot)
+            throws ApiException {
+        requireUnit(unit);
+        Objects.requireNonNull(snapshot);
+        if (snapshot.token().isEmpty() || !snapshot.previousRunning())
+            throw new IllegalArgumentException("Only a previously running original can be stopped");
+        String verb = switch (snapshot.previousKind()) {
+            case "container" -> "lifecycle-container";
+            case "deployment" -> "lifecycle-deployment";
+            case "ordinary" -> "lifecycle";
+            default -> throw new IllegalArgumentException("Original runtime kind cannot be stopped");
+        };
+        var observed = send("deployment.publication.stop-old.v1", unit, verb,
+                List.of(unit.id(), "stop", unit.ownershipManifestSha256()), Duration.ofSeconds(45), 4096);
+        if (observed.outcome() != Outcome.SUCCEEDED) {
+            if (observed.outcome() == Outcome.FAILED && observed.value().isPresent())
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(), observed.problem());
+            return withoutValue(observed);
+        }
+        if (!complete(observed) || !"LIFECYCLE=stop\n".equals(observed.value().orElseThrow().stdout()))
+            return unknown("DEPLOYMENT_OLD_STOP_UNCONFIRMED");
+        var state = observeRestored(unit);
+        if (state.outcome() != Outcome.SUCCEEDED || state.value().isEmpty())
+            return unknown("DEPLOYMENT_OLD_STOP_STATE_UNCONFIRMED");
+        return state.value().orElseThrow().state() == DeploymentRemoteRuntimeObservation.StateType.STOPPED
+                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+                : unknown("DEPLOYMENT_OLD_STOP_STATE_CHANGED");
     }
 
     /** Checks the actual owned runtime after a confirmed publish or rollback. / 在确认发布或回滚后检查实际所属运行时。
@@ -571,8 +605,11 @@ public final class DeploymentPublicationChannel {
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
             return withoutValue(observed);
-        if (!complete(observed))
+        if (observed.value().isEmpty() || observed.value().orElseThrow().truncated()
+                || observed.value().orElseThrow().exitCode().isEmpty())
             return unknown("DEPLOYMENT_ROLLBACK_UNCONFIRMED");
+        if (observed.value().orElseThrow().exitCode().orElseThrow() != 0)
+            return failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_ROLLBACK_FAILED");
         String output = observed.value().orElseThrow().stdout();
         final String marker = "ROLLED_BACK=1\n";
         int at = output.length() - marker.length();

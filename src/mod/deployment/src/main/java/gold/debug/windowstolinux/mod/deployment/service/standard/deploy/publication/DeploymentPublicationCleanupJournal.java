@@ -65,6 +65,22 @@ final class DeploymentPublicationCleanupJournal {
      * @throws ApiException if the original evidence cannot be confirmed / 原依据无法确认时 */
     static DeploymentPublicationCleanupJournal begin(ModContext context, TaskContext task, DeploymentUnitIdentity unit,
             String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime) throws ApiException {
+        return begin(context, task, KEY, unit, archiveSha256, planSha256, runtime);
+    }
+
+    /** Begins one indexed component journal before its first possible remote effect. / 在组件首次可能的远端副作用前建立索引账本。
+     * @param context original Mod / 原Mod
+     * @param task original task / 原任务
+     * @param key graph-indexed fixed checkpoint key / 图索引固定检查点键
+     * @param unit exact component owner / 精确组件归属
+     * @param archiveSha256 original tar digest / 原tar摘要
+     * @param planSha256 original component plan digest / 原组件计划摘要
+     * @param runtime reviewed backend / 已审阅后端
+     * @return occupied original component journal / 已占用原组件账本
+     * @throws ApiException if persistence is unconfirmed / 持久确认不明时 */
+    static DeploymentPublicationCleanupJournal begin(ModContext context, TaskContext task, String key,
+            DeploymentUnitIdentity unit, String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime)
+            throws ApiException {
         Objects.requireNonNull(context);
         Objects.requireNonNull(task);
         Objects.requireNonNull(unit);
@@ -87,7 +103,7 @@ final class DeploymentPublicationCleanupJournal {
             facts.put("engine", "none");
         }
         facts.put("phase", "CANDIDATE_MAY_EXIST");
-        var checkpoint = context.tasks().beginCheckpoint(task, KEY, facts.toString());
+        var checkpoint = context.tasks().beginCheckpoint(task, key, facts.toString());
         return new DeploymentPublicationCleanupJournal(checkpoint, facts);
     }
 
@@ -99,7 +115,18 @@ final class DeploymentPublicationCleanupJournal {
      * @throws IllegalArgumentException if retained facts are incomplete / 留存事实不完整时 */
     static Optional<DeploymentPublicationCleanupJournal> reopen(ModContext context, TaskContext task)
             throws ApiException {
-        var found = context.tasks().findCheckpoint(task, KEY);
+        return reopen(context, task, KEY);
+    }
+
+    /** Reopens only an existing indexed component journal. / 仅重开已有索引组件账本。
+     * @param context original Mod / 原Mod
+     * @param task original recovery task / 原恢复任务
+     * @param key original indexed key / 原索引键
+     * @return original journal or absence / 原账本或不存在
+     * @throws ApiException if original access fails / 原访问失败时 */
+    static Optional<DeploymentPublicationCleanupJournal> reopen(ModContext context, TaskContext task, String key)
+            throws ApiException {
+        var found = context.tasks().findCheckpoint(task, key);
         if (found.isEmpty())
             return Optional.empty();
         var checkpoint = found.orElseThrow();
@@ -155,6 +182,14 @@ final class DeploymentPublicationCleanupJournal {
     boolean publishing(String releaseSha256) {
         facts.put("releaseSha256", releaseSha256);
         return mark("PUBLISH_MAY_HAVE_RUN");
+    }
+
+    /** Freezes the reviewed content digest before a graph can stop old runtimes, without claiming a publish dispatch. / 整图可能停旧运行时前冻结已审阅内容摘要，但不宣称已发送发布。
+     * @param releaseSha256 exact content identity / 精确内容身份
+     * @return whether the original digest was durably confirmed / 原摘要是否已持久确认 */
+    boolean plannedRelease(String releaseSha256) {
+        facts.put("releaseSha256", releaseSha256);
+        return mark(facts.path("phase").asText());
     }
 
     /** Persists the actual old-release snapshot before any new publication request. / 在任何新发布请求前持久化实际旧版快照。

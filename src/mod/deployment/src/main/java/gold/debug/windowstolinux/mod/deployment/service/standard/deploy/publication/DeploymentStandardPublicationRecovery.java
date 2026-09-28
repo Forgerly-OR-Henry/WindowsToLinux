@@ -31,6 +31,14 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
     @Override
     public Optional<OperationResult<DeploymentPublicationProposal>> reconcile(TaskContext task,
             DeploymentExecutionRecord record) {
+        try {
+            var graph = DeploymentGraphPublicationJournal.reopen(context, task);
+            if (graph.isPresent())
+                return Optional.of(new DeploymentMultiComponentPublicationRecovery(context).reconcile(task, record,
+                        graph.orElseThrow()));
+        } catch (ApiException | IllegalArgumentException unavailable) {
+            return Optional.of(unknown("DEPLOYMENT_GRAPH_JOURNAL_UNAVAILABLE"));
+        }
         final DeploymentPublicationCleanupJournal journal;
         try {
             var original = DeploymentPublicationCleanupJournal.reopen(context, task);
@@ -237,7 +245,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                 : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         if (observed.value().orElseThrow().state() != expected)
             return unknown("DEPLOYMENT_PUBLISHED_RUNTIME_CHANGED");
-        var health = channel.health(facts.unit(), reviewedRuntime);
+        var health = channel.healthCheck(facts.unit(), reviewedRuntime.healthCheck());
         if (health.outcome() != Outcome.SUCCEEDED)
             return unknown("DEPLOYMENT_PUBLISHED_HEALTH_UNCONFIRMED");
         return new OperationResult<>(Outcome.SUCCEEDED, proposal, Optional.empty());

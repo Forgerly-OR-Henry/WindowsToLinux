@@ -2060,8 +2060,14 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
 - `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
 - `mod/deployment/service/standard/deploy/plan/DeploymentReviewedReleaseIdentity.java`：按原 v5 内容身份与 tools-v1 实际工具绑定生成远端发布摘要，独立于审阅时间和本机发布清单。
+- `mod/deployment/service/standard/deploy/publication/DeploymentGraphPublicationJournal.java`：以原任务根检查点保存整图身份、唯一组件索引、阶段与已核实的整组结论。
+- `mod/deployment/service/standard/deploy/publication/DeploymentMultiComponentPublicationExecutor.java`：同一原任务和会话先预检整图容量、构建全部候选，再交付一次整组发布事务。
+- `mod/deployment/service/standard/deploy/publication/DeploymentMultiComponentPublicationRecovery.java`：显式核对原整图全部组件、完整业务模板及只读远端事实，仅推进可证明的原收尾。
+- `mod/deployment/service/standard/deploy/publication/DeploymentMultiComponentPublicationTransaction.java`：按依赖图封存、逆序停止旧版、拓扑发布、逐项与整应用健康、逆序已知回滚。
+- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationCleanupAttempt.java`：共用原单元收尾的发送前拒绝与已发送未知分界。
 - `mod/deployment/service/standard/deploy/publication/DeploymentPublicationCleanupJournal.java`：原任务检查点保存远端候选、旧版快照、已核实业务结果及原收尾阶段的非秘密事实。
 - `mod/deployment/service/standard/deploy/publication/DeploymentPublicationRecoveryFacts.java`：恢复时从原检查点读取并校验原任务、候选、旧版及已知结果事实。
+- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationStaging.java`：共用固定配置与秘密封存及明文副本清零顺序。
 - `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationRecovery.java`：经原任务审批只读核对远端精确发布状态，并仅推进有证据的原业务提交和收尾。
 - `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationExecutor.java`：在同一原发布任务内关联素材、计划、候选构建、远端发布与本机发布事务。
 - `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationTransaction.java`：执行单组件封存、旧版快照、发布、健康、已知回滚及 maintenance/候选收尾。

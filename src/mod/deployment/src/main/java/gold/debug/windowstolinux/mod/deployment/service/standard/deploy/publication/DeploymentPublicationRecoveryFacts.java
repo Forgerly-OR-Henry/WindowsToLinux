@@ -31,15 +31,27 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
     /** Fixed recorded phases; later phases cannot invent earlier missing identities. / 固定记录阶段；后续阶段不得补造先前缺失身份。 */
     private static final Set<String> PHASES = Set.of("CANDIDATE_MAY_EXIST", "SNAPSHOT_MAY_HAVE_RUN",
             "SNAPSHOT_VERIFIED", "SNAPSHOT_DISCARD_MAY_HAVE_RUN", "SNAPSHOT_DISCARDED", "PUBLISH_MAY_HAVE_RUN",
-            "PUBLISHED_VERIFIED", "ROLLBACK_MAY_HAVE_RUN", "ROLLBACK_VERIFIED", "MAINTENANCE_END_MAY_HAVE_RUN",
-            "MAINTENANCE_ENDED", "RETAIN_MAY_HAVE_RUN", "RETAIN_VERIFIED", "CANDIDATE_CLEANUP_MAY_HAVE_RUN",
-            "CANDIDATE_CLEANED", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED", "CLEANUP_VERIFIED");
+            "STOP_MAY_HAVE_RUN", "STOP_VERIFIED", "PUBLISHED_VERIFIED", "ROLLBACK_MAY_HAVE_RUN", "ROLLBACK_VERIFIED",
+            "MAINTENANCE_END_MAY_HAVE_RUN", "MAINTENANCE_ENDED", "RETAIN_MAY_HAVE_RUN", "RETAIN_VERIFIED",
+            "CANDIDATE_CLEANUP_MAY_HAVE_RUN", "CANDIDATE_CLEANED", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED",
+            "CLEANUP_VERIFIED");
 
     /** Reads only exact original identities from the retained checkpoint. / 仅从留存检查点读取精确原身份。
      * @param node original JSON object / 原JSON对象
      * @param record original execution / 原执行
      * @return validated facts / 已校验事实 */
     static DeploymentPublicationRecoveryFacts read(JsonNode node, DeploymentExecutionRecord record) {
+        return read(node, record, record.identity().applicationId(), record.identity().reviewedRevision());
+    }
+
+    /** Reads an indexed component only when the graph root supplied its exact original identity. / 仅在图根提供精确原身份时读取索引组件。
+     * @param node original component journal / 原组件账本
+     * @param record whole original execution / 完整原执行
+     * @param application expected component unit / 预期组件单元
+     * @param reviewed expected component review / 预期组件审阅
+     * @return validated component facts / 已校验组件事实 */
+    static DeploymentPublicationRecoveryFacts read(JsonNode node, DeploymentExecutionRecord record, String application,
+            String reviewed) {
         String task = text(node, "task");
         String app = text(node, "application");
         String server = text(node, "server");
@@ -50,8 +62,8 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
         String phase = text(node, "phase");
         String backend = text(node, "backend");
         String engine = text(node, "engine");
-        if (!task.equals(record.identity().taskId().toString()) || !app.equals(record.identity().applicationId())
-                || !server.equals(record.identity().server().id()) || !plan.equals(record.identity().reviewedRevision())
+        if (!task.equals(record.identity().taskId().toString()) || !app.equals(application)
+                || !server.equals(record.identity().server().id()) || !plan.equals(reviewed)
                 || !archive.matches("[0-9a-f]{64}") || !plan.matches("[0-9a-f]{64}") || !PHASES.contains(phase)
                 || !Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine)
                 || !candidate.equals(new DeploymentRemoteWorkspace(app, archive).candidateId()))

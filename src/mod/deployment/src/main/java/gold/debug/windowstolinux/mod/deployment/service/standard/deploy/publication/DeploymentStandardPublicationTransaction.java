@@ -61,36 +61,12 @@ public final class DeploymentStandardPublicationTransaction {
             throw new IllegalArgumentException("Publication differs from the original reviewed candidate");
         var channel = new DeploymentPublicationChannel(session, context.interaction(), request.server(), task,
                 ReviewedPlanIdentity.from(request));
-        var systemd = DeploymentPublicationArguments.configuration(request.configuration(), "systemd");
-        var container = DeploymentPublicationArguments.configuration(request.configuration(), "container");
-        boolean staged = false;
-        try {
-            for (String format : List.of("systemd", "container")) {
-                var stage = channel.stageConfiguration(unit, request.configuration().sha256(), format,
-                        format.equals("systemd") ? systemd : container);
-                if (stage.outcome() != Outcome.SUCCEEDED) {
-                    if (!staged && stage.outcome() == Outcome.FAILED && stage.value().isEmpty())
-                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), stage.problem());
-                    return uncertain(stage, "DEPLOYMENT_CONFIGURATION_STAGE_UNCONFIRMED");
-                }
-                staged = true;
-            }
-        } finally {
-            java.util.Arrays.fill(systemd, (byte) 0);
-            java.util.Arrays.fill(container, (byte) 0);
-        }
-        var digests = new HashMap<DeploymentSecretReference, String>();
-        for (var revision : request.secretReferences().stream()
-                .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                        .thenComparingLong(DeploymentSecretReference::revision))
-                .toList()) {
-            SecretRef ref = credentials.get(revision);
-            var stage = context.secrets().use(ref, ref.purpose(), task,
-                    plaintext -> channel.stageSecret(unit, revision.identifier(), revision.revision(), plaintext));
-            if (stage.outcome() != Outcome.SUCCEEDED)
-                return uncertain(stage, "DEPLOYMENT_SECRET_STAGE_UNCONFIRMED");
-            digests.put(revision, stage.value().orElseThrow());
-        }
+        var staged = DeploymentPublicationStaging.stage(context, plan, unit, credentials, channel, task);
+        if (staged.outcome() != Outcome.SUCCEEDED)
+            return staged.outcome() == Outcome.FAILED
+                    ? new OperationResult<>(Outcome.FAILED, Optional.empty(), staged.problem())
+                    : uncertain(staged, "DEPLOYMENT_INPUT_STAGE_UNCONFIRMED");
+        var digests = staged.value().orElseThrow();
         if (!journal.mark("SNAPSHOT_MAY_HAVE_RUN"))
             return unknown("DEPLOYMENT_SNAPSHOT_BOUNDARY_UNCONFIRMED");
         var saved = channel.snapshot(unit, request.runtime());
@@ -135,7 +111,7 @@ public final class DeploymentStandardPublicationTransaction {
         journal.mark("PUBLISHED_VERIFIED");
         if (cancelled(task))
             return unknown("DEPLOYMENT_PUBLISHED_AFTER_CANCEL");
-        var health = channel.health(unit, request.runtime());
+        var health = channel.healthCheck(unit, request.runtime().healthCheck());
         if (health.outcome() == Outcome.UNKNOWN || health.outcome() == Outcome.CANCELLED)
             return uncertain(health, "DEPLOYMENT_HEALTH_UNCONFIRMED");
         if (health.outcome() == Outcome.FAILED)
