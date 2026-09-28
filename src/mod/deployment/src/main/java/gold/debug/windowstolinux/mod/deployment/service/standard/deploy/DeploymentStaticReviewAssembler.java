@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer.SnapshotAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentDatabaseReviewModeType;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticInputParser;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
@@ -54,6 +55,37 @@ public final class DeploymentStaticReviewAssembler {
     public OperationResult<ReviewedDeploymentPlan> plan(ServerRef server, DeploymentSourceMaterial material,
             DeploymentSourceArchive archive, SnapshotAssessment<DeploymentProjectAssessment> analysis,
             DeploymentStaticReviewAnswers answers, TaskContext task) {
+        return plan(server, material, archive, analysis, answers, Optional.empty(), task);
+    }
+
+    /** Plans with exact source-derived SQLite preparation in the same original task. / 在同一原任务中使用精确源码派生 SQLite 准备进行规划。
+     * @param server selected server / 选定服务器
+     * @param material original material / 原素材
+     * @param archive original archive / 原归档
+     * @param analysis source assessment / 来源评估
+     * @param answers reviewed runtime / 经审阅运行输入
+     * @param prepared source-derived SQLite facts / 源码派生 SQLite 事实
+     * @param task original task / 原任务
+     * @return typed plan or refusal / 类型化计划或拒绝 */
+    public OperationResult<ReviewedDeploymentPlan> plan(ServerRef server, DeploymentSourceMaterial material,
+            DeploymentSourceArchive archive, SnapshotAssessment<DeploymentProjectAssessment> analysis,
+            DeploymentStaticReviewAnswers answers, DeploymentSqlitePreparation.Prepared prepared, TaskContext task) {
+        return plan(server, material, archive, analysis, answers, Optional.of(prepared), task);
+    }
+
+    /** Applies optional source-derived values after original identity checks. / 原身份检查后应用可选源码派生值。
+     * @param server selected server / 选定服务器
+     * @param material original material / 原素材
+     * @param archive original archive / 原归档
+     * @param analysis source assessment / 来源评估
+     * @param answers reviewed runtime / 经审阅运行输入
+     * @param prepared optional source-derived SQLite facts / 可选源码派生 SQLite 事实
+     * @param task original task / 原任务
+     * @return typed plan or refusal / 类型化计划或拒绝 */
+    private OperationResult<ReviewedDeploymentPlan> plan(ServerRef server, DeploymentSourceMaterial material,
+            DeploymentSourceArchive archive, SnapshotAssessment<DeploymentProjectAssessment> analysis,
+            DeploymentStaticReviewAnswers answers, Optional<DeploymentSqlitePreparation.Prepared> prepared,
+            TaskContext task) {
         Objects.requireNonNull(server);
         Objects.requireNonNull(material);
         Objects.requireNonNull(archive);
@@ -73,7 +105,7 @@ public final class DeploymentStaticReviewAssembler {
             if (!server.equals(serverInfo.ref()))
                 return rejected("DEPLOYMENT_STATIC_SERVER_CHANGED");
             var request = request(server, facts, assessed.runtimeSuggestion().orElse(null), material, archive,
-                    serverInfo.host(), answers);
+                    serverInfo.host(), answers, prepared);
             return planner.plan(material, analysis, request, task);
         } catch (ApiException failure) {
             return capabilityFailure(failure);
@@ -114,6 +146,23 @@ public final class DeploymentStaticReviewAssembler {
             DeploymentSourceMaterial material, Map<String, DeploymentSourceArchive> archives,
             SnapshotAssessment<MultiComponentProjectAssessment> analysis,
             Map<String, DeploymentStaticReviewAnswers> answers, TaskContext task) {
+        return planComponents(server, material, archives, analysis, answers, Map.of(), task);
+    }
+
+    /** Plans source-derived databases per graph component without sharing their review. / 对各整图组件规划源码派生数据库，不混用各自批准。
+     * @param server original target / 原目标
+     * @param material original material / 原素材
+     * @param archives component archives / 组件归档
+     * @param analysis graph assessment / 整图评估
+     * @param answers reviewed inputs / 经审阅输入
+     * @param databases source-derived component databases / 源码派生组件数据库
+     * @param task original task / 原任务
+     * @return complete graph plan or refusal / 完整整图计划或拒绝 */
+    public OperationResult<DeploymentStandardPlanner.ComponentPlans> planComponents(ServerRef server,
+            DeploymentSourceMaterial material, Map<String, DeploymentSourceArchive> archives,
+            SnapshotAssessment<MultiComponentProjectAssessment> analysis,
+            Map<String, DeploymentStaticReviewAnswers> answers,
+            Map<String, DeploymentSqlitePreparation.Prepared> databases, TaskContext task) {
         Objects.requireNonNull(server);
         Objects.requireNonNull(material);
         archives = Map.copyOf(archives);
@@ -144,7 +193,8 @@ public final class DeploymentStaticReviewAssembler {
                             ? cancelled()
                             : rejected("DEPLOYMENT_STATIC_SOURCE_UNAVAILABLE");
                 var request = request(server, component.facts(), null, material, archive, serverInfo.host(),
-                        answers.get(component.componentId()));
+                        answers.get(component.componentId()),
+                        Optional.ofNullable(databases.get(component.componentId())));
                 if (!request.runtime().equals(component.runtime().orElseThrow()))
                     return rejected("DEPLOYMENT_STATIC_COMPONENT_RUNTIME_CHANGED");
                 requests.put(component.componentId(), request);
@@ -201,22 +251,31 @@ public final class DeploymentStaticReviewAssembler {
      * @param archive original archive / 原归档
      * @param host actual server host / 实际服务器主机
      * @param answers actual reviewed answers / 真实审阅答案
+     * @param prepared independently reviewed SQLite inputs / 独立审阅的 SQLite 输入
      * @return complete reviewed request / 完整已审阅请求 */
     private ReviewedDeploymentRequest request(ServerRef server, DeploymentProjectFacts facts,
             DeploymentRuntimeAssessment suggestion, DeploymentSourceMaterial material, DeploymentSourceArchive archive,
-            String host, DeploymentStaticReviewAnswers answers) {
+            String host, DeploymentStaticReviewAnswers answers,
+            Optional<DeploymentSqlitePreparation.Prepared> prepared) {
         Map<String, String> values = new LinkedHashMap<>(
                 runtime.defaults(facts.projectType(), suggestion, facts.sourceRoot()));
         values.putAll(answers.values());
         if (!runtime.missing(facts.applicationId(), facts.projectType(), values).isEmpty())
             throw new IllegalArgumentException("Required runtime input remains unreviewed");
         var definition = runtime.runtime(facts.projectType(), values);
-        var configuration = DeploymentConfigurationSnapshot.create(facts.applicationId(),
-                answers.configurationRevision(), "1", answers.consent().confirmedAt(),
+        var entries = new java.util.ArrayList<>(
                 DeploymentConfigurationInput.parse(values.getOrDefault("configuration", "")));
+        prepared.ifPresent(value -> entries.addAll(value.configuration()));
+        var configuration = DeploymentConfigurationSnapshot.create(facts.applicationId(),
+                answers.configurationRevision(), "1", answers.consent().confirmedAt(), entries);
         var secrets = DeploymentConfigurationInput.secrets(values.getOrDefault("secrets", ""));
         var mode = DeploymentDatabaseReviewModeType.valueOf(values.getOrDefault("databaseMode", "UNREVIEWED"));
-        var databases = DeploymentStaticInputParser.databaseBindings(mode, values.getOrDefault("databaseDetails", ""));
+        var databases = prepared.filter(value -> !value.bindings().isEmpty()).map(value -> {
+            if (mode != DeploymentDatabaseReviewModeType.NONE || !values.getOrDefault("databaseDetails", "").isBlank())
+                throw new IllegalArgumentException("Source database and manual binding conflict");
+            return Optional.of(value.bindings());
+        }).orElseGet(
+                () -> DeploymentStaticInputParser.databaseBindings(mode, values.getOrDefault("databaseDetails", "")));
         var resources = new DeploymentResourceBindings(answers.files(), databases);
         return new ReviewedDeploymentRequest(server, facts, material, archive, configuration, secrets, resources,
                 definition, runtime.access(values, host), answers.limits(), answers.consent(),

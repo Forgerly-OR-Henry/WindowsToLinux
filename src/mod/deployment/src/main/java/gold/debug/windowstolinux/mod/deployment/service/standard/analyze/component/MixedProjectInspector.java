@@ -304,7 +304,7 @@ public final class MixedProjectInspector {
      * @return managed component id text / 受管组件标识文本
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    private static String managedComponentId(String applicationId, String componentId) {
+    public static String managedComponentId(String applicationId, String componentId) {
         String value = applicationId + "-" + componentId;
         if (value.length() <= 63)
             return value;

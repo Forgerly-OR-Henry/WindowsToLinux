@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
@@ -25,9 +26,13 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.compo
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ComponentAnalysisRequest;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.MixedProjectInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ProjectComponentDiscovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.DeploymentReviewConsent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.*;
 import gold.debug.windowstolinux.mod.deployment.source.*;
@@ -170,6 +175,36 @@ public final class DeploymentStaticWorkflow {
 
     /** Owner-view review boundary; rejection must leave all source cleanup to this task. / 所属视图审阅边界；拒绝时来源清理由本任务完成。 */
     public interface Reviewer {
+        /** Completes source-derived non-secret database fields without authorizing an effect. / 补齐源码派生的非秘密数据库字段，不授权副作用。
+         * @param server exact target / 精确目标
+         * @param componentId reviewed component / 经审阅组件
+         * @param sourceSha256 frozen manifest digest / 冻结清单摘要
+         * @param root actual frozen component root / 实际冻结组件根
+         * @param applicationId managed identity / 受管身份
+         * @param assessment source assessment / 源码评估
+         * @param task original task / 原任务
+         * @return explicit answers or refusal / 明确答案或拒绝
+         * @throws Exception if the owner view fails / 所属视图失败时 */
+        default OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+                String sourceSha256, Path root, String applicationId, DatabaseProjectInspector.Assessment assessment,
+                TaskContext task) throws Exception {
+            return rejected("DEPLOYMENT_DATABASE_REVIEW_UNAVAILABLE");
+        }
+
+        /** Separately confirms planned first SQLite initialization against exact source files. / 对精确源码文件单独确认 SQLite 首次初始化计划。
+         * @param server exact target / 精确目标
+         * @param componentId component / 组件
+         * @param sourceSha256 frozen manifest digest / 冻结清单摘要
+         * @param assessment completed declaration / 已补齐声明
+         * @param task original task / 原任务
+         * @return affirmative current-view decision / 当前视图明确决定
+         * @throws Exception if the owner view fails / 所属视图失败时 */
+        default OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
+                String sourceSha256, DatabaseProjectInspector.Assessment assessment, TaskContext task)
+                throws Exception {
+            return rejected("DEPLOYMENT_DATABASE_REVIEW_UNAVAILABLE");
+        }
+
         /** Chooses actual discovered component kinds and graph identity. / 选择实际发现组件的类型和整图身份。
          * @param server exact server / 精确服务器
          * @param sourceSha256 manifest digest / 清单摘要
@@ -195,12 +230,14 @@ public final class DeploymentStaticWorkflow {
          * @param sourceSha256 manifest digest / 清单摘要
          * @param archiveSha256 component-to-tar digest / 组件至 tar 摘要
          * @param answers reviewed values / 经审阅值
+         * @param databases source-derived exact SQLite preparation / 源码派生的精确 SQLite 准备
          * @param git original selected and resolved Git identity / 原选定及已解析 Git 身份
          * @param task original task / 原任务
          * @return explicit current-view confirmation or refusal / 当前视图明确确认或拒绝
          * @throws Exception if view observation fails / 视图观察失败时 */
         OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-                Map<String, Answers> answers, Optional<GitReview> git, TaskContext task) throws Exception;
+                Map<String, Answers> answers, Map<String, DeploymentSqlitePreparation.Prepared> databases,
+                Optional<GitReview> git, TaskContext task) throws Exception;
     }
 
     /** Binds the existing task, analyzer, planner and publisher without owning their resources. / 绑定既有任务、分析、规划与发布能力但不取得资源所有权。
@@ -318,6 +355,9 @@ public final class DeploymentStaticWorkflow {
             if (outcome == Outcome.CANCELLED)
                 marker.cancelled();
             return new OperationResult<>(outcome, Optional.empty(), Optional.of(failure.problem()));
+        } catch (CancellationException cancelled) {
+            marker.cancelled();
+            return cancelled();
         } catch (SQLException readFailure) {
             return ioFailure("DEPLOYMENT_STATIC_METADATA_UNAVAILABLE");
         } catch (IOException sourceFailure) {
@@ -399,7 +439,12 @@ public final class DeploymentStaticWorkflow {
                 || assessed.admission() == DeploymentAdmissionStatus.RECOGNITION_PREVIEW)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
         var facts = assessed.facts().orElseThrow();
-        var prompt = prompt(id, facts, assessed.runtimeSuggestion().orElse(null));
+        var database = prepareDatabase(server, id, facts.applicationId(), material, facts, reviewer, task);
+        if (database.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(database);
+        var preparedDatabase = database.value().orElseThrow();
+        var prompt = prompt(id, facts, assessed.runtimeSuggestion().orElse(null),
+                !preparedDatabase.bindings().isEmpty());
         var reviewed = reviewer.review(server, material.snapshot().sha256(), List.of(prompt), task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reviewed);
@@ -409,7 +454,7 @@ public final class DeploymentStaticWorkflow {
         var values = completed(prompt, supplied.get(id));
         runtime.runtime(type, values);
         var reanalyzed = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
-                Optional.empty(), false, task);
+                preparedDatabase.schemaReview(), false, task);
         if (reanalyzed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reanalyzed);
         if (schemaReviewMissing(reanalyzed.value().orElseThrow().assessment()))
@@ -420,13 +465,14 @@ public final class DeploymentStaticWorkflow {
                 draft.archiveBytes(), task);
         archives.add(archive);
         var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.of(id, archive.sha256()), supplied,
-                gitReview(pinned), task);
+                Map.of(id, preparedDatabase), gitReview(pinned), task);
         if (confirmed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(confirmed);
         if (!confirmed.value().orElse(false))
             return cancelled();
         var answer = answers(task, server, facts.applicationId(), material, archive, supplied.get(id));
-        var planned = assembler.plan(server, material, archive, reanalyzed.value().orElseThrow(), answer, task);
+        var planned = assembler.plan(server, material, archive, reanalyzed.value().orElseThrow(), answer,
+                preparedDatabase, task);
         if (planned.outcome() != Outcome.SUCCEEDED)
             return withoutValue(planned);
         var plan = planned.value().orElseThrow();
@@ -456,6 +502,7 @@ public final class DeploymentStaticWorkflow {
             DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
         var prompts = new ArrayList<Prompt>();
         var facts = new HashMap<String, DeploymentProjectFacts>();
+        var databases = new HashMap<String, DeploymentSqlitePreparation.Prepared>();
         for (var component : discovered) {
             var initial = analyzer.analyzeComponent(material, component.relativeRoot(), component.id(),
                     selection.choices().get(component.id()).type(), Optional.empty(), true, task);
@@ -467,7 +514,14 @@ public final class DeploymentStaticWorkflow {
                 return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
             var observed = assessed.facts().orElseThrow();
             facts.put(component.id(), observed);
-            prompts.add(prompt(component.id(), observed, assessed.runtimeSuggestion().orElse(null)));
+            var database = prepareDatabase(server, component.id(),
+                    MixedProjectInspector.managedComponentId(selection.applicationId(), component.id()), material,
+                    observed, reviewer, task);
+            if (database.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(database);
+            databases.put(component.id(), database.value().orElseThrow());
+            prompts.add(prompt(component.id(), observed, assessed.runtimeSuggestion().orElse(null),
+                    !database.value().orElseThrow().bindings().isEmpty()));
         }
         var reviewed = reviewer.review(server, material.snapshot().sha256(), List.copyOf(prompts), task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
@@ -479,7 +533,9 @@ public final class DeploymentStaticWorkflow {
         for (int i = 0; i < discovered.size(); i++)
             requests.add(componentRequest(discovered.get(i), selection.choices().get(discovered.get(i).id()),
                     facts.get(discovered.get(i).id()), prompts.get(i), supplied.get(discovered.get(i).id())));
-        var analyzed = analyzer.analyzeComponents(material, logicalName, selection.applicationId(), requests, Map.of(),
+        var reviews = new HashMap<String, DatabaseSchemaReview>();
+        databases.forEach((id, prepared) -> prepared.schemaReview().ifPresent(review -> reviews.put(id, review)));
+        var analyzed = analyzer.analyzeComponents(material, logicalName, selection.applicationId(), requests, reviews,
                 false, task);
         if (analyzed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(analyzed);
@@ -497,7 +553,7 @@ public final class DeploymentStaticWorkflow {
             byComponent.put(component.id(), archive);
             digests.put(component.id(), archive.sha256());
         }
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.copyOf(digests), supplied,
+        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.copyOf(digests), supplied, databases,
                 gitReview(pinned), task);
         if (confirmed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(confirmed);
@@ -507,7 +563,7 @@ public final class DeploymentStaticWorkflow {
         for (var component : assessment.assessment().components())
             answers.put(component.componentId(), answers(task, server, component.facts().applicationId(), material,
                     byComponent.get(component.componentId()), supplied.get(component.componentId())));
-        var planned = assembler.planComponents(server, material, byComponent, assessment, answers, task);
+        var planned = assembler.planComponents(server, material, byComponent, assessment, answers, databases, task);
         if (planned.outcome() != Outcome.SUCCEEDED)
             return withoutValue(planned);
         var plans = planned.value().orElseThrow();
@@ -525,6 +581,48 @@ public final class DeploymentStaticWorkflow {
         return multi.prepareWithinTask(task, server, project, owners, credentials, healthId,
                 runtime.health(completed(healthPrompt, supplied.get(healthId))),
                 original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plans), Optional.empty()));
+    }
+
+    /** Completes database declarations before runtime analysis and requires separate SQLite initialization consent. / 运行重分析前补齐数据库声明，并要求单独的 SQLite 初始化同意。
+     * @param server exact target / 精确目标
+     * @param componentId actual discovered component / 实际发现组件
+     * @param applicationId final managed component identity / 最终受管组件身份
+     * @param material original frozen source / 原冻结来源
+     * @param facts actual component facts / 实际组件事实
+     * @param reviewer original owner view / 原所属视图
+     * @param task original publication task / 原发布任务
+     * @return bound SQLite preparation or classified refusal / 绑定 SQLite 准备或分类拒绝
+     * @throws Exception if source inspection or review fails / 来源检查或审阅失败时 */
+    private OperationResult<DeploymentSqlitePreparation.Prepared> prepareDatabase(ServerRef server, String componentId,
+            String applicationId, DeploymentSourceMaterial material, DeploymentProjectFacts facts, Reviewer reviewer,
+            TaskContext task) throws Exception {
+        var observed = new DatabaseProjectInspector().inspect(facts.sourceRoot());
+        Map<String, String> supplied = Map.of();
+        if (!observed.databases().isEmpty() || observed.unknownDatabase()) {
+            var reviewed = reviewer.databaseInputs(server, componentId, material.snapshot().sha256(),
+                    facts.sourceRoot(), applicationId, observed, task);
+            if (reviewed.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(reviewed.outcome(), Optional.empty(), reviewed.problem());
+            supplied = reviewed.value().orElseThrow();
+        }
+        var completed = DeploymentDatabaseSourceInputs.complete(facts.sourceRoot(), applicationId, observed, supplied);
+        if (completed.databases().stream().anyMatch(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE))
+            return rejected("DEPLOYMENT_SERVER_DATABASE_PREPARATION_REQUIRED");
+        boolean approved = false;
+        if (completed.schemaReviewRequired()) {
+            var confirmation = reviewer.confirmSqliteInitialization(server, componentId, material.snapshot().sha256(),
+                    completed, task);
+            if (confirmation.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(confirmation.outcome(), Optional.empty(), confirmation.problem());
+            if (!confirmation.value().orElse(false))
+                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_DATABASE_INITIALIZATION_DECLINED",
+                                "SQLite initialization was not approved", Map.of(), Optional.empty())));
+            approved = true;
+        }
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional
+                .of(DeploymentSqlitePreparation.prepare(facts.sourceRoot(), applicationId, completed, approved, task)),
+                Optional.empty());
     }
 
     /** Projects exact selected and resolved Git identity into final consent. / 将精确选定并解析的 Git 身份投影到最终同意。
@@ -620,16 +718,21 @@ public final class DeploymentStaticWorkflow {
      * @param component component scope / 组件范围
      * @param facts actual analysis / 真实分析
      * @param suggestion optional analyzer recommendation / 可选分析建议
+     * @param sourceDatabase whether a source-derived database replaces manual notation / 源码派生数据库是否取代手填记法
      * @return dynamic review prompt / 动态审阅问题 */
     private Prompt prompt(String component, DeploymentProjectFacts facts,
-            gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment suggestion) {
+            gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment suggestion,
+            boolean sourceDatabase) {
         var defaults = runtime.defaults(facts.projectType(), suggestion, facts.sourceRoot());
         defaults = new LinkedHashMap<>(defaults);
         defaults.putIfAbsent("configuration", "");
         defaults.putIfAbsent("secrets", "");
         defaults.putIfAbsent("databaseMode", "NONE");
         defaults.putIfAbsent("databaseDetails", "");
-        var fields = new ArrayList<DeploymentReviewField>(runtime.corrections(component, defaults));
+        var fields = new ArrayList<DeploymentReviewField>(runtime.corrections(component, defaults).stream()
+                .filter(field -> !sourceDatabase
+                        || !Set.of(component + "/databaseMode", component + "/databaseDetails").contains(field.id()))
+                .toList());
         fields.addAll(runtime.missing(component, facts.projectType(), defaults));
         return new Prompt(component, facts.applicationId(), facts.projectType(), defaults, fields);
     }
@@ -687,9 +790,10 @@ public final class DeploymentStaticWorkflow {
     }
 
     /** Rejects an incomplete local review without external effects. / 无外部副作用地拒绝不完整本机审阅。
+     * @param <T> expected result type / 预期结果类型
      * @param event stable event / 稳定事件
      * @return known failure / 已知失败 */
-    private static OperationResult<DeploymentReferenceFlow.PreparedPublication> rejected(String event) {
+    private static <T> OperationResult<T> rejected(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Static review is incomplete", Map.of(),
                         Optional.empty())));

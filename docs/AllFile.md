@@ -1917,7 +1917,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/analyze/component/ComponentAnalysisRequest.java`：提供给确定性混合项目分析的用户审阅组件边界。
 - `mod/deployment/service/standard/analyze/component/ComponentGraphValidator.java`：验证跨组件所有权、依赖、端口、制品及数据路径约束。
 - `mod/deployment/service/standard/analyze/component/DiscoveredProjectComponent.java`：声明可部署根目录及可能类型，保留歧义供输入解析处理。
-- `mod/deployment/service/standard/analyze/component/MixedProjectInspector.java`：分析显式组件根，并在修改目标机前拒绝跨组件矛盾。
+- `mod/deployment/service/standard/analyze/component/MixedProjectInspector.java`：分析显式组件根、提供最终受管组件身份，并在修改目标机前拒绝跨组件矛盾。
 - `mod/deployment/service/standard/analyze/component/ProjectComponentDiscovery.java`：有界静态发现，目录和声明仅作为证据，不作为可执行指令。
 - `mod/deployment/service/standard/analyze/contract/policy/SourceMutationPolicy.java`：拒绝可能自动修改受管数据库的源码声明。
 - `mod/deployment/service/standard/analyze/contract/spi/DeploymentTypeAssessment.java`：由一个类型检查器返回的局部事实与运行时建议。
@@ -2065,16 +2065,18 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/input/DeploymentReviewField.java`：静态运行审阅缺项的类型化字段。
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticInputParser.java`：解析确定性运行及数据库审阅输入。
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAnswers.java`：保留显式审阅值、资源及原确认事实。
-- `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上组装单组件或整图计划。
+- `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上合并已审阅 SQLite 配置与资源，组装单组件或整图计划。
+- `mod/deployment/service/standard/deploy/database/DeploymentDatabaseSourceInputs.java`：从冻结源码数据库声明产生补问、校验路径及有界初始化 SQL，并保留更正输入。
+- `mod/deployment/service/standard/deploy/database/DeploymentSqlitePreparation.java`：将独立确认的 SQLite 首次初始化绑定组件源码摘要、配置和资源。
 - `mod/deployment/service/standard/DeploymentStaticPageService.java`：为惰性页面提供原任务静态发布、只读服务器/秘密修订发现、独立受保护秘密创建及持久任务状态读取。
 - `mod/deployment/service/standard/DeploymentStaticPreparationJournal.java`：在原选材前保存无远端效果的准备标记，已观测取消另行持久化。
 - `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机/Git 准备清理与已有执行的原发布恢复，缺失、未核实或损坏依据保持未知。
 - `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
-- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内从本地目录或固定 Git 提供冻结来源、发现、审阅、重分析、逐组件归档并交给原单/多执行器；源码结构变更缺独立数据库依据时拒绝。
+- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内冻结来源、发现、补全数据库声明并独立确认 SQLite 初始化，重分析、逐组件归档后交给原单/多执行器；服务器型数据库准备未接通时拒绝。
 - `mod/deployment/ui/DeploymentGitSourceForm.java`：仅 Git 模式可见的来源、引用和本机可执行文件输入，任务准入前构造无凭据的类型化请求。
 - `mod/deployment/ui/DeploymentSecretReferenceField.java`：运行审阅中选择已有业务秘密修订并追加精确引用，同时保留高级非秘密输入。
 - `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。
-- `mod/deployment/ui/DeploymentStaticPageReviewer.java`：在所属 Swing 对话框中收集组件、运行与绑定输入，并确认原清单、归档和目标。
+- `mod/deployment/ui/DeploymentStaticPageReviewer.java`：在所属 Swing 对话框中收集组件、数据库声明与运行输入，分别确认 SQLite 首次初始化和原清单、归档、目标。
 - `mod/deployment/ui/DeploymentStaticSecretControls.java`：发布前应用秘密表单、准入后密码交接、独立原创建任务观察和已有修订列表。
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticRuntimeResolver.java`：推导静态运行默认值、缺项与类型化运行定义。
 - `mod/deployment/service/standard/deploy/input/DeploymentStoragePlan.java`：解析已审阅存储并拒绝原有重叠和保留路径。
