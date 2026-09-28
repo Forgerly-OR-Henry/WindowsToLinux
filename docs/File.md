@@ -8,7 +8,7 @@
 
 - 文档版本：`4.0.0-standard-agent`
 - 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model、service/standard/analyze 完整静态分析、service/standard/deploy 审阅计划与固定渲染，以及借用原任务远端会话的工具准备、精确绑定与受限构建入口；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model、service/standard/analyze 完整静态分析、service/standard/deploy 审阅计划与固定渲染，以及借用原任务、素材与会话的主机准入、工具准备、候选上传及受限构建入口；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 更新日期：2026-09-28（1.1 增量实施；完整目标图仍待切换）
@@ -159,6 +159,7 @@ WindowsToLinux/
    │     │  │  └─ model/
    │     │  │     ├─ analysis/
    │     │  │     ├─ assessment/
+   │     │  │     ├─ capability/
    │     │  │     ├─ ecosystem/
    │     │  │     │  └─ db/
    │     │  │     ├─ language/
@@ -166,6 +167,7 @@ WindowsToLinux/
    │     │  │     ├─ project/
    │     │  │     │  └─ component/
    │     │  │     ├─ server/
+   │     │  │     │  └─ security/
    │     │  │     └─ toolchain/
    │     │  └─ standard/
    │     │     ├─ analyze/
@@ -237,6 +239,9 @@ WindowsToLinux/
    │     │        │  └─ registry/
    │     │        ├─ input/
    │     │        ├─ plan/
+   │     │        ├─ support/
+   │     │        │  ├─ distro/
+   │     │        │  └─ runtime/
    │     │        └─ toolchain/
    │     └─ source/
    │        └─ git/
@@ -1458,13 +1463,15 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     │  │  └─ model/                   # [包] 部署、应用、发布与业务状态的私有模型
 │  │     │  │     ├─ analysis/            # [包] 准入、证据及拒绝纯值
 │  │     │  │     ├─ assessment/          # [包] 单项目与多组件类型化评估
+│  │     │  │     ├─ capability/          # [包] Linux 与生态运行能力纯值
 │  │     │  │     ├─ ecosystem/           # [包] 纯生态声明
 │  │     │  │     │  └─ db/               # [包] 数据库要求与模式审阅纯值
 │  │     │  │     ├─ language/            # [包] 语言及版本事实
 │  │     │  │     ├─ message/             # [包] 非秘密本地化消息纯值
 │  │     │  │     ├─ project/             # [包] 项目构建与运行事实
 │  │     │  │     │  └─ component/        # [包] 独立分析组件纯值
-│  │     │  │     ├─ server/              # [包] 目标发行版纯值
+│  │     │  │     ├─ server/              # [包] 目标发行版与 CPU 纯值
+│  │     │  │     │  └─ security/        # [包] 防火墙和安全模块纯值
 │  │     │  │     └─ toolchain/           # [包] 工具链要求纯值
 │  │     │  └─ standard/                   # [包] 标准部署流程，区分分析和执行
 │  │     │     ├─ analyze/                 # [包] 静态识别、证据提取、冲突和缺项分析
@@ -1514,6 +1521,9 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     │     │  ├─ toolchain/           # [包] 工具链声明读取
 │  │     │     │  └─ workload/            # [包] 静态站点和容器工作负载检查
 │  │     │     └─ deploy/                  # [包] 标准计划、适配器、工具链及有界 assistance
+│  │     │        └─ support/             # [包] 主机、发行版与运行时准入政策
+│  │     │           ├─ distro/          # [包] 发行版精确版本与架构政策
+│  │     │           └─ runtime/         # [包] 准备工具后的运行能力政策
 │  │     ├─ source/                        # [包] 部署取材、排除规则及平台快照的业务使用
 │  │     │  └─ git/                        # [包] Git 版本选择及固定来源准备
 │  │     ├─ ui/                            # [包] 部署、受管应用及部署配置页面
