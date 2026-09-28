@@ -32,6 +32,9 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -416,7 +419,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             panelMethod.setAccessible(true);
             var confirmation = DeploymentStaticPageReviewer.class.getDeclaredMethod("confirmation",
                     DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.ServerRef.class, String.class,
-                    Map.class, Map.class, Optional.class);
+                    Map.class, Map.class, Map.class, Optional.class);
             confirmation.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
                 try {
@@ -431,7 +434,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                             "DEFAULT:HEAD", "a".repeat(40));
                     var finalPanel = (JPanel) confirmation.invoke(null, page,
                             new gold.debug.windowstolinux.appapi.server.ServerRef("visual-server"), "b".repeat(64),
-                            Map.of("service", "c".repeat(64)), Map.of(), Optional.of(gitReview));
+                            Map.of("service", "c".repeat(64)), Map.of(), Map.of(), Optional.of(gitReview));
                     assertNotNull(findLabel(finalPanel, "确认后将在部署前保存本次经审阅的来源项目记录。"));
                     render(new JOptionPane(new JScrollPane(finalPanel), JOptionPane.QUESTION_MESSAGE,
                             JOptionPane.OK_CANCEL_OPTION), "git-confirm");
@@ -439,6 +442,85 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     throw new AssertionError(failure);
                 }
             });
+            SwingUtilities.invokeAndWait(page::close);
+        }
+    }
+
+    /** The real Swing source form preserves declared paths while correcting a missing file and accepting multiple SQL files. / 真实 Swing 源码表单在修复缺失文件并选择多份 SQL 时保留已声明路径。
+     * @throws Exception if local Swing or source setup fails / 本机 Swing 或源码准备失败时 */
+    @Test
+    void sqliteCorrectionKeepsSourceDefaultsAndMultipleSqlFiles() throws Exception {
+        Path source = root.resolve("sqlite-source");
+        Files.createDirectories(source);
+        Files.writeString(source.resolve("windowstolinux-db.properties"),
+                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/custom.db\n"
+                        + "db.main.pathEnvironment=APP_DB_PATH\ndb.main.initialize=schema-a.sql,missing.sql\n");
+        Files.writeString(source.resolve("schema-a.sql"), "CREATE TABLE a(id integer);");
+        Files.writeString(source.resolve("schema-b.sql"), "CREATE TABLE b(id integer);");
+        var assessment = new DatabaseProjectInspector().inspect(source);
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            SwingUtilities
+                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+            var target = new gold.debug.windowstolinux.appapi.server.ServerRef("sqlite-server");
+            var result = new AtomicReference<Map<String, String>>();
+            var handle = context.tasks().submit(new TaskRequest("sqlite-modal-test", "SQLite review", List.of(), true),
+                    task -> {
+                        var reviewer = new DeploymentStaticPageReviewer(page, 0);
+                        var input = reviewer.databaseInputs(target, "api", "a".repeat(64), source, "sqlite-app",
+                                assessment, task);
+                        if (input.outcome() != Outcome.SUCCEEDED)
+                            return new OperationResult<Void>(input.outcome(), Optional.empty(), input.problem());
+                        result.set(input.value().orElseThrow());
+                        var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment,
+                                result.get());
+                        var first = reviewer.confirmSqliteInitialization(target, "api", "a".repeat(64), completed,
+                                task);
+                        if (first.outcome() != Outcome.SUCCEEDED)
+                            return new OperationResult<Void>(first.outcome(), Optional.empty(), first.problem());
+                        var prepared = DeploymentSqlitePreparation.prepare(source, "sqlite-app", completed, true, task);
+                        var answers = new DeploymentStaticWorkflow.Answers(
+                                Map.of("databaseMode", "NONE", "databaseDetails", ""), List.of(),
+                                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits
+                                        .defaultNonRoot(),
+                                false, true);
+                        var finalReview = reviewer.confirm(target, "a".repeat(64), Map.of("api", "b".repeat(64)),
+                                Map.of("api", answers), Map.of("api", prepared), Optional.empty(), task);
+                        return new OperationResult<Void>(finalReview.outcome(), Optional.empty(),
+                                finalReview.problem());
+                    });
+            acceptDialog(awaitDialog("审阅源码数据库声明"));
+            var correction = awaitDialog("审阅源码数据库声明");
+            SwingUtilities.invokeAndWait(() -> {
+                assertNotNull(findTextField(correction, "state/custom.db"));
+                assertNotNull(findTextField(correction, "APP_DB_PATH"));
+                var sql = findTextField(correction, "schema-a.sql,missing.sql");
+                assertNotNull(sql);
+                sql.setText("schema-a.sql,schema-b.sql");
+                captureDialog(correction, "sqlite-source-correction");
+            });
+            acceptDialog(correction);
+            assertTrue(awaitDialog("同意在正式发布中首次初始化 SQLite").isVisible());
+            var initialization = awaitDialog("同意在正式发布中首次初始化 SQLite");
+            SwingUtilities.invokeAndWait(() -> captureDialog(initialization, "sqlite-initialization-confirm"));
+            acceptDialog(initialization);
+            var finalDialog = awaitDialog("确认部署");
+            SwingUtilities.invokeAndWait(() -> captureDialog(finalDialog, "sqlite-final-confirm"));
+            acceptDialog(finalDialog);
+            assertEquals(Outcome.SUCCEEDED,
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment, result.get());
+            assertEquals("state/custom.db", completed.databases().getFirst().sqlite().orElseThrow().accessPath());
+            assertEquals("APP_DB_PATH", completed.databases().getFirst().sqlite().orElseThrow().pathEnvironment());
+            assertEquals(List.of("schema-a.sql", "schema-b.sql"),
+                    completed.databases().getFirst().initializationFiles());
             SwingUtilities.invokeAndWait(page::close);
         }
     }
@@ -548,6 +630,56 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         }
         fail("Original owner review dialog did not appear");
         return null;
+    }
+
+    /** Accepts the actual owned modal on the EDT. / 在 EDT 接受真实所属模态框。
+     * @param dialog current visible review / 当前可见审阅
+     * @throws Exception if EDT dispatch fails / EDT 派发失败时 */
+    private static void acceptDialog(JDialog dialog) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            findOptionPane(dialog).setValue(JOptionPane.OK_OPTION);
+            dialog.dispose();
+        });
+    }
+
+    /** Finds one actual editable text field by its preserved source value. / 按保留的源码值查找真实可编辑文本字段。
+     * @param root current dialog subtree / 当前对话框子树
+     * @param value expected source value / 预期源码值
+     * @return matching field or absent / 匹配字段或空 */
+    private static JTextField findTextField(java.awt.Container root, String value) {
+        for (var child : root.getComponents()) {
+            if (child instanceof JTextField field && field.getText().equals(value))
+                return field;
+            if (child instanceof java.awt.Container nested) {
+                var found = findTextField(nested, value);
+                if (found != null)
+                    return found;
+            }
+        }
+        return null;
+    }
+
+    /** Captures the displayed owned modal at its actual laid-out size. / 以真实布局尺寸捕获已显示的所属模态框。
+     * @param dialog visible owner modal / 可见所属模态框
+     * @param name evidence name / 证据名 */
+    private static void captureDialog(JDialog dialog, String name) {
+        String directory = System.getProperty("static.page.screenshot.dir", "");
+        if (directory.isBlank())
+            return;
+        try {
+            Path destination = Path.of(directory, name + ".png");
+            Files.createDirectories(destination.getParent());
+            var image = new BufferedImage(dialog.getWidth(), dialog.getHeight(), BufferedImage.TYPE_INT_RGB);
+            var graphics = image.createGraphics();
+            try {
+                dialog.printAll(graphics);
+            } finally {
+                graphics.dispose();
+            }
+            ImageIO.write(image, "png", destination.toFile());
+        } catch (Exception failure) {
+            throw new AssertionError("Actual owner modal could not render", failure);
+        }
     }
 
     private static JOptionPane findOptionPane(java.awt.Container root) {

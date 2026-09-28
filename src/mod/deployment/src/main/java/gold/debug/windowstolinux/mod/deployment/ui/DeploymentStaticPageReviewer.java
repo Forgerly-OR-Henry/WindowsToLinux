@@ -17,6 +17,9 @@ import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 
 /** Translates one current owner-view decision into typed static review values. / 将当前所属视图的一次决定转换为类型化静态审阅值。 */
@@ -33,6 +36,132 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
     DeploymentStaticPageReviewer(DeploymentStaticPage page, long view) {
         this.page = page;
         this.view = view;
+    }
+
+    /** Reviews actual source-derived database fields on the owner view, checking files on the task worker. / 在所属视图审阅真实源码数据库字段，并在任务线程检查文件。
+     * @param server selected target / 选定目标
+     * @param componentId actual component / 实际组件
+     * @param sourceSha256 frozen manifest / 冻结清单
+     * @param root frozen component root / 冻结组件根
+     * @param applicationId final managed identity / 最终受管身份
+     * @param assessment original source facts / 原源码事实
+     * @param task original task / 原任务
+     * @return explicit non-secret answers / 明确非秘密答案
+     * @throws Exception if the owner view cannot complete the interaction / 所属视图无法完成交互时 */
+    @Override
+    public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+            String sourceSha256, java.nio.file.Path root, String applicationId,
+            DatabaseProjectInspector.Assessment assessment, TaskContext task) throws Exception {
+        Map<String, String> supplied = Map.of();
+        var form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
+                DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of())));
+        while (page.active(view)) {
+            if (!page.approve(view, form.panel, page.text("databaseSourceReview"), task))
+                return cancelled();
+            var edited = page.onEdt(form::answers);
+            var merged = new LinkedHashMap<>(supplied);
+            merged.putAll(edited);
+            supplied = Map.copyOf(merged);
+            try {
+                DeploymentDatabaseSourceInputs.complete(root, applicationId, assessment, supplied);
+                return success(supplied);
+            } catch (IllegalArgumentException | java.io.IOException invalid) {
+                var answers = supplied;
+                form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
+                        DeploymentDatabaseSourceInputs.questions(assessment, applicationId, answers, true)));
+                var current = form;
+                page.onEdt(() -> {
+                    current.error.setText(page.text("invalidForm"));
+                    return null;
+                });
+            }
+        }
+        return cancelled();
+    }
+
+    /** Shows every first-initialization source file before creating a planned review. / 生成计划批准前展示每份首次初始化源码文件。
+     * @param server selected target / 选定目标
+     * @param componentId actual component / 实际组件
+     * @param sourceSha256 frozen manifest / 冻结清单
+     * @param assessment completed declaration / 已补齐声明
+     * @param task original task / 原任务
+     * @return explicit consent or cancellation / 明确同意或取消 */
+    @Override
+    public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
+            String sourceSha256, DatabaseProjectInspector.Assessment assessment, TaskContext task) {
+        var panel = page.onEdt(() -> {
+            var rows = new JPanel(new GridLayout(0, 1));
+            rows.add(new JLabel(page.text("sqliteFirstInitialization")));
+            rows.add(new JLabel(page.text("sourceDigest") + ": " + sourceSha256));
+            for (var database : assessment.databases()) {
+                var sqlite = database.sqlite().orElseThrow();
+                rows.add(new JLabel(componentId + " / " + database.id() + " / " + sqlite.fileName()));
+                rows.add(new JLabel(page.text("database.path") + ": " + sqlite.accessPath()));
+                rows.add(new JLabel(page.text("database.seed") + ": " + sqlite.seedFile()));
+                rows.add(new JLabel(
+                        page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
+            }
+            return rows;
+        });
+        if (!page.approve(view, panel, page.text("sqliteFirstInitialization"), task))
+            return cancelled();
+        return success(Boolean.TRUE);
+    }
+
+    /** Bounded non-secret database fields on the EDT. / EDT 上有界非秘密数据库字段。 */
+    private static final class DatabaseInputForm {
+        /** Source-bound form. / 来源绑定表单。 */
+        private final JPanel panel = new JPanel(new GridLayout(0, 1, 8, 8));
+
+        /** Local error message. / 本地错误提示。 */
+        private final JLabel error = new JLabel();
+
+        /** Typed input controls. / 类型化输入控件。 */
+        private final Map<String, JComponent> fields = new LinkedHashMap<>();
+
+        /** Builds questions without reading source files on the EDT. / 不在 EDT 读取源码文件而构建问题。
+         * @param page owner page / 所属页
+         * @param componentId reviewed component / 经审阅组件
+         * @param sourceSha256 frozen manifest / 冻结清单
+         * @param assessment source-derived declarations / 源码派生声明
+         * @param questions actual missing inputs / 实际缺失输入 */
+        private DatabaseInputForm(DeploymentStaticPage page, String componentId, String sourceSha256,
+                DatabaseProjectInspector.Assessment assessment, List<DeploymentReviewField> questions) {
+            panel.add(new JLabel(componentId + " / " + page.text("sourceDigest")));
+            panel.add(new JLabel(sourceSha256));
+            for (var database : assessment.databases()) {
+                panel.add(new JLabel(database.id() + " / " + database.engine()));
+                panel.add(new JLabel(database.sqlite().map(value -> value.accessPath() + " / " + value.seedFile())
+                        .orElse(database.database())));
+                panel.add(new JLabel(page.text("database.initialize")));
+                panel.add(new JLabel(String.join(", ", database.initializationFiles())));
+            }
+            for (var question : questions) {
+                JComponent input = question.choices().isEmpty() || question.id().endsWith(".initialize")
+                        ? new JTextField(question.value())
+                        : new JComboBox<>(question.choices().toArray(String[]::new));
+                if (input instanceof JTextField field && question.id().endsWith(".initialize"))
+                    field.setToolTipText(String.join(", ", question.choices()));
+                if (input instanceof JComboBox<?> combo && !question.value().isBlank())
+                    combo.setSelectedItem(question.value());
+                panel.add(new JLabel(page.text(question.titleKey())));
+                panel.add(input);
+                fields.put(question.id(), input);
+            }
+            panel.add(error);
+            panel.add(new JLabel());
+        }
+
+        /** Reads only the current EDT text values. / 仅读取当前 EDT 文本值。
+         * @return non-secret reviewed answers / 非秘密经审阅答案 */
+        private Map<String, String> answers() {
+            var values = new LinkedHashMap<String, String>();
+            fields.forEach((id, input) -> values.put(id,
+                    input instanceof JTextField field
+                            ? field.getText().trim()
+                            : String.valueOf(((JComboBox<?>) input).getSelectedItem())));
+            return Map.copyOf(values);
+        }
     }
 
     /** Selects only actual discovered component roots. / 仅选择实际发现的组件根。
@@ -218,14 +347,16 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param sourceSha256 source manifest digest / 来源清单摘要
      * @param archiveSha256 each actual tar digest / 各实际 tar 摘要
      * @param answers final edited answers / 最终编辑答案
+     * @param databases source-derived SQLite facts / 源码派生 SQLite 事实
      * @param git original URL, selected ref and pinned commit / 原 URL、选定引用和固定提交
      * @param task original task / 原任务
      * @return current explicit confirmation / 当前明确确认 */
     @Override
     public OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-            Map<String, DeploymentStaticWorkflow.Answers> answers, Optional<DeploymentStaticWorkflow.GitReview> git,
-            TaskContext task) {
-        var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, git));
+            Map<String, DeploymentStaticWorkflow.Answers> answers,
+            Map<String, DeploymentSqlitePreparation.Prepared> databases,
+            Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+        var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, databases, git));
         if (!page.approve(view, panel, page.text("finalConfirm"), task, true))
             return cancelled();
         return success(Boolean.TRUE);
@@ -237,10 +368,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param sourceSha256 source manifest digest / 来源清单摘要
      * @param archiveSha256 actual tar digests / 实际 tar 摘要
      * @param answers final edited values / 最终编辑值
+     * @param databases source-derived SQLite facts / 源码派生 SQLite 事实
      * @param git original and pinned Git identity / 原及固定 Git 身份
      * @return confirmation rows / 确认行 */
     private static JPanel confirmation(DeploymentStaticPage page, ServerRef server, String sourceSha256,
             Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
+            Map<String, DeploymentSqlitePreparation.Prepared> databases,
             Optional<DeploymentStaticWorkflow.GitReview> git) {
         var panel = new JPanel(new GridLayout(0, 1));
         panel.add(new JLabel(page.text("server") + ": " + server.id()));
@@ -253,8 +386,29 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 .forEach(entry -> panel.add(new JLabel(entry.getKey() + " tar SHA-256: " + entry.getValue())));
         answers.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
             panel.add(new JLabel(entry.getKey()));
-            entry.getValue().values().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(
-                    value -> panel.add(new JLabel("  " + label(page, value.getKey()) + ": " + value.getValue())));
+            entry.getValue().values().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(value -> {
+                if (!databases.containsKey(entry.getKey()) || databases.get(entry.getKey()).bindings().isEmpty()
+                        || !Set.of("databaseMode", "databaseDetails").contains(value.getKey()))
+                    panel.add(new JLabel("  " + label(page, value.getKey()) + ": " + value.getValue()));
+            });
+            var database = databases.get(entry.getKey());
+            if (database != null)
+                database.bindings().forEach(binding -> {
+                    var sqlite = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                    panel.add(new JLabel("  " + page.text("database.sqliteBinding") + ": " + binding.databaseId()
+                            + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
+                    panel.add(new JLabel("  " + page.text("database.seed") + ": " + sqlite.seedFile()));
+                    panel.add(new JLabel("  " + page.text("database.initialize") + ": "
+                            + String.join(", ", sqlite.initializationFiles())));
+                    panel.add(new JLabel(
+                            "  " + page.text("database.planned") + ": " + database.schemaReview().isPresent()));
+                });
+            if (database != null) {
+                database.configuration().forEach(
+                        config -> panel.add(new JLabel("  " + config.key() + " = " + config.value().canonicalValue())));
+                database.schemaReview().ifPresent(review -> panel.add(
+                        new JLabel("  " + page.text("database.inspectionDigest") + ": " + review.inspectionSha256())));
+            }
             entry.getValue().files().forEach(file -> panel.add(
                     new JLabel("  " + page.text("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
             panel.add(

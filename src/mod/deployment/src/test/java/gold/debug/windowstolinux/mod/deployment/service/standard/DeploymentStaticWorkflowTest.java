@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -21,6 +22,7 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -55,11 +57,18 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
         runReview(count, false, true);
     }
 
-    /** Source schema mutations reach the review form, then stop before archive or remote effect without verified DB work. / 源码模式变更可进入审阅表单，但缺少已验证数据库操作时在归档与远端效果前停止。
+    /** Source schema mutations require a separate SQLite initialization decision before runtime review. / 源码模式变更在运行审阅前要求单独 SQLite 初始化决定。
      * @throws Exception if real source or task setup fails / 真实来源或任务设置失败时 */
     @Test
-    void schemaMutationNeedsSeparateVerifiedReviewAfterRuntimeForm() throws Exception {
+    void schemaMutationNeedsSeparateSqliteConsentBeforeRuntimeForm() throws Exception {
         runReview(1, true, false);
+    }
+
+    /** Cancellation after SQLite consent remains a known local cancellation before runtime review. / SQLite 同意后取消仍是运行审阅前的已知本机取消。
+     * @throws Exception if the original task or frozen source fails / 原任务或冻结源码失败时 */
+    @Test
+    void cancellationAfterSqliteConsentReleasesOriginalSourceWithoutPublication() throws Exception {
+        runReview(1, true, false, true);
     }
 
     /** Real page admission retains both original checkpoints when Git preparation cleanup is initially unknown. / 真实页面准入在 Git 准备收尾暂未知时保留两个原检查点。
@@ -115,6 +124,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
 
                 public OperationResult<Boolean> confirm(ServerRef server, String manifest, Map<String, String> archives,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
+                        Map<String, DeploymentSqlitePreparation.Prepared> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
@@ -138,6 +148,10 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private void runReview(int count, boolean schema, boolean git) throws Exception {
+        runReview(count, schema, git, false);
+    }
+
+    private void runReview(int count, boolean schema, boolean git, boolean cancelAfterConsent) throws Exception {
         for (int i = 0; i < count; i++) {
             Path project = count == 1
                     ? selectedSourceDirectory()
@@ -172,8 +186,37 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var source = new java.util.concurrent.atomic.AtomicReference<String>();
             var archives = new java.util.concurrent.atomic.AtomicReference<Map<String, String>>();
             var taskId = new java.util.concurrent.atomic.AtomicReference<UUID>();
+            var confirmationEntered = new CountDownLatch(1);
+            var confirmationRelease = new CountDownLatch(1);
             var workflow = new DeploymentStaticWorkflow(context, new DeploymentReferenceFlow(context));
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                @Override
+                public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+                        String sha, Path componentRoot, String applicationId,
+                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                        TaskContext task) {
+                    assertTrue(schema);
+                    assertEquals(taskId.get(), task.id());
+                    return success(Map.of("database.main.engine", "SQLITE", "database.main.path", "DEFAULT",
+                            "database.main.pathEnvironment", "DATABASE_PATH", "database.main.initialize",
+                            "schema.sql"));
+                }
+
+                @Override
+                public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
+                        String sha,
+                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                        TaskContext task) throws Exception {
+                    assertTrue(schema);
+                    assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+                    if (cancelAfterConsent) {
+                        confirmationEntered.countDown();
+                        assertTrue(confirmationRelease.await(20, TimeUnit.SECONDS));
+                        return success(Boolean.TRUE);
+                    }
+                    return cancelled();
+                }
+
                 @Override
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
                         List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
@@ -220,6 +263,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 @Override
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archiveSha,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
+                        Map<String, DeploymentSqlitePreparation.Prepared> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                     assertFalse(schema, "Schema review must block before final publication consent");
                     assertEquals(taskId.get(), task.id());
@@ -241,11 +285,16 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var handle = workflow.submit(new ServerRef("server"),
                     new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536), gitInput,
                     reviewer);
+            if (cancelAfterConsent)
+                try {
+                    assertTrue(confirmationEntered.await(20, TimeUnit.SECONDS));
+                    handle.requestCancel();
+                } finally {
+                    confirmationRelease.countDown();
+                }
             var result = handle.completion().toCompletableFuture().get(90, TimeUnit.SECONDS);
-            assertEquals(schema ? Outcome.FAILED : Outcome.CANCELLED, result.outcome(), result.toString());
-            if (schema)
-                assertEquals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED", result.problem().orElseThrow().eventCode());
-            assertEquals(1, reviewed.get());
+            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(schema ? 0 : 1, reviewed.get());
             if (!schema)
                 assertEquals(count, archives.get().size());
             if (git) {
@@ -260,6 +309,14 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             }
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+            if (cancelAfterConsent)
+                try (var access = scope(runtime, true);
+                        var connection = access.openConnection();
+                        var statement = connection.createStatement();
+                        var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
+                    assertTrue(rows.next());
+                    assertEquals(0, rows.getLong(1));
+                }
         }
     }
 

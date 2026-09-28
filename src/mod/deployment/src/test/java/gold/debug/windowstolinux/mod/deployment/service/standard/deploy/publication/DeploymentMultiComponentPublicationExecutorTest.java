@@ -23,10 +23,13 @@ import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentWorkloadArguments;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
@@ -119,12 +122,33 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void staticWorkflowPublishesDiscoveredGraphFromSeparateArchiveRoots(boolean git) throws Exception {
+        runStaticGraph(git, false);
+    }
+
+    /** Checks DEFAULT SQLite path and resource identity under the final graph namespace. / 核对最终整图命名空间下的默认 SQLite 路径及资源身份。
+     * @throws Exception if original graph publication fails / 原整图发布失败时 */
+    @Test
+    void staticWorkflowPublishesGraphWithIsolatedSqliteComponent() throws Exception {
+        runStaticGraph(false, true);
+    }
+
+    /** Executes the shared original graph fixture with optional source-derived SQLite. / 使用可选源码派生 SQLite 执行原整图夹具。
+     * @param git use local Git / 使用本机 Git
+     * @param sqlite declare SQLite on the API component / 在 API 组件声明 SQLite
+     * @throws Exception if original graph publication fails / 原整图发布失败时 */
+    private void runStaticGraph(boolean git, boolean sqlite) throws Exception {
         for (String id : List.of("api", "web")) {
             var source = selectedSourceDirectory().resolve(id);
             Files.createDirectories(source);
             Files.writeString(source.resolve("go.mod"), "module example.test/" + id + "\n\ngo 1.24\n");
             Files.writeString(source.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
             Files.writeString(source.resolve("main.go"), "package main\nfunc main() {}\n");
+            if (sqlite && id.equals("api")) {
+                Files.writeString(source.resolve("windowstolinux-db.properties"),
+                        "db=main\ndb.main.engine=SQLITE\ndb.main.path=DEFAULT\n"
+                                + "db.main.pathEnvironment=API_DB_PATH\ndb.main.initialize=schema.sql\n");
+                Files.writeString(source.resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
+            }
         }
         String commit = null;
         if (git) {
@@ -199,6 +223,26 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             var originalTask = new AtomicReference<UUID>();
             var archives = new AtomicReference<Map<String, String>>();
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                public OperationResult<Map<String, String>> databaseInputs(ServerRef exact, String componentId,
+                        String manifest, Path frozenRoot, String applicationId,
+                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                        TaskContext task) {
+                    assertTrue(sqlite);
+                    assertEquals("api", componentId);
+                    assertEquals("whole-app-api", applicationId);
+                    assertEquals(originalTask.get(), task.id());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
+                }
+
+                public OperationResult<Boolean> confirmSqliteInitialization(ServerRef exact, String componentId,
+                        String manifest,
+                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                        TaskContext task) {
+                    assertEquals("api", componentId);
+                    assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                }
+
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef exact, String manifest,
                         List<DiscoveredProjectComponent> discovered, TaskContext task) {
                     assertEquals(2, discovered.size());
@@ -237,8 +281,20 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
 
                 public OperationResult<Boolean> confirm(ServerRef exact, String manifest, Map<String, String> digests,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
+                        Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation.Prepared> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     assertEquals(originalTask.get(), task.id());
+                    if (sqlite) {
+                        assertTrue(databases.get("web").bindings().isEmpty());
+                        var prepared = databases.get("api");
+                        var binding = prepared.bindings().getFirst();
+                        var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                        String configured = prepared.configuration().stream()
+                                .filter(value -> value.key().equals("API_DB_PATH")).findFirst().orElseThrow().value()
+                                .canonicalValue();
+                        assertEquals(connection.physicalPath("whole-app-api", binding.databaseId()), configured);
+                        assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
+                    }
                     assertEquals(pinnedCommit != null, git.isPresent());
                     git.ifPresent(value -> {
                         assertEquals(selectedSourceDirectory().toUri().toString(), value.remote());
@@ -280,6 +336,29 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             assertEquals(2, actions.stream().filter("publish"::equals).count());
             assertEquals(1, countMod(runtime, "deployment_release"));
             assertEquals(2, countMod(runtime, "deployment_unit_release_binding"));
+            if (sqlite) {
+                var inspected = real.tasks().submit(new TaskRequest("sqlite-graph-inspect",
+                        "Inspect published SQLite graph", List.of(server.id()), false), task -> {
+                            var graph = new DeploymentGraphRepository(real.db()).find(task, "whole-app").orElseThrow();
+                            var api = graph.components().stream().filter(value -> value.componentId().equals("api"))
+                                    .findFirst().orElseThrow();
+                            var web = graph.components().stream().filter(value -> value.componentId().equals("web"))
+                                    .findFirst().orElseThrow();
+                            assertEquals(List.of(), web.resources().databaseBindings().orElseThrow());
+                            var binding = api.resources().databaseBindings().orElseThrow().getFirst();
+                            assertEquals("main", binding.databaseId());
+                            var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                            assertEquals(List.of("schema.sql"), connection.initializationFiles());
+                            var configuration = new DeploymentConfigurationRepository(real.db())
+                                    .find(task, "whole-app-api", 1).orElseThrow();
+                            assertEquals(connection.physicalPath("whole-app-api", binding.databaseId()),
+                                    configuration.requireValue("API_DB_PATH", DeploymentConfigurationScopeType.RUNTIME)
+                                            .canonicalValue());
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        });
+                assertEquals(Outcome.SUCCEEDED,
+                        inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            }
             if (git) {
                 assertEquals(1, countMod(runtime, "deployment_project"));
                 try (var access = scope(runtime, true);

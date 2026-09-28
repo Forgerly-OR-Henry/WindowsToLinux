@@ -25,10 +25,13 @@ import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
@@ -140,10 +143,32 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void staticWorkflowPublishesOneOriginalTaskWithReviewedInputs(boolean git) throws Exception {
+        runStaticWorkflow(git, false);
+    }
+
+    /** Publishes source-derived SQLite with separate schema consent and the exact managed resource path. / 经独立结构同意后发布源码派生 SQLite，并核对精确受管资源路径。
+     * @throws Exception if original publication fails / 原发布失败时 */
+    @Test
+    void staticWorkflowPublishesSqliteWithSourceBoundFirstInitialization() throws Exception {
+        runStaticWorkflow(false, true);
+    }
+
+    /** Shares the original CLASS/H2 publication fixture across local, Git and SQLite sources. / 为本地、Git 和 SQLite 来源复用原 CLASS/H2 发布夹具。
+     * @param git whether real local Git is used / 是否使用真实本机 Git
+     * @param sqlite whether source declares SQLite / 源码是否声明 SQLite
+     * @throws Exception if original publication fails / 原发布失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
         Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        if (sqlite) {
+            Files.writeString(selectedSourceDirectory().resolve("windowstolinux-db.properties"),
+                    "db=main\ndb.main.engine=SQLITE\ndb.main.path=DEFAULT\ndb.main.pathEnvironment=DB_PATH\n"
+                            + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
+            Files.writeString(selectedSourceDirectory().resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
+            Files.write(selectedSourceDirectory().resolve("seed.db"), new byte[]{1, 2, 3});
+        }
         if (git) {
             git(selectedSourceDirectory(), "init", "-b", "main");
             git(selectedSourceDirectory(), "config", "user.email", "test@example.invalid");
@@ -207,6 +232,27 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var observedTask = new AtomicReference<UUID>();
                 var reviewedApplication = new AtomicReference<String>();
                 var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                    public OperationResult<Map<String, String>> databaseInputs(ServerRef exact, String componentId,
+                            String manifest, Path frozenRoot, String applicationId,
+                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                            TaskContext task) throws Exception {
+                        assertTrue(sqlite);
+                        assertEquals(observedTask.get(), task.id());
+                        assertEquals(1, assessment.databases().size());
+                        assertEquals("seed.db", assessment.databases().getFirst().sqlite().orElseThrow().seedFile());
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
+                    }
+
+                    public OperationResult<Boolean> confirmSqliteInitialization(ServerRef exact, String componentId,
+                            String manifest,
+                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                            TaskContext task) {
+                        assertTrue(sqlite);
+                        assertEquals(observedTask.get(), task.id());
+                        assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                    }
+
                     public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef exact, String manifest,
                             List<DiscoveredProjectComponent> discovered, TaskContext task) {
                         assertEquals(server, exact);
@@ -243,8 +289,23 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     public OperationResult<Boolean> confirm(ServerRef exact, String manifest,
                             Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
+                            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation.Prepared> databases,
                             Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                         assertEquals(observedTask.get(), task.id());
+                        if (sqlite) {
+                            var prepared = databases.values().iterator().next();
+                            var binding = prepared.bindings().getFirst();
+                            var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                            String actualPath = prepared.configuration().stream()
+                                    .filter(value -> value.key().equals("DB_PATH")).findFirst().orElseThrow().value()
+                                    .canonicalValue();
+                            assertEquals(connection.physicalPath(reviewedApplication.get(), binding.databaseId()),
+                                    actualPath);
+                            assertEquals("seed.db", connection.seedFile());
+                            assertEquals(List.of("schema.sql"), connection.initializationFiles());
+                            assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
+                        } else
+                            assertTrue(databases.values().stream().allMatch(value -> value.bindings().isEmpty()));
                         assertEquals(git, gitReview.isPresent());
                         gitReview.ifPresent(value -> {
                             assertEquals(selectedSourceDirectory().toUri().toString(), value.remote());
@@ -290,6 +351,28 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 assertEquals(1, actions.stream().filter("upload"::equals).count());
                 assertEquals(1, actions.stream().filter("stage-secret-page-application"::equals).count(),
                         "The reviewed revision and protected bytes must reach the controlled stage command");
+                if (sqlite) {
+                    long revision = publication;
+                    var inspected = original.tasks().submit(new TaskRequest("sqlite-publication-inspect",
+                            "Inspect published SQLite", List.of(server.id()), false), task -> {
+                                var graph = new DeploymentGraphRepository(original.db())
+                                        .find(task, reviewedApplication.get()).orElseThrow();
+                                var component = graph.components().getFirst();
+                                var binding = component.resources().databaseBindings().orElseThrow().getFirst();
+                                assertEquals("main", binding.databaseId());
+                                var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                                assertEquals("seed.db", connection.seedFile());
+                                assertEquals(List.of("schema.sql"), connection.initializationFiles());
+                                var configuration = new DeploymentConfigurationRepository(original.db())
+                                        .find(task, reviewedApplication.get(), revision).orElseThrow();
+                                assertEquals(connection.physicalPath(reviewedApplication.get(), binding.databaseId()),
+                                        configuration.requireValue("DB_PATH", DeploymentConfigurationScopeType.RUNTIME)
+                                                .canonicalValue());
+                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                            });
+                    assertEquals(Outcome.SUCCEEDED,
+                            inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                }
                 var snapshots = configurationRows(runtime);
                 String owner = ownershipManifest(runtime);
                 assertEquals(publication, snapshots.size());
