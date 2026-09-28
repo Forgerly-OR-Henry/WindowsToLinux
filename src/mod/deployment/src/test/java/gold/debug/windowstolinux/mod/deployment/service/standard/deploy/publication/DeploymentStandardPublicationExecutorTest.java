@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -39,12 +40,16 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.Deployme
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.DeploymentReviewedReleaseIdentity;
 import gold.debug.windowstolinux.mod.deployment.source.*;
+import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 /** Executes the real original publication task, source handles, H2 and host review against a controlled peer. / 用受控对等端执行真实原发布任务、来源句柄、H2和宿主审核。 */
 class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture {
+    private static final Path GIT = Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
+            .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
+            .toAbsolutePath().normalize();
     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
     private enum ScenarioType {
         SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
@@ -131,12 +136,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
     /** Runs the new page workflow through actual source, reviewed plan and original publication under one task. / 在同一任务内通过真实来源、已审阅计划与原发布运行新页面流程。
      * @throws Exception if original source or publication fails / 原来源或发布失败时 */
-    @Test
-    void staticWorkflowPublishesOneOriginalTaskWithReviewedInputs() throws Exception {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void staticWorkflowPublishesOneOriginalTaskWithReviewedInputs(boolean git) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
         Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        if (git) {
+            git(selectedSourceDirectory(), "init", "-b", "main");
+            git(selectedSourceDirectory(), "config", "user.email", "test@example.invalid");
+            git(selectedSourceDirectory(), "config", "user.name", "Test");
+        }
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -151,8 +162,14 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             for (int publication = 1; publication <= 2; publication++) {
                 Files.writeString(selectedSourceDirectory().resolve("main.go"),
                         "package main\nfunc main() { /* publication " + publication + " */ }\n");
+                if (git) {
+                    git(selectedSourceDirectory(), "add", ".");
+                    git(selectedSourceDirectory(), "commit", "-m", "publication-" + publication);
+                }
+                final String commit = git ? git(selectedSourceDirectory(), "rev-parse", "HEAD") : null;
                 var actions = new CopyOnWriteArrayList<String>();
                 var sha = new AtomicReference<String>();
+                var manifestSha = new AtomicReference<String>();
                 var bytes = new AtomicLong();
                 var path = new AtomicReference<Path>();
                 var candidate = new AtomicReference<DeploymentRemoteWorkspace>();
@@ -169,6 +186,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         assertEquals(server, exact);
                         assertEquals(1, discovered.size());
                         observedTask.set(task.id());
+                        manifestSha.set(manifest);
                         return new OperationResult<>(Outcome.SUCCEEDED,
                                 Optional.of(new DeploymentStaticWorkflow.Selection(discovered.getFirst().id(),
                                         Map.of(discovered.getFirst().id(), new DeploymentStaticWorkflow.Choice(
@@ -198,15 +216,28 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     public OperationResult<Boolean> confirm(ServerRef exact, String manifest,
                             Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
-                            TaskContext task) {
+                            Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                         assertEquals(observedTask.get(), task.id());
+                        assertEquals(git, gitReview.isPresent());
+                        gitReview.ifPresent(value -> {
+                            assertEquals(selectedSourceDirectory().toUri().toString(), value.remote());
+                            assertEquals("DEFAULT:HEAD", value.reference());
+                            assertEquals(commit, value.commit());
+                        });
                         sha.set(archives.values().iterator().next());
                         candidate.set(new DeploymentRemoteWorkspace(reviewedApplication.get(), sha.get()));
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
                     }
                 };
-                var handle = workflow.submit(server, new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
-                        reviewer);
+                var gitInput = git
+                        ? Optional.of(new DeploymentStaticWorkflow.GitSource(
+                                new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
+                                        new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
+                                GIT))
+                        : Optional.<DeploymentStaticWorkflow.GitSource>empty();
+                var handle = workflow.submit(server,
+                        new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
+                        gitInput, reviewer);
                 assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> handle.snapshot().toString());
                 OperationResult<Void> result;
                 try {
@@ -221,6 +252,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 }
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(publication, countMod(runtime, "deployment_release"));
+                assertEquals(git ? publication : 0, countMod(runtime, "deployment_project"));
+                if (git)
+                    assertGitSourceSaved(runtime, selectedSourceDirectory().toUri().toString(), commit,
+                            manifestSha.get());
                 assertEquals(0,
                         scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(1, actions.stream().filter("publish"::equals).count());
@@ -239,6 +274,44 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     assertEquals(firstApplication, reviewedApplication.get(), "Managed application changed");
                 }
             }
+        }
+    }
+
+    /** Runs only fixture setup commands against the controlled local repository. / 仅对受控本地仓库运行夹具准备命令。
+     * @param directory original fixture repository / 原夹具仓库
+     * @param arguments fixed Git arguments / 固定 Git 参数
+     * @return bounded command output / 有界命令输出
+     * @throws Exception if native fixture preparation fails / 原生夹具准备失败时 */
+    private static String git(Path directory, String... arguments) throws Exception {
+        var words = new ArrayList<String>();
+        words.add(GIT.toString());
+        words.addAll(List.of(arguments));
+        var process = new ProcessBuilder(words).directory(directory.toFile()).redirectErrorStream(true).start();
+        process.getOutputStream().close();
+        var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        assertEquals(0, process.waitFor(), output);
+        return output;
+    }
+
+    /** Verifies actual saved source identity and formal execution linkage after task archival. / 在任务归档后核对实际来源身份及正式执行关联。
+     * @param runtime actual host / 真实宿主
+     * @param remote original credential-free URL / 原不含凭据 URL
+     * @param commit pinned commit / 固定提交
+     * @param manifest original frozen manifest digest / 原冻结清单摘要
+     * @throws Exception if actual Mod data cannot be read / 真实 Mod 数据无法读取时 */
+    private void assertGitSourceSaved(PlatformRuntime runtime, String remote, String commit, String manifest)
+            throws Exception {
+        try (var access = scope(runtime, true);
+                var connection = access.openConnection();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT p.source_location,p.git_ref,p.git_commit,p.source_sha256 "
+                        + "FROM deployment_execution e JOIN deployment_project p ON e.project_id=p.project_id "
+                        + "ORDER BY e.created_at DESC LIMIT 1")) {
+            assertTrue(rows.next(), "Formal execution must retain its reviewed source project");
+            assertEquals(remote, rows.getString(1));
+            assertEquals("DEFAULT:HEAD", rows.getString(2));
+            assertEquals(commit, rows.getString(3));
+            assertEquals(manifest, rows.getString(4));
         }
     }
 
@@ -635,11 +708,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return actual rows / 实际行数
      * @throws Exception if access fails / 访问失败时 */
     private long countMod(PlatformRuntime runtime, String table) throws Exception {
-        assertEquals("deployment_release", table);
+        assertTrue(Set.of("deployment_release", "deployment_project").contains(table));
         try (var access = scope(runtime, true);
                 var connection = access.openConnection();
                 var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
+                var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }

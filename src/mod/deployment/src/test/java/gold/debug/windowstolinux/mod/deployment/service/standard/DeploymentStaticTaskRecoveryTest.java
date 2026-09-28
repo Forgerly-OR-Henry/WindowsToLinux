@@ -2,23 +2,31 @@ package gold.debug.windowstolinux.mod.deployment.service.standard;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourcePreparer;
+import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 
 /** Checks only original no-effect preparation evidence and retained uncertainty. / 仅核对原无效果准备依据及保留的不确定性。 */
 class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
+    private static final Path GIT = java.util.Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
+            .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
+            .toAbsolutePath().normalize();
     @Override
     protected Path selectedSourceDirectory() {
         return root.resolve("input");
@@ -58,6 +66,62 @@ class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
+    }
+
+    /** Registered publication recovery settles the real Git worker before releasing its original frozen source. / 已登记发布恢复先核实真实 Git worker，再释放原冻结来源。
+     * @throws Exception if native Git, task or resource observation fails / 原生 Git、任务或资源观察失败时 */
+    @Test
+    void registeredRecoverySettlesOriginalGitWithoutFetchingAgain() throws Exception {
+        var repo = Files.createDirectory(root.resolve("repo"));
+        git(repo, "init", "-b", "main");
+        git(repo, "config", "user.email", "test@example.invalid");
+        git(repo, "config", "user.name", "Test");
+        Files.writeString(repo.resolve("go.mod"), "module example.test/recover\n\ngo 1.24\n");
+        Files.writeString(repo.resolve("main.go"), "package main\nfunc main() {}\n");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "first");
+        var request = new DeploymentGitRequest(new DeploymentGitRemote(repo.toUri()),
+                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var calls = new java.util.concurrent.atomic.AtomicInteger();
+            var handle = context.tasks().submit(
+                    new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Recover original pinned Git", List.of(), true),
+                    task -> {
+                        calls.incrementAndGet();
+                        DeploymentStaticPreparationJournal.begin(context.tasks(), task, new ServerRef("server"));
+                        var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
+                                "reviewed-git-project", 65536, 100, task);
+                        assertTrue(Files
+                                .isRegularFile(pinned.material().source().snapshot().directory().resolve("main.go")));
+                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_PREPARATION_INTERRUPTED",
+                                        "Git prepared before publication", java.util.Map.of(), Optional.empty())));
+                    });
+            for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
+                Thread.sleep(50);
+            assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+            Files.move(repo, root.resolve("remote-unavailable"));
+            var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+            assertEquals(TaskState.ENDED, recovered.state(), recovered.toString());
+            assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
+            assertEquals(1, calls.get());
+            assertEquals(0, scalar(runtime,
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+        }
+    }
+
+    private static String git(Path repo, String... arguments) throws Exception {
+        var command = new ArrayList<String>();
+        command.add(GIT.toString());
+        command.addAll(List.of(arguments));
+        var process = new ProcessBuilder(command).directory(repo.toFile()).redirectErrorStream(true).start();
+        process.getOutputStream().close();
+        var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        assertEquals(0, process.waitFor(), output);
+        return output;
     }
 
     /** Missing and damaged preparation evidence cannot authorize a known result; a cancelled original marker can close. / 缺失和损坏的准备依据不能授权已知结果；原已取消标记可收尾。

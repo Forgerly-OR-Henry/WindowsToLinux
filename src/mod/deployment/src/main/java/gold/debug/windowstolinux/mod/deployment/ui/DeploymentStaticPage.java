@@ -5,6 +5,7 @@ import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,6 +22,14 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 
 /** Owner-bound static deployment page; task callbacks remain with their original task after a confirmed view closes. / 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务。 */
 public final class DeploymentStaticPage implements ModPage {
+    /** Supported source form modes. / 支持的来源表单模式。 */
+    private enum SourceMode {
+        /** Original local directory chooser. / 原本地目录选择器。 */
+        LOCAL,
+        /** One pinned Git request. / 一项固定 Git 请求。 */
+        GIT
+    }
+
     /** Mod-owned task and read-only query service. / Mod 所属任务及只读查询服务。 */
     private final DeploymentStaticPageService service;
 
@@ -43,6 +52,12 @@ public final class DeploymentStaticPage implements ModPage {
     /** Reviewed logical source name. / 经审阅逻辑来源名。 */
     private final JTextField sourceName = new JTextField(24);
 
+    /** Explicit source mode and Git inputs. / 明确来源模式及 Git 输入。 */
+    private final JComboBox<SourceMode> sourceMode = new JComboBox<>(SourceMode.values());
+
+    /** Git-only input component created after the locale is known. / 语言确定后创建的仅 Git 输入组件。 */
+    private DeploymentGitSourceForm gitForm;
+
     /** Current and previously retained task observations. / 当前及之前保留的任务观察。 */
     private final JTextArea status = new JTextArea(10, 60);
 
@@ -51,6 +66,9 @@ public final class DeploymentStaticPage implements ModPage {
 
     /** Current server label and source label. / 当前服务器与来源标签。 */
     private final JLabel serverLabel = new JLabel(), sourceLabel = new JLabel();
+
+    /** Localized source mode label. / 本地化来源方式标签。 */
+    private final JLabel modeLabel = new JLabel();
 
     /** Reload action. / 重新读取操作。 */
     private final JButton refreshButton = new JButton();
@@ -102,7 +120,8 @@ public final class DeploymentStaticPage implements ModPage {
     public JComponent create(UiEnvironment environment) {
         requireEdt();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-                environment.locale());
+                environment.locale(),
+                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         locked = environment.locked();
         var controls = new JPanel(new GridLayout(0, 2, 8, 8));
         serverLabel.setText(text("server"));
@@ -111,6 +130,19 @@ public final class DeploymentStaticPage implements ModPage {
         sourceLabel.setText(text("sourceName"));
         controls.add(sourceLabel);
         controls.add(sourceName);
+        modeLabel.setText(text("sourceMode"));
+        controls.add(modeLabel);
+        controls.add(sourceMode);
+        gitForm = new DeploymentGitSourceForm(this);
+        sourceMode.setRenderer((list, value, index, selected, focus) -> {
+            var label = new JLabel(value == null ? "" : text("sourceMode." + value.name()));
+            label.setOpaque(true);
+            label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
+            label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
+            return label;
+        });
+        sourceMode.addActionListener(ignored -> updateSourceMode());
+        updateSourceMode();
         var buttons = new JPanel();
         start.setText(text("start"));
         start.addActionListener(ignored -> submit());
@@ -118,7 +150,11 @@ public final class DeploymentStaticPage implements ModPage {
         refreshButton.addActionListener(ignored -> refresh());
         buttons.add(start);
         buttons.add(refreshButton);
-        root.add(controls, BorderLayout.NORTH);
+        var sourceControls = new JPanel();
+        sourceControls.setLayout(new BoxLayout(sourceControls, BoxLayout.Y_AXIS));
+        sourceControls.add(controls);
+        sourceControls.add(gitForm.panel());
+        root.add(sourceControls, BorderLayout.NORTH);
         status.setEditable(false);
         root.add(new JScrollPane(status), BorderLayout.CENTER);
         root.add(buttons, BorderLayout.SOUTH);
@@ -135,9 +171,13 @@ public final class DeploymentStaticPage implements ModPage {
         requireEdt();
         locked = environment.locked();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-                environment.locale());
+                environment.locale(),
+                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         serverLabel.setText(text("server"));
-        sourceLabel.setText(text("sourceName"));
+        sourceLabel.setText(text(sourceMode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
+        modeLabel.setText(text("sourceMode"));
+        gitForm.localize();
+        sourceMode.repaint();
         refreshButton.setText(text("refresh"));
         start.setText(text("start"));
         start.setEnabled(!closed && !locked && !pendingReview && servers.getSelectedItem() != null);
@@ -196,6 +236,15 @@ public final class DeploymentStaticPage implements ModPage {
         }
     }
 
+    /** Keeps Git inputs visible only for the selected source mode. / 仅在选定 Git 来源模式显示可用 Git 输入。 */
+    private void updateSourceMode() {
+        boolean git = sourceMode.getSelectedItem() == SourceMode.GIT;
+        sourceLabel.setText(text(git ? "sourceNameGit" : "sourceName"));
+        if (gitForm != null)
+            gitForm.visible(git);
+        root.revalidate();
+    }
+
     /** Submits the selected server and source name through one original publication task. / 将选定服务器及来源名提交为一项原发布任务。 */
     private void submit() {
         requireEdt();
@@ -203,6 +252,16 @@ public final class DeploymentStaticPage implements ModPage {
             return;
         var server = ((ServerInfo) servers.getSelectedItem()).ref();
         var name = sourceName.getText().trim();
+        var mode = (SourceMode) sourceMode.getSelectedItem();
+        Optional<DeploymentStaticWorkflow.GitSource> git;
+        try {
+            if (mode == SourceMode.GIT && name.isBlank())
+                throw new IllegalArgumentException("Git project name is required");
+            git = mode == SourceMode.GIT ? Optional.of(gitForm.source()) : Optional.empty();
+        } catch (IllegalArgumentException invalid) {
+            status.setText(text("invalidGitInput"));
+            return;
+        }
         long view = generation.get();
         pendingReview = true;
         confirmed = false;
@@ -216,9 +275,11 @@ public final class DeploymentStaticPage implements ModPage {
                 }
                 boolean admitted = false;
                 try {
-                    var handle = service.submit(server, new DeploymentStaticWorkflow.Draft(name,
-                            2L * 1024 * 1024 * 1024, 100_000, 2L * 1024 * 1024 * 1024),
-                            new DeploymentStaticPageReviewer(this, view));
+                    var handle = service
+                            .submit(server,
+                                    new DeploymentStaticWorkflow.Draft(name, 2L * 1024 * 1024 * 1024, 100_000,
+                                            2L * 1024 * 1024 * 1024),
+                                    git, new DeploymentStaticPageReviewer(this, view));
                     admitted = true;
                     currentTask = handle;
                     if (closed || locked || generation.get() != view)
@@ -237,7 +298,8 @@ public final class DeploymentStaticPage implements ModPage {
                 } catch (Exception failure) {
                     SwingUtilities.invokeLater(() -> {
                         if (!closed && !locked && generation.get() == view)
-                            status.setText(text("submitError"));
+                            status.setText(text(
+                                    failure instanceof IllegalArgumentException ? "invalidGitInput" : "submitError"));
                     });
                 } finally {
                     if (!admitted) {

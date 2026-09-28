@@ -11,7 +11,9 @@ import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -29,8 +31,9 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.*;
 import gold.debug.windowstolinux.mod.deployment.source.*;
+import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitRequest;
 
-/** Coordinates one original local static review and publication task without minting a second source authorization. / 协调一项原本地静态审阅与发布任务，不另造来源授权。 */
+/** Coordinates one original local or Git static review and publication task without minting a second source authorization. / 协调一项本地或 Git 静态审阅与发布原任务，不另造来源授权。 */
 public final class DeploymentStaticWorkflow {
     /** Original task-bound capabilities. / 原任务绑定能力。 */
     private final ModContext context;
@@ -73,6 +76,26 @@ public final class DeploymentStaticWorkflow {
                     || archiveBytes < 1 || archiveBytes > 2L * 1024 * 1024 * 1024)
                 throw new IllegalArgumentException("Source budgets differ from the supported bounds");
         }
+    }
+
+    /** One reviewed source route; Git stays in the original publication task. / 一项经审阅来源路径；Git 保留在原发布任务。
+     * @param request credential-free Git selection / 不含凭据 Git 选择
+     * @param executable explicit native Git path / 明确原生 Git 路径 */
+    public record GitSource(DeploymentGitRequest request, Path executable) {
+        /** Requires exact input before task admission. / 任务准入前要求精确输入。
+         * @param request original request / 原请求
+         * @param executable original executable / 原可执行文件 */
+        public GitSource {
+            Objects.requireNonNull(request);
+            Objects.requireNonNull(executable);
+        }
+    }
+
+    /** Actual pinned identity shown at final consent. / 最终同意时展示的真实固定身份。
+     * @param remote original URL / 原 URL
+     * @param reference selected ref kind and value / 选定引用类型和值
+     * @param commit resolved immutable commit / 已解析不可变提交 */
+    public record GitReview(String remote, String reference, String commit) {
     }
 
     /** Reviewed choice for one discovered root. / 一个已发现根的审阅选择。
@@ -172,11 +195,12 @@ public final class DeploymentStaticWorkflow {
          * @param sourceSha256 manifest digest / 清单摘要
          * @param archiveSha256 component-to-tar digest / 组件至 tar 摘要
          * @param answers reviewed values / 经审阅值
+         * @param git original selected and resolved Git identity / 原选定及已解析 Git 身份
          * @param task original task / 原任务
          * @return explicit current-view confirmation or refusal / 当前视图明确确认或拒绝
          * @throws Exception if view observation fails / 视图观察失败时 */
         OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-                Map<String, Answers> answers, TaskContext task) throws Exception;
+                Map<String, Answers> answers, Optional<GitReview> git, TaskContext task) throws Exception;
     }
 
     /** Binds the existing task, analyzer, planner and publisher without owning their resources. / 绑定既有任务、分析、规划与发布能力但不取得资源所有权。
@@ -198,38 +222,66 @@ public final class DeploymentStaticWorkflow {
      * @return one original task / 一项原任务
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<Void> submit(ServerRef server, Draft draft, Reviewer reviewer) throws ApiException {
+        return submit(server, draft, Optional.empty(), reviewer);
+    }
+
+    /** Admits either local selection or one explicit Git source under the same publication task. / 在同一发布任务中准入本地选择或一项明确 Git 来源。
+     * @param server exact target / 精确目标
+     * @param draft frozen limits and name / 冻结限额与名称
+     * @param git optional original Git input / 可选原 Git 输入
+     * @param reviewer current owner view / 当前所属视图
+     * @return original publication task / 原发布任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public TaskHandle<Void> submit(ServerRef server, Draft draft, Optional<GitSource> git, Reviewer reviewer)
+            throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(draft);
+        Objects.requireNonNull(git);
         Objects.requireNonNull(reviewer);
-        return references.submitPrepared(server, task -> prepare(server, draft, reviewer, task));
+        if (git.isPresent() && draft.logicalRootName().isBlank())
+            throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_NAME_REQUIRED",
+                    "Git source requires an explicit project name", Map.of(), Optional.empty()));
+        return references.submitPrepared(server, task -> prepare(server, draft, git, reviewer, task));
     }
 
     /** Retains local evidence before original selection, then hands off only a complete reviewed publication. / 原选材前保留本机依据，且只交接完整审阅发布。
      * @param server original target / 原目标
      * @param draft immutable choices / 不可变选择
+     * @param git optional reviewed Git source / 可选的已审阅 Git 来源
      * @param reviewer original review / 原审阅
      * @param task original task / 原任务
      * @return actual prepared publication / 实际已准备发布
      * @throws Exception if original cleanup or checkpoint cannot be confirmed / 原清理或检查点无法确认时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepare(ServerRef server, Draft draft,
-            Reviewer reviewer, TaskContext task) throws Exception {
+            Optional<GitSource> git, Reviewer reviewer, TaskContext task) throws Exception {
         var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
         DeploymentSourceMaterial material = null;
+        DeploymentGitSourceFlow.PublicationSource pinned = null;
         var archives = new ArrayList<DeploymentSourceArchive>();
         boolean transferred = false;
+        boolean retainMarker = false;
         try {
             if (task.cancellation().requested()) {
                 marker.cancelled();
                 return cancelled();
             }
-            var selection = context.source().selectDirectory("Deployment source", task);
-            if (task.cancellation().requested()) {
-                marker.cancelled();
-                return cancelled();
+            String logicalName;
+            if (git.isPresent()) {
+                var source = git.orElseThrow();
+                pinned = new DeploymentGitSourceFlow(context).prepareForPublication(source.request(),
+                        source.executable(), draft.logicalRootName(), draft.sourceBytes(), draft.sourceEntries(), task);
+                material = pinned.material().source();
+                logicalName = draft.logicalRootName();
+            } else {
+                var selection = context.source().selectDirectory("Deployment source", task);
+                if (task.cancellation().requested()) {
+                    marker.cancelled();
+                    return cancelled();
+                }
+                material = new DeploymentSourcePreparer(context.source()).prepare(selection, draft.sourceBytes(),
+                        draft.sourceEntries(), task);
+                logicalName = draft.logicalRootName().isBlank() ? selection.displayName() : draft.logicalRootName();
             }
-            material = new DeploymentSourcePreparer(context.source()).prepare(selection, draft.sourceBytes(),
-                    draft.sourceEntries(), task);
-            String logicalName = draft.logicalRootName().isBlank() ? selection.displayName() : draft.logicalRootName();
             if (logicalName.isBlank())
                 return rejected("DEPLOYMENT_STATIC_SOURCE_NAME_UNAVAILABLE");
             var discovered = new ProjectComponentDiscovery().discover(material.snapshot().directory());
@@ -245,17 +297,21 @@ public final class DeploymentStaticWorkflow {
                 return rejected("DEPLOYMENT_STATIC_SELECTION_INVALID");
             OperationResult<DeploymentReferenceFlow.PreparedPublication> ready = discovered.size() == 1
                     ? prepareSingle(server, draft, logicalName, reviewer, task, material, discovered.getFirst(),
-                            choices, archives)
-                    : prepareGraph(server, draft, logicalName, reviewer, task, material, discovered, choices, archives);
+                            choices, archives, pinned)
+                    : prepareGraph(server, draft, logicalName, reviewer, task, material, discovered, choices, archives,
+                            pinned);
             if (ready.outcome() == Outcome.CANCELLED)
                 marker.cancelled();
             if (ready.outcome() != Outcome.SUCCEEDED)
                 return ready;
+            if (pinned != null)
+                pinned.close();
             marker.close();
             transferred = true;
             return ready;
         } catch (ApiException failure) {
             var code = failure.problem().code();
+            retainMarker = git.isPresent() && code == ProblemCode.UNKNOWN;
             var outcome = code == ProblemCode.CANCELLED
                     ? Outcome.CANCELLED
                     : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
@@ -269,38 +325,50 @@ public final class DeploymentStaticWorkflow {
         } catch (IllegalArgumentException invalid) {
             return rejected("DEPLOYMENT_STATIC_REVIEW_INVALID");
         } finally {
-            if (!transferred) {
-                Exception cleanup = null;
-                for (var archive : archives)
-                    try {
-                        archive.close();
-                    } catch (Exception failure) {
-                        if (cleanup == null)
-                            cleanup = failure;
-                        else
-                            cleanup.addSuppressed(failure);
-                    }
-                try {
-                    if (material != null)
-                        material.close();
-                } catch (Exception failure) {
-                    if (cleanup == null)
-                        cleanup = failure;
-                    else
-                        cleanup.addSuppressed(failure);
-                }
-                try {
-                    marker.close();
-                } catch (Exception failure) {
-                    if (cleanup == null)
-                        cleanup = failure;
-                    else
-                        cleanup.addSuppressed(failure);
-                }
-                if (cleanup != null)
-                    throw cleanup;
-            }
+            if (!transferred)
+                closePreparation(archives, material, pinned, marker, retainMarker);
         }
+    }
+
+    /** Releases owned preparation resources only after their actual prior cleanup is known. / 仅在先前清理确知后释放所属准备资源。
+     * @param archives child archives still owned here / 此处仍持有的组件归档
+     * @param material original frozen source still owned here / 此处仍持有的原冻结来源
+     * @param pinned optional original Git material and checkpoint / 可选的原 Git 素材及检查点
+     * @param marker original static preparation marker / 原静态准备标记
+     * @param retainMarker unresolved Git work still needs the original static recovery entry / 未决 Git 工作仍需原静态恢复入口
+     * @throws Exception if any original resource release is unconfirmed / 任一原资源释放未确认时 */
+    private static void closePreparation(List<DeploymentSourceArchive> archives, DeploymentSourceMaterial material,
+            DeploymentGitSourceFlow.PublicationSource pinned, DeploymentStaticPreparationJournal marker,
+            boolean retainMarker) throws Exception {
+        Exception cleanup = null;
+        for (var archive : archives)
+            try {
+                archive.close();
+            } catch (Exception failure) {
+                if (cleanup == null)
+                    cleanup = failure;
+                else
+                    cleanup.addSuppressed(failure);
+            }
+        try {
+            if (material != null)
+                material.close();
+            if (pinned != null)
+                pinned.close();
+        } catch (Exception failure) {
+            if (cleanup == null)
+                cleanup = failure;
+            else
+                cleanup.addSuppressed(failure);
+        }
+        if (cleanup == null && !retainMarker)
+            try {
+                marker.close();
+            } catch (Exception failure) {
+                cleanup = failure;
+            }
+        if (cleanup != null)
+            throw cleanup;
     }
 
     /** Completes one discovered project on its original frozen subtree. / 在原冻结子树完成一个已发现项目。
@@ -313,12 +381,13 @@ public final class DeploymentStaticWorkflow {
      * @param discovered discovered root / 已发现根
      * @param selection reviewed type / 经审阅类型
      * @param archives owned archives to release on failure / 失败时释放的所属归档
+     * @param pinned optional original Git material / 可选原 Git 素材
      * @return prepared original publication / 已准备原发布
      * @throws Exception if original review or storage fails / 原审阅或存储失败时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareSingle(ServerRef server, Draft draft,
             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
-            DiscoveredProjectComponent discovered, Selection selection, List<DeploymentSourceArchive> archives)
-            throws Exception {
+            DiscoveredProjectComponent discovered, Selection selection, List<DeploymentSourceArchive> archives,
+            DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
         String id = discovered.id();
         var type = selection.choices().get(id).type();
         var initial = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
@@ -351,7 +420,7 @@ public final class DeploymentStaticWorkflow {
                 draft.archiveBytes(), task);
         archives.add(archive);
         var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.of(id, archive.sha256()), supplied,
-                task);
+                gitReview(pinned), task);
         if (confirmed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(confirmed);
         if (!confirmed.value().orElse(false))
@@ -363,7 +432,8 @@ public final class DeploymentStaticWorkflow {
         var plan = planned.value().orElseThrow();
         var unit = units.resolve(task, facts.applicationId(), server);
         var credentials = credentials(task, plan.request().secretReferences());
-        return single.prepareWithinTask(task, unit, Optional.empty(), credentials,
+        Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
+        return single.prepareWithinTask(task, unit, project, credentials,
                 original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan), Optional.empty()));
     }
 
@@ -377,12 +447,13 @@ public final class DeploymentStaticWorkflow {
      * @param discovered original roots / 原发现根
      * @param selection reviewed graph / 经审阅整图
      * @param archives owned archives / 所属归档
+     * @param pinned optional original Git material / 可选原 Git 素材
      * @return prepared original publication / 已准备原发布
      * @throws Exception if review or storage fails / 审阅或存储失败时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareGraph(ServerRef server, Draft draft,
             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
-            List<DiscoveredProjectComponent> discovered, Selection selection, List<DeploymentSourceArchive> archives)
-            throws Exception {
+            List<DiscoveredProjectComponent> discovered, Selection selection, List<DeploymentSourceArchive> archives,
+            DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
         var prompts = new ArrayList<Prompt>();
         var facts = new HashMap<String, DeploymentProjectFacts>();
         for (var component : discovered) {
@@ -426,7 +497,8 @@ public final class DeploymentStaticWorkflow {
             byComponent.put(component.id(), archive);
             digests.put(component.id(), archive.sha256());
         }
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.copyOf(digests), supplied, task);
+        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.copyOf(digests), supplied,
+                gitReview(pinned), task);
         if (confirmed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(confirmed);
         if (!confirmed.value().orElse(false))
@@ -449,9 +521,21 @@ public final class DeploymentStaticWorkflow {
         var healthId = selection.healthComponent().orElseThrow();
         var healthPrompt = prompts.stream().filter(value -> value.componentId().equals(healthId)).findFirst()
                 .orElseThrow();
-        return multi.prepareWithinTask(task, server, Optional.empty(), owners, credentials, healthId,
+        Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
+        return multi.prepareWithinTask(task, server, project, owners, credentials, healthId,
                 runtime.health(completed(healthPrompt, supplied.get(healthId))),
                 original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plans), Optional.empty()));
+    }
+
+    /** Projects exact selected and resolved Git identity into final consent. / 将精确选定并解析的 Git 身份投影到最终同意。
+     * @param pinned original pinned source or null / 原固定来源或空值
+     * @return final consent identity / 最终同意身份 */
+    private static Optional<GitReview> gitReview(DeploymentGitSourceFlow.PublicationSource pinned) {
+        if (pinned == null)
+            return Optional.empty();
+        var material = pinned.material();
+        return Optional
+                .of(new GitReview(material.remote().location().toString(), pinned.reference(), material.commit()));
     }
 
     /** Checks exact frozen discovery choices before reading any component. / 读取组件前核对精确冻结发现选择。

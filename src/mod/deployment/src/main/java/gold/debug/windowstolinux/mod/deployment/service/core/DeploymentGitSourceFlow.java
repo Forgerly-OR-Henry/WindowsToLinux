@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -27,6 +28,152 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
     public DeploymentGitSourceFlow(ModContext context) {
         this.context = Objects.requireNonNull(context);
         this.projects = new DeploymentProjectRepository(context.db());
+    }
+
+    /** Keeps one pinned Git source and its actual source-project write in the publication task. / 在发布原任务中保留一份固定 Git 来源及其真实项目写入。 */
+    public static final class PublicationSource implements AutoCloseable {
+        /** Original business owner. / 原业务所有者。 */
+        private final DeploymentGitSourceFlow owner;
+
+        /** Source and root archive owned until handoff or preparation cleanup. / 持有至交接或准备清理的来源及根归档。 */
+        private final DeploymentGitMaterial material;
+
+        /** Exact original durable Git operation. / 精确原持久 Git 操作。 */
+        private final DeploymentGitSourceJournal journal;
+
+        /** Original authorized task. / 原授权任务。 */
+        private final TaskContext task;
+
+        /** Prevents a second business write. / 阻止第二次业务写入。 */
+        private boolean saved;
+
+        /** Binds the one returned physical result. / 绑定唯一返回的物理结果。
+         * @param owner original flow / 原流程
+         * @param material original Git material / 原 Git 素材
+         * @param journal original journal / 原日志
+         * @param task original task / 原任务 */
+        private PublicationSource(DeploymentGitSourceFlow owner, DeploymentGitMaterial material,
+                DeploymentGitSourceJournal journal, TaskContext task) {
+            this.owner = owner;
+            this.material = material;
+            this.journal = journal;
+            this.task = task;
+        }
+
+        /** Returns the same original frozen source used by component archives. / 返回组件归档共用的同一原冻结来源。
+         * @return frozen source / 冻结来源 */
+        public DeploymentGitMaterial material() {
+            return material;
+        }
+
+        /** Returns the original branch, tag, commit or default-branch choice. / 返回原分支、标签、提交或默认分支选择。
+         * @return exact typed reference text / 精确类型化引用文本 */
+        public String reference() {
+            return DeploymentGitSourceFlow.reference(journal.facts().request().reference());
+        }
+
+        /** Saves the reviewed source after final consent and before formal publication. / 最终同意后、正式发布前保存经审阅来源。
+         * @return exact persistent source project / 精确持久来源项目
+         * @throws ApiException if task or durability is unconfirmed / 任务或持久性未确认时
+         * @throws SQLException if the original project write fails / 原项目写入失败时 */
+        public DeploymentProjectRecord save() throws ApiException, SQLException {
+            if (saved)
+                throw new IllegalStateException("Original Git source was already saved");
+            var facts = journal.facts();
+            var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT, material.remote().location(),
+                    Optional.of(DeploymentGitSourceFlow.reference(facts.request().reference())),
+                    Optional.of(material.commit()), material.source().snapshot().sha256());
+            var row = new DeploymentProjectRecord(facts.project(), facts.displayName(), source, facts.observedAt(),
+                    facts.observedAt());
+            journal.propose(row);
+            journal.writeStarted();
+            try {
+                owner.projects.create(task, row);
+            } catch (SQLException knownRollback) {
+                journal.knownFailure(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PROJECT_SAVE_FAILED"));
+                throw knownRollback;
+            }
+            journal.saved();
+            saved = true;
+            return row;
+        }
+
+        /** Releases the otherwise unused root archive and the settled Git checkpoint; the publisher owns the source. / 释放未用于组件构建的根归档及已确定 Git 检查点；来源由发布器持有。
+         * @throws ApiException if either original release is uncertain / 任一原释放未知时 */
+        @Override
+        public void close() throws ApiException {
+            material.archive().close();
+            var phase = journal.refresh().phase();
+            if (phase == DeploymentGitSourceJournal.Phase.WRITE_STARTED) {
+                try {
+                    if (owner.business(task, journal).outcome() == Outcome.UNKNOWN)
+                        throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_PROJECT_SAVE_UNKNOWN"));
+                } catch (SQLException unknownSave) {
+                    throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_PROJECT_SAVE_UNKNOWN"));
+                }
+            }
+            if (journal.facts().phase() != DeploymentGitSourceJournal.Phase.REQUESTED)
+                journal.close();
+        }
+    }
+
+    /** Pins Git inside an already admitted publication task without submitting a second task. / 在已准入发布任务内固定 Git，不提交第二任务。
+     * @param request reviewed credential-free source / 经审阅不含凭据来源
+     * @param executable explicit native Git executable / 明确原生 Git 可执行文件
+     * @param name reviewed logical project name / 经审阅逻辑项目名
+     * @param maximumBytes source byte budget / 来源字节预算
+     * @param maximumEntries source entry budget / 来源条目预算
+     * @param task original publication task / 原发布任务
+     * @return live pinned source and original save boundary / 开放的固定来源与原保存边界
+     * @throws ApiException if input, physical work or cleanup cannot be confirmed / 输入、物理工作或清理未确认时 */
+    public PublicationSource prepareForPublication(DeploymentGitRequest request, Path executable, String name,
+            long maximumBytes, int maximumEntries, TaskContext task) throws ApiException {
+        Objects.requireNonNull(request);
+        Objects.requireNonNull(executable);
+        if (!executable.isAbsolute() || !java.nio.file.Files.isRegularFile(executable) || name == null
+                || name.isBlank())
+            throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
+        var when = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        var project = UUID.randomUUID();
+        try {
+            DeploymentGitSourceJournal.validateInput(project, name, Optional.empty(), when, request, maximumBytes,
+                    maximumEntries);
+        } catch (IllegalArgumentException invalid) {
+            throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
+        }
+        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, project, name, Optional.empty(), when,
+                request, maximumBytes, maximumEntries);
+        var preparer = new DeploymentGitPreparer(context, executable);
+        try {
+            return new PublicationSource(this, preparer.prepare(request, maximumBytes, maximumEntries, task, journal),
+                    journal, task);
+        } catch (ApiException failure) {
+            OperationResult<Void> settled;
+            try {
+                settled = settle(task, journal, preparer, false);
+            } catch (Exception unsettled) {
+                throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RESULT_UNCONFIRMED"));
+            }
+            if (settled.outcome() == Outcome.UNKNOWN)
+                throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RESULT_UNCONFIRMED"));
+            if (failure.problem().code() == ProblemCode.UNKNOWN && settled.problem().isPresent())
+                throw new ApiException(settled.problem().orElseThrow());
+            throw failure;
+        }
+    }
+
+    /** Settles only original Git preparation facts before static publication recovery may release source. / 静态发布恢复释放来源前仅核对原 Git 准备依据。
+     * @param task original publication recovery task / 原发布恢复任务
+     * @return absent for a local source, otherwise the original Git outcome / 本地来源为空；否则保留原 Git 结果 */
+    public Optional<Outcome> reconcilePreparation(TaskContext task) {
+        try {
+            var journal = DeploymentGitSourceJournal.find(context.tasks(), task);
+            if (journal.isEmpty())
+                return Optional.empty();
+            return Optional.of(settle(task, journal.orElseThrow(), null, false).outcome());
+        } catch (Exception | LinkageError | AssertionError uncertain) {
+            return Optional.of(Outcome.UNKNOWN);
+        }
     }
 
     /** Submits one real original task; no user-source grant or Git executable is needed for recovery. / 提交一个真实原任务；恢复不需要用户源码授权或 Git 可执行文件。
@@ -151,6 +298,19 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @throws SQLException if project observation fails / 项目观察失败时 */
     private OperationResult<Void> settle(TaskContext task, DeploymentGitSourceJournal journal,
             DeploymentGitPreparer preparer) throws ApiException, SQLException {
+        return settle(task, journal, preparer, true);
+    }
+
+    /** Settles the same Git facts while leaving other publication checkpoints to their owner. / 核对相同 Git 依据，其他发布检查点留给其所有者。
+     * @param task original context / 原上下文
+     * @param journal original checkpoint / 原检查点
+     * @param preparer current-boot attempt or null / 当前启动尝试或空值
+     * @param wholeTask whether this is the standalone Git task / 是否独立 Git 整任务
+     * @return known Git result or retained uncertainty / 已知 Git 结果或保留未知
+     * @throws ApiException if original evidence or cleanup is unavailable / 原依据或清理不可用时
+     * @throws SQLException if exact project observation fails / 精确项目观察失败时 */
+    private OperationResult<Void> settle(TaskContext task, DeploymentGitSourceJournal journal,
+            DeploymentGitPreparer preparer, boolean wholeTask) throws ApiException, SQLException {
         if (preparer != null)
             preparer.closeTaskResources(task);
         var facts = journal.refresh();
@@ -175,7 +335,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             return result;
         context.source().closeTaskResources(task);
         journal.close();
-        if (!context.tasks().resourcesReleased(task))
+        if (wholeTask && !context.tasks().resourcesReleased(task))
             return unknown();
         return result;
     }
