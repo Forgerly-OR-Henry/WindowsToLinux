@@ -2,6 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.linux;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -67,7 +68,7 @@ class DeploymentManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = DeploymentManagedHelperBundle.renderScript();
 
-        assertEquals(10, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(11, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
@@ -240,6 +241,115 @@ class DeploymentManagedHelperBundleTest {
                 assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
             }
         }
+    }
+
+    /** Executes the protocol-eleven status verb against exact task evidence and systemd observations. / 对精确任务依据和systemd观测真实执行第十一版状态命令。 */
+    @Test
+    void publicationObservationReportsFirstDeploymentAndChecksSystemdPresence() throws Exception {
+        String prefix = "/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/";
+        String foundation;
+        String observation;
+        try (var input = java.util.Objects.requireNonNull(
+                DeploymentManagedHelperBundle.class.getResourceAsStream(prefix + "00-protocol-foundation.sh"))) {
+            foundation = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        try (var input = java.util.Objects.requireNonNull(DeploymentManagedHelperBundle.class
+                .getResourceAsStream(prefix + "release/53-publication-observation.sh"))) {
+            observation = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        String setup = "\nbase_root='" + temporaryDirectory.toString().replace('\\', '/')
+                + "/controlled'\napplications_root=\"$base_root/apps\"\nwork_root=\"$base_root/work\"\n"
+                + "snapshots_root=\"$base_root/snapshots\"\n" + "unit_path() { printf '%s/unit' \"$base_root\"; }\n"
+                + "podman_quadlet_path() { printf '%s/quadlet' \"$base_root\"; }\n"
+                + "build_unit_name() { printf 'windowstolinux-build-%s.service' \"$1\"; }\n"
+                + "assert_root_owned_directory() { test -d \"$1\"; }\n"
+                + "assert_root_owned_regular() { test -f \"$1\" && test ! -L \"$1\"; }\n";
+        String call = "publication_original_status demo " + "b".repeat(64)
+                + " 11111111-1111-4111-8111-111111111111 demo-" + "a".repeat(16) + " none native none\n";
+        String inactive = "systemctl() { case \"$*\" in *LoadState*) printf 'not-found\\n';; *ActiveState*) printf 'inactive\\n';; *) printf 'inactive\\n';; esac; }\n";
+        var first = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertEquals(0, first.exit(), first.output());
+        assertTrue(first.output().startsWith(
+                "PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\n" + "CURRENT_MODE=none\nSNAPSHOT=none\n"),
+                first.output());
+        assertTrue(first.output().contains("BUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\n"),
+                first.output());
+        String loaded = "systemctl() { case \"$*\" in *LoadState*) printf 'loaded\\n';; *ActiveState*) printf 'active\\n';; *) printf 'inactive\\n';; esac; }\n";
+        var active = publicationScript(foundation + setup + loaded + observation + "\n" + call);
+        assertEquals(0, active.exit(), active.output());
+        assertTrue(active.output().contains("UNIT_PRESENT=yes\n"), active.output());
+        String unavailable = "systemctl() { case \"$*\" in *LoadState*) return 1;; *) printf 'inactive\\n';; esac; }\n";
+        var failed = publicationScript(foundation + setup + unavailable + observation + "\n" + call);
+        assertNotEquals(0, failed.exit(), failed.output());
+        assertTrue(failed.output().contains("publication-unit-load-query"), failed.output());
+
+        var old = temporaryDirectory.resolve("controlled/apps/demo/releases").resolve("d".repeat(64));
+        java.nio.file.Files.createDirectories(old);
+        java.nio.file.Files.writeString(old.resolve(".windowstolinux-owner"), "b".repeat(64));
+        var snapshot = temporaryDirectory.resolve("controlled/snapshots/demo-11111111-1111-4111-8111-111111111111");
+        java.nio.file.Files.createDirectories(snapshot);
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-task"), "11111111-1111-4111-8111-111111111111");
+        java.nio.file.Files.writeString(snapshot.resolve("current-path"), old.toString().replace('\\', '/'));
+        java.nio.file.Files.writeString(snapshot.resolve("runtime"), "inactive");
+        java.nio.file.Files.writeString(snapshot.resolve("kind"), "deployment");
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-old-owner"), "b".repeat(64));
+        var original = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertEquals(0, original.exit(), original.output());
+        assertTrue(
+                original.output().contains(
+                        "SNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD=" + "d".repeat(64) + "\n"),
+                original.output());
+        java.nio.file.Files.delete(snapshot.resolve(".deployment-old-owner"));
+        var missingOwner = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertNotEquals(0, missingOwner.exit(), missingOwner.output());
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-old-owner"), "b".repeat(64));
+        java.nio.file.Files.delete(old.resolve(".windowstolinux-owner"));
+        java.nio.file.Files.delete(old);
+        var retained = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertEquals(0, retained.exit(), retained.output());
+        assertTrue(retained.output().contains("SNAPSHOT_OLD=" + "d".repeat(64) + "\n"), retained.output());
+        var discard = publicationScript(foundation + setup + inactive + observation
+                + "\napplication_maintenance() { :; }\n" + "discard_original_snapshot demo " + "b".repeat(64)
+                + " 11111111-1111-4111-8111-111111111111\n");
+        assertNotEquals(0, discard.exit(), discard.output());
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-old-owner"), "c".repeat(64));
+        var wrongOwner = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertNotEquals(0, wrongOwner.exit(), wrongOwner.output());
+        assertTrue(wrongOwner.output().contains("publication-snapshot-owner"), wrongOwner.output());
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-old-owner"), "b".repeat(64));
+        java.nio.file.Files.writeString(snapshot.resolve(".deployment-task"), "22222222-2222-4222-8222-222222222222");
+        var foreign = publicationScript(foundation + setup + inactive + observation + "\n" + call);
+        assertNotEquals(0, foreign.exit(), foreign.output());
+        assertTrue(foreign.output().contains("publication-snapshot-foreign"), foreign.output());
+    }
+
+    /** Runs one actual bundled Bash function without allowing a test process to outlive the assertion. / 实际运行一项打包Bash函数，不让测试进程越过断言。
+     * @param script complete local fixture / 完整本机夹具
+     * @return process exit and complete output / 进程退出码与完整输出
+     * @throws Exception if the local interpreter cannot start / 本机解释器无法启动时 */
+    private static PublicationScriptResult publicationScript(String script) throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
+        var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write(script.getBytes(StandardCharsets.UTF_8));
+            }
+            assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
+            return new PublicationScriptResult(process.exitValue(),
+                    new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    /** Complete local Bash observation. / 完整本机Bash观测。
+     * @param exit actual process exit / 实际进程退出
+     * @param output complete output / 完整输出 */
+    private record PublicationScriptResult(int exit, String output) {
     }
 
 }

@@ -37,9 +37,10 @@ public final class DeploymentExecutionRepository {
         requireTask(task, identity);
         Objects.requireNonNull(reviewedProject);
         var request = DeploymentExecutionCodec.request(identity, operationType, references, reviewedProject);
-        var initial = new DeploymentExecutionRecord(identity, "PREPARED", Optional.empty(), request,
-                DeploymentExecutionCodec.recovery(identity, "PREPARED", Map.of()), Optional.empty(), false, false,
-                millis(createdAt), millis(createdAt));
+        var initial = new DeploymentExecutionRecord(
+                identity, "PREPARED", Optional.empty(), request, DeploymentExecutionCodec.recovery(identity,
+                        DeploymentExecutionCodec.requestVersion(request), "PREPARED", Map.of()),
+                Optional.empty(), false, false, millis(createdAt), millis(createdAt));
         DeploymentExecutionCodec.known(initial);
         var connection = connection(task);
         DeploymentDataTransaction.execute(connection, () -> {
@@ -111,6 +112,50 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if the format or facts are unsupported / 格式或事实不受支持时 */
     public Optional<DeploymentProjectRecord> reviewedProject(DeploymentExecutionRecord record) throws SQLException {
         return DeploymentExecutionCodec.project(Objects.requireNonNull(record));
+    }
+
+    /** Reads a complete pre-publish business proposal only when the original execution saved one. / 仅在原执行已保存时读取完整发布前业务提案。
+     * @param record original retained execution / 原留存执行
+     * @return original proposal or explicit absence / 原提案或明确缺失
+     * @throws SQLException if retained evidence is invalid / 留存依据无效时 */
+    public Optional<DeploymentPublicationProposal> publicationTemplate(DeploymentExecutionRecord record)
+            throws SQLException {
+        return DeploymentExecutionCodec.publicationTemplate(Objects.requireNonNull(record));
+    }
+
+    /** Persists the exact non-secret business proposal before any publish dispatch. / 在任何发布发送前持久化精确非秘密业务提案。
+     * @param task original admitted task / 原准入任务
+     * @param executionId original execution / 原执行
+     * @param publication complete original proposal / 完整原提案
+     * @param observedAt durable boundary time / 持久边界时间
+     * @throws SQLException if original facts conflict or SQL fails / 原事实冲突或SQL失败时
+     * @throws ApiException if original task access or durability is unavailable / 原任务访问或持久性不可用时 */
+    public void recordPublicationTemplate(TaskContext task, UUID executionId, DeploymentPublicationProposal publication,
+            Instant observedAt) throws SQLException, ApiException {
+        Objects.requireNonNull(publication);
+        mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
+            if (!record.phase().equals("EXECUTING") || record.outcome().isPresent()
+                    || !record.identity().applicationId().equals(publication.graph().applicationId())
+                    || publication.graph().components().stream()
+                            .anyMatch(component -> !component.unit().server().equals(record.identity().server())))
+                throw new SQLException("Publication proposal differs from original executing task");
+            String request = DeploymentExecutionCodec.withPublicationTemplate(record, publication);
+            if (request.equals(record.requestJson()))
+                return;
+            var next = new DeploymentExecutionRecord(record.identity(), record.phase(), record.outcome(), request,
+                    record.recoveryJson(), record.resultJson(), record.businessCommitted(), record.cleanupComplete(),
+                    record.createdAt(), millis(observedAt));
+            if (!DeploymentExecutionCodec.known(next).intents().equals(checkpoint.intents()))
+                throw new SQLException("Publication proposal changed original references");
+            try (var statement = connection.prepareStatement(
+                    "UPDATE deployment_execution SET request_payload=?,updated_at=? WHERE execution_id=?")) {
+                statement.setBytes(1, bytes(request));
+                statement.setLong(2, next.updatedAt().toEpochMilli());
+                statement.setObject(3, executionId);
+                if (statement.executeUpdate() != 1)
+                    throw new SQLException("Original publication proposal was not confirmed");
+            }
+        });
     }
 
     /** Returns supported exact associations with any already observed reservation UUID. / 返回受支持的精确关联及已观察预留UUID。
@@ -193,8 +238,9 @@ public final class DeploymentExecutionRepository {
             DeploymentPublicationRepository.save(connection, graph, records, observedAt);
             var release = DeploymentReleaseRepository.activate(connection, record.identity(),
                     DeploymentReleaseSnapshot.capture(graph, records), observedAt);
-            var result = DeploymentExecutionCodec.result(record.identity(), Outcome.SUCCEEDED, Optional.empty(),
-                    "DEPLOYMENT_PUBLICATION_COMMITTED", records, Optional.of(release));
+            var result = DeploymentExecutionCodec.result(record.identity(), DeploymentExecutionCodec.version(record),
+                    Outcome.SUCCEEDED, Optional.empty(), "DEPLOYMENT_PUBLICATION_COMMITTED", records,
+                    Optional.of(release));
             update(connection, record, checkpoint, checkpoint.ids(), "COMMITTED", Optional.of(Outcome.SUCCEEDED),
                     Optional.of(result), true, false, observedAt);
         });
@@ -242,8 +288,8 @@ public final class DeploymentExecutionRepository {
             if (record.businessCommitted() || record.cleanupComplete()
                     || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
                 throw new SQLException("Known business outcome is immutable");
-            var result = DeploymentExecutionCodec.result(record.identity(), outcome, Optional.of(problem.code()),
-                    problem.eventCode(), List.of(), Optional.empty());
+            var result = DeploymentExecutionCodec.result(record.identity(), DeploymentExecutionCodec.version(record),
+                    outcome, Optional.of(problem.code()), problem.eventCode(), List.of(), Optional.empty());
             update(connection, record, checkpoint, checkpoint.ids(), record.phase(), Optional.of(outcome),
                     Optional.of(result), false, false, observedAt);
         });
@@ -312,7 +358,8 @@ public final class DeploymentExecutionRepository {
             DeploymentExecutionCodec.Checkpoint checkpoint, Map<Integer, UUID> ids, String phase,
             Optional<Outcome> outcome, Optional<String> result, boolean committed, boolean cleaned, Instant time)
             throws SQLException {
-        var recovery = DeploymentExecutionCodec.recovery(record.identity(), phase, ids);
+        var recovery = DeploymentExecutionCodec.recovery(record.identity(), DeploymentExecutionCodec.version(record),
+                phase, ids);
         var next = new DeploymentExecutionRecord(record.identity(), phase, outcome, record.requestJson(), recovery,
                 result, committed, cleaned, record.createdAt(), millis(time));
         if (!DeploymentExecutionCodec.known(next).intents().equals(checkpoint.intents()))
@@ -364,7 +411,8 @@ public final class DeploymentExecutionRepository {
             byte[] result = DeploymentPayloadReader.read(row, "result_payload");
             var record = new DeploymentExecutionRecord(identity, row.getString("phase"),
                     Optional.ofNullable(row.getString("outcome")).map(Outcome::valueOf),
-                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "request_payload")),
+                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "request_payload",
+                            DeploymentExecutionCodec.REQUEST_LIMIT), DeploymentExecutionCodec.REQUEST_LIMIT),
                     DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "recovery_payload")),
                     result == null ? Optional.empty() : Optional.of(DeploymentJsonDocument.text(result)),
                     row.getBoolean("business_committed"), row.getBoolean("cleanup_complete"),

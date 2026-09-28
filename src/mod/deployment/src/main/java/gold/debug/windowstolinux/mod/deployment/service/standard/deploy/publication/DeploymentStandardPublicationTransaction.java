@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -12,6 +13,8 @@ import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationProposal;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentUnitCommit;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
@@ -88,6 +91,8 @@ public final class DeploymentStandardPublicationTransaction {
                 return uncertain(stage, "DEPLOYMENT_SECRET_STAGE_UNCONFIRMED");
             digests.put(revision, stage.value().orElseThrow());
         }
+        if (!journal.mark("SNAPSHOT_MAY_HAVE_RUN"))
+            return unknown("DEPLOYMENT_SNAPSHOT_BOUNDARY_UNCONFIRMED");
         var saved = channel.snapshot(unit, request.runtime());
         if (saved.outcome() != Outcome.SUCCEEDED)
             return uncertain(saved, "DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
@@ -96,6 +101,25 @@ public final class DeploymentStandardPublicationTransaction {
             return unknown("DEPLOYMENT_SNAPSHOT_EVIDENCE_UNCONFIRMED");
         String releaseSha256 = DeploymentReviewedReleaseIdentity.bind(DeploymentReviewedReleaseIdentity.from(request),
                 build.toolchains());
+        var runtime = new DeploymentUnitRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(),
+                request.runtime().identityPolicy(), request.runtime().workload());
+        var component = new DeploymentApplicationGraph.Component(unit.id(), unit, runtime, List.of(), request.runtime(),
+                request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
+                request.resources());
+        var graph = new DeploymentApplicationGraph(unit.id(), unit.id(), request.runtime().healthCheck(),
+                List.of(component));
+        var commit = new DeploymentUnitCommit(unit, runtime,
+                new DeploymentCurrentRelease(unit.id(), releaseSha256, Instant.now()), request.configuration(),
+                request.secretReferences());
+        var proposed = new DeploymentPublication(graph, List.of(commit));
+        try {
+            var execution = new DeploymentExecutionRepository(context.db()).findForTask(task).orElseThrow();
+            new DeploymentExecutionRepository(context.db()).recordPublicationTemplate(task,
+                    execution.identity().executionId(), new DeploymentPublicationProposal(graph, List.of(commit)),
+                    Instant.now());
+        } catch (SQLException | ApiException | java.util.NoSuchElementException unconfirmed) {
+            return unknown("DEPLOYMENT_PUBLICATION_TEMPLATE_UNCONFIRMED");
+        }
         if (cancelled(task))
             return unknown("DEPLOYMENT_SNAPSHOT_RETAINED_AFTER_CANCEL");
         if (!journal.publishing(releaseSha256))
@@ -127,19 +151,10 @@ public final class DeploymentStandardPublicationTransaction {
         if (state != expected)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
                     journal, failed("DEPLOYMENT_RUNTIME_UNHEALTHY"));
-        var runtime = new DeploymentUnitRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(),
-                request.runtime().identityPolicy(), request.runtime().workload());
-        var component = new DeploymentApplicationGraph.Component(unit.id(), unit, runtime, List.of(), request.runtime(),
-                request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
-                request.resources());
-        var graph = new DeploymentApplicationGraph(unit.id(), unit.id(), request.runtime().healthCheck(),
-                List.of(component));
-        var commit = new DeploymentUnitCommit(unit, runtime,
-                new DeploymentCurrentRelease(unit.id(), releaseSha256, Instant.now()), request.configuration(),
-                request.secretReferences());
+        if (!journal.verifiedBusiness(Outcome.SUCCEEDED, Optional.empty()))
+            return unknown("DEPLOYMENT_VERIFIED_PUBLICATION_UNCONFIRMED");
         finishKnown(channel, unit, build.candidateId(), releaseSha256, true, journal);
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new DeploymentPublication(graph, List.of(commit))),
-                Optional.empty());
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(proposed), Optional.empty());
     }
 
     /** Recovers only after an explicitly known publication or health failure. / 仅在明确已知发布或健康失败后恢复。
@@ -160,7 +175,9 @@ public final class DeploymentStandardPublicationTransaction {
             DeploymentPublicationCleanupJournal journal, OperationResult<?> failure) throws ApiException {
         if (cancelled(task))
             return unknown("DEPLOYMENT_ROLLBACK_BLOCKED_BY_CANCEL");
-        if (!journal.mark("ROLLBACK_MAY_HAVE_RUN"))
+        var originalFailure = failure.problem().orElseGet(() -> new Problem(ProblemCode.IO_FAILURE,
+                "DEPLOYMENT_KNOWN_FAILURE", "Reviewed release failed", Map.of(), Optional.empty()));
+        if (!journal.rollbackStarting(originalFailure))
             return unknown("DEPLOYMENT_ROLLBACK_EVIDENCE_UNCONFIRMED");
         var restored = channel.rollback(unit, releaseSha256, snapshot, runtime);
         if (restored.outcome() != Outcome.SUCCEEDED)
@@ -174,11 +191,11 @@ public final class DeploymentStandardPublicationTransaction {
                     || state == DeploymentRemoteRuntimeObservation.StateType.ERROR)
                 return unknown("DEPLOYMENT_RESTORED_STATE_CHANGED");
         }
-        journal.mark("ROLLBACK_VERIFIED");
+        if (!journal.mark("ROLLBACK_VERIFIED")
+                || !journal.verifiedBusiness(Outcome.FAILED, Optional.of(originalFailure)))
+            return unknown("DEPLOYMENT_VERIFIED_ROLLBACK_UNCONFIRMED");
         finishKnown(channel, unit, candidateId, releaseSha256, false, journal);
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                failure.problem().or(() -> Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_KNOWN_FAILURE",
-                        "Reviewed release failed", Map.of(), Optional.empty()))));
+        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(originalFailure));
     }
 
     /** Completes only verified business outcomes; an unconfirmed cleanup remains occupied for original recovery. / 仅收尾已核实业务结果；未确认清理仍占用以待原任务恢复。

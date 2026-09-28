@@ -5,7 +5,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 helper_path=/usr/local/lib/windowstolinux/managed-helper
 helper_directory=/usr/local/lib/windowstolinux
-helper_protocol=10
+helper_protocol=11
 base_root=/var/lib/windowstolinux
 applications_root=/opt/windowstolinux/apps
 work_root="$base_root/work"

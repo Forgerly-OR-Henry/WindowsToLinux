@@ -20,7 +20,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
-    public static final int PROTOCOL_VERSION = 10;
+    public static final int PROTOCOL_VERSION = 11;
 
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "7e8ea768f8cadb4e023fa8f50279b772d0b047ff0820dab1a66ac7bb31d5257f";
+    public static final String EXPECTED_SHA256 = "3990952a717b419d09ca054e4f9410ef6b4a63fdaef16bb42738a23faed149e5";
 
     /**
      * ROOT.
@@ -89,6 +89,7 @@ public final class DeploymentManagedHelperBundle {
             "execution/protocol/helper/fragments/runtime/45-application-container-contract.sh",
             "execution/protocol/helper/fragments/release/50-container-release.sh",
             "execution/protocol/helper/fragments/release/52-container-recovery.sh",
+            "execution/protocol/helper/fragments/release/53-publication-observation.sh",
             "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
             "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
             "execution/protocol/helper/fragments/restore/57-application-restore.sh",

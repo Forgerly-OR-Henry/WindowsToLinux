@@ -83,6 +83,8 @@ case "$verb" in
     restore-start-formal) restore_start_formal "$@" ;;
     restore-recover) restore_recover_component "$@" ;;
     snapshot-deployment) snapshot_deployment "$@" ;;
+    publication-original-status) publication_original_status "$@" ;;
+    snapshot-discard-task) discard_original_snapshot "$@" ;;
     publish-deployment) publish_deployment "$@" ;;
     prepare-toolchains)
         case "${1:-}" in prepare | bind | verify) prepare_official_toolchains "$@" ;; *) reject toolchain-verb ;; esac

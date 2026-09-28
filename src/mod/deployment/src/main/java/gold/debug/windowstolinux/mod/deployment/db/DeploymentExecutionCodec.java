@@ -17,6 +17,12 @@ final class DeploymentExecutionCodec {
     /** Current journal version freezes the reviewed project's complete source revision. / 当前账本版本冻结已审阅项目的完整来源修订。 */
     static final int VERSION = 4;
 
+    /** Publication request version adds one full non-secret original business template. / 发布请求版本增加完整非秘密原业务模板。 */
+    static final int PUBLICATION_VERSION = 5;
+
+    /** A complete bounded publication template plus original references and request framing. / 完整有界发布模板加原引用与请求信封。 */
+    static final int REQUEST_LIMIT = 40 * 1_048_576;
+
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
     }
@@ -32,7 +38,10 @@ final class DeploymentExecutionCodec {
             List<DeploymentReferenceIntent> intents, Optional<DeploymentProjectRecord> project) throws SQLException {
         if (operationType == null || !operationType.matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
-        var node = envelope(identity).put("operationType", operationType);
+        int version = operationType.equals("deployment-publication") ? PUBLICATION_VERSION : VERSION;
+        var node = envelope(identity, version).put("operationType", operationType);
+        if (version == PUBLICATION_VERSION)
+            node.putNull("publicationTemplate");
         if (project.isPresent()) {
             var value = project.get();
             if (!identity.projectId().equals(Optional.of(value.id())))
@@ -56,7 +65,7 @@ final class DeploymentExecutionCodec {
             intent.purpose().ifPresent(value -> entry.put("purpose", value));
         }
         references(node, identity);
-        return encode(node);
+        return encode(node, version == PUBLICATION_VERSION ? REQUEST_LIMIT : 1_048_576);
     }
 
     /** Records UUIDs only after they have been observed for original indexed intents. / 仅在观察到原索引意图的UUID后记录。
@@ -67,7 +76,20 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if encoding exceeds bounds / 编码超限时 */
     static String recovery(DeploymentExecutionIdentity identity, String phase, Map<Integer, UUID> ids)
             throws SQLException {
-        var node = envelope(identity).put("reconciliationType", "deployment-references-v1").put("phase", phase);
+        return recovery(identity, VERSION, phase, ids);
+    }
+
+    /** Keeps the original request format when advancing its recovery evidence. / 推进恢复依据时保留原请求格式。
+     * @param identity original identity / 原身份
+     * @param version original request format / 原请求格式
+     * @param phase retained phase / 留存阶段
+     * @param ids exact reservation IDs / 精确预留ID
+     * @return bounded recovery document / 有界恢复文档
+     * @throws SQLException if encoding fails / 编码失败时 */
+    static String recovery(DeploymentExecutionIdentity identity, int version, String phase, Map<Integer, UUID> ids)
+            throws SQLException {
+        var node = envelope(identity, version).put("reconciliationType", "deployment-references-v1").put("phase",
+                phase);
         var array = node.putArray("referenceIds");
         new TreeMap<>(ids).forEach((index, id) -> array.addObject().put("index", index).put("id", id.toString()));
         return encode(node);
@@ -85,10 +107,26 @@ final class DeploymentExecutionCodec {
     static String result(DeploymentExecutionIdentity identity, Outcome outcome, Optional<ProblemCode> problemCode,
             String eventCode, List<DeploymentUnitCommit> publications, Optional<DeploymentReleaseIdentity> release)
             throws SQLException {
+        return result(identity, VERSION, outcome, problemCode, eventCode, publications, release);
+    }
+
+    /** Writes one formal result with its original execution format. / 使用原执行格式写入正式结果。
+     * @param identity original identity / 原身份
+     * @param version original format / 原格式
+     * @param outcome observed result / 已观测结果
+     * @param problemCode bounded problem category / 有界问题类别
+     * @param eventCode stable event / 稳定事件
+     * @param publications committed units / 已提交单元
+     * @param release whole application history / 整应用历史
+     * @return bounded result / 有界结果
+     * @throws SQLException if metadata is invalid / 元数据无效时 */
+    static String result(DeploymentExecutionIdentity identity, int version, Outcome outcome,
+            Optional<ProblemCode> problemCode, String eventCode, List<DeploymentUnitCommit> publications,
+            Optional<DeploymentReleaseIdentity> release) throws SQLException {
         if (eventCode == null || !eventCode.matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
                 || (outcome == Outcome.SUCCEEDED) == problemCode.isPresent())
             throw new SQLException("Invalid result event code");
-        var node = envelope(identity).put("outcome", outcome.name()).put("eventCode", eventCode);
+        var node = envelope(identity, version).put("outcome", outcome.name()).put("eventCode", eventCode);
         if (problemCode.isPresent())
             node.put("problemCode", problemCode.orElseThrow().name());
         else
@@ -108,9 +146,10 @@ final class DeploymentExecutionCodec {
 
     /** Adds fixed identity fields to each current-version document. / 向每个当前版本文档添加固定身份字段。
      * @param identity original operation / 原操作
+     * @param version original document version / 原文档版本
      * @return fixed versioned envelope / 固定版本化信封 */
-    private static ObjectNode envelope(DeploymentExecutionIdentity identity) {
-        var node = object().put("formatVersion", VERSION).put("executionId", identity.executionId().toString())
+    private static ObjectNode envelope(DeploymentExecutionIdentity identity, int version) {
+        var node = object().put("formatVersion", version).put("executionId", identity.executionId().toString())
                 .put("taskId", identity.taskId().toString()).put("applicationId", identity.applicationId())
                 .put("serverId", identity.server().id()).put("reviewedRevision", identity.reviewedRevision())
                 .put("mode", identity.mode().name());
@@ -126,10 +165,11 @@ final class DeploymentExecutionCodec {
      * @return whether semantic reconciliation is supported / 是否支持语义核对
      * @throws SQLException if a document is malformed / 文档无效时 */
     static boolean supported(DeploymentExecutionRecord record) throws SQLException {
-        boolean supported = parse(record.requestJson()).path("formatVersion").intValue() == VERSION;
-        supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == VERSION;
+        int version = parse(record.requestJson(), REQUEST_LIMIT).path("formatVersion").intValue();
+        boolean supported = version == VERSION || version == PUBLICATION_VERSION;
+        supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == version;
         if (record.resultJson().isPresent())
-            supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == VERSION;
+            supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == version;
         return supported;
     }
 
@@ -140,8 +180,20 @@ final class DeploymentExecutionCodec {
     static Checkpoint known(DeploymentExecutionRecord record) throws SQLException {
         if (!supported(record))
             throw new SQLException("Execution format requires a matching reader", "0A000");
-        var request = parse(record.requestJson());
-        identity(request, record.identity(), "operationType", "references", "projectSource");
+        var request = parse(record.requestJson(), REQUEST_LIMIT);
+        int version = request.path("formatVersion").intValue();
+        if (version == VERSION
+                && record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1_048_576)
+            throw new SQLException("Legacy execution request exceeds its original bound");
+        if (version == PUBLICATION_VERSION)
+            identity(request, record.identity(), "operationType", "references", "projectSource", "publicationTemplate");
+        else
+            identity(request, record.identity(), "operationType", "references", "projectSource");
+        if (version == PUBLICATION_VERSION && !"deployment-publication".equals(string(request, "operationType")))
+            throw new SQLException("Publication template format belongs to another operation");
+        if (version == PUBLICATION_VERSION && !request.path("publicationTemplate").isNull())
+            DeploymentPublicationTemplateCodec.decodeTemplate(request.path("publicationTemplate").toString(),
+                    record.identity().executionId());
         project(request, record.identity());
         if (!string(request, "operationType").matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
@@ -175,6 +227,59 @@ final class DeploymentExecutionCodec {
         return new Checkpoint(intents, Map.copyOf(ids));
     }
 
+    /** Returns the original supported version without changing it during recovery. / 返回原受支持版本，恢复期间不改变它。
+     * @param record original validated execution / 原已校验执行
+     * @return original document version / 原文档版本
+     * @throws SQLException if unsupported or malformed / 不支持或畸形时 */
+    static int version(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        return parse(record.requestJson(), REQUEST_LIMIT).path("formatVersion").intValue();
+    }
+
+    /** Reads the just-encoded original request version before constructing its first recovery document. / 构造首份恢复文档前读取刚编码的原请求版本。
+     * @param request original validated request / 原已校验请求
+     * @return supported version / 受支持版本
+     * @throws SQLException if the request is malformed / 请求畸形时 */
+    static int requestVersion(String request) throws SQLException {
+        return parse(request, REQUEST_LIMIT).path("formatVersion").intValue();
+    }
+
+    /** Reads the complete original proposal only when it was durably saved before publish. / 仅在发布前已持久化时读取完整原提案。
+     * @param record original execution / 原执行
+     * @return original proposal or explicit absence / 原提案或明确缺失
+     * @throws SQLException if evidence is malformed / 依据畸形时 */
+    static Optional<DeploymentPublicationProposal> publicationTemplate(DeploymentExecutionRecord record)
+            throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), REQUEST_LIMIT);
+        if (request.path("formatVersion").intValue() != PUBLICATION_VERSION
+                || request.path("publicationTemplate").isNull())
+            return Optional.empty();
+        return Optional.of(DeploymentPublicationTemplateCodec
+                .decodeTemplate(request.path("publicationTemplate").toString(), record.identity().executionId()));
+    }
+
+    /** Adds an immutable single-unit proposal to the same original request before any publish. / 在发布前向同一原请求加入不可变单元提案。
+     * @param record original execution / 原执行
+     * @param publication full non-secret proposal / 完整非秘密提案
+     * @return bounded request document / 有界请求文档
+     * @throws SQLException if the original format or proposal conflicts / 原格式或提案冲突时 */
+    static String withPublicationTemplate(DeploymentExecutionRecord record, DeploymentPublicationProposal publication)
+            throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), REQUEST_LIMIT);
+        if (request.path("formatVersion").intValue() != PUBLICATION_VERSION)
+            throw new SQLException("Original execution cannot store a publication template");
+        String template = DeploymentPublicationTemplateCodec.encodeTemplate(publication);
+        if (!request.path("publicationTemplate").isNull()) {
+            if (!template.equals(request.path("publicationTemplate").toString()))
+                throw new SQLException("Original publication proposal is immutable");
+            return record.requestJson();
+        }
+        request.set("publicationTemplate", parse(template, DeploymentPublicationTemplateCodec.LIMIT));
+        return encode(request, REQUEST_LIMIT);
+    }
+
     /** Checks the immutable identity envelope and exact current-version fields. / 检查不可变身份信封及当前版本精确字段。
      * @param node original object / 原对象
      * @param identity original row identity / 原行身份
@@ -202,7 +307,7 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if format or stored facts are invalid / 格式或已存事实无效时 */
     static Optional<DeploymentProjectRecord> project(DeploymentExecutionRecord record) throws SQLException {
         known(record);
-        return project(parse(record.requestJson()), record.identity());
+        return project(parse(record.requestJson(), REQUEST_LIMIT), record.identity());
     }
 
     /** Decodes and checks the exact original project snapshot. / 解码并核验精确原项目快照。

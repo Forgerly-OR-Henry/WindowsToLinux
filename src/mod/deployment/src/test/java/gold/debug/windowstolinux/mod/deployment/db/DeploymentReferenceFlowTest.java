@@ -404,8 +404,10 @@ class DeploymentReferenceFlowTest extends DeploymentExecutionFixture {
                         DeploymentExecutionCodec
                                 .request(identity, DeploymentReferenceFlow.TASK_TYPE, List.of(intent), Optional.empty())
                                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                insert.setBytes(9, DeploymentExecutionCodec.recovery(identity, "PREPARED", Map.of())
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                insert.setBytes(9,
+                        DeploymentExecutionCodec
+                                .recovery(identity, DeploymentExecutionCodec.PUBLICATION_VERSION, "PREPARED", Map.of())
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 insert.setLong(10, OBSERVED.toEpochMilli());
                 insert.setLong(11, OBSERVED.toEpochMilli());
                 insert.executeUpdate();

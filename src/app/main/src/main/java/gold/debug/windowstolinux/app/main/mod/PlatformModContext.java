@@ -99,7 +99,8 @@ public final class PlatformModContext implements ContextLease {
         var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
         var source = own(runtime.source(identity.id(), identity.version()));
         var processes = own(runtime.processes(identity.id(), identity.version()));
-        var tasks = runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY);
+        var tasks = new RecoveryTasks(
+                runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote);
         ModDatabase database = schema.isPresent()
                 ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
                 : new StatelessDatabase();
@@ -264,6 +265,76 @@ public final class PlatformModContext implements ContextLease {
             InteractionService interaction, ServerService servers, LinuxService linux, AiService ai, ModDatabase db,
             SecretService secrets, SourceService source, LogService logs, ProcessService processes,
             ModServices services) implements ModContext {
+    }
+
+    /** Retains host-only physical cleanup before invoking a Mod's manual original-task recovery. / 调用Mod人工原任务恢复前执行仅宿主可做的物理收尾。
+     * @param delegate original task capability / 原任务能力
+     * @param remote host-owned remote cleanup / 宿主持有的远端收尾 */
+    private record RecoveryTasks(TaskService delegate, PlatformModHost.Remote remote) implements TaskService {
+        /** Delegates original task admission unchanged. / 原样委托任务准入。
+         * @param request exact task request / 精确任务请求
+         * @param work author callback / 作者回调
+         * @param <T> result type / 结果类型
+         * @return original task handle / 原任务句柄
+         * @throws ApiException if admission fails / 准入失败时 */
+        @Override
+        public <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException {
+            return delegate.submit(request, work);
+        }
+
+        /** Delegates original snapshots unchanged. / 原样委托原任务快照。
+         * @param cursor continuation cursor / 后续游标
+         * @param limit page limit / 页容量
+         * @return original snapshots / 原快照
+         * @throws ApiException if observation fails / 观察失败时 */
+        @Override
+        public PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException {
+            return delegate.list(cursor, limit);
+        }
+
+        /** Delegates authoritative resource observation. / 委托权威资源观察。
+         * @param task original context / 原上下文
+         * @return actual explicit-resource release / 实际显式资源释放
+         * @throws ApiException if observation fails / 观察失败时 */
+        @Override
+        public boolean resourcesReleased(TaskContext task) throws ApiException {
+            return delegate.resourcesReleased(task);
+        }
+
+        /** Delegates original checkpoint creation unchanged. / 原样委托原检查点创建。
+         * @param task original context / 原上下文
+         * @param key original key / 原键
+         * @param initial bounded initial facts / 有界初始事实
+         * @return original checkpoint / 原检查点
+         * @throws ApiException if creation fails / 创建失败时 */
+        @Override
+        public TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException {
+            return delegate.beginCheckpoint(task, key, initial);
+        }
+
+        /** Delegates read of an existing original checkpoint. / 委托读取原已存在检查点。
+         * @param task original context / 原上下文
+         * @param key original key / 原键
+         * @return existing checkpoint / 已存在检查点
+         * @throws ApiException if reading fails / 读取失败时 */
+        @Override
+        public Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException {
+            return delegate.findCheckpoint(task, key);
+        }
+
+        /** Cleans only original host-owned connections before one explicit author callback. / 一次显式作者回调前仅清理原宿主连接。
+         * @param taskType original owner-local task type / 原所属任务类型
+         * @param recovery original author recovery / 原作者恢复
+         * @return actual registration / 实际登记
+         * @throws ApiException if registration fails / 登记失败时 */
+        @Override
+        public RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException {
+            Objects.requireNonNull(recovery);
+            return delegate.registerRecovery(taskType, (previous, task) -> {
+                remote.closeTaskResources(task);
+                return recovery.reconcile(previous, task);
+            });
+        }
     }
 
     /** Explicit unavailable database for an author that declares no schema. / 未声明数据结构的作者所用明确不可用数据库。 */

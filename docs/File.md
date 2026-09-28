@@ -1452,8 +1452,8 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     ├─ Mod.java                       # [入口类] 在根包装配部署能力、注册公开服务及释放资源
 │  │     ├─ ai/                            # [包] 部署提示词、模型输入适配、平台 AI 调用及结果格式校验
 │  │     ├─ api/                           # [公开包] 向其他 Mod 提供应用快照、生命周期与恢复协作契约
-│  │     ├─ db/                            # [包] 部署配置、应用拓扑、版本和业务记录的数据访问
-│  │     ├─ linux/                         # [包] 固定 helper、候选、发布与健康回执，经公开 API 使用主体连接
+│  │     ├─ db/                            # [包] 部署配置、应用拓扑、版本及完整原发布模板的数据访问
+│  │     ├─ linux/                         # [包] 固定 helper、候选、发布、原任务状态观察与健康回执
 │  │     ├─ secret/                        # [包] 部署秘密的用途、引用及短期注入策略
 │  │     ├─ service/                       # [包] 部署业务编排、公开契约实现及任务执行
 │  │     │  ├─ agent/                      # [包] 自主部署循环、任务状态、工具执行与审批，独立于 standard
@@ -1523,7 +1523,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     │     │  └─ workload/            # [包] 静态站点和容器工作负载检查
 │  │     │     └─ deploy/                  # [包] 标准计划、候选构建、单组件发布及有界 assistance
 │  │     │        ├─ plan/               # [包] 审阅与远端发布内容身份
-│  │     │        ├─ publication/        # [包] 单组件发布、健康、回滚与收尾事实
+│  │     │        ├─ publication/        # [包] 单组件发布、健康、回滚及原任务显式恢复
 │  │     │        └─ support/            # [包] 主机、发行版与运行时准入政策
 │  │     │           ├─ distro/         # [包] 发行版精确版本与架构政策
 │  │     │           └─ runtime/        # [包] 准备工具后的运行能力政策
@@ -1599,6 +1599,8 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serverId，与 TaskRequest 的服务器身份一致；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
 
 官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 实现独立初始化和只读核验，固定 SQL 资源位于同名资源包；业务启动绑定当前数据身份、deployment 日志类别及固定 deployment-publication、deployment-git-source、deployment-secret-revision 原任务恢复器。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID，不解析或读取平台存储。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
+
+单组件发布的原执行记录现以格式 5 嵌套保存完整非秘密发布模板，原作者检查点以格式 2 保存原候选、旧快照、已核实业务结论与实际收尾阶段。标准发布恢复经 `service/core` 的窄端口由 Mod 装配，宿主在调用原作者核对前释放原任务旧 SSH 连接；启动只登记恢复器，不自动访问远端。显式原任务恢复须经原任务身份、精确审批和协议 11 固定只读观察核对原服务器、应用、候选、当前版本、旧快照、维护及运行设施；缺失或冲突保持 UNKNOWN，不重发构建、发布或回滚。业务已核实而本机正式提交丢失时，按原完整模板及必要远端事实补原事务；若原远端收尾已持久核实、检查点已释放，只补本机事务，不重复连远端。清理只推进原检查点允许的原资源。`app/main` 的受限 `test-support` 附件只向本 Mod 的测试作用域提供 loopback SSH 夹具，不进入生产依赖。
 
 官方 deployment 的 `source` 当前包含实际本地筛选和冻结流程：经公开 SourceService 的原任务目录句柄逐层发现，业务排除与 source.include 由 Mod 决定，平台持有目录读取、不可变快照及释放。source 仅使用 appapi 和 service/core/model 的纯相对路径值规则，不引用 APP 私有实现；core/model 不反向依赖 source。素材返回原平台句柄和明确文件清单，后续分析/执行共享直到关闭。确定性 ustar/gzip 归档写入平台 SourceWorkspace 并冻结成独立 SourceSnapshot，保留实际归档字节 SHA，临时文件归属/释放仍在 APP source/service。`source/git` 提供受管 worker 固定 Git 提交的本机取材构件及同一筛选/归档复用。`service/core/DeploymentProjectSourceRecorder` 将真实本地选择或 Git 固定取材与 `db/DeploymentProjectRepository` 接通；`service/core/model/DeploymentProjectSource` 只保存来源纯值，db 不依赖取材实现。执行账本冻结已审阅完整项目修订；同一项目后续更新不会改写旧执行。固定 Git 来源原任务现持久化原请求、工作目录/进程身份、物理回执和完整项目保存边界，并在 Mod 启动时登记只读原任务恢复；SSH 凭据/信任、部署页面及引擎调用仍待实现，不能把来源任务视为完整部署入口。
 

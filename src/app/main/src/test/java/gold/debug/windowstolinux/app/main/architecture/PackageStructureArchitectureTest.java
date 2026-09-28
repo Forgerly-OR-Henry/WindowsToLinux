@@ -400,14 +400,31 @@ class PackageStructureArchitectureTest {
         Path resources = projectRoot()
                 .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux");
         Set<String> expected = new HashSet<>(HELPER_FRAGMENTS);
+        expected.add("53-publication-observation.sh");
         expected.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh", "selinux-command-entry.sh",
                 "centos-source-repositories.py"));
-        assertEquals(46, expected.size());
+        assertEquals(47, expected.size());
         assertEquals(expected, fileNamesRecursively(resources));
         assertEquals(Set.of("source-operations.py"), fileNames(resources.resolve("workspace")));
         assertEquals(Set.of("10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py",
                 "40-binding-protocol.py"), fileNames(resources.resolve("toolchain")));
         assertMaximumLinesRecursively(resources, 300);
+        Path original = projectRoot()
+                .resolve("src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd");
+        Set<String> changed = Set.of("00-protocol-foundation.sh", "70-command-dispatch.sh", "40-typed-runtime.sh",
+                "52-container-recovery.sh", "53-publication-observation.sh");
+        List<Path> unchanged;
+        try (Stream<Path> files = Files.walk(resources)) {
+            unchanged = files.filter(Files::isRegularFile)
+                    .filter(file -> !changed.contains(file.getFileName().toString())).toList();
+        }
+        assertEquals(42, unchanged.size());
+        for (Path file : unchanged) {
+            Path relative = resources.relativize(file);
+            assertTrue(
+                    java.util.Arrays.equals(Files.readAllBytes(original.resolve(relative)), Files.readAllBytes(file)),
+                    relative.toString());
+        }
     }
 
     @Test
