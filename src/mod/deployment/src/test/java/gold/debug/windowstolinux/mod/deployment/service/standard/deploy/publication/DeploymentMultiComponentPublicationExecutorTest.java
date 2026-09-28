@@ -17,9 +17,12 @@ import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.secret.SecretRef;
+import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentWorkloadArguments;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
@@ -40,7 +43,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeFixture {
     /** Confirmed publication and confirmed middle-component health failure. / 已确认发布与已确认中途组件健康失败。 */
     private enum ScenarioType {
-        SUCCESS, HEALTH_FAILED_ROLLBACK, MIDDLE_HEALTH_FAILED_ROLLBACK, PUBLISH_UNKNOWN, ROLLBACK_KNOWN_FAILURE, ORIGINAL_CLEANUP_REFUSED, STAGE_UNKNOWN, CLOSE_UNKNOWN, TOO_MANY, DUPLICATE_ORDER, ROLLBACK_CLEANUP_REFUSED, CANCELLED_BEFORE_SOURCE, TOTAL_SPACE_EXCEEDED
+        SUCCESS, HEALTH_FAILED_ROLLBACK, MIDDLE_HEALTH_FAILED_ROLLBACK, PUBLISH_UNKNOWN, ROLLBACK_KNOWN_FAILURE, ORIGINAL_CLEANUP_REFUSED, STAGE_UNKNOWN, CLOSE_UNKNOWN, TOO_MANY, DUPLICATE_ORDER, ROLLBACK_CLEANUP_REFUSED, CANCELLED_BEFORE_SOURCE, TOTAL_SPACE_EXCEEDED, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
     }
 
     /** Original grants must pass to the same remote session. / 原授权必须传给同一远端会话。 */
@@ -151,6 +154,15 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
         runScenario(ScenarioType.TOTAL_SPACE_EXCEEDED, false);
     }
 
+    /** Requires the original saved purpose for a whole graph before any remote effect. / 整图任一远端副作用前要求原已保存用途。
+     * @param scenario missing or mismatched purpose / 缺失或不匹配的用途
+     * @throws Exception if actual task setup fails / 真实任务设置失败时 */
+    @ParameterizedTest
+    @EnumSource(value = ScenarioType.class, names = {"PURPOSE_UNKNOWN", "PURPOSE_MISMATCH"})
+    void savedPurposeIsRequiredForWholeGraph(ScenarioType scenario) throws Exception {
+        runScenario(scenario, false);
+    }
+
     /** Runs only an occupied original task in a child that can exit without claiming cleanup. / 仅在可退出且不冒称清理的子进程运行占用中的原任务。
      * @param scenario exact uncertain outcome / 精确未决结果
      * @throws Exception if the child fails / 子进程失败时 */
@@ -222,6 +234,15 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             var real = runtime.modContexts().get(OWNER).context();
             var bound = withSession(real, peer);
             var executor = new DeploymentMultiComponentPublicationExecutor(bound, new DeploymentReferenceFlow(bound));
+            var reference = new DeploymentSecretReference("password-id", 1);
+            boolean purposeCase = scenario == ScenarioType.PURPOSE_UNKNOWN || scenario == ScenarioType.PURPOSE_MISMATCH;
+            var secret = purposeCase ? purposeSecret(real, reference, scenario == ScenarioType.PURPOSE_UNKNOWN) : null;
+            var reviewedSecret = purposeCase && scenario == ScenarioType.PURPOSE_MISMATCH
+                    ? new SecretRef(secret.id(), "deployment.wrong")
+                    : secret;
+            var credentials = purposeCase
+                    ? Map.of(reference, reviewedSecret)
+                    : Map.<DeploymentSecretReference, SecretRef>of();
             var ids = scenario == ScenarioType.MIDDLE_HEALTH_FAILED_ROLLBACK
                     ? List.of("db", "api", "web")
                     : scenario == ScenarioType.TOO_MANY
@@ -235,7 +256,7 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             for (var id : ids)
                 units.put(id, DeploymentUnitIdentity.forManaged(id, server,
                         (id.equals("db") ? "a" : id.equals("api") ? "b" : "c").repeat(64)));
-            var task = executor.submit(server, Optional.empty(), units, Map.of(), wholeHealthOwner,
+            var task = executor.submit(server, Optional.empty(), units, credentials, wholeHealthOwner,
                     new DeploymentHealthCheck.Tcp(8099, 10, 2), original -> {
                         if (scenario == ScenarioType.CANCELLED_BEFORE_SOURCE)
                             return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
@@ -263,7 +284,8 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                                     originalFacts.buildDirectory());
                             var request = new ReviewedDeploymentRequest(server, facts, material, archive,
                                     DeploymentConfigurationSnapshot.create(id, 1, "v1", Instant.now(), List.of()),
-                                    List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+                                    purposeCase ? List.of(reference) : List.of(),
+                                    new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
                                     new DeploymentRuntimeDefinition.GoService("1.24", id, "main.go",
                                             new DeploymentHealthCheck.Tcp(
                                                     id.equals("db") ? 8080 : id.equals("api") ? 8081 : 8082, 10, 2)),
@@ -296,6 +318,18 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                                                 : plans)),
                                 Optional.empty());
                     });
+            if (purposeCase) {
+                var result = task.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+                assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+                assertEquals(scenario == ScenarioType.PURPOSE_UNKNOWN
+                        ? "DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE"
+                        : "DEPLOYMENT_GRAPH_PREPARATION_INVALID", result.problem().orElseThrow().eventCode());
+                assertTrue(actions.isEmpty(), actions.toString());
+                assertEquals(0, countMod(runtime, "deployment_release"));
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                return;
+            }
             if (invalid || scenario == ScenarioType.CANCELLED_BEFORE_SOURCE) {
                 var result = task.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
                 assertEquals(invalid ? Outcome.FAILED : Outcome.CANCELLED, result.outcome(),
@@ -393,6 +427,37 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             if (!interruptedHost)
                 runtime.close();
         }
+    }
+
+    /** Saves an original credential and optionally models a migrated unknown-purpose revision. / 保存原凭据并可模拟迁移后用途未知的修订。
+     * @param context original Mod / 原Mod
+     * @param reference exact immutable revision / 精确不可变修订
+     * @param unknownPurpose whether migrated metadata lacks purpose / 迁移元数据是否缺用途
+     * @return original opaque credential / 原不透明凭据
+     * @throws Exception if actual storage fails / 实际存储失败时 */
+    private SecretRef purposeSecret(ModContext context, DeploymentSecretReference reference, boolean unknownPurpose)
+            throws Exception {
+        var observed = new AtomicReference<SecretRef>();
+        var setup = context.tasks()
+                .submit(new TaskRequest("secret_purpose_fixture", "Secret purpose fixture", List.of(), true), task -> {
+                    var secret = context.secrets().create("deployment.actual", new byte[]{7}, task);
+                    observed.set(secret);
+                    var reservation = context.secrets().reserve(secret, "secret:" + reference.identifier(), task);
+                    new DeploymentSecretRepository(context.db()).saveRevision(task, new DeploymentSecretRevision(
+                            reference, secret.id(), Instant.now(), Optional.of(secret.purpose())));
+                    if (unknownPurpose)
+                        try (var connection = context.db().openConnection(task);
+                                var statement = connection.prepareStatement(
+                                        "UPDATE secret_revision SET purpose=NULL WHERE secret_id=? AND secret_revision=?")) {
+                            statement.setString(1, reference.identifier());
+                            statement.setLong(2, reference.revision());
+                            assertEquals(1, statement.executeUpdate());
+                        }
+                    context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
+        assertEquals(Outcome.SUCCEEDED, setup.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+        return observed.get();
     }
 
     /** Reads actual Mod schema rows. / 读取真实Mod schema行。 */

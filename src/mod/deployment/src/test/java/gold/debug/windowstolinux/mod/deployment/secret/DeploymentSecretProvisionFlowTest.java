@@ -117,6 +117,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var row = result.value().orElseThrow();
             assertEquals(REVISION, row.reference());
             assertEquals(CREATED, row.createdAt());
+            assertEquals(Optional.of(PURPOSE), row.purpose());
             assertArrayEquals("private-fixture".getBytes(StandardCharsets.UTF_8), callerOwned);
             assertNotSame(callerOwned, copied.get());
             assertTrue(Arrays.equals(new byte[copied.get().length], copied.get()));

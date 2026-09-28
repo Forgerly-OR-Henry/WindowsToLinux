@@ -27,6 +27,8 @@ public final class DeploymentSecretRepository {
     public void saveRevision(TaskContext task, DeploymentSecretRevision revision) throws SQLException, ApiException {
         Objects.requireNonNull(revision);
         requireRevision(revision.reference());
+        if (revision.purpose().isEmpty())
+            throw new IllegalArgumentException("New secret revisions require their original purpose");
         var connection = connection(task);
         DeploymentDataTransaction.execute(connection, () -> saveRevision(connection, revision));
     }
@@ -116,16 +118,18 @@ public final class DeploymentSecretRepository {
         if (existing.isPresent()) {
             var stored = existing.orElseThrow();
             if (!stored.credentialId().equals(revision.credentialId())
-                    || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli())
+                    || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli()
+                    || !stored.purpose().equals(revision.purpose()))
                 throw new SQLException("Secret revision metadata is immutable");
             return;
         }
         try (var statement = connection.prepareStatement(
-                "INSERT INTO secret_revision(secret_id,secret_revision,credential_id,created_at) VALUES(?,?,?,?)")) {
+                "INSERT INTO secret_revision(secret_id,secret_revision,credential_id,created_at,purpose) VALUES(?,?,?,?,?)")) {
             statement.setString(1, revision.reference().identifier());
             statement.setLong(2, revision.reference().revision());
             statement.setString(3, revision.credentialId());
             statement.setLong(4, revision.createdAt().toEpochMilli());
+            statement.setString(5, revision.purpose().orElseThrow());
             statement.executeUpdate();
         }
     }
@@ -138,13 +142,13 @@ public final class DeploymentSecretRepository {
     static Optional<DeploymentSecretRevision> readRevision(Connection connection, DeploymentSecretReference reference)
             throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT credential_id,created_at FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
+                "SELECT credential_id,created_at,purpose FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
             try (var rows = statement.executeQuery()) {
                 return rows.next()
                         ? Optional.of(new DeploymentSecretRevision(reference, rows.getString(1),
-                                Instant.ofEpochMilli(rows.getLong(2))))
+                                Instant.ofEpochMilli(rows.getLong(2)), Optional.ofNullable(rows.getString(3))))
                         : Optional.empty();
             }
         } catch (IllegalArgumentException failure) {
@@ -267,10 +271,11 @@ public final class DeploymentSecretRepository {
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
                 var rows = statement.executeQuery(
-                        "SELECT secret_id,secret_revision,credential_id,created_at FROM secret_revision")) {
+                        "SELECT secret_id,secret_revision,credential_id,created_at,purpose FROM secret_revision")) {
             while (rows.next())
                 new DeploymentSecretRevision(new DeploymentSecretReference(rows.getString(1), rows.getLong(2)),
-                        rows.getString(3), Instant.ofEpochMilli(rows.getLong(4)));
+                        rows.getString(3), Instant.ofEpochMilli(rows.getLong(4)),
+                        Optional.ofNullable(rows.getString(5)));
         } catch (IllegalArgumentException failure) {
             throw new SQLException("Stored secret revisions are invalid", failure);
         }

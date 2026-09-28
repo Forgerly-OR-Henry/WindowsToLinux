@@ -268,7 +268,7 @@ class DeploymentReleaseRepositoryTest extends DeploymentExecutionFixture {
                                 .create("deployment.configuration", new byte[]{42}, task);
                         new DeploymentSecretRepository(runtime.modContexts().get(OWNER).context().db()).saveRevision(
                                 task, new DeploymentSecretRevision(new DeploymentSecretReference("added", 1),
-                                        secret.id(), OBSERVED));
+                                        secret.id(), OBSERVED, Optional.of(secret.purpose())));
                         sql(runtime, task, "INSERT INTO deployment_unit_release_secret_reference VALUES('web','"
                                 + "a".repeat(64) + "','added',1)");
                     }

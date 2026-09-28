@@ -36,7 +36,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
         }
         var reservation = context.secrets().reserve(secret,
                 "secret:" + reference.identifier() + ":" + reference.revision(), task);
-        var metadata = new DeploymentSecretRevision(reference, secret.id(), OBSERVED);
+        var metadata = new DeploymentSecretRevision(reference, secret.id(), OBSERVED, Optional.of(secret.purpose()));
         new DeploymentSecretRepository(context.db()).saveRevision(task, metadata);
         context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
         return metadata;
@@ -134,16 +134,21 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var repository = new DeploymentSecretRepository(runtime.modContexts().get(OWNER).context().db());
                 var original = secret(runtime, task, new DeploymentSecretReference("password", Integer.MAX_VALUE));
                 repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                        original.credentialId(), original.createdAt().plusNanos(123)));
-                assertThrows(SQLException.class, () -> repository.saveRevision(task,
-                        new DeploymentSecretRevision(original.reference(), "another-opaque-id", original.createdAt())));
+                        original.credentialId(), original.createdAt().plusNanos(123), original.purpose()));
                 assertThrows(SQLException.class,
                         () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                                original.credentialId(), original.createdAt().plusMillis(1))));
+                                "another-opaque-id", original.createdAt(), original.purpose())));
+                assertThrows(SQLException.class,
+                        () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
+                                original.credentialId(), original.createdAt().plusMillis(1), original.purpose())));
+                assertThrows(SQLException.class,
+                        () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
+                                original.credentialId(), original.createdAt(), Optional.of("another-purpose"))));
                 assertEquals(original, repository.findRevision(task, original.reference()).orElseThrow());
                 var oversized = new DeploymentSecretReference("password", (long) Integer.MAX_VALUE + 1);
-                assertThrows(IllegalArgumentException.class, () -> repository.saveRevision(task,
-                        new DeploymentSecretRevision(oversized, original.credentialId(), OBSERVED)));
+                assertThrows(IllegalArgumentException.class,
+                        () -> repository.saveRevision(task, new DeploymentSecretRevision(oversized,
+                                original.credentialId(), OBSERVED, original.purpose())));
                 assertThrows(IllegalArgumentException.class,
                         () -> repository.bindRelease(task, "web", "release", List.of(oversized)));
                 assertThrows(IllegalArgumentException.class, () -> repository.bindRelease(task, "web", "release",
@@ -151,7 +156,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM secret_revision"));
                 assertTrue(repository.findRevision(task, new DeploymentSecretReference("absent", 1)).isEmpty());
                 var opaque = new DeploymentSecretRevision(new DeploymentSecretReference("opaque", 1),
-                        " Exact/Platform..Identity ", OBSERVED);
+                        " Exact/Platform..Identity ", OBSERVED, Optional.of(PURPOSE));
                 repository.saveRevision(task, opaque);
                 assertEquals(opaque, repository.findRevision(task, opaque.reference()).orElseThrow());
                 return success();

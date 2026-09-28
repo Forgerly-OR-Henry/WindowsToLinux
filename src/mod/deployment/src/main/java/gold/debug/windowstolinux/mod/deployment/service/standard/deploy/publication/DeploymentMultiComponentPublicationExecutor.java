@@ -77,7 +77,7 @@ public final class DeploymentMultiComponentPublicationExecutor {
         Objects.requireNonNull(prepareSource);
         var originalUnits = units;
         var originalCredentials = credentials;
-        return references.submitPrepared(server, task -> prepare(task, server, project, originalUnits,
+        return references.submitPrepared(server, task -> prepareWithinTask(task, server, project, originalUnits,
                 originalCredentials, healthComponent, health, prepareSource));
     }
 
@@ -92,10 +92,18 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param prepareSource original source callback / 原来源回调
      * @return original prepared graph / 原已准备图
      * @throws Exception if original source work fails / 原来源工作失败时 */
-    private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepare(TaskContext task, ServerRef server,
-            Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
+    public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
+            ServerRef server, Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
             Map<DeploymentSecretReference, SecretRef> credentials, String healthComponent, DeploymentHealthCheck health,
             TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource) throws Exception {
+        Objects.requireNonNull(task);
+        Objects.requireNonNull(server);
+        Objects.requireNonNull(project);
+        Objects.requireNonNull(healthComponent);
+        Objects.requireNonNull(health);
+        Objects.requireNonNull(prepareSource);
+        var originalUnits = Map.copyOf(units);
+        var originalCredentials = Map.copyOf(credentials);
         var prepared = prepareSource.run(task);
         if (prepared.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
@@ -107,7 +115,8 @@ public final class DeploymentMultiComponentPublicationExecutor {
             if (ordering.startOrder().size() < 2 || ordering.startOrder().size() > 16
                     || ordering.startOrder().size() != plans.size()
                     || new HashSet<>(ordering.startOrder()).size() != ordering.startOrder().size()
-                    || !units.keySet().equals(plans.keySet()) || !ordering.startOrder().contains(healthComponent)
+                    || !originalUnits.keySet().equals(plans.keySet())
+                    || !ordering.startOrder().contains(healthComponent)
                     || !ordering.candidateNamespaces().keySet().equals(plans.keySet()))
                 throw new IllegalArgumentException("Reviewed graph exceeds the 16-component execution bound");
             var material = plans.get(ordering.startOrder().getFirst()).request().material();
@@ -119,7 +128,7 @@ public final class DeploymentMultiComponentPublicationExecutor {
             intents.add(DeploymentReferenceKey.application(server, ordering.applicationId()));
             for (var id : ordering.startOrder()) {
                 var request = plans.get(id).request();
-                var unit = units.get(id);
+                var unit = originalUnits.get(id);
                 if (!server.equals(request.server()) || !server.equals(unit.server())
                         || !ordering.candidateNamespaces().get(id).equals(request.facts().applicationId())
                         || !unit.id().equals(request.facts().applicationId())
@@ -132,13 +141,16 @@ public final class DeploymentMultiComponentPublicationExecutor {
                 identities.put(id, ReviewedPlanIdentity.from(request));
                 intents.add(DeploymentReferenceKey.unit(server, unit.id()));
             }
-            if (!union.equals(credentials.keySet())
+            if (!union.equals(originalCredentials.keySet())
                     || project.isPresent() && !project.orElseThrow().source().sha256().equals(sourceSha))
                 throw new IllegalArgumentException("Original graph secret or project identity differs");
             var repository = new DeploymentSecretRepository(context.db());
-            for (var entry : credentials.entrySet()) {
+            for (var entry : originalCredentials.entrySet()) {
                 var actual = repository.findRevision(task, entry.getKey());
-                if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id()))
+                if (actual.isPresent() && actual.orElseThrow().purpose().isEmpty())
+                    return failed("DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE");
+                if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id())
+                        || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
                     throw new IllegalArgumentException("Secret revision differs from its stored credential");
                 intents.add(DeploymentReferenceKey.secretRevision(server, entry.getValue(), entry.getKey()));
             }
@@ -148,8 +160,9 @@ public final class DeploymentMultiComponentPublicationExecutor {
                     Instant.now().truncatedTo(ChronoUnit.MILLIS));
             var root = new AtomicReference<DeploymentGraphPublicationJournal>();
             var journals = new AtomicReference<Map<String, DeploymentPublicationCleanupJournal>>(Map.of());
-            var ready = new DeploymentReferenceFlow.PreparedPublication(plan, original -> author(ordering, plans, units,
-                    credentials, healthComponent, health, identities, original, root, journals),
+            var ready = new DeploymentReferenceFlow.PreparedPublication(plan,
+                    original -> author(ordering, plans, originalUnits, originalCredentials, healthComponent, health,
+                            identities, original, root, journals),
                     () -> closeOriginal(plans, root.get(), journals.get()));
             handedOff = true;
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(ready), Optional.empty());

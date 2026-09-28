@@ -53,7 +53,8 @@ public final class DeploymentStandardPublicationExecutor {
         credentials = Map.copyOf(credentials);
         Objects.requireNonNull(prepareSource);
         Map<DeploymentSecretReference, SecretRef> originals = credentials;
-        return references.submitPrepared(unit.server(), task -> prepare(task, unit, project, originals, prepareSource));
+        return references.submitPrepared(unit.server(),
+                task -> prepareWithinTask(task, unit, project, originals, prepareSource));
     }
 
     /** Binds the open source and actual saved credentials before the first publication reservation. / 在首次发布预留前绑定开放来源及实际已保存凭据。
@@ -64,10 +65,15 @@ public final class DeploymentStandardPublicationExecutor {
      * @param prepareSource original source callback / 原来源回调
      * @return task-bound publication facts / 任务绑定发布事实
      * @throws Exception if original preparation fails / 原准备失败时 */
-    private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepare(TaskContext task,
+    public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
             DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
             Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
             throws Exception {
+        Objects.requireNonNull(task);
+        Objects.requireNonNull(unit);
+        Objects.requireNonNull(project);
+        Objects.requireNonNull(prepareSource);
+        var originals = Map.copyOf(credentials);
         var prepared = prepareSource.run(task);
         if (prepared.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
@@ -76,28 +82,31 @@ public final class DeploymentStandardPublicationExecutor {
         try {
             var request = plan.request();
             if (!unit.server().equals(request.server()) || !unit.id().equals(request.facts().applicationId())
-                    || !credentials.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
+                    || !originals.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
                 throw new IllegalArgumentException("Publication target or secrets differ from reviewed source");
             if (project.isPresent()
                     && !project.orElseThrow().source().sha256().equals(request.material().snapshot().sha256()))
                 throw new IllegalArgumentException("Saved project source differs from original frozen material");
             var repository = new DeploymentSecretRepository(context.db());
-            for (var entry : credentials.entrySet()) {
+            for (var entry : originals.entrySet()) {
                 var actual = repository.findRevision(task, entry.getKey());
-                if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id()))
+                if (actual.isPresent() && actual.orElseThrow().purpose().isEmpty())
+                    return failed("DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE");
+                if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id())
+                        || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
                     throw new IllegalArgumentException("Secret revision differs from its stored credential");
             }
             var intents = new ArrayList<DeploymentReferenceIntent>();
             intents.add(DeploymentReferenceKey.application(unit.server(), unit.id()));
             intents.add(DeploymentReferenceKey.unit(unit.server(), unit.id()));
-            credentials.forEach((revision, secret) -> intents
+            originals.forEach((revision, secret) -> intents
                     .add(DeploymentReferenceKey.secretRevision(unit.server(), secret, revision)));
             var publicationPlan = new DeploymentPublicationPlan(UUID.randomUUID(), project, unit.id(), unit.server(),
                     DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, ReviewedPlanIdentity.from(request),
                     List.copyOf(intents), Instant.now().truncatedTo(ChronoUnit.MILLIS));
             var cleanupFacts = new java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal>();
             var ready = new DeploymentReferenceFlow.PreparedPublication(publicationPlan,
-                    original -> author(plan, unit, credentials, original, cleanupFacts), () -> {
+                    original -> author(plan, unit, originals, original, cleanupFacts), () -> {
                         boolean closed = false;
                         try {
                             request.archive().close();

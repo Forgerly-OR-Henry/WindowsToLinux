@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
@@ -113,7 +114,7 @@ class DeploymentReferenceAssociationsTest extends DeploymentExecutionFixture {
                     Arrays.fill(value, (byte) 0);
                 }
                 new DeploymentSecretRepository(context.db()).saveRevision(task,
-                        new DeploymentSecretRevision(revision, secret.id(), OBSERVED));
+                        new DeploymentSecretRevision(revision, secret.id(), OBSERVED, Optional.of(secret.purpose())));
                 assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_unit_release_secret_reference"));
                 assertEquals(REFERENCED, associations.observe(task, identity,
                         DeploymentReferenceKey.secretRevision(SERVER, secret, revision)));
