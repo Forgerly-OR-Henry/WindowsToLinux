@@ -247,7 +247,7 @@ class DeploymentReferenceFlowTest extends DeploymentExecutionFixture {
                 assertTrue(ready.await(10, TimeUnit.SECONDS));
                 assertTrue(releaseRequested.await(10, TimeUnit.SECONDS));
                 new DeploymentSecretRepository(context.db()).saveRevision(task,
-                        new DeploymentSecretRevision(revision, secret.id(), OBSERVED));
+                        new DeploymentSecretRevision(revision, secret.id(), OBSERVED, Optional.of(secret.purpose())));
                 revisionSaved.countDown();
                 return new OperationResult<>(Outcome.SUCCEEDED,
                         Optional.of(new DeploymentPublication(graph, publications(graph, 1, List.of(revision)))),

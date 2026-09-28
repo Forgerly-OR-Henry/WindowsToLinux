@@ -234,7 +234,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                     journal.recordReference(task, id, secretIntent, reservation.id(), OBSERVED.plusSeconds(1));
                 var reference = new DeploymentSecretReference("password", 1);
                 new DeploymentSecretRepository(context.db()).saveRevision(task,
-                        new DeploymentSecretRevision(reference, secret.id(), OBSERVED));
+                        new DeploymentSecretRevision(reference, secret.id(), OBSERVED, Optional.of(secret.purpose())));
                 journal.startEffects(task, id, OBSERVED.plusSeconds(2));
                 var graph = graph("application");
                 var records = publications(graph, 1, List.of(reference));
@@ -289,7 +289,7 @@ class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
                 journal.recordReference(task, id, firstIntent, firstRef.id(), OBSERVED.plusSeconds(1));
                 journal.recordReference(task, id, secondIntent, secondRef.id(), OBSERVED.plusSeconds(1));
                 new DeploymentSecretRepository(context.db()).saveRevision(task,
-                        new DeploymentSecretRevision(published, second.id(), OBSERVED));
+                        new DeploymentSecretRevision(published, second.id(), OBSERVED, Optional.of(second.purpose())));
                 journal.startEffects(task, id, OBSERVED.plusSeconds(2));
                 var graph = graph("application");
                 assertThrows(SQLException.class, () -> journal.commitApplication(task, id, graph,

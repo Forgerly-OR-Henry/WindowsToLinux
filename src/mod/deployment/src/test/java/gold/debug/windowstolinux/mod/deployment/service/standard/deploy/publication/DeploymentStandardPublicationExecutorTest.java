@@ -19,9 +19,12 @@ import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.secret.SecretRef;
+import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
@@ -42,7 +45,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture {
     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
     private enum ScenarioType {
-        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW
+        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
     }
 
     /** Actual host-reviewed grants. / 宿主实际审核的授权。 */
@@ -106,6 +109,22 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             "HEALTH_FAILED_ROLLBACK_OLD_MODE"})
     void originalTaskPublishesOrRetainsRemoteEvidence(ScenarioType scenario) throws Exception {
         runScenario(scenario, false);
+    }
+
+    /** Rejects missing or mismatched persisted purpose before any remote publication. / 在任何远端发布前拒绝缺失或不匹配的已持久用途。
+     * @param scenario exact purpose defect / 精确用途缺陷
+     * @throws Exception if the real original task fails / 真实原任务失败时 */
+    @ParameterizedTest
+    @EnumSource(value = ScenarioType.class, names = {"PURPOSE_UNKNOWN", "PURPOSE_MISMATCH"})
+    void savedPurposeIsRequiredForSinglePublication(ScenarioType scenario) throws Exception {
+        runScenario(scenario, false);
+    }
+
+    /** Publishes a real stored credential whose identifier is not its purpose. / 发布标识与用途不同的真实已存凭据。
+     * @throws Exception if the original publication cannot finish / 原发布无法结束时 */
+    @Test
+    void exactStoredPurposePermitsOriginalSecretPublication() throws Exception {
+        runScenario(ScenarioType.PURPOSE_PRESENT, false);
     }
 
     /** Verifies the retained original task in its own JVM, whose exit models an interrupted host. / 在独立JVM验证保留的原任务，其退出模拟宿主中断。
@@ -183,7 +202,19 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var original = new DeploymentReferenceFlow(bound);
             var executor = new DeploymentStandardPublicationExecutor(bound, original);
             var unit = DeploymentUnitIdentity.forManaged("service", server, "b".repeat(64));
-            var handle = executor.submit(unit, Optional.empty(), Map.of(), task -> {
+            var reference = new DeploymentSecretReference("password-id", 1);
+            boolean purposeCase = scenario == ScenarioType.PURPOSE_PRESENT || scenario == ScenarioType.PURPOSE_UNKNOWN
+                    || scenario == ScenarioType.PURPOSE_MISMATCH;
+            boolean purposeDefect = scenario == ScenarioType.PURPOSE_UNKNOWN
+                    || scenario == ScenarioType.PURPOSE_MISMATCH;
+            var secret = purposeCase ? purposeSecret(real, reference, scenario == ScenarioType.PURPOSE_UNKNOWN) : null;
+            var reviewedSecret = purposeCase && scenario == ScenarioType.PURPOSE_MISMATCH
+                    ? new SecretRef(secret.id(), "deployment.wrong")
+                    : secret;
+            var credentials = purposeCase
+                    ? Map.of(reference, reviewedSecret)
+                    : Map.<DeploymentSecretReference, SecretRef>of();
+            var handle = executor.submit(unit, Optional.empty(), credentials, task -> {
                 if (recoveryPort != 22)
                     real.linux().connect(server, task);
                 var selection = real.source().selectDirectory("Source", task);
@@ -200,7 +231,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var request = new ReviewedDeploymentRequest(server, facts, material, archive,
                         DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1", Instant.now(),
                                 List.of()),
-                        List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+                        purposeCase ? List.of(reference) : List.of(),
+                        new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
                         new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(), "main.go",
                                 new DeploymentHealthCheck.Tcp(8080, 10, 2)),
                         Optional.empty(), DeploymentBuildLimits.defaultNonRoot(),
@@ -214,8 +246,20 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan.value().orElseThrow()),
                         Optional.empty());
             });
+            if (purposeDefect) {
+                var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+                assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+                assertEquals(scenario == ScenarioType.PURPOSE_UNKNOWN
+                        ? "DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE"
+                        : "DEPLOYMENT_PREPARATION_INVALID", result.problem().orElseThrow().eventCode());
+                assertTrue(actions.isEmpty(), actions.toString());
+                assertEquals(0, countMod(runtime, "deployment_release"));
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                return;
+            }
             assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> "Remote callback: " + handle.snapshot());
-            if (scenario == ScenarioType.SUCCESS) {
+            if (scenario == ScenarioType.SUCCESS || scenario == ScenarioType.PURPOSE_PRESENT) {
                 OperationResult<Void> result;
                 try {
                     result = handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
@@ -229,6 +273,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 }
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(1, countMod(runtime, "deployment_release"));
+                if (scenario == ScenarioType.PURPOSE_PRESENT) {
+                    assertNotEquals(reference.identifier(), reviewedSecret.purpose());
+                    assertEquals(1, countReleaseSecrets(runtime));
+                }
                 assertEquals(0,
                         scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(List.of("maintenance-end", "retain", "candidate-cleanup"),
@@ -290,6 +338,37 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             if (!interruptedHost)
                 runtime.close();
         }
+    }
+
+    /** Saves an exact opaque purpose, optionally modeling a migrated unknown-purpose row. / 保存精确不透明用途，并可模拟迁移后用途未知的行。
+     * @param context real original Mod / 真实原Mod
+     * @param reference immutable revision / 不可变修订
+     * @param unknownPurpose whether the original row lacks purpose / 原行是否缺失用途
+     * @return original credential / 原凭据
+     * @throws Exception if the real credential or metadata cannot be saved / 真实凭据或元数据无法保存时 */
+    private SecretRef purposeSecret(ModContext context, DeploymentSecretReference reference, boolean unknownPurpose)
+            throws Exception {
+        var observed = new AtomicReference<SecretRef>();
+        var setup = context.tasks()
+                .submit(new TaskRequest("secret_purpose_fixture", "Secret purpose fixture", List.of(), true), task -> {
+                    var secret = context.secrets().create("deployment.actual", new byte[]{7}, task);
+                    observed.set(secret);
+                    var reservation = context.secrets().reserve(secret, "secret:" + reference.identifier(), task);
+                    new DeploymentSecretRepository(context.db()).saveRevision(task, new DeploymentSecretRevision(
+                            reference, secret.id(), Instant.now(), Optional.of(secret.purpose())));
+                    if (unknownPurpose)
+                        try (var connection = context.db().openConnection(task);
+                                var statement = connection.prepareStatement(
+                                        "UPDATE secret_revision SET purpose=NULL WHERE secret_id=? AND secret_revision=?")) {
+                            statement.setString(1, reference.identifier());
+                            statement.setLong(2, reference.revision());
+                            assertEquals(1, statement.executeUpdate());
+                        }
+                    context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
+        assertEquals(Outcome.SUCCEEDED, setup.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+        return observed.get();
     }
 
     /** Verifies original v5 content identity is independent of review identity but sensitive to release inputs. / 验证原v5内容身份独立于审阅身份，且对发布输入敏感。
@@ -413,6 +492,20 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var connection = access.openConnection();
                 var statement = connection.createStatement();
                 var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
+            assertTrue(rows.next());
+            return rows.getLong(1);
+        }
+    }
+
+    /** Counts the actual business secret binding rather than relying on the reviewed request. / 计数真实业务秘密绑定而非只依赖审阅请求。
+     * @param runtime actual host / 真实宿主
+     * @return saved binding count / 已存绑定数
+     * @throws Exception if original data cannot be read / 无法读取原数据时 */
+    private long countReleaseSecrets(PlatformRuntime runtime) throws Exception {
+        try (var access = scope(runtime, true);
+                var connection = access.openConnection();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_unit_release_secret_reference")) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }
@@ -559,6 +652,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         return scenario == ScenarioType.SECOND_CONFIG_UNKNOWN && configStages.incrementAndGet() == 2
                                 ? unknown()
                                 : reply("INPUT_STAGED=1\n");
+                    }
+                    if (script.contains("stage-secret")) {
+                        actions.add("stage-secret");
+                        return reply("INPUT_STAGED=1\n");
                     }
                     if (script.contains("snapshot-deployment")) {
                         actions.add("snapshot");

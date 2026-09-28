@@ -22,14 +22,14 @@ class ModTest extends DeploymentRuntimeFixture {
     void fixedSchemaCanBeCreatedAndValidatedWithRestrictedAuthorConnections() throws Exception {
         try (var runtime = open()) {
             var database = runtime.persistence().database();
-            var identity = new SchemaIdentity(OWNER, "1", UUID.randomUUID());
+            var identity = new SchemaIdentity(OWNER, DeploymentSchema.VERSION, UUID.randomUUID());
             var coordinates = new SchemaCoordinates(identity);
             try (var connection = database.openConnection(); var statement = connection.createStatement()) {
                 statement.executeUpdate("INSERT INTO mod_registry(mod_id,updated_at) VALUES('" + OWNER + "',1)");
                 try (var insert = connection.prepareStatement(
                         "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',1)")) {
                     insert.setString(1, OWNER);
-                    insert.setString(2, "1");
+                    insert.setString(2, DeploymentSchema.VERSION);
                     insert.setObject(3, identity.generation());
                     insert.setString(4, coordinates.physicalName());
                     insert.setString(5, coordinates.databaseUser());
@@ -57,7 +57,7 @@ class ModTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             original = context.db().identity();
             assertEquals(OWNER, original.ownerId());
-            assertEquals("1", original.schemaVersion());
+            assertEquals(DeploymentSchema.VERSION, original.schemaVersion());
             assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM mod_schema WHERE state='READY' AND ever_used"));
             assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM log_category WHERE owner_id='" + OWNER
                     + "' AND target_table='deployment_log'"));
@@ -178,7 +178,7 @@ class ModTest extends DeploymentRuntimeFixture {
     @Test
     void foreignOwnerAndUnsupportedVersionAreRejectedBeforeJdbcAccess() {
         for (var identity : List.of(new SchemaIdentity("example.other", "1", UUID.randomUUID()),
-                new SchemaIdentity(OWNER, "2", UUID.randomUUID()))) {
+                new SchemaIdentity(OWNER, "3", UUID.randomUUID()))) {
             SchemaAccess access = new SchemaAccess() {
                 public SchemaIdentity identity() {
                     return identity;

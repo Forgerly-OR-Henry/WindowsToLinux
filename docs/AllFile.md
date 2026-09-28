@@ -1776,9 +1776,12 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
 
 - `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、日志、发布引用及 Git 来源原任务恢复器；页面/引擎迁移仍在进行。
-- `mod/deployment/db/DeploymentSchema.java`：独立于业务启动的固定数据生命周期，初始化文档规定的 18 张表，只读核验列清单、类型化配置内容摘要及发布绑定。
-- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：官方部署 Schema 1 的固定 H2 DDL，含业务表及标准日志。
-- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：只读列清单，用于发现缺表、缺列及多余表列。
+- `mod/deployment/db/DeploymentSchema.java`：以 Schema 2 初始化并只读核验原 18 张表、秘密用途、配置摘要及发布绑定。
+- `mod/deployment/db/DeploymentSchemaMigration12.java`：经受限来源读者和新目标写者复制 Schema 1 到 2；源只读、BLOB 流式复制、保留旧事件身份序列与秘密用途未知事实。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：冻结的官方部署 Schema 1 H2 DDL。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：冻结的 Schema 1 只读列清单。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v2.sql`：官方部署 Schema 2 的固定 H2 DDL，秘密修订新增可空精确用途。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v2.sql`：Schema 2 只读列清单，核对新增用途列与原业务结构。
 - `mod/deployment/db/DeploymentConfigurationRepository.java`：在原任务受管 H2 连接中保存不可变配置及精确发布绑定，读取时复核类型和摘要。
 - `mod/deployment/db/DeploymentDataTransaction.java`：所属业务事务的提交/回滚边界，无法确认时保留 UNKNOWN。
 - `mod/deployment/service/core/config/DeploymentConfigurationSnapshot.java`：保留原规范 SHA-256 算法的不可变配置修订。
@@ -1824,9 +1827,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentPayloadReader.java`：统一有界 BLOB 流读取，保留 SQL NULL 并拒绝超过既有格式上限的载荷。
 - `mod/deployment/service/core/model/DeploymentApplicationGraph.java`：完整单服务器应用拓扑，校验组件唯一、依赖无环、健康归属及资源路径精确覆盖。
 - `mod/deployment/db/DeploymentGraphRepository.java`：在既有匹配部署单元上原子替换完整图，只返回 graph_ready=true 的一致快照，不查询平台私有表。
-- `mod/deployment/service/core/model/DeploymentSecretRevision.java`：精确秘密修订、不透明平台凭据 ID 和创建时间，不保存秘密值。
+- `mod/deployment/service/core/model/DeploymentSecretRevision.java`：精确秘密修订、不透明平台凭据 ID、创建时间及原用途；旧行用途缺失明示为未知，不保存秘密值。
 - `mod/deployment/service/core/model/DeploymentCurrentRelease.java`：部署单元当前确认发布的摘要及时间。
-- `mod/deployment/db/DeploymentSecretRepository.java`：不可变秘密元数据及完整发布引用集合，区分未绑定与显式空集合，不覆盖普通配置绑定。
+- `mod/deployment/db/DeploymentSecretRepository.java`：新修订须保存不可变精确用途，旧 NULL 只读保留；完整发布引用集合区分未绑定与显式空集合，不覆盖普通配置绑定。
 - `mod/deployment/db/DeploymentUnitCommit.java`：数据库写入边界的单元成功记录，校验单元、配置、发布及秘密集合一致，不是公开 Mod API。
 - `mod/deployment/db/DeploymentPublicationRepository.java`：同事务保存整图所有单元、当前发布、配置、精确秘密集合及拓扑，保持原服务器归属与无关展示/观测字段。
 - `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。

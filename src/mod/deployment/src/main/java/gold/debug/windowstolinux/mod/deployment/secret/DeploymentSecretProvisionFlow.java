@@ -131,7 +131,8 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             journal.reserved(reference.id());
             journal.writeStarted();
             try {
-                revisions.saveRevision(task, new DeploymentSecretRevision(revision, created.id(), createdAt));
+                revisions.saveRevision(task,
+                        new DeploymentSecretRevision(revision, created.id(), createdAt, Optional.of(purpose)));
             } catch (SQLException knownRollback) {
                 journal.knownFailure(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_SAVE_FAILED",
                         "Secret revision was not saved", Map.of(), Optional.empty()));
@@ -159,8 +160,10 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             DeploymentSecretProvisionJournal journal) {
         if (settled.outcome() == Outcome.SUCCEEDED) {
             var facts = journal.facts();
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new DeploymentSecretRevision(facts.revision(),
-                    facts.credentialId().orElseThrow(), facts.createdAt())), Optional.empty());
+            return new OperationResult<>(
+                    Outcome.SUCCEEDED, Optional.of(new DeploymentSecretRevision(facts.revision(),
+                            facts.credentialId().orElseThrow(), facts.createdAt(), Optional.of(facts.purpose()))),
+                    Optional.empty());
         }
         return new OperationResult<>(settled.outcome(), Optional.empty(), settled.problem());
     }
@@ -241,7 +244,8 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param facts original durable facts / 原持久依据
      * @return exact row / 精确行 */
     private static DeploymentSecretRevision revision(DeploymentSecretProvisionJournal.Facts facts) {
-        return new DeploymentSecretRevision(facts.revision(), facts.credentialId().orElseThrow(), facts.createdAt());
+        return new DeploymentSecretRevision(facts.revision(), facts.credentialId().orElseThrow(), facts.createdAt(),
+                Optional.of(facts.purpose()));
     }
 
     /** Returns a successful result without a retained Java value. / 返回不留存 Java 值的成功结果。
