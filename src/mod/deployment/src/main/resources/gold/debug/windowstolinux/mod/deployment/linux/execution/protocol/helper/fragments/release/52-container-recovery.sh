@@ -1,9 +1,10 @@
 snapshot_container() {
-    [ "$#" -eq 2 ] || reject snapshot-container-arguments
-    local app="$1" manifest="$2"
+    [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || reject snapshot-container-arguments
+    local app="$1" manifest="$2" task="${3:-}"
     current_application="$app"
     require_app "$app"
     require_digest "$manifest"
+    if [ -n "$task" ]; then require_snapshot_token "$task"; fi
     initialise_controlled_roots
     container_current_release "$app" "$manifest"
     if [ "$previous_present" -eq 0 ]; then
@@ -11,7 +12,7 @@ snapshot_container() {
         return
     fi
     local token snapshot autostart
-    token="$(cat /proc/sys/kernel/random/uuid)"
+    if [ -n "$task" ]; then token="$task"; else token="$(cat /proc/sys/kernel/random/uuid)"; fi
     require_snapshot_token "$token"
     snapshot="$(snapshot_root "$app" "$token")"
     install -d -o root -g root -m 700 -- "$snapshot"
@@ -26,7 +27,13 @@ snapshot_container() {
     printf '%s\n' "$autostart" >"$snapshot/autostart"
     chown root:root -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
     chmod 600 -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
-    printf 'SNAPSHOT_TOKEN=%s\nPREVIOUS=1\nPREVIOUS_RUNNING=%s\n' "$token" "$previous_running"
+    if [ -n "$task" ]; then
+        install -o root -g root -m 600 -- "$previous_path/.windowstolinux-owner" "$snapshot/.deployment-old-owner"
+        printf '%s\n' "$task" >"$snapshot/.deployment-task"
+        chown root:root -- "$snapshot/.deployment-task"
+        chmod 600 -- "$snapshot/.deployment-task"
+    fi
+    printf 'SNAPSHOT_TOKEN=%s\nPREVIOUS=1\nPREVIOUS_RUNNING=%s\nPREVIOUS_DIGEST=%s\nPREVIOUS_KIND=container\n' "$token" "$previous_running" "${previous_path##*/}"
 }
 stop_container_runtime() {
     local app="$1" name found

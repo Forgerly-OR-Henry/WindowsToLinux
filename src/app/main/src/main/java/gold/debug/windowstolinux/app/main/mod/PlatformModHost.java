@@ -118,6 +118,12 @@ public interface PlatformModHost {
          * @return transport service / 传输服务 */
         gold.debug.windowstolinux.appapi.linux.LinuxService linux();
 
+        /** Releases retained physical connections of only the original task before author recovery. / 作者恢复前仅释放原任务留存的物理连接。
+         * @param task authentic original recovery context / 真实原任务恢复上下文
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if physical release is unconfirmed / 物理释放未确认时 */
+        void closeTaskResources(gold.debug.windowstolinux.appapi.task.TaskContext task)
+                throws gold.debug.windowstolinux.appapi.task.ApiException;
+
         /** Releases the original capabilities after actual resource cleanup. / 实际资源清理后释放原能力。
          * @throws gold.debug.windowstolinux.appapi.task.ApiException if cleanup remains / 仍有清理残留时 */
         @Override

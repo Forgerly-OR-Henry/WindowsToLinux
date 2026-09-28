@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSource
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -50,7 +51,7 @@ public final class Mod implements ModEntrypoint {
             throw new IllegalStateException("Deployment context is already bound");
         DeploymentSchema.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
-        var flow = new DeploymentReferenceFlow(context);
+        var flow = new DeploymentReferenceFlow(context, new DeploymentStandardPublicationRecovery(context));
         var registration = context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE, flow);
         var gitFlow = new DeploymentGitSourceFlow(context);
         RecoveryRegistration gitRegistration;

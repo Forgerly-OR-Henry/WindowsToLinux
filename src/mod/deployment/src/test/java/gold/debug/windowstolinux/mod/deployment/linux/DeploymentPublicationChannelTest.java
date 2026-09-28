@@ -24,11 +24,41 @@ class DeploymentPublicationChannelTest {
         var unit = unit();
         var missing = channel(request -> reply(0, ""), new ArrayList<>());
         assertEquals(Outcome.UNKNOWN, missing.snapshot(unit, runtime()).outcome());
-        var previous = channel(
-                request -> reply(0,
-                        "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\n"),
+        var previous = channel(request -> reply(0,
+                "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
                 new ArrayList<>());
         assertTrue(previous.snapshot(unit, runtime()).value().orElseThrow().previousRunning());
+        var foreign = channel(request -> reply(0,
+                "SNAPSHOT_TOKEN=22222222-2222-4222-8222-222222222222\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
+                new ArrayList<>());
+        assertEquals(Outcome.UNKNOWN, foreign.snapshot(unit, runtime()).outcome());
+    }
+
+    /** Task-bound status accepts only complete facts and never converts malformed activity to false. / 原任务状态仅接收完整事实，绝不把畸形活动值转为否。 */
+    @Test
+    void originalStatusRejectsMissingAndConflictingRecoveryFacts() throws Exception {
+        var unit = unit();
+        String body = "PUBLICATION_STATUS=1\nCURRENT=" + "d".repeat(64)
+                + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD="
+                + "e".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
+                + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+        var good = channel(request -> reply(0, body), new ArrayList<>());
+        var observed = good.originalStatus(unit, "demo-" + "a".repeat(16), Optional.of("d".repeat(64)), "native",
+                "none");
+        assertEquals(Outcome.SUCCEEDED, observed.outcome());
+        assertEquals(Optional.of("e".repeat(64)), observed.value().orElseThrow().previousDigest());
+        for (String malformed : List.of(body.replace("SNAPSHOT_RUNNING=1", "SNAPSHOT_RUNNING=wrong"),
+                body.replace("SNAPSHOT=11111111-1111-4111-8111-111111111111",
+                        "SNAPSHOT=22222222-2222-4222-8222-222222222222"),
+                body.replace("BUILD_ACTIVE=no", "BUILD_ACTIVE=maybe"),
+                body.replace("CONTAINER_PRESENT=not-applicable", "CONTAINER_PRESENT=no"), body + "CURRENT=none\n")) {
+            var peer = channel(request -> reply(0, malformed), new ArrayList<>());
+            assertEquals(Outcome.UNKNOWN,
+                    peer.originalStatus(unit, "demo-" + "a".repeat(16), Optional.of("d".repeat(64)), "native", "none")
+                            .outcome());
+        }
     }
 
     /** A full known publish failure can recover; legal stop diagnostics precede its unique final marker. / 完整已知发布失败可恢复；合法停机诊断位于唯一末尾标记前。 */
@@ -74,6 +104,18 @@ class DeploymentPublicationChannelTest {
         assertFalse(requests.stream().anyMatch(script -> script.contains("rollback")));
     }
 
+    /** A cancellation returned after execute was called does not prove the remote command stayed unsent. / execute调用后的取消不证明远端命令未发送。 */
+    @Test
+    void executeCancellationCannotBeMistakenForAdmissionRefusal() throws Exception {
+        var requests = new ArrayList<String>();
+        var peer = channel(request -> new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                Optional.of(new Problem(ProblemCode.CANCELLED, "FIXTURE_CANCELLED", "Controlled cancellation", Map.of(),
+                        Optional.empty()))),
+                requests);
+        assertEquals(Outcome.UNKNOWN, peer.cleanupCandidate(unit(), "demo-" + "a".repeat(16)).outcome());
+        assertEquals(1, requests.size());
+    }
+
     /** On-demand container needs only its helper identity; malformed native numbers remain unresolved. / 按需容器只需helper身份；畸形原生数值保持未决。 */
     @Test
     void runtimeObservationKeepsOnDemandAndNativeBoundaries() throws Exception {
@@ -95,7 +137,7 @@ class DeploymentPublicationChannelTest {
     @Test
     void firstRollbackNeverAcceptsForgedOrConflictingCompletion() throws Exception {
         var unit = unit();
-        var snapshot = new DeploymentRemoteReleaseSnapshot(Optional.empty(), false);
+        var snapshot = new DeploymentRemoteReleaseSnapshot(Optional.empty(), false, Optional.empty(), "none");
         var good = channel(request -> reply(0, "STOP_AFTER=1\nROLLED_BACK=1\n"), new ArrayList<>());
         assertEquals(Outcome.SUCCEEDED, good.rollback(unit, "d".repeat(64), snapshot, runtime()).outcome());
         var forged = channel(request -> reply(0, "notROLLED_BACK=1\n"), new ArrayList<>());

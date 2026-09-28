@@ -1832,7 +1832,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionIdentity.java`：原业务操作/平台任务、应用/服务器、执行模式与审阅修订的不可变身份。
 - `mod/deployment/db/DeploymentReferenceIntent.java`：预留前保存的精确平台资源、秘密用途及业务键，不包含秘密值。
 - `mod/deployment/db/DeploymentExecutionRecord.java`：包含正式结果、独立提交/清理标记及原 JSON 文档的只读持久证据。
-- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 4 执行信封、审阅项目、原引用 UUID、成功历史与非成功结果的公开 ProblemCode/eventCode；旧格式只读保留。
+- `mod/deployment/db/DeploymentExecutionCodec.java`：格式 4 通用执行信封及格式 5 单组件发布模板、原引用 UUID、成功历史与非成功结果的公开 ProblemCode/eventCode；格式 4 仍按原契约核对，不支持的更旧格式只读保留。
+- `mod/deployment/db/DeploymentPublicationProposal.java`：数据库边界的完整非秘密单组件发布提案，不使 db 依赖标准发布编排。
+- `mod/deployment/db/DeploymentPublicationTemplateCodec.java`：有界、嵌套 JSON 的原发布提案编解码，供原执行记录跨启动读回。
 - `mod/deployment/db/DeploymentReferenceKey.java`：原应用、单元及服务器作用域秘密修订的平台引用业务键，精确核对原意图。
 - `mod/deployment/db/DeploymentReferenceAssociations.java`：只读检查当前与保留发布历史、秘密修订的原业务引用，冲突不当作缺失。
 - `mod/deployment/db/DeploymentProjectRecord.java`：稳定项目身份、完整来源事实与精确创建/更新观测时间。
@@ -1840,7 +1842,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。
 - `mod/deployment/service/core/DeploymentPublication.java`：作者一次性返回的完整已核实应用图和单元发布事实。
 - `mod/deployment/service/core/DeploymentPublicationPlan.java`：预留前已审阅的原执行身份及完整引用意图，不接受外部伪造任务 UUID。
-- `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；同一原任务可先准备素材与计划，UNKNOWN 不重放作者副作用。
+- `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；同一原任务可先准备素材与计划，并经窄端口核对原远端证据，UNKNOWN 不重放作者副作用。
+- `mod/deployment/service/core/DeploymentRemoteRecovery.java`：原任务发布恢复的窄端口，由 Mod 装配具体标准发布观察与收尾。
 - `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
 - `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
 - `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
@@ -2057,7 +2060,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
 - `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
 - `mod/deployment/service/standard/deploy/plan/DeploymentReviewedReleaseIdentity.java`：按原 v5 内容身份与 tools-v1 实际工具绑定生成远端发布摘要，独立于审阅时间和本机发布清单。
-- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationCleanupJournal.java`：原任务 checkpoint 保存远端候选、旧版快照、发布及清理阶段的确认事实。
+- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationCleanupJournal.java`：原任务检查点保存远端候选、旧版快照、已核实业务结果及原收尾阶段的非秘密事实。
+- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationRecoveryFacts.java`：恢复时从原检查点读取并校验原任务、候选、旧版及已知结果事实。
+- `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationRecovery.java`：经原任务审批只读核对远端精确发布状态，并仅推进有证据的原业务提交和收尾。
 - `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationExecutor.java`：在同一原发布任务内关联素材、计划、候选构建、远端发布与本机发布事务。
 - `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationTransaction.java`：执行单组件封存、旧版快照、发布、健康、已知回滚及 maintenance/候选收尾。
 - `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。
@@ -2094,6 +2099,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/linux/DeploymentContainerArguments.java`：按旧固定 helper 合同组织容器运行参数。
 - `mod/deployment/linux/DeploymentPublicationArguments.java`：约束单组件发布的固定配置、运行及内容输入。
 - `mod/deployment/linux/DeploymentPublicationChannel.java`：用原任务及精确审批发送封存、快照、发布、健康、观察、回滚和候选清理命令。
+- `mod/deployment/linux/DeploymentOriginalPublicationStatus.java`：严格表达原任务、原候选、当前发布、旧快照、维护和运行设施的只读远端观察。
 - `mod/deployment/linux/DeploymentRemoteReleaseSnapshot.java`：区分首次发布与携带原 token 和运行状态的远端旧版快照。
 - `mod/deployment/linux/DeploymentRemoteRuntimeObservation.java`：表达已核实运行、按需安装、停止与错误状态。
 - `mod/deployment/linux/DeploymentRuntimeArguments.java`：按旧固定 helper 合同组织 native 与容器运行参数。
@@ -2105,11 +2111,11 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/linux/DeploymentPlatformCapabilityParser.java`：按原有界类型和缺字段规则解析固定主机能力回执为纯值，不凭空补造远端事实。
 - `mod/deployment/linux/DeploymentPlatformCapabilityProbe.java`：生成发行版、架构、安全与运行能力的固定只读探测。
 - `mod/deployment/linux/DeploymentBuildOutputProtocol.java`：不改原helper资源，将最多128MiB构建流压成平台8MiB以内的固定短回执与已遮蔽诊断。
-- `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按原 40 片段、5 插入和独立 build-entry 组装协议 10 受管 helper，逐字节核对固定摘要。
+- `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按固定片段、5 插入和独立 build-entry 组装协议 11 受管 helper，逐字节核对固定摘要。
 - `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、实际字节校验及最终回执。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainSelectionPolicy.java`：按原纯策略从已审阅支持目录中选择精确候选发布。
 
-下列资源位于 `src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/`；每项与旧 helper 对应资源字节相同，由固定组装清单引用，不作为新 SSH 实现或独立协议版本。
+下列资源位于 `src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/`；固定清单沿用旧 helper 资源；协议 11 为原任务观察修改 00、70、40、52 四份片段并新增 53 片段，其余按原字节参与新固定包身份，不作为新 SSH 实现。
 
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/distro/dnf/centos-source-repositories.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/00-protocol-foundation.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
@@ -2129,6 +2135,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/18-container-storage.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/50-container-release.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/52-container-recovery.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/53-publication-observation.sh`：协议 11 原任务只读发布状态、旧快照及运行设施的精确观察资源。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/54-restore-candidate.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/56-restore-commit.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/57-application-restore.sh`：受管 helper 固定协议资源，按原字节参与完整包身份校验。

@@ -24,6 +24,9 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
     /** Authoritative retained business associations. / 权威保留业务关联。 */
     private final DeploymentReferenceAssociations associations;
 
+    /** Optional real remote recovery for standard publications, absent in isolated reference-only callers. / 标准发布的真实远端恢复；孤立引用调用方可不存在。 */
+    private final Optional<DeploymentRemoteRecovery> remoteRecovery;
+
     /** Publication prepared within the same original platform task before durable reservation. / 在同一原平台任务内、持久预留前准备的发布。
      * @param plan complete original reference intent / 完整原引用意图
      * @param author one-shot original effect callback / 一次性原副作用回调
@@ -44,9 +47,24 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
     /** Binds one actual Mod activation. / 绑定一个实际插件启用。
      * @param context original activation / 原启用 */
     public DeploymentReferenceFlow(ModContext context) {
+        this(context, Optional.empty());
+    }
+
+    /** Binds original references and a narrow remote recovery assembled by the same Mod activation. / 绑定原引用及同一Mod启用装配的窄远端恢复。
+     * @param context actual original activation / 实际原启用
+     * @param recovery original remote recovery / 原远端恢复 */
+    public DeploymentReferenceFlow(ModContext context, DeploymentRemoteRecovery recovery) {
+        this(context, Optional.of(Objects.requireNonNull(recovery)));
+    }
+
+    /** Shares one original setup for reference-only and real standard callers. / 引用调用方和真实标准调用方共用一份原装配。
+     * @param context original activation / 原启用
+     * @param recovery optional narrow recovery / 可选窄恢复 */
+    private DeploymentReferenceFlow(ModContext context, Optional<DeploymentRemoteRecovery> recovery) {
         this.context = Objects.requireNonNull(context);
         this.executions = new DeploymentExecutionRepository(context.db());
         this.associations = new DeploymentReferenceAssociations(context.db());
+        this.remoteRecovery = recovery;
     }
 
     /** Submits a reviewed one-shot publication whose author callback supplies actual verified effects. / 提交作者回调提供实际已核实结果的一次性已审阅发布。
@@ -125,7 +143,29 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         var original = executions.findForTask(task);
         if (original.isEmpty())
             return unknown();
-        return reconcileRecord(task, original.orElseThrow());
+        var record = original.orElseThrow();
+        if ((record.phase().equals("EXECUTING") || record.phase().equals("COMMITTED")) && remoteRecovery.isPresent()) {
+            var remote = remoteRecovery.orElseThrow().reconcile(task, record);
+            if (remote.isPresent()) {
+                var verified = remote.orElseThrow();
+                if (verified.outcome() == Outcome.UNKNOWN)
+                    return reconcileRecord(task, record);
+                if (record.outcome().isEmpty() || record.outcome().orElseThrow() == Outcome.UNKNOWN) {
+                    if (verified.outcome() == Outcome.SUCCEEDED) {
+                        var proposal = verified.value().orElseThrow();
+                        executions.commitApplication(task, record.identity().executionId(), proposal.graph(),
+                                proposal.units(), Instant.now());
+                    } else if (verified.outcome() == Outcome.FAILED || verified.outcome() == Outcome.CANCELLED) {
+                        executions.recordUncommittedOutcome(task, record.identity().executionId(), verified.outcome(),
+                                verified.problem().orElseThrow(), Instant.now());
+                    } else
+                        return unknown();
+                } else if (record.outcome().orElseThrow() != verified.outcome())
+                    return unknown();
+                record = executions.find(task, record.identity().executionId()).orElseThrow();
+            }
+        }
+        return reconcileRecord(task, record);
     }
 
     /** Runs one admitted callback with all reference intent durable before reservation. / 在所有引用意图持久化后运行一次准入回调。

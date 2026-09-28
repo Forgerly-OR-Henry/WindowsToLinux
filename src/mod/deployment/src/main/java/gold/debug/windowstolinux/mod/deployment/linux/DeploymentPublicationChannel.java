@@ -68,7 +68,7 @@ public final class DeploymentPublicationChannel {
                 ? "snapshot-container"
                 : "snapshot-deployment";
         var observed = send("deployment.publication.snapshot.v1", unit, verb,
-                List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(30), 4096);
+                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString()), Duration.ofSeconds(30), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -77,13 +77,102 @@ public final class DeploymentPublicationChannel {
             return unknown("DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
         String output = observed.value().orElseThrow().stdout();
         if (output.equals("PREVIOUS=0\n"))
-            return success(new DeploymentRemoteReleaseSnapshot(Optional.empty(), false));
+            return success(new DeploymentRemoteReleaseSnapshot(Optional.empty(), false, Optional.empty(), "none"));
         var match = java.util.regex.Pattern.compile(
-                "SNAPSHOT_TOKEN=([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\\nPREVIOUS=1\\nPREVIOUS_RUNNING=([01])\\n")
+                "SNAPSHOT_TOKEN=([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\\nPREVIOUS=1\\nPREVIOUS_RUNNING=([01])\\nPREVIOUS_DIGEST=([0-9a-f]{64})\\nPREVIOUS_KIND=(ordinary|deployment|container)\\n")
                 .matcher(output);
         if (!match.matches())
             return unknown("DEPLOYMENT_SNAPSHOT_RECEIPT_INVALID");
-        return success(new DeploymentRemoteReleaseSnapshot(Optional.of(match.group(1)), "1".equals(match.group(2))));
+        if (!task.id().toString().equals(match.group(1))
+                || runtime instanceof DeploymentRuntimeDefinition.Container != "container".equals(match.group(4)))
+            return unknown("DEPLOYMENT_SNAPSHOT_RECEIPT_INVALID");
+        return success(new DeploymentRemoteReleaseSnapshot(Optional.of(match.group(1)), "1".equals(match.group(2)),
+                Optional.of(match.group(3)), match.group(4)));
+    }
+
+    /** Reads only the original task's owned publication evidence without replaying an effect. / 仅读取原任务所属发布证据而不重放副作用。
+     * @param unit original owned application / 原所属应用
+     * @param candidateId original confirmed candidate / 原已确认候选
+     * @param releaseSha256 exact attempted release, absent before publication identity exists / 精确尝试发布；发布身份未形成前为空
+     * @param backend original persisted native or container backend / 原已持久原生或容器后端
+     * @param engine original persisted container engine, or none / 原已持久容器引擎或none
+     * @return complete original status or retained uncertainty / 完整原状态或保留未知
+     * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
+    public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
+            String candidateId, Optional<String> releaseSha256, String backend, String engine) throws ApiException {
+        requireUnit(unit);
+        Objects.requireNonNull(releaseSha256);
+        if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}")
+                || releaseSha256.isPresent() && !releaseSha256.orElseThrow().matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("Original publication identity required");
+        if (!Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine))
+            throw new IllegalArgumentException("Original backend and engine required");
+        var observed = send("deployment.publication.original-status.v1", unit, "publication-original-status",
+                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), candidateId,
+                        releaseSha256.orElse("none"), backend, engine),
+                Duration.ofSeconds(30), 4096);
+        if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
+            return withoutValue(observed);
+        if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
+            return withoutValue(observed);
+        if (!complete(observed))
+            return unknown("DEPLOYMENT_ORIGINAL_STATUS_UNCONFIRMED");
+        var values = fields(observed.value().orElseThrow().stdout());
+        if (!values.keySet()
+                .equals(Set.of("PUBLICATION_STATUS", "CURRENT", "CURRENT_KIND", "CURRENT_MODE", "SNAPSHOT",
+                        "SNAPSHOT_OLD", "SNAPSHOT_KIND", "SNAPSHOT_RUNNING", "MAINTENANCE", "CANDIDATE", "BUILD_ACTIVE",
+                        "UNIT_PRESENT", "CONTAINER_PRESENT", "RETAINED_COUNT"))
+                || !"1".equals(values.get("PUBLICATION_STATUS"))
+                || !Set.of("none", task.id().toString()).contains(values.get("SNAPSHOT"))
+                || !Set.of("none", "0", "1").contains(values.get("SNAPSHOT_RUNNING"))
+                || ("none".equals(values.get("SNAPSHOT")) != "none".equals(values.get("SNAPSHOT_RUNNING")))
+                || !("none".equals(values.get("MAINTENANCE")) || releaseSha256.isPresent()
+                        && ("deployment-" + releaseSha256.orElseThrow()).equals(values.get("MAINTENANCE")))
+                || !Set.of("owned", "absent").contains(values.get("CANDIDATE"))
+                || !Set.of("yes", "no").contains(values.get("BUILD_ACTIVE"))
+                || !Set.of("yes", "no").contains(values.get("UNIT_PRESENT"))
+                || !Set.of("yes", "no", "not-applicable").contains(values.get("CONTAINER_PRESENT"))
+                || (backend.equals("native") != "not-applicable".equals(values.get("CONTAINER_PRESENT"))))
+            return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
+        try {
+            if (!values.get("RETAINED_COUNT").matches("0|[1-9][0-9]{0,3}"))
+                return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
+            return success(new DeploymentOriginalPublicationStatus(
+                    "none".equals(values.get("CURRENT")) ? Optional.empty() : Optional.of(values.get("CURRENT")),
+                    values.get("CURRENT_KIND"), values.get("CURRENT_MODE"), !"none".equals(values.get("SNAPSHOT")),
+                    "none".equals(values.get("SNAPSHOT_OLD"))
+                            ? Optional.empty()
+                            : Optional.of(values.get("SNAPSHOT_OLD")),
+                    values.get("SNAPSHOT_KIND"),
+                    "none".equals(values.get("SNAPSHOT_RUNNING"))
+                            ? Optional.empty()
+                            : Optional.of("1".equals(values.get("SNAPSHOT_RUNNING"))),
+                    !"none".equals(values.get("MAINTENANCE")), "owned".equals(values.get("CANDIDATE")),
+                    "yes".equals(values.get("BUILD_ACTIVE")), "yes".equals(values.get("UNIT_PRESENT")),
+                    "not-applicable".equals(values.get("CONTAINER_PRESENT"))
+                            ? Optional.empty()
+                            : Optional.of("yes".equals(values.get("CONTAINER_PRESENT"))),
+                    Integer.parseInt(values.get("RETAINED_COUNT"))));
+        } catch (IllegalArgumentException malformed) {
+            return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
+        }
+    }
+
+    /** Discards only a task-bound prepublish snapshot after read-only proof that old current is unchanged. / 只在只读证明旧当前版本未变后丢弃原任务发布前快照。
+     * @param unit exact original owner / 精确原归属
+     * @return verified discard or retained uncertainty / 已核实丢弃或保留未知
+     * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
+    public OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit) throws ApiException {
+        requireUnit(unit);
+        var observed = send("deployment.publication.snapshot-discard.v1", unit, "snapshot-discard-task",
+                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString()), Duration.ofSeconds(60), 4096);
+        if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
+            return withoutValue(observed);
+        if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
+            return withoutValue(observed);
+        if (!complete(observed) || !"SNAPSHOT_DISCARDED=1\n".equals(observed.value().orElseThrow().stdout()))
+            return unknown("DEPLOYMENT_SNAPSHOT_DISCARD_UNCONFIRMED");
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     /** Stages one immutable normal configuration payload through the original approval. / 经原授权暂存一份不可变普通配置。
@@ -599,7 +688,11 @@ public final class DeploymentPublicationChannel {
         if (grant.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
         try {
-            return session.execute(request, grant.value().orElseThrow());
+            var executed = session.execute(request, grant.value().orElseThrow());
+            if (executed.outcome() == Outcome.CANCELLED
+                    || executed.outcome() == Outcome.FAILED && executed.value().isEmpty())
+                return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+            return executed;
         } catch (ApiException failure) {
             if (failure.problem().code() == ProblemCode.ACCESS_DENIED
                     || failure.problem().code() == ProblemCode.INVALID_INPUT)

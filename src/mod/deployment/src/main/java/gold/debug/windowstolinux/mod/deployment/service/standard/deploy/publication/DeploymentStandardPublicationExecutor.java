@@ -149,7 +149,7 @@ public final class DeploymentStandardPublicationExecutor {
         try {
             var request = plan.request();
             var journal = DeploymentPublicationCleanupJournal.begin(context, task, unit, request.archive().sha256(),
-                    ReviewedPlanIdentity.from(request));
+                    ReviewedPlanIdentity.from(request), request.runtime());
             cleanupFacts.set(journal);
             var build = new DeploymentStandardCandidateExecutor().execute(plan, session, context.interaction(), task);
             result = build.outcome() == Outcome.SUCCEEDED

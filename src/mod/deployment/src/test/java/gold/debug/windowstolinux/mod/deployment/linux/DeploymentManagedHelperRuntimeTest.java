@@ -95,7 +95,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
                             calls.incrementAndGet();
                             return new OperationResult<>(Outcome.SUCCEEDED,
                                     Optional.of(new CommandResult(Optional.of(0),
-                                            "HELPER=1\nPROTOCOL=10\nSHA256="
+                                            "HELPER=1\nPROTOCOL=11\nSHA256="
                                                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n",
                                             "", false)),
                                     Optional.empty());

@@ -6,6 +6,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -15,6 +16,7 @@ import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
@@ -40,11 +42,14 @@ import org.junit.jupiter.params.provider.EnumSource;
 class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture {
     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
     private enum ScenarioType {
-        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN
+        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW
     }
 
     /** Actual host-reviewed grants. / 宿主实际审核的授权。 */
     private final Map<ApprovalGrant, ActionIntent> grants = new ConcurrentHashMap<>();
+
+    /** Optional controlled loopback port for a later cross-process recovery probe. / 后续跨进程恢复探针可用的受控回环端口。 */
+    private int recoveryPort = 22;
 
     /** Starts an actual CLASS/H2 runtime with controlled host interactions. / 启动带受控宿主交互的真实CLASS/H2运行时。
      * @return actual platform / 真实平台
@@ -132,11 +137,13 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     /** Runs only the controlled unknown case when launched by the parent test. / 仅在父测试启动时运行受控未知场景。
      * @param args fixed child marker, directory and scenario / 固定子进程标记、目录与场景 */
     public static void main(String[] args) {
-        if (args.length != 3 || !args[0].equals("--unknown"))
+        if ((args.length != 3 && args.length != 4) || !args[0].equals("--unknown"))
             throw new IllegalArgumentException("Isolated publication probe only");
         try {
             var probe = new DeploymentStandardPublicationExecutorTest();
             probe.root = Path.of(args[1]);
+            if (args.length == 4)
+                probe.recoveryPort = Integer.parseInt(args[3]);
             probe.runScenario(ScenarioType.valueOf(args[2]), true);
             System.out.println("ORIGINAL_UNKNOWN_VERIFIED");
             System.exit(0);
@@ -160,9 +167,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         try {
             start(runtime, true);
             var server = new ServerRef("server-publication");
-            runtime.servers().saveServerProfile(
-                    ServerProfile.fromStored(
-                            new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+            runtime.servers().saveServerProfile(ServerProfile.fromStored(
+                    new StoredServerProfile(server.id(), "127.0.0.1", recoveryPort, "root", "fixture-password")),
                     "fixture-password".toCharArray());
             var actions = new CopyOnWriteArrayList<String>();
             var archiveSha = new AtomicReference<String>();
@@ -173,11 +179,13 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             RemoteSession session = peer(scenario, actions, archiveSha, archiveBytes, archivePath, candidate,
                     callbackEnded);
             var real = runtime.modContexts().get(OWNER).context();
-            var bound = withControlledSession(real, session);
+            var bound = withControlledSession(real, session, runtime, scenario);
             var original = new DeploymentReferenceFlow(bound);
             var executor = new DeploymentStandardPublicationExecutor(bound, original);
             var unit = DeploymentUnitIdentity.forManaged("service", server, "b".repeat(64));
             var handle = executor.submit(unit, Optional.empty(), Map.of(), task -> {
+                if (recoveryPort != 22)
+                    real.linux().connect(server, task);
                 var selection = real.source().selectDirectory("Source", task);
                 var material = new DeploymentSourcePreparer(real.source()).prepare(selection, 65536, 100, task);
                 var archive = new DeploymentSourceArchiver(real.source()).prepare(material, 65536, task);
@@ -239,7 +247,12 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     Thread.sleep(10);
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
                 assertEquals(scenario == ScenarioType.RETAIN_UNKNOWN ? 1 : 0, countMod(runtime, "deployment_release"));
-                if (scenario == ScenarioType.RETAIN_UNKNOWN) {
+                if (scenario == ScenarioType.COMMIT_WINDOW) {
+                    assertEquals(0, countMod(runtime, "deployment_release"));
+                    assertTrue(originalCheckpointReleased(runtime, handle.id()));
+                    assertEquals(1, countExecutionOutcome(runtime, "UNKNOWN"));
+                    assertFalse(actions.contains("rollback"));
+                } else if (scenario == ScenarioType.RETAIN_UNKNOWN) {
                     assertEquals(List.of("maintenance-end", "retain"),
                             actions.subList(actions.size() - 2, actions.size()));
                     assertFalse(actions.contains("candidate-cleanup"));
@@ -355,6 +368,23 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         }
     }
 
+    /** Observes only the original author checkpoint release before injecting a formal commit interruption. / 只在注入正式提交中断前观察原作者检查点释放。
+     * @param runtime actual host / 真实宿主
+     * @param task original task / 原任务
+     * @return true only if the original checkpoint was released / 仅原检查点已释放时为真
+     * @throws SQLException if platform evidence cannot be read / 平台依据不可读取时 */
+    private static boolean originalCheckpointReleased(PlatformRuntime runtime, UUID task) throws SQLException {
+        try (var connection = runtime.persistence().database().openConnection();
+                var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
+                        + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+            query.setObject(1, task);
+            query.setString(2, "gold.debug.windowstolinux.mod.deployment/checkpoint/deployment-publication-remote");
+            try (var rows = query.executeQuery()) {
+                return rows.next() && rows.getObject(1) != null;
+            }
+        }
+    }
+
     /** Counts one original known business outcome while task cleanup remains unknown. / 在任务清理未决时计数一项原已知业务结果。
      * @param runtime actual host / 实际宿主
      * @param outcome original persisted outcome / 原持久结果
@@ -392,7 +422,9 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param real original Mod context / 原Mod上下文
      * @param session controlled original session / 受控原会话
      * @return delegated context / 委托上下文 */
-    private ModContext withControlledSession(ModContext real, RemoteSession session) {
+    private ModContext withControlledSession(ModContext real, RemoteSession session, PlatformRuntime runtime,
+            ScenarioType scenario) {
+        var commitRefused = new AtomicBoolean();
         LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                 new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
                     assertEquals("connect", method.getName());
@@ -403,6 +435,21 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 (proxy, method, args) -> {
                     if (method.getName().equals("linux"))
                         return linux;
+                    if (method.getName().equals("db") && scenario == ScenarioType.COMMIT_WINDOW)
+                        return new ModDatabase() {
+                            public gold.debug.windowstolinux.appapi.db.SchemaIdentity identity() throws ApiException {
+                                return real.db().identity();
+                            }
+
+                            public java.sql.Connection openConnection(TaskContext task)
+                                    throws ApiException, SQLException {
+                                if (originalCheckpointReleased(runtime, task.id())
+                                        && commitRefused.compareAndSet(false, true))
+                                    throw new SQLException(
+                                            "Controlled interruption before formal business transaction");
+                                return real.db().openConnection(task);
+                            }
+                        };
                     if (method.getName().equals("interaction"))
                         return new InteractionService() {
                             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
@@ -460,7 +507,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     String script = ((CommandRequest) args[0]).script();
                     if (script.contains("managed-helper' probe")) {
                         actions.add("helper-probe");
-                        return reply("HELPER=1\nPROTOCOL=10\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
+                        return reply("HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
                                 + "\n");
                     }
                     if (script.contains("DISTRO_ID=")) {
@@ -515,12 +562,28 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
                     if (script.contains("snapshot-deployment")) {
                         actions.add("snapshot");
+                        var taskToken = java.util.regex.Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+                                .matcher(script);
+                        assertTrue(taskToken.find(), script);
                         return reply(scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
-                                ? "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=0\n"
+                                ? "SNAPSHOT_TOKEN=" + taskToken.group()
+                                        + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
+                                        + "\nPREVIOUS_KIND=deployment\n"
                                 : "PREVIOUS=0\n");
                     }
                     if (script.contains("publish-deployment")) {
                         actions.add("publish");
+                        if (scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_UNKNOWN
+                                || scenario == ScenarioType.RETAIN_UNKNOWN
+                                || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                                || scenario == ScenarioType.COMMIT_WINDOW) {
+                            var match = java.util.regex.Pattern
+                                    .compile("'publish-deployment' 'service' '[a-z0-9-]+' '([0-9a-f]{64})'")
+                                    .matcher(script);
+                            assertTrue(match.find(), script);
+                            Files.writeString(root.resolve("controlled-remote-publication"),
+                                    match.group(1) + "\n" + candidate.get().candidateId() + "\n");
+                        }
                         return scenario == ScenarioType.PUBLISH_UNKNOWN ? unknown() : reply("PUBLISHED=1\n");
                     }
                     if (script.contains("application-health")) {
