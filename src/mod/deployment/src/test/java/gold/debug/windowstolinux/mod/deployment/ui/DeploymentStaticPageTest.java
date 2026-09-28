@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Graphics2D;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -19,11 +21,16 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.secret.SecretRef;
+import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.appapi.task.TaskState;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import org.junit.jupiter.api.Test;
@@ -32,6 +39,264 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Checks the actual lazily registered Swing view, lock/close lifetime and optional visual evidence. / 检查真实惰性登记Swing视图、锁定关闭寿命及可选视觉证据。 */
 class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
+    /** A confirmed secret task completes after its owning page closes. / 已确认秘密任务在所属页关闭后继续完成。
+     * @throws Exception if original task handoff fails / 原任务交接失败时 */
+    @Test
+    void confirmedSecretCreationSurvivesImmediatePageClose() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers()
+                    .saveServerProfile(ServerProfile.fromStored(
+                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                            "fixture-password".toCharArray());
+            var real = runtime.modContexts().get(OWNER).context();
+            var entered = new CountDownLatch(1);
+            var release = new CountDownLatch(1);
+            var cancelled = new AtomicBoolean();
+            var intercepted = (SecretService) Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{SecretService.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("create")) {
+                            entered.countDown();
+                            assertTrue(release.await(20, TimeUnit.SECONDS));
+                            cancelled.set(((TaskContext) args[2]).cancellation().requested());
+                        }
+                        try {
+                            return method.invoke(real.secrets(), args);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    });
+            var bound = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("secrets"))
+                            return intercepted;
+                        try {
+                            return method.invoke(real, args);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    });
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(bound,
+                            new DeploymentStaticWorkflow(bound,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            bound))));
+            var mounted = new AtomicReference<JComponent>();
+            SwingUtilities.invokeAndWait(
+                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
+            SwingUtilities.invokeAndWait(() -> {
+                ((JTextField) secretPanel.getComponent(3)).setText("confirmed-secret");
+                findButton(secretPanel, "创建受保护修订").doClick();
+            });
+            var dialog = awaitDialog("创建受保护的应用秘密");
+            var handle = awaitCreation(page);
+            SwingUtilities.invokeAndWait(() -> {
+                findPassword(dialog).setText("\u4f60\u597d");
+                findOptionPane(dialog).setValue(JOptionPane.OK_OPTION);
+                dialog.dispose();
+            });
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                SwingUtilities.invokeAndWait(page::close);
+            } finally {
+                release.countDown();
+            }
+            assertEquals(Outcome.SUCCEEDED,
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertFalse(cancelled.get(), "Confirmed original secret creation must outlive the view");
+            awaitServerTasks(real);
+        }
+    }
+
+    /** Closing or locking an unanswered secret prompt cancels its original task without creating a credential. / 关闭或锁定未答秘密提示会取消原任务且不创建凭据。
+     * @param lock whether the view is locked instead of closed / 是否锁定而非关闭
+     * @throws Exception if the task or Swing boundary fails / 任务或 Swing 边界失败时 */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void unansweredSecretPromptCancelsOriginalTask(boolean lock) throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers()
+                    .saveServerProfile(ServerProfile.fromStored(
+                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                            "fixture-password".toCharArray());
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            var mounted = new AtomicReference<JComponent>();
+            SwingUtilities.invokeAndWait(
+                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
+            SwingUtilities.invokeAndWait(() -> {
+                ((JTextField) secretPanel.getComponent(3)).setText("cancelled-secret");
+                findButton(secretPanel, "创建受保护修订").doClick();
+            });
+            var dialog = awaitDialog("创建受保护的应用秘密");
+            var handle = awaitCreation(page);
+            SwingUtilities.invokeAndWait(() -> {
+                if (lock)
+                    page.environmentChanged(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", true));
+                else
+                    page.close();
+            });
+            assertFalse(dialog.isVisible());
+            assertEquals(Outcome.CANCELLED,
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            var read = context.tasks().submit(
+                    new TaskRequest("cancelled-secret-read", "Check absent revision", List.of(), true), task -> {
+                        assertTrue(new DeploymentSecretRepository(context.db())
+                                .findRevision(task, new DeploymentSecretReference("cancelled-secret", 1)).isEmpty());
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
+            assertEquals(Outcome.SUCCEEDED,
+                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            if (lock)
+                SwingUtilities.invokeAndWait(page::close);
+            awaitServerTasks(context);
+        }
+    }
+
+    /** Interrupting the waiting worker still clears the delayed EDT password control. / 中断等待线程后迟到的 EDT 仍清空密码控件。
+     * @throws Exception if the bounded Swing handoff fails / 有界 Swing 交接失败时 */
+    @Test
+    void interruptedPasswordCaptureDiscardsDelayedSwingValue() throws Exception {
+        var field = new JPasswordField();
+        SwingUtilities.invokeAndWait(() -> field.setText("\u4f60\u597d"));
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var failure = new AtomicReference<Throwable>();
+        SwingUtilities.invokeLater(() -> {
+            entered.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        var capture = DeploymentStaticSecretControls.class.getDeclaredMethod("capturePassword", JPasswordField.class);
+        capture.setAccessible(true);
+        var worker = Thread.ofVirtual().start(() -> {
+            try {
+                char[] exposed = (char[]) capture.invoke(null, field);
+                Arrays.fill(exposed, '\0');
+                failure.set(new AssertionError("Interrupted capture returned a secret"));
+            } catch (java.lang.reflect.InvocationTargetException wrapped) {
+                failure.set(wrapped.getCause());
+            } catch (Exception unexpected) {
+                failure.set(unexpected);
+            }
+        });
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            worker.interrupt();
+            worker.join(5_000);
+            assertFalse(worker.isAlive());
+            assertInstanceOf(InterruptedException.class, failure.get());
+        } finally {
+            release.countDown();
+        }
+        SwingUtilities.invokeAndWait(() -> assertEquals(0, field.getPassword().length));
+    }
+
+    /** Creates a non-ASCII secret through the real page and selects its persisted exact revision. / 经真实页面创建非 ASCII 秘密并选择其持久精确修订。
+     * @throws Exception if the original secret task or Swing handoff fails / 原秘密任务或 Swing 交接失败时 */
+    @Test
+    void pageCreatesProtectedSecretBeforePublicationAndOffersExactRevision() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers()
+                    .saveServerProfile(ServerProfile.fromStored(
+                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                            "fixture-password".toCharArray());
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            var mounted = new AtomicReference<JComponent>();
+            SwingUtilities.invokeAndWait(
+                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
+            SwingUtilities.invokeAndWait(() -> {
+                ((JTextField) secretPanel.getComponent(3)).setText("page-secret");
+                ((JTextField) secretPanel.getComponent(5)).setText("1");
+                render(mounted.get(), "secret-page");
+                findButton(secretPanel, "创建受保护修订").doClick();
+            });
+            var dialog = awaitDialog("创建受保护的应用秘密");
+            var password = findPassword(dialog);
+            assertNotNull(password);
+            char[] input = {'你', '好', '!'};
+            try {
+                SwingUtilities.invokeAndWait(() -> {
+                    password.setText(new String(input));
+                    findOptionPane(dialog).setValue(JOptionPane.OK_OPTION);
+                    dialog.dispose();
+                });
+            } finally {
+                Arrays.fill(input, '\0');
+            }
+            var reference = new DeploymentSecretReference("page-secret", 1);
+            awaitSecretChoice(page, reference);
+            var read = context.tasks().submit(
+                    new TaskRequest("page-secret-read", "Read saved revision", List.of("secret-server"), false),
+                    task -> {
+                        var stored = new DeploymentSecretRepository(context.db()).findRevision(task, reference)
+                                .orElseThrow();
+                        assertEquals("deployment-application", stored.purpose().orElseThrow());
+                        var expected = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5,
+                                (byte) 0xbd, 0x21};
+                        boolean matched = context.secrets().use(
+                                new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
+                                stored.purpose().orElseThrow(), task, actual -> Arrays.equals(expected, actual));
+                        Arrays.fill(expected, (byte) 0);
+                        assertTrue(matched);
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
+            assertEquals(Outcome.SUCCEEDED,
+                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            SwingUtilities.invokeAndWait(() -> {
+                var choice = new DeploymentSecretReferenceField(page, "", page.secretChoices());
+                findButton(choice, "使用所选修订").doClick();
+                assertEquals("page-secret:1", choice.value());
+                var reviewRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING));
+                reviewRow.add(new JLabel("已存在的秘密修订"));
+                reviewRow.add(choice);
+                var review = new JPanel(new java.awt.BorderLayout());
+                review.add(reviewRow, java.awt.BorderLayout.NORTH);
+                render(new JOptionPane(review, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION),
+                        "secret-review");
+                assertEquals(0, password.getPassword().length, "The Swing password control must be cleared");
+                page.close();
+            });
+            var reopened = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            var reopenedView = new AtomicReference<JComponent>();
+            SwingUtilities.invokeAndWait(() -> reopenedView
+                    .set(reopened.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+            awaitSecretChoice(reopened, reference);
+            assertEquals("deployment-application", reopened.secretChoices().stream()
+                    .filter(item -> item.reference().equals(reference)).findFirst().orElseThrow().purpose());
+            SwingUtilities.invokeAndWait(() -> render(reopenedView.get(), "secret-page-saved"));
+            SwingUtilities.invokeAndWait(reopened::close);
+            awaitServerTasks(context);
+        }
+    }
+
     /** A closed page can reopen as a fresh instance without pinning or leaking its pending view. / 已关闭页面可作为新实例重开，不固定导航或泄漏待答视图。
      * @throws Exception if actual Mod registration or Swing rendering fails / 实际Mod登记或Swing渲染失败时 */
     @Test
@@ -75,12 +340,16 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mainControls = (JPanel) sourceControls.getComponent(0);
             var mode = (JComboBox<?>) mainControls.getComponent(5);
             var gitPanel = (JPanel) sourceControls.getComponent(1);
+            var secretPanel = (JPanel) sourceControls.getComponent(2);
             var url = (JTextField) gitPanel.getComponent(1);
             var name = (JTextField) mainControls.getComponent(3);
             var nativeGit = (JTextField) gitPanel.getComponent(7);
             var status = (JTextArea) ((JScrollPane) first.getComponent(1)).getViewport().getView();
             SwingUtilities.invokeAndWait(() -> {
                 assertFalse(gitPanel.isVisible());
+                ((JTextField) secretPanel.getComponent(3)).setText("INVALID-UPPER");
+                findButton(secretPanel, "创建受保护修订").doClick();
+                assertNotNull(findLabel(secretPanel, "请输入小写标识和正修订号。"));
                 mode.setSelectedIndex(1);
                 assertTrue(gitPanel.isVisible());
                 assertNotNull(findLabel(first, "Git 项目名称（必填）"));
@@ -294,6 +563,58 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         return null;
     }
 
+    /** Finds the actual modal password control. / 查找真实模态密码控件。
+     * @param root dialog tree / 对话框树
+     * @return password field or absent / 密码字段或空 */
+    private static JPasswordField findPassword(java.awt.Container root) {
+        for (var child : root.getComponents()) {
+            if (child instanceof JPasswordField field)
+                return field;
+            if (child instanceof java.awt.Container nested) {
+                var found = findPassword(nested);
+                if (found != null)
+                    return found;
+            }
+        }
+        return null;
+    }
+
+    /** Reads the actual admitted secret handle after the prompt is visible. / 在提示可见后读取实际已准入秘密句柄。
+     * @param page original page / 原页面
+     * @return original secret task / 原秘密任务
+     * @throws Exception if no task was admitted / 无任务准入时 */
+    private static TaskHandle<?> awaitCreation(DeploymentStaticPage page) throws Exception {
+        var controlsField = DeploymentStaticPage.class.getDeclaredField("secretControls");
+        controlsField.setAccessible(true);
+        var controls = controlsField.get(page);
+        var creation = DeploymentStaticSecretControls.class.getDeclaredField("creation");
+        creation.setAccessible(true);
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < until) {
+            var handle = (TaskHandle<?>) creation.get(controls);
+            if (handle != null)
+                return handle;
+            Thread.sleep(20);
+        }
+        fail("Actual secret task was not admitted");
+        return null;
+    }
+
+    /** Waits for the page's observed saved reference, not just dialog disposal. / 等待页面观察到已保存引用而非仅等对话框关闭。
+     * @param page current page / 当前页面
+     * @param reference expected business revision / 预期业务修订
+     * @throws Exception if no saved choice is observed / 未观察到已保存选项时 */
+    private static void awaitSecretChoice(DeploymentStaticPage page, DeploymentSecretReference reference)
+            throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < until) {
+            if (page.secretChoices().stream().anyMatch(item -> item.reference().equals(reference)))
+                return;
+            Thread.sleep(20);
+        }
+        fail("Page did not observe the saved secret revision");
+    }
+
     private static JButton findButton(java.awt.Container root, String text) {
         for (var child : root.getComponents()) {
             if (child instanceof JButton button && text.equals(button.getText()))
@@ -324,7 +645,9 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < until) {
             var tasks = context.tasks().list(Optional.empty(), 200).items();
-            if (tasks.stream().filter(item -> item.type().equals("deployment-server-list"))
+            if (tasks.stream()
+                    .filter(item -> item.type().equals("deployment-server-list")
+                            || item.type().equals("deployment-secret-list"))
                     .allMatch(item -> item.state() == TaskState.ENDED))
                 return;
             Thread.sleep(20);

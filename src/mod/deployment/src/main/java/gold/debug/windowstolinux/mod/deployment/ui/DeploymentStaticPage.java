@@ -14,9 +14,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.ServerInfo;
+import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.appapi.ui.ModPage;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 
@@ -58,6 +60,9 @@ public final class DeploymentStaticPage implements ModPage {
     /** Git-only input component created after the locale is known. / 语言确定后创建的仅 Git 输入组件。 */
     private DeploymentGitSourceForm gitForm;
 
+    /** Pre-publication secret choices and one-shot creation controls. / 发布前秘密选项及一次性创建控件。 */
+    private DeploymentStaticSecretControls secretControls;
+
     /** Current and previously retained task observations. / 当前及之前保留的任务观察。 */
     private final JTextArea status = new JTextArea(10, 60);
 
@@ -87,6 +92,9 @@ public final class DeploymentStaticPage implements ModPage {
 
     /** A pending unconfirmed owner review. / 一项待确认所属审阅。 */
     private volatile boolean pendingReview;
+
+    /** An independent secret task is being admitted or observed. / 独立秘密任务正在准入或观察。 */
+    private volatile boolean secretBusy;
 
     /** Original admitted task while this view owns unanswered decisions. / 本视图仍持有待答决定时的原已准入任务。 */
     private volatile TaskHandle<Void> currentTask;
@@ -154,12 +162,15 @@ public final class DeploymentStaticPage implements ModPage {
         sourceControls.setLayout(new BoxLayout(sourceControls, BoxLayout.Y_AXIS));
         sourceControls.add(controls);
         sourceControls.add(gitForm.panel());
+        secretControls = new DeploymentStaticSecretControls(this, service);
+        sourceControls.add(secretControls.panel());
         root.add(sourceControls, BorderLayout.NORTH);
         status.setEditable(false);
         root.add(new JScrollPane(status), BorderLayout.CENTER);
         root.add(buttons, BorderLayout.SOUTH);
         start.setEnabled(false);
         loadServers();
+        secretControls.refresh(generation.get());
         refresh();
         return root;
     }
@@ -177,15 +188,18 @@ public final class DeploymentStaticPage implements ModPage {
         sourceLabel.setText(text(sourceMode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
         modeLabel.setText(text("sourceMode"));
         gitForm.localize();
+        secretControls.localize();
+        secretControls.updateAvailability();
         sourceMode.repaint();
         refreshButton.setText(text("refresh"));
         start.setText(text("start"));
-        start.setEnabled(!closed && !locked && !pendingReview && servers.getSelectedItem() != null);
+        start.setEnabled(!closed && !locked && !pendingReview && !secretBusy && servers.getSelectedItem() != null);
         if (locked)
             revoke();
         else {
             if (servers.getItemCount() == 0)
                 loadServers();
+            secretControls.refresh(generation.get());
             refresh();
         }
     }
@@ -196,6 +210,7 @@ public final class DeploymentStaticPage implements ModPage {
         requireEdt();
         closed = true;
         revoke();
+        secretControls.close();
         actions.shutdown();
     }
 
@@ -222,7 +237,8 @@ public final class DeploymentStaticPage implements ModPage {
                         }
                         servers.removeAllItems();
                         result.value().orElseThrow().forEach(servers::addItem);
-                        start.setEnabled(!pendingReview && servers.getItemCount() > 0);
+                        start.setEnabled(!pendingReview && !secretBusy && servers.getItemCount() > 0);
+                        secretControls.updateAvailability();
                     }));
                 } catch (Exception failure) {
                     SwingUtilities.invokeLater(() -> {
@@ -248,7 +264,7 @@ public final class DeploymentStaticPage implements ModPage {
     /** Submits the selected server and source name through one original publication task. / 将选定服务器及来源名提交为一项原发布任务。 */
     private void submit() {
         requireEdt();
-        if (closed || locked || pendingReview || servers.getSelectedItem() == null)
+        if (closed || locked || pendingReview || secretBusy || servers.getSelectedItem() == null)
             return;
         var server = ((ServerInfo) servers.getSelectedItem()).ref();
         var name = sourceName.getText().trim();
@@ -264,6 +280,7 @@ public final class DeploymentStaticPage implements ModPage {
         }
         long view = generation.get();
         pendingReview = true;
+        secretControls.updateAvailability();
         confirmed = false;
         recentProblem = null;
         start.setEnabled(false);
@@ -288,11 +305,12 @@ public final class DeploymentStaticPage implements ModPage {
                         pendingReview = false;
                         if (currentTask == handle)
                             currentTask = null;
+                        SwingUtilities.invokeLater(secretControls::updateAvailability);
                         if (active(view) && failure == null && result != null)
                             recentProblem = result.problem().orElse(null);
                         refresh();
-                        SwingUtilities
-                                .invokeLater(() -> start.setEnabled(!closed && !locked && servers.getItemCount() > 0));
+                        SwingUtilities.invokeLater(() -> start
+                                .setEnabled(!closed && !locked && !secretBusy && servers.getItemCount() > 0));
                     });
                     refresh();
                 } catch (Exception failure) {
@@ -304,8 +322,9 @@ public final class DeploymentStaticPage implements ModPage {
                 } finally {
                     if (!admitted) {
                         pendingReview = false;
-                        SwingUtilities
-                                .invokeLater(() -> start.setEnabled(!closed && !locked && servers.getItemCount() > 0));
+                        SwingUtilities.invokeLater(secretControls::updateAvailability);
+                        SwingUtilities.invokeLater(() -> start
+                                .setEnabled(!closed && !locked && !secretBusy && servers.getItemCount() > 0));
                     }
                 }
             });
@@ -368,6 +387,8 @@ public final class DeploymentStaticPage implements ModPage {
             dialog.dispose();
             dialog = null;
         }
+        if (secretControls != null)
+            secretControls.revoke();
     }
 
     /** Cancels only a view-owned read-only query. / 仅取消视图所属只读查询。
@@ -410,6 +431,31 @@ public final class DeploymentStaticPage implements ModPage {
      * @param finalReview whether this is final consent / 是否为最终同意
      * @return current approval / 当前同意 */
     boolean approve(long view, JPanel panel, String title, TaskContext task, boolean finalReview) {
+        return approve(view, panel, title, task, finalReview, () -> {
+        });
+    }
+
+    /** Records a secret consent on the EDT before the dialog result is handed to its worker. / 在对话框结果交给工作线程前于 EDT 记录秘密同意。
+     * @param view original generation / 原代次
+     * @param panel actual controls / 实际控件
+     * @param title localized title / 本地化标题
+     * @param task original task / 原任务
+     * @param onAccepted owner action performed before returning approval / 返回同意前执行的所属操作
+     * @return current approval / 当前同意 */
+    boolean approveSecret(long view, JPanel panel, String title, TaskContext task, Runnable onAccepted) {
+        return approve(view, panel, title, task, false, onAccepted);
+    }
+
+    /** Performs the shared owner-bound dialog and its accepted-state transition. / 执行共同的所属对话框及接受状态转换。
+     * @param view original generation / 原代次
+     * @param panel actual controls / 实际控件
+     * @param title localized title / 本地化标题
+     * @param task original task / 原任务
+     * @param finalReview whether this is publication consent / 是否发布最终同意
+     * @param onAccepted additional same-EDT accepted transition / 同 EDT 的附加接受转换
+     * @return current approval / 当前同意 */
+    private boolean approve(long view, JPanel panel, String title, TaskContext task, boolean finalReview,
+            Runnable onAccepted) {
         if (closed || locked || generation.get() != view || task.cancellation().requested())
             return false;
         var answer = new java.util.concurrent.CompletableFuture<Boolean>();
@@ -432,6 +478,8 @@ public final class DeploymentStaticPage implements ModPage {
                         && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
                 if (accepted && finalReview)
                     confirmed = true;
+                if (accepted)
+                    onAccepted.run();
                 answer.complete(accepted);
             } catch (RuntimeException failed) {
                 answer.complete(false);
@@ -499,6 +547,46 @@ public final class DeploymentStaticPage implements ModPage {
      * @return true only for current view / 仅当前视图为真 */
     boolean active(long view) {
         return !closed && !locked && generation.get() == view;
+    }
+
+    /** Schedules a view action without giving it publication ownership. / 调度视图操作而不授予发布所有权。
+     * @param action short page action / 短页面操作 */
+    void execute(Runnable action) {
+        actions.execute(action);
+    }
+
+    /** Returns the current owner generation. / 返回当前所属代次。
+     * @return generation / 代次 */
+    long viewGeneration() {
+        return generation.get();
+    }
+
+    /** Returns the selected visible server, if any. / 返回当前可见选定服务器。
+     * @return selected server / 选定服务器 */
+    Optional<ServerRef> selectedServer() {
+        var selected = servers.getSelectedItem();
+        return selected instanceof ServerInfo info ? Optional.of(info.ref()) : Optional.empty();
+    }
+
+    /** Exposes only purpose-backed business choices to review forms. / 仅向审阅表单提供有原用途的业务选项。
+     * @return current choices / 当前选项 */
+    List<DeploymentSecretSelection> secretChoices() {
+        return secretControls.choices();
+    }
+
+    /** Checks whether a separate secret task can be admitted before publication. / 检查独立秘密任务可否在发布前准入。
+     * @return true only for a current unlocked idle view / 仅当前未锁空闲视图为真 */
+    boolean canCreateSecret() {
+        return !closed && !locked && !pendingReview && !secretBusy && selectedServer().isPresent();
+    }
+
+    /** Blocks publication while one pre-publication secret task is in progress. / 发布前秘密任务进行时阻止发布。
+     * @param busy whether a task is active / 是否有活动任务 */
+    void secretBusy(boolean busy) {
+        secretBusy = busy;
+        SwingUtilities.invokeLater(() -> start
+                .setEnabled(!closed && !locked && !pendingReview && !secretBusy && servers.getSelectedItem() != null));
+        SwingUtilities.invokeLater(secretControls::updateAvailability);
     }
 
     /** Validates a form before allowing it to leave the same owner review. / 表单离开同一所属审阅前先校验。

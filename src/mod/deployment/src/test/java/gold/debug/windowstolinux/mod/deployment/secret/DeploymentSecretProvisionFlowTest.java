@@ -140,7 +140,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             assertEquals(Outcome.SUCCEEDED,
                     read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var calls = new AtomicInteger();
-            var duplicate = flow.submit(SERVER, REVISION, PURPOSE, CREATED.plusSeconds(1), task -> {
+            var duplicate = flow.submitOwned(SERVER, REVISION, PURPOSE, CREATED.plusSeconds(1), task -> {
                 calls.incrementAndGet();
                 return callerOwned;
             });
@@ -265,6 +265,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             var creates = new AtomicInteger();
             var inputs = new AtomicInteger();
+            var owned = new AtomicReference<byte[]>();
             var observed = new AtomicReference<OperationResult<DeploymentSecretRevision>>();
             var secrets = intercept((method, args) -> {
                 try {
@@ -311,14 +312,17 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                         }
                     });
             var flow = new DeploymentSecretProvisionFlow(withTasks(withSecrets(context, secrets), tasks));
-            var handle = flow.submit(SERVER, REVISION, PURPOSE, CREATED, task -> {
+            var handle = flow.submitOwned(SERVER, REVISION, PURPOSE, CREATED, task -> {
                 inputs.incrementAndGet();
-                return new byte[]{11, 12, 13};
+                byte[] value = new byte[]{11, 12, 13};
+                owned.set(value);
+                return value;
             });
             assertEquals(Outcome.FAILED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(Outcome.UNKNOWN, observed.get().outcome());
             assertEquals(1, creates.get());
             assertEquals(1, inputs.get());
+            assertArrayEquals(new byte[3], owned.get(), "UNKNOWN must not retain page-owned plaintext");
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
         }
@@ -420,6 +424,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var entered = new CountDownLatch(1);
             var release = new CountDownLatch(1);
             var creates = new AtomicInteger();
+            var owned = new AtomicReference<byte[]>();
             var secrets = intercept((method, args) -> {
                 try {
                     if (method.getName().equals("create"))
@@ -430,10 +435,12 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 }
             });
             var flow = new DeploymentSecretProvisionFlow(withSecrets(context, secrets));
-            var handle = flow.submit(SERVER, REVISION, PURPOSE, CREATED, task -> {
+            var handle = flow.submitOwned(SERVER, REVISION, PURPOSE, CREATED, task -> {
                 entered.countDown();
                 assertTrue(release.await(20, TimeUnit.SECONDS));
-                return new byte[]{14, 15, 16};
+                byte[] value = new byte[]{14, 15, 16};
+                owned.set(value);
+                return value;
             });
             try {
                 assertTrue(entered.await(20, TimeUnit.SECONDS));
@@ -444,6 +451,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
             assertEquals(0, creates.get());
+            assertArrayEquals(new byte[3], owned.get(), "Cancelled owned input must be cleared");
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
         }

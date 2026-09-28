@@ -27,6 +27,7 @@ import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -156,6 +157,32 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     ServerProfile.fromStored(
                             new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
                     "fixture-password".toCharArray());
+            var original = runtime.modContexts().get(OWNER).context();
+            var secretRevision = new DeploymentSecretReference("page-application", 1);
+            byte[] plaintext = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5, (byte) 0xbd,
+                    0x21};
+            byte[] expectedPlaintext = plaintext.clone();
+            var provision = new DeploymentSecretProvisionFlow(original).submitOwned(server, secretRevision,
+                    "deployment-application", Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS),
+                    task -> plaintext);
+            var saved = provision.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
+            assertEquals(Outcome.SUCCEEDED, saved.outcome(), saved.toString());
+            assertArrayEquals(new byte[plaintext.length], plaintext, "Page-owned plaintext must be cleared");
+            var stored = saved.value().orElseThrow();
+            assertEquals(Optional.of("deployment-application"), stored.purpose());
+            var inspectSecret = original.tasks().submit(
+                    new TaskRequest("page-secret-inspect", "Inspect secret", List.of(server.id()), false), task -> {
+                        var actual = new DeploymentSecretRepository(original.db()).findRevision(task, secretRevision);
+                        assertEquals(Optional.of(stored), actual);
+                        boolean matched = original.secrets().use(
+                                new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
+                                stored.purpose().orElseThrow(), task, bytes -> Arrays.equals(expectedPlaintext, bytes));
+                        assertTrue(matched, "Protected platform value must round-trip without entering Mod metadata");
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
+            assertEquals(Outcome.SUCCEEDED,
+                    inspectSecret.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            Arrays.fill(expectedPlaintext, (byte) 0);
             List<String> firstSnapshot = null;
             String firstOwner = null;
             String firstApplication = null;
@@ -175,7 +202,6 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var candidate = new AtomicReference<DeploymentRemoteWorkspace>();
                 var callbackEnded = new CountDownLatch(1);
                 var session = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
-                var original = runtime.modContexts().get(OWNER).context();
                 var bound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
                 var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
                 var observedTask = new AtomicReference<UUID>();
@@ -207,6 +233,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         values.put("port", "8080");
                         values.put("healthMode", "TCP");
                         values.put("exposure", "INTERNAL");
+                        values.put("secrets", "page-application:1");
                         var answer = new DeploymentStaticWorkflow.Answers(values, List.of(),
                                 DeploymentBuildLimits.defaultNonRoot(), false, true);
                         workflow.validateReview(prompt, answer);
@@ -252,6 +279,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 }
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(publication, countMod(runtime, "deployment_release"));
+                assertEquals(publication, countMod(runtime, "deployment_unit_release_secret_reference"));
                 assertEquals(git ? publication : 0, countMod(runtime, "deployment_project"));
                 if (git)
                     assertGitSourceSaved(runtime, selectedSourceDirectory().toUri().toString(), commit,
@@ -260,6 +288,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(1, actions.stream().filter("publish"::equals).count());
                 assertEquals(1, actions.stream().filter("upload"::equals).count());
+                assertEquals(1, actions.stream().filter("stage-secret-page-application"::equals).count(),
+                        "The reviewed revision and protected bytes must reach the controlled stage command");
                 var snapshots = configurationRows(runtime);
                 String owner = ownershipManifest(runtime);
                 assertEquals(publication, snapshots.size());
@@ -429,6 +459,17 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             boolean purposeDefect = scenario == ScenarioType.PURPOSE_UNKNOWN
                     || scenario == ScenarioType.PURPOSE_MISMATCH;
             var secret = purposeCase ? purposeSecret(real, reference, scenario == ScenarioType.PURPOSE_UNKNOWN) : null;
+            if (scenario == ScenarioType.PURPOSE_UNKNOWN) {
+                var choices = real.tasks().submit(
+                        new TaskRequest("legacy-secret-choices", "Legacy secret choices", List.of(), true),
+                        task -> new OperationResult<>(Outcome.SUCCEEDED,
+                                Optional.of(new DeploymentSecretRepository(real.db()).listReferences(task, 1000)),
+                                Optional.empty()));
+                var listed = choices.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
+                assertEquals(Outcome.SUCCEEDED, listed.outcome());
+                assertTrue(listed.value().orElseThrow().stream().noneMatch(item -> item.reference().equals(reference)),
+                        "A legacy revision without its original purpose cannot be selected");
+            }
             var reviewedSecret = purposeCase && scenario == ScenarioType.PURPOSE_MISMATCH
                     ? new SecretRef(secret.id(), "deployment.wrong")
                     : secret;
@@ -708,7 +749,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return actual rows / 实际行数
      * @throws Exception if access fails / 访问失败时 */
     private long countMod(PlatformRuntime runtime, String table) throws Exception {
-        assertTrue(Set.of("deployment_release", "deployment_project").contains(table));
+        assertTrue(Set.of("deployment_release", "deployment_project", "deployment_unit_release_secret_reference")
+                .contains(table));
         try (var access = scope(runtime, true);
                 var connection = access.openConnection();
                 var statement = connection.createStatement();
@@ -822,7 +864,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                                 sha.get(), transfer.localPath(), transfer.remoteAbsolutePath())), Optional.empty());
                     }
                     assertEquals("execute", method.getName());
-                    String script = ((CommandRequest) args[0]).script();
+                    var command = (CommandRequest) args[0];
+                    String script = command.script();
                     if (script.contains("managed-helper' probe")) {
                         actions.add("helper-probe");
                         return reply("HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
@@ -880,6 +923,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
                     if (script.contains("stage-secret")) {
                         actions.add("stage-secret");
+                        if (script.contains("page-application")) {
+                            assertTrue(script.contains("'page-application' '1'"),
+                                    "The original business revision must be sent unchanged");
+                            byte[] submitted = command.stdin();
+                            try {
+                                assertArrayEquals(new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5,
+                                        (byte) 0xa5, (byte) 0xbd, 0x21}, submitted);
+                            } finally {
+                                Arrays.fill(submitted, (byte) 0);
+                            }
+                            actions.add("stage-secret-page-application");
+                        }
                         return reply("INPUT_STAGED=1\n");
                     }
                     if (script.contains("snapshot-deployment")) {

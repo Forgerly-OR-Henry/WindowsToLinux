@@ -21,6 +21,10 @@ import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
+    /** Creates an inactive deployment Mod for platform lifecycle binding. / 创建等待平台生命周期绑定的未启用部署 Mod。 */
+    public Mod() {
+    }
+
     /** Original published context, absent before startup or after stop. / 原已发布上下文，启动前及停止后不存在。 */
     private ModContext context;
 
@@ -53,6 +57,9 @@ public final class Mod implements ModEntrypoint {
 
     /** Read-only server lookup recovery. / 只读服务器查询恢复。 */
     private RecoveryRegistration serverListRecoveryRegistration;
+
+    /** Read-only secret choice recovery. / 只读秘密选项恢复。 */
+    private RecoveryRegistration secretListRecoveryRegistration;
 
     /** One original-task static review coordinator. / 单项原任务静态审阅协调器。 */
     private DeploymentStaticWorkflow staticWorkflow;
@@ -105,8 +112,11 @@ public final class Mod implements ModEntrypoint {
         var pageTasks = new DeploymentStaticPageService(context, workflow);
         PageRegistration page = null;
         RecoveryRegistration serverListRegistration = null;
+        RecoveryRegistration secretListRegistration = null;
         try {
             serverListRegistration = context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK,
+                    pageTasks);
+            secretListRegistration = context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK,
                     pageTasks);
             if (context.launchMode() == ModLaunchMode.NORMAL) {
                 page = context.ui().register(
@@ -114,6 +124,12 @@ public final class Mod implements ModEntrypoint {
                         () -> new DeploymentStaticPage(pageTasks));
             }
         } catch (Exception failure) {
+            if (secretListRegistration != null)
+                try {
+                    secretListRegistration.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
             if (serverListRegistration != null)
                 try {
                     serverListRegistration.close();
@@ -140,6 +156,7 @@ public final class Mod implements ModEntrypoint {
         this.pageService = pageTasks;
         this.pageRegistration = page;
         this.serverListRecoveryRegistration = serverListRegistration;
+        this.secretListRecoveryRegistration = secretListRegistration;
         this.context = context;
     }
 
@@ -215,6 +232,17 @@ public final class Mod implements ModEntrypoint {
             try {
                 serverListRecoveryRegistration.close();
                 serverListRecoveryRegistration = null;
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        }
+        if (secretListRecoveryRegistration != null) {
+            try {
+                secretListRecoveryRegistration.close();
+                secretListRecoveryRegistration = null;
             } catch (Exception unclosed) {
                 if (failure == null)
                     failure = unclosed;

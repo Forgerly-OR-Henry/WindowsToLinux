@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -10,17 +11,32 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerInfo;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
+import gold.debug.windowstolinux.mod.deployment.secret.SecretValueSource;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
 
 /** Binds one page's read-only server lookup and original publication task without owning its Swing view. / 绑定页面只读服务器查询及原发布任务，但不持有 Swing 视图。 */
 public final class DeploymentStaticPageService implements TaskRecovery {
     /** Read-only short task type. / 只读短任务类型。 */
     public static final String SERVER_LIST_TASK = "deployment-server-list";
 
+    /** Read-only secret choice task type. / 只读秘密选项任务类型。 */
+    public static final String SECRET_LIST_TASK = "deployment-secret-list";
+
     /** Original platform capabilities. / 原平台能力。 */
     private final ModContext context;
 
     /** Actual original-task static workflow. / 实际原任务静态流程。 */
     private final DeploymentStaticWorkflow workflow;
+
+    /** Existing original-task secret creation. / 既有原任务秘密创建。 */
+    private final DeploymentSecretProvisionFlow secrets;
+
+    /** Business revision metadata without plaintext. / 不含明文的业务修订元数据。 */
+    private final DeploymentSecretRepository revisions;
 
     /** Current accepted publication task, independent of an open page. / 当前已接纳发布任务，独立于开放页面。 */
     private TaskHandle<Void> active;
@@ -31,6 +47,44 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     public DeploymentStaticPageService(ModContext context, DeploymentStaticWorkflow workflow) {
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
+        this.secrets = new DeploymentSecretProvisionFlow(context);
+        this.revisions = new DeploymentSecretRepository(context.db());
+    }
+
+    /** Creates one immutable revision before publication admission and transfers its plaintext buffer. / 在发布准入前创建一项不可变修订并转交其明文缓冲区。
+     * @param server selected target / 所选目标
+     * @param reference reviewed business identifier and revision / 已审阅业务标识与修订
+     * @param value one-shot plaintext input requested only by the admitted task / 仅由已准入任务请求的一次性明文输入
+     * @return original secret task / 原秘密任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public TaskHandle<DeploymentSecretRevision> createSecret(ServerRef server, DeploymentSecretReference reference,
+            SecretValueSource value) throws ApiException {
+        return secrets.submitOwned(server, reference, "deployment-application",
+                Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), value);
+    }
+
+    /** Lists existing selectable business revisions in a separate read-only task. / 在独立只读任务中列出既有可选业务修订。
+     * @return original query task / 原查询任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public TaskHandle<List<DeploymentSecretSelection>> secretChoices() throws ApiException {
+        return context.tasks().submit(new TaskRequest(SECRET_LIST_TASK, "Deployment secret choices", List.of(), true),
+                task -> {
+                    try {
+                        return new OperationResult<>(Outcome.SUCCEEDED,
+                                Optional.of(revisions.listReferences(task, 1000)), Optional.empty());
+                    } catch (ApiException failure) {
+                        var code = failure.problem().code();
+                        return new OperationResult<>(
+                                code == ProblemCode.CANCELLED
+                                        ? Outcome.CANCELLED
+                                        : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                                Optional.empty(), Optional.of(failure.problem()));
+                    } catch (java.sql.SQLException failure) {
+                        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                                Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_LIST_FAILED",
+                                        "Secret references could not be read", Map.of(), Optional.empty())));
+                    }
+                });
     }
 
     /** Starts one read-only task for a complete bounded server list. / 为完整有界服务器列表启动一项只读任务。
@@ -87,6 +141,21 @@ public final class DeploymentStaticPageService implements TaskRecovery {
         return List.copyOf(all);
     }
 
+    /** Reads retained original secret tasks so reopened pages expose unresolved creation. / 读取保留的原秘密任务，使重开页面显示未解决创建。
+     * @return bounded current secret tasks / 有界当前秘密任务
+     * @throws ApiException if the original task list is unavailable / 原任务列表不可用时 */
+    public List<TaskSnapshot> secretTasks() throws ApiException {
+        var all = new ArrayList<TaskSnapshot>();
+        Optional<String> cursor = Optional.empty();
+        do {
+            var page = context.tasks().list(cursor, 200);
+            page.items().stream().filter(item -> item.type().equals(DeploymentSecretProvisionFlow.TASK_TYPE))
+                    .forEach(all::add);
+            cursor = page.nextCursor();
+        } while (cursor.isPresent() && all.size() < 1_000);
+        return List.copyOf(all);
+    }
+
     /** Checks pure typed form values without accessing source or server capabilities. / 不访问来源或服务器能力，仅校验类型化表单值。
      * @param prompt original source-backed prompt / 原来源依据问题
      * @param answer edited values / 已编辑值 */
@@ -136,8 +205,8 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @throws ApiException if original occupancy cannot be observed / 无法观察原占用时 */
     @Override
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws ApiException {
-        if (!SERVER_LIST_TASK.equals(previous.type()) || !previous.id().equals(task.id())
-                || !context.tasks().resourcesReleased(task))
+        if (!(SERVER_LIST_TASK.equals(previous.type()) || SECRET_LIST_TASK.equals(previous.type()))
+                || !previous.id().equals(task.id()) || !context.tasks().resourcesReleased(task))
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_SERVER_LIST_RECOVERY_UNKNOWN",
                             "Original query needs review", Map.of(), Optional.empty())));
