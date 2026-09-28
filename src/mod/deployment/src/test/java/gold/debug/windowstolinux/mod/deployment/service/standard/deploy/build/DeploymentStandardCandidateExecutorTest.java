@@ -142,7 +142,7 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
                         String script = command.script();
                         if (script.contains("managed-helper' probe")) {
                             actions.add("helper-probe");
-                            return reply("HELPER=1\nPROTOCOL=11\nSHA256="
+                            return reply("HELPER=1\nPROTOCOL=12\nSHA256="
                                     + gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle.EXPECTED_SHA256
                                     + "\n");
                         }

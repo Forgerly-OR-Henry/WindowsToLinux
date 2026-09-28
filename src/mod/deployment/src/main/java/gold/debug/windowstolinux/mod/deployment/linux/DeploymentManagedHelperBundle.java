@@ -20,7 +20,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
-    public static final int PROTOCOL_VERSION = 11;
+    public static final int PROTOCOL_VERSION = 12;
 
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "3990952a717b419d09ca054e4f9410ef6b4a63fdaef16bb42738a23faed149e5";
+    public static final String EXPECTED_SHA256 = "d60fa1376c6a0262dd357c872d09f5299952ec5b28b92c0b17f173540fe245c4";
 
     /**
      * ROOT.

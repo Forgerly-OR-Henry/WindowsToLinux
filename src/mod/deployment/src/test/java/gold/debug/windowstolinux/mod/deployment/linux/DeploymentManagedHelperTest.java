@@ -91,7 +91,7 @@ class DeploymentManagedHelperTest {
         assertTrue(installer.contains("[ \"$(id -u)\" -eq 0 ] || exit 64"));
         assertTrue(installer.contains("/usr/bin/sha256sum --check --status"));
         assertTrue(installer.contains("PREPARE_REJECT=recovery-unit-conflict"));
-        assertTrue(installer.endsWith("printf 'HELPER_INSTALL=1\\nPROTOCOL=11\\nSHA256="
+        assertTrue(installer.endsWith("printf 'HELPER_INSTALL=1\\nPROTOCOL=12\\nSHA256="
                 + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n"));
     }
 
@@ -232,10 +232,10 @@ class DeploymentManagedHelperTest {
     }
 
     private static String installTail() {
-        return "HELPER_INSTALL=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+        return "HELPER_INSTALL=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
     }
 
     private static String probeOutput() {
-        return "HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+        return "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
     }
 }
