@@ -102,10 +102,23 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @throws ApiException if admission fails / 准入失败时 */
     public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
             DeploymentStaticWorkflow.Reviewer reviewer) throws ApiException {
+        return submit(server, draft, Optional.empty(), reviewer);
+    }
+
+    /** Admits the selected local or Git source on the original publication task. / 在原发布任务接纳选定本地或 Git 来源。
+     * @param server exact selected server / 精确选定服务器
+     * @param draft reviewed source name and limits / 经审阅来源名及限额
+     * @param git optional explicit Git source / 可选明确 Git 来源
+     * @param reviewer current owner review / 当前所属审阅
+     * @return original publication task / 原发布任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+            Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer)
+            throws ApiException {
         if (active != null && active.snapshot().state() != TaskState.ENDED)
             throw new ApiException(new Problem(ProblemCode.BUSY, "DEPLOYMENT_STATIC_TASK_ACTIVE",
                     "An original deployment task is already active", Map.of(), Optional.empty()));
-        var handle = workflow.submit(server, draft, reviewer);
+        var handle = workflow.submit(server, draft, git, reviewer);
         active = handle;
         handle.completion().whenComplete((ignored, failure) -> {
             synchronized (DeploymentStaticPageService.this) {

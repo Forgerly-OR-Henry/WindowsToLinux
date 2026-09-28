@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -37,6 +38,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.Deployme
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedDeploymentPlanner;
 import gold.debug.windowstolinux.mod.deployment.source.*;
+import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -114,8 +116,9 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
 
     /** Uses the page workflow's separate child archives for one real graph task and one controlled session. / 使用页面流程的独立组件归档执行一项真实整图任务及一条受控会话。
      * @throws Exception if original task preparation or publication fails / 原任务准备或发布失败时 */
-    @Test
-    void staticWorkflowPublishesDiscoveredGraphFromSeparateArchiveRoots() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void staticWorkflowPublishesDiscoveredGraphFromSeparateArchiveRoots(boolean git) throws Exception {
         for (String id : List.of("api", "web")) {
             var source = selectedSourceDirectory().resolve(id);
             Files.createDirectories(source);
@@ -123,6 +126,16 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             Files.writeString(source.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
             Files.writeString(source.resolve("main.go"), "package main\nfunc main() {}\n");
         }
+        String commit = null;
+        if (git) {
+            git(selectedSourceDirectory(), "init", "-b", "main");
+            git(selectedSourceDirectory(), "config", "user.email", "test@example.invalid");
+            git(selectedSourceDirectory(), "config", "user.name", "Test");
+            git(selectedSourceDirectory(), "add", ".");
+            git(selectedSourceDirectory(), "commit", "-m", "graph");
+            commit = git(selectedSourceDirectory(), "rev-parse", "HEAD");
+        }
+        final String pinnedCommit = commit;
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -223,14 +236,30 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                 }
 
                 public OperationResult<Boolean> confirm(ServerRef exact, String manifest, Map<String, String> digests,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers, TaskContext task) {
+                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     assertEquals(originalTask.get(), task.id());
+                    assertEquals(pinnedCommit != null, git.isPresent());
+                    git.ifPresent(value -> {
+                        assertEquals(selectedSourceDirectory().toUri().toString(), value.remote());
+                        assertEquals("DEFAULT:HEAD", value.reference());
+                        assertEquals(pinnedCommit, value.commit());
+                    });
                     archives.set(Map.copyOf(digests));
                     assertEquals(2, new HashSet<>(digests.values()).size());
                     return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
                 }
             };
-            var handle = workflow.submit(server, new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), reviewer);
+            var gitInput = git
+                    ? Optional
+                            .of(new DeploymentStaticWorkflow.GitSource(
+                                    new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
+                                            new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
+                                    locateGit()))
+                    : Optional.<DeploymentStaticWorkflow.GitSource>empty();
+            var handle = workflow.submit(server,
+                    new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-graph" : "", 65536, 100, 65536), gitInput,
+                    reviewer);
             assertTrue(callbackEnded.await(30, TimeUnit.SECONDS), () -> handle.snapshot() + " actions=" + actions);
             OperationResult<Void> result;
             try {
@@ -251,8 +280,42 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             assertEquals(2, actions.stream().filter("publish"::equals).count());
             assertEquals(1, countMod(runtime, "deployment_release"));
             assertEquals(2, countMod(runtime, "deployment_unit_release_binding"));
+            if (git) {
+                assertEquals(1, countMod(runtime, "deployment_project"));
+                try (var access = scope(runtime, true);
+                        var connection = access.openConnection();
+                        var statement = connection.createStatement();
+                        var rows = statement.executeQuery("SELECT p.source_location,p.git_ref,p.git_commit "
+                                + "FROM deployment_execution e JOIN deployment_project p ON e.project_id=p.project_id")) {
+                    assertTrue(rows.next());
+                    assertEquals(selectedSourceDirectory().toUri().toString(), rows.getString(1));
+                    assertEquals("DEFAULT:HEAD", rows.getString(2));
+                    assertEquals(pinnedCommit, rows.getString(3));
+                    assertFalse(rows.next());
+                }
+            }
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }
+    }
+
+    private static Path locateGit() {
+        for (String directory : System.getenv("PATH").split(java.io.File.pathSeparator)) {
+            var path = Path.of(directory).resolve("git.exe");
+            if (Files.isRegularFile(path))
+                return path.toAbsolutePath().normalize();
+        }
+        throw new AssertionError("Local native Git is required");
+    }
+
+    private static String git(Path directory, String... arguments) throws Exception {
+        var command = new ArrayList<String>();
+        command.add(locateGit().toString());
+        command.addAll(List.of(arguments));
+        var child = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true).start();
+        child.getOutputStream().close();
+        var output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        assertEquals(0, child.waitFor(), output);
+        return output;
     }
 
     /** Isolates a genuine original UNKNOWN occupation from the parent test JVM. / 将真实原UNKNOWN占用隔离于父测试JVM。

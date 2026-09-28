@@ -218,12 +218,14 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param sourceSha256 source manifest digest / 来源清单摘要
      * @param archiveSha256 each actual tar digest / 各实际 tar 摘要
      * @param answers final edited answers / 最终编辑答案
+     * @param git original URL, selected ref and pinned commit / 原 URL、选定引用和固定提交
      * @param task original task / 原任务
      * @return current explicit confirmation / 当前明确确认 */
     @Override
     public OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-            Map<String, DeploymentStaticWorkflow.Answers> answers, TaskContext task) {
-        var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers));
+            Map<String, DeploymentStaticWorkflow.Answers> answers, Optional<DeploymentStaticWorkflow.GitReview> git,
+            TaskContext task) {
+        var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, git));
         if (!page.approve(view, panel, page.text("finalConfirm"), task, true))
             return cancelled();
         return success(Boolean.TRUE);
@@ -235,11 +237,17 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param sourceSha256 source manifest digest / 来源清单摘要
      * @param archiveSha256 actual tar digests / 实际 tar 摘要
      * @param answers final edited values / 最终编辑值
+     * @param git original and pinned Git identity / 原及固定 Git 身份
      * @return confirmation rows / 确认行 */
     private static JPanel confirmation(DeploymentStaticPage page, ServerRef server, String sourceSha256,
-            Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers) {
+            Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
+            Optional<DeploymentStaticWorkflow.GitReview> git) {
         var panel = new JPanel(new GridLayout(0, 1));
         panel.add(new JLabel(page.text("server") + ": " + server.id()));
+        git.ifPresent(identity -> panel.add(new JLabel(page.text("gitSource") + ": " + identity.remote() + " / "
+                + identity.reference() + " / " + identity.commit())));
+        if (git.isPresent())
+            panel.add(new JLabel(page.text("gitSaveNotice")));
         panel.add(new JLabel(page.text("sourceDigest") + ": " + sourceSha256));
         archiveSha256.entrySet().stream().sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> panel.add(new JLabel(entry.getKey() + " tar SHA-256: " + entry.getValue())));

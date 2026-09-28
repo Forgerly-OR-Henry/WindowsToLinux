@@ -71,6 +71,37 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             assertNotNull(start);
             awaitEnabled(start);
             SwingUtilities.invokeAndWait(() -> render(first, "page"));
+            var sourceControls = (JPanel) first.getComponent(0);
+            var mainControls = (JPanel) sourceControls.getComponent(0);
+            var mode = (JComboBox<?>) mainControls.getComponent(5);
+            var gitPanel = (JPanel) sourceControls.getComponent(1);
+            var url = (JTextField) gitPanel.getComponent(1);
+            var name = (JTextField) mainControls.getComponent(3);
+            var nativeGit = (JTextField) gitPanel.getComponent(7);
+            var status = (JTextArea) ((JScrollPane) first.getComponent(1)).getViewport().getView();
+            SwingUtilities.invokeAndWait(() -> {
+                assertFalse(gitPanel.isVisible());
+                mode.setSelectedIndex(1);
+                assertTrue(gitPanel.isVisible());
+                assertNotNull(findLabel(first, "Git 项目名称（必填）"));
+                assertNotNull(findLabel(gitPanel, "不含凭据的 Git URL"));
+                url.setText("https://example.invalid/repository.git");
+                render(first, "git-page");
+                start.doClick();
+                assertEquals("请检查 Git URL、引用与可执行文件路径。", status.getText());
+                name.setText("reviewed-project");
+                nativeGit.setText(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString());
+                url.setText("https://token@example.invalid/repository.git");
+                start.doClick();
+                assertEquals("请检查 Git URL、引用与可执行文件路径。", status.getText());
+                url.setText("https://example.invalid/repository.git");
+            });
+            pages.environment(new UiEnvironment(Locale.ENGLISH, "LIGHT", false));
+            SwingUtilities.invokeAndWait(() -> {
+                assertEquals("https://example.invalid/repository.git", url.getText());
+                assertNotNull(findLabel(first, "Git project name (required)"));
+                assertNotNull(findLabel(gitPanel, "Credential-free Git URL"));
+            });
             pages.environment(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", true));
             assertFalse(start.isEnabled());
             pages.closeView(key);
@@ -114,6 +145,10 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             constructor.setAccessible(true);
             var panelMethod = formClass.getDeclaredMethod("panel");
             panelMethod.setAccessible(true);
+            var confirmation = DeploymentStaticPageReviewer.class.getDeclaredMethod("confirmation",
+                    DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.ServerRef.class, String.class,
+                    Map.class, Map.class, Optional.class);
+            confirmation.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
                 try {
                     var form = constructor.newInstance(page, prompt);
@@ -123,6 +158,14 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     assertNotNull(findLabel(panel, "数据库绑定方式"));
                     render(new JOptionPane(new JScrollPane(panel), JOptionPane.QUESTION_MESSAGE,
                             JOptionPane.OK_CANCEL_OPTION), "runtime-review");
+                    var gitReview = new DeploymentStaticWorkflow.GitReview("https://example.invalid/repository.git",
+                            "DEFAULT:HEAD", "a".repeat(40));
+                    var finalPanel = (JPanel) confirmation.invoke(null, page,
+                            new gold.debug.windowstolinux.appapi.server.ServerRef("visual-server"), "b".repeat(64),
+                            Map.of("service", "c".repeat(64)), Map.of(), Optional.of(gitReview));
+                    assertNotNull(findLabel(finalPanel, "确认后将在部署前保存本次经审阅的来源项目记录。"));
+                    render(new JOptionPane(new JScrollPane(finalPanel), JOptionPane.QUESTION_MESSAGE,
+                            JOptionPane.OK_CANCEL_OPTION), "git-confirm");
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }

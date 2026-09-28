@@ -7,6 +7,7 @@ import java.util.Optional;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 
 /** Routes only a documented prepublication no-effect task to local cleanup; all formal executions retain their original recovery. / 仅将有据的发布前无效果任务交本机清理；全部正式执行仍由原恢复处理。 */
@@ -48,8 +49,11 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         }
         if (marker.isEmpty())
             return unknown();
+        var gitOutcome = new DeploymentGitSourceFlow(context).reconcilePreparation(task);
+        if (gitOutcome.filter(Outcome.UNKNOWN::equals).isPresent())
+            return unknown();
         var original = marker.orElseThrow();
-        boolean cancelled = original.wasCancelled();
+        boolean cancelled = original.wasCancelled() || gitOutcome.filter(Outcome.CANCELLED::equals).isPresent();
         context.source().closeTaskResources(task);
         original.close();
         if (!context.tasks().resourcesReleased(task))

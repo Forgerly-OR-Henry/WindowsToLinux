@@ -1849,7 +1849,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/DeploymentPublicationPlan.java`：预留前已审阅的原执行身份及完整引用意图，不接受外部伪造任务 UUID。
 - `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；同一原任务可先准备素材与计划，并经窄端口核对原远端证据，UNKNOWN 不重放作者副作用。
 - `mod/deployment/service/core/DeploymentRemoteRecovery.java`：原任务发布恢复的窄端口，由 Mod 装配具体标准发布观察与收尾。
-- `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
+- `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务及静态发布内复用的原任务准备，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
 - `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
 - `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
 - `mod/deployment/secret/DeploymentSecretProvisionJournal.java`：宿主作者检查点中的原服务器/用途/修订、创建 ID、引用 UUID 与已知业务结果；不保存秘密值。
@@ -2067,9 +2067,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上组装单组件或整图计划。
 - `mod/deployment/service/standard/DeploymentStaticPageService.java`：为惰性页面提供原任务静态发布、只读服务器发现及持久任务状态读取。
 - `mod/deployment/service/standard/DeploymentStaticPreparationJournal.java`：在原选材前保存无远端效果的准备标记，已观测取消另行持久化。
-- `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机准备清理与已有执行的原发布恢复，缺失或损坏依据保持未知。
+- `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机/Git 准备清理与已有执行的原发布恢复，缺失、未核实或损坏依据保持未知。
 - `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
-- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内发现、审阅、重分析、逐组件归档并交给原单/多执行器；源码结构变更缺独立数据库依据时拒绝。
+- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内从本地目录或固定 Git 提供冻结来源、发现、审阅、重分析、逐组件归档并交给原单/多执行器；源码结构变更缺独立数据库依据时拒绝。
+- `mod/deployment/ui/DeploymentGitSourceForm.java`：仅 Git 模式可见的来源、引用和本机可执行文件输入，任务准入前构造无凭据的类型化请求。
 - `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。
 - `mod/deployment/ui/DeploymentStaticPageReviewer.java`：在所属 Swing 对话框中收集组件、运行与绑定输入，并确认原清单、归档和目标。
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticRuntimeResolver.java`：推导静态运行默认值、缺项与类型化运行定义。
