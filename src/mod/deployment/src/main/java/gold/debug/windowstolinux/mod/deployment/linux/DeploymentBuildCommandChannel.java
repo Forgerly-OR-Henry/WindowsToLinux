@@ -159,7 +159,7 @@ public final class DeploymentBuildCommandChannel {
     /** Quotes one fixed literal without permitting shell evaluation. / 引用固定字面量而不允许shell求值。
      * @param value bounded fixed argument / 有界固定参数
      * @return quoted shell literal / 已引用shell字面量 */
-    private static String shellQuote(String value) {
+    static String shellQuote(String value) {
         return "'" + Objects.requireNonNull(value).replace("'", "'\"'\"'") + "'";
     }
 
@@ -172,11 +172,30 @@ public final class DeploymentBuildCommandChannel {
      * @param output captured receipt ceiling / 捕获回执上限
      * @return host-observed operation / 宿主观测操作
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
-    private OperationResult<CommandResult> send(String operation, String target, String script, byte[] input,
+    OperationResult<CommandResult> send(String operation, String target, String script, byte[] input, Duration timeout,
+            long output) throws ApiException {
+        return send(operation, "deployment-build", target, script, input, timeout, output);
+    }
+
+    /** Executes a fixed deployment candidate command with its exact target kind. / 使用精确目标类别执行固定部署候选命令。
+     * @param operation stable operation / 稳定操作
+     * @param kind stable target kind / 稳定目标类别
+     * @param target exact target / 精确目标
+     * @param script fixed script / 固定脚本
+     * @param input owned bytes / 所属字节
+     * @param timeout approved deadline / 已审阅期限
+     * @param output bounded capture / 有界输出
+     * @return original host observation / 原宿主观测
+     * @throws ApiException if admission fails before dispatch / 发送前准入失败时 */
+    OperationResult<CommandResult> send(String operation, String kind, String target, String script, byte[] input,
             Duration timeout, long output) throws ApiException {
-        CommandRequest request = new CommandRequest(script, input, timeout, output);
-        var intent = RemoteActions.command(server, planRevision, request).withSemantics(
-                new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), "deployment-build", target))));
+        long available = budget.remainingSeconds();
+        if (available < 1)
+            return timeout();
+        CommandRequest request = new CommandRequest(script, input,
+                Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
+        var intent = RemoteActions.command(server, planRevision, request)
+                .withSemantics(new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), kind, target))));
         var grant = interaction.approve(intent, task);
         if (grant.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());

@@ -24,7 +24,89 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.toolchai
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.toolchain.ToolchainBuildEnvironment;
 
 /** Executes one reviewed source candidate through exact helper tool binding and a restricted build. / 经精确 helper 工具绑定与受限构建执行一个已审阅来源候选。 */
-public final class DeploymentStandardBuildExecutor {
+final class DeploymentStandardBuildExecutor {
+    /** One original pre-upload selection; no remote candidate is implied. / 一次原上传前选择，不意味着远端候选已存在。 */
+    static final class Prepared {
+        /** Original reviewed plan. / 原已审阅计划。 */
+        final ReviewedDeploymentPlan plan;
+
+        /** Rendered source-bound plan. / 与原来源绑定的渲染计划。 */
+        final DeploymentStandardPlanner.RenderedPlan rendered;
+
+        /** Candidate naming value, not upload evidence. / 候选命名值，不是上传证据。 */
+        final DeploymentRemoteWorkspace workspace;
+
+        /** Reviewed build environment. / 已审阅构建环境。 */
+        final DeploymentBuildEnvironment environment;
+
+        /** Shared remote execution budget. / 共用远端执行预算。 */
+        final DeploymentBuildBudget budget;
+
+        /** Original approved command channel. / 原已批准命令通道。 */
+        final DeploymentBuildCommandChannel commands;
+
+        /** Project tool requirements. / 项目工具要求。 */
+        final List<ToolchainRequirement> requirements;
+
+        /** Installed exact tool identities. / 已安装的精确工具身份。 */
+        final DeploymentResolvedToolchains tools;
+
+        /** Selected build engine. / 已选构建引擎。 */
+        final String engine;
+
+        /** Current candidate attempt. / 当前候选次数。 */
+        final int attempt;
+
+        /** Borrowed original session. / 借用的原会话。 */
+        final RemoteSession session;
+
+        /** Original admitted task. / 原准入任务。 */
+        final TaskContext task;
+
+        /** Single-use guard. / 单次消费门禁。 */
+        private boolean consumed;
+
+        /** Stores the one pre-upload selection. / 保存一次上传前选择。
+         * @param plan reviewed plan / 已审阅计划
+         * @param rendered rendered source plan / 已渲染来源计划
+         * @param workspace candidate naming value / 候选命名值
+         * @param environment reviewed build values / 已审阅构建值
+         * @param budget shared execution budget / 共用执行预算
+         * @param commands original command channel / 原命令通道
+         * @param requirements tool requirements / 工具要求
+         * @param tools exact installed tools / 精确已安装工具
+         * @param engine selected engine / 已选引擎
+         * @param attempt current attempt / 当前尝试次数
+         * @param session original session / 原会话
+         * @param task original task / 原任务 */
+        Prepared(ReviewedDeploymentPlan plan, DeploymentStandardPlanner.RenderedPlan rendered,
+                DeploymentRemoteWorkspace workspace, DeploymentBuildEnvironment environment,
+                DeploymentBuildBudget budget, DeploymentBuildCommandChannel commands,
+                List<ToolchainRequirement> requirements, DeploymentResolvedToolchains tools, String engine, int attempt,
+                RemoteSession session, TaskContext task) {
+            this.plan = plan;
+            this.rendered = rendered;
+            this.workspace = workspace;
+            this.environment = environment;
+            this.budget = budget;
+            this.commands = commands;
+            this.requirements = requirements;
+            this.tools = tools;
+            this.engine = engine;
+            this.attempt = attempt;
+            this.session = session;
+            this.task = task;
+        }
+
+        /** Consumes only for the original task and session. / 仅允许原任务及会话单次消费。
+         * @param actualSession supplied session / 提供的会话
+         * @param actualTask supplied task / 提供的任务 */
+        synchronized void consume(RemoteSession actualSession, TaskContext actualTask) {
+            if (consumed || session != actualSession || task != actualTask)
+                throw new IllegalStateException("Prepared build belongs to another operation or was consumed");
+            consumed = true;
+        }
+    }
     /** The same reviewed catalog used by planning and remote identity checks. / 规划与远端身份核对共用的已审阅目录。 */
     private final DeploymentToolchainCatalog catalog;
 
@@ -32,7 +114,7 @@ public final class DeploymentStandardBuildExecutor {
     private final DeploymentStandardPlanner planner;
 
     /** Creates the official fixed build executor. / 创建官方固定构建执行器。 */
-    public DeploymentStandardBuildExecutor() {
+    DeploymentStandardBuildExecutor() {
         this(DeploymentToolchainCatalog.defaults(), new DeploymentStandardPlanner());
     }
 
@@ -44,7 +126,7 @@ public final class DeploymentStandardBuildExecutor {
         this.planner = Objects.requireNonNull(planner);
     }
 
-    /** Prepares and builds only a previously uploaded candidate, borrowing the caller's original session and source handles. / 仅准备并构建此前已上传候选，借用调用方的原会话和来源句柄。
+    /** Internal build-only compatibility path; a workspace value does not prove upload. / 内部仅构建兼容路径；工作区值不能证明已上传。
      * @param plan original reviewed single-component plan / 原已审阅单组件计划
      * @param uploaded original candidate already uploaded and confirmed by its owning flow / 已由所属流程上传并确认的原候选
      * @param session original authenticated connection, closed by its caller / 原已认证连接，由调用方关闭
@@ -52,11 +134,42 @@ public final class DeploymentStandardBuildExecutor {
      * @param task original admitted task / 原准入任务
      * @return exact archive and installed tool identities only after a confirmed build / 仅确认构建后返回精确归档及已安装工具身份
      * @throws ApiException if the host rejects admission before dispatch / 宿主发送前拒绝准入时 */
-    public OperationResult<DeploymentVerifiedBuildResult> build(ReviewedDeploymentPlan plan,
+    OperationResult<DeploymentVerifiedBuildResult> build(ReviewedDeploymentPlan plan,
             DeploymentRemoteWorkspace uploaded, RemoteSession session, InteractionService interaction, TaskContext task)
             throws ApiException {
+        if (!Objects.requireNonNull(uploaded).equals(new DeploymentRemoteWorkspace(
+                plan.request().facts().applicationId(), plan.request().archive().sha256())))
+            throw new IllegalArgumentException("Build candidate differs from reviewed source");
+        var prepared = prepareForUpload(plan, session, interaction, task);
+        if (prepared.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(prepared);
+        return buildPrepared(prepared.value().orElseThrow(), uploaded, session, task);
+    }
+
+    /** Confirms isolation and exact tool binding before source upload. / 在源码上传前确认隔离与精确工具绑定。
+     * @param plan original reviewed plan / 原已审阅计划
+     * @param session borrowed original session / 借用的原会话
+     * @param interaction actual host review / 真实宿主审核
+     * @param task original task / 原任务
+     * @return one prepared selection without a candidate / 未创建候选的一次已准备选择
+     * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
+    OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task) throws ApiException {
+        return prepareForUpload(plan, session, interaction, task,
+                new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()));
+    }
+
+    /** Shares one cumulative execution budget with the preceding candidate preflight. / 与先前候选预检共用一份累计执行预算。
+     * @param plan original reviewed plan / 原已审阅计划
+     * @param session original session / 原会话
+     * @param interaction actual host review / 真实宿主审核
+     * @param task original task / 原任务
+     * @param budget original cumulative execution budget / 原累计执行预算
+     * @return exact installed selection / 精确已安装选择
+     * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
+    OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget) throws ApiException {
         Objects.requireNonNull(plan);
-        Objects.requireNonNull(uploaded);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
         Objects.requireNonNull(task);
@@ -64,8 +177,7 @@ public final class DeploymentStandardBuildExecutor {
         var facts = request.facts();
         var runtime = request.runtime();
         var limits = request.limits();
-        if (!uploaded.equals(new DeploymentRemoteWorkspace(facts.applicationId(), request.archive().sha256())))
-            throw new IllegalArgumentException("Build candidate or configuration differs from the reviewed source");
+        var workspace = new DeploymentRemoteWorkspace(facts.applicationId(), request.archive().sha256());
         var buildValues = new LinkedHashMap<String, String>();
         for (var entry : request.configuration().entries()) {
             if (entry.scope() == DeploymentConfigurationScopeType.BUILD)
@@ -74,25 +186,25 @@ public final class DeploymentStandardBuildExecutor {
         var environment = new DeploymentBuildEnvironment(request.configuration().applicationId(), buildValues);
         var rendered = planner.render(plan, task);
         if (rendered.outcome() != Outcome.SUCCEEDED)
-            return withoutValue(rendered);
+            return withoutValuePrepared(rendered);
         if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
-            return cancelled();
+            return cancelledPrepared();
         String revision = rendered.value().orElseThrow().reviewedPlanSha256();
         String engine = runtime instanceof DeploymentRuntimeDefinition.Container container
                 ? container.engine().name().toLowerCase(java.util.Locale.ROOT)
                 : "ordinary";
-        var budget = new DeploymentBuildBudget(limits.timeoutSeconds());
+        Objects.requireNonNull(budget);
         var commands = new DeploymentBuildCommandChannel(session, interaction, request.server(), task, revision,
                 budget);
         var preflight = commands.preflight(engine);
         if (preflight.outcome() == Outcome.UNKNOWN || preflight.outcome() == Outcome.CANCELLED)
-            return withoutValue(preflight);
+            return withoutValuePrepared(preflight);
         if (preflight.outcome() == Outcome.FAILED && preflight.value().isEmpty())
-            return withoutValue(preflight);
+            return withoutValuePrepared(preflight);
         if (!knownSuccess(preflight))
             return preflight.outcome() == Outcome.FAILED && knownExit(preflight)
-                    ? failed(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_ISOLATION_UNAVAILABLE")
-                    : unknown("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
+                    ? failedPrepared(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_ISOLATION_UNAVAILABLE")
+                    : unknownPrepared("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
         List<ToolchainRequirement> requirements = DeploymentProjectToolchainRequirements.from(facts, runtime);
         var preparer = new DeploymentToolchainPreparer(commands, catalog);
         int attempt = 0;
@@ -105,18 +217,51 @@ public final class DeploymentStandardBuildExecutor {
             prepared = preparer.prepare(requirements, attempt, (int) budget.remainingSeconds());
         }
         if (prepared.outcome() != Outcome.SUCCEEDED)
-            return withoutValue(prepared);
+            return withoutValuePrepared(prepared);
         var tools = prepared.value().orElseThrow();
-        var built = execute(rendered.value().orElseThrow().buildScript(), request, uploaded, environment, commands,
-                budget, engine, tools);
+        return new OperationResult<>(
+                Outcome.SUCCEEDED, Optional.of(new Prepared(plan, rendered.value().orElseThrow(), workspace,
+                        environment, budget, commands, requirements, tools, engine, attempt, session, task)),
+                Optional.empty());
+    }
+
+    /** Builds the exact uploaded candidate using the pre-upload selection and budget. / 使用上传前的选择与预算构建精确候选。
+     * @param prepared original confirmed pre-upload selection / 原已确认上传前选择
+     * @param uploaded independently confirmed uploaded workspace / 独立确认已上传的工作区
+     * @param session same original borrowed session / 同一原借用会话
+     * @param task same original admitted task / 同一原准入任务
+     * @return confirmed build or retained uncertainty / 已确认构建或保留的不确定性
+     * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
+    OperationResult<DeploymentVerifiedBuildResult> buildPrepared(Prepared prepared, DeploymentRemoteWorkspace uploaded,
+            RemoteSession session, TaskContext task) throws ApiException {
+        Objects.requireNonNull(prepared);
+        if (!prepared.workspace.equals(uploaded))
+            throw new IllegalArgumentException("Uploaded candidate differs from prepared source");
+        prepared.consume(session, task);
+        if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
+            return cancelled();
+        var rerendered = planner.render(prepared.plan, task);
+        if (rerendered.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(rerendered);
+        if (!rerendered.value().orElseThrow().reviewedPlanSha256().equals(prepared.rendered.reviewedPlanSha256()))
+            return unknown("DEPLOYMENT_BUILD_PLAN_CHANGED");
+        var request = prepared.plan.request();
+        var budget = prepared.budget;
+        var commands = prepared.commands;
+        var engine = prepared.engine;
+        var requirements = prepared.requirements;
+        int attempt = prepared.attempt;
+        var preparer = new DeploymentToolchainPreparer(commands, catalog);
+        var built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
+                engine, prepared.tools);
         if (built.outcome() == Outcome.FAILED
                 && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")
                 && attempt == 0 && hasAlternative(requirements) && budget.remainingSeconds() > 60) {
-            prepared = preparer.prepare(requirements, 1, (int) budget.remainingSeconds());
-            if (prepared.outcome() != Outcome.SUCCEEDED)
-                return withoutValue(prepared);
-            built = execute(rendered.value().orElseThrow().buildScript(), request, uploaded, environment, commands,
-                    budget, engine, prepared.value().orElseThrow());
+            var second = preparer.prepare(requirements, 1, (int) budget.remainingSeconds());
+            if (second.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(second);
+            built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
+                    engine, second.value().orElseThrow());
         }
         if (built.outcome() == Outcome.FAILED
                 && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")) {
@@ -214,6 +359,36 @@ public final class DeploymentStandardBuildExecutor {
      * @return same problem without a build value / 无构建值的相同问题 */
     private static OperationResult<DeploymentVerifiedBuildResult> withoutValue(OperationResult<?> outcome) {
         return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
+    }
+
+    /** Propagates a pre-upload outcome without manufacturing a selection. / 不虚构选择地传播上传前结果。
+     * @param outcome original outcome / 原结果
+     * @return same outcome without a selection / 无选择的相同结果 */
+    private static OperationResult<Prepared> withoutValuePrepared(OperationResult<?> outcome) {
+        return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
+    }
+
+    /** Returns a known pre-upload failure. / 返回已知上传前失败。
+     * @param code public category / 公开类别
+     * @param event stable event / 稳定事件
+     * @return failed preparation / 已失败的准备 */
+    private static OperationResult<Prepared> failedPrepared(ProblemCode code, String event) {
+        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(problem(code, event)));
+    }
+
+    /** Retains uncertain pre-upload effects. / 保留未知上传前副作用。
+     * @param event stable event / 稳定事件
+     * @return uncertain preparation / 未知准备 */
+    private static OperationResult<Prepared> unknownPrepared(String event) {
+        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+    }
+
+    /** Stops before further remote work on cancellation. / 取消时停止后续远端操作。
+     * @return cancelled preparation / 已取消准备 */
+    private static OperationResult<Prepared> cancelledPrepared() {
+        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_BUILD_CANCELLED")));
     }
 
     /** Returns a known failure. / 返回已知失败。

@@ -1992,7 +1992,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 ### S5-02 已迁入的标准计划与固定构建渲染生产文件
 
-旧 `shared/standard/deploy` 在根切换前仍保留；以下索引当前实际迁入的无 AI 计划、脚本生成与受控构建构件。构建执行仍要求调用方已确认上传原候选，不代表上传、发布或恢复完成。
+旧 `shared/standard/deploy` 在根切换前仍保留；以下索引当前实际迁入的无 AI 计划、脚本生成与受控构建构件。完整候选入口已经核对原素材并上传，发布和原任务持久恢复仍待接入。
 
 - `mod/deployment/service/core/model/DeploymentBuildLimits.java`：固定受管构建入口经过审阅的明确限制。
 - `mod/deployment/service/core/model/DeploymentBuildEnvironment.java`：精确非秘密构建配置投影；执行时仅从原已审阅配置的 BUILD 项生成。
@@ -2001,7 +2001,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainBindingCodec.java`：无配置解析依赖的确定性版本化发布绑定。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainCatalog.java`：唯一可注入构建分支目录，补丁由官方发布发现提供。
 - `mod/deployment/service/standard/deploy/build/BuildCompatibilityPolicy.java`：根据构建输出判定有界工具链重试。
-- `mod/deployment/service/standard/deploy/build/DeploymentStandardBuildExecutor.java`：复核原冻结素材与已上传候选，沿原任务完成隔离预检、精确工具绑定及受限构建。
+- `mod/deployment/service/standard/deploy/build/DeploymentStandardBuildExecutor.java`：内部共用原素材核对、上传前工具准备及上传后单次受限构建，不把工作区值视为上传凭据。
+- `mod/deployment/service/standard/deploy/build/DeploymentStandardCandidateExecutor.java`：借用原任务、素材与会话，完成主机准入、上传前准备、候选创建、精确上传回读和受限构建。
 - `mod/deployment/service/standard/deploy/build/DeploymentVerifiedBuildResult.java`：仅在受限构建已确认后携带原归档和真实已安装工具绑定身份。
 - `mod/deployment/service/standard/deploy/build/DeploymentToolchainPreparer.java`：最多选择两个已审阅目录候选，核验实际安装版本和固定绑定回执。
 - `mod/deployment/service/standard/deploy/build/contract/spi/DeploymentBuildRenderer.java`：通过固定且有界的目标机构建入口渲染一种经审阅项目类型。
@@ -2058,11 +2059,40 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。
 - `mod/deployment/service/standard/deploy/toolchain/DeploymentProjectToolchainRequirements.java`：从原分析事实与已审阅运行时推导固定工具需求，不猜测未解析版本。
 
+### S5-02 已迁入的主机与运行能力准入构件
+
+- `mod/deployment/service/core/model/capability/DeploymentEcosystemToolType.java`：明确生态构建工具类别的纯值。
+- `mod/deployment/service/core/model/capability/DeploymentLinuxCapabilityFacts.java`：Linux 主机与生态探测的有界纯事实。
+- `mod/deployment/service/core/model/server/DeploymentCpuMicroarchitectureLevel.java`：受管主机 CPU 指令集级别纯值。
+- `mod/deployment/service/core/model/server/security/DeploymentLinuxFirewallKind.java`：防火墙实现类别纯值。
+- `mod/deployment/service/core/model/server/security/DeploymentLinuxFirewallState.java`：防火墙运行事实纯值。
+- `mod/deployment/service/core/model/server/security/DeploymentLinuxSecurityModuleType.java`：Linux 安全模块类别纯值。
+- `mod/deployment/service/core/model/server/security/DeploymentLinuxSecurityPosture.java`：安全模块与防火墙组合事实纯值。
+- `mod/deployment/service/core/model/server/security/DeploymentLinuxSecurityState.java`：Linux 安全模块状态纯值。
+- `mod/deployment/service/standard/deploy/support/DeploymentHostSupportDecision.java`：主机准入决定和证据。
+- `mod/deployment/service/standard/deploy/support/DeploymentHostSupportEvaluator.java`：按原发行版、架构与安全策略评估主机准入。
+- `mod/deployment/service/core/model/capability/DeploymentHostSupportStatus.java`：主机准入状态纯值。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentAlmaLinuxSupportPolicy.java`：AlmaLinux 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentCentosStreamSupportPolicy.java`：CentOS Stream 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentDebianSupportPolicy.java`：Debian 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentDistributionSupportEvaluator.java`：按目标发行版选择并执行固定政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentDistributionSupportPolicy.java`：发行版政策内部契约。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentDistributionSupportRules.java`：共用发行版版本、CPU 与包管理器准入规则。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentOracleLinuxSupportPolicy.java`：Oracle Linux 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentRockyLinuxSupportPolicy.java`：Rocky Linux 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/distro/DeploymentUbuntuSupportPolicy.java`：Ubuntu 精确版本与架构政策。
+- `mod/deployment/service/standard/deploy/support/runtime/DeploymentRuntimeCapabilityDecision.java`：准备工具后的运行能力决定。
+- `mod/deployment/service/standard/deploy/support/runtime/DeploymentRuntimeCapabilityEvaluator.java`：按生态、编译器和配套工具事实评估可运行性。
+
 ### S5-02 已迁入的受管 helper 与公开远端协议适配
 
 - `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装并核对固定 helper 身份，未知副作用不重放。
 - `mod/deployment/linux/DeploymentBuildBudget.java`：在最多两个候选间累计实际远端执行时间，不计人工审核等待。
 - `mod/deployment/linux/DeploymentBuildCommandChannel.java`：以原任务、原服务器、固定语义和宿主审批发送预检/工具准备/绑定/构建命令。
+- `mod/deployment/linux/DeploymentCandidateChannel.java`：经原任务授权的固定主机采集、空间探测、候选任务创建/查询、精确上传及远端完整性核对。
+- `mod/deployment/linux/DeploymentEcosystemCapabilityProbe.java`：生成原生态工具与运行能力的固定只读探测。
+- `mod/deployment/linux/DeploymentPlatformCapabilityParser.java`：按原有界类型和缺字段规则解析固定主机能力回执为纯值，不凭空补造远端事实。
+- `mod/deployment/linux/DeploymentPlatformCapabilityProbe.java`：生成发行版、架构、安全与运行能力的固定只读探测。
 - `mod/deployment/linux/DeploymentBuildOutputProtocol.java`：不改原helper资源，将最多128MiB构建流压成平台8MiB以内的固定短回执与已遮蔽诊断。
 - `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按原 40 片段、5 插入和独立 build-entry 组装协议 10 受管 helper，逐字节核对固定摘要。
 - `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、实际字节校验及最终回执。
