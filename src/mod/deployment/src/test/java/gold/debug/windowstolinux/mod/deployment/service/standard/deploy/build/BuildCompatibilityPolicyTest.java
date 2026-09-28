@@ -6,7 +6,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+/** Preserves the former exact compatibility retry cases. / 保留原有精确兼容性重试用例。 */
 class BuildCompatibilityPolicyTest {
+    /** Rejects generic failures while recognizing every former ecosystem marker. / 拒绝普通失败并识别全部原生态提示。 */
     @Test
     void retriesOnlyExplicitCompatibilityFailures() {
         assertTrue(BuildCompatibilityPolicy.retryable("error: invalid target release: 17"));
