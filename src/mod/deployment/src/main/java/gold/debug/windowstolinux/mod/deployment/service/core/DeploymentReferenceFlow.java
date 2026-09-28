@@ -24,6 +24,23 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
     /** Authoritative retained business associations. / 权威保留业务关联。 */
     private final DeploymentReferenceAssociations associations;
 
+    /** Publication prepared within the same original platform task before durable reservation. / 在同一原平台任务内、持久预留前准备的发布。
+     * @param plan complete original reference intent / 完整原引用意图
+     * @param author one-shot original effect callback / 一次性原副作用回调
+     * @param cleanup original prepared source and archive cleanup / 原已准备来源及归档清理 */
+    public record PreparedPublication(DeploymentPublicationPlan plan, TaskWork<DeploymentPublication> author,
+            AutoCloseable cleanup) {
+        /** Requires the actual plan, author and cleanup. / 要求真实计划、作者及清理。
+         * @param plan complete intent / 完整意图
+         * @param author original callback / 原回调
+         * @param cleanup original resource cleanup / 原资源清理 */
+        public PreparedPublication {
+            Objects.requireNonNull(plan);
+            Objects.requireNonNull(author);
+            Objects.requireNonNull(cleanup);
+        }
+    }
+
     /** Binds one actual Mod activation. / 绑定一个实际插件启用。
      * @param context original activation / 原启用 */
     public DeploymentReferenceFlow(ModContext context) {
@@ -44,6 +61,56 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         return context.tasks().submit(
                 new TaskRequest(TASK_TYPE, "Deployment publication", List.of(plan.server().id()), true),
                 task -> execute(plan, author, task));
+    }
+
+    /** Prepares source, plan and exact references inside the same original publication task. / 在同一原发布任务内准备来源、计划及精确引用。
+     * @param server original selected server / 原选定服务器
+     * @param preparation task-bound work producing intent before any publication effect / 发布副作用前产出意图的任务绑定工作
+     * @return original platform task / 原平台任务
+     * @throws ApiException if task admission fails / 任务准入失败时 */
+    public TaskHandle<Void> submitPrepared(ServerRef server, TaskWork<PreparedPublication> preparation)
+            throws ApiException {
+        Objects.requireNonNull(server);
+        Objects.requireNonNull(preparation);
+        return context.tasks().submit(new TaskRequest(TASK_TYPE, "Deployment publication", List.of(server.id()), true),
+                task -> {
+                    OperationResult<PreparedPublication> prepared;
+                    try {
+                        prepared = Objects.requireNonNull(preparation.run(task));
+                    } catch (Exception | LinkageError | AssertionError uncertain) {
+                        return unknown();
+                    }
+                    if (prepared.outcome() != Outcome.SUCCEEDED)
+                        return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
+                    if (prepared.value().isEmpty())
+                        return unknown();
+                    var ready = prepared.value().orElseThrow();
+                    var closed = new java.util.concurrent.atomic.AtomicBoolean();
+                    try {
+                        if (!server.equals(ready.plan().server()))
+                            return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
+                                    .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_PREPARED_SERVER_CHANGED")));
+                        return execute(ready.plan(), original -> {
+                            OperationResult<DeploymentPublication> result = null;
+                            try {
+                                result = ready.author().run(original);
+                                return result;
+                            } finally {
+                                if (closed.compareAndSet(false, true)) {
+                                    try {
+                                        ready.cleanup().close();
+                                    } catch (Exception uncertainCleanup) {
+                                        if (result == null || result.outcome() == Outcome.UNKNOWN)
+                                            throw uncertainCleanup;
+                                    }
+                                }
+                            }
+                        }, task);
+                    } finally {
+                        if (closed.compareAndSet(false, true))
+                            ready.cleanup().close();
+                    }
+                });
     }
 
     /** Reconciles exact original evidence only; unknown external work is never run again. / 仅核对精确原证据；未知外部工作绝不重跑。

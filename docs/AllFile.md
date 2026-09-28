@@ -1840,7 +1840,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/db/DeploymentExecutionRepository.java`：原任务执行记录、不可变预留证据、与整图发布同事务的正式结果及独立实际收尾。
 - `mod/deployment/service/core/DeploymentPublication.java`：作者一次性返回的完整已核实应用图和单元发布事实。
 - `mod/deployment/service/core/DeploymentPublicationPlan.java`：预留前已审阅的原执行身份及完整引用意图，不接受外部伪造任务 UUID。
-- `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；UNKNOWN 不重放作者副作用。
+- `mod/deployment/service/core/DeploymentReferenceFlow.java`：正式发布任务一次性执行和原引用核对恢复；同一原任务可先准备素材与计划，UNKNOWN 不重放作者副作用。
 - `mod/deployment/service/core/DeploymentGitSourceFlow.java`：固定 Git 来源原任务，持久审阅计划、真实取材、精确项目保存及不重发 Git 的显式恢复。
 - `mod/deployment/service/core/DeploymentGitSourceJournal.java`：宿主作者检查点上的有界原 Git 请求、物理回执、完整项目拟写行及已知结果阶段。
 - `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
@@ -2056,6 +2056,10 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/plan/MultiComponentDeploymentPlanner.java`：仅在混合项目通过安全准入后生成确定性图顺序。
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
 - `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
+- `mod/deployment/service/standard/deploy/plan/DeploymentReviewedReleaseIdentity.java`：按原 v5 内容身份与 tools-v1 实际工具绑定生成远端发布摘要，独立于审阅时间和本机发布清单。
+- `mod/deployment/service/standard/deploy/publication/DeploymentPublicationCleanupJournal.java`：原任务 checkpoint 保存远端候选、旧版快照、发布及清理阶段的确认事实。
+- `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationExecutor.java`：在同一原发布任务内关联素材、计划、候选构建、远端发布与本机发布事务。
+- `mod/deployment/service/standard/deploy/publication/DeploymentStandardPublicationTransaction.java`：执行单组件封存、旧版快照、发布、健康、已知回滚及 maintenance/候选收尾。
 - `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。
 - `mod/deployment/service/standard/deploy/toolchain/DeploymentProjectToolchainRequirements.java`：从原分析事实与已审阅运行时推导固定工具需求，不猜测未解析版本。
 
@@ -2087,6 +2091,13 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 ### S5-02 已迁入的受管 helper 与公开远端协议适配
 
 - `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装并核对固定 helper 身份，未知副作用不重放。
+- `mod/deployment/linux/DeploymentContainerArguments.java`：按旧固定 helper 合同组织容器运行参数。
+- `mod/deployment/linux/DeploymentPublicationArguments.java`：约束单组件发布的固定配置、运行及内容输入。
+- `mod/deployment/linux/DeploymentPublicationChannel.java`：用原任务及精确审批发送封存、快照、发布、健康、观察、回滚和候选清理命令。
+- `mod/deployment/linux/DeploymentRemoteReleaseSnapshot.java`：区分首次发布与携带原 token 和运行状态的远端旧版快照。
+- `mod/deployment/linux/DeploymentRemoteRuntimeObservation.java`：表达已核实运行、按需安装、停止与错误状态。
+- `mod/deployment/linux/DeploymentRuntimeArguments.java`：按旧固定 helper 合同组织 native 与容器运行参数。
+- `mod/deployment/linux/DeploymentWorkloadArguments.java`：按旧固定 helper 合同组织应用工作负载参数。
 - `mod/deployment/linux/DeploymentBuildBudget.java`：在最多两个候选间累计实际远端执行时间，不计人工审核等待。
 - `mod/deployment/linux/DeploymentBuildCommandChannel.java`：以原任务、原服务器、固定语义和宿主审批发送预检/工具准备/绑定/构建命令。
 - `mod/deployment/linux/DeploymentCandidateChannel.java`：经原任务授权的固定主机采集、空间探测、候选任务创建/查询、精确上传及远端完整性核对。
