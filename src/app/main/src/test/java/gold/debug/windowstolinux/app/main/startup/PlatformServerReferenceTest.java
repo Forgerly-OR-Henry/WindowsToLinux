@@ -111,32 +111,32 @@ class PlatformServerReferenceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             for (var id : List.of("server-a", "server-z"))
-                runtime.persistence().servers().saveServerProfile(
-                        new StoredServerProfile(id, "host.example", 22, "alice", "credential", id));
+                runtime.persistence().servers()
+                        .saveServerProfile(new StoredServerProfile(id, "host.example", 22, "alice", "credential", id));
             var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var request = new TaskRequest("discover", "Discover servers", List.of(), true);
             var callbackFailure = new AtomicReference<Throwable>();
             var cursor = completed(binding.submit(request, task -> {
                 try {
-                assertTrue(access.list(Optional.empty(), 1, task).items().isEmpty());
-                var first = access.listConfigured(Optional.empty(), 1, task);
-                assertEquals("server", first.items().getFirst().ref().id());
-                var second = access.listConfigured(first.nextCursor(), 1, task);
-                assertEquals("server-a", second.items().getFirst().ref().id());
-                assertEquals("server-z", access.listConfigured(second.nextCursor(), 1, task)
-                        .items().getFirst().ref().id());
-                assertEquals(ProblemCode.INVALID_INPUT,
-                        assertThrows(ApiException.class,
-                                () -> access.list(first.nextCursor(), 1, task)).problem().code());
-                assertEquals(ProblemCode.ACCESS_DENIED,
-                        assertThrows(ApiException.class,
-                                () -> access.get(new ServerRef("server-a"), task)).problem().code());
-                assertEquals(ProblemCode.ACCESS_DENIED,
-                        assertThrows(ApiException.class,
-                                () -> access.reserve(new ServerRef("server-a"), "discovery-only", task))
-                                        .problem().code());
-                return success(first.nextCursor().orElseThrow());
+                    assertTrue(access.list(Optional.empty(), 1, task).items().isEmpty());
+                    var first = access.listConfigured(Optional.empty(), 1, task);
+                    assertEquals("server", first.items().getFirst().ref().id());
+                    var second = access.listConfigured(first.nextCursor(), 1, task);
+                    assertEquals("server-a", second.items().getFirst().ref().id());
+                    assertEquals("server-z",
+                            access.listConfigured(second.nextCursor(), 1, task).items().getFirst().ref().id());
+                    assertEquals(ProblemCode.INVALID_INPUT,
+                            assertThrows(ApiException.class, () -> access.list(first.nextCursor(), 1, task)).problem()
+                                    .code());
+                    assertEquals(ProblemCode.ACCESS_DENIED,
+                            assertThrows(ApiException.class, () -> access.get(new ServerRef("server-a"), task))
+                                    .problem().code());
+                    assertEquals(ProblemCode.ACCESS_DENIED,
+                            assertThrows(ApiException.class,
+                                    () -> access.reserve(new ServerRef("server-a"), "discovery-only", task)).problem()
+                                    .code());
+                    return success(first.nextCursor().orElseThrow());
                 } catch (Exception | AssertionError failure) {
                     callbackFailure.set(failure);
                     return success(null);
@@ -146,12 +146,11 @@ class PlatformServerReferenceTest {
                 throw new AssertionError("Discovery callback failed", callbackFailure.get());
             completed(binding.submit(request, task -> {
                 assertEquals(ProblemCode.INVALID_INPUT,
-                        assertThrows(ApiException.class,
-                                () -> access.listConfigured(Optional.of(cursor), 1, task)).problem().code());
+                        assertThrows(ApiException.class, () -> access.listConfigured(Optional.of(cursor), 1, task))
+                                .problem().code());
                 return success(null);
             }));
-            assertEquals(0, count(runtime.persistence().database(),
-                    "SELECT COUNT(*) FROM mod_server_reference"));
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_server_reference"));
         }
     }
 

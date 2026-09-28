@@ -1306,7 +1306,23 @@ import gold.debug.windowstolinux.appapi.task.OperationResult;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 
 public record RemoteFacts(String operatingSystem, String architecture, String fingerprint) {}
-public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes) {}
+public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes)
+    implements AutoCloseable {
+    public CommandRequest {
+        java.util.Objects.requireNonNull(script);
+        stdin = java.util.Objects.requireNonNull(stdin).clone();
+        java.util.Objects.requireNonNull(timeout);
+        if (timeout.isZero() || timeout.isNegative() || outputLimitBytes < 0)
+            throw new IllegalArgumentException("Invalid command limit");
+    }
+    @Override public synchronized byte[] stdin() { return stdin.clone(); }
+    public synchronized CommandRequest snapshot() {
+        return new CommandRequest(script, stdin, timeout, outputLimitBytes);
+    }
+    @Override public synchronized void close() {
+        java.util.Arrays.fill(stdin, (byte) 0);
+    }
+}
 public record CommandResult(Optional<Integer> exitCode, String stdout, String stderr, boolean truncated) {}
 public record TransferRequest(Path localPath, String remoteAbsolutePath, long maxBytes) {}
 public record TransferResult(long transferredBytes, String sha256,
@@ -1336,7 +1352,7 @@ public interface LinuxService {
 }
 ```
 
-会话绑定当前任务与所选服务器，平台处理凭据、指纹交互和连接释放，不向作者暴露 SSHD 类型。脚本经标准输入传输，不能把大脚本放进 shell 参数；具体部署 helper 载荷仍由部署 Mod 生成。UTF-8 脚本和 stdin 分别最大 16 MiB，脚本拒绝 NUL 与无效 UTF-16 输入；更大素材走文件传输，超限在发送前拒绝。`outputLimitBytes` 最大 8 MiB，标准输出与错误输出合计计算原始字节数；超过捕获限额后继续排空并返回 `truncated=true`，不因此终止命令。传输仅处理请求中的普通文件，路径、摘要和实际字节数核对后返回；调用方申请任务授权的本地路径范围仍生效。
+会话绑定当前任务与所选服务器，平台处理凭据、指纹交互和连接释放，不向作者暴露 SSHD 类型。脚本经标准输入传输，不能把大脚本放进 shell 参数；具体部署 helper 载荷仍由部署 Mod 生成。UTF-8 脚本和 stdin 分别最大 16 MiB，脚本拒绝 NUL 与无效 UTF-16 输入；更大素材走文件传输，超限在发送前拒绝。`outputLimitBytes` 最大 8 MiB，标准输出与错误输出合计计算原始字节数；超过捕获限额后继续排空并返回 `truncated=true`，不因此终止命令。`CommandRequest` 复制并持有 stdin；作者在审批及执行流程退出后调用 `close()` 清零自己的请求副本，平台执行时先取得独立稳定快照，让授权摘要与实际发送使用同一份输入。平台发送副本在发送线程真实终止后清零；`UNKNOWN` 不提前释放仍在使用的副本。传输仅处理请求中的普通文件，路径、摘要和实际字节数核对后返回；调用方申请任务授权的本地路径范围仍生效。
 
 审批绑定实际脚本、输入摘要、目标和传输方向/路径/文件摘要。超时、断连或取消后，已发出的副作用无法确认则返回 UNKNOWN；不自动重发写操作。会话关闭不代表远端操作已结束。浏览器救援仍是平台固定入口，作者不负责实现或启动救援。
 

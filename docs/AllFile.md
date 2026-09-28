@@ -1532,7 +1532,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/db/SchemaIdentity.java`：与唯一代次绑定的数据所有者及版本。
 - `appapi/db/SchemaMigration.java`：从受保护来源到独立目标的作者迁移逻辑。
 - `appapi/db/ValidationReport.java`：作者对数据结构作出接受或拒绝判断的证据。
-- `appapi/linux/CommandRequest.java`：带独立输入及输出上限的精确远端脚本。
+- `appapi/linux/CommandRequest.java`：带独立输入及输出上限的精确远端脚本；复制执行快照并清零请求持有的敏感输入。
 - `appapi/linux/CommandResult.java`：不推断未观察退出状态的远端输出。
 - `appapi/linux/LinuxService.java`：绑定任务授权及主机信任校验的 SSH 能力。
 - `appapi/linux/RemoteFacts.java`：已观察的远端平台与认证主机指纹。
