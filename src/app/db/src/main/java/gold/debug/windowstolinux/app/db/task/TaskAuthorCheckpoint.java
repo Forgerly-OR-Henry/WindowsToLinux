@@ -122,12 +122,26 @@ public final class TaskAuthorCheckpoint {
         validatePayload(next);
         if (expected.released() || expected.revision() == Long.MAX_VALUE)
             throw new RejectedException("Author checkpoint cannot advance after release or revision exhaustion");
-        var before = facts(task, owner, version, key, expected.revision(), expected.payload()).encode();
         var after = facts(task, owner, version, key, expected.revision() + 1, next).encode();
         try (var connection = database.openConnection()) {
             connection.setAutoCommit(false);
             RepositoryConnections.lockPlatformState(connection);
             requireTask(connection, task, owner, version);
+            String before;
+            try (var query = connection.prepareStatement(
+                    "SELECT recovery_json,released_at FROM platform_task_resource WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED'")) {
+                query.setObject(1, lease);
+                query.setObject(2, task);
+                query.setString(3, resourceId(owner, key));
+                query.setString(4, owner);
+                try (var rows = query.executeQuery()) {
+                    if (!rows.next())
+                        throw new RejectedException("Author checkpoint expected value differs");
+                    before = rows.getString(1);
+                    if (!decode(before, task, owner, version, key, rows.getObject(2) != null).equals(expected))
+                        throw new RejectedException("Author checkpoint expected value differs");
+                }
+            }
             try (var update = connection.prepareStatement(
                     "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED' AND recovery_json=? AND released_at IS NULL")) {
                 update.setString(1, after);

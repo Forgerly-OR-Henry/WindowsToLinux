@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
@@ -107,6 +109,52 @@ class TaskAuthorCheckpointTest {
             assertEquals(new TaskCheckpoint.Snapshot(1, "{\"state\":1}", true), stored.snapshot());
             assertThrows(SQLException.class, () -> checkpoints.advance(task, OWNER, VERSION, "publication", lease,
                     stored.snapshot(), "{\"state\":2}"));
+        }
+    }
+
+    @Test
+    void reorderedPersistedEnvelopeAdvancesAcrossH2ReopenWithoutWeakeningExactCas() throws Exception {
+        UUID task;
+        UUID lease;
+        String initial = "{\"phase\":\"prepared\"}";
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            task = started(db);
+            lease = new TaskAuthorCheckpoint(db).begin(task, OWNER, VERSION, "publication", initial).lease();
+            try (var connection = db.openConnection();
+                    var query = connection
+                            .prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
+                query.setObject(1, lease);
+                try (var rows = query.executeQuery()) {
+                    assertTrue(rows.next());
+                    var stored = rows.getString(1);
+                    var fields = new ObjectMapper().readTree(stored).path("fields");
+                    var alternative = new LinkedHashMap<String, Object>();
+                    alternative.put("fields", fields);
+                    alternative.put("protocol", "author-checkpoint.v1");
+                    alternative.put("version", 1);
+                    alternative.put("release", "EXPLICIT");
+                    var reordered = new ObjectMapper().writeValueAsString(alternative);
+                    assertNotEquals(stored, reordered);
+                    try (var update = connection
+                            .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                        update.setString(1, reordered);
+                        update.setObject(2, lease);
+                        assertEquals(1, update.executeUpdate());
+                    }
+                }
+            }
+        }
+        try (var reopened = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var checkpoints = new TaskAuthorCheckpoint(reopened);
+            var original = checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow();
+            assertEquals(new TaskCheckpoint.Snapshot(0, initial, false), original.snapshot());
+            assertThrows(TaskAuthorCheckpoint.RejectedException.class,
+                    () -> checkpoints.advance(task, OWNER, VERSION, "publication", lease,
+                            new TaskCheckpoint.Snapshot(0, "{\"phase\":\"forged\"}", false), "{\"phase\":\"done\"}"));
+            var advanced = checkpoints.advance(task, OWNER, VERSION, "publication", lease, original.snapshot(),
+                    "{\"phase\":\"done\"}");
+            assertEquals(1, advanced.revision());
+            assertEquals(advanced, checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot());
         }
     }
 
