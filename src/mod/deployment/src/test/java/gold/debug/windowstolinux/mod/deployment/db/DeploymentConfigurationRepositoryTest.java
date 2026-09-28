@@ -54,6 +54,8 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             var repository = new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db());
             run(runtime, task -> {
                 repository.saveAndBindRelease(task, accepted, "a".repeat(64));
+                assertEquals(2, repository.nextRevision(task, "demo"));
+                assertEquals(1, repository.nextRevision(task, "another-unit"));
                 var loaded = repository.findRelease(task, "demo", "a".repeat(64)).orElseThrow();
                 assertEquals(accepted.sha256(), loaded.sha256());
                 assertEquals(accepted.createdAt().toEpochMilli(), loaded.createdAt().toEpochMilli());
@@ -74,6 +76,7 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                 var repository = new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db());
                 assertEquals(accepted.sha256(),
                         repository.findRelease(task, "demo", "a".repeat(64)).orElseThrow().sha256());
+                assertEquals(2, repository.nextRevision(task, "demo"));
                 assertTrue(repository.findRelease(task, "demo", "absent").isEmpty());
                 return success();
             });

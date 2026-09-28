@@ -32,7 +32,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.DeploymentReviewedReleaseIdentity;
@@ -125,6 +127,152 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     @Test
     void exactStoredPurposePermitsOriginalSecretPublication() throws Exception {
         runScenario(ScenarioType.PURPOSE_PRESENT, false);
+    }
+
+    /** Runs the new page workflow through actual source, reviewed plan and original publication under one task. / 在同一任务内通过真实来源、已审阅计划与原发布运行新页面流程。
+     * @throws Exception if original source or publication fails / 原来源或发布失败时 */
+    @Test
+    void staticWorkflowPublishesOneOriginalTaskWithReviewedInputs() throws Exception {
+        Files.createDirectories(selectedSourceDirectory());
+        Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
+        Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
+        Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var server = new ServerRef("server-publication");
+            runtime.servers().saveServerProfile(
+                    ServerProfile.fromStored(
+                            new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
+            List<String> firstSnapshot = null;
+            String firstOwner = null;
+            String firstApplication = null;
+            for (int publication = 1; publication <= 2; publication++) {
+                Files.writeString(selectedSourceDirectory().resolve("main.go"),
+                        "package main\nfunc main() { /* publication " + publication + " */ }\n");
+                var actions = new CopyOnWriteArrayList<String>();
+                var sha = new AtomicReference<String>();
+                var bytes = new AtomicLong();
+                var path = new AtomicReference<Path>();
+                var candidate = new AtomicReference<DeploymentRemoteWorkspace>();
+                var callbackEnded = new CountDownLatch(1);
+                var session = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
+                var original = runtime.modContexts().get(OWNER).context();
+                var bound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
+                var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
+                var observedTask = new AtomicReference<UUID>();
+                var reviewedApplication = new AtomicReference<String>();
+                var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                    public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef exact, String manifest,
+                            List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                        assertEquals(server, exact);
+                        assertEquals(1, discovered.size());
+                        observedTask.set(task.id());
+                        return new OperationResult<>(Outcome.SUCCEEDED,
+                                Optional.of(new DeploymentStaticWorkflow.Selection(discovered.getFirst().id(),
+                                        Map.of(discovered.getFirst().id(), new DeploymentStaticWorkflow.Choice(
+                                                DeploymentProjectKind.GO_SERVICE, Set.of())),
+                                        Optional.empty())),
+                                Optional.empty());
+                    }
+
+                    public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef exact,
+                            String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                        assertEquals(observedTask.get(), task.id());
+                        var prompt = prompts.getFirst();
+                        reviewedApplication.set(prompt.applicationId());
+                        var values = new HashMap<>(prompt.defaults());
+                        values.put("primary", "service");
+                        values.put("secondary", "main.go");
+                        values.put("version", "1.24");
+                        values.put("port", "8080");
+                        values.put("healthMode", "TCP");
+                        values.put("exposure", "INTERNAL");
+                        var answer = new DeploymentStaticWorkflow.Answers(values, List.of(),
+                                DeploymentBuildLimits.defaultNonRoot(), false, true);
+                        workflow.validateReview(prompt, answer);
+                        return new OperationResult<>(Outcome.SUCCEEDED,
+                                Optional.of(Map.of(prompt.componentId(), answer)), Optional.empty());
+                    }
+
+                    public OperationResult<Boolean> confirm(ServerRef exact, String manifest,
+                            Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
+                            TaskContext task) {
+                        assertEquals(observedTask.get(), task.id());
+                        sha.set(archives.values().iterator().next());
+                        candidate.set(new DeploymentRemoteWorkspace(reviewedApplication.get(), sha.get()));
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                    }
+                };
+                var handle = workflow.submit(server, new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
+                        reviewer);
+                assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> handle.snapshot().toString());
+                OperationResult<Void> result;
+                try {
+                    result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+                } catch (TimeoutException unfinished) {
+                    throw new AssertionError(
+                            "Static publication unfinished: " + handle.snapshot() + ", app=" + reviewedApplication.get()
+                                    + ", candidate=" + candidate.get() + ", actions=" + actions + ", resources="
+                                    + scalar(runtime,
+                                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                            unfinished);
+                }
+                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals(publication, countMod(runtime, "deployment_release"));
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                assertEquals(1, actions.stream().filter("publish"::equals).count());
+                assertEquals(1, actions.stream().filter("upload"::equals).count());
+                var snapshots = configurationRows(runtime);
+                String owner = ownershipManifest(runtime);
+                assertEquals(publication, snapshots.size());
+                assertEquals(publication + ":", snapshots.getLast().substring(0, 2));
+                if (firstSnapshot == null) {
+                    firstSnapshot = snapshots;
+                    firstOwner = owner;
+                    firstApplication = reviewedApplication.get();
+                } else {
+                    assertEquals(firstSnapshot.getFirst(), snapshots.getFirst(), "First immutable revision changed");
+                    assertEquals(firstOwner, owner, "Managed ownership manifest changed on second publication");
+                    assertEquals(firstApplication, reviewedApplication.get(), "Managed application changed");
+                }
+            }
+        }
+    }
+
+    /** Reads immutable revision identities from the actual Mod schema. / 从真实 Mod 模式读取不可变修订身份。
+     * @param runtime actual host / 真实宿主
+     * @return ordered revision and digest rows / 排序后的修订和摘要行
+     * @throws Exception if schema access fails / 模式访问失败时 */
+    private List<String> configurationRows(PlatformRuntime runtime) throws Exception {
+        try (var access = scope(runtime, true);
+                var connection = access.openConnection();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT configuration_revision, configuration_sha256 "
+                        + "FROM deployment_unit_configuration_snapshot ORDER BY configuration_revision")) {
+            var result = new ArrayList<String>();
+            while (rows.next())
+                result.add(rows.getLong(1) + ":" + rows.getString(2));
+            return List.copyOf(result);
+        }
+    }
+
+    /** Reads the actual managed ownership manifest, independent of the reviewed name. / 读取独立于审阅名称的实际受管归属清单。
+     * @param runtime actual host / 真实宿主
+     * @return persisted owner identity / 已持久归属身份
+     * @throws Exception if business storage fails / 业务存储失败时 */
+    private String ownershipManifest(PlatformRuntime runtime) throws Exception {
+        try (var access = scope(runtime, true);
+                var connection = access.openConnection();
+                var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT ownership_manifest_sha256 FROM deployment_unit")) {
+            assertTrue(rows.next());
+            var digest = rows.getString(1);
+            assertFalse(rows.next(), "Expected one managed unit across publications");
+            return digest;
+        }
     }
 
     /** Verifies the retained original task in its own JVM, whose exit models an interrupted host. / 在独立JVM验证保留的原任务，其退出模拟宿主中断。
@@ -592,6 +740,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     if (method.getName().equals("upload")) {
                         actions.add("upload");
                         var transfer = (TransferRequest) args[0];
+                        if (path.get() == null) {
+                            path.set(transfer.localPath());
+                            bytes.set(Files.size(transfer.localPath()));
+                        }
                         assertEquals(path.get(), transfer.localPath());
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(bytes.get(),
                                 sha.get(), transfer.localPath(), transfer.remoteAbsolutePath())), Optional.empty());

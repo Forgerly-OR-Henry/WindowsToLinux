@@ -27,7 +27,20 @@ public final class DeploymentSourceArchiver {
      * @throws ApiException if writing, cancellation, verification or cleanup fails / 写入、取消、核验或清理失败时 */
     public DeploymentSourceArchive prepare(DeploymentSourceMaterial material, long maximumBytes, TaskContext task)
             throws ApiException {
+        return prepare(material, "", maximumBytes, task);
+    }
+
+    /** Archives one discovered subtree while keeping the original snapshot identity. / 归档一棵已发现子树，同时保持原快照身份。
+     * @param material original frozen material / 原冻结素材
+     * @param relativeRoot canonical snapshot-relative root, empty for the whole source / 规范快照相对根，全来源为空
+     * @param maximumBytes compressed byte ceiling / 压缩字节上限
+     * @param task original task / 原任务
+     * @return original-task component archive / 原任务组件归档
+     * @throws ApiException if creation or verification fails / 创建或核验失败时 */
+    public DeploymentSourceArchive prepare(DeploymentSourceMaterial material, String relativeRoot, long maximumBytes,
+            TaskContext task) throws ApiException {
         Objects.requireNonNull(material);
+        Objects.requireNonNull(relativeRoot);
         if (maximumBytes < 1 || maximumBytes > 2L * 1024 * 1024 * 1024)
             throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_ARCHIVE_BUDGET", "Source archive budget is invalid");
         SourceWorkspace workspace = null;
@@ -43,7 +56,7 @@ public final class DeploymentSourceArchiver {
             long bytes, originalBytes;
             try (var bounded = new BoundedOutput(Files.newOutputStream(file, StandardOpenOption.CREATE_NEW),
                     maximumBytes); var output = new DigestOutputStream(bounded, digest)) {
-                originalBytes = DeploymentSourceTar.write(material, output, task);
+                originalBytes = DeploymentSourceTar.write(material, relativeRoot, output, task);
                 bytes = bounded.count;
             }
             String sha256 = HexFormat.of().formatHex(digest.digest());
@@ -56,7 +69,7 @@ public final class DeploymentSourceArchiver {
                 throw new IOException("Original source snapshot identity changed");
             workspace.close();
             var archive = new DeploymentSourceArchive(frozen, sha256, bytes, originalBytes, originSnapshotId,
-                    sourceManifestSha256);
+                    sourceManifestSha256, relativeRoot);
             published = true;
             return archive;
         } catch (IOException | IllegalStateException failure) {

@@ -51,6 +51,29 @@ public final class ServerReferenceRepository {
         return List.copyOf(result);
     }
 
+    /** Lists configured non-secret summaries without creating a task resource or server reference. / 无须创建任务资源或服务器引用即可列出已配置非秘密摘要。
+     * @param after exclusive previous identifier or null / 不含端点的前一标识，可为空
+     * @param limit bounded requested rows / 有界请求行数
+     * @return saved server summaries / 已保存服务器摘要
+     * @throws SQLException if the platform read fails / 平台读取失败时 */
+    public List<ServerInfo> listConfigured(String after, int limit) throws SQLException {
+        if (limit < 1 || limit > 201)
+            throw new SQLException("Invalid server page size");
+        var result = new ArrayList<ServerInfo>();
+        try (var connection = connections.open();
+                var statement = connection.prepareStatement("SELECT * FROM server_profile "
+                        + "WHERE (? IS NULL OR server_profile_id>?) ORDER BY server_profile_id LIMIT ?")) {
+            statement.setString(1, after);
+            statement.setString(2, after);
+            statement.setInt(3, limit);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next())
+                    result.add(read(rows));
+            }
+        }
+        return List.copyOf(result);
+    }
+
     /**
      * Returns one already admitted server observation without querying the remote host. / 返回一个已准入服务器观测，不查询远端主机。
      * @param serverId exact admitted server / 精确已准入服务器

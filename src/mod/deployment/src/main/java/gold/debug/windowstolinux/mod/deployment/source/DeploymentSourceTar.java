@@ -73,13 +73,33 @@ final class DeploymentSourceTar {
      * @throws ApiException if cancellation was requested / 已请求取消时 */
     static long write(DeploymentSourceMaterial material, OutputStream output, TaskContext task)
             throws IOException, ApiException {
+        return write(material, "", output, task);
+    }
+
+    /** Writes only one original component subtree with paths relative to that component. / 仅以组件内相对路径写入原组件子树。
+     * @param material original frozen material / 原冻结素材
+     * @param relativeRoot exact snapshot-relative component root / 精确快照相对组件根
+     * @param output bounded destination / 有界目标
+     * @param task original task / 原任务
+     * @return original file bytes / 原文件字节
+     * @throws IOException if source verification fails / 来源核验失败时
+     * @throws ApiException if cancelled / 已取消时 */
+    static long write(DeploymentSourceMaterial material, String relativeRoot, OutputStream output, TaskContext task)
+            throws IOException, ApiException {
         Path root = material.snapshot().directory();
         var names = new TreeSet<>(material.includedFiles());
         if (names.size() != material.includedFiles().size())
             throw new IllegalArgumentException("Duplicate archive member");
+        String prefix = relativeRoot.isEmpty() ? "" : relativeRoot + "/";
+        if (!DeploymentSourceArchive.validRelativeRoot(relativeRoot)
+                || !relativeRoot.isEmpty() && !Files.isDirectory(root.resolve(relativeRoot), LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Component archive root is unavailable");
         long total = 0;
+        int written = 0;
         try (var gzip = new GZIPOutputStream(output)) {
             for (String name : names) {
+                if (!name.startsWith(prefix))
+                    continue;
                 DeploymentSourceArchiver.cancelled(task);
                 Path file = root.resolve(name).normalize();
                 if (name.isBlank() || name.indexOf('\\') >= 0 || name.chars().anyMatch(c -> c < 32)
@@ -90,14 +110,20 @@ final class DeploymentSourceTar {
                 var before = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 if (!before.isRegularFile() || before.isOther() || before.isSymbolicLink())
                     throw new IOException("Archive member is not an ordinary file");
-                gzip.write(tarHeader(name, before.size()));
+                String entry = name.substring(prefix.length());
+                if (entry.isEmpty())
+                    throw new IOException("Empty component archive entry");
+                gzip.write(tarHeader(entry, before.size()));
                 writeFile(gzip, file, before.size(), task);
                 var after = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
                         || !before.lastModifiedTime().equals(after.lastModifiedTime()))
                     throw new IOException("Archive member changed during writing");
                 total = Math.addExact(total, before.size());
+                written++;
             }
+            if (written == 0 && !relativeRoot.isEmpty())
+                throw new IOException("Component archive has no source files");
             gzip.write(new byte[TAR_BLOCK_BYTES * 2]);
         }
         material.snapshot().directory();

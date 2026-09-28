@@ -30,7 +30,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentCo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedDeploymentPlanner;
@@ -108,6 +110,149 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             "MIDDLE_HEALTH_FAILED_ROLLBACK"})
     void wholeGraphPublishesUnderOneOriginalTaskAndSession(ScenarioType scenario) throws Exception {
         runScenario(scenario, false);
+    }
+
+    /** Uses the page workflow's separate child archives for one real graph task and one controlled session. / 使用页面流程的独立组件归档执行一项真实整图任务及一条受控会话。
+     * @throws Exception if original task preparation or publication fails / 原任务准备或发布失败时 */
+    @Test
+    void staticWorkflowPublishesDiscoveredGraphFromSeparateArchiveRoots() throws Exception {
+        for (String id : List.of("api", "web")) {
+            var source = selectedSourceDirectory().resolve(id);
+            Files.createDirectories(source);
+            Files.writeString(source.resolve("go.mod"), "module example.test/" + id + "\n\ngo 1.24\n");
+            Files.writeString(source.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
+            Files.writeString(source.resolve("main.go"), "package main\nfunc main() {}\n");
+        }
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var server = new ServerRef("server-publication");
+            runtime.servers().saveServerProfile(
+                    ServerProfile.fromStored(
+                            new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
+            var actions = new CopyOnWriteArrayList<String>();
+            var callbackEnded = new CountDownLatch(1);
+            var existing = peer(ScenarioType.SUCCESS, actions, new AtomicReference<>(), new AtomicLong(),
+                    new AtomicReference<>(), callbackEnded);
+            record Uploaded(long bytes, String sha) {
+            }
+            var uploaded = new ConcurrentHashMap<String, Uploaded>();
+            RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                    new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("upload")) {
+                            actions.add("upload");
+                            var request = (TransferRequest) args[0];
+                            var match = java.util.regex.Pattern.compile("/work/([a-z0-9-]+)/")
+                                    .matcher(request.remoteAbsolutePath());
+                            assertTrue(match.find(), request.remoteAbsolutePath());
+                            byte[] content = Files.readAllBytes(request.localPath());
+                            String digest = java.util.HexFormat.of()
+                                    .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(content));
+                            uploaded.put(match.group(1), new Uploaded(content.length, digest));
+                            return new OperationResult<>(Outcome.SUCCEEDED,
+                                    Optional.of(new TransferResult(content.length, digest, request.localPath(),
+                                            request.remoteAbsolutePath())),
+                                    Optional.empty());
+                        }
+                        if (method.getName().equals("execute")) {
+                            String script = ((CommandRequest) args[0]).script();
+                            if (script.contains("candidate-create-task")) {
+                                actions.add("create-candidate");
+                                var match = java.util.regex.Pattern.compile("candidate-create-task '[^']+' '([^']+)'")
+                                        .matcher(script);
+                                assertTrue(match.find(), script);
+                                return reply("CANDIDATE=/var/lib/windowstolinux/work/" + match.group(1) + "\n");
+                            }
+                            if (script.contains("stat -c '%s'")) {
+                                actions.add("verify-archive");
+                                var match = java.util.regex.Pattern.compile("/work/([a-z0-9-]+)/").matcher(script);
+                                assertTrue(match.find(), script);
+                                var actual = uploaded.get(match.group(1));
+                                assertNotNull(actual, script);
+                                return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + actual.bytes()
+                                        + "\nSHA256=" + actual.sha() + "\nOWNER=0\n");
+                            }
+                        }
+                        try {
+                            return method.invoke(existing, args);
+                        } catch (InvocationTargetException wrapped) {
+                            throw wrapped.getCause();
+                        }
+                    });
+            var real = runtime.modContexts().get(OWNER).context();
+            var bound = withSession(real, session);
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
+            var originalTask = new AtomicReference<UUID>();
+            var archives = new AtomicReference<Map<String, String>>();
+            var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef exact, String manifest,
+                        List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                    assertEquals(2, discovered.size());
+                    originalTask.set(task.id());
+                    var choices = new HashMap<String, DeploymentStaticWorkflow.Choice>();
+                    for (var component : discovered)
+                        choices.put(component.id(),
+                                new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE,
+                                        component.id().equals("web") ? Set.of("api") : Set.of()));
+                    return new OperationResult<>(Outcome.SUCCEEDED,
+                            Optional.of(
+                                    new DeploymentStaticWorkflow.Selection("whole-app", choices, Optional.of("web"))),
+                            Optional.empty());
+                }
+
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef exact,
+                        String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                    assertEquals(originalTask.get(), task.id());
+                    var reviewed = new HashMap<String, DeploymentStaticWorkflow.Answers>();
+                    for (var prompt : prompts) {
+                        var values = new HashMap<>(prompt.defaults());
+                        values.put("primary", prompt.componentId());
+                        values.put("secondary", "main.go");
+                        values.put("version", "1.24");
+                        values.put("healthMode", "TCP");
+                        values.put("port", prompt.componentId().equals("api") ? "8081" : "8082");
+                        values.put("exposure", "INTERNAL");
+                        var answer = new DeploymentStaticWorkflow.Answers(values, List.of(),
+                                DeploymentBuildLimits.defaultNonRoot(), false, true);
+                        workflow.validateReview(prompt, answer);
+                        reviewed.put(prompt.componentId(), answer);
+                    }
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.copyOf(reviewed)),
+                            Optional.empty());
+                }
+
+                public OperationResult<Boolean> confirm(ServerRef exact, String manifest, Map<String, String> digests,
+                        Map<String, DeploymentStaticWorkflow.Answers> answers, TaskContext task) {
+                    assertEquals(originalTask.get(), task.id());
+                    archives.set(Map.copyOf(digests));
+                    assertEquals(2, new HashSet<>(digests.values()).size());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                }
+            };
+            var handle = workflow.submit(server, new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), reviewer);
+            assertTrue(callbackEnded.await(30, TimeUnit.SECONDS), () -> handle.snapshot() + " actions=" + actions);
+            OperationResult<Void> result;
+            try {
+                result = handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
+            } catch (TimeoutException unfinished) {
+                throw new AssertionError(
+                        "Static graph unfinished: " + handle.snapshot() + ", actions=" + actions + ", uploads="
+                                + uploaded + ", resources="
+                                + scalar(runtime,
+                                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                        unfinished);
+            }
+            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(2, archives.get().size());
+            assertEquals(2, uploaded.size());
+            assertEquals(2, actions.stream().filter("build"::equals).count());
+            assertTrue(actions.lastIndexOf("build") < actions.indexOf("publish"), actions.toString());
+            assertEquals(2, actions.stream().filter("publish"::equals).count());
+            assertEquals(1, countMod(runtime, "deployment_release"));
+            assertEquals(2, countMod(runtime, "deployment_unit_release_binding"));
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
     }
 
     /** Isolates a genuine original UNKNOWN occupation from the parent test JVM. / 将真实原UNKNOWN占用隔离于父测试JVM。

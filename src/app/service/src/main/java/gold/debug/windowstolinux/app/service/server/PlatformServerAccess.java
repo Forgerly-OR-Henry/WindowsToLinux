@@ -75,6 +75,32 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
         });
     }
 
+    /** Discovers saved server summaries for selection without granting server use. / 发现可供选择的已保存服务器摘要，不授予服务器使用权。
+     * @param cursor original discovery-only cursor / 原发现专用游标
+     * @param limit bounded page size / 有界页容量
+     * @param task authentic current owner task / 真实当前所属任务
+     * @return non-secret summaries / 非秘密摘要
+     * @throws ApiException if current access, cursor or storage fails / 当前访问、游标或存储失败时 */
+    @Override
+    public PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task)
+            throws ApiException {
+        if (cursor == null || limit < 1 || limit > 200)
+            throw error(ProblemCode.INVALID_INPUT, "SERVER_PAGE", "Invalid server page request");
+        return access(task, false, false, () -> {
+            if (tasks.reconciling(task))
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVER_DISCOVERY_RECOVERY",
+                        "Recovery cannot discover new servers");
+            String after = cursor.isEmpty() ? null : decodeConfiguredCursor(cursor.orElseThrow(), task.id());
+            var values = repository.listConfigured(after, limit + 1);
+            boolean more = values.size() > limit;
+            var page = more ? values.subList(0, limit) : values;
+            return new PageSlice<>(page,
+                    more
+                            ? Optional.of(encodeConfiguredCursor(task.id(), page.getLast().ref().id()))
+                            : Optional.empty());
+        });
+    }
+
     /**
      * Reads saved metadata only for an admitted server. / 仅为已准入服务器读取保存元数据。
      * @param server exact selected server / 精确所选服务器
@@ -274,6 +300,38 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
             String decoded = StandardCharsets.UTF_8.newDecoder()
                     .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
             String prefix = task + ":";
+            if (!decoded.startsWith(prefix) || decoded.length() <= prefix.length())
+                throw new IllegalArgumentException();
+            String id = decoded.substring(prefix.length());
+            if (id.isBlank() || id.length() > 512)
+                throw new IllegalArgumentException();
+            return id;
+        } catch (IllegalArgumentException | CharacterCodingException invalid) {
+            throw error(ProblemCode.INVALID_INPUT, "SERVER_CURSOR", "Invalid server continuation cursor");
+        }
+    }
+
+    /** Encodes a discovery cursor distinct from admitted-server cursors. / 编码区别于已准入服务器游标的发现游标。
+     * @param task original lookup task / 原查询任务
+     * @param id last returned server / 最后一项服务器
+     * @return discovery-only cursor / 发现专用游标 */
+    private static String encodeConfiguredCursor(UUID task, String id) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(("configured:" + task + ":" + id).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Decodes only the original task's discovery continuation. / 只解析原任务的发现续页。
+     * @param encoded opaque cursor / 不透明游标
+     * @param task original lookup task / 原查询任务
+     * @return exclusive server boundary / 不含的服务器边界
+     * @throws ApiException if task or cursor kind differs / 任务或游标类别不符时 */
+    private static String decodeConfiguredCursor(String encoded, UUID task) throws ApiException {
+        try {
+            if (encoded.isEmpty() || encoded.length() > 4096)
+                throw new IllegalArgumentException();
+            String decoded = StandardCharsets.UTF_8.newDecoder()
+                    .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
+            String prefix = "configured:" + task + ":";
             if (!decoded.startsWith(prefix) || decoded.length() <= prefix.length())
                 throw new IllegalArgumentException();
             String id = decoded.substring(prefix.length());

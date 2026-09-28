@@ -104,6 +104,27 @@ public final class DeploymentConfigurationRepository {
         }
     }
 
+    /** Selects the next immutable revision in the original task before a new review is recorded. / 在原任务记录新审阅前选择下一不可变修订。
+     * @param task original task / 原任务
+     * @param applicationId exact managed unit / 精确受管单元
+     * @return next positive revision / 下一正修订
+     * @throws SQLException if current revision state is unavailable / 当前修订状态不可用时
+     * @throws ApiException if original task access fails / 原任务访问失败时 */
+    public long nextRevision(TaskContext task, String applicationId) throws SQLException, ApiException {
+        applicationId = boundedIdentity(applicationId, "applicationId");
+        try (Connection connection = connection(task); PreparedStatement statement = connection.prepareStatement("""
+                SELECT COALESCE(MAX(configuration_revision),0)
+                FROM deployment_unit_configuration_snapshot
+                WHERE deployment_unit_id=?
+                """)) {
+            statement.setString(1, applicationId);
+            try (ResultSet rows = statement.executeQuery()) {
+                rows.next();
+                return Math.addExact(rows.getLong(1), 1);
+            }
+        }
+    }
+
     /**
      * Reads the requested immutable configuration revision and reconstructs its typed entries.
      * <p>读取请求的不可变配置修订，并重建其类型化条目。

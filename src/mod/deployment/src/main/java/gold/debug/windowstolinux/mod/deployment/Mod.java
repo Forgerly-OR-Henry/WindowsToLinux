@@ -5,13 +5,19 @@ import java.util.Optional;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.LogCategory;
 import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.ui.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.PageSpec;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticTaskRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
+import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
 public final class Mod implements ModEntrypoint {
@@ -42,6 +48,18 @@ public final class Mod implements ModEntrypoint {
     /** Original secret revision recovery registration. / 原秘密修订恢复登记。 */
     private RecoveryRegistration secretRecoveryRegistration;
 
+    /** Lazy normal-mode static deployment page registration. / 正常模式的惰性静态部署页面登记。 */
+    private PageRegistration pageRegistration;
+
+    /** Read-only server lookup recovery. / 只读服务器查询恢复。 */
+    private RecoveryRegistration serverListRecoveryRegistration;
+
+    /** One original-task static review coordinator. / 单项原任务静态审阅协调器。 */
+    private DeploymentStaticWorkflow staticWorkflow;
+
+    /** Mod-level page query and running-task state. / Mod 级页面查询及运行任务状态。 */
+    private DeploymentStaticPageService pageService;
+
     /** Binds owned diagnostics after the platform has prepared the exact business generation. / 平台准备精确业务代次后绑定所属诊断。
      * @param context actual host-created context / 实际宿主创建的上下文
      * @throws Exception if identity or diagnostic registration is unavailable / 身份或诊断登记不可用时 */
@@ -52,7 +70,8 @@ public final class Mod implements ModEntrypoint {
         DeploymentSchema.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
         var flow = new DeploymentReferenceFlow(context, new DeploymentStandardPublicationRecovery(context));
-        var registration = context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE, flow);
+        var registration = context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
+                new DeploymentStaticTaskRecovery(context, flow));
         var gitFlow = new DeploymentGitSourceFlow(context);
         RecoveryRegistration gitRegistration;
         try {
@@ -82,6 +101,33 @@ public final class Mod implements ModEntrypoint {
             }
             throw failure;
         }
+        var workflow = new DeploymentStaticWorkflow(context, flow);
+        var pageTasks = new DeploymentStaticPageService(context, workflow);
+        PageRegistration page = null;
+        RecoveryRegistration serverListRegistration = null;
+        try {
+            serverListRegistration = context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK,
+                    pageTasks);
+            if (context.launchMode() == ModLaunchMode.NORMAL) {
+                page = context.ui().register(
+                        new PageSpec("static-deployment", "deployment.page.title", "Static deployment", false),
+                        () -> new DeploymentStaticPage(pageTasks));
+            }
+        } catch (Exception failure) {
+            if (serverListRegistration != null)
+                try {
+                    serverListRegistration.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+            for (var registered : new AutoCloseable[]{secretRegistration, gitRegistration, registration})
+                try {
+                    registered.close();
+                } catch (Exception cleanup) {
+                    failure.addSuppressed(cleanup);
+                }
+            throw failure;
+        }
         this.publicationFlow = flow;
         this.gitSourceFlow = gitFlow;
         this.secretProvisionFlow = secretFlow;
@@ -90,6 +136,10 @@ public final class Mod implements ModEntrypoint {
         this.recoveryRegistration = registration;
         this.gitRecoveryRegistration = gitRegistration;
         this.secretRecoveryRegistration = secretRegistration;
+        this.staticWorkflow = workflow;
+        this.pageService = pageTasks;
+        this.pageRegistration = page;
+        this.serverListRecoveryRegistration = serverListRegistration;
         this.context = context;
     }
 
@@ -139,12 +189,37 @@ public final class Mod implements ModEntrypoint {
     @Override
     public void stop(StopContext context) throws Exception {
         Exception failure = null;
+        if (pageRegistration != null) {
+            try {
+                pageRegistration.close();
+                pageRegistration = null;
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        }
         if (secretRecoveryRegistration != null) {
             try {
                 secretRecoveryRegistration.close();
                 secretRecoveryRegistration = null;
             } catch (Exception unclosed) {
-                failure = unclosed;
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        }
+        if (serverListRecoveryRegistration != null) {
+            try {
+                serverListRecoveryRegistration.close();
+                serverListRecoveryRegistration = null;
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
             }
         }
         if (gitRecoveryRegistration != null) {
@@ -172,6 +247,8 @@ public final class Mod implements ModEntrypoint {
         if (failure != null)
             throw failure;
         secretProvisionFlow = null;
+        staticWorkflow = null;
+        pageService = null;
         standardAnalyzer = null;
         standardPlanner = null;
         gitSourceFlow = null;

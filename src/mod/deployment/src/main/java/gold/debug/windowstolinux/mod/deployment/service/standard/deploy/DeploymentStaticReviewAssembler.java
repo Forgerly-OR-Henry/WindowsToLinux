@@ -96,9 +96,27 @@ public final class DeploymentStaticReviewAssembler {
             DeploymentSourceMaterial material, DeploymentSourceArchive archive,
             SnapshotAssessment<MultiComponentProjectAssessment> analysis,
             Map<String, DeploymentStaticReviewAnswers> answers, TaskContext task) {
+        var archives = new java.util.HashMap<String, DeploymentSourceArchive>();
+        for (var component : analysis.assessment().components())
+            archives.put(component.componentId(), archive);
+        return planComponents(server, material, archives, analysis, answers, task);
+    }
+
+    /** Plans a whole graph with each component's exact archive subtree. / 使用各组件精确归档子树规划整图。
+     * @param server original target / 原目标
+     * @param material original material / 原素材
+     * @param archives one original archive per component / 每组件一份原归档
+     * @param analysis complete graph analysis / 完整整图分析
+     * @param answers reviewed inputs / 经审阅输入
+     * @param task original task / 原任务
+     * @return complete graph plan or refusal / 完整整图计划或拒绝 */
+    public OperationResult<DeploymentStandardPlanner.ComponentPlans> planComponents(ServerRef server,
+            DeploymentSourceMaterial material, Map<String, DeploymentSourceArchive> archives,
+            SnapshotAssessment<MultiComponentProjectAssessment> analysis,
+            Map<String, DeploymentStaticReviewAnswers> answers, TaskContext task) {
         Objects.requireNonNull(server);
         Objects.requireNonNull(material);
-        Objects.requireNonNull(archive);
+        archives = Map.copyOf(archives);
         Objects.requireNonNull(analysis);
         answers = Map.copyOf(answers);
         Objects.requireNonNull(task);
@@ -118,6 +136,9 @@ public final class DeploymentStaticReviewAssembler {
                 return rejected("DEPLOYMENT_STATIC_SERVER_CHANGED");
             var requests = new java.util.TreeMap<String, ReviewedDeploymentRequest>();
             for (var component : components) {
+                var archive = archives.get(component.componentId());
+                if (archive == null)
+                    return rejected("DEPLOYMENT_STATIC_COMPONENT_ARCHIVE_MISSING");
                 if (!original(material, archive, analysis.snapshotId(), analysis.snapshotSha256(), component.facts()))
                     return task.cancellation().requested()
                             ? cancelled()
@@ -162,9 +183,11 @@ public final class DeploymentStaticReviewAssembler {
             var snapshot = material.snapshot();
             var root = snapshot.directory();
             archive.path();
-            return facts.sourceRoot().startsWith(root) && facts.sourceRoot().toRealPath().startsWith(root.toRealPath())
-                    && snapshot.id().equals(id) && snapshot.sha256().equals(sha)
-                    && archive.originSnapshotId().equals(id) && archive.sourceManifestSha256().equals(sha);
+            var expectedRoot = root.resolve(archive.relativeRoot()).normalize();
+            return facts.sourceRoot().equals(expectedRoot)
+                    && facts.sourceRoot().toRealPath().equals(expectedRoot.toRealPath()) && snapshot.id().equals(id)
+                    && snapshot.sha256().equals(sha) && archive.originSnapshotId().equals(id)
+                    && archive.sourceManifestSha256().equals(sha);
         } catch (IOException | IllegalStateException closed) {
             return false;
         }

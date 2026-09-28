@@ -1230,6 +1230,7 @@ public enum ReferenceState { RESERVED, ACTIVE, UNKNOWN }
 public enum ReferenceResolution { REFERENCED, NOT_REFERENCED, UNKNOWN }
 public record ServerReference(UUID id, ServerRef server, String businessKey, ReferenceState state) {}
 public interface ServerService {
+    PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
     PageSlice<ServerInfo> list(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
     ServerInfo get(ServerRef server, TaskContext task) throws ApiException;
     ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException;
@@ -1261,9 +1262,9 @@ public interface SecretService {
 }
 ```
 
-服务器列表限于当前任务有权使用的配置，修改服务器、主密码及模型配置由平台页面负责。`get` 返回的观测附时间，不代表实时连接健康；真正使用仍复核指纹、服务器版本及授权。
+`listConfigured` 是原任务作用域内已保存服务器的只读发现入口，仅返回不含秘密的 `ServerInfo` 摘要，不准入或占用目标；`list` 仅返回当前任务已准入的服务器。选中发现结果后仍须由实际发布原任务准入，随后才能 `get`、预留引用或连接。修改服务器、主密码及模型配置由平台页面负责。`get` 返回的观测附时间，不代表实时连接健康；真正使用仍复核指纹、服务器版本及授权。
 
-服务器分页 `limit` 为 1～200，游标只在生成它的原任务中继续使用。没有业务 Schema 的 Mod 可以读取已准入服务器，但不能建立持久业务引用。引用预留绑定实际运行版本和已准入 Schema 代次；已取消或出现不确定性的原任务只允许核对已有引用，不能借收尾入口新增预留。回调已返回且未进入显式恢复时拒绝调用，伪造相同任务 UUID 不能取得权限。
+服务器分页 `limit` 为 1～200，游标只在生成它的原任务和原查询类别中继续使用；发现入口不用于 RECOVERY。没有业务 Schema 的 Mod 可以读取已准入服务器，但不能建立持久业务引用。引用预留绑定实际运行版本和已准入 Schema 代次；已取消或出现不确定性的原任务只允许核对已有引用，不能借收尾入口新增预留。回调已返回且未进入显式恢复时拒绝调用，伪造相同任务 UUID 不能取得权限。
 
 引用操作以拥有者＋Schema 代次＋资源 ID＋业务键幂等登记。**先 reserve，再提交自己的业务关联，最后 resolve(REFERENCED)**；提交未知则登记 UNKNOWN，不能释放。业务引用删除提交已知成功后才能 resolve(NOT_REFERENCED)；切换版本不释放保留 Schema 引用。保留、有效和未知引用均阻止平台删除资源；禁用时照样保护。重新核对由所属 Mod 读取自己的业务记录后提交结论，平台不直接读取其私有表；Schema 确认删除后平台才能统一注销该代次引用。
 
@@ -1283,7 +1284,7 @@ public interface SecretService {
 
 现行通用执行文档为 `formatVersion=4` 的 UTF-8 JSON object，单份最大一 MiB；单组件 `deployment-publication` 沿用格式 5／模板格式 1，在原请求中嵌套保存完整非秘密发布模板，模板最大 32 MiB、请求最大 40 MiB；多组件整图使用请求格式 6／模板格式 2，分别限 144 MiB／128 MiB。格式 4 仍按原契约推进引用和已知结果，不支持的更旧格式只读且不补造远端模板。资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。原请求/恢复/结果绑定同一执行和任务身份；非成功结果仅保存公开 `ProblemCode` 与符合 `[A-Za-z][A-Za-z0-9_.-]{0,127}` 的 `eventCode`，不存任意消息、上下文、异常或秘密。模板使用结构化嵌套节点，避免两层 JSON 字符串转义；上限是持久信封而非额外执行授权。整图正式执行至多 16 组件，分析和业务模型仍允许至多 64；完整图 16 MiB、每项 BUILD 脚本一 MiB、每项 RUNTIME 封存 64 KiB、健康文档一 MiB等各自准入继续适用。BUILD JSON 保守按脚本六倍、RUNTIME JSON 按 systemd 封存十一倍估算，整图上界约 123 MiB，模板 128 MiB 和请求 144 MiB 留有有界信封余量；不能将独立任意配置快照视为已获发布许可。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。
 
-正式发布入口固定 `deployment-publication` 平台任务类型，`Mod.start` 登记原版本 `TaskRecovery`，`stop` 释放登记。`DeploymentReferenceFlow` 在作者副作用前持久化原执行及全部引用意图，预留并记录原 UUID，确认 `startEffects` 后仅调用作者一次；正式成功的原单元、配置、秘密修订、完整图、发布历史及结果同事务提交。单组件格式 5 与整图格式 6 模板及原作者检查点使同一原任务能在显式恢复时核对原服务器、应用、候选、旧快照、已核实业务结果及具体收尾步骤。整图先持久唯一根索引，再在各组件首次候选效果前分别登记短检查点；首次停止旧运行或发布前将完整整图业务提案一次保存到原执行 BLOB。宿主先释放原任务旧 SSH 连接，再由作者通过原任务精确审批调用固定只读远端观察；启动不会自动连远端。仅全部组件及独立整应用健康获证、全部原状态已核实恢复，或完整证明整图发布从未开始时，才推进唯一正式结果及原资源收尾；局部、冲突和缺失事实保持 UNKNOWN。已知业务结果不覆盖，已提交不重复提交，已完成的远端清理不重发。PREPARED 仍按原业务行、平台 UUID 和显式资源证明未开始；引用保护包括 RETIRED 历史，只有全部真实资源释放才记录 `cleanup_complete`。默认页面与真实目标机验收仍待后续。
+正式发布入口固定 `deployment-publication` 平台任务类型，`Mod.start` 登记原版本 `TaskRecovery`，`stop` 释放登记。`DeploymentReferenceFlow` 在作者副作用前持久化原执行及全部引用意图，预留并记录原 UUID，确认 `startEffects` 后仅调用作者一次；正式成功的原单元、配置、秘密修订、完整图、发布历史及结果同事务提交。单组件格式 5 与整图格式 6 模板及原作者检查点使同一原任务能在显式恢复时核对原服务器、应用、候选、旧快照、已核实业务结果及具体收尾步骤。整图先持久唯一根索引，再在各组件首次候选效果前分别登记短检查点；首次停止旧运行或发布前将完整整图业务提案一次保存到原执行 BLOB。宿主先释放原任务旧 SSH 连接，再由作者通过原任务精确审批调用固定只读远端观察；启动不会自动连远端。仅全部组件及独立整应用健康获证、全部原状态已核实恢复，或完整证明整图发布从未开始时，才推进唯一正式结果及原资源收尾；局部、冲突和缺失事实保持 UNKNOWN。已知业务结果不覆盖，已提交不重复提交，已完成的远端清理不重发。PREPARED 仍按原业务行、平台 UUID 和显式资源证明未开始；引用保护包括 RETIRED 历史，只有全部真实资源释放才记录 `cleanup_complete`。默认页面已接本机流程，完整 S5 与真实目标机验收仍待后续。
 
 官方 deployment 的成功结果在现行格式 4、单组件格式 5 与整图格式 6 中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；格式 1～3 及其他不支持版本保留原文，只读而不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；整图执行只有全部组件成功并完成健康核对后才正式提交一次。
 
@@ -1484,11 +1485,13 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 官方 deployment 的 `source/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；正式业务入口现为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。入口先以作者检查点持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再在原任务下只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。恢复只读原检查点和最多 1 MiB 的原工作区回执，核验原进程/FILE 资源、必要项目状态并清理原资源；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。直接准备器继续供调用方使用，但不代替上述生产原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成部署页面/引擎及远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结现行格式 4 的已审阅项目修订，旧格式 1～3 只读。
 
+默认静态页面在 NORMAL 模式惰性登记，关闭或锁定会撤销未答审阅，最终确认后的原发布任务继续由平台持有；RECOVERY 模式不显示页面。页面短任务使用 `ServerService.listConfigured` 只读发现已保存的非秘密服务器摘要，游标绑定原查询任务且与已准入服务器列表区分；发现不授予连接、`get` 或引用预留权限，选定目标仍由新的 `deployment-publication` 原任务准入。源码子树逐组件归档为去前缀 tar，保留原快照清单和各自 tar 摘要，规划时与实际组件来源根精确绑定。普通数据库绑定输入只表示目标资源；若源码含 schema/migration 变更，初次分析保留待审并允许展示运行表单，缺少独立已验证的 `DatabaseSchemaReview` 时重分析以 `DEPLOYMENT_SCHEMA_REVIEW_REQUIRED` 拒绝发布，不用 `NONE` 伪装已批准。实际数据库准备与批准接线仍属于后续 S5 必须完成的部署工作。
+
 官方 deployment 现已将旧标准静态分析的完整 10 语言生态、14 种可部署类型与只识别预览、多构建架构、数据库审阅和多组件冲突规则迁入 `service.standard.analyze`；所需纯值归 `service.core.model`，复用已有相同身份类型。`Mod.standardAnalyzer()` 供原已准入任务借用仍开放的 `DeploymentSourceMaterial`：调用方须明确传入已审阅逻辑项目名，本地取材可采用原选定目录名，Git 工作区的通用显示名不能代替已审阅项目名。分析只读取平台冻结目录；项目元数据名称优先，缺失时才按原各生态规则使用逻辑根名称，组件子目录用自身名称，整图继续使用明确 applicationId。结果保留原类型化 `REJECTED`、`REQUIRES_INPUT`、`READY_FOR_PLANNING` 和预览状态，并附原快照 UUID/摘要；其中 Path 仅为当次观察元数据，不是后续可重获的源码授权。遍历和组件边界检查原任务协作取消并返回 `CANCELLED`，不强杀。素材由调用方在分析及后续执行全部结束后关闭；纯分析不建立新的恢复账本。
 
-`DeploymentStaticReviewAssembler` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析保留旧默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口尚不是默认页面，也不创建新的来源授权。
+`DeploymentStaticReviewAssembler` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析保留旧默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
 
-`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerRef.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；旧 v5 的输入为归档 tar 字节 SHA-256，不沿旧域名改变语义。旧容器卷名仍以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面与实际目标机尚未验收。
+`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerRef.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；旧 v5 的输入为归档 tar 字节 SHA-256，不沿旧域名改变语义。旧容器卷名仍以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面已接本机流程，完整 S5 与实际目标机尚未验收。
 
 当前 `deployment/linux` 已迁完整受管 helper 包的 41 个固定片段、5 个插入资源和独立 build-entry，以原资源和组装顺序为基础，为原任务只读观察更新四份片段并增补 53 片段，形成协议 11 与新的固定 SHA-256；纯工具链选择策略已供受控构建入口的精确绑定使用。`DeploymentManagedHelper` 只借用调用方已在原任务下取得的 `RemoteSession`，自身不连接、保管 SSH 凭据或关闭会话；安装与只读探测分别通过固定 `RemoteActions.command`、带版本的 helper `ActionSemantics`、真实 `InteractionService.approve` 和原 `ApprovalGrant` 执行。调用方仍须持有原任务与会话；平台决定普通逐次审核或已批准工作流范围，本适配器不假定每条动作都会弹窗。安装脚本在目标上检查 root、固定包集合、helper 实际 SHA、恢复 unit、协议探测及安全状态，必须已知退出 0、输出未截断且末尾回执完整；随后独立探测要求完整 stdout、空 stderr、原 helper 协议与 SHA 一致。安装已可能产生副作用而回执不全、探测冲突或探测取消时返回 `UNKNOWN`，不得重新安装；宿主明确发送前拒绝保留原问题，发送前确认取消保持 `CANCELLED`。本机 Git Bash/Python 合同和 CLASS/H2 原任务审批验证不是实际目标机安装证据，不代表 S5-02 全流程完成。
 
@@ -1496,7 +1499,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction 与受控会话测试只证明调用、授权及协议边界；实际目标机执行、发布及原候选/构建任务的持久恢复尚未验收。
 
-`DeploymentStandardPublicationExecutor` 与 `DeploymentMultiComponentPublicationExecutor` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；原执行格式 6 的模板格式 2 保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经协议 11 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理，混合状态保持 UNKNOWN。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面尚未完成。
+`DeploymentStandardPublicationExecutor` 与 `DeploymentMultiComponentPublicationExecutor` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；原执行格式 6 的模板格式 2 保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经协议 11 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理，混合状态保持 UNKNOWN。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面已登记且本机分闭环已接线，完整 S5 尚未完成。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 

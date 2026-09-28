@@ -72,6 +72,55 @@ public final class DeploymentStandardAnalyzer {
         }
     }
 
+    /** Analyzes a discovered component inside the original frozen snapshot. / 在原冻结快照内部分析已发现组件。
+     * @param material original live material / 原开放素材
+     * @param relativeRoot discovered relative directory / 已发现相对目录
+     * @param logicalName reviewed component name / 经审阅组件名
+     * @param type selected deployable kind / 选定可部署类型
+     * @param task original task / 原任务
+     * @return source-bound component assessment / 来源绑定组件评估 */
+    public OperationResult<SnapshotAssessment<DeploymentProjectAssessment>> analyzeComponent(
+            DeploymentSourceMaterial material, Path relativeRoot, String logicalName, DeploymentProjectKind type,
+            TaskContext task) {
+        return analyzeComponent(material, relativeRoot, logicalName, type, Optional.empty(), false, task);
+    }
+
+    /** Preserves a pending schema decision during discovery or verifies an exact prior review. / 发现时保留待审模式决定，或核验精确既有审阅。
+     * @param material original live material / 原开放素材
+     * @param relativeRoot discovered relative directory / 已发现相对目录
+     * @param logicalName reviewed component name / 经审阅组件名
+     * @param type selected deployable kind / 选定可部署类型
+     * @param review verified schema evidence, if available / 已验证模式依据（若有）
+     * @param deferDatabase whether schema review remains pending / 模式审阅是否待决
+     * @param task original task / 原任务
+     * @return source-bound component assessment / 来源绑定组件评估 */
+    public OperationResult<SnapshotAssessment<DeploymentProjectAssessment>> analyzeComponent(
+            DeploymentSourceMaterial material, Path relativeRoot, String logicalName, DeploymentProjectKind type,
+            Optional<DatabaseSchemaReview> review, boolean deferDatabase, TaskContext task) {
+        Objects.requireNonNull(material);
+        Objects.requireNonNull(relativeRoot);
+        requireLogicalName(logicalName);
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(review);
+        Objects.requireNonNull(task);
+        try {
+            active(task);
+            Path root = sourceRoot(material);
+            if (root == null) {
+                active(task);
+                return unavailable();
+            }
+            Path component = root.resolve(relativeRoot).normalize();
+            if (relativeRoot.isAbsolute() || !component.startsWith(root))
+                return unavailable();
+            var assessment = single.analyze(component, type, review, deferDatabase, task.cancellation(), logicalName);
+            active(task);
+            return success(material, assessment, task);
+        } catch (CancellationException cancelled) {
+            return cancelled();
+        }
+    }
+
     /** Analyzes one complete component graph on the same frozen source. / 在同一冻结源码上分析完整组件图。
      * @param material original still-open platform material / 原仍开放的平台素材
      * @param logicalRootName original reviewed project name / 原审阅项目名称

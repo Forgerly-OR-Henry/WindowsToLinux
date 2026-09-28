@@ -1563,7 +1563,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `appapi/server/ServerInfo.java`：不含秘密的服务器配置与已观察信任信息。
 - `appapi/server/ServerRef.java`：平台管理服务器的稳定引用。
 - `appapi/server/ServerReference.java`：保护共享服务器的业务归属预留。
-- `appapi/server/ServerService.java`：绑定任务的服务器查询、持久引用预留/核对及按原资源/业务键只读找回。
+- `appapi/server/ServerService.java`：绑定任务的服务器查询、供选择的非秘密配置发现、持久引用预留/核对及按原资源/业务键只读找回；发现不授权使用。
 - `appapi/source/SnapshotRequest.java`：明确的相对文件集合及总复制容量预算。
 - `appapi/source/SourceFile.java`：从已授权来源取得的独立字节及摘要。
 - `appapi/source/SourceReadRequest.java`：限制在已选来源根目录内的有界读取。
@@ -1625,7 +1625,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/mod/ModNavigationPreferences.java`：共用严格导航偏好读写，移除精确所有者条目时保留其余条目顺序，损坏内容不覆盖。
 - `app/db/persistence/connection/ManagedJdbcConnection.java`：追踪 JDBC 所有权，不暴露物理驱动句柄。
 - `app/db/persistence/connection/RepositoryConnections.java`：在嵌套平台仓库事务间共享一个所属连接。
-- `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出服务器观测，并事务化保存、只读查询精确 Mod/Schema 代次和原业务键的引用。
+- `app/db/persistence/repository/ServerReferenceRepository.java`：按任务列出已准入服务器观测，另分页读取不含秘密的已配置服务器摘要，并事务化保存、只读查询精确 Mod/Schema 代次和原业务键的引用。
 - `app/db/persistence/repository/CredentialReferenceRepository.java`：签发 Mod/用途所属凭据身份，并事务化保护、只读查询精确数据代次/用途/业务键的引用。
 - `app/db/schema/SchemaAccessScope.java`：持有准备阶段连接及可选的只读验证凭据。
 - `app/db/schema/SchemaCoordinates.java`：将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。
@@ -1689,7 +1689,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/service/secret/PlatformSecretService.java`：在原任务凭据作用域提供所属秘密字节及持久引用，回调结束清零临时明文；支持原引用查询，恢复中禁止创建和预留。
 - `app/service/contract/spi/ServerProfileEditor.java`：只保存服务器配置及凭据的窄接口，不附带部署或连接检查。
 - `app/service/server/PlatformServerService.java`：平台服务器配置、受引用保护的删除及原身份 SSH 认证检查/中断收尾。
-- `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、持久引用预留/只读找回/核对及未完成释放重试；恢复中禁止预留。
+- `app/service/server/PlatformServerAccess.java`：面向 Mod 的任务绑定服务器查询、只读配置发现、持久引用预留/只读找回/核对及未完成释放重试；发现不取得使用权，恢复中禁止发现新目标或预留。
 - `app/service/task/PlatformInteractionService.java`：持有调用方绑定的单次审批、秘密输入及实际提示窗口的任务占用。
 - `app/service/linux/PlatformLinuxService.java`：连接真实服务器、凭据及 SSH/SFTP 资源，核验精确授权并报告不可覆盖的未知结果。
 - `app/ui/shell/TaskInteractionPresenter.java`：在主窗口隐私边界内显示完整任务审核和输入，取消后实际关闭对话框。
@@ -1775,13 +1775,15 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 - `app/service/recovery/PlatformRecoveryService.java`：默认服务器页独立救援的原任务、保存配置、模型/浏览器/固定 SSH 复核总装、同服务器会话重开及显式原任务核对。
 
-- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、日志、发布引用及 Git 来源原任务恢复器；页面/引擎迁移仍在进行。
+- `mod/deployment/Mod.java`：官方部署生命周期入口，绑定当前数据身份、日志、发布引用、Git 来源及静态页面原任务恢复器；其余部署入口迁移仍在进行。
 - `mod/deployment/db/DeploymentSchema.java`：以 Schema 2 初始化并只读核验原 18 张表、秘密用途、配置摘要及发布绑定。
 - `mod/deployment/db/DeploymentSchemaMigration12.java`：经受限来源读者和新目标写者复制 Schema 1 到 2；源只读、BLOB 流式复制、保留旧事件身份序列与秘密用途未知事实。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql`：冻结的官方部署 Schema 1 H2 DDL。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql`：冻结的 Schema 1 只读列清单。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v2.sql`：官方部署 Schema 2 的固定 H2 DDL，秘密修订新增可空精确用途。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v2.sql`：Schema 2 只读列清单，核对新增用途列与原业务结构。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ui/deployment-page.properties`：默认静态页面的英文表单、任务及错误提示。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ui/deployment-page_zh.properties`：默认静态页面的简体中文表单、任务及错误提示。
 - `mod/deployment/db/DeploymentConfigurationRepository.java`：在原任务受管 H2 连接中保存不可变配置及精确发布绑定，读取时复核类型和摘要。
 - `mod/deployment/db/DeploymentDataTransaction.java`：所属业务事务的提交/回滚边界，无法确认时保留 UNKNOWN。
 - `mod/deployment/service/core/config/DeploymentConfigurationSnapshot.java`：保留原规范 SHA-256 算法的不可变配置修订。
@@ -1865,9 +1867,9 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/source/DeploymentSourcePreparer.java`：经公开 Source 列举/读取筛选明确文件并冻结，复核声明与实际快照一致。
 - `mod/deployment/source/DeploymentSourceMaterial.java`：供分析与部署共用的原平台快照及纳入/排除清单，按原句柄释放实际资源。
 
-- `mod/deployment/source/DeploymentSourceTar.java`：将冻结源码按原确定性 ustar/gzip 格式写入有界输出，分块检查取消。
-- `mod/deployment/source/DeploymentSourceArchiver.java`：受管暂存、归档输出限额、独立冻结及实际压缩字节摘要核验。
-- `mod/deployment/source/DeploymentSourceArchive.java`：原平台归档快照、压缩字节 SHA 与长度及原源码快照 UUID/清单摘要，显式释放实际资源。
+- `mod/deployment/source/DeploymentSourceTar.java`：将冻结源码全根或精确子树按原确定性 ustar/gzip 格式写入有界输出，子树成员去前缀并分块检查取消。
+- `mod/deployment/source/DeploymentSourceArchiver.java`：受管暂存、子树归档输出限额、独立冻结及实际压缩字节摘要核验。
+- `mod/deployment/source/DeploymentSourceArchive.java`：原平台归档快照、压缩字节 SHA 与长度、原源码快照 UUID/清单摘要及精确相对子树，显式释放实际资源。
 - `mod/deployment/source/git/DeploymentGitRemote.java`：无凭据且受限的 Git 远端 URI。
 - `mod/deployment/source/git/DeploymentGitReference.java`：默认分支、分支、标签及完整提交引用。
 - `mod/deployment/source/git/DeploymentGitRequest.java`：主机准入、本地文件许可及归档预算。
@@ -2063,6 +2065,13 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticInputParser.java`：解析确定性运行及数据库审阅输入。
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAnswers.java`：保留显式审阅值、资源及原确认事实。
 - `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上组装单组件或整图计划。
+- `mod/deployment/service/standard/DeploymentStaticPageService.java`：为惰性页面提供原任务静态发布、只读服务器发现及持久任务状态读取。
+- `mod/deployment/service/standard/DeploymentStaticPreparationJournal.java`：在原选材前保存无远端效果的准备标记，已观测取消另行持久化。
+- `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机准备清理与已有执行的原发布恢复，缺失或损坏依据保持未知。
+- `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
+- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内发现、审阅、重分析、逐组件归档并交给原单/多执行器；源码结构变更缺独立数据库依据时拒绝。
+- `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。
+- `mod/deployment/ui/DeploymentStaticPageReviewer.java`：在所属 Swing 对话框中收集组件、运行与绑定输入，并确认原清单、归档和目标。
 - `mod/deployment/service/standard/deploy/input/DeploymentStaticRuntimeResolver.java`：推导静态运行默认值、缺项与类型化运行定义。
 - `mod/deployment/service/standard/deploy/input/DeploymentStoragePlan.java`：解析已审阅存储并拒绝原有重叠和保留路径。
 - `mod/deployment/service/standard/deploy/plan/MultiComponentDeploymentPlanner.java`：仅在混合项目通过安全准入后生成确定性图顺序。
