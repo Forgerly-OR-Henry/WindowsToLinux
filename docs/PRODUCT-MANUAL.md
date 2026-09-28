@@ -35,7 +35,7 @@
 
 ## 1.1 规划与当前功能的区别
 
-本文其余操作说明适用于现有 0.x 代码。1.1 平台化改造尚未提供可用入口；其目标交付范围与官网方向见 [APP.md](APP.md)，从当前代码到目标的改造计划见 [1.1 开发文档](development/PHASE-1.1.md#implementation)。计划中的 Mod 管理操作及失败处理统一见 [Mod.md：用户操作与生命周期](Mod.md#mod-lifecycle)，迁移和重试见[版本详情](Mod.md#mod-version-management)，APP/JAR 交付见 [APP.md](APP.md)。本手册不复制尚未实现的操作规则，也不把它们描述为当前功能。
+本文其余操作说明主要适用于现有 0.x 代码。1.1 默认窗口已提供服务器配置和官方 deployment 的本地静态部署页面分闭环：选已保存服务器、选本地目录、审阅发现的组件与运行输入，再确认实际归档后交给原发布任务。配置服务器的发现仅供选择；原发布任务仍须单独准入目标。页面当前不会从普通数据库绑定输入生成已验证的数据库结构变更审阅；源码含 schema/migration 变更而缺独立数据库准备或批准依据时，明确拒绝发布。完整部署 Mod 与本机验收尚未完成，备份/恢复/跨服务器迁移 Mod 的 S6 和发行 S7 暂缓；真实远端未验收。目标交付范围与官网方向见 [APP.md](APP.md)，改造计划见 [1.1 开发文档](development/PHASE-1.1.md#implementation)。计划中的 Mod 管理操作及失败处理统一见 [Mod.md：用户操作与生命周期](Mod.md#mod-lifecycle)，迁移和重试见[版本详情](Mod.md#mod-version-management)，APP/JAR 交付见 [APP.md](APP.md)。
 
 ## 1. 产品定位
 

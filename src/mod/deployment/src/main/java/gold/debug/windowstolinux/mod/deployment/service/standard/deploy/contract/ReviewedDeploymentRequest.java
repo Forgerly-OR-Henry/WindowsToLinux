@@ -82,7 +82,8 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
         var source = material.snapshot();
         var root = source.directory();
         archive.path();
-        if (!facts.sourceRoot().startsWith(root) || !archive.originSnapshotId().equals(source.id())
+        if (!facts.sourceRoot().equals(root.resolve(archive.relativeRoot()).normalize())
+                || !archive.originSnapshotId().equals(source.id())
                 || !archive.sourceManifestSha256().equals(source.sha256()))
             throw new IllegalArgumentException("Reviewed candidate is not bound to the original frozen source");
         if (!facts.readyForPlanning() || !facts.projectType().deployable()

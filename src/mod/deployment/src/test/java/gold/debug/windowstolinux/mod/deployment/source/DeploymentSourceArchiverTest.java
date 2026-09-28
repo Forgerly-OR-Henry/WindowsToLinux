@@ -85,6 +85,66 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
     }
 
     @Test
+    void componentArchiveUsesOriginalSnapshotButBuildsFromItsOwnTarRoot() throws Exception {
+        file("api/go.mod", "module example/api\n".getBytes());
+        file("web/package.json", "{\"name\":\"web\"}".getBytes());
+        file("中文 服务..v2/main.txt", "nested content".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            run(runtime, task -> {
+                var source = source(runtime);
+                try (var material = material(source, task);
+                        var api = new DeploymentSourceArchiver(source).prepare(material, "api", 100_000, task);
+                        var web = new DeploymentSourceArchiver(source).prepare(material, "web", 100_000, task);
+                        var named = new DeploymentSourceArchiver(source).prepare(material, "中文 服务..v2", 100_000,
+                                task)) {
+                    assertEquals(material.snapshot().id(), api.originSnapshotId());
+                    assertEquals(material.snapshot().sha256(), web.sourceManifestSha256());
+                    assertEquals("api", api.relativeRoot());
+                    assertEquals("web", web.relativeRoot());
+                    assertEquals("中文 服务..v2", named.relativeRoot());
+                    assertTrue(DeploymentSourceArchive.validRelativeRoot("中文 服务..v2"));
+                    assertFalse(DeploymentSourceArchive.validRelativeRoot("../api"));
+                    assertFalse(DeploymentSourceArchive.validRelativeRoot("api/../web"));
+                    assertFalse(DeploymentSourceArchive.validRelativeRoot("/api"));
+                    try (var gzip = new GZIPInputStream(Files.newInputStream(api.path()))) {
+                        byte[] tar = gzip.readAllBytes();
+                        assertEquals("go.mod", new String(tar, 0, 6, java.nio.charset.StandardCharsets.US_ASCII));
+                        assertFalse(
+                                new String(tar, java.nio.charset.StandardCharsets.UTF_8).contains("web/package.json"));
+                    }
+                    var buildSource = root.resolve("expanded-api");
+                    Files.createDirectories(buildSource);
+                    var extraction = new ProcessBuilder("tar", "-xzf", api.path().toString(), "-C",
+                            buildSource.toString()).redirectErrorStream(true).start();
+                    try {
+                        assertTrue(extraction.waitFor(10, TimeUnit.SECONDS), "Original tar extraction timed out");
+                        assertEquals(0, extraction.exitValue(), new String(extraction.getInputStream().readAllBytes()));
+                    } finally {
+                        if (extraction.isAlive()) {
+                            extraction.destroyForcibly();
+                            assertTrue(extraction.waitFor(5, TimeUnit.SECONDS));
+                        }
+                    }
+                    assertTrue(Files.isRegularFile(buildSource.resolve("go.mod")));
+                    assertFalse(Files.exists(buildSource.resolve("api")));
+                    try (var gzip = new GZIPInputStream(Files.newInputStream(web.path()))) {
+                        byte[] tar = gzip.readAllBytes();
+                        assertEquals("package.json",
+                                new String(tar, 0, 12, java.nio.charset.StandardCharsets.US_ASCII));
+                    }
+                    try (var gzip = new GZIPInputStream(Files.newInputStream(named.path()))) {
+                        assertEquals("main.txt",
+                                new String(gzip.readAllBytes(), 0, 8, java.nio.charset.StandardCharsets.US_ASCII));
+                    }
+                }
+                return success();
+            });
+        }
+    }
+
+    @Test
     void compressedBytesMatchTheOriginalFormatAndOwnAnIndependentFrozenLifetime() throws Exception {
         file("pom.xml", "project".getBytes());
         file("asset+@().txt", "ordinary name".getBytes());

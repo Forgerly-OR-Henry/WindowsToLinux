@@ -200,42 +200,56 @@ class DeploymentStaticReviewAssemblerTest extends DeploymentRuntimeFixture {
                         try {
                             var selection = context.source().selectDirectory("Source", task);
                             try (var material = new DeploymentSourcePreparer(context.source()).prepare(selection, 65536,
-                                    100, task);
-                                    var archive = new DeploymentSourceArchiver(context.source()).prepare(material,
-                                            65536, task)) {
-                                var analyzer = new DeploymentStandardAnalyzer();
-                                var analyzed = analyzer.analyzeComponents(material, "Reviewed Shop", "shop",
-                                        List.of(component("api", 8080, Set.of("database")),
-                                                component("database", 5432, Set.of())),
-                                        Map.of(), false, task);
-                                assertEquals(Outcome.SUCCEEDED, analyzed.outcome());
-                                var answers = new TreeMap<String, DeploymentStaticReviewAnswers>();
-                                for (var component : analyzed.value().orElseThrow().assessment().components()) {
-                                    int port = component.componentId().equals("api") ? 8080 : 5432;
-                                    var values = Map.of("primary", component.componentId(), "secondary", "main.go",
-                                            "version", "1.24", "healthMode", "TCP", "port", Integer.toString(port),
-                                            "stability", "2", "exposure", "INTERNAL", "databaseMode", "NONE");
-                                    var consent = new DeploymentReviewConsent(component.facts().applicationId(),
-                                            "server", material.snapshot().sha256(), archive.sha256(), Instant.now());
-                                    answers.put(component.componentId(),
-                                            new DeploymentStaticReviewAnswers(values, List.of(), 1,
-                                                    DeploymentBuildLimits.defaultNonRoot(), consent, false, true));
+                                    100, task)) {
+                                try (var apiArchive = new DeploymentSourceArchiver(context.source()).prepare(material,
+                                        "api", 65536, task);
+                                        var databaseArchive = new DeploymentSourceArchiver(context.source())
+                                                .prepare(material, "database", 65536, task)) {
+                                    var archives = Map.of("api", apiArchive, "database", databaseArchive);
+                                    var analyzer = new DeploymentStandardAnalyzer();
+                                    var analyzed = analyzer
+                                            .analyzeComponents(material, "Reviewed Shop", "shop",
+                                                    List.of(component("api", 8080, Set.of("database")),
+                                                            component("database", 5432, Set.of())),
+                                                    Map.of(), false, task);
+                                    assertEquals(Outcome.SUCCEEDED, analyzed.outcome());
+                                    var answers = new TreeMap<String, DeploymentStaticReviewAnswers>();
+                                    for (var component : analyzed.value().orElseThrow().assessment().components()) {
+                                        int port = component.componentId().equals("api") ? 8080 : 5432;
+                                        var values = Map.of("primary", component.componentId(), "secondary", "main.go",
+                                                "version", "1.24", "healthMode", "TCP", "port", Integer.toString(port),
+                                                "stability", "2", "exposure", "INTERNAL", "databaseMode", "NONE");
+                                        var consent = new DeploymentReviewConsent(component.facts().applicationId(),
+                                                "server", material.snapshot().sha256(),
+                                                archives.get(component.componentId()).sha256(), Instant.now());
+                                        answers.put(component.componentId(),
+                                                new DeploymentStaticReviewAnswers(values, List.of(), 1,
+                                                        DeploymentBuildLimits.defaultNonRoot(), consent, false, true));
+                                    }
+                                    var assembled = new DeploymentStaticReviewAssembler(context.servers(),
+                                            new DeploymentStandardPlanner()).planComponents(new ServerRef("server"),
+                                                    material, archives, analyzed.value().orElseThrow(), answers, task);
+                                    assertEquals(Outcome.FAILED,
+                                            new DeploymentStaticReviewAssembler(context.servers(),
+                                                    new DeploymentStandardPlanner())
+                                                    .planComponents(new ServerRef("server"), material,
+                                                            Map.of("api", databaseArchive, "database", apiArchive),
+                                                            analyzed.value().orElseThrow(), answers, task)
+                                                    .outcome(),
+                                            "Archives from the same snapshot cannot be exchanged across component roots");
+                                    assertEquals(Outcome.SUCCEEDED, assembled.outcome(), assembled.toString());
+                                    assertEquals(List.of(List.of("database"), List.of("api")),
+                                            assembled.value().orElseThrow().ordering().buildWaves());
+                                    assertEquals(2, assembled.value().orElseThrow().components().size());
+                                    plannedGraph.countDown();
+                                    assertTrue(afterCancel.await(8, TimeUnit.SECONDS));
+                                    assertEquals(Outcome.CANCELLED,
+                                            new DeploymentStaticReviewAssembler(context.servers(),
+                                                    new DeploymentStandardPlanner())
+                                                    .planComponents(new ServerRef("server"), material, archives,
+                                                            analyzed.value().orElseThrow(), answers, task)
+                                                    .outcome());
                                 }
-                                var assembled = new DeploymentStaticReviewAssembler(context.servers(),
-                                        new DeploymentStandardPlanner()).planComponents(new ServerRef("server"),
-                                                material, archive, analyzed.value().orElseThrow(), answers, task);
-                                assertEquals(Outcome.SUCCEEDED, assembled.outcome(), assembled.toString());
-                                assertEquals(List.of(List.of("database"), List.of("api")),
-                                        assembled.value().orElseThrow().ordering().buildWaves());
-                                assertEquals(2, assembled.value().orElseThrow().components().size());
-                                plannedGraph.countDown();
-                                assertTrue(afterCancel.await(8, TimeUnit.SECONDS));
-                                assertEquals(Outcome.CANCELLED,
-                                        new DeploymentStaticReviewAssembler(context.servers(),
-                                                new DeploymentStandardPlanner())
-                                                .planComponents(new ServerRef("server"), material, archive,
-                                                        analyzed.value().orElseThrow(), answers, task)
-                                                .outcome());
                             }
                             return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
                         } catch (Exception | AssertionError caught) {

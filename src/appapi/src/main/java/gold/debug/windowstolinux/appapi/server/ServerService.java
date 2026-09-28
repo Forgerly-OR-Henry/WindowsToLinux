@@ -22,6 +22,14 @@ public interface ServerService {
      */
     PageSlice<ServerInfo> list(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
 
+    /** Lists saved non-secret server summaries for selection only; actual server operations require explicit admission of the selected server. / 仅为选择列出已保存的非秘密服务器摘要；实际服务器操作仍须明确准入所选服务器。
+     * @param cursor optional discovery-only cursor bound to this task / 绑定当前任务的可选发现专用游标
+     * @param limit page size from one to two hundred / 一到二百之间的页容量
+     * @param task authentic active task / 真实活动任务
+     * @return bounded saved summaries without server-use authority / 不含服务器使用授权的有界摘要
+     * @throws ApiException if owner, task or storage is unavailable / 所属者、任务或存储不可用时 */
+    PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
+
     /**
      * Reads the authorized non-secret configuration snapshot. / 读取授权范围内的不含秘密配置快照。
      * @param server selected platform server reference / 选定的平台服务器引用
