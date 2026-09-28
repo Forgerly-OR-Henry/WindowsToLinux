@@ -1992,14 +1992,18 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 ### S5-02 已迁入的标准计划与固定构建渲染生产文件
 
-旧 `shared/standard/deploy` 在根切换前仍保留；以下仅索引当前实际迁入的无 AI 计划与脚本生成首批。
+旧 `shared/standard/deploy` 在根切换前仍保留；以下索引当前实际迁入的无 AI 计划、脚本生成与受控构建构件。构建执行仍要求调用方已确认上传原候选，不代表上传、发布或恢复完成。
 
 - `mod/deployment/service/core/model/DeploymentBuildLimits.java`：固定受管构建入口经过审阅的明确限制。
+- `mod/deployment/service/core/model/DeploymentBuildEnvironment.java`：精确非秘密构建配置投影；执行时仅从原已审阅配置的 BUILD 项生成。
 - `mod/deployment/service/core/model/DeploymentRemoteWorkspace.java`：仅根据已验证应用 ID 和压缩归档字节摘要推导的固定服务端路径。
 - `mod/deployment/service/core/model/toolchain/DeploymentResolvedToolchains.java`：发布级不可变工具身份，不随目录修订重新选择。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainBindingCodec.java`：无配置解析依赖的确定性版本化发布绑定。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainCatalog.java`：唯一可注入构建分支目录，补丁由官方发布发现提供。
 - `mod/deployment/service/standard/deploy/build/BuildCompatibilityPolicy.java`：根据构建输出判定有界工具链重试。
+- `mod/deployment/service/standard/deploy/build/DeploymentStandardBuildExecutor.java`：复核原冻结素材与已上传候选，沿原任务完成隔离预检、精确工具绑定及受限构建。
+- `mod/deployment/service/standard/deploy/build/DeploymentVerifiedBuildResult.java`：仅在受限构建已确认后携带原归档和真实已安装工具绑定身份。
+- `mod/deployment/service/standard/deploy/build/DeploymentToolchainPreparer.java`：最多选择两个已审阅目录候选，核验实际安装版本和固定绑定回执。
 - `mod/deployment/service/standard/deploy/build/contract/spi/DeploymentBuildRenderer.java`：通过固定且有界的目标机构建入口渲染一种经审阅项目类型。
 - `mod/deployment/service/standard/deploy/build/ecosystem/CargoBuildRenderer.java`：渲染固定 Cargo 构建架构。
 - `mod/deployment/service/standard/deploy/build/ecosystem/CmakeBuildRenderer.java`：渲染固定单目标 CMake 试验架构。
@@ -2027,6 +2031,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/build/ecosystem/ruby/RubyCliBuildRenderer.java`：通过 Ruby CLI 语法验证渲染无依赖 Ruby 源码。
 - `mod/deployment/service/standard/deploy/build/extension/registry/DeploymentBuildRendererRegistry.java`：为每种可部署项目架构恰好注册一个具名 Renderer。
 - `mod/deployment/service/standard/deploy/build/generation/script/CompanionBuildScript.java`：将配套制品保留在与所属组件相同的有界候选及封存发布中。
+- `mod/deployment/service/standard/deploy/build/generation/script/DeploymentBuildEnvironmentRenderer.java`：以shell字面量导出已审阅BUILD配置值。
 - `mod/deployment/service/standard/deploy/build/generation/script/NodeDependencyToolPreparation.java`：准备项目固定包管理器，不改声明或锁文件。
 - `mod/deployment/service/standard/deploy/build/generation/script/NodePackageBuildScript.java`：渲染 Node 服务与构建型静态站点共享的包管理器部分。
 - `mod/deployment/service/standard/deploy/build/generation/script/SafeBuildScriptEnvelope.java`：持有全部渲染器共享的归档校验、解压、限制、日志与构建工具证明。
@@ -2051,10 +2056,14 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
 - `mod/deployment/service/standard/deploy/plan/ReviewedPlanIdentity.java`：稳定的执行前审阅身份，区别于最终发布清单身份。
 - `mod/deployment/service/standard/deploy/toolchain/ToolchainBuildEnvironment.java`：明确可执行路径与选择版本，保留项目语言目标。
+- `mod/deployment/service/standard/deploy/toolchain/DeploymentProjectToolchainRequirements.java`：从原分析事实与已审阅运行时推导固定工具需求，不猜测未解析版本。
 
 ### S5-02 已迁入的受管 helper 与公开远端协议适配
 
 - `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装并核对固定 helper 身份，未知副作用不重放。
+- `mod/deployment/linux/DeploymentBuildBudget.java`：在最多两个候选间累计实际远端执行时间，不计人工审核等待。
+- `mod/deployment/linux/DeploymentBuildCommandChannel.java`：以原任务、原服务器、固定语义和宿主审批发送预检/工具准备/绑定/构建命令。
+- `mod/deployment/linux/DeploymentBuildOutputProtocol.java`：不改原helper资源，将最多128MiB构建流压成平台8MiB以内的固定短回执与已遮蔽诊断。
 - `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按原 40 片段、5 插入和独立 build-entry 组装协议 10 受管 helper，逐字节核对固定摘要。
 - `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、实际字节校验及最终回执。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainSelectionPolicy.java`：按原纯策略从已审阅支持目录中选择精确候选发布。
