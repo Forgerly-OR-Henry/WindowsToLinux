@@ -2055,6 +2055,12 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/extension/adapter/StaticSiteAdapter.java`：只在验证声明的生成输出目录后计划静态站点发布。
 - `mod/deployment/service/standard/deploy/extension/registry/DeploymentAdapterRegistry.java`：持有完整且已验证的部署适配器装配。
 - `mod/deployment/service/standard/deploy/input/ApplicationDeclaration.java`：有界应用声明与补填值。
+- `mod/deployment/service/standard/deploy/input/DeploymentDatabaseReviewModeType.java`：区分未审阅、已审阅为空与精确数据库类型。
+- `mod/deployment/service/standard/deploy/input/DeploymentReviewField.java`：静态运行审阅缺项的类型化字段。
+- `mod/deployment/service/standard/deploy/input/DeploymentStaticInputParser.java`：解析确定性运行及数据库审阅输入。
+- `mod/deployment/service/standard/deploy/DeploymentStaticReviewAnswers.java`：保留显式审阅值、资源及原确认事实。
+- `mod/deployment/service/standard/deploy/DeploymentStaticReviewAssembler.java`：在原任务及原冻结素材上组装单组件或整图计划。
+- `mod/deployment/service/standard/deploy/input/DeploymentStaticRuntimeResolver.java`：推导静态运行默认值、缺项与类型化运行定义。
 - `mod/deployment/service/standard/deploy/input/DeploymentStoragePlan.java`：解析已审阅存储并拒绝原有重叠和保留路径。
 - `mod/deployment/service/standard/deploy/plan/MultiComponentDeploymentPlanner.java`：仅在混合项目通过安全准入后生成确定性图顺序。
 - `mod/deployment/service/standard/deploy/plan/ReviewedDeploymentPlanner.java`：将经审阅的请求路由到唯一能够计划其选定单组件项目类型的适配器。
