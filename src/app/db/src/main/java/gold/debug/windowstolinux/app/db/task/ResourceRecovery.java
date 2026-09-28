@@ -43,8 +43,12 @@ public record ResourceRecovery(String protocol, Map<String, String> fields) {
      * @throws SQLException if encoding exceeds its limit / 编码超限时 */
     String encode() throws SQLException {
         try {
-            String value = JSON.writeValueAsString(
-                    Map.of("release", "EXPLICIT", "version", 1, "protocol", protocol, "fields", new TreeMap<>(fields)));
+            var envelope = new LinkedHashMap<String, Object>();
+            envelope.put("release", "EXPLICIT");
+            envelope.put("version", 1);
+            envelope.put("protocol", protocol);
+            envelope.put("fields", new TreeMap<>(fields));
+            String value = JSON.writeValueAsString(envelope);
             if (value.length() > 65536)
                 throw new SQLException("Resource recovery metadata is too large");
             return value;
