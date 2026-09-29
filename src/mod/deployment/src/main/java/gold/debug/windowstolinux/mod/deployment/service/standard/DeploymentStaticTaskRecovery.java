@@ -41,13 +41,17 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws Exception {
         if (!DeploymentReferenceFlow.TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id()))
             return unknown();
+        Optional<DeploymentHelperBootstrapJournal> bootstrap;
         Optional<DeploymentNativeDatabaseJournal> database;
         try {
+            bootstrap = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
             database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
         } catch (IllegalArgumentException damaged) {
             return unknown();
         }
         if (executions.findForTask(task).isPresent()) {
+            if (bootstrap.isPresent() && !settleBootstrap(task, bootstrap.orElseThrow()))
+                return unknown();
             if (database.isPresent() && !settleDatabase(task, database.orElseThrow()))
                 return unknown();
             return references.reconcile(previous, task);
@@ -60,10 +64,14 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         }
         if (marker.isEmpty())
             return unknown();
+        if (bootstrap.isPresent() && !settleBootstrap(task, bootstrap.orElseThrow()))
+            return unknown();
         if (database.isPresent() && !settleDatabase(task, database.orElseThrow()))
             return unknown();
+        Optional<DeploymentHelperBootstrapJournal.Facts> bootstrapFacts;
         Optional<DeploymentNativeDatabaseJournal.Facts> databaseFacts;
         try {
+            bootstrapFacts = bootstrap.isPresent() ? Optional.of(bootstrap.orElseThrow().facts()) : Optional.empty();
             databaseFacts = database.isPresent() ? Optional.of(database.orElseThrow().facts()) : Optional.empty();
         } catch (ApiException | IllegalArgumentException unreadable) {
             return unknown();
@@ -82,14 +90,50 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         return new OperationResult<>(outcome, Optional.empty(), Optional.of(new Problem(code,
                 cancelled ? "DEPLOYMENT_STATIC_PREPARATION_CANCELLED" : "DEPLOYMENT_STATIC_PREPARATION_INTERRUPTED",
                 databaseFacts.filter(DeploymentNativeDatabaseJournal.Facts::effectsObserved).isPresent()
-                        ? "Native database effects may require manual review before publication"
-                        : "Static review ended before publication effects",
-                databaseFacts.isPresent()
-                        ? Map.of("serverId", databaseFacts.orElseThrow().serverId(), "target",
-                                databaseFacts.orElseThrow().target(), "effectTargets",
-                                String.join(",", databaseFacts.orElseThrow().effectTargets()))
-                        : Map.of(),
-                Optional.empty())));
+                        || bootstrapFacts.filter(value -> !"INTENT".equals(value.phase())).isPresent()
+                                ? "Original preparation may have changed the helper or native database; review the server before publication"
+                                : "Static review ended before publication effects",
+                effectContext(bootstrapFacts, databaseFacts), Optional.empty())));
+    }
+
+    /** Retains a possible first-install effect until its original root receipt is confirmed. / 在原 root 回执确认前保留可能的首次安装效果。
+     * @param task original recovery task / 原恢复任务
+     * @param journal original installation journal / 原安装日志
+     * @return true only when this installation is known and released / 仅安装已知且释放时为真
+     * @throws ApiException if original capabilities cannot be read / 原能力无法读取时 */
+    private boolean settleBootstrap(TaskContext task, DeploymentHelperBootstrapJournal journal) throws ApiException {
+        var facts = journal.facts();
+        if (!"DISPATCHED".equals(facts.phase())) {
+            journal.close();
+            return true;
+        }
+        try (RemoteSession session = context.linux().connect(new ServerRef(facts.serverId()), task)) {
+            var result = new DeploymentHelperBootstrap(context.tasks(), task, new ServerRef(facts.serverId()), session,
+                    context.interaction()).reconcile(journal);
+            return result.outcome() != Outcome.UNKNOWN;
+        } catch (ApiException unavailable) {
+            return false;
+        }
+    }
+
+    /** Reports bounded prior helper and database effect targets without secrets. / 不含秘密地报告有界先前 helper 与数据库效果目标。
+     * @param bootstrap optional original helper facts / 可选原 helper 事实
+     * @param database optional original database facts / 可选原数据库事实
+     * @return non-secret recovery context / 非秘密恢复上下文 */
+    private static Map<String, String> effectContext(Optional<DeploymentHelperBootstrapJournal.Facts> bootstrap,
+            Optional<DeploymentNativeDatabaseJournal.Facts> database) {
+        var details = new java.util.LinkedHashMap<String, String>();
+        bootstrap.filter(value -> !"INTENT".equals(value.phase())).ifPresent(value -> {
+            details.put("helperServerId", value.serverId());
+            details.put("helperOperationId", value.operationId().toString());
+            details.put("helperPhase", value.phase());
+        });
+        database.ifPresent(value -> {
+            details.put("serverId", value.serverId());
+            details.put("target", value.target());
+            details.put("effectTargets", String.join(",", value.effectTargets()));
+        });
+        return Map.copyOf(details);
     }
 
     /** Settles only the original native operation after checking its exact helper receipt. / 仅核验精确 helper 回执后结清原生数据库原操作。

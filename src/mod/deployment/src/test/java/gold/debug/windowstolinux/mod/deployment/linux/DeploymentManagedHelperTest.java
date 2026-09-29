@@ -57,6 +57,32 @@ class DeploymentManagedHelperTest {
         assertBashSyntax(bash, installer);
     }
 
+    @Test
+    void trackedInstallerPersistsOriginalIdentityBeforePackagesAndQueriesWithoutHelper() throws Exception {
+        String bash = System.getProperty("managed.test.bash", "/bin/bash");
+        var task = UUID.fromString("12345678-1234-1234-1234-123456789012");
+        var operation = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        String serverDigest = "a".repeat(64), bodyDigest = "b".repeat(64);
+        String script = DeploymentHelperInstallerScript.renderTracked(task, operation, serverDigest, bodyDigest);
+        String status = DeploymentHelperInstallerScript.renderStatus(operation);
+        assertTrue(script.indexOf("PHASE=STARTED") < script.indexOf("apt-get"));
+        assertTrue(script.indexOf("PHASE=SUCCEEDED") < script.lastIndexOf("HELPER_INSTALL=1"));
+        assertTrue(script.contains("bootstrap_trusted_directory /var/lib"));
+        assertTrue(script.contains("set -C; printf"));
+        assertTrue(status.contains("/usr/bin/cat -- \"$bootstrap_receipt\""));
+        assertFalse(status.contains("python"));
+        assertFalse(status.contains("install -d"));
+        assertFalse(status.contains("managed-helper'"));
+        assertTrue(DeploymentHelperInstallerScript.receipt(task, operation, serverDigest, bodyDigest, "SUCCEEDED")
+                .contains("HELPER_SHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256));
+        Path installer = temporary.resolve("tracked-installer");
+        Path query = temporary.resolve("tracked-status");
+        Files.writeString(installer, script);
+        Files.writeString(query, status);
+        assertBashSyntax(bash, installer);
+        assertBashSyntax(bash, query);
+    }
+
     private static void assertBashSyntax(String bash, Path file) throws Exception {
         Process process = new ProcessBuilder(bash, "--noprofile", "--norc", "-n", file.toString()).start();
         try {
@@ -217,7 +243,7 @@ class DeploymentManagedHelperTest {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                     if (method.getName().equals("execute")) {
-                        requests.add((CommandRequest) args[0]);
+                        requests.add(((CommandRequest) args[0]).snapshot());
                         return replies.removeFirst();
                     }
                     if (method.getName().equals("close"))

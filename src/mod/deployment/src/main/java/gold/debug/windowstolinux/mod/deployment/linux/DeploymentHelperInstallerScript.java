@@ -2,6 +2,9 @@ package gold.debug.windowstolinux.mod.deployment.linux;
 
 /** Shared helper and isolation installation; no project language selection. / 共用 helper 及隔离安装，不选择项目语言。 */
 public final class DeploymentHelperInstallerScript {
+    /** Root-owned original installer receipt directory. / root 持有的原安装回执目录。 */
+    public static final String RECEIPT_DIRECTORY = "/var/lib/windowstolinux/helper-install-operations";
+
     /** Prevents construction. / 禁止实例化。 */
     private DeploymentHelperInstallerScript() {
     }
@@ -10,10 +13,120 @@ public final class DeploymentHelperInstallerScript {
      * @return bounded implementation-owned script / 有界实现自有脚本
      */
     public static String render() {
+        return render("", "");
+    }
+
+    /** Renders one installer with an original operation receipt written before and after its effects. / 渲染一项在副作用前后写入原操作回执的安装程序。
+     * @param taskId original task UUID / 原任务 UUID
+     * @param operationId original installer UUID / 原安装 UUID
+     * @param serverDigest exact server identity digest / 精确服务器身份摘要
+     * @param bodyDigest digest of the unchanged installer body / 未修改安装主体的摘要
+     * @return bounded operation-specific Bash script / 有界的操作专属 Bash 脚本 */
+    public static String renderTracked(java.util.UUID taskId, java.util.UUID operationId, String serverDigest,
+            String bodyDigest) {
+        java.util.Objects.requireNonNull(taskId);
+        java.util.Objects.requireNonNull(operationId);
+        if (serverDigest == null || !serverDigest.matches("[0-9a-f]{64}") || bodyDigest == null
+                || !bodyDigest.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("Invalid installer operation digest");
+        String started = receipt(taskId, operationId, serverDigest, bodyDigest, "STARTED");
+        String succeeded = receipt(taskId, operationId, serverDigest, bodyDigest, "SUCCEEDED");
+        String directory = quote(RECEIPT_DIRECTORY);
+        String receipt = quote(RECEIPT_DIRECTORY + "/" + operationId + ".receipt");
+        String begin = """
+                prepare_stage=installer-receipt
+                bootstrap_directory=%s
+                bootstrap_receipt=%s
+                bootstrap_trusted_directory() {
+                  [ ! -L "$1" ] && [ -d "$1" ] || return 1
+                  [ "$(/usr/bin/stat -c '%%u:%%g' "$1")" = '0:0' ] || return 1
+                  bootstrap_mode=$(/usr/bin/stat -c '%%a' "$1")
+                  (( (8#$bootstrap_mode & 022) == 0 ))
+                }
+                bootstrap_trusted_directory /var || exit 64
+                bootstrap_trusted_directory /var/lib || exit 64
+                if [ -e /var/lib/windowstolinux ] || [ -L /var/lib/windowstolinux ]; then
+                  bootstrap_trusted_directory /var/lib/windowstolinux || exit 64
+                else
+                  /usr/bin/install -d -o root -g root -m 700 /var/lib/windowstolinux
+                fi
+                bootstrap_trusted_directory /var/lib/windowstolinux || exit 64
+                if [ -e "$bootstrap_directory" ] || [ -L "$bootstrap_directory" ]; then
+                  bootstrap_trusted_directory "$bootstrap_directory" || exit 64
+                else
+                  /usr/bin/install -d -o root -g root -m 700 "$bootstrap_directory"
+                fi
+                [ "$(/usr/bin/stat -c '%%u:%%g:%%a' "$bootstrap_directory")" = '0:0:700' ] || exit 64
+                umask 077
+                ( set -C; printf '%%s' %s > "$bootstrap_receipt" ) || exit 64
+                /usr/bin/sync -f "$bootstrap_receipt"
+                /usr/bin/sync -f "$bootstrap_directory"
+                """.formatted(directory, receipt, quote(started));
+        String end = """
+                prepare_stage=installer-receipt-terminal
+                bootstrap_terminal=$(/usr/bin/mktemp "$bootstrap_directory/.%s.XXXXXX")
+                cleanup_files="$cleanup_files $bootstrap_terminal"
+                printf '%%s' %s > "$bootstrap_terminal"
+                /usr/bin/sync -f "$bootstrap_terminal"
+                /usr/bin/mv -fT -- "$bootstrap_terminal" "$bootstrap_receipt"
+                /usr/bin/sync -f "$bootstrap_directory"
+                """.formatted(operationId, quote(succeeded));
+        return render(begin, end);
+    }
+
+    /** Builds one exact non-secret original installer receipt. / 构造精确的非秘密原安装回执。
+     * @param taskId original task UUID / 原任务 UUID
+     * @param operationId original installer UUID / 原安装 UUID
+     * @param serverDigest exact server identity digest / 精确服务器身份摘要
+     * @param bodyDigest unchanged installer body digest / 未修改安装主体摘要
+     * @param phase original receipt phase / 原回执阶段
+     * @return exact bounded receipt bytes as text / 精确有界回执文本 */
+    public static String receipt(java.util.UUID taskId, java.util.UUID operationId, String serverDigest,
+            String bodyDigest, String phase) {
+        if (taskId == null || operationId == null || serverDigest == null || !serverDigest.matches("[0-9a-f]{64}")
+                || bodyDigest == null || !bodyDigest.matches("[0-9a-f]{64}")
+                || !java.util.Set.of("STARTED", "SUCCEEDED").contains(phase))
+            throw new IllegalArgumentException("Invalid installer receipt identity");
+        return "FORMAT=1\nTASK=" + taskId + "\nOPERATION=" + operationId + "\nSERVER_SHA256=" + serverDigest
+                + "\nBODY_SHA256=" + bodyDigest + "\nHELPER_SHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
+                + "\nPHASE=" + phase + "\n";
+    }
+
+    /** Renders a read-only receipt query requiring only pre-existing Bash and core utilities. / 渲染仅依赖原有 Bash 和基础工具的只读回执查询。
+     * @param operationId original installer UUID / 原安装 UUID
+     * @return fixed bounded read-only Bash script / 固定有界只读 Bash 脚本 */
+    public static String renderStatus(java.util.UUID operationId) {
+        java.util.Objects.requireNonNull(operationId);
+        return """
+                set -euo pipefail
+                export LC_ALL=C
+                bootstrap_directory=%s
+                bootstrap_receipt=%s
+                for bootstrap_parent in /var /var/lib /var/lib/windowstolinux "$bootstrap_directory"; do
+                  [ ! -L "$bootstrap_parent" ] && [ -d "$bootstrap_parent" ] || exit 3
+                  [ "$(/usr/bin/stat -c '%%u:%%g' "$bootstrap_parent")" = '0:0' ] || exit 3
+                  bootstrap_mode=$(/usr/bin/stat -c '%%a' "$bootstrap_parent")
+                  (( (8#$bootstrap_mode & 022) == 0 )) || exit 3
+                done
+                [ "$(/usr/bin/stat -c '%%u:%%g:%%a' "$bootstrap_directory")" = '0:0:700' ] || exit 3
+                [ ! -L "$bootstrap_receipt" ] && [ -f "$bootstrap_receipt" ] || exit 3
+                [ "$(/usr/bin/stat -c '%%u:%%g:%%a' "$bootstrap_receipt")" = '0:0:600' ] || exit 3
+                [ "$(/usr/bin/stat -c '%%s' "$bootstrap_receipt")" -le 1024 ] || exit 3
+                /usr/bin/cat -- "$bootstrap_receipt"
+                """.formatted(quote(RECEIPT_DIRECTORY), quote(RECEIPT_DIRECTORY + "/" + operationId + ".receipt"));
+    }
+
+    /** Combines unchanged installer stages with optional original-operation receipt steps. / 将未改变的安装阶段与可选原操作回执步骤组合。
+     * @param begin operation receipt before effects / 副作用前操作回执
+     * @param end terminal receipt before response / 回包前终态回执
+     * @return complete installer script / 完整安装脚本 */
+    private static String render(String begin, String end) {
         return "set -euo pipefail\nexport LC_ALL=C\n" + renderStageDiagnostics() + renderSecurityObservationFunctions()
                 + """
                         [ "$(id -u)" -eq 0 ] || exit 64
                         command -v systemctl >/dev/null
+                        """ + begin
+                + """
                         prepare_stage=platform-packages
                         if command -v apt-get >/dev/null; then
                           export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
@@ -24,7 +137,7 @@ public final class DeploymentHelperInstallerScript {
                         else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
                         prepare_stage=helper-installation
                         """
-                + renderHelperInstallation() + renderSecurityInvariant() + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
+                + renderHelperInstallation() + renderSecurityInvariant() + end + "printf 'HELPER_INSTALL=1\\nPROTOCOL="
                 + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\\nSHA256="
                 + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n";
     }

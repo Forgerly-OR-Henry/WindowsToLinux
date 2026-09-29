@@ -2072,9 +2072,11 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/DeploymentStaticPreparationJournal.java`：在原选材前保存静态准备标记，已观测取消另行持久化；服务器数据库效果另由原操作检查点核对。
 - `mod/deployment/service/standard/DeploymentNativeDatabaseJournal.java`：在原任务持久保存串行数据库操作、请求摘要、已结清效果目标及发送/回执阶段，未知操作不得覆写。
 - `mod/deployment/service/standard/DeploymentNativeDatabaseChannel.java`：先核协议 12 helper 身份，再以同一原任务审核发送数据库操作、精确解析原回执并更新检查点。
-- `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：精确区分无正式执行的本机/Git 清理、原数据库效果回执核对与已有执行的原发布恢复，缺失、未核实或损坏依据保持未知。
+- `mod/deployment/service/standard/DeploymentHelperBootstrapJournal.java`：在原发布任务中持久保存首次 helper 安装的请求、目标摘要和发送/终态阶段，未决安装保留原占用。
+- `mod/deployment/service/standard/DeploymentHelperBootstrap.java`：先探测固定 helper；缺失时在原任务留痕安装，成功须核原 root 回执与包身份，未知恢复不重装。
+- `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：先核首次 helper 安装及原数据库回执，再区分本机/Git 清理与正式发布恢复；缺失、未核实或损坏依据保持未知。
 - `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
-- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内冻结来源、发现、补全数据库声明并独立确认 SQLite 初始化，重分析、逐组件归档后交给原单/多执行器；服务器型数据库准备未接通时拒绝。
+- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内冻结来源、发现、补全数据库声明并独立确认 SQLite 初始化，重分析、逐组件归档及最终确认后先确保固定 helper，再交给原单/多执行器；服务器型数据库准备未接通时拒绝。
 - `mod/deployment/ui/DeploymentGitSourceForm.java`：仅 Git 模式可见的来源、引用和本机可执行文件输入，任务准入前构造无凭据的类型化请求。
 - `mod/deployment/ui/DeploymentSecretReferenceField.java`：运行审阅中选择已有业务秘密修订并追加精确引用，同时保留高级非秘密输入。
 - `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。
@@ -2127,7 +2129,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 
 ### S5-02 已迁入的受管 helper 与公开远端协议适配
 
-- `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装并核对固定 helper 身份，未知副作用不重放。
+- `mod/deployment/linux/DeploymentManagedHelper.java`：借用原任务远端会话，经精确宿主审核安装、读取原安装回执并核对固定 helper 身份，未知副作用不重放。
 - `mod/deployment/linux/DeploymentContainerArguments.java`：按旧固定 helper 合同组织容器运行参数。
 - `mod/deployment/linux/DeploymentPublicationArguments.java`：约束单组件发布的固定配置、运行及内容输入。
 - `mod/deployment/linux/DeploymentPublicationChannel.java`：用原任务及精确审批发送封存、快照、发布、健康、观察、回滚和候选清理命令。
@@ -2145,7 +2147,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/linux/DeploymentBuildOutputProtocol.java`：不改原helper资源，将最多128MiB构建流压成平台8MiB以内的固定短回执与已遮蔽诊断。
 - `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按固定片段、5 插入和独立 build-entry 组装协议 12 受管 helper，逐字节核对固定摘要。
 - `mod/deployment/linux/DeploymentNativeDatabaseWire.java`：编码有界 Base64 请求帧、解析无重复键回执，并经原任务精确审核发送固定 helper 动作；不持有业务日志。
-- `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、实际字节校验及最终回执。
+- `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、原操作安装回执与不依赖新 helper 的只读状态脚本。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainSelectionPolicy.java`：按原纯策略从已审阅支持目录中选择精确候选发布。
 
 下列资源位于 `src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/`；固定清单沿用旧 helper 资源；协议 11 曾为原任务观察修改 00、70、40、52 四份片段并新增 53 片段，数据库 10/20 片段新增原操作回执与只读 status，00 片段升级协议 12；其余按原字节参与新固定包身份，不作为新 SSH 实现。
