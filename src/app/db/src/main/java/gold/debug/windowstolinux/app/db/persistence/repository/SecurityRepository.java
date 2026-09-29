@@ -135,6 +135,7 @@ public final class SecurityRepository {
     public void save(StoredCredential credential, boolean contentChanged) throws SQLException {
         transaction(() -> {
             try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
                 byte[] payload = credential.payload();
                 try {
                     int updated;

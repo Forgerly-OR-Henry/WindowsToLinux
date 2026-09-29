@@ -72,6 +72,7 @@ public final class AiProfileRepository {
         new StoredAiProviderConfiguration(profile, name, 0, 1, Optional.empty(), Optional.empty());
         connections.transaction(() -> {
             try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
                 int changed;
                 try (var update = c.prepareStatement(
                         "UPDATE ai_model SET configuration_revision=configuration_revision+CASE WHEN credential_id<>? OR endpoint_url<>? OR model_name<>? THEN 1 ELSE 0 END,credential_id=?,endpoint_url=?,model_name=?,display_name=? WHERE model_id=?")) {
@@ -111,14 +112,17 @@ public final class AiProfileRepository {
     public void recordVerification(StoredAiProviderProfile expected, long expectedRevision, AiCapabilityType capability,
             Instant verifiedAt) throws SQLException {
         connections.transaction(() -> {
-            try (var c = connections.open(); var s = c.prepareStatement("SELECT * FROM ai_model WHERE model_id=?")) {
-                s.setString(1, expected.id());
-                try (var rows = s.executeQuery()) {
-                    if (!rows.next() || rows.getLong("configuration_revision") != expectedRevision
-                            || !provider(rows).equals(expected))
-                        throw new SQLException("model changed during capability probe");
+            try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
+                try (var s = c.prepareStatement("SELECT * FROM ai_model WHERE model_id=?")) {
+                    s.setString(1, expected.id());
+                    try (var rows = s.executeQuery()) {
+                        if (!rows.next() || rows.getLong("configuration_revision") != expectedRevision
+                                || !provider(rows).equals(expected))
+                            throw new SQLException("model changed during capability probe");
+                    }
+                    writeVerification(c, expected.id(), capability, Objects.requireNonNull(verifiedAt));
                 }
-                writeVerification(c, expected.id(), capability, Objects.requireNonNull(verifiedAt));
             }
         });
     }
@@ -190,6 +194,52 @@ public final class AiProfileRepository {
         var result = new EnumMap<AiPurposeType, List<StoredAiProviderConfiguration>>(AiPurposeType.class);
         grouped.forEach((purpose, rows) -> result.put(purpose, List.copyOf(rows.values())));
         return Map.copyOf(result);
+    }
+
+    /** Captures all enabled routes and their output limits under one platform configuration lock. / 在同一平台配置锁下捕获所有启用路由及输出上限。
+     * @return one immutable routing state / 一份不可变路由状态
+     * @throws SQLException if the state cannot be read / 状态无法读取时 */
+    public RoutingState routingState() throws SQLException {
+        RoutingState[] result = new RoutingState[1];
+        connections.transaction(() -> {
+            try (var connection = connections.open()) {
+                RepositoryConnections.lockPlatformState(connection);
+                var routes = purposeSnapshot();
+                var inventory = new HashMap<String, StoredAiProviderConfiguration>();
+                for (var configuration : listConfigured())
+                    inventory.put(configuration.profile().id(), configuration);
+                var members = new EnumMap<AiPurposeType, List<RoutingMember>>(AiPurposeType.class);
+                var limits = new HashMap<String, Integer>();
+                for (var purpose : AiPurposeType.values()) {
+                    var selected = new ArrayList<RoutingMember>();
+                    for (var assignment : purposes().list(purpose)) {
+                        var configuration = inventory.get(assignment.profileId());
+                        if (configuration == null)
+                            throw new SQLException("Purpose route names a missing model");
+                        selected.add(new RoutingMember(configuration, assignment.enabled()));
+                        limits.putIfAbsent(configuration.profile().id(),
+                                outputLimit(configuration.profile().id()).orElse(-1));
+                    }
+                    members.put(purpose, List.copyOf(selected));
+                }
+                result[0] = new RoutingState(routes, Map.copyOf(members), Map.copyOf(limits));
+            }
+        });
+        return result[0];
+    }
+
+    /** One ordered purpose member, including a disabled selection. / 一个有序用途成员，包括已禁用选择。
+     * @param configuration exact current model configuration / 精确当前模型配置
+     * @param enabled whether the assignment is enabled / 分配是否启用 */
+    public record RoutingMember(StoredAiProviderConfiguration configuration, boolean enabled) {
+    }
+
+    /** One transaction-consistent AI routing view. / 一份事务一致的 AI 路由视图。
+     * @param routes purpose-ordered model chains / 按用途排序的模型链
+     * @param members all ordered assignments including disabled members / 全部有序分配，包括已禁用成员
+     * @param outputLimits exact per-model token limits, or -1 when absent / 精确模型 Token 上限，缺失时为 -1 */
+    public record RoutingState(Map<AiPurposeType, List<StoredAiProviderConfiguration>> routes,
+            Map<AiPurposeType, List<RoutingMember>> members, Map<String, Integer> outputLimits) {
     }
 
     /** Returns the repository for independent purpose routing settings. / 返回独立用途路由设置仓库。
@@ -283,11 +333,12 @@ public final class AiProfileRepository {
     public void reorder(List<String> ids) throws SQLException {
         var order = List.copyOf(ids);
         connections.transaction(() -> {
-            var saved = listNamed().stream().map(StoredAiProviderProfile::id)
-                    .collect(java.util.stream.Collectors.toSet());
-            if (order.size() != saved.size() || !saved.equals(new HashSet<>(order)))
-                throw new SQLException("inventory order changed");
             try (var c = connections.open(); var max = c.createStatement()) {
+                RepositoryConnections.lockPlatformState(c);
+                var saved = listNamed().stream().map(StoredAiProviderProfile::id)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (order.size() != saved.size() || !saved.equals(new HashSet<>(order)))
+                    throw new SQLException("inventory order changed");
                 long offset;
                 try (var rows = max.executeQuery("SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model")) {
                     rows.next();

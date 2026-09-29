@@ -25,14 +25,14 @@ public final class ServiceSnapshot {
      * @return copied immutable value / 复制的不可变值
      * @throws ReflectiveOperationException if a record cannot be safely reconstructed / 无法安全重建记录时 */
     public static Object copy(Object value, Predicate<Class<?>> publicType) throws ReflectiveOperationException {
-        return copy(value, publicType, new IdentityHashMap<>(), new int[]{4096, 1024 * 1024}, 0);
+        return copy(value, publicType, new IdentityHashMap<>(), new int[]{4096, 1024 * 1024, 16 * 1024 * 1024}, 0);
     }
 
     /** Copies only bounded acyclic values, never streams, callbacks, JDBC or futures. / 仅复制有界无环值，不复制流、回调、JDBC 或 Future。
      * @param value current value / 当前值
      * @param publicType exact public type policy / 精确公开类型策略
      * @param visiting current identity path / 当前身份路径
-     * @param budget remaining nodes and text bytes / 剩余节点及文字字节
+     * @param budget remaining nodes, text and binary bytes / 剩余节点、文字和二进制字节
      * @param depth current nesting / 当前嵌套
      * @return detached value / 分离值
      * @throws ReflectiveOperationException if reconstruction fails / 重建失败时 */
@@ -43,6 +43,12 @@ public final class ServiceSnapshot {
         if (value == null)
             return null;
         var type = value.getClass();
+        if (value instanceof byte[] bytes) {
+            budget[2] -= bytes.length;
+            if (budget[2] < 0)
+                throw new IllegalArgumentException("Service binary value exceeds byte budget");
+            return bytes.clone();
+        }
         if (SCALARS.contains(type) || value instanceof Enum<?> item && publicType.test(item.getDeclaringClass())
                 || value instanceof Path path && path.getFileSystem() == FileSystems.getDefault()
                         && type.getClassLoader() == null) {

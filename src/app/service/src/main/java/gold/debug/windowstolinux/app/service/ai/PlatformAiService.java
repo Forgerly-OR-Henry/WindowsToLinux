@@ -2,6 +2,10 @@ package gold.debug.windowstolinux.app.service.ai;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.*;
@@ -69,7 +73,42 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      */
     @Override
     public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
-        return call(request, task, false);
+        return call(request, task, false, Optional.empty());
+    }
+
+    /** Captures an opaque revision of all ordered purpose routes and their exact credentials and output limits. / 捕获全部有序用途路由及其精确凭据引用、输出上限的不透明修订。
+     * @param purpose requested available purpose / 所需可用用途
+     * @param task original task / 原任务
+     * @return frozen non-secret revision / 冻结的不含秘密修订
+     * @throws ApiException if authorization or configuration fails / 授权或配置失败时 */
+    @Override
+    public String configurationRevision(AiPurpose purpose, TaskContext task) throws ApiException {
+        Objects.requireNonNull(purpose);
+        try {
+            return scope.call(task, false, () -> {
+                var snapshot = routingSnapshot();
+                if (snapshot.routes().get(mapped(purpose)).isEmpty())
+                    throw error(ProblemCode.UNAVAILABLE, "AI_PURPOSE_UNAVAILABLE",
+                            "No enabled verified model is configured for this purpose");
+                return snapshot.revision();
+            });
+        } catch (SQLException failure) {
+            throw error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read");
+        }
+    }
+
+    /** Uses only a previously frozen whole-routing revision. / 仅使用此前冻结的完整路由修订。
+     * @param request bounded original request / 有界原请求
+     * @param expectedRevision frozen non-secret revision / 冻结不含秘密修订
+     * @param task original task / 原任务
+     * @return actual classified result / 实际分类结果
+     * @throws ApiException if the route changed or access fails / 路由改变或访问失败时 */
+    @Override
+    public OperationResult<AiResponse> call(AiRequest request, String expectedRevision, TaskContext task)
+            throws ApiException {
+        if (expectedRevision == null || !expectedRevision.matches("[0-9a-f]{64}"))
+            throw error(ProblemCode.INVALID_INPUT, "AI_REVISION", "A frozen AI configuration revision is required");
+        return call(request, task, false, Optional.of(expectedRevision));
     }
 
     /** Applies a host-owned output ceiling within each selected model's configured limit. / 在每个所选模型的配置上限内应用宿主输出预算。
@@ -78,17 +117,18 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return actual routed result / 实际路由结果
      * @throws ApiException if configuration, authority or cleanup is unavailable / 配置、授权或清理不可用时 */
     public OperationResult<AiResponse> callWithinModelLimit(AiRequest request, TaskContext task) throws ApiException {
-        return call(request, task, true);
+        return call(request, task, true, Optional.empty());
     }
 
     /** Routes one original request while keeping explicit author budgets strict. / 路由一次原请求，同时保持作者显式预算的严格校验。
      * @param request bounded original request / 有界原请求
      * @param task original task / 原任务
      * @param hostCeiling whether the host accepts the smaller configured output / 宿主是否接受较小配置输出
+     * @param expectedRevision optional frozen whole-route identity / 可选冻结整路由身份
      * @return actual routed result / 实际路由结果
      * @throws ApiException if configuration, authority or cleanup is unavailable / 配置、授权或清理不可用时 */
-    private OperationResult<AiResponse> call(AiRequest request, TaskContext task, boolean hostCeiling)
-            throws ApiException {
+    private OperationResult<AiResponse> call(AiRequest request, TaskContext task, boolean hostCeiling,
+            Optional<String> expectedRevision) throws ApiException {
         if (request == null)
             throw error(ProblemCode.INVALID_INPUT, "AI_REQUEST", "A model request is required");
         long timeout;
@@ -100,18 +140,16 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         long start = System.nanoTime();
         try {
             return scope.call(task, false, () -> {
-                AiPurposeType purpose = switch (request.purpose()) {
-                    case LANGUAGE -> AiPurposeType.DEPLOYMENT;
-                    case APPROVAL -> AiPurposeType.APPROVAL;
-                    case VISION -> AiPurposeType.VISION;
-                };
-                var candidates = profiles.configuredFor(purpose);
+                AiPurposeType purpose = mapped(request.purpose());
+                var candidates = expectedRevision.isPresent()
+                        ? routingSnapshotFor(expectedRevision.orElseThrow(), purpose)
+                        : profiles.configuredFor(purpose);
                 if (candidates.isEmpty())
                     throw error(ProblemCode.UNAVAILABLE, "AI_PURPOSE_UNAVAILABLE",
                             "No enabled verified model is configured for this purpose");
                 OperationResult<AiResponse> result = null;
                 for (var candidate : candidates) {
-                    try (var prepared = capture(candidate, purpose, task)) {
+                    try (var prepared = capture(candidate, purpose, task, expectedRevision)) {
                         var effective = hostCeiling
                                 ? new AiRequest(request.purpose(), request.messages(),
                                         Math.min(request.maxOutputTokens(), prepared.maxOutputTokens()),
@@ -210,25 +248,108 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
+    /** Maps the public purpose to the platform's persisted route. / 将公开用途映射到平台持久路由。
+     * @param purpose public purpose / 公开用途
+     * @return persisted purpose / 持久用途 */
+    private static AiPurposeType mapped(AiPurpose purpose) {
+        return switch (purpose) {
+            case LANGUAGE -> AiPurposeType.DEPLOYMENT;
+            case APPROVAL -> AiPurposeType.APPROVAL;
+            case VISION -> AiPurposeType.VISION;
+        };
+    }
+
+    /** One immutable selected route used for both revision comparison and actual candidate iteration. / 同时用于修订比较与实际候选迭代的一份不可变已选路由。
+     * @param revision opaque digest / 不透明摘要
+     * @param routes exact ordered candidates / 精确有序候选
+     * @param limits atomically captured model output limits / 原子捕获的模型输出限额 */
+    private record RoutingSnapshot(String revision, Map<AiPurposeType, List<StoredAiProviderConfiguration>> routes,
+            Map<String, Integer> limits) {
+    }
+
+    /** Requires the frozen revision and returns the same captured candidate list for sending. / 要求冻结修订并返回同份捕获的候选列表以供发送。
+     * @param expected frozen revision / 冻结修订
+     * @param purpose requested purpose / 请求用途
+     * @return original selected candidates / 原已选候选
+     * @throws SQLException if routing cannot be read / 路由无法读取时
+     * @throws ApiException if the revision changed / 修订改变时 */
+    private List<StoredAiProviderConfiguration> routingSnapshotFor(String expected, AiPurposeType purpose)
+            throws SQLException, ApiException {
+        var snapshot = routingSnapshot();
+        if (!expected.equals(snapshot.revision()))
+            throw error(ProblemCode.INVALID_INPUT, "AI_CONFIGURATION_CHANGED",
+                    "Frozen AI configuration changed before the model call");
+        return snapshot.routes().get(purpose);
+    }
+
+    /** Captures all configured purpose members, activation state, credentials and output limits atomically. / 原子捕获全部已配置用途成员、启用状态、凭据与输出限额。
+     * @return immutable route with opaque revision / 带不透明修订的不可变路由
+     * @throws SQLException if model metadata or output limits are unavailable / 模型元数据或输出限额不可用时 */
+    private RoutingSnapshot routingSnapshot() throws SQLException {
+        var state = profiles.routingState();
+        var routes = state.routes();
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            append(digest, "ai-routing-v2");
+            for (AiPurposeType purpose : AiPurposeType.values()) {
+                append(digest, purpose.name());
+                var members = state.members().get(purpose);
+                append(digest, Integer.toString(members.size()));
+                for (var member : members) {
+                    var candidate = member.configuration();
+                    var profile = candidate.profile();
+                    append(digest, Boolean.toString(member.enabled()));
+                    append(digest, profile.id());
+                    append(digest, profile.endpoint());
+                    append(digest, profile.model());
+                    append(digest, profile.credentialKey());
+                    append(digest, Long.toString(candidate.revision()));
+                    append(digest, Integer.toString(state.outputLimits().get(profile.id())));
+                }
+            }
+            return new RoutingSnapshot(HexFormat.of().formatHex(digest.digest()), routes, state.outputLimits());
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("JDK SHA-256 unavailable", impossible);
+        }
+    }
+
+    /** Hashes one length-delimited non-secret routing field. / 对一项带长度的不含秘密路由字段求摘要。
+     * @param digest current SHA-256 / 当前 SHA-256
+     * @param value exact metadata / 精确元数据 */
+    private static void append(MessageDigest digest, String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+        digest.update(bytes);
+    }
+
     /**
      * Locks the selected revision while reading its limit and exact credential in one transaction. / 在同一事务读取上限和精确凭据期间锁定所选修订。
      * @param expected frozen purpose member / 冻结用途成员
      * @param purpose requested model purpose / 请求的模型用途
      * @param task authentic original task / 真实原任务
+     * @param expectedRevision optional whole-route revision to recheck before each candidate / 每个候选调用前重核的可选整路由修订
      * @return copied credential and configured limit / 复制的凭据和已配置上限
      * @throws ApiException if configuration or credential authorization fails / 配置或凭据授权失败时
      */
-    private Prepared capture(StoredAiProviderConfiguration expected, AiPurposeType purpose, TaskContext task)
-            throws ApiException {
+    private Prepared capture(StoredAiProviderConfiguration expected, AiPurposeType purpose, TaskContext task,
+            Optional<String> expectedRevision) throws ApiException {
         char[][] key = new char[1][];
         int[] limit = new int[1];
+        boolean[] changed = new boolean[1];
         try {
             tasks.authorized(task, owner, version, () -> {
                 try (var store = security.openCredentials()) {
                     store.transaction(() -> {
+                        var snapshot = routingSnapshot();
+                        if (expectedRevision.isPresent()
+                                && !expectedRevision.orElseThrow().equals(snapshot.revision())) {
+                            changed[0] = true;
+                            throw new SQLException("Frozen AI configuration changed", "55000");
+                        }
+                        if (!snapshot.routes().get(purpose).contains(expected))
+                            throw new SQLException("Captured model is no longer in the purpose route", "55000");
                         profiles.requireInvocation(expected, purpose);
-                        limit[0] = profiles.outputLimit(expected.profile().id()).orElseThrow(
-                                () -> new SQLException("Model output limit has not been configured", "55000"));
+                        limit[0] = snapshotLimit(snapshot, expected.profile().id());
                         key[0] = store.read(expected.profile().credentialKey())
                                 .orElseThrow(() -> new SQLException("Model credential is unavailable", "02000"));
                     });
@@ -244,12 +365,27 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         } catch (ApiException failure) {
             throw failure;
         } catch (Exception failure) {
+            if (changed[0])
+                throw error(ProblemCode.INVALID_INPUT, "AI_CONFIGURATION_CHANGED",
+                        "Frozen AI configuration changed before the model call");
             throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_UNAVAILABLE",
                     "The selected model, output limit or protected credential is unavailable");
         } finally {
             if (key[0] != null)
                 Arrays.fill(key[0], '\0');
         }
+    }
+
+    /** Requires the limit copied into the same routing transaction. / 要求同一路由事务中复制的上限。
+     * @param snapshot consistent routing state / 一致路由状态
+     * @param id exact model id / 精确模型标识
+     * @return configured positive limit / 已配置的正上限
+     * @throws SQLException if no limit exists / 上限不存在时 */
+    private static int snapshotLimit(RoutingSnapshot snapshot, String id) throws SQLException {
+        int limit = snapshot.limits().getOrDefault(id, -1);
+        if (limit < 1)
+            throw new SQLException("Model output limit has not been configured", "55000");
+        return limit;
     }
 
     /**

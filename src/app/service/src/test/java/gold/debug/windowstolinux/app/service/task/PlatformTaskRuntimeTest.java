@@ -121,6 +121,45 @@ class PlatformTaskRuntimeTest {
     }
 
     @Test
+    void inspectAuthenticatesOriginalOwnerOnlyDuringItsCallback() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+                var security = security(db);
+                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var owner = runtime.bind("example.owner", "1.0.0", false);
+            var other = runtime.bind("example.other", "1.0.0", false);
+            var retained = new AtomicReference<TaskContext>();
+            var handle = owner.submit(request("A"), task -> {
+                retained.set(task);
+                var snapshot = owner.inspect(task);
+                assertEquals("example.owner", snapshot.ownerId());
+                assertEquals("1.0.0", snapshot.ownerVersion());
+                assertEquals(task.id(), snapshot.id());
+                assertThrows(ApiException.class, () -> other.inspect(task));
+                TaskContext forged = new TaskContext() {
+                    public UUID id() {
+                        return task.id();
+                    }
+
+                    public CancellationToken cancellation() {
+                        return task.cancellation();
+                    }
+
+                    public void progress(String text, Optional<Double> fraction) {
+                    }
+
+                    public ResourceLease retain(String kind, String id, String description) {
+                        return null;
+                    }
+                };
+                assertThrows(ApiException.class, () -> owner.inspect(forged));
+                return success(null);
+            });
+            assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+            assertThrows(ApiException.class, () -> owner.inspect(retained.get()));
+        }
+    }
+
+    @Test
     void queuedTaskHasAtomicServerAdmissionAndOtherServerWorkCanProceed() throws Exception {
         var unblock = new CountDownLatch(1);
         try (var db = PlatformDatabase.open(root, PROTECTION);

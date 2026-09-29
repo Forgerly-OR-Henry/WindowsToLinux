@@ -26,6 +26,12 @@ public interface TaskService {
      */
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
 
+    /** Reads the authenticated original task identity during its current callback or delegated service call. / 在原回调或被委托服务调用期间读取已认证原任务身份。
+     * @param task authentic original context, not a copied identifier / 真实原上下文，而非复制的标识
+     * @return the original root owner's task snapshot / 原根所有者任务快照
+     * @throws ApiException if the caller or current callback scope cannot be verified / 调用方或当前回调作用域无法核实时 */
+    TaskSnapshot inspect(TaskContext task) throws ApiException;
+
     /**
      * Observes whether every explicit resource of the original running or reconciling task was actually released.
      * / 观察原执行或核对任务的全部显式资源是否确已释放。

@@ -292,6 +292,15 @@ public final class PlatformModContext implements ContextLease {
             return delegate.list(cursor, limit);
         }
 
+        /** Delegates authentication of the current original callback. / 委托认证当前原回调。
+         * @param task original context / 原上下文
+         * @return authenticated original snapshot / 已认证原快照
+         * @throws ApiException if original access fails / 原访问失败时 */
+        @Override
+        public TaskSnapshot inspect(TaskContext task) throws ApiException {
+            return delegate.inspect(task);
+        }
+
         /** Delegates authoritative resource observation. / 委托权威资源观察。
          * @param task original context / 原上下文
          * @return actual explicit-resource release / 实际显式资源释放
@@ -339,6 +348,10 @@ public final class PlatformModContext implements ContextLease {
 
     /** Explicit unavailable database for an author that declares no schema. / 未声明数据结构的作者所用明确不可用数据库。 */
     private static final class StatelessDatabase implements ModDatabase {
+        /** Creates the explicit capability without a business Schema. / 创建明确不含业务结构的能力。 */
+        private StatelessDatabase() {
+        }
+
         /** Reports that this Mod intentionally has no business database. / 报告此 Mod 明确没有业务数据库。
          * @return never returns a fabricated identity / 不返回虚构身份
          * @throws ApiException always, because no schema was declared / 总是抛出，因为未声明数据结构 */

@@ -1020,6 +1020,7 @@ public interface TaskHandle<T> {
 public interface TaskService {
     <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException;
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
+    TaskSnapshot inspect(TaskContext task) throws ApiException;
     boolean resourcesReleased(TaskContext task) throws ApiException;
     TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException;
     Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
@@ -1082,7 +1083,7 @@ public interface ProcessService {
 
 `OperationResult` 成功时 `problem` 为空；失败、未知必须有 `problem`，取消可附收尾信息。`value` 只包含可信的已知结果或证据，存在值不代表成功。任务同服务器资源首次申请按 ID 排序、原子取得，冲突排队；跨 Mod 调用沿用原任务，不再新建争抢同服务器的任务。`retain` 只登记本 Mod 的自定义本地资源，不允许声明任意服务器锁；JDBC、进程与跨 Mod 服务由对应平台适配自动登记。`progress` 的比例若有则为 0～1。
 
-`TaskService.list` 仅返回当前 Mod 的活动任务内存快照；平台任务页使用内部聚合及历史查询接口。任务尚有资源或补偿时进入 `FINISHING`；结果未知保留 `UNKNOWN`，提供者核对后才提交终态，`completion` 只在资源收尾后完成。回调异常转为结构化失败，若副作用不能核实则为未知；不能只依据异常类型猜测远端结果。作者在 start 为有持久副作用的任务类型登记 TaskRecovery；用户从任务页选择“重新核对”后，平台在后台传入原任务身份及保留资源，不新建同服务器竞争任务。回调只核对并完成必要收尾，不重发未知业务；返回 UNKNOWN 则继续保留。核实为终态时原句柄若仍存在，以核实结果完成且 value 为空，业务对象按操作 ID 重新查询；重启后不恢复旧 Java Future。恢复实现不可用时保留状态和阻塞原因，不自动清除任务。
+`TaskService.inspect(originalTask)` 在当前原回调或被委托的同步跨 Mod 调用作用域内读取已认证原任务快照，返回真实根所有者、类型、版本及原任务身份；不接受复制 UUID 或脱离原作用域的 TaskContext，也不授予访问其他所有者检查点的能力。`TaskService.list` 仅返回当前 Mod 的活动任务内存快照；平台任务页使用内部聚合及历史查询接口。任务尚有资源或补偿时进入 `FINISHING`；结果未知保留 `UNKNOWN`，提供者核对后才提交终态，`completion` 只在资源收尾后完成。回调异常转为结构化失败，若副作用不能核实则为未知；不能只依据异常类型猜测远端结果。作者在 start 为有持久副作用的任务类型登记 TaskRecovery；用户从任务页选择“重新核对”后，平台在后台传入原任务身份及保留资源，不新建同服务器竞争任务。回调只核对并完成必要收尾，不重发未知业务；返回 UNKNOWN 则继续保留。核实为终态时原句柄若仍存在，以核实结果完成且 value 为空，业务对象按操作 ID 重新查询；重启后不恢复旧 Java Future。恢复实现不可用时保留状态和阻塞原因，不自动清除任务。
 
 `resourcesReleased(originalTask)` 只在原 Mod 仍启用、原对象身份匹配且处于原执行或显式恢复上下文时允许后台读取，不开启新的业务任务或安全解锁流程。它按平台任务账本扫描所有所有者与资源类别的未释放显式租约，仅精确 `TASK_END` 自动清理项可排除；NULL、未知恢复元数据和不存在的原任务都不能报告已释放。该观察不主动清理资源，也不能单独证明远端副作用结果；最终任务终态仍由平台任务运行时判定。
 
@@ -1417,13 +1418,16 @@ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, int maxOutp
 public record AiUsage(Optional<Long> inputTokens, Optional<Long> outputTokens) {}
 public record AiResponse(String text, String modelId, String finishReason, AiUsage usage) {}
 public interface AiService {
+    String configurationRevision(AiPurpose purpose, TaskContext task) throws ApiException;
     OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException;
+    OperationResult<AiResponse> call(AiRequest request, String expectedRevision, TaskContext task)
+        throws ApiException;
 }
 ```
 
 模型选择、验证和用途分组沿用平台配置；输入图片仅限 VISION，支持 PNG/JPEG，单张最多 10 MiB、单次最多 4 张；文本 UTF-8 合计最多 1 MiB，最大输出 token 不超过所选模型已配置上限。预算或能力不满足在发送前拒绝，不自行放宽限制。`jsonObjectResponse` 是输出格式请求，业务字段和语义仍由作者校验。用量缺失为 Optional.empty，不伪造为零。首版公开接口一次返回完整结果；Provider 内部流式接收不作为业务自动执行指令。调用取消及超时不证明服务商没有处理请求，不自动重发来掩盖未知结果。
 
-当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。所有候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
+可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主在同一平台事务捕获所有用途的全部已配置成员、顺序、启用/禁用状态、模型修订、精确凭据引用和输出上限；原捕获的路由与限额用于实际候选发送。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。所有候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
 
 单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。模型输出上限必须明确配置，缺失时拒绝调用，不推测提供者能力。公开用量来自响应中的 prompt_tokens/completion_tokens，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
 
@@ -1593,7 +1597,7 @@ public interface ModContext {
 
 当前 `PlatformModServices` 已提供真实注册、启动后发布、依赖发现和同步调用，接入默认 Runtime 工厂；完整 ModContext 及 CLASS 自动启停已装配。注册实现须属于提供方实际加载器，回调得到的代理只在原线程、原调用内有效。提供方可在该作用域使用自己的 JDBC、服务器等能力，但服务器集合、凭据和当前流程授权仍来自原任务；不得借调用提交新的竞争任务。平台内部 SSH 信任、SFTP 冲突/进度/检查点回调显式传递原作用域，作者自建线程不继承它，调用结束后宿主回调也失效。
 
-跨边界值复制支持明确的不可变 JDK 标量、默认文件系统 Path、公开导出或 appapi 的枚举/record，以及递归复制后的 List/Set/Map/Optional；集合不接受 null 元素，不支持数组、JDBC、流、闭包、Future 或任意实例。每次复制最多 4096 个节点、64 层和 1 MiB 标量 UTF-8 文本，调用嵌套最多 64 层且拒绝提供方循环。这是可信本地 Mod 的协作契约与容量限制，不是恶意作者代码沙箱；自定义 record 构造器和访问器也须保持值语义。
+跨边界值复制支持明确的不可变 JDK 标量、默认文件系统 Path、公开导出或 appapi 的枚举/record，以及递归复制后的 List/Set/Map/Optional 与防御复制的 `byte[]`；集合不接受 null 元素，不支持其他数组、JDBC、流、闭包、Future 或任意实例。每次复制最多 4096 个节点、64 层和 1 MiB 标量 UTF-8 文本，另有独立合计 16 MiB 二进制预算；每次出现的字节数组分别计入预算并复制，调用嵌套最多 64 层且拒绝提供方循环。这是可信本地 Mod 的协作契约与容量限制，不是恶意作者代码沙箱；自定义 record 构造器和访问器也须保持值语义。
 
 每次调用使用独立 `service.v1` 记录，在同一事务保留提供方 Mod 和可选 Schema；只记录启动/调用 UUID、原版本及代次，不保存参数、返回值或具体授权。已知未准入和独占冲突直接拒绝；作者异常、值契约失败、未关闭物理资源或释放提交不明时保留 UNKNOWN 和原提供方记录。JDBC 仍须在其原线程关闭；不能用另一个恢复线程绕过连接的线程约束。显式恢复先核对实际资源，再释放原调用组，业务结果由原 TaskRecovery 决定，不重放调用。RECOVERY 图仅接受原任务中保留的已安装版本和 Schema 代次，不改用户选择，也不对 NORMAL 图发布。
 

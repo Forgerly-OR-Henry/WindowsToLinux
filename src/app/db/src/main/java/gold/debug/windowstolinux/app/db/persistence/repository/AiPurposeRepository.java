@@ -69,6 +69,7 @@ public final class AiPurposeRepository {
             throw new IllegalArgumentException("duplicate model purpose membership");
         connections.transaction(() -> {
             try (var c = connections.open()) {
+                RepositoryConnections.lockPlatformState(c);
                 String capability = purpose == AiPurposeType.VISION ? "vision" : "text";
                 try (var check = c.prepareStatement("SELECT configuration_revision," + capability
                         + "_verified_revision FROM ai_model WHERE model_id=?")) {
