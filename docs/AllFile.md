@@ -1633,7 +1633,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/db/schema/SchemaValidation.java`：以只读身份复核实际表和 Domain 约束，生成结构验证凭据。
 - `app/db/schema/SchemaSnapshot.java`：按固定 H2 引擎对来源实际结构及数据求摘要，核对迁移前后保全。
 - `app/db/task/BrowserRecoveryArchival.java`：核对原宿主任务/服务器，保存固定救援摘要，并在中央任务事务内清理所属救援事件与状态；拒绝迟到写入。
-- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；预选物理资源身份拒绝同任务历史复用，固定任务摘要与执行清理同事务。
+- `app/db/task/TaskLedger.java`：独立于业务 SQL 持久化原子准入及实际资源释放；预选物理资源身份拒绝同任务历史复用，固定任务摘要与执行清理同事务；`queries()` 内部只读查询对象与归档对象沿用原连接及锁。
 - `app/db/task/TaskAuthorCheckpoint.java`：在既有 CUSTOM 资源恢复字段以宿主固定封套保存原作者事实，核对根任务身份并以修订和完整旧值 CAS 推进；已释放行在任务归档前仍可读。
 - `app/db/task/TaskResourceObservation.java`：按原任务及精确自动释放标记只读观测所有者和类别无关的显式资源占用。
 - `app/db/task/TaskRecoveryGraph.java`：保留任务准入时原所有者及全部传递提供方的版本、完整代码摘要与可选 Schema 代次；严格校验持久字段，不从当前单选补造原图。
@@ -1644,7 +1644,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/linux/ssh/SshCommandExecution.java`：一次 SSH 命令发送、有界等待、退出证据及未知结果处理，保留尚未释放的通道和发送线程。
 - `app/linux/ssh/SshCommandFrame.java`：固定 Bash 引导与长度帧，在标准输入上传送脚本及原始二进制输入。
 - `app/linux/ssh/SshOutputCapture.java`：合并限制标准输出和错误输出的保留容量，超限后继续排空。
-- `app/linux/ssh/SftpTransfer.java`：普通文件的临时传输、摘要与容量核对、校验后发布及回读，保留不确定结果及未释放资源。
+- `app/linux/ssh/SftpTransfer.java`：普通文件的临时传输、摘要与容量核对、校验后发布及回读，保留不确定结果及未释放资源；内部完成职责复用原发布核验及恢复收尾。
 - `app/linux/ssh/SshEndpoint.java`：平台保存的服务器标识及精确连接端点。
 - `app/main/startup/PlatformRuntime.java`：为一次桌面启动持有平台存储、中央任务执行器及安全会话，并核对实际关闭。
 - `app/main/mod/ModSchemaInspection.java`：持有原版本只读验证器、来源核验和资源收尾，核对不重放迁移或启动业务。
@@ -1680,7 +1680,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `app/mod/version/VersionRange.java`：判断精确版本或单一区间，并显式限制预发布准入。
 - `app/service/database/TaskModDatabase.java`：将所属业务 JDBC 直接连接到原始任务的资源账本。
 - `app/service/mod/ModHostLease.java`：将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用。
-- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后运行绑定作者工作；原执行或恢复上下文可核对资源及作者检查点，未确认写入保留 UNKNOWN；已知归档失败仅补元数据。
+- `app/service/task/PlatformTaskRuntime.java`：在持久化准入后运行绑定作者工作；原执行或恢复上下文可核对资源及作者检查点，未确认写入保留 UNKNOWN；已知归档失败仅补元数据；结论、授权及依赖内部职责沿用原宿主同步监视器。
 - `app/service/task/PlatformTaskAdmission.java`：在锁定的平台事务内核验本次启动的 Mod 版本、完整传递依赖、代码摘要、就绪 Schema 代次及完整服务器集合，并捕获原恢复图。
 - `app/service/contract/spi/TaskManagement.java`：平台内部的保留任务清单及原任务操作契约，区分不可核对、缺原恢复、原恢复、元数据归档及救援确认。
 - `app/service/task/PlatformTaskManagement.java`：后台读取真实控制可用性、请求原句柄协作取消，精确宿主救援经原救援服务确认；仅待归档不调用业务恢复。

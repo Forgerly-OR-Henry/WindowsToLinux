@@ -142,7 +142,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var unfinished = new TaskLedger(runtime.persistence().database()).unfinished();
+                var unfinished = new TaskLedger(runtime.persistence().database()).queries().unfinished();
                 assertEquals(1, unfinished.size());
                 var original = unfinished.getFirst();
                 assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
@@ -231,7 +231,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                 var report = runtime.startDevelopmentMods(probe.workspace(), pages());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var original = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                var original = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 for (int attempt = 0; attempt < 2; attempt++) {
                     var result = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
                     assertEquals(TaskState.UNKNOWN, result.state());

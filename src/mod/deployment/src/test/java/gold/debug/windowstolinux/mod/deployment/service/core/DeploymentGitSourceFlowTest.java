@@ -317,7 +317,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             var probe = context.tasks().submit(
                     new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Capture original graph", List.of(), true),
                     task -> {
-                        graph.set(new TaskLedger(runtime.persistence().database()).recoveryGraph(task.id())
+                        graph.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
                                 .orElseThrow());
                         var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
                                 "Prepared Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),

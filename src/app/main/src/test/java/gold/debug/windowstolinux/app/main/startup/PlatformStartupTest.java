@@ -92,14 +92,14 @@ class PlatformStartupTest {
             assertTrue(ledger.tryStart(id));
             assertFalse(ledger.complete(id, Outcome.UNKNOWN, "{}", false));
             assertThrows(SQLException.class, runtime::close);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(id).state());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(id).state());
             assertTrue(ledger.complete(id, Outcome.SUCCEEDED, "{}", true));
         } finally {
             runtime.close();
         }
         runtime.close();
         try (var reopened = PlatformRuntime.open(root, PROTECTION)) {
-            assertTrue(new TaskLedger(reopened.persistence().database()).unfinished().isEmpty());
+            assertTrue(new TaskLedger(reopened.persistence().database()).queries().unfinished().isEmpty());
         }
     }
 

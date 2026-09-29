@@ -114,7 +114,7 @@ public final class ServerProfileRepository {
                         && (!prior.get().host().equals(profile.host()) || prior.get().sshPort() != profile.sshPort());
                 if (platform && prior.isPresent() && (changed || !prior.get().username().equals(profile.username())
                         || !prior.get().credentialKey().equals(profile.credentialKey())))
-                    gold.debug.windowstolinux.app.db.task.TaskLedger.requireServerIdle(c, profile.id());
+                    gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(c, profile.id());
                 if (changed) {
                     try (var s = c.prepareStatement(referenceQuery)) {
                         s.setString(1, profile.id());
@@ -181,7 +181,7 @@ public final class ServerProfileRepository {
             try (var connection = connections.open()) {
                 if (platform) {
                     RepositoryConnections.lockPlatformState(connection);
-                    gold.debug.windowstolinux.app.db.task.TaskLedger.requireServerIdle(connection, serverId);
+                    gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(connection, serverId);
                 }
                 var profile = findServerProfile(serverId);
                 if (profile.isEmpty())

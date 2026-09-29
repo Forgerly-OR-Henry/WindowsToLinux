@@ -812,7 +812,7 @@ public final class PlatformRuntime implements AutoCloseable, gold.debug.windowst
                 if (!modContexts.isEmpty() || !modSessions.isEmpty())
                     throw new SQLException(
                             "Mod sessions and their original contexts must close before platform shutdown");
-                if (!new TaskLedger(persistence.database()).unfinished().isEmpty())
+                if (!new TaskLedger(persistence.database()).queries().unfinished().isEmpty())
                     throw new SQLException("Unfinished platform tasks require reconciliation before shutdown");
                 if (persistence.database().openConnections() != 0)
                     throw new SQLException("Platform connections must close before shutdown");

@@ -397,7 +397,7 @@ public final class PlatformModServices implements AutoCloseable {
         if (!tasks.reconciling(task))
             throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
                     "Recovery graph requires explicit reconciliation");
-        boolean original = TaskLedger.readDependencies(connection, task.id()).keySet().stream()
+        boolean original = TaskLedger.TaskLedgerQueries.readDependencies(connection, task.id()).keySet().stream()
                 .anyMatch(call -> call.provider().equals(provider.owner()) && call.version().equals(provider.version())
                         && call.schema().equals(provider.schema));
         if (!original)

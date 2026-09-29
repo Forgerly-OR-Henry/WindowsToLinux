@@ -36,7 +36,7 @@ class ProcessRecoveryLedgerTest {
                         "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_checkpoint CHECK(resource_kind<>'PROCESS' OR recovery_json NOT LIKE '%STARTED%')");
             }
             assertThrows(SQLException.class, () -> ledger.checkpointProcess(task, resource, original, observed));
-            assertEquals(original.encode(), ledger.recoveries(task, "PROCESS", "process-v1:").get(resource));
+            assertEquals(original.encode(), ledger.queries().recoveries(task, "PROCESS", "process-v1:").get(resource));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_checkpoint");
             }
@@ -53,9 +53,9 @@ class ProcessRecoveryLedgerTest {
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(task).state());
             assertEquals(observed,
-                    ProcessRecovery.decode(ledger.recoveries(task, "PROCESS", "process-v1:").get(resource)));
+                    ProcessRecovery.decode(ledger.queries().recoveries(task, "PROCESS", "process-v1:").get(resource)));
         }
     }
 
@@ -85,8 +85,8 @@ class ProcessRecoveryLedgerTest {
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
-            assertEquals(started, ProcessRecovery.decode(ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser),
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(task).state());
+            assertEquals(started, ProcessRecovery.decode(ledger.queries().recoveries(task, "PROCESS", "browser-v1:").get(browser),
                     "browser.v1"));
         }
     }
@@ -111,7 +111,7 @@ class ProcessRecoveryLedgerTest {
                         "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_closed CHECK(recovery_json NOT LIKE '%browser.closed.v1%')");
             }
             assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(task, browser, before));
-            assertEquals(started.encode("browser.v1"), ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser));
+            assertEquals(started.encode("browser.v1"), ledger.queries().recoveries(task, "PROCESS", "browser-v1:").get(browser));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_closed");
             }
@@ -120,7 +120,7 @@ class ProcessRecoveryLedgerTest {
                     new TaskResource("PROCESS", browser.id(), "other", false), before));
             ledger.confirmBrowserClosed(task, browser, before);
             ledger.confirmBrowserClosed(task, browser, before);
-            assertEquals(started.encodeBrowserClosed(), ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser));
+            assertEquals(started.encodeBrowserClosed(), ledger.queries().recoveries(task, "PROCESS", "browser-v1:").get(browser));
             assertThrows(SQLException.class, () -> ledger.checkpointBrowser(task, browser, before, started));
             assertThrows(IllegalArgumentException.class,
                     () -> ProcessRecovery.decodeBrowserClosed(started.encode("browser.v1")));
@@ -137,9 +137,9 @@ class ProcessRecoveryLedgerTest {
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(task).state());
             assertEquals(started, ProcessRecovery
-                    .decodeBrowserClosed(ledger.recoveries(task, "PROCESS", "browser-v1:").get(browser)));
+                    .decodeBrowserClosed(ledger.queries().recoveries(task, "PROCESS", "browser-v1:").get(browser)));
             assertThrows(SQLException.class, () -> ledger.confirmBrowserClosed(task, browser, before));
         }
     }

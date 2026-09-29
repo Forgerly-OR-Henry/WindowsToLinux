@@ -276,7 +276,7 @@ class PlatformModServicesTest {
                     assertThrows(ApiException.class, () -> f.business.openConnection(context));
                     f.hook.set(() -> {
                         try {
-                            assertEquals(1, new TaskLedger(f.db).dependencies(context.id()).size());
+                            assertEquals(1, new TaskLedger(f.db).queries().dependencies(context.id()).size());
                             assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                         } catch (Exception e) {
                             throw new AssertionError(e);
@@ -306,7 +306,7 @@ class PlatformModServicesTest {
                     assertThrows(UnsupportedOperationException.class, () -> values.add("changed"));
                     assertThrows(ApiException.class, () -> f.invoke(escaped.get(), "write", context));
                     assertThrows(ApiException.class, () -> f.business.openConnection(context));
-                    assertTrue(new TaskLedger(f.db).dependencies(context.id()).isEmpty());
+                    assertTrue(new TaskLedger(f.db).queries().dependencies(context.id()).isEmpty());
                     assertTrue(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                     return success(null);
                 });
@@ -323,7 +323,7 @@ class PlatformModServicesTest {
         try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null)) {
             f.publish();
             try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
-                assertEquals(1, new TaskLedger(f.db).dependencies(context.id()).size());
+                assertEquals(1, new TaskLedger(f.db).queries().dependencies(context.id()).size());
                 f.runtime.tasks().closeDependencyResources(context, OWNER, VERSION);
                 return success(null);
             })) {
@@ -363,8 +363,8 @@ class PlatformModServicesTest {
                 try {
                     assertTrue(leaked.await(8, TimeUnit.SECONDS));
                     state(task, TaskState.UNKNOWN);
-                    assertEquals(1, new TaskLedger(f.db).dependencies(task.id()).size());
-                    assertTrue(new TaskLedger(f.db).hasDependencyResources(task.id(), Set.of(PROVIDER)));
+                    assertEquals(1, new TaskLedger(f.db).queries().dependencies(task.id()).size());
+                    assertTrue(new TaskLedger(f.db).queries().hasDependencyResources(task.id(), Set.of(PROVIDER)));
                     assertEquals("TASK_RECOVERY_BUSY",
                             assertThrows(ApiException.class, () -> f.runtime.tasks().reconcile(task.id())).problem()
                                     .eventCode());
@@ -412,7 +412,7 @@ class PlatformModServicesTest {
                 }
                 assertEquals(Outcome.SUCCEEDED,
                         task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
-                assertTrue(new TaskLedger(f.db).dependencies(task.id()).isEmpty());
+                assertTrue(new TaskLedger(f.db).queries().dependencies(task.id()).isEmpty());
                 sql(f.db, "UPDATE mod_registry SET enabled=TRUE WHERE mod_id=?", PROVIDER);
                 var ledger = new TaskLedger(f.db);
                 var maintenance = ledger.enqueue(UUID.randomUUID(), PROVIDER, VERSION, request(),
@@ -423,7 +423,7 @@ class PlatformModServicesTest {
                         assertEquals(ProblemCode.BUSY,
                                 assertThrows(ApiException.class, () -> f.call(handle, "write", context)).problem()
                                         .code());
-                        assertTrue(ledger.dependencies(context.id()).isEmpty());
+                        assertTrue(ledger.queries().dependencies(context.id()).isEmpty());
                         return success(null);
                     });
                     assertEquals(Outcome.SUCCEEDED,
@@ -599,7 +599,7 @@ class PlatformModServicesTest {
                     return success(null);
                 });
                 state(task, TaskState.UNKNOWN);
-                assertEquals(1, new TaskLedger(f.db).dependencies(task.id()).size());
+                assertEquals(1, new TaskLedger(f.db).queries().dependencies(task.id()).size());
                 sql(f.db, "ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_service_release");
                 assertEquals(TaskState.ENDED, f.reconcile(task.id()).state());
             }

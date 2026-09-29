@@ -124,7 +124,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
             if (active != null && active.selected.id().equals(profile.id()))
                 return active;
             try {
-                if (new gold.debug.windowstolinux.app.db.task.TaskLedger(persistence.database()).holds(original.id(),
+                if (new gold.debug.windowstolinux.app.db.task.TaskLedger(persistence.database()).queries().holds(original.id(),
                         new gold.debug.windowstolinux.app.db.task.TaskResource("SERVER", profile.id(),
                                 PlatformTaskAdmission.PLATFORM_OWNER, true)))
                     throw new ApiException(problem(ProblemCode.BUSY, "RESCUE_ORIGINAL_RETAINED",

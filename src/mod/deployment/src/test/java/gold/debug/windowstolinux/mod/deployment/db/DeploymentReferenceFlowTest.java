@@ -379,7 +379,7 @@ class DeploymentReferenceFlowTest extends DeploymentExecutionFixture {
             var probe = runtime.modContexts().get(OWNER).context().tasks().submit(
                     new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Graph capture", List.of("server"), true),
                     task -> {
-                        captured.set(new TaskLedger(runtime.persistence().database()).recoveryGraph(task.id())
+                        captured.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
                                 .orElseThrow());
                         return success();
                     });

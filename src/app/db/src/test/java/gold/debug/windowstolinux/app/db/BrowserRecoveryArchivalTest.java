@@ -101,7 +101,7 @@ class BrowserRecoveryArchivalTest {
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            var restored = ledger.pendingFinalization(id).orElseThrow();
+            var restored = ledger.queries().pendingFinalization(id).orElseThrow();
             sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT rescue_archive_fixture");
             assertEquals(original.snapshot(), ledger.retryFinalization(restored, () -> {
             }));
@@ -131,7 +131,7 @@ class BrowserRecoveryArchivalTest {
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_task"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
-            assertEquals(TaskState.RUNNING, ledger.snapshot(id).state());
+            assertEquals(TaskState.RUNNING, ledger.queries().snapshot(id).state());
             sql(db, "DELETE FROM rescue_reference_fixture");
             ledger.retryFinalization(original, () -> {
             });

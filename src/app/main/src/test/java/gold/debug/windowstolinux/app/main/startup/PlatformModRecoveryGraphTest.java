@@ -109,7 +109,7 @@ class PlatformModRecoveryGraphTest {
                         new TaskRequest("fixture", "Original task", List.of(), false),
                         t -> PlatformTaskManagementWindowTest.unknown());
                 state(task, TaskState.UNKNOWN);
-                originals.put(task.id(), ledger.recoveryGraph(task.id()).orElseThrow());
+                originals.put(task.id(), ledger.queries().recoveryGraph(task.id()).orElseThrow());
                 if (disableAfterCapture && owner.equals(C)) {
                     var intents = runtime.modIntents();
                     intents.apply(intents.review(C, PlatformModIntentsTest.choice(false, VERSION), Optional.empty()),
@@ -162,8 +162,8 @@ class PlatformModRecoveryGraphTest {
             Files.deleteIfExists(fixture.workspace.resolve(owner + ".recover.unknown"));
         }
         var ledger = new TaskLedger(runtime.persistence().database());
-        for (var id : ledger.unfinished()) {
-            var snapshot = ledger.snapshot(id);
+        for (var id : ledger.queries().unfinished()) {
+            var snapshot = ledger.queries().snapshot(id);
             try {
                 runtime.tasks().reconcile(id).toCompletableFuture().get(8, TimeUnit.SECONDS);
             } catch (ApiException absent) {

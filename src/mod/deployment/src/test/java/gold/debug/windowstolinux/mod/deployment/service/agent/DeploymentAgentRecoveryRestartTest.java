@@ -98,7 +98,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                UUID id = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                UUID id = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 assertEquals(TaskState.UNKNOWN,
                         runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(0, cleanup.get());

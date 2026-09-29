@@ -392,6 +392,8 @@ Web JSON 编解码由 `persistence/serialization/WebJsonCodec` 承担；`contrac
 
 偏好键为 `ui_locale`、`ui_theme`、`ui_navigation_collapsed`、`deploy_mode`、`deploy_approval`。缺失部署偏好首次写入 ASSISTED + AUTOMATIC；非法值报错而不覆盖。用户调整立即保存两项，失败回滚界面。缺少模型提示配置，保留模式选择；高风险人工确认规则继续生效。
 
+任务宿主把原任务结论、授权和依赖账本分别组织在内部职责对象中，仍使用原 `PlatformTaskRuntime` 同步监视器，不改变公开任务契约或任务身份。`TaskLedger.queries()` 提供原只读查询，写入与归档仍由原账本提交；嵌套查询和归档对象沿用原连接及锁。SFTP 的发布核验与恢复收尾复用内部完成职责，不改变发送顺序或 UNKNOWN 资源保留规则。此职责拆分不表示跨 Mod 的原提供方传输恢复已经闭合；该恢复接线仍需独立验收。
+
 ### 验证边界
 
 仓库测试使用隔离临时数据库，覆盖结构、事务、密码/密文失败、锁定任务生命周期、配置修订、业务调用和可见 Swing 窗口。验证执行方法见 [1.1 开发文档](development/PHASE-1.1.md#engineering-workflow)。真实 Linux 和真实模型服务需要独立运行有条件的验收，不能由本地模拟或界面测试替代。

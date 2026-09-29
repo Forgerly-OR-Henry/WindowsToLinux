@@ -99,7 +99,7 @@ class TaskBrowserSessionTest {
                 browser.open();
                 browser.open();
                 assertTrue(browser.available());
-                var facts = new TaskLedger(runtime.persistence().database()).recoveries(task.id(), "PROCESS",
+                var facts = new TaskLedger(runtime.persistence().database()).queries().recoveries(task.id(), "PROCESS",
                         "browser-v1:");
                 assertEquals(1, facts.size());
                 var checkpoint = ProcessRecovery.decode(facts.values().iterator().next(), "browser.v1");
@@ -228,7 +228,7 @@ class TaskBrowserSessionTest {
                     assertTrue(actual(browser).resourcesClosed());
                     assertTrue(actual(browser).processes().stream().noneMatch(BrowserProcess::alive));
                     assertEquals(1, claims(runtime));
-                    var facts = new TaskLedger(db).recoveries(task.id(), "PROCESS", "browser-v1:").values().iterator()
+                    var facts = new TaskLedger(db).queries().recoveries(task.id(), "PROCESS", "browser-v1:").values().iterator()
                             .next();
                     assertEquals(checkpointFailure ? "browser.v1" : "browser.closed.v1", facts.protocol());
                     return success(null);
