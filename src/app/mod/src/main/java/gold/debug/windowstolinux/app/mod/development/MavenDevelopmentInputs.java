@@ -13,6 +13,9 @@ import org.apache.maven.project.MavenProject;
 
 /** Captures Maven's resolved model before compilation; never reparses dependency declarations. / 编译前捕获 Maven 已解析模型，不重新解析依赖声明。 */
 public final class MavenDevelopmentInputs extends AbstractMojo {
+    /** Creates the Maven goal before its actual session is injected. / 在实际会话注入前创建Maven构建目标。 */
+    public MavenDevelopmentInputs() { }
+
     /** Actual Maven build session, injected by the build goal descriptor. / 构建目标描述注入的实际 Maven 构建会话。 */
     private MavenSession session;
 
@@ -64,57 +67,8 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
             inputs.add(module.resolve(config).normalize().toRealPath());
         for (String filter : project.getBuild().getFilters())
             inputs.add(module.resolve(filter).normalize().toRealPath());
-        var companions = new LinkedHashSet<>(tokens(property(project, "wtl.authorArtifacts", "")));
-        var remaining = new LinkedHashSet<>(companions);
-        var authorOutputs = new ArrayList<Path>();
-        var authorJars = new ArrayList<Path>();
-        var libraries = new ArrayList<Path>();
-        boolean api = false;
-        for (var dependency : project.getArtifacts()) {
-            boolean platform = dependency.getGroupId().equals("gold.debug.windowstolinux")
-                    && dependency.getArtifactId().equals("windowstolinux-appapi");
-            if (platform) {
-                if (!Artifact.SCOPE_PROVIDED.equals(dependency.getScope()))
-                    throw new IOException("Platform API must have provided scope");
-                api = true;
-            }
-            if (!Set.of(Artifact.SCOPE_COMPILE, Artifact.SCOPE_RUNTIME).contains(dependency.getScope()))
-                continue;
-            if (dependency.getGroupId().equals("com.h2database")
-                    || dependency.getGroupId().equals("gold.debug.windowstolinux")
-                            && !dependency.getArtifactId().startsWith("windowstolinux-mod-"))
-                throw new IOException("Host dependencies cannot become private Mod runtime artifacts");
-            if (!"jar".equals(dependency.getType()))
-                throw new IOException("CLASS runtime artifacts must be ordinary JAR dependencies");
-            for (var provider : session.getAllProjects())
-                if (provider.getGroupId().equals(dependency.getGroupId())
-                        && provider.getArtifactId().equals(dependency.getArtifactId())
-                        && provider.getVersion().equals(dependency.getVersion())) {
-                    if (Files.exists(provider.getBasedir().toPath().resolve("mod.json")))
-                        throw new IOException("Other reactor Mods must have provided scope");
-                    if (!companions.contains(dependency.getId()))
-                        throw new IOException("Reactor runtime modules must be declared as CLASS companions");
-                }
-            if (companions.contains(dependency.getId())) {
-                var author = companion(dependency);
-                if (!author.getGroupId().equals(project.getGroupId())
-                        || Files.exists(author.getBasedir().toPath().resolve("mod.json")))
-                    throw new IOException("A companion must be a same-author module, not another Mod");
-                parents(author, workspace, inputs);
-                authorOutputs.add(Path.of(author.getBuild().getOutputDirectory()).toAbsolutePath().normalize());
-                authorJars.add(Path.of(author.getBuild().getDirectory())
-                        .resolve(author.getBuild().getFinalName() + ".jar").toAbsolutePath().normalize());
-                remaining.remove(dependency.getId());
-            } else {
-                File resolved = dependency.getFile();
-                if (resolved == null || !resolved.isFile())
-                    throw new IOException("Undeclared companion or missing resolved private JAR");
-                libraries.add(resolved.toPath().toRealPath());
-            }
-        }
-        if (!api || !remaining.isEmpty())
-            throw new IOException(
-                    "Platform API or declared companion artifacts were not resolved with the required scope");
+        var artifacts = new ResolvedArtifacts(new LinkedHashSet<>(tokens(property(project, "wtl.authorArtifacts", ""))));
+        artifacts.collect(project, workspace, inputs);
         for (Path input : inputs)
             if (!input.startsWith(workspace) || !Files.isRegularFile(input) || !input.equals(input.toRealPath()))
                 throw new IOException("Build input must be an existing unredirected workspace file");
@@ -124,7 +78,7 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
                 .put("mainJar", key(target.resolve(project.getBuild().getFinalName() + ".jar")))
                 .put("readme", key(module.resolve("README.md"))).put("license", key(module.resolve("LICENSE")))
                 .put("mainOutput", key(output));
-        for (var group : Map.of("authorJars", authorJars, "authorOutputs", authorOutputs, "libraries", libraries,
+        for (var group : Map.of("authorJars", artifacts.authorJars, "authorOutputs", artifacts.authorOutputs, "libraries", artifacts.libraries,
                 "buildInputs", inputs).entrySet()) {
             var array = node.putArray(group.getKey());
             group.getValue().forEach(path -> array.add(key(path)));
@@ -196,5 +150,81 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
      * @return forward-slash path / 正斜线路径 */
     private static String key(Path path) {
         return path.toString().replace('\\', '/');
+    }
+
+    /** Actual Maven-resolved runtime artifact inventory for this one preparation. / 此次准备的实际Maven已解析运行制品清单。 */
+    private final class ResolvedArtifacts {
+        /** Explicit same-author artifact coordinates. / 明示同作者制品坐标。 */
+        private final Set<String> companions;
+        /** Explicit coordinates not yet matched by a resolved artifact. / 尚未匹配已解析制品的明示坐标。 */
+        private final Set<String> remaining;
+        /** Exact reactor compiled directories. / 精确reactor编译目录。 */
+        private final List<Path> authorOutputs = new ArrayList<>();
+        /** Exact reactor packaged originals. / 精确reactor打包原件。 */
+        private final List<Path> authorJars = new ArrayList<>();
+        /** Actual ordinary private runtime JARs. / 实际普通私有运行JAR。 */
+        private final List<Path> libraries = new ArrayList<>();
+        /** Whether the actual platform API has its required provided scope. / 实际平台API是否具有要求的provided作用域。 */
+        private boolean api;
+
+        /** Captures the original explicit artifact list. / 捕获原明示制品列表。
+         * @param companions original ordered coordinates / 原有序坐标 */
+        private ResolvedArtifacts(Set<String> companions) {
+            this.companions = companions;
+            remaining = new LinkedHashSet<>(companions);
+        }
+
+        /** Collects only the current Maven model's actual resolved artifacts. / 仅收集当前Maven模型实际已解析制品。
+         * @param project original current project / 原当前项目
+         * @param workspace validated workspace / 已校验工作区
+         * @param inputs same original build input inventory / 同一原构建输入清单
+         * @throws IOException if resolution, scope or identity differs / 解析、作用域或身份不符时 */
+        private void collect(MavenProject project, Path workspace, Set<Path> inputs) throws IOException {
+            for (var dependency : project.getArtifacts()) {
+                boolean platform = dependency.getGroupId().equals("gold.debug.windowstolinux")
+                        && dependency.getArtifactId().equals("windowstolinux-appapi");
+                if (platform) {
+                    if (!Artifact.SCOPE_PROVIDED.equals(dependency.getScope()))
+                        throw new IOException("Platform API must have provided scope");
+                    api = true;
+                }
+                if (!Set.of(Artifact.SCOPE_COMPILE, Artifact.SCOPE_RUNTIME).contains(dependency.getScope()))
+                    continue;
+                if (dependency.getGroupId().equals("com.h2database")
+                        || dependency.getGroupId().equals("gold.debug.windowstolinux")
+                                && !dependency.getArtifactId().startsWith("windowstolinux-mod-"))
+                    throw new IOException("Host dependencies cannot become private Mod runtime artifacts");
+                if (!"jar".equals(dependency.getType()))
+                    throw new IOException("CLASS runtime artifacts must be ordinary JAR dependencies");
+                for (var provider : session.getAllProjects())
+                    if (provider.getGroupId().equals(dependency.getGroupId())
+                            && provider.getArtifactId().equals(dependency.getArtifactId())
+                            && provider.getVersion().equals(dependency.getVersion())) {
+                        if (Files.exists(provider.getBasedir().toPath().resolve("mod.json")))
+                            throw new IOException("Other reactor Mods must have provided scope");
+                        if (!companions.contains(dependency.getId()))
+                            throw new IOException("Reactor runtime modules must be declared as CLASS companions");
+                    }
+                if (companions.contains(dependency.getId())) {
+                    var author = companion(dependency);
+                    if (!author.getGroupId().equals(project.getGroupId())
+                            || Files.exists(author.getBasedir().toPath().resolve("mod.json")))
+                        throw new IOException("A companion must be a same-author module, not another Mod");
+                    parents(author, workspace, inputs);
+                    authorOutputs.add(Path.of(author.getBuild().getOutputDirectory()).toAbsolutePath().normalize());
+                    authorJars.add(Path.of(author.getBuild().getDirectory())
+                            .resolve(author.getBuild().getFinalName() + ".jar").toAbsolutePath().normalize());
+                    remaining.remove(dependency.getId());
+                } else {
+                    File resolved = dependency.getFile();
+                    if (resolved == null || !resolved.isFile())
+                        throw new IOException("Undeclared companion or missing resolved private JAR");
+                    libraries.add(resolved.toPath().toRealPath());
+                }
+            }
+            if (!api || !remaining.isEmpty())
+                throw new IOException(
+                        "Platform API or declared companion artifacts were not resolved with the required scope");
+        }
     }
 }

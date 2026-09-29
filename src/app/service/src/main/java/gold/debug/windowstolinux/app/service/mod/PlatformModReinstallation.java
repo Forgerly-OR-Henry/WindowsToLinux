@@ -22,6 +22,9 @@ import gold.debug.windowstolinux.appapi.task.*;
 
 /** Repairs the original installed release while preserving data, choices and a recoverable old program. / 修复原安装发布，保留数据、选择及可恢复旧程序。 */
 public final class PlatformModReinstallation implements AutoCloseable {
+    /** Original repair file identities, locations and authorized subsets. / 原修复文件身份、位置与授权子集。 */
+    private final RepairFileScope files = new RepairFileScope();
+
     /** Original trusted installation root. / 原可信安装根。 */
     private final Path home;
 
@@ -142,7 +145,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
             var catalog = ledger.review(owner, version, inspection.contentSha256(), inspection.archiveSha256());
             if (!catalog.manifest().equals(inspection.manifest().json()))
                 throw new IOException("Repair manifest differs from the original release");
-            Path stage = stage(catalog.id());
+            Path stage = files.stage(catalog.id());
             if (exists(stage))
                 throw new IOException("Original repair staging already exists");
             if (original.startsWith(home.resolve("mod")) || original.startsWith(home.resolve(".mod-staging")))
@@ -152,11 +155,11 @@ public final class PlatformModReinstallation implements AutoCloseable {
                 keep = keepOriginal(c);
             }
             keep |= !original.getParent().equals(home.resolve("mod-zip"));
-            var evidence = new Evidence(1, nativeDirectory(home), nativeDirectory(home.resolve("mod")),
-                    nativeDirectory(catalog.program().getParent()), source, nativeDirectory(original.getParent()), keep,
+            var evidence = new Evidence(1, RepairFileScope.nativeDirectory(home), RepairFileScope.nativeDirectory(home.resolve("mod")),
+                    RepairFileScope.nativeDirectory(catalog.program().getParent()), source, RepairFileScope.nativeDirectory(original.getParent()), keep,
                     inspection.files(), ModInstallationCleanup.installed(catalog.program()));
-            parents(evidence, catalog.program());
-            unchanged(source);
+            files.parents(evidence, catalog.program());
+            RepairFileScope.unchanged(source);
             return new Review(catalog, inspection, evidence);
         }
     }
@@ -171,9 +174,9 @@ public final class PlatformModReinstallation implements AutoCloseable {
         if (review == null || review.issuer != this || review.used)
             throw new IllegalArgumentException("Original unused repair review required");
         try (var permission = security.enterOperation()) {
-            parents(review.evidence, review.catalog.program());
+            files.parents(review.evidence, review.catalog.program());
             identity(Path.of(review.evidence.original().path()).getParent(), review.evidence.originalParent());
-            unchanged(review.evidence.original());
+            RepairFileScope.unchanged(review.evidence.original());
             if (!review.evidence.old().equals(ModInstallationCleanup.installed(review.catalog.program())))
                 throw new IOException("Old program changed after repair confirmation");
             review.used = true;
@@ -263,13 +266,13 @@ public final class PlatformModReinstallation implements AutoCloseable {
             if (!p.execution().state().equals("UNKNOWN")
                     || !Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(p.execution().phase()))
                 throw new SQLException("Repair is not awaiting a pre-registration restoration decision");
-            checkedParents(p);
-            oldLocation(p);
-            String location = newLocation(p);
+            files.checkedParents(p);
+            files.oldLocation(p);
+            String location = files.newLocation(p);
             var discarded = location.equals("NONE")
                     ? List.<ModInstallationCleanup.Entry>of()
-                    : ModInstallationCleanup.installed(newPath(p, location));
-            allowedNewFiles(p, discarded, newPath(p, location));
+                    : ModInstallationCleanup.installed(files.newPath(p, location));
+            files.allowedNewFiles(p, discarded, files.newPath(p, location));
             restorationCheckpoint(p, location, discarded);
             return new RestoreReview(p, location, discarded);
         }
@@ -288,11 +291,11 @@ public final class PlatformModReinstallation implements AutoCloseable {
             var p = read(review.id());
             if (!p.execution().equals(review.pending.execution()))
                 throw new SQLException("Repair changed after restoration review");
-            checkedParents(p);
-            oldLocation(p);
-            if (!review.location.equals(newLocation(p)) || !review.discarded.equals(review.location.equals("NONE")
+            files.checkedParents(p);
+            files.oldLocation(p);
+            if (!review.location.equals(files.newLocation(p)) || !review.discarded.equals(review.location.equals("NONE")
                     ? List.of()
-                    : ModInstallationCleanup.installed(newPath(p, review.location))))
+                    : ModInstallationCleanup.installed(files.newPath(p, review.location))))
                 throw new IOException("New files changed after restoration review");
             String checkpoint = restorationCheckpoint(p, review.location, review.discarded);
             review.used = true;
@@ -326,87 +329,57 @@ public final class PlatformModReinstallation implements AutoCloseable {
             if (Set.of("RESTORING", "RESTORED").contains(p.execution().phase()))
                 return restoreFiles(p);
             while (true) {
-                checkedParents(p);
-                Path stage = stage(operation), program = stage.resolve("program"), old = stage.resolve("old"),
+                files.checkedParents(p);
+                Path stage = files.stage(operation), program = stage.resolve("program"), old = stage.resolve("old"),
                         target = p.execution().program();
                 switch (p.execution().phase()) {
                     case "VALIDATED" -> {
-                        equalOld(p, target);
-                        absent(old);
-                        var cp = p.checkpoint();
-                        if (cp.parent() == null) {
-                            if (!exists(stage.getParent()))
-                                Files.createDirectory(stage.getParent());
-                            cp = new Checkpoint(1, nativeDirectory(stage.getParent()), null, null, null, null, null);
-                            ledger.checkpoint(operation, "VALIDATED", encode(cp));
-                        }
-                        identity(stage.getParent(), cp.parent());
-                        if (cp.root() == null) {
-                            Files.createDirectory(stage);
-                            cp = new Checkpoint(1, cp.parent(), nativeDirectory(stage), null, null, null, null);
-                            ledger.checkpoint(operation, "VALIDATED", encode(cp));
-                        }
-                        identity(stage, cp.root());
-                        onlyChildren(stage);
-                        if (cp.program() == null) {
-                            Files.createDirectory(program);
-                            cp = new Checkpoint(1, cp.parent(), cp.root(), nativeDirectory(program), null, null, null);
-                            ledger.checkpoint(operation, "VALIDATED", encode(cp));
-                        }
-                        identity(program, cp.program());
-                        try (var children = Files.newDirectoryStream(program)) {
-                            if (!children.iterator().hasNext()) {
-                                unchanged(p.evidence().original());
-                                ModPackageReader.extractIntoEmpty(p.inspection(), program);
-                            }
-                        }
-                        verified(p, program, cp.program());
-                        ledger.advance(operation, "VALIDATED", "STAGED", encode(cp));
+                        files.stageCandidate(p, stage, program, old, target);
                     }
                     case "STAGED" -> {
-                        verified(p, program, p.checkpoint().program());
+                        RepairFileScope.verified(p, program, p.checkpoint().program());
                         if (p.evidence().old().isEmpty()) {
-                            absent(target);
-                            absent(old);
+                            RepairFileScope.absent(target);
+                            RepairFileScope.absent(old);
                         } else if (exists(target)) {
-                            equalOld(p, target);
-                            absent(old);
+                            files.equalOld(p, target);
+                            RepairFileScope.absent(old);
                             WindowsFilePublication.publishDirectory(target, old);
                         }
-                        equalOld(p, old);
-                        absent(target);
+                        files.equalOld(p, old);
+                        RepairFileScope.absent(target);
                         ledger.advance(operation, "STAGED", "OLD_SAVED", encode(p.checkpoint()));
                     }
                     case "OLD_SAVED" -> {
-                        equalOld(p, old);
+                        files.equalOld(p, old);
                         if (exists(program)) {
-                            verified(p, program, p.checkpoint().program());
-                            absent(target);
+                            RepairFileScope.verified(p, program, p.checkpoint().program());
+                            RepairFileScope.absent(target);
                             WindowsFilePublication.publishDirectory(program, target);
                         }
-                        verified(p, target, p.checkpoint().program());
-                        absent(program);
+                        RepairFileScope.verified(p, target, p.checkpoint().program());
+                        RepairFileScope.absent(program);
                         ledger.advance(operation, "OLD_SAVED", "FILES_PUBLISHED", encode(p.checkpoint()));
                     }
                     case "FILES_PUBLISHED" -> {
-                        verified(p, target, p.checkpoint().program());
-                        absent(program);
-                        equalOld(p, old);
+                        RepairFileScope.verified(p, target, p.checkpoint().program());
+                        RepairFileScope.absent(program);
+                        files.equalOld(p, old);
                         ledger.registered(operation, encode(p.checkpoint()));
                     }
                     case "REGISTERED" -> {
-                        verified(p, target, p.checkpoint().program());
-                        absent(program);
-                        removeOld(p, old);
+                        RepairFileScope.verified(p, target, p.checkpoint().program());
+                        RepairFileScope.absent(program);
+                        files.removeOld(p, old);
                         var cp = p.checkpoint();
                         ledger.advance(operation, "REGISTERED", "CLEANUP", encode(new Checkpoint(1, cp.parent(),
                                 cp.root(), cp.program(), null, null, cleanupOriginal(p))));
                     }
                     case "CLEANUP" -> {
-                        verified(p, target, p.checkpoint().program());
-                        absent(program);
-                        absent(old);
-                        removeStage(p);
+                        RepairFileScope.verified(p, target, p.checkpoint().program());
+                        RepairFileScope.absent(program);
+                        RepairFileScope.absent(old);
+                        files.removeStage(p);
                         ledger.finish(operation, p.checkpoint().cleanup());
                         return result(new Receipt(operation, p.execution().owner(), p.execution().version(), false,
                                 p.checkpoint().cleanup()));
@@ -434,32 +407,32 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @throws IOException if physical ownership or completion is ambiguous / 物理归属或完成含糊时
      * @throws SQLException if persistence is unconfirmed / 持久化未确认时 */
     private OperationResult<Receipt> restoreFiles(Pending p) throws IOException, SQLException {
-        checkedParents(p);
+        files.checkedParents(p);
         var e = p.execution();
         var cp = p.checkpoint();
-        Path stage = stage(e.id()), old = stage.resolve("old"), program = stage.resolve("program"),
+        Path stage = files.stage(e.id()), old = stage.resolve("old"), program = stage.resolve("program"),
                 target = e.program();
         if (e.phase().equals("RESTORING")) {
-            String oldAt = oldLocation(p);
+            String oldAt = files.oldLocation(p);
             if (!cp.discardAt().equals("NONE") && !(cp.discardAt().equals("TARGET") && oldAt.equals("TARGET"))) {
-                Path discarded = newPath(p, cp.discardAt());
-                remove(p, cp.discarded(), discarded);
+                Path discarded = files.newPath(p, cp.discardAt());
+                files.remove(p, cp.discarded(), discarded);
             }
-            absent(program);
+            RepairFileScope.absent(program);
             if (oldAt.equals("OLD")) {
-                equalOld(p, old);
-                absent(target);
+                files.equalOld(p, old);
+                RepairFileScope.absent(target);
                 WindowsFilePublication.publishDirectory(old, target);
             }
-            equalOld(p, target);
-            absent(old);
+            files.equalOld(p, target);
+            RepairFileScope.absent(old);
             ledger.restored(e.id(), encode(cp));
             p = read(e.id());
         }
-        equalOld(p, target);
-        absent(program);
-        absent(old);
-        removeStage(p);
+        files.equalOld(p, target);
+        RepairFileScope.absent(program);
+        RepairFileScope.absent(old);
+        files.removeStage(p);
         ledger.finish(e.id(), "UNTOUCHED");
         return result(new Receipt(e.id(), e.owner(), e.version(), true, "UNTOUCHED"));
     }
@@ -505,9 +478,9 @@ public final class PlatformModReinstallation implements AutoCloseable {
                 if (!Set.of("STAGE", "TARGET", "NONE").contains(cp.discardAt()) || cp.discarded() == null
                         || evidence.old().isEmpty() || cp.discardAt().equals("NONE") && !cp.discarded().isEmpty())
                     throw new IOException("Invalid original restoration scope");
-                allowedNewFiles(p, cp.discarded(), newPath(p, cp.discardAt()));
+                files.allowedNewFiles(p, cp.discarded(), files.newPath(p, cp.discardAt()));
                 if (!cp.discarded().isEmpty()
-                        && !Objects.equals(rootIdentity(cp.discarded(), newPath(p, cp.discardAt())), cp.program()))
+                        && !Objects.equals(RepairFileScope.rootIdentity(cp.discarded(), files.newPath(p, cp.discardAt())), cp.program()))
                     throw new IOException("Restoration does not own the new program");
             } else if (cp.discardAt() != null || cp.discarded() != null)
                 throw new IOException("Unexpected restoration evidence");
@@ -531,132 +504,6 @@ public final class PlatformModReinstallation implements AutoCloseable {
             throw new IOException("Repair package is incompatible with the actual host");
     }
 
-    /** Confirms immutable shared ancestors before any file action. / 任何文件动作前确认不可变共用祖先。
-     * @param evidence original physical scope / 原物理范围
-     * @param target original program / 原程序
-     * @throws IOException if changed or redirected / 变化或重定向时 */
-    private void parents(Evidence evidence, Path target) throws IOException {
-        identity(home, evidence.home());
-        identity(home.resolve("mod"), evidence.mod());
-        identity(target.getParent(), evidence.owner());
-    }
-
-    /** Rechecks original shared and staging ancestry without creating missing directories. / 复核原共用及暂存祖先，不创建缺失目录。
-     * @param p original operation / 原操作
-     * @throws IOException if ownership differs / 归属不同时 */
-    private void checkedParents(Pending p) throws IOException {
-        parents(p.evidence(), p.execution().program());
-        var cp = p.checkpoint();
-        Path stage = stage(p.execution().id());
-        if (cp.parent() != null)
-            identity(stage.getParent(), cp.parent());
-        if (exists(stage)) {
-            if (cp.root() == null)
-                throw new IOException("Unclaimed repair staging directory");
-            identity(stage, cp.root());
-            onlyChildren(stage);
-        } else if (cp.root() != null && !Set.of("CLEANUP", "RESTORED").contains(p.execution().phase()))
-            throw new IOException("Claimed repair staging directory disappeared");
-    }
-
-    /** Finds complete old files at exactly one original location. / 在恰好一个原位置找到完整旧文件。
-     * @param p original operation / 原操作
-     * @return OLD or TARGET / 旧副本或目标
-     * @throws IOException if absent, changed or duplicated / 缺失、变化或重复时 */
-    private String oldLocation(Pending p) throws IOException {
-        if (p.evidence().old().isEmpty())
-            throw new IOException("No complete original program is available for restoration");
-        Path old = stage(p.execution().id()).resolve("old"), target = p.execution().program();
-        boolean saved = exists(old);
-        if (saved) {
-            equalOld(p, old);
-            return "OLD";
-        }
-        equalOld(p, target);
-        return "TARGET";
-    }
-
-    /** Locates only the claimed new directory and rejects ambiguous replacements. / 仅定位已取得新目录并拒绝含糊替代物。
-     * @param p original operation / 原操作
-     * @return STAGE, TARGET or NONE / 暂存、目标或无
-     * @throws IOException if ownership is ambiguous / 归属含糊时 */
-    private String newLocation(Pending p) throws IOException {
-        Path program = stage(p.execution().id()).resolve("program"), target = p.execution().program();
-        boolean staged = exists(program),
-                atTarget = exists(target) && Objects.equals(WindowsFileIdentity.read(target), p.checkpoint().program());
-        if (staged && atTarget)
-            throw new IOException("New program has conflicting locations");
-        if (staged) {
-            identity(program, p.checkpoint().program());
-            return "STAGE";
-        }
-        if (atTarget) {
-            identity(target, p.checkpoint().program());
-            return "TARGET";
-        }
-        if (p.checkpoint().program() != null)
-            throw new IOException("Claimed new program disappeared");
-        return "NONE";
-    }
-
-    /** Derives new-file locations only from fixed original coordinates. / 仅从固定原坐标推导新文件位置。
-     * @param p original operation / 原操作
-     * @param location confirmed location kind / 已确认位置种类
-     * @return exact original path / 精确原路径 */
-    private Path newPath(Pending p, String location) {
-        return location.equals("TARGET") ? p.execution().program() : stage(p.execution().id()).resolve("program");
-    }
-
-    /** Rejects unrelated new files while allowing explicit review of partial or damaged expected files. / 拒绝无关新文件，允许明确审阅部分或损坏的预期文件。
-     * @param p original package evidence / 原包依据
-     * @param entries actual reviewed files / 实际已审阅文件
-     * @param root original new-program root / 原新程序根
-     * @throws IOException if an entry is outside the package / 条目超出包范围时 */
-    private void allowedNewFiles(Pending p, List<ModInstallationCleanup.Entry> entries, Path root) throws IOException {
-        ModInstallationCleanup.validateInstalled(entries, root);
-        var allowed = new HashSet<String>();
-        allowed.add("");
-        for (var file : p.evidence().files()) {
-            allowed.add(file.path());
-            if (file.path().contains("/"))
-                allowed.add(file.path().substring(0, file.path().indexOf('/')));
-        }
-        for (var entry : entries)
-            if (!allowed.contains(root.relativize(Path.of(entry.path())).toString().replace('\\', '/')))
-                throw new IOException("Unrelated new file prevents restoration");
-    }
-
-    /** Verifies exact old native identities and bytes after a directory rename. / 目录重命名后验证精确旧原生身份及字节。
-     * @param p original evidence / 原依据
-     * @param location current old-program location / 当前旧程序位置
-     * @throws IOException if any original file changed / 任意原文件变化时 */
-    private void equalOld(Pending p, Path location) throws IOException {
-        if (!moved(p.evidence().old(), p.execution().program(), location)
-                .equals(ModInstallationCleanup.installed(location)))
-            throw new IOException("Complete original old program cannot be confirmed");
-    }
-
-    /** Rewrites only the parent coordinate while preserving every file identity and digest. / 仅改写父坐标，保留每个文件身份及摘要。
-     * @param entries original scope / 原范围
-     * @param from original root / 原根
-     * @param to fixed renamed root / 固定重命名根
-     * @return same immutable files at the renamed location / 重命名位置的同一不可变文件 */
-    private static List<ModInstallationCleanup.Entry> moved(List<ModInstallationCleanup.Entry> entries, Path from,
-            Path to) {
-        return ModInstallationCleanup.ordered(entries.stream()
-                .map(e -> new ModInstallationCleanup.Entry(to.resolve(from.relativize(Path.of(e.path()))).toString(),
-                        e.identity(), e.directory(), e.size(), e.sha256()))
-                .toList());
-    }
-
-    /** Removes only the unchanged remaining saved-old subset after successful new registration. / 新登记成功后仅移除未变剩余旧副本子集。
-     * @param p original evidence / 原依据
-     * @param old fixed saved directory / 固定副本目录
-     * @throws IOException if cleanup ownership is ambiguous / 清理归属含糊时 */
-    private void removeOld(Pending p, Path old) throws IOException {
-        remove(p, moved(p.evidence().old(), p.execution().program(), old), old);
-    }
-
     /** Applies captured retention only to the exact managed original after successful program registration. / 程序登记成功后仅对精确受管原包应用捕获留存选择。
      * @param p original repair / 原修复
      * @return independent original cleanup observation / 独立原包清理观察 */
@@ -670,7 +517,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
             if (!original.getParent().equals(home.resolve("mod-zip")))
                 throw new IOException("Unmanaged original source");
             identity(original.getParent(), p.evidence().originalParent());
-            unchanged(p.evidence().original());
+            RepairFileScope.unchanged(p.evidence().original());
             Files.delete(original);
             return "DELETED";
         } catch (IOException failure) {
@@ -708,50 +555,6 @@ public final class PlatformModReinstallation implements AutoCloseable {
         } catch (RuntimeException invalid) {
             throw new IOException("Invalid original repair inventory", invalid);
         }
-    }
-
-    /** Applies shared subset cleanup under original staging and installation ancestors. / 在原暂存及安装祖先下应用共用子集清理。
-     * @param p original repair / 原修复
-     * @param accepted exact authorized files / 精确授权文件
-     * @param root exact removable root / 精确可移除根
-     * @throws IOException if files or parents differ / 文件或父目录不同时 */
-    private void remove(Pending p, List<ModInstallationCleanup.Entry> accepted, Path root) throws IOException {
-        checkedParents(p);
-        ModInstallationCleanup.validateInstalled(accepted, root);
-        var parentEntries = new ArrayList<ModInstallationCleanup.Entry>();
-        var parents = new LinkedHashMap<Path, String>();
-        parents.put(home, p.evidence().home());
-        parents.put(home.resolve("mod"), p.evidence().mod());
-        parents.put(p.execution().program().getParent(), p.evidence().owner());
-        parents.put(stage(p.execution().id()).getParent(), p.checkpoint().parent());
-        parents.put(stage(p.execution().id()), p.checkpoint().root());
-        for (var parent : parents.entrySet())
-            if (parent.getValue() != null)
-                parentEntries.add(
-                        new ModInstallationCleanup.Entry(parent.getKey().toString(), parent.getValue(), true, 0, null));
-        ModInstallationCleanup.removeEntries(accepted, ModInstallationCleanup.installed(root), parentEntries);
-        absent(root);
-    }
-
-    /** Removes the original empty operation directory only. / 仅移除原空操作目录。
-     * @param p original repair / 原修复
-     * @throws IOException if unowned or nonempty / 无归属或非空时 */
-    private void removeStage(Pending p) throws IOException {
-        checkedParents(p);
-        Path stage = stage(p.execution().id());
-        if (exists(stage))
-            Files.delete(stage);
-    }
-
-    /** Verifies all new package bytes under the original native directory identity. / 在原原生目录身份下验证全部新包字节。
-     * @param p original package / 原包
-     * @param directory exact current location / 精确当前位置
-     * @param expected original native identity / 原原生身份
-     * @throws IOException if code, bytes or identity differs / 代码、字节或身份不同时 */
-    private static void verified(Pending p, Path directory, String expected) throws IOException {
-        identity(directory, expected);
-        ModPackageReader.verifyDirectory(p.inspection(), directory);
-        identity(directory, expected);
     }
 
     /** Reads only retained platform repair receipts without replay. / 仅读取保留平台修复凭据，不重放。
@@ -794,49 +597,6 @@ public final class PlatformModReinstallation implements AutoCloseable {
                         : Optional.empty());
     }
 
-    /** Derives the operation-owned staging root. / 推导操作所属暂存根。
-     * @param id original operation / 原操作
-     * @return fixed original path / 固定原路径 */
-    private Path stage(UUID id) {
-        return home.resolve(".mod-staging").resolve(id.toString());
-    }
-
-    /** Reads an ordinary canonical directory identity. / 读取普通规范目录身份。
-     * @param path explicit directory / 明示目录
-     * @return native identity / 原生身份
-     * @throws IOException if invalid / 无效时 */
-    private static String nativeDirectory(Path path) throws IOException {
-        ordinary(path, true);
-        return WindowsFileIdentity.read(path);
-    }
-
-    /** Rechecks original archive identity and bytes. / 复核原归档身份及字节。
-     * @param entry original archive / 原归档
-     * @throws IOException if changed / 变化时 */
-    private static void unchanged(ModInstallationCleanup.Entry entry) throws IOException {
-        if (!entry.equals(ModInstallationCleanup.observe(Path.of(entry.path()), entry.size())))
-            throw new IOException("Reviewed archive changed");
-    }
-
-    /** Proves absence without conflating unreadability. / 证明不存在，不混同不可读取。
-     * @param path exact scope / 精确范围
-     * @throws IOException if present or unconfirmed / 存在或未确认时 */
-    private static void absent(Path path) throws IOException {
-        if (exists(path))
-            throw new IOException("Original repair location remains occupied");
-    }
-
-    /** Refuses unexpected operation-root children. / 拒绝意外操作根子项。
-     * @param stage original operation directory / 原操作目录
-     * @throws IOException if extras exist / 存在额外项时 */
-    private static void onlyChildren(Path stage) throws IOException {
-        try (var entries = Files.newDirectoryStream(stage)) {
-            for (var entry : entries)
-                if (!Set.of("program", "old").contains(entry.getFileName().toString()))
-                    throw new IOException("Unexpected repair staging entry");
-        }
-    }
-
     /** Checks retained native identity syntax. / 检查保留原生身份语法。
      * @param value original identity / 原身份
      * @param nullable whether not yet created / 是否尚未创建
@@ -844,15 +604,6 @@ public final class PlatformModReinstallation implements AutoCloseable {
     private static void validIdentity(String value, boolean nullable) throws IOException {
         if (value == null ? !nullable : !value.matches("[0-9a-f]{48}"))
             throw new IOException("Invalid repair native identity");
-    }
-
-    /** Finds a captured root identity. / 查找捕获根身份。
-     * @param entries original entries / 原条目
-     * @param root exact root / 精确根
-     * @return captured identity or absent / 捕获身份或缺省 */
-    private static String rootIdentity(List<ModInstallationCleanup.Entry> entries, Path root) {
-        return entries.stream().filter(e -> e.path().equals(root.toString()) && e.directory())
-                .map(ModInstallationCleanup.Entry::identity).findFirst().orElse(null);
     }
 
     /** Encodes bounded host physical evidence. / 编码有界宿主物理依据。
@@ -912,5 +663,275 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @param inspection original package declaration / 原包声明 */
     private record Pending(ModReinstallationLedger.Execution execution, Evidence evidence, Checkpoint checkpoint,
             ModPackageReader.Inspection inspection) {
+    }
+
+    /** Original repair file identities, locations and authorized subsets. / 原修复文件身份、位置与授权子集。 */
+    private final class RepairFileScope {
+        /** Binds the original owning service. / 绑定原服务所有者。 */
+        private RepairFileScope() { }
+
+        /** Confirms immutable shared ancestors before any file action. / 任何文件动作前确认不可变共用祖先。
+         * @param evidence original physical scope / 原物理范围
+         * @param target original program / 原程序
+         * @throws IOException if changed or redirected / 变化或重定向时 */
+        private void parents(Evidence evidence, Path target) throws IOException {
+            identity(home, evidence.home());
+            identity(home.resolve("mod"), evidence.mod());
+            identity(target.getParent(), evidence.owner());
+        }
+
+        /** Rechecks original shared and staging ancestry without creating missing directories. / 复核原共用及暂存祖先，不创建缺失目录。
+         * @param p original operation / 原操作
+         * @throws IOException if ownership differs / 归属不同时 */
+        private void checkedParents(Pending p) throws IOException {
+            files.parents(p.evidence(), p.execution().program());
+            var cp = p.checkpoint();
+            Path stage = files.stage(p.execution().id());
+            if (cp.parent() != null)
+                identity(stage.getParent(), cp.parent());
+            if (exists(stage)) {
+                if (cp.root() == null)
+                    throw new IOException("Unclaimed repair staging directory");
+                identity(stage, cp.root());
+                RepairFileScope.onlyChildren(stage);
+            } else if (cp.root() != null && !Set.of("CLEANUP", "RESTORED").contains(p.execution().phase()))
+                throw new IOException("Claimed repair staging directory disappeared");
+        }
+
+        /** Finds complete old files at exactly one original location. / 在恰好一个原位置找到完整旧文件。
+         * @param p original operation / 原操作
+         * @return OLD or TARGET / 旧副本或目标
+         * @throws IOException if absent, changed or duplicated / 缺失、变化或重复时 */
+        private String oldLocation(Pending p) throws IOException {
+            if (p.evidence().old().isEmpty())
+                throw new IOException("No complete original program is available for restoration");
+            Path old = files.stage(p.execution().id()).resolve("old"), target = p.execution().program();
+            boolean saved = exists(old);
+            if (saved) {
+                files.equalOld(p, old);
+                return "OLD";
+            }
+            files.equalOld(p, target);
+            return "TARGET";
+        }
+
+        /** Locates only the claimed new directory and rejects ambiguous replacements. / 仅定位已取得新目录并拒绝含糊替代物。
+         * @param p original operation / 原操作
+         * @return STAGE, TARGET or NONE / 暂存、目标或无
+         * @throws IOException if ownership is ambiguous / 归属含糊时 */
+        private String newLocation(Pending p) throws IOException {
+            Path program = files.stage(p.execution().id()).resolve("program"), target = p.execution().program();
+            boolean staged = exists(program),
+                    atTarget = exists(target) && Objects.equals(WindowsFileIdentity.read(target), p.checkpoint().program());
+            if (staged && atTarget)
+                throw new IOException("New program has conflicting locations");
+            if (staged) {
+                identity(program, p.checkpoint().program());
+                return "STAGE";
+            }
+            if (atTarget) {
+                identity(target, p.checkpoint().program());
+                return "TARGET";
+            }
+            if (p.checkpoint().program() != null)
+                throw new IOException("Claimed new program disappeared");
+            return "NONE";
+        }
+
+        /** Derives new-file locations only from fixed original coordinates. / 仅从固定原坐标推导新文件位置。
+         * @param p original operation / 原操作
+         * @param location confirmed location kind / 已确认位置种类
+         * @return exact original path / 精确原路径 */
+        private Path newPath(Pending p, String location) {
+            return location.equals("TARGET") ? p.execution().program() : files.stage(p.execution().id()).resolve("program");
+        }
+
+        /** Rejects unrelated new files while allowing explicit review of partial or damaged expected files. / 拒绝无关新文件，允许明确审阅部分或损坏的预期文件。
+         * @param p original package evidence / 原包依据
+         * @param entries actual reviewed files / 实际已审阅文件
+         * @param root original new-program root / 原新程序根
+         * @throws IOException if an entry is outside the package / 条目超出包范围时 */
+        private void allowedNewFiles(Pending p, List<ModInstallationCleanup.Entry> entries, Path root) throws IOException {
+            ModInstallationCleanup.validateInstalled(entries, root);
+            var allowed = new HashSet<String>();
+            allowed.add("");
+            for (var file : p.evidence().files()) {
+                allowed.add(file.path());
+                if (file.path().contains("/"))
+                    allowed.add(file.path().substring(0, file.path().indexOf('/')));
+            }
+            for (var entry : entries)
+                if (!allowed.contains(root.relativize(Path.of(entry.path())).toString().replace('\\', '/')))
+                    throw new IOException("Unrelated new file prevents restoration");
+        }
+
+        /** Verifies exact old native identities and bytes after a directory rename. / 目录重命名后验证精确旧原生身份及字节。
+         * @param p original evidence / 原依据
+         * @param location current old-program location / 当前旧程序位置
+         * @throws IOException if any original file changed / 任意原文件变化时 */
+        private void equalOld(Pending p, Path location) throws IOException {
+            if (!RepairFileScope.moved(p.evidence().old(), p.execution().program(), location)
+                    .equals(ModInstallationCleanup.installed(location)))
+                throw new IOException("Complete original old program cannot be confirmed");
+        }
+
+        /** Rewrites only the parent coordinate while preserving every file identity and digest. / 仅改写父坐标，保留每个文件身份及摘要。
+         * @param entries original scope / 原范围
+         * @param from original root / 原根
+         * @param to fixed renamed root / 固定重命名根
+         * @return same immutable files at the renamed location / 重命名位置的同一不可变文件 */
+        private static List<ModInstallationCleanup.Entry> moved(List<ModInstallationCleanup.Entry> entries, Path from,
+                Path to) {
+            return ModInstallationCleanup.ordered(entries.stream()
+                    .map(e -> new ModInstallationCleanup.Entry(to.resolve(from.relativize(Path.of(e.path()))).toString(),
+                            e.identity(), e.directory(), e.size(), e.sha256()))
+                    .toList());
+        }
+
+        /** Removes only the unchanged remaining saved-old subset after successful new registration. / 新登记成功后仅移除未变剩余旧副本子集。
+         * @param p original evidence / 原依据
+         * @param old fixed saved directory / 固定副本目录
+         * @throws IOException if cleanup ownership is ambiguous / 清理归属含糊时 */
+        private void removeOld(Pending p, Path old) throws IOException {
+            files.remove(p, RepairFileScope.moved(p.evidence().old(), p.execution().program(), old), old);
+        }
+
+        /** Applies shared subset cleanup under original staging and installation ancestors. / 在原暂存及安装祖先下应用共用子集清理。
+         * @param p original repair / 原修复
+         * @param accepted exact authorized files / 精确授权文件
+         * @param root exact removable root / 精确可移除根
+         * @throws IOException if files or parents differ / 文件或父目录不同时 */
+        private void remove(Pending p, List<ModInstallationCleanup.Entry> accepted, Path root) throws IOException {
+            files.checkedParents(p);
+            ModInstallationCleanup.validateInstalled(accepted, root);
+            var parentEntries = new ArrayList<ModInstallationCleanup.Entry>();
+            var parents = new LinkedHashMap<Path, String>();
+            parents.put(home, p.evidence().home());
+            parents.put(home.resolve("mod"), p.evidence().mod());
+            parents.put(p.execution().program().getParent(), p.evidence().owner());
+            parents.put(files.stage(p.execution().id()).getParent(), p.checkpoint().parent());
+            parents.put(files.stage(p.execution().id()), p.checkpoint().root());
+            for (var parent : parents.entrySet())
+                if (parent.getValue() != null)
+                    parentEntries.add(
+                            new ModInstallationCleanup.Entry(parent.getKey().toString(), parent.getValue(), true, 0, null));
+            ModInstallationCleanup.removeEntries(accepted, ModInstallationCleanup.installed(root), parentEntries);
+            RepairFileScope.absent(root);
+        }
+
+        /** Removes the original empty operation directory only. / 仅移除原空操作目录。
+         * @param p original repair / 原修复
+         * @throws IOException if unowned or nonempty / 无归属或非空时 */
+        private void removeStage(Pending p) throws IOException {
+            files.checkedParents(p);
+            Path stage = files.stage(p.execution().id());
+            if (exists(stage))
+                Files.delete(stage);
+        }
+
+        /** Verifies all new package bytes under the original native directory identity. / 在原原生目录身份下验证全部新包字节。
+         * @param p original package / 原包
+         * @param directory exact current location / 精确当前位置
+         * @param expected original native identity / 原原生身份
+         * @throws IOException if code, bytes or identity differs / 代码、字节或身份不同时 */
+        private static void verified(Pending p, Path directory, String expected) throws IOException {
+            identity(directory, expected);
+            ModPackageReader.verifyDirectory(p.inspection(), directory);
+            identity(directory, expected);
+        }
+
+        /** Derives the operation-owned staging root. / 推导操作所属暂存根。
+         * @param id original operation / 原操作
+         * @return fixed original path / 固定原路径 */
+        private Path stage(UUID id) {
+            return home.resolve(".mod-staging").resolve(id.toString());
+        }
+
+        /** Reads an ordinary canonical directory identity. / 读取普通规范目录身份。
+         * @param path explicit directory / 明示目录
+         * @return native identity / 原生身份
+         * @throws IOException if invalid / 无效时 */
+        private static String nativeDirectory(Path path) throws IOException {
+            ordinary(path, true);
+            return WindowsFileIdentity.read(path);
+        }
+
+        /** Rechecks original archive identity and bytes. / 复核原归档身份及字节。
+         * @param entry original archive / 原归档
+         * @throws IOException if changed / 变化时 */
+        private static void unchanged(ModInstallationCleanup.Entry entry) throws IOException {
+            if (!entry.equals(ModInstallationCleanup.observe(Path.of(entry.path()), entry.size())))
+                throw new IOException("Reviewed archive changed");
+        }
+
+        /** Proves absence without conflating unreadability. / 证明不存在，不混同不可读取。
+         * @param path exact scope / 精确范围
+         * @throws IOException if present or unconfirmed / 存在或未确认时 */
+        private static void absent(Path path) throws IOException {
+            if (exists(path))
+                throw new IOException("Original repair location remains occupied");
+        }
+
+        /** Refuses unexpected operation-root children. / 拒绝意外操作根子项。
+         * @param stage original operation directory / 原操作目录
+         * @throws IOException if extras exist / 存在额外项时 */
+        private static void onlyChildren(Path stage) throws IOException {
+            try (var entries = Files.newDirectoryStream(stage)) {
+                for (var entry : entries)
+                    if (!Set.of("program", "old").contains(entry.getFileName().toString()))
+                        throw new IOException("Unexpected repair staging entry");
+            }
+        }
+
+        /** Finds a captured root identity. / 查找捕获根身份。
+         * @param entries original entries / 原条目
+         * @param root exact root / 精确根
+         * @return captured identity or absent / 捕获身份或缺省 */
+        private static String rootIdentity(List<ModInstallationCleanup.Entry> entries, Path root) {
+            return entries.stream().filter(e -> e.path().equals(root.toString()) && e.directory())
+                    .map(ModInstallationCleanup.Entry::identity).findFirst().orElse(null);
+        }
+
+        /** Creates and validates only the original staged candidate. / 仅创建并核验原暂存候选。
+         * @param p original persisted repair / 原持久修复
+         * @param stage original operation root / 原操作根
+         * @param program fixed staged program / 固定暂存程序
+         * @param old fixed saved old directory / 固定旧副本目录
+         * @param target original installed target / 原安装目标
+         * @throws IOException if identities or original bytes differ / 身份或原字节不符时
+         * @throws SQLException if the original checkpoint cannot be saved / 原检查点不能保存时 */
+        private void stageCandidate(Pending p, Path stage, Path program, Path old, Path target) throws IOException, SQLException {
+            files.equalOld(p, target);
+            RepairFileScope.absent(old);
+            var cp = p.checkpoint();
+            if (cp.parent() == null) {
+                if (!exists(stage.getParent()))
+                    Files.createDirectory(stage.getParent());
+                cp = new Checkpoint(1, RepairFileScope.nativeDirectory(stage.getParent()), null, null, null, null, null);
+                ledger.checkpoint(p.execution().id(), "VALIDATED", encode(cp));
+            }
+            identity(stage.getParent(), cp.parent());
+            if (cp.root() == null) {
+                Files.createDirectory(stage);
+                cp = new Checkpoint(1, cp.parent(), RepairFileScope.nativeDirectory(stage), null, null, null, null);
+                ledger.checkpoint(p.execution().id(), "VALIDATED", encode(cp));
+            }
+            identity(stage, cp.root());
+            RepairFileScope.onlyChildren(stage);
+            if (cp.program() == null) {
+                Files.createDirectory(program);
+                cp = new Checkpoint(1, cp.parent(), cp.root(), RepairFileScope.nativeDirectory(program), null, null, null);
+                ledger.checkpoint(p.execution().id(), "VALIDATED", encode(cp));
+            }
+            identity(program, cp.program());
+            try (var children = Files.newDirectoryStream(program)) {
+                if (!children.iterator().hasNext()) {
+                    RepairFileScope.unchanged(p.evidence().original());
+                    ModPackageReader.extractIntoEmpty(p.inspection(), program);
+                }
+            }
+            RepairFileScope.verified(p, program, cp.program());
+            ledger.advance(p.execution().id(), "VALIDATED", "STAGED", encode(cp));
+        }
     }
 }

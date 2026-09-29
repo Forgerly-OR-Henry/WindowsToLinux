@@ -104,93 +104,9 @@ public final class PlatformModCatalog {
                 var manifest = candidate.manifest();
                 String owner = manifest.id(), version = manifest.version().toString();
                 long now = System.currentTimeMillis();
-                boolean fresh;
-                try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_registry WHERE mod_id=?")) {
-                    p.setString(1, owner);
-                    try (var r = p.executeQuery()) {
-                        r.next();
-                        fresh = r.getLong(1) == 0;
-                    }
-                }
-                if (fresh) {
-                    try (var p = c.prepareStatement("INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,?)")) {
-                        p.setString(1, owner);
-                        p.setLong(2, now);
-                        p.executeUpdate();
-                    }
-                }
-                boolean exists = false, identical = false;
-                try (var p = c.prepareStatement(
-                        "SELECT install_path,content_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
-                    p.setString(1, owner);
-                    p.setString(2, version);
-                    try (var r = p.executeQuery()) {
-                        if (r.next()) {
-                            exists = true;
-                            if (!"CLASS".equals(r.getString(5)) || !"READY".equals(r.getString(6)))
-                                throw rejected(ProblemCode.CONTRACT_VIOLATION, "MOD_CATALOG_SOURCE_CONFLICT",
-                                        "Existing release belongs to another source or maintenance");
-                            identical = candidate.module().toString().equals(r.getString(1))
-                                    && build.contentDigest().equals(r.getString(2))
-                                    && manifest.schemaVersion().equals(Optional.ofNullable(r.getString(3)))
-                                    && manifest.json().equals(r.getString(4));
-                        }
-                    }
-                }
-                if (!identical) {
-                    requireReplaceable(c, owner);
-                    if (exists) {
-                        try (var p = c.prepareStatement(
-                                "UPDATE mod_version SET content_sha256=?,schema_version=?,manifest_json=?,installed_at=?,install_path=? WHERE mod_id=? AND version=?")) {
-                            p.setString(1, build.contentDigest());
-                            p.setString(2, manifest.schemaVersion().orElse(null));
-                            p.setString(3, manifest.json());
-                            p.setLong(4, now);
-                            p.setString(5, candidate.module().toString());
-                            p.setString(6, owner);
-                            p.setString(7, version);
-                            if (p.executeUpdate() != 1)
-                                throw new SQLException("Original development registration changed");
-                        }
-                    } else {
-                        try (var p = c.prepareStatement(
-                                "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,state,installed_at) VALUES(?,?,?,?,?,?,'CLASS','READY',?)")) {
-                            p.setString(1, owner);
-                            p.setString(2, version);
-                            p.setString(3, candidate.module().toString());
-                            p.setString(4, build.contentDigest());
-                            p.setString(5, manifest.schemaVersion().orElse(null));
-                            p.setString(6, manifest.json());
-                            p.setLong(7, now);
-                            p.executeUpdate();
-                        }
-                    }
-                }
-                var versions = new ArrayList<SemanticVersion>();
-                try (var p = c.prepareStatement("SELECT version FROM mod_version WHERE mod_id=? AND state='READY'")) {
-                    p.setString(1, owner);
-                    try (var r = p.executeQuery()) {
-                        while (r.next()) {
-                            try {
-                                versions.add(SemanticVersion.parse(r.getString(1)));
-                            } catch (IllegalArgumentException invalid) {
-                                throw rejected(ProblemCode.INVALID_INPUT, "MOD_CATALOG_VERSION_INVALID",
-                                        "Stored release identity is invalid");
-                            }
-                        }
-                    }
-                }
-                String initial = Collections
-                        .max(versions,
-                                Comparator.<SemanticVersion>naturalOrder().thenComparing(SemanticVersion::toString))
-                        .toString();
-                try (var p = c.prepareStatement(
-                        "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0")) {
-                    p.setString(1, initial);
-                    p.setLong(2, now);
-                    p.setString(3, owner);
-                    p.executeUpdate();
-                }
+                ensureRegistry(c, owner, now);
+                reconcileBuild(c, build, owner, version, now);
+                initializeSelection(c, owner, now);
             }
         });
     }
@@ -325,5 +241,120 @@ public final class PlatformModCatalog {
     private static void requireWorker() {
         if (SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Development catalog requires a worker thread");
+    }
+
+    /** Creates only the missing original owner row. / 仅创建缺失的原所有者行。
+     * @param c original locked transaction / 原已锁事务
+     * @param owner original Mod identity / 原Mod身份
+     * @param now original registration timestamp / 原登记时间戳
+     * @throws SQLException if original registration cannot be verified / 原登记不能核实时 */
+    private static void ensureRegistry(Connection c, String owner, long now) throws SQLException {
+        boolean fresh;
+        try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_registry WHERE mod_id=?")) {
+            p.setString(1, owner);
+            try (var r = p.executeQuery()) {
+                r.next();
+                fresh = r.getLong(1) == 0;
+            }
+        }
+        if (fresh) {
+            try (var p = c.prepareStatement("INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,?)")) {
+                p.setString(1, owner);
+                p.setLong(2, now);
+                p.executeUpdate();
+            }
+        }
+    }
+
+    /** Reconciles only this exact compiled release inside the original transaction. / 在原事务中仅核对此精确编译发布。
+     * @param c original locked transaction / 原已锁事务
+     * @param build exact compiled evidence / 精确编译依据
+     * @param owner original Mod identity / 原Mod身份
+     * @param version original release / 原发布
+     * @param now original registration timestamp / 原登记时间戳
+     * @throws SQLException if original registration cannot be verified / 原登记不能核实时 */
+    private static void reconcileBuild(Connection c, Build build, String owner, String version, long now) throws SQLException {
+        var candidate = build.candidate();
+        var manifest = candidate.manifest();
+        boolean exists = false, identical = false;
+        try (var p = c.prepareStatement(
+                "SELECT install_path,content_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
+            p.setString(1, owner);
+            p.setString(2, version);
+            try (var r = p.executeQuery()) {
+                if (r.next()) {
+                    exists = true;
+                    if (!"CLASS".equals(r.getString(5)) || !"READY".equals(r.getString(6)))
+                        throw rejected(ProblemCode.CONTRACT_VIOLATION, "MOD_CATALOG_SOURCE_CONFLICT",
+                                "Existing release belongs to another source or maintenance");
+                    identical = candidate.module().toString().equals(r.getString(1))
+                            && build.contentDigest().equals(r.getString(2))
+                            && manifest.schemaVersion().equals(Optional.ofNullable(r.getString(3)))
+                            && manifest.json().equals(r.getString(4));
+                }
+            }
+        }
+        if (!identical) {
+            requireReplaceable(c, owner);
+            if (exists) {
+                try (var p = c.prepareStatement(
+                        "UPDATE mod_version SET content_sha256=?,schema_version=?,manifest_json=?,installed_at=?,install_path=? WHERE mod_id=? AND version=?")) {
+                    p.setString(1, build.contentDigest());
+                    p.setString(2, manifest.schemaVersion().orElse(null));
+                    p.setString(3, manifest.json());
+                    p.setLong(4, now);
+                    p.setString(5, candidate.module().toString());
+                    p.setString(6, owner);
+                    p.setString(7, version);
+                    if (p.executeUpdate() != 1)
+                        throw new SQLException("Original development registration changed");
+                }
+            } else {
+                try (var p = c.prepareStatement(
+                        "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,state,installed_at) VALUES(?,?,?,?,?,?,'CLASS','READY',?)")) {
+                    p.setString(1, owner);
+                    p.setString(2, version);
+                    p.setString(3, candidate.module().toString());
+                    p.setString(4, build.contentDigest());
+                    p.setString(5, manifest.schemaVersion().orElse(null));
+                    p.setString(6, manifest.json());
+                    p.setLong(7, now);
+                    p.executeUpdate();
+                }
+            }
+        }
+    }
+
+    /** Initializes only a previously untouched selection from actual ready releases. / 仅从实际就绪发布初始化未触碰的选择。
+     * @param c original locked transaction / 原已锁事务
+     * @param owner original Mod identity / 原Mod身份
+     * @param now original registration timestamp / 原登记时间戳
+     * @throws SQLException if original registration cannot be verified / 原登记不能核实时 */
+    private static void initializeSelection(Connection c, String owner, long now) throws SQLException {
+        var versions = new ArrayList<SemanticVersion>();
+        try (var p = c.prepareStatement("SELECT version FROM mod_version WHERE mod_id=? AND state='READY'")) {
+            p.setString(1, owner);
+            try (var r = p.executeQuery()) {
+                while (r.next()) {
+                    try {
+                        versions.add(SemanticVersion.parse(r.getString(1)));
+                    } catch (IllegalArgumentException invalid) {
+                        throw rejected(ProblemCode.INVALID_INPUT, "MOD_CATALOG_VERSION_INVALID",
+                                "Stored release identity is invalid");
+                    }
+                }
+            }
+        }
+        String initial = Collections
+                .max(versions,
+                        Comparator.<SemanticVersion>naturalOrder().thenComparing(SemanticVersion::toString))
+                .toString();
+        try (var p = c.prepareStatement(
+                "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0")) {
+            p.setString(1, initial);
+            p.setLong(2, now);
+            p.setString(3, owner);
+            p.executeUpdate();
+        }
     }
 }
