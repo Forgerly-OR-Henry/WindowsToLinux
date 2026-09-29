@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
+import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 
@@ -43,9 +44,11 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             return unknown();
         Optional<DeploymentHelperBootstrapJournal> bootstrap;
         Optional<DeploymentNativeDatabaseJournal> database;
+        Optional<DeploymentDatabasePlanJournal> databasePlan;
         try {
             bootstrap = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
             database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
+            databasePlan = DeploymentDatabasePlanJournal.find(context.tasks(), task);
         } catch (IllegalArgumentException damaged) {
             return unknown();
         }
@@ -53,6 +56,8 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             if (bootstrap.isPresent() && !settleBootstrap(task, bootstrap.orElseThrow()))
                 return unknown();
             if (database.isPresent() && !settleDatabase(task, database.orElseThrow()))
+                return unknown();
+            if (databasePlan.isPresent() && !settleDatabasePlan(task, databasePlan.orElseThrow()))
                 return unknown();
             return references.reconcile(previous, task);
         }
@@ -68,11 +73,21 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             return unknown();
         if (database.isPresent() && !settleDatabase(task, database.orElseThrow()))
             return unknown();
+        if (databasePlan.isPresent() && !settleDatabasePlan(task, databasePlan.orElseThrow()))
+            return unknown();
         Optional<DeploymentHelperBootstrapJournal.Facts> bootstrapFacts;
         Optional<DeploymentNativeDatabaseJournal.Facts> databaseFacts;
         try {
             bootstrapFacts = bootstrap.isPresent() ? Optional.of(bootstrap.orElseThrow().facts()) : Optional.empty();
             databaseFacts = database.isPresent() ? Optional.of(database.orElseThrow().facts()) : Optional.empty();
+        } catch (ApiException | IllegalArgumentException unreadable) {
+            return unknown();
+        }
+        Map<String, String> planEffects;
+        try {
+            planEffects = databasePlan.isPresent()
+                    ? new DeploymentDatabaseStages(context).effectDetails(task, databasePlan.orElseThrow())
+                    : Map.of();
         } catch (ApiException | IllegalArgumentException unreadable) {
             return unknown();
         }
@@ -89,11 +104,12 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         var outcome = cancelled ? Outcome.CANCELLED : Outcome.FAILED;
         return new OperationResult<>(outcome, Optional.empty(), Optional.of(new Problem(code,
                 cancelled ? "DEPLOYMENT_STATIC_PREPARATION_CANCELLED" : "DEPLOYMENT_STATIC_PREPARATION_INTERRUPTED",
-                databaseFacts.filter(DeploymentNativeDatabaseJournal.Facts::effectsObserved).isPresent()
+                !planEffects.isEmpty()
+                        || databaseFacts.filter(DeploymentNativeDatabaseJournal.Facts::effectsObserved).isPresent()
                         || bootstrapFacts.filter(value -> !"INTENT".equals(value.phase())).isPresent()
                                 ? "Original preparation may have changed the helper or native database; review the server before publication"
                                 : "Static review ended before publication effects",
-                effectContext(bootstrapFacts, databaseFacts), Optional.empty())));
+                effectContext(bootstrapFacts, databaseFacts, planEffects), Optional.empty())));
     }
 
     /** Retains a possible first-install effect until its original root receipt is confirmed. / 在原 root 回执确认前保留可能的首次安装效果。
@@ -119,10 +135,12 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
     /** Reports bounded prior helper and database effect targets without secrets. / 不含秘密地报告有界先前 helper 与数据库效果目标。
      * @param bootstrap optional original helper facts / 可选原 helper 事实
      * @param database optional original database facts / 可选原数据库事实
+     * @param indexed exact retained indexed database and saved-secret facts / 精确保留的索引数据库及已存秘密事实
      * @return non-secret recovery context / 非秘密恢复上下文 */
     private static Map<String, String> effectContext(Optional<DeploymentHelperBootstrapJournal.Facts> bootstrap,
-            Optional<DeploymentNativeDatabaseJournal.Facts> database) {
+            Optional<DeploymentNativeDatabaseJournal.Facts> database, Map<String, String> indexed) {
         var details = new java.util.LinkedHashMap<String, String>();
+        details.putAll(indexed);
         bootstrap.filter(value -> !"INTENT".equals(value.phase())).ifPresent(value -> {
             details.put("helperServerId", value.serverId());
             details.put("helperOperationId", value.operationId().toString());
@@ -154,6 +172,32 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             }
         }
         journal.close();
+        return true;
+    }
+
+    /** Reconciles every indexed original child without inventing an absent operation or replaying a mutation. / 核对每项已索引原子项，不虚构缺失操作或重放变更。
+     * @param task original recovery task / 原恢复任务
+     * @param plan original bounded database index / 原有界数据库索引
+     * @return true only when every started child is known and released / 仅全部已开始子项已知且释放时为真
+     * @throws ApiException if original evidence cannot be read / 原依据无法读取时 */
+    private boolean settleDatabasePlan(TaskContext task, DeploymentDatabasePlanJournal plan) throws ApiException {
+        var facts = plan.facts();
+        for (String address : facts.keys()) {
+            var child = DeploymentNativeDatabaseJournal.find(context.tasks(), task,
+                    DeploymentNativeDatabaseJournal.KEY + "." + address);
+            if (child.isPresent()) {
+                if (!facts.serverId().equals(child.orElseThrow().facts().serverId())
+                        || !settleDatabase(task, child.orElseThrow()))
+                    return false;
+            }
+            String secretKey = "deployment-secret-revision." + address;
+            if (context.tasks().findCheckpoint(task, secretKey).isPresent()
+                    && new DeploymentSecretProvisionFlow(context)
+                            .reconcileChild(task, secretKey, new ServerRef(facts.serverId()))
+                            .outcome() == Outcome.UNKNOWN)
+                return false;
+        }
+        plan.close();
         return true;
     }
 

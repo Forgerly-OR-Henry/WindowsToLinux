@@ -22,7 +22,7 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -124,7 +124,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
 
                 public OperationResult<Boolean> confirm(ServerRef server, String manifest, Map<String, String> archives,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentSqlitePreparation.Prepared> databases,
+                        Map<String, DeploymentPreparedDatabase> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
@@ -263,7 +263,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 @Override
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archiveSha,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentSqlitePreparation.Prepared> databases,
+                        Map<String, DeploymentPreparedDatabase> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                     assertFalse(schema, "Schema review must block before final publication consent");
                     assertEquals(taskId.get(), task.id());

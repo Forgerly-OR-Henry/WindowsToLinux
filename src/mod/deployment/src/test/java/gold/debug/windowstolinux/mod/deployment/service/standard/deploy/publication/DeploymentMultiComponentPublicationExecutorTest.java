@@ -34,6 +34,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentCo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentNativeDatabasePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
@@ -132,11 +133,44 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
         runStaticGraph(false, true);
     }
 
+    /** Publishes mixed SQLite/native facts in one graph component after whole-source local validation. / 整份源码本机校验后在一图组件发布 SQLite 与原生合并事实。
+     * @throws Exception if original CLASS/H2 graph publication fails / 原 CLASS/H2 整图发布失败时 */
+    @Test
+    void staticWorkflowPublishesGraphWithMixedNativeAndSqliteReview() throws Exception {
+        runStaticGraph(false, false, true);
+    }
+
+    /** A later component's missing SQL blocks the entire graph before helper, DB or secret effects. / 后续组件缺失 SQL 在整图 helper、数据库和秘密效果前阻断。
+     * @throws Exception if original source validation fails unexpectedly / 原来源校验意外失败时 */
+    @Test
+    void laterInvalidGraphSqlCannotStartEarlierNativePreparation() throws Exception {
+        runStaticGraph(false, false, true, true);
+    }
+
     /** Executes the shared original graph fixture with optional source-derived SQLite. / 使用可选源码派生 SQLite 执行原整图夹具。
      * @param git use local Git / 使用本机 Git
      * @param sqlite declare SQLite on the API component / 在 API 组件声明 SQLite
      * @throws Exception if original graph publication fails / 原整图发布失败时 */
     private void runStaticGraph(boolean git, boolean sqlite) throws Exception {
+        runStaticGraph(git, sqlite, false);
+    }
+
+    /** Runs the same graph with optional mixed native and SQLite declarations. / 使用可选原生与 SQLite 混合声明运行同一整图。
+     * @param git use local Git / 使用本机 Git
+     * @param sqlite declare only SQLite / 仅声明 SQLite
+     * @param mixed declare both native and SQLite / 同时声明原生与 SQLite
+     * @throws Exception if original graph fails / 原整图失败时 */
+    private void runStaticGraph(boolean git, boolean sqlite, boolean mixed) throws Exception {
+        runStaticGraph(git, sqlite, mixed, false);
+    }
+
+    /** Runs one graph with an optional deliberately invalid later component. / 使用可选刻意无效后续组件运行一图。
+     * @param git local Git selection / 本机 Git 选择
+     * @param sqlite SQLite-only API declaration / API 仅 SQLite 声明
+     * @param mixed API mixed native and SQLite declaration / API 原生和 SQLite 混合声明
+     * @param invalidLater missing Web SQL source / Web SQL 来源缺失
+     * @throws Exception if original task setup fails / 原任务准备失败时 */
+    private void runStaticGraph(boolean git, boolean sqlite, boolean mixed, boolean invalidLater) throws Exception {
         for (String id : List.of("api", "web")) {
             var source = selectedSourceDirectory().resolve(id);
             Files.createDirectories(source);
@@ -149,6 +183,21 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                                 + "db.main.pathEnvironment=API_DB_PATH\ndb.main.initialize=schema.sql\n");
                 Files.writeString(source.resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
             }
+            if (mixed && id.equals("api")) {
+                Files.writeString(source.resolve("windowstolinux-db.properties"),
+                        "db=main,local\ndb.main.engine=POSTGRESQL\ndb.main.version=>=16\n"
+                                + "db.main.database=sampledb\ndb.main.username=sampleuser\n"
+                                + "db.main.environmentPrefix=DB\ndb.main.passwordEnvironment=DB_PASSWORD\n"
+                                + "db.main.initialize=schema.sql\ndb.local.engine=SQLITE\n"
+                                + "db.local.path=DEFAULT\ndb.local.pathEnvironment=API_DB_PATH\n"
+                                + "db.local.initialize=local.sql\n");
+                Files.writeString(source.resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
+                Files.writeString(source.resolve("local.sql"), "CREATE TABLE local(id integer);\n");
+            }
+            if (invalidLater && id.equals("web"))
+                Files.writeString(source.resolve("windowstolinux-db.properties"),
+                        "db=local\ndb.local.engine=SQLITE\ndb.local.path=DEFAULT\n"
+                                + "db.local.pathEnvironment=WEB_DB_PATH\n" + "db.local.initialize=missing.sql\n");
         }
         String commit = null;
         if (git) {
@@ -172,6 +221,8 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             var callbackEnded = new CountDownLatch(1);
             var existing = peer(ScenarioType.SUCCESS, actions, new AtomicReference<>(), new AtomicLong(),
                     new AtomicReference<>(), callbackEnded);
+            var nativeState = new DeploymentStandardPublicationExecutorTest.NativeState();
+            var reviewedTask = new AtomicReference<TaskContext>();
             record Uploaded(long bytes, String sha) {
             }
             var uploaded = new ConcurrentHashMap<String, Uploaded>();
@@ -218,7 +269,11 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                         }
                     });
             var real = runtime.modContexts().get(OWNER).context();
-            var bound = withSession(real, session);
+            var combined = mixed
+                    ? DeploymentStandardPublicationExecutorTest.nativePeer(session, real, reviewedTask, nativeState,
+                            actions, grants)
+                    : session;
+            var bound = withSession(real, combined);
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             var originalTask = new AtomicReference<UUID>();
             var archives = new AtomicReference<Map<String, String>>();
@@ -226,11 +281,19 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                 public OperationResult<Map<String, String>> databaseInputs(ServerRef exact, String componentId,
                         String manifest, Path frozenRoot, String applicationId,
                         gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                        TaskContext task) {
-                    assertTrue(sqlite);
-                    assertEquals("api", componentId);
-                    assertEquals("whole-app-api", applicationId);
+                        TaskContext task) throws Exception {
+                    assertTrue(sqlite || mixed);
+                    assertEquals(invalidLater && componentId.equals("web") ? "web" : "api", componentId);
+                    assertEquals("whole-app-" + componentId, applicationId);
                     assertEquals(originalTask.get(), task.id());
+                    if (invalidLater && componentId.equals("web"))
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
+                    if (mixed) {
+                        nativeState.applicationId = applicationId;
+                        nativeState.sourceDigest = DeploymentNativeDatabasePreparation
+                                .local(componentId, applicationId, manifest, frozenRoot, assessment, task)
+                                .sourceDigest();
+                    }
                     return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
                 }
 
@@ -239,7 +302,8 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                         gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
                         TaskContext task) {
                     assertEquals("api", componentId);
-                    assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+                    assertEquals(List.of(mixed ? "local.sql" : "schema.sql"),
+                            assessment.databases().getFirst().initializationFiles());
                     return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
                 }
 
@@ -247,6 +311,7 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                         List<DiscoveredProjectComponent> discovered, TaskContext task) {
                     assertEquals(2, discovered.size());
                     originalTask.set(task.id());
+                    reviewedTask.set(task);
                     var choices = new HashMap<String, DeploymentStaticWorkflow.Choice>();
                     for (var component : discovered)
                         choices.put(component.id(),
@@ -281,19 +346,29 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
 
                 public OperationResult<Boolean> confirm(ServerRef exact, String manifest, Map<String, String> digests,
                         Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation.Prepared> databases,
+                        Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase> databases,
                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     assertEquals(originalTask.get(), task.id());
-                    if (sqlite) {
+                    if (sqlite || mixed) {
                         assertTrue(databases.get("web").bindings().isEmpty());
                         var prepared = databases.get("api");
-                        var binding = prepared.bindings().getFirst();
+                        var binding = prepared.bindings().stream()
+                                .filter(value -> value.connection() instanceof DeploymentDatabaseConnection.Sqlite)
+                                .findFirst().orElseThrow();
                         var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
                         String configured = prepared.configuration().stream()
                                 .filter(value -> value.key().equals("API_DB_PATH")).findFirst().orElseThrow().value()
                                 .canonicalValue();
                         assertEquals(connection.physicalPath("whole-app-api", binding.databaseId()), configured);
                         assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
+                        if (mixed) {
+                            assertEquals(2, prepared.bindings().size());
+                            assertEquals(Set.of("schema.sql", "local.sql"),
+                                    prepared.schemaReview().orElseThrow().initializedSqlPaths());
+                            assertEquals(nativeState.sourceDigest,
+                                    prepared.schemaReview().orElseThrow().inspectionSha256());
+                            assertEquals(1, prepared.secrets().size());
+                        }
                     }
                     assertEquals(pinnedCommit != null, git.isPresent());
                     git.ifPresent(value -> {
@@ -316,6 +391,16 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             var handle = workflow.submit(server,
                     new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-graph" : "", 65536, 100, 65536), gitInput,
                     reviewer);
+            if (invalidLater) {
+                var rejected = handle.completion().toCompletableFuture().get(25, TimeUnit.SECONDS);
+                assertEquals(Outcome.FAILED, rejected.outcome(), rejected.toString());
+                assertTrue(actions.stream().noneMatch(value -> value.startsWith("native-")
+                        || value.equals("helper-probe") || value.equals("stage-secret")), actions.toString());
+                assertEquals(0, countMod(runtime, "deployment_release"));
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                return;
+            }
             assertTrue(callbackEnded.await(30, TimeUnit.SECONDS), () -> handle.snapshot() + " actions=" + actions);
             OperationResult<Void> result;
             try {
@@ -336,7 +421,7 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             assertEquals(2, actions.stream().filter("publish"::equals).count());
             assertEquals(1, countMod(runtime, "deployment_release"));
             assertEquals(2, countMod(runtime, "deployment_unit_release_binding"));
-            if (sqlite) {
+            if (sqlite || mixed) {
                 var inspected = real.tasks().submit(new TaskRequest("sqlite-graph-inspect",
                         "Inspect published SQLite graph", List.of(server.id()), false), task -> {
                             var graph = new DeploymentGraphRepository(real.db()).find(task, "whole-app").orElseThrow();
@@ -345,15 +430,31 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                             var web = graph.components().stream().filter(value -> value.componentId().equals("web"))
                                     .findFirst().orElseThrow();
                             assertEquals(List.of(), web.resources().databaseBindings().orElseThrow());
-                            var binding = api.resources().databaseBindings().orElseThrow().getFirst();
-                            assertEquals("main", binding.databaseId());
+                            var bindings = api.resources().databaseBindings().orElseThrow();
+                            var binding = bindings.stream()
+                                    .filter(value -> value.connection() instanceof DeploymentDatabaseConnection.Sqlite)
+                                    .findFirst().orElseThrow();
+                            assertEquals(mixed ? "local" : "main", binding.databaseId());
                             var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
-                            assertEquals(List.of("schema.sql"), connection.initializationFiles());
+                            assertEquals(List.of(mixed ? "local.sql" : "schema.sql"), connection.initializationFiles());
+                            if (mixed) {
+                                assertEquals(2, bindings.size());
+                                var nativeBinding = bindings.stream().filter(
+                                        value -> value.connection() instanceof DeploymentDatabaseConnection.Server)
+                                        .findFirst().orElseThrow();
+                                assertEquals("main", nativeBinding.databaseId());
+                                assertEquals("sampledb",
+                                        ((DeploymentDatabaseConnection.Server) nativeBinding.connection()).database());
+                            }
                             var configuration = new DeploymentConfigurationRepository(real.db())
                                     .find(task, "whole-app-api", 1).orElseThrow();
                             assertEquals(connection.physicalPath("whole-app-api", binding.databaseId()),
                                     configuration.requireValue("API_DB_PATH", DeploymentConfigurationScopeType.RUNTIME)
                                             .canonicalValue());
+                            if (mixed)
+                                assertEquals("127.0.0.1",
+                                        configuration.requireValue("DB_HOST", DeploymentConfigurationScopeType.RUNTIME)
+                                                .canonicalValue());
                             return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
                         });
                 assertEquals(Outcome.SUCCEEDED,
@@ -875,6 +976,18 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                                         Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_GRAPH_STAGE_ACK_LOST",
                                                 "Controlled acknowledgement was lost", Map.of(), Optional.empty())))
                                 : reply("INPUT_STAGED=1\n");
+                    }
+                    if (script.contains("stage-secret")) {
+                        actions.add("stage-secret");
+                        assertTrue(script.contains("'db-"), "Native database business reference must be staged");
+                        assertTrue(script.contains("'1'"), "The exact immutable revision must be staged");
+                        byte[] password = ((CommandRequest) args[0]).stdin();
+                        try {
+                            assertTrue(password.length > 0);
+                        } finally {
+                            Arrays.fill(password, (byte) 0);
+                        }
+                        return reply("INPUT_STAGED=1\n");
                     }
                     if (script.contains("snapshot-deployment")) {
                         actions.add("snapshot");

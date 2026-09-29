@@ -15,6 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentCo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.policy.SourceMutationPolicy;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
@@ -31,7 +32,7 @@ public final class DeploymentSqlitePreparation {
      * @param bindings exact managed database resources / 精确受管数据库资源
      * @param schemaReview source-bound planned first initialization, when needed / 必要时绑定源码的首次初始化计划 */
     public record Prepared(List<DeploymentConfigurationEntry> configuration, List<DeploymentDatabaseBinding> bindings,
-            Optional<DatabaseSchemaReview> schemaReview) {
+            Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
         /** Copies every published value. / 复制全部输出值。
          * @param configuration generated runtime configuration / 生成的运行配置
          * @param bindings managed bindings / 受管绑定
@@ -40,6 +41,13 @@ public final class DeploymentSqlitePreparation {
             configuration = List.copyOf(configuration);
             bindings = List.copyOf(bindings);
             schemaReview = java.util.Objects.requireNonNull(schemaReview);
+        }
+
+        /** SQLite needs no platform secret reference. / SQLite 不需要平台秘密引用。
+         * @return empty immutable list / 空不可变列表 */
+        @Override
+        public List<DeploymentSecretReference> secrets() {
+            return List.of();
         }
     }
 

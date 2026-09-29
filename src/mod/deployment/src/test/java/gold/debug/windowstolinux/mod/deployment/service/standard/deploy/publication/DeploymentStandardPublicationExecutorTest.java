@@ -30,6 +30,7 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType;
@@ -38,7 +39,10 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentDatabasePlanJournal;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentHelperBootstrapJournal;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentNativeDatabaseJournal;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentNativeDatabasePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
@@ -162,6 +166,62 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         runStaticWorkflow(false, false, true);
     }
 
+    /** Publishes an actual source-bound native target twice using its one immutable original-task credential. / 用原任务同一不可变凭据两次发布真实源码绑定原生目标。
+     * @throws Exception if the controlled helper or original CLASS/H2 publication fails / 受控 helper 或原 CLASS/H2 发布失败时 */
+    @Test
+    void staticWorkflowPublishesNativeDatabaseAndReusesExactSecretRevision() throws Exception {
+        runStaticWorkflow(false, false, false, true);
+    }
+
+    /** Retries an existing target's rejected password under the same child operation and saves only one revision. / 在同一子操作下重试已有目标被拒密码且只保存一版修订。
+     * @throws Exception if the original task or controlled helper fails / 原任务或受控 helper 失败时 */
+    @Test
+    void staticWorkflowRetriesExistingNativeAuthenticationBeforeSavingOnce() throws Exception {
+        runStaticWorkflow(false, false, false, true, true);
+    }
+
+    /** A stored rejected revision remains immutable while two corrected attempts save only revision two. / 已存修订被拒时保持不可变，两次更正仅保存第二版。
+     * @throws Exception if original task or protected storage fails / 原任务或受保护存储失败时 */
+    @Test
+    void staticWorkflowRotatesStoredNativeRevisionOnlyAfterSuccessfulRetry() throws Exception {
+        runStaticWorkflow(false, false, false, true, false, true);
+    }
+
+    /** Installs a reviewed absent native package before the original publication. / 原发布前安装已审阅的缺失原生软件包。
+     * @throws Exception if original installation or publication fails / 原安装或发布失败时 */
+    @Test
+    void staticWorkflowInstallsMissingNativeDatabase() throws Exception {
+        runStaticWorkflow(false, false, false, true, false, false, NativeInstall.FIRST);
+    }
+
+    /** Replaces an incompatible package only with backup, downtime and manual restore confirmation. / 仅经备份停机及人工恢复确认替换不兼容包。
+     * @throws Exception if original replacement or publication fails / 原替换或发布失败时 */
+    @Test
+    void staticWorkflowReplacesNativePackageAfterManualRestoration() throws Exception {
+        runStaticWorkflow(false, false, false, true, false, false, NativeInstall.REPLACE);
+    }
+
+    /** Resumes a previously interrupted replacement through its original manual restore gate. / 经原人工恢复门槛继续此前中断的替换。
+     * @throws Exception if original restoration or publication fails / 原恢复或发布失败时 */
+    @Test
+    void staticWorkflowRecoversPendingNativeReplacement() throws Exception {
+        runStaticWorkflow(false, false, false, true, false, false, NativeInstall.PENDING);
+    }
+
+    /** Controlled native package scenarios. / 受控原生软件包场景。 */
+    private enum NativeInstall {
+        /** An existing compatible instance. / 既有兼容实例。 */
+        NONE,
+        /** An absent instance requiring reviewed installation. / 缺失实例需经审阅安装。 */
+        FIRST,
+        /** An incompatible instance requiring manual restoration. / 不兼容实例需人工恢复。 */
+        REPLACE,
+        /** A previous installation left manual restoration pending. / 此前安装留下待人工恢复状态。 */
+        PENDING,
+        /** The original start reply disappears after dispatch. / 原启动发送后回包丢失。 */
+        START_UNKNOWN
+    }
+
     /** Shares the original CLASS/H2 publication fixture across local, Git and SQLite sources. / 为本地、Git 和 SQLite 来源复用原 CLASS/H2 发布夹具。
      * @param git whether real local Git is used / 是否使用真实本机 Git
      * @param sqlite whether source declares SQLite / 源码是否声明 SQLite
@@ -176,6 +236,56 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param installHelper whether the first publication finds no fixed helper / 首次发布是否缺少固定 helper
      * @throws Exception if the original task fails / 原任务失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper) throws Exception {
+        runStaticWorkflow(git, sqlite, installHelper, false);
+    }
+
+    /** Runs an optional native source declaration through the same original publication. / 在同一原发布中运行可选原生来源声明。
+     * @param git whether Git is selected / 是否选择 Git
+     * @param sqlite whether SQLite is declared / 是否声明 SQLite
+     * @param installHelper whether helper is initially absent / helper 是否初始缺失
+     * @param nativeDatabase whether PostgreSQL is declared / 是否声明 PostgreSQL
+     * @throws Exception if the original task fails / 原任务失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase)
+            throws Exception {
+        runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, false);
+    }
+
+    /** Runs an optional existing-target authentication retry through the same real publication. / 通过同一真实发布运行可选已有目标认证重试。
+     * @param git whether Git is selected / 是否选择 Git
+     * @param sqlite whether SQLite is declared / 是否声明 SQLite
+     * @param installHelper whether helper is absent / helper 是否缺失
+     * @param nativeDatabase whether native DB is declared / 是否声明原生数据库
+     * @param authRetry whether first existing-target password is refused / 首次已有目标密码是否被拒
+     * @throws Exception if original publication fails / 原发布失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
+            boolean authRetry) throws Exception {
+        runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, authRetry, false);
+    }
+
+    /** Runs the same real source with optional stored-credential rotation after first publication. / 首次发布后使用可选已存凭据轮换运行同一真实来源。
+     * @param git whether Git is selected / 是否选择 Git
+     * @param sqlite whether SQLite is declared / 是否声明 SQLite
+     * @param installHelper whether helper is absent / helper 是否缺失
+     * @param nativeDatabase whether native DB is declared / 是否声明原生数据库
+     * @param authRetry whether initial existing target rejects input / 初始已有目标是否拒绝输入
+     * @param rotateStored whether second publication rejects old revision / 第二次发布是否拒绝旧修订
+     * @throws Exception if original publication fails / 原发布失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
+            boolean authRetry, boolean rotateStored) throws Exception {
+        runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, authRetry, rotateStored, NativeInstall.NONE);
+    }
+
+    /** Runs one exact native package scenario under the same original publication. / 在同一原发布下运行精确原生软件包场景。
+     * @param git whether Git is selected / 是否选择 Git
+     * @param sqlite whether SQLite is declared / 是否声明 SQLite
+     * @param installHelper whether helper is absent / helper 是否缺失
+     * @param nativeDatabase whether native DB is declared / 是否声明原生数据库
+     * @param authRetry whether initial target authentication fails / 初次目标认证是否失败
+     * @param rotateStored whether saved password rotates / 已存密码是否轮换
+     * @param nativeInstall controlled package scenario / 受控软件包场景
+     * @throws Exception if original publication fails / 原发布失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
+            boolean authRetry, boolean rotateStored, NativeInstall nativeInstall) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
@@ -186,6 +296,14 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
             Files.writeString(selectedSourceDirectory().resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
             Files.write(selectedSourceDirectory().resolve("seed.db"), new byte[]{1, 2, 3});
+        }
+        if (nativeDatabase) {
+            Files.writeString(selectedSourceDirectory().resolve("windowstolinux-db.properties"),
+                    "db=main\ndb.main.engine=POSTGRESQL\ndb.main.version=>=16\n"
+                            + "db.main.database=sampledb\ndb.main.username=sampleuser\n"
+                            + "db.main.environmentPrefix=DB\ndb.main.passwordEnvironment=DB_PASSWORD\n"
+                            + "db.main.initialize=schema.sql\n");
+            Files.writeString(selectedSourceDirectory().resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
         }
         if (git) {
             git(selectedSourceDirectory(), "init", "-b", "main");
@@ -229,14 +347,31 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             List<String> firstSnapshot = null;
             String firstOwner = null;
             String firstApplication = null;
+            var firstNativeSecret = new AtomicReference<DeploymentSecretRevision>();
+            var firstNativePasswordDigest = new AtomicReference<String>();
+            var nativeSecretAudit = new AtomicReference<String>();
+            var nativeState = new NativeState();
+            nativeState.install = nativeInstall;
+            nativeState.installed = nativeInstall != NativeInstall.FIRST;
+            nativeState.restorePending = nativeInstall == NativeInstall.PENDING;
+            nativeState.prepared = authRetry;
+            nativeState.authFailuresRemaining = authRetry ? 1 : 0;
+            var passwordPrompts = new AtomicInteger();
             for (int publication = 1; publication <= 2; publication++) {
-                Files.writeString(selectedSourceDirectory().resolve("main.go"),
-                        "package main\nfunc main() { /* publication " + publication + " */ }\n");
+                final int currentPublication = publication;
+                if (!nativeDatabase)
+                    Files.writeString(selectedSourceDirectory().resolve("main.go"),
+                            "package main\nfunc main() { /* publication " + publication + " */ }\n");
+                if (rotateStored && publication == 2) {
+                    nativeState.authFailuresRemaining = 2;
+                    nativeState.acceptRotation = true;
+                }
                 if (git) {
                     git(selectedSourceDirectory(), "add", ".");
                     git(selectedSourceDirectory(), "commit", "-m", "publication-" + publication);
                 }
                 final String commit = git ? git(selectedSourceDirectory(), "rev-parse", "HEAD") : null;
+                final int expectedNativeRevision = rotateStored && publication == 2 ? 2 : 1;
                 var actions = new CopyOnWriteArrayList<String>();
                 var sha = new AtomicReference<String>();
                 var manifestSha = new AtomicReference<String>();
@@ -247,9 +382,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var reviewedTask = new AtomicReference<TaskContext>();
                 var helperInstalls = new AtomicInteger();
                 var existing = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
-                var session = installHelper && publication == 1
-                        ? missingHelper(existing, original, reviewedTask, helperInstalls)
-                        : existing;
+                var session = nativeDatabase
+                        ? nativePeer(existing, original, reviewedTask, nativeState, actions, grants)
+                        : installHelper && publication == 1
+                                ? missingHelper(existing, original, reviewedTask, helperInstalls)
+                                : existing;
                 var bound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
                 var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
                 var observedTask = new AtomicReference<UUID>();
@@ -259,10 +396,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             String manifest, Path frozenRoot, String applicationId,
                             gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
                             TaskContext task) throws Exception {
-                        assertTrue(sqlite);
+                        assertTrue(sqlite || nativeDatabase);
                         assertEquals(observedTask.get(), task.id());
                         assertEquals(1, assessment.databases().size());
-                        assertEquals("seed.db", assessment.databases().getFirst().sqlite().orElseThrow().seedFile());
+                        if (sqlite)
+                            assertEquals("seed.db",
+                                    assessment.databases().getFirst().sqlite().orElseThrow().seedFile());
+                        if (nativeDatabase)
+                            nativeState.applicationId = applicationId;
+                        if (nativeDatabase)
+                            nativeState.sourceDigest = DeploymentNativeDatabasePreparation
+                                    .local(componentId, applicationId, manifest, frozenRoot, assessment, task)
+                                    .sourceDigest();
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
                     }
 
@@ -273,6 +418,53 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         assertTrue(sqlite);
                         assertEquals(observedTask.get(), task.id());
                         assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                    }
+
+                    @Override
+                    public OperationResult<byte[]> applicationPassword(ServerRef exact,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
+                            TaskContext task) {
+                        if (!authRetry && !rotateStored)
+                            throw new AssertionError("A new owned target must use its generated and saved password");
+                        int prompt = passwordPrompts.incrementAndGet();
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of((prompt == 1
+                                ? "incorrect"
+                                : rotateStored && currentPublication == 2 ? "rotated-password" : "correct-password")
+                                .getBytes(StandardCharsets.UTF_8)), Optional.empty());
+                    }
+
+                    @Override
+                    public OperationResult<Boolean> install(ServerRef exact,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
+                            TaskContext task) {
+                        assertEquals(NativeInstall.FIRST, nativeInstall);
+                        assertEquals("postgresql-16", candidate.name());
+                        assertEquals(observedTask.get(), task.id());
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                    }
+
+                    @Override
+                    public OperationResult<Boolean> replacement(ServerRef exact,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance previous,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
+                            TaskContext task) {
+                        assertTrue(nativeInstall == NativeInstall.REPLACE || nativeInstall == NativeInstall.PENDING);
+                        assertEquals("15.6", previous.version());
+                        assertEquals("16.6", candidate.engineVersion());
+                        assertEquals(observedTask.get(), task.id());
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
+                    }
+
+                    @Override
+                    public OperationResult<Boolean> restored(ServerRef exact,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance restored,
+                            TaskContext task) {
+                        assertTrue(nativeInstall == NativeInstall.REPLACE || nativeInstall == NativeInstall.PENDING);
+                        assertEquals("16.6", restored.version());
+                        assertEquals(observedTask.get(), task.id());
+                        nativeState.restorePending = false;
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(true), Optional.empty());
                     }
 
@@ -313,7 +505,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     public OperationResult<Boolean> confirm(ServerRef exact, String manifest,
                             Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
-                            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation.Prepared> databases,
+                            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase> databases,
                             Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                         assertEquals(observedTask.get(), task.id());
                         if (sqlite) {
@@ -328,6 +520,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             assertEquals("seed.db", connection.seedFile());
                             assertEquals(List.of("schema.sql"), connection.initializationFiles());
                             assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
+                        } else if (nativeDatabase) {
+                            var prepared = databases.values().iterator().next();
+                            var binding = prepared.bindings().getFirst();
+                            var connection = (DeploymentDatabaseConnection.Server) binding.connection();
+                            assertEquals("sampledb", connection.database());
+                            assertEquals("sampleuser", connection.username());
+                            assertEquals("127.0.0.1", connection.host());
+                            assertEquals(5432, connection.port());
+                            assertEquals(expectedNativeRevision, connection.passwordReference().revision());
+                            assertEquals(List.of(connection.passwordReference()), prepared.secrets());
+                            assertEquals(nativeState.sourceDigest,
+                                    prepared.schemaReview().orElseThrow().inspectionSha256());
                         } else
                             assertTrue(databases.values().stream().allMatch(value -> value.bindings().isEmpty()));
                         assertEquals(git, gitReview.isPresent());
@@ -350,6 +554,26 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var handle = workflow.submit(server,
                         new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
                         gitInput, reviewer);
+                if (nativeInstall == NativeInstall.START_UNKNOWN) {
+                    long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+                    while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
+                        Thread.sleep(25);
+                    assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
+                    assertTrue(actions.contains("native-start"));
+                    assertFalse(actions.contains("native-prepare"));
+                    assertEquals(1,
+                            scalar(runtime,
+                                    "SELECT COUNT(*) FROM platform_task_resource "
+                                            + "WHERE resource_kind='CUSTOM' AND resource_id='" + OWNER
+                                            + "/checkpoint/deployment-static-preparation' AND released_at IS NULL"));
+                    assertTrue(
+                            scalar(runtime,
+                                    "SELECT COUNT(*) FROM platform_task_resource "
+                                            + "WHERE resource_kind='FILE' AND released_at IS NULL") > 0,
+                            "Original frozen source must remain owned while native effect is unknown");
+                    System.out.println("ORIGINAL_NATIVE_WORKFLOW_UNKNOWN_VERIFIED");
+                    System.exit(0);
+                }
                 assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> handle.snapshot().toString());
                 OperationResult<Void> result;
                 try {
@@ -364,7 +588,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 }
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(publication, countMod(runtime, "deployment_release"));
-                assertEquals(publication, countMod(runtime, "deployment_unit_release_secret_reference"));
+                assertEquals(publication * (nativeDatabase ? 2 : 1),
+                        countMod(runtime, "deployment_unit_release_secret_reference"));
                 assertEquals(git ? publication : 0, countMod(runtime, "deployment_project"));
                 if (git)
                     assertGitSourceSaved(runtime, selectedSourceDirectory().toUri().toString(), commit,
@@ -397,6 +622,87 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             });
                     assertEquals(Outcome.SUCCEEDED,
                             inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                }
+                if (nativeDatabase) {
+                    assertTrue(actions.contains("native-inspect"));
+                    assertTrue(actions.contains("native-start"));
+                    assertEquals(
+                            (nativeInstall == NativeInstall.FIRST || nativeInstall == NativeInstall.REPLACE)
+                                    && publication == 1 ? 1 : 0,
+                            actions.stream().filter("native-install"::equals).count());
+                    assertEquals(
+                            (nativeInstall == NativeInstall.REPLACE || nativeInstall == NativeInstall.PENDING)
+                                    && publication == 1 ? 1 : 0,
+                            actions.stream().filter("native-resume"::equals).count());
+                    assertTrue(actions.contains("native-target"));
+                    assertTrue(actions.contains("native-prepare"));
+                    assertTrue(actions.contains("native-initialize"));
+                    assertEquals(expectedNativeRevision, countMod(runtime, "secret_revision") - 1,
+                            "Only a successful new password may add a database credential revision");
+                    if (authRetry || rotateStored && publication == 2)
+                        assertEquals(2, passwordPrompts.get());
+                    long revision = publication;
+                    var inspected = original.tasks().submit(new TaskRequest("native-publication-inspect",
+                            "Inspect published native database", List.of(server.id()), false), task -> {
+                                var graph = new DeploymentGraphRepository(original.db())
+                                        .find(task, reviewedApplication.get()).orElseThrow();
+                                var binding = graph.components().getFirst().resources().databaseBindings().orElseThrow()
+                                        .getFirst();
+                                var connection = (DeploymentDatabaseConnection.Server) binding.connection();
+                                assertEquals("main", binding.databaseId());
+                                assertEquals("sampledb", connection.database());
+                                assertEquals(expectedNativeRevision, connection.passwordReference().revision());
+                                if (rotateStored) {
+                                    var repository = new DeploymentSecretRepository(original.db());
+                                    var initialReference = new DeploymentSecretReference(
+                                            connection.passwordReference().identifier(), 1);
+                                    var initial = repository.findRevision(task, initialReference).orElseThrow();
+                                    if (currentPublication == 1) {
+                                        firstNativeSecret.set(initial);
+                                        firstNativePasswordDigest.set(nativeState.passwordDigest);
+                                    } else {
+                                        assertEquals(firstNativeSecret.get(), initial,
+                                                "The old immutable credential revision changed");
+                                        var latest = repository.findRevision(task, connection.passwordReference())
+                                                .orElseThrow();
+                                        assertNotEquals(initial.credentialId(), latest.credentialId(),
+                                                "The corrected password must create a new protected value");
+                                        try {
+                                            boolean firstMatches = original.secrets().use(
+                                                    new SecretRef(initial.credentialId(),
+                                                            initial.purpose().orElseThrow()),
+                                                    initial.purpose().orElseThrow(), task,
+                                                    secretBytes -> firstNativePasswordDigest.get()
+                                                            .equals(DeploymentNativeDatabaseWire.digest(secretBytes)));
+                                            boolean secondMatches = original.secrets()
+                                                    .use(new SecretRef(latest.credentialId(),
+                                                            latest.purpose().orElseThrow()),
+                                                            latest.purpose().orElseThrow(), task,
+                                                            secretBytes -> Arrays.equals(
+                                                                    "rotated-password".getBytes(StandardCharsets.UTF_8),
+                                                                    secretBytes));
+                                            nativeSecretAudit.set("old=" + firstMatches + ",new=" + secondMatches);
+                                        } catch (ApiException failure) {
+                                            nativeSecretAudit.set(failure.problem().eventCode());
+                                        }
+                                    }
+                                }
+                                var configuration = new DeploymentConfigurationRepository(original.db())
+                                        .find(task, reviewedApplication.get(), revision).orElseThrow();
+                                assertEquals("127.0.0.1",
+                                        configuration.requireValue("DB_HOST", DeploymentConfigurationScopeType.RUNTIME)
+                                                .canonicalValue());
+                                assertEquals("sampledb",
+                                        configuration
+                                                .requireValue("DB_DATABASE", DeploymentConfigurationScopeType.RUNTIME)
+                                                .canonicalValue());
+                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                            });
+                    assertEquals(Outcome.SUCCEEDED,
+                            inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                    if (rotateStored && currentPublication == 2)
+                        assertEquals("old=true,new=true", nativeSecretAudit.get(),
+                                "Both immutable protected values must retain their original bytes");
                 }
                 var snapshots = configurationRows(runtime);
                 String owner = ownershipManifest(runtime);
@@ -512,9 +818,40 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         }
     }
 
+    /** The real static submit path retains its preparation marker and frozen source on an unknown native effect. / 真实静态提交路径遇原生效果未知时保留准备标记及冻结源码。
+     * @throws Exception if the isolated original task cannot be observed / 无法观察隔离原任务时 */
+    @Test
+    void nativeStartUnknownRetainsOriginalStaticMarkerAndSource() throws Exception {
+        var javaBinary = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        var process = new ProcessBuilder(javaBinary.toString(), "-cp", System.getProperty("java.class.path"),
+                getClass().getName(), "--native-unknown", root.toString()).redirectErrorStream(true).start();
+        try {
+            assertTrue(process.waitFor(55, TimeUnit.SECONDS), "Original native workflow probe timed out");
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, process.exitValue(), output);
+            assertTrue(output.contains("ORIGINAL_NATIVE_WORKFLOW_UNKNOWN_VERIFIED"), output);
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                assertTrue(process.waitFor(5, TimeUnit.SECONDS));
+            }
+        }
+    }
+
     /** Runs only the controlled unknown case when launched by the parent test. / 仅在父测试启动时运行受控未知场景。
      * @param args fixed child marker, directory and scenario / 固定子进程标记、目录与场景 */
     public static void main(String[] args) {
+        if (args.length == 2 && args[0].equals("--native-unknown")) {
+            try {
+                var probe = new DeploymentStandardPublicationExecutorTest();
+                probe.root = Path.of(args[1]);
+                probe.runStaticWorkflow(false, false, false, true, false, false, NativeInstall.START_UNKNOWN);
+                throw new AssertionError("Original native workflow unexpectedly returned");
+            } catch (Throwable failed) {
+                failed.printStackTrace();
+                System.exit(1);
+            }
+        }
         if ((args.length != 3 && args.length != 4) || !args[0].equals("--unknown"))
             throw new IllegalArgumentException("Isolated publication probe only");
         try {
@@ -857,8 +1194,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return actual rows / 实际行数
      * @throws Exception if access fails / 访问失败时 */
     private long countMod(PlatformRuntime runtime, String table) throws Exception {
-        assertTrue(Set.of("deployment_release", "deployment_project", "deployment_unit_release_secret_reference")
-                .contains(table));
+        assertTrue(Set.of("deployment_release", "deployment_project", "deployment_unit_release_secret_reference",
+                "secret_revision").contains(table));
         try (var access = scope(runtime, true);
                 var connection = access.openConnection();
                 var statement = connection.createStatement();
@@ -974,6 +1311,287 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         throw wrapped.getCause();
                     }
                 });
+    }
+
+    /** Non-secret state of one controlled native target across two source-identical publications. / 两次同源发布间一个受控原生目标的不含秘密状态。 */
+    static final class NativeState {
+        /** Controlled package installation case. / 受控软件包安装场景。 */
+        NativeInstall install = NativeInstall.NONE;
+
+        /** Whether the package is now installed. / 软件包现在是否已安装。 */
+        boolean installed = true;
+
+        /** Whether an incompatible package was replaced. / 不兼容软件包是否已替换。 */
+        boolean replaced;
+
+        /** Whether a prior replacement still requires manual restoration. / 前次替换是否仍需人工恢复。 */
+        boolean restorePending;
+
+        /** Exact component inspection digest. / 精确组件检查摘要。 */
+        String sourceDigest = "";
+
+        /** Final managed application identity. / 最终受管应用身份。 */
+        String applicationId = "";
+
+        /** Hash of the first actual transient application password, never the original bytes. / 首次真实短期应用密码的摘要，绝非原字节。 */
+        private String passwordDigest = "";
+
+        /** One controlled known authentication failure. / 一次受控已知认证失败。 */
+        private int authFailuresRemaining;
+
+        /** Permits one confirmed new password after a stored revision is rejected. / 已存修订被拒后允许一份已确认新密码。 */
+        private boolean acceptRotation;
+
+        /** Whether prepare created the owned target. / prepare 是否创建了已归属目标。 */
+        boolean prepared;
+
+        /** Whether reviewed SQL reached a terminal initialization result. / 经审阅 SQL 是否到达终态初始化结果。 */
+        boolean initialized;
+    }
+
+    /** Owns decoded sensitive test-frame bytes until the current helper observation ends. / 持有已解码敏感测试帧字节直到当前 helper 观察结束。 */
+    private static final class NativeFrame implements AutoCloseable {
+        /** Only non-secret reviewed fields. / 仅非秘密已审阅字段。 */
+        private final Map<String, String> fields = new HashMap<>();
+
+        /** Clearable sensitive input bytes. / 可清零敏感输入字节。 */
+        private final Map<String, byte[]> sensitive = new HashMap<>();
+
+        /** SHA-256 of actual received frame bytes. / 实际收到帧字节的 SHA-256。 */
+        private String digest;
+
+        /** Clears all decoded sensitive values. / 清零全部已解码敏感值。 */
+        @Override
+        public void close() {
+            sensitive.values().forEach(value -> Arrays.fill(value, (byte) 0));
+        }
+    }
+
+    /** Decodes actual bounded stdin without making plaintext passwords or SQL into Strings. / 解码真实有界 stdin，密码和 SQL 明文绝不转 String。
+     * @param request actual approved remote command / 真实已批准远端命令
+     * @return owned clearable test frame / 所属可清零测试帧 */
+    private static NativeFrame nativeFrame(CommandRequest request) {
+        byte[] input = request.stdin();
+        var decoded = new NativeFrame();
+        try {
+            decoded.digest = DeploymentNativeDatabaseWire.digest(input);
+            assertTrue(input.length <= 3 * 1024 * 1024);
+            int cursor = 0;
+            while (cursor < input.length) {
+                int equal = cursor;
+                while (equal < input.length && input[equal] != '=')
+                    equal++;
+                int end = equal;
+                while (end < input.length && input[end] != '\n')
+                    end++;
+                assertTrue(equal > cursor && end < input.length);
+                String key = new String(input, cursor, equal - cursor, StandardCharsets.US_ASCII);
+                byte[] encoded = Arrays.copyOfRange(input, equal + 1, end);
+                byte[] value;
+                try {
+                    value = Base64.getDecoder().decode(encoded);
+                } finally {
+                    Arrays.fill(encoded, (byte) 0);
+                }
+                if (Set.of("applicationPassword", "adminPassword", "sql").contains(key))
+                    assertNull(decoded.sensitive.put(key, value));
+                else {
+                    try {
+                        assertNull(decoded.fields.put(key, new String(value, StandardCharsets.UTF_8)));
+                    } finally {
+                        Arrays.fill(value, (byte) 0);
+                    }
+                }
+                cursor = end + 1;
+            }
+            return decoded;
+        } catch (RuntimeException | Error failure) {
+            decoded.close();
+            throw failure;
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
+    }
+
+    /** Adds strict non-secret native helper facts to the existing controlled publication peer. / 向既有受控发布对等端补入严格非秘密原生 helper 事实。
+     * @param existing existing publication peer / 既有发布对等端
+     * @param context actual CLASS/H2 capabilities / 真实 CLASS/H2 能力
+     * @param task current original task / 当前原任务
+     * @param state one original target's observed state / 一个原目标的观察状态
+     * @param actions observed action names / 已观察动作名
+     * @return borrowed combined peer / 借用组合对等端 */
+    static RemoteSession nativePeer(RemoteSession existing, ModContext context, AtomicReference<TaskContext> task,
+            NativeState state, List<String> actions, Map<ApprovalGrant, ActionIntent> grants) {
+        return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("execute")) {
+                        var request = (CommandRequest) args[0];
+                        String script = request.script();
+                        int offset = script.indexOf(" native-db ");
+                        if (offset >= 0) {
+                            assertTrue(grants.containsKey(args[1]));
+                            String action = script.substring(offset + " native-db ".length());
+                            actions.add("native-" + action);
+                            try (var frame = nativeFrame(request)) {
+                                assertEquals("POSTGRESQL", frame.fields.get("engine"));
+                                if (action.equals("inspect"))
+                                    return nativeReply(nativeInventory(state, ""));
+                                if (!action.equals("install"))
+                                    assertEquals("postgresql-16", frame.fields.get("instanceId"));
+                                if (!Set.of("start", "resume", "install").contains(action)) {
+                                    assertEquals("sampledb", frame.fields.get("database"));
+                                    assertEquals("sampleuser", frame.fields.get("username"));
+                                    assertEquals(state.applicationId, frame.fields.get("applicationId"));
+                                }
+                                if (action.equals("target"))
+                                    return nativeReply(nativeTarget(state, ""));
+                                if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action))
+                                    throw new AssertionError("Unexpected native action: " + action);
+                                var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task.get())
+                                        .orElseThrow();
+                                var key = plan.facts().keys().getFirst();
+                                var facts = DeploymentNativeDatabaseJournal.find(context.tasks(), task.get(),
+                                        DeploymentNativeDatabaseJournal.KEY + "." + key).orElseThrow().facts();
+                                assertEquals("DISPATCHED", facts.phase());
+                                assertEquals(action, facts.action());
+                                assertEquals(frame.digest, facts.requestDigest());
+                                byte[] password = frame.sensitive.get("applicationPassword");
+                                if (Set.of("prepare", "initialize").contains(action)) {
+                                    assertNotNull(password);
+                                    assertTrue(password.length > 0);
+                                }
+                                String digest = Set.of("prepare", "initialize").contains(action)
+                                        ? DeploymentNativeDatabaseWire.digest(password)
+                                        : "";
+                                boolean denied = action.equals("prepare") && state.authFailuresRemaining-- > 0;
+                                boolean restoreRequired = action.equals("start") && state.restorePending;
+                                if (action.equals("start") && state.install == NativeInstall.START_UNKNOWN)
+                                    return unknown();
+                                if (Set.of("prepare", "initialize").contains(action) && !denied) {
+                                    if (state.passwordDigest.isEmpty() || state.acceptRotation) {
+                                        state.passwordDigest = digest;
+                                        state.acceptRotation = false;
+                                    } else
+                                        assertEquals(state.passwordDigest, digest);
+                                }
+                                if (action.equals("prepare") && !denied)
+                                    state.prepared = true;
+                                if (action.equals("initialize") && !denied) {
+                                    assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
+                                    assertEquals("false", frame.fields.get("existingApproved"));
+                                    assertArrayEquals(
+                                            "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
+                                            frame.sensitive.get("sql"));
+                                    state.initialized = true;
+                                }
+                                if (action.equals("install")) {
+                                    assertEquals("postgresql-16", frame.fields.get("package"));
+                                    assertEquals("16.6", frame.fields.get("engineVersion"));
+                                    if (state.install == NativeInstall.REPLACE) {
+                                        assertEquals("true", frame.fields.get("replacementApproved"));
+                                        assertEquals("server-publication", frame.fields.get("approvedServer"));
+                                    }
+                                    state.installed = true;
+                                    state.replaced = true;
+                                    if (state.install == NativeInstall.REPLACE)
+                                        state.restorePending = true;
+                                }
+                                if (action.equals("resume"))
+                                    state.restorePending = false;
+                                var result = new LinkedHashMap<String, String>();
+                                result.put("status",
+                                        denied ? "AUTH_REQUIRED" : restoreRequired ? "MANUAL_RESTORE_REQUIRED" : "OK");
+                                result.put("receipt.formatVersion", "1");
+                                result.put("receipt.operationId", facts.operationId().toString());
+                                result.put("receipt.taskId", task.get().id().toString());
+                                result.put("receipt.serverId", facts.serverId());
+                                result.put("receipt.action", facts.action());
+                                result.put("receipt.targetDigest", facts.targetDigest());
+                                result.put("receipt.requestDigest", facts.requestDigest());
+                                result.put("receipt.phase", denied || restoreRequired ? "FAILED" : "SUCCEEDED");
+                                result.put("receipt.effectBoundary",
+                                        denied ? "NONE" : restoreRequired ? "MAY_HAVE_RUN" : "CONFIRMED");
+                                if (denied || restoreRequired)
+                                    result.put("receipt.failureCode",
+                                            denied ? "AUTH_REQUIRED" : "MANUAL_RESTORE_REQUIRED");
+                                else if (action.equals("install"))
+                                    nativeInventory(state, "result.").forEach(result::put);
+                                else if (Set.of("start", "resume").contains(action))
+                                    nativeInstance(state, "result.instance.").forEach(result::put);
+                                else
+                                    nativeTarget(state, "result.").forEach(result::put);
+                                return nativeReply(result);
+                            }
+                        }
+                    }
+                    try {
+                        return method.invoke(existing, args);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
+                    }
+                });
+    }
+
+    /** One observed PostgreSQL inventory, including an exact package candidate. / 一份含精确软件包候选的 PostgreSQL 库存。
+     * @param state controlled package state / 受控软件包状态
+     * @param prefix helper result prefix / helper 结果前缀
+     * @return strict non-secret helper fields / 严格非秘密 helper 字段 */
+    private static Map<String, String> nativeInventory(NativeState state, String prefix) {
+        var fields = new LinkedHashMap<String, String>();
+        fields.put("status", "OK");
+        fields.put(prefix + "engine", "POSTGRESQL");
+        fields.put(prefix + "instanceCount", state.installed ? "1" : "0");
+        fields.put(prefix + "conflictCount", "0");
+        if (state.installed)
+            nativeInstance(state, prefix + "instance.0.").forEach(fields::put);
+        if (state.install != NativeInstall.NONE) {
+            fields.put(prefix + "package", "postgresql-16");
+            fields.put(prefix + "packageVersion", "16.6-1");
+            fields.put(prefix + "engineVersion", "16.6");
+        }
+        return fields;
+    }
+
+    /** One exact instance projection for inventory and target responses. / 库存及目标回包的一份精确实例投影。
+     * @param state controlled package state / 受控软件包状态
+     * @param prefix protocol field prefix / 协议字段前缀
+     * @return instance fields / 实例字段 */
+    private static Map<String, String> nativeInstance(NativeState state, String prefix) {
+        return Map.of(prefix + "engine", "POSTGRESQL", prefix + "id", "postgresql-16", prefix + "version",
+                state.install == NativeInstall.REPLACE && !state.replaced ? "15.6" : "16.6", prefix + "port", "5432",
+                prefix + "service", "postgresql.service", prefix + "dataDirectory", "/var/lib/postgresql/16/main",
+                prefix + "fingerprint", "a".repeat(64), prefix + "running", Boolean.toString(!state.restorePending));
+    }
+
+    /** One target whose ownership changes only after actual controlled helper actions. / 仅在真实受控 helper 动作后变化的目标。
+     * @param state target state / 目标状态
+     * @param prefix protocol field prefix / 协议字段前缀
+     * @return exact target fields / 精确目标字段 */
+    private static Map<String, String> nativeTarget(NativeState state, String prefix) {
+        var fields = new LinkedHashMap<String, String>();
+        fields.put("status", "OK");
+        nativeInstance(state, prefix + "instance.").forEach(fields::put);
+        fields.put(prefix + "applicationId", state.applicationId);
+        fields.put(prefix + "database", "sampledb");
+        fields.put(prefix + "username", "sampleuser");
+        fields.put(prefix + "exists", Boolean.toString(state.prepared));
+        fields.put(prefix + "empty", Boolean.toString(!state.initialized));
+        fields.put(prefix + "ownershipToken", state.prepared ? "b".repeat(64) : "");
+        fields.put(prefix + "initialization", state.initialized ? "COMPLETE" : state.prepared ? "EMPTY" : "UNOWNED");
+        fields.put(prefix + "initializedSourceSha256", state.initialized ? state.sourceDigest : "");
+        return fields;
+    }
+
+    /** Encodes only non-secret helper facts using the real protocol field framing. / 用真实协议字段帧编码仅非秘密 helper 事实。
+     * @param fields exact observed fields / 精确观察字段
+     * @return successful controlled command / 成功受控命令 */
+    private static OperationResult<CommandResult> nativeReply(Map<String, String> fields) {
+        byte[] bytes = DeploymentNativeDatabaseWire.frame(fields);
+        try {
+            return reply(new String(bytes, StandardCharsets.US_ASCII));
+        } finally {
+            Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     /** Supplies exact candidate and release responses without a real SSH endpoint. / 不使用真实SSH端点而提供精确候选及发布回执。

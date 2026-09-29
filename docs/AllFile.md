@@ -1855,6 +1855,15 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/secret/DeploymentSecretProvisionFlow.java`：原任务创建秘密、预留精确业务引用、保存不可变修订及不重建秘密的恢复编排。
 - `mod/deployment/secret/DeploymentSecretProvisionJournal.java`：宿主作者检查点中的原服务器/用途/修订、创建 ID、引用 UUID 与已知业务结果；不保存秘密值。
 - `mod/deployment/secret/SecretValueSource.java`：已准入任务内一次性取得明文数组的窄回调，由 `submit` 或 `submitOwned` 明确原数组所有权。
+- `mod/deployment/service/core/model/ecosystem/db/DeploymentNativeDatabaseFacts.java`：严格有界的非秘密库存、精确实例、包版本与应用目标事实。
+- `mod/deployment/service/standard/DeploymentDatabasePlanJournal.java`：在原静态任务内先持久整图数据库子键索引，恢复核对完整组件/数据库身份。
+- `mod/deployment/service/standard/DeploymentDatabaseStages.java`：整图 SQLite/native 本机预检、原任务准备及已知收尾阶段。
+- `mod/deployment/service/standard/DeploymentNativeDatabasePreparation.java`：库存、安装/替换及恢复、目标/SQL/凭据与正式发布合并编排。
+- `mod/deployment/service/standard/deploy/database/DeploymentNativeDatabaseReview.java`：实例选择、安装、替换、人工恢复与短期密码审阅合同。
+- `mod/deployment/service/standard/deploy/database/DeploymentNativeSqlSource.java`：冻结 SQL 的 realpath、有界 UTF-8 字节读取与摘要校验。
+- `mod/deployment/service/standard/deploy/database/DeploymentPreparedDatabase.java`：SQLite 与原生准备输出共享的窄发布事实合同。
+- `mod/deployment/linux/DeploymentNativeDatabaseResults.java`：严格解析无重复字段及身份一致的原生数据库回包。
+- `mod/deployment/ui/DeploymentStaticPasswordInput.java`：原 owner 模态的短期密码输入与 char/byte 缓冲清零。
 
 - `mod/deployment/db/DeploymentJsonDocument.java`：共享严格有界 UTF-8/JSON、精确字段与 UUID 原语，不解释业务状态。
 - `mod/deployment/db/DeploymentReleaseIdentity.java`：整应用历史的不可变 UUID 与完整清单摘要。
@@ -2076,7 +2085,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/DeploymentHelperBootstrap.java`：先探测固定 helper；缺失时在原任务留痕安装，成功须核原 root 回执与包身份，未知恢复不重装。
 - `mod/deployment/service/standard/DeploymentStaticTaskRecovery.java`：先核首次 helper 安装及原数据库回执，再区分本机/Git 清理与正式发布恢复；缺失、未核实或损坏依据保持未知。
 - `mod/deployment/service/standard/DeploymentStaticUnitResolver.java`：以原服务器和已持久受管单元身份确定部署归属。
-- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内冻结来源、发现、补全数据库声明并独立确认 SQLite 初始化，重分析、逐组件归档及最终确认后先确保固定 helper，再交给原单/多执行器；服务器型数据库准备未接通时拒绝。
+- `mod/deployment/service/standard/DeploymentStaticWorkflow.java`：同一原发布任务内冻结来源、发现与补全声明，先全图本机 SQL/配置预检，再准备 SQLite/native 与独立结构批准，合入原单/多执行器；UNKNOWN 保留来源与静态标记。
 - `mod/deployment/ui/DeploymentGitSourceForm.java`：仅 Git 模式可见的来源、引用和本机可执行文件输入，任务准入前构造无凭据的类型化请求。
 - `mod/deployment/ui/DeploymentSecretReferenceField.java`：运行审阅中选择已有业务秘密修订并追加精确引用，同时保留高级非秘密输入。
 - `mod/deployment/ui/DeploymentStaticPage.java`：NORMAL 模式惰性静态部署页面及锁定、关闭时的所属审阅生命周期。

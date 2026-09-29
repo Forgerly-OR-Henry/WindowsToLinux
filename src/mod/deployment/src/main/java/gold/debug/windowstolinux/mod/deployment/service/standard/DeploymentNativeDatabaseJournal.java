@@ -107,10 +107,29 @@ public final class DeploymentNativeDatabaseJournal {
     public static DeploymentNativeDatabaseJournal begin(TaskService tasks, TaskContext task, ServerRef server,
             UUID operationId, String action, String targetDigest, String requestDigest, String target)
             throws ApiException {
+        return begin(tasks, task, server, KEY, operationId, action, targetDigest, requestDigest, target);
+    }
+
+    /** Persists one indexed database's first operation before any remote dispatch. / 远端发送前持久保存一项已索引数据库的首操作。
+     * @param tasks original task service / 原任务服务
+     * @param task admitted task / 已准入任务
+     * @param server admitted server / 已准入服务器
+     * @param key durable per-database key from the original plan / 原计划中的每库持久键
+     * @param operationId fixed operation identity / 固定操作身份
+     * @param action helper action / helper 动作
+     * @param targetDigest actual target digest / 实际目标摘要
+     * @param requestDigest complete frame digest / 完整帧摘要
+     * @param target business target / 业务目标
+     * @return retained journal / 保留的日志
+     * @throws ApiException if original persistence fails / 原持久化失败时 */
+    public static DeploymentNativeDatabaseJournal begin(TaskService tasks, TaskContext task, ServerRef server,
+            String key, UUID operationId, String action, String targetDigest, String requestDigest, String target)
+            throws ApiException {
+        checkedKey(key);
         var facts = new Facts(server.id(), operationId, action, targetDigest, requestDigest, target, "INTENT", "NONE",
                 false, List.of());
         requireTerminalCapacity(task.id(), facts);
-        return new DeploymentNativeDatabaseJournal(tasks.beginCheckpoint(task, KEY, encode(task.id(), facts)),
+        return new DeploymentNativeDatabaseJournal(tasks.beginCheckpoint(task, key, encode(task.id(), facts)),
                 task.id());
     }
 
@@ -121,12 +140,31 @@ public final class DeploymentNativeDatabaseJournal {
      * @throws ApiException if reading fails / 读取失败时 */
     public static Optional<DeploymentNativeDatabaseJournal> find(TaskService tasks, TaskContext task)
             throws ApiException {
-        var found = tasks.findCheckpoint(task, KEY);
+        return find(tasks, task, KEY);
+    }
+
+    /** Finds one indexed database's exact original checkpoint. / 查找一项已索引数据库的精确原检查点。
+     * @param tasks original task service / 原任务服务
+     * @param task original task / 原任务
+     * @param key durable per-database key / 每库持久键
+     * @return original journal or genuine absence / 原日志或真实不存在
+     * @throws ApiException if reading fails / 读取失败时 */
+    public static Optional<DeploymentNativeDatabaseJournal> find(TaskService tasks, TaskContext task, String key)
+            throws ApiException {
+        checkedKey(key);
+        var found = tasks.findCheckpoint(task, key);
         if (found.isEmpty())
             return Optional.empty();
         var journal = new DeploymentNativeDatabaseJournal(found.orElseThrow(), task.id());
         journal.facts();
         return Optional.of(journal);
+    }
+
+    /** Rejects unplanned and malformed journal keys. / 拒绝未规划及畸形日志键。
+     * @param key candidate key / 候选键 */
+    private static void checkedKey(String key) {
+        if (!KEY.equals(key) && (key == null || !key.matches("deployment-native-database\\.[0-9a-f]{32}")))
+            throw new IllegalArgumentException("Invalid native database journal key");
     }
 
     /** Reads the exact persisted identity. / 读取精确持久身份。

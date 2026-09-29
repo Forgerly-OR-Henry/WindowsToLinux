@@ -125,9 +125,25 @@ final class DeploymentSecretProvisionJournal {
      * @throws ApiException if persistence is unconfirmed / 持久化未确认时 */
     static DeploymentSecretProvisionJournal begin(TaskService tasks, TaskContext task, ServerRef server,
             DeploymentSecretReference revision, String purpose, Instant createdAt) throws ApiException {
+        return begin(tasks, task, server, revision, purpose, createdAt, KEY);
+    }
+
+    /** Begins one pre-indexed child under the original publication task. / 在原发布任务中开始一项预索引子项。
+     * @param tasks original task service / 原任务服务
+     * @param task original task / 原任务
+     * @param server admitted server / 已准入服务器
+     * @param revision exact immutable business revision / 精确不可变业务修订
+     * @param purpose exact secret purpose / 精确秘密用途
+     * @param createdAt reviewed time / 已审阅时间
+     * @param key planned child checkpoint key / 已计划子项检查点键
+     * @return durable child journal / 持久子日志
+     * @throws ApiException if original persistence fails / 原持久化失败时 */
+    static DeploymentSecretProvisionJournal begin(TaskService tasks, TaskContext task, ServerRef server,
+            DeploymentSecretReference revision, String purpose, Instant createdAt, String key) throws ApiException {
+        checkedKey(key);
         var initial = new Facts(task.id(), server, revision, purpose, createdAt, PhaseType.PLANNED, Optional.empty(),
                 Optional.empty(), Optional.empty());
-        var handle = tasks.beginCheckpoint(task, KEY, encode(initial));
+        var handle = tasks.beginCheckpoint(task, key, encode(initial));
         return new DeploymentSecretProvisionJournal(handle, handle.snapshot(), task.id());
     }
 
@@ -137,11 +153,30 @@ final class DeploymentSecretProvisionJournal {
      * @return original journal or absence / 原日志或不存在
      * @throws ApiException if original evidence cannot be read / 原依据无法读取时 */
     static Optional<DeploymentSecretProvisionJournal> find(TaskService tasks, TaskContext task) throws ApiException {
-        var original = tasks.findCheckpoint(task, KEY);
+        return find(tasks, task, KEY);
+    }
+
+    /** Finds an indexed child without treating damaged evidence as absence. / 查找已索引子项，不把损坏依据当作不存在。
+     * @param tasks original task service / 原任务服务
+     * @param task original task / 原任务
+     * @param key planned child checkpoint key / 已计划子项检查点键
+     * @return original child or genuine absence / 原子项或真实不存在
+     * @throws ApiException if lookup fails / 查找失败时 */
+    static Optional<DeploymentSecretProvisionJournal> find(TaskService tasks, TaskContext task, String key)
+            throws ApiException {
+        checkedKey(key);
+        var original = tasks.findCheckpoint(task, key);
         if (original.isEmpty())
             return Optional.empty();
         var handle = original.orElseThrow();
         return Optional.of(new DeploymentSecretProvisionJournal(handle, handle.snapshot(), task.id()));
+    }
+
+    /** Restricts child addresses to the prior durable database plan. / 将子项地址限制为先前持久数据库计划格式。
+     * @param key candidate checkpoint key / 候选检查点键 */
+    private static void checkedKey(String key) {
+        if (!KEY.equals(key) && (key == null || !key.matches("deployment-secret-revision\\.[0-9a-f]{32}")))
+            throw new IllegalArgumentException("Invalid secret child checkpoint key");
     }
 
     /** Returns the verified current facts. / 返回已核实当前依据。

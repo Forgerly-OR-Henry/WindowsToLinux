@@ -32,6 +32,8 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosyst
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.DeploymentReviewConsent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentNativeDatabaseReview;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.*;
@@ -174,7 +176,7 @@ public final class DeploymentStaticWorkflow {
     }
 
     /** Owner-view review boundary; rejection must leave all source cleanup to this task. / 所属视图审阅边界；拒绝时来源清理由本任务完成。 */
-    public interface Reviewer {
+    public interface Reviewer extends DeploymentNativeDatabaseReview {
         /** Completes source-derived non-secret database fields without authorizing an effect. / 补齐源码派生的非秘密数据库字段，不授权副作用。
          * @param server exact target / 精确目标
          * @param componentId reviewed component / 经审阅组件
@@ -230,13 +232,13 @@ public final class DeploymentStaticWorkflow {
          * @param sourceSha256 manifest digest / 清单摘要
          * @param archiveSha256 component-to-tar digest / 组件至 tar 摘要
          * @param answers reviewed values / 经审阅值
-         * @param databases source-derived exact SQLite preparation / 源码派生的精确 SQLite 准备
+         * @param databases source-derived exact database preparation / 源码派生的精确数据库准备
          * @param git original selected and resolved Git identity / 原选定及已解析 Git 身份
          * @param task original task / 原任务
          * @return explicit current-view confirmation or refusal / 当前视图明确确认或拒绝
          * @throws Exception if view observation fails / 视图观察失败时 */
         OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-                Map<String, Answers> answers, Map<String, DeploymentSqlitePreparation.Prepared> databases,
+                Map<String, Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
                 Optional<GitReview> git, TaskContext task) throws Exception;
     }
 
@@ -446,9 +448,8 @@ public final class DeploymentStaticWorkflow {
         var database = prepareDatabase(server, id, facts.applicationId(), material, facts, reviewer, task);
         if (database.outcome() != Outcome.SUCCEEDED)
             return withoutValue(database);
-        var preparedDatabase = database.value().orElseThrow();
-        var prompt = prompt(id, facts, assessed.runtimeSuggestion().orElse(null),
-                !preparedDatabase.bindings().isEmpty());
+        var databaseLocal = database.value().orElseThrow();
+        var prompt = prompt(id, facts, assessed.runtimeSuggestion().orElse(null), databaseLocal.hasBindings());
         var reviewed = reviewer.review(server, material.snapshot().sha256(), List.of(prompt), task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reviewed);
@@ -456,7 +457,21 @@ public final class DeploymentStaticWorkflow {
         if (!supplied.keySet().equals(Set.of(id)))
             return rejected("DEPLOYMENT_STATIC_REVIEW_INCOMPLETE");
         var values = completed(prompt, supplied.get(id));
-        runtime.runtime(type, values);
+        validateReview(prompt, supplied.get(id));
+        var stages = new DeploymentDatabaseStages(context);
+        stages.validateRuntime(databaseLocal, supplied.get(id));
+        var plan = stages.begin(server, material.snapshot().sha256(), List.of(databaseLocal), task);
+        if (plan.isPresent()) {
+            var helper = ensureHelper(server, task);
+            if (helper.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(helper);
+        }
+        var prepared = stages.prepare(server, plan, databaseLocal, reviewer, task);
+        if (prepared.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(prepared);
+        var preparedDatabase = prepared.value().orElseThrow();
+        if (plan.isPresent() && !stages.releaseKnown(task, plan.orElseThrow()))
+            return unknownPreparation();
         var reanalyzed = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
                 preparedDatabase.schemaReview(), false, task);
         if (reanalyzed.outcome() != Outcome.SUCCEEDED)
@@ -479,15 +494,15 @@ public final class DeploymentStaticWorkflow {
                 preparedDatabase, task);
         if (planned.outcome() != Outcome.SUCCEEDED)
             return withoutValue(planned);
-        var plan = planned.value().orElseThrow();
+        var publication = planned.value().orElseThrow();
         var unit = units.resolve(task, facts.applicationId(), server);
-        var credentials = credentials(task, plan.request().secretReferences());
+        var credentials = credentials(task, publication.request().secretReferences());
         var helper = ensureHelper(server, task);
         if (helper.outcome() != Outcome.SUCCEEDED)
             return withoutValue(helper);
         Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
         return single.prepareWithinTask(task, unit, project, credentials,
-                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan), Optional.empty()));
+                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(publication), Optional.empty()));
     }
 
     /** Completes a discovered graph only after each reviewed runtime has been reanalyzed. / 每份经审阅运行时重分析后才完成发现整图。
@@ -509,37 +524,30 @@ public final class DeploymentStaticWorkflow {
             DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
         var prompts = new ArrayList<Prompt>();
         var facts = new HashMap<String, DeploymentProjectFacts>();
-        var databases = new HashMap<String, DeploymentSqlitePreparation.Prepared>();
-        for (var component : discovered) {
-            var initial = analyzer.analyzeComponent(material, component.relativeRoot(), component.id(),
-                    selection.choices().get(component.id()).type(), Optional.empty(), true, task);
-            if (initial.outcome() != Outcome.SUCCEEDED)
-                return withoutValue(initial);
-            var assessed = initial.value().orElseThrow().assessment();
-            if (assessed.admission() == DeploymentAdmissionStatus.REJECTED
-                    || assessed.admission() == DeploymentAdmissionStatus.RECOGNITION_PREVIEW)
-                return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
-            var observed = assessed.facts().orElseThrow();
-            facts.put(component.id(), observed);
-            var database = prepareDatabase(server, component.id(),
-                    MixedProjectInspector.managedComponentId(selection.applicationId(), component.id()), material,
-                    observed, reviewer, task);
-            if (database.outcome() != Outcome.SUCCEEDED)
-                return withoutValue(database);
-            databases.put(component.id(), database.value().orElseThrow());
-            prompts.add(prompt(component.id(), observed, assessed.runtimeSuggestion().orElse(null),
-                    !database.value().orElseThrow().bindings().isEmpty()));
-        }
+        var databaseLocal = new HashMap<String, DeploymentDatabaseStages.Local>();
+        var collected = graphPrompts(server, material, discovered, selection, reviewer, task, facts, databaseLocal);
+        if (collected.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(collected);
+        prompts.addAll(collected.value().orElseThrow());
         var reviewed = reviewer.review(server, material.snapshot().sha256(), List.copyOf(prompts), task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reviewed);
         var supplied = reviewed.value().orElseThrow();
         if (!supplied.keySet().equals(selection.choices().keySet()))
             return rejected("DEPLOYMENT_STATIC_COMPONENT_REVIEW_INCOMPLETE");
+        for (var prompt : prompts)
+            validateReview(prompt, supplied.get(prompt.componentId()));
+        var stages = new DeploymentDatabaseStages(context);
+        for (var prompt : prompts)
+            stages.validateRuntime(databaseLocal.get(prompt.componentId()), supplied.get(prompt.componentId()));
         var requests = new ArrayList<ComponentAnalysisRequest>();
         for (int i = 0; i < discovered.size(); i++)
             requests.add(componentRequest(discovered.get(i), selection.choices().get(discovered.get(i).id()),
                     facts.get(discovered.get(i).id()), prompts.get(i), supplied.get(discovered.get(i).id())));
+        var preparedDatabases = graphDatabases(server, material, discovered, databaseLocal, reviewer, task);
+        if (preparedDatabases.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(preparedDatabases);
+        var databases = preparedDatabases.value().orElseThrow();
         var reviews = new HashMap<String, DatabaseSchemaReview>();
         databases.forEach((id, prepared) -> prepared.schemaReview().ifPresent(review -> reviews.put(id, review)));
         var analyzed = analyzer.analyzeComponents(material, logicalName, selection.applicationId(), requests, reviews,
@@ -593,6 +601,78 @@ public final class DeploymentStaticWorkflow {
                 original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plans), Optional.empty()));
     }
 
+    /** Prepares all locally verified databases under one durable original-task index. / 在一个持久原任务索引下准备全部本机已核数据库。
+     * @param server exact target / 精确目标
+     * @param material original frozen material / 原冻结素材
+     * @param discovered original ordered components / 原有序组件
+     * @param databaseLocal validated local plans / 已校验本机计划
+     * @param reviewer owner view / 所属视图
+     * @param task original task / 原任务
+     * @return actual prepared facts or original refusal / 实际准备事实或原拒绝
+     * @throws Exception if original preparation or journal fails / 原准备或日志失败时 */
+    private OperationResult<Map<String, DeploymentPreparedDatabase>> graphDatabases(ServerRef server,
+            DeploymentSourceMaterial material, List<DiscoveredProjectComponent> discovered,
+            Map<String, DeploymentDatabaseStages.Local> databaseLocal, Reviewer reviewer, TaskContext task)
+            throws Exception {
+        var stages = new DeploymentDatabaseStages(context);
+        var databasePlan = stages.begin(server, material.snapshot().sha256(), List.copyOf(databaseLocal.values()),
+                task);
+        if (databasePlan.isPresent()) {
+            var helper = ensureHelper(server, task);
+            if (helper.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(helper);
+        }
+        var databases = new HashMap<String, DeploymentPreparedDatabase>();
+        for (var component : discovered) {
+            var database = stages.prepare(server, databasePlan, databaseLocal.get(component.id()), reviewer, task);
+            if (database.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(database);
+            databases.put(component.id(), database.value().orElseThrow());
+        }
+        if (databasePlan.isPresent() && !stages.releaseKnown(task, databasePlan.orElseThrow()))
+            return unknownPreparation();
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.copyOf(databases)), Optional.empty());
+    }
+
+    /** Collects source facts and locally checked database prompts for the entire graph. / 为整图收集源码事实及本机已核数据库问题。
+     * @param server exact target / 精确目标
+     * @param material live frozen material / 开放冻结素材
+     * @param discovered original component roots / 原组件根
+     * @param selection reviewed graph kinds / 经审阅整图类型
+     * @param reviewer owner view / 所属视图
+     * @param task original publication task / 原发布任务
+     * @param facts collected actual component facts / 收集的实际组件事实
+     * @param databaseLocal collected source-backed database plans / 收集的源码绑定数据库计划
+     * @return complete local prompts or original refusal / 完整本机问题或原拒绝
+     * @throws Exception if source inspection or review fails / 来源检查或审阅失败时 */
+    private OperationResult<List<Prompt>> graphPrompts(ServerRef server, DeploymentSourceMaterial material,
+            List<DiscoveredProjectComponent> discovered, Selection selection, Reviewer reviewer, TaskContext task,
+            Map<String, DeploymentProjectFacts> facts, Map<String, DeploymentDatabaseStages.Local> databaseLocal)
+            throws Exception {
+        var prompts = new ArrayList<Prompt>();
+        for (var component : discovered) {
+            var initial = analyzer.analyzeComponent(material, component.relativeRoot(), component.id(),
+                    selection.choices().get(component.id()).type(), Optional.empty(), true, task);
+            if (initial.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(initial);
+            var assessed = initial.value().orElseThrow().assessment();
+            if (assessed.admission() == DeploymentAdmissionStatus.REJECTED
+                    || assessed.admission() == DeploymentAdmissionStatus.RECOGNITION_PREVIEW)
+                return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
+            var observed = assessed.facts().orElseThrow();
+            facts.put(component.id(), observed);
+            var database = prepareDatabase(server, component.id(),
+                    MixedProjectInspector.managedComponentId(selection.applicationId(), component.id()), material,
+                    observed, reviewer, task);
+            if (database.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(database);
+            databaseLocal.put(component.id(), database.value().orElseThrow());
+            prompts.add(prompt(component.id(), observed, assessed.runtimeSuggestion().orElse(null),
+                    database.value().orElseThrow().hasBindings()));
+        }
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(List.copyOf(prompts)), Optional.empty());
+    }
+
     /** Completes database declarations before runtime analysis and requires separate SQLite initialization consent. / 运行重分析前补齐数据库声明，并要求单独的 SQLite 初始化同意。
      * @param server exact target / 精确目标
      * @param componentId actual discovered component / 实际发现组件
@@ -603,36 +683,11 @@ public final class DeploymentStaticWorkflow {
      * @param task original publication task / 原发布任务
      * @return bound SQLite preparation or classified refusal / 绑定 SQLite 准备或分类拒绝
      * @throws Exception if source inspection or review fails / 来源检查或审阅失败时 */
-    private OperationResult<DeploymentSqlitePreparation.Prepared> prepareDatabase(ServerRef server, String componentId,
+    private OperationResult<DeploymentDatabaseStages.Local> prepareDatabase(ServerRef server, String componentId,
             String applicationId, DeploymentSourceMaterial material, DeploymentProjectFacts facts, Reviewer reviewer,
             TaskContext task) throws Exception {
-        var observed = new DatabaseProjectInspector().inspect(facts.sourceRoot());
-        Map<String, String> supplied = Map.of();
-        if (!observed.databases().isEmpty() || observed.unknownDatabase()) {
-            var reviewed = reviewer.databaseInputs(server, componentId, material.snapshot().sha256(),
-                    facts.sourceRoot(), applicationId, observed, task);
-            if (reviewed.outcome() != Outcome.SUCCEEDED)
-                return new OperationResult<>(reviewed.outcome(), Optional.empty(), reviewed.problem());
-            supplied = reviewed.value().orElseThrow();
-        }
-        var completed = DeploymentDatabaseSourceInputs.complete(facts.sourceRoot(), applicationId, observed, supplied);
-        if (completed.databases().stream().anyMatch(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE))
-            return rejected("DEPLOYMENT_SERVER_DATABASE_PREPARATION_REQUIRED");
-        boolean approved = false;
-        if (completed.schemaReviewRequired()) {
-            var confirmation = reviewer.confirmSqliteInitialization(server, componentId, material.snapshot().sha256(),
-                    completed, task);
-            if (confirmation.outcome() != Outcome.SUCCEEDED)
-                return new OperationResult<>(confirmation.outcome(), Optional.empty(), confirmation.problem());
-            if (!confirmation.value().orElse(false))
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_DATABASE_INITIALIZATION_DECLINED",
-                                "SQLite initialization was not approved", Map.of(), Optional.empty())));
-            approved = true;
-        }
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional
-                .of(DeploymentSqlitePreparation.prepare(facts.sourceRoot(), applicationId, completed, approved, task)),
-                Optional.empty());
+        return new DeploymentDatabaseStages(context).local(server, componentId, applicationId,
+                material.snapshot().sha256(), facts.sourceRoot(), reviewer, task);
     }
 
     /** Ensures the fixed helper after final review but before ordinary publication effects. / 最终审阅后、普通发布副作用前确保固定 helper。
@@ -655,6 +710,9 @@ public final class DeploymentStaticWorkflow {
         try {
             var helper = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
             var database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
+            var indexed = DeploymentDatabasePlanJournal.find(context.tasks(), task);
+            if (indexed.isPresent() && !new DeploymentDatabaseStages(context).releaseKnown(task, indexed.orElseThrow()))
+                return true;
             return helper.filter(value -> {
                 try {
                     return "DISPATCHED".equals(value.facts().phase());
@@ -673,6 +731,15 @@ public final class DeploymentStaticWorkflow {
         }
     }
 
+    /** Retains the original task when an indexed preparation still lacks a confirmed terminal fact. / 索引准备仍缺确认终态事实时保留原任务。
+     * @param <T> discarded prepared value / 丢弃的准备值
+     * @return classified unknown with retained original recovery / 保留原恢复的已分类未知 */
+    private static <T> OperationResult<T> unknownPreparation() {
+        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_DATABASE_PREPARATION_UNKNOWN",
+                        "Original database preparation needs exact receipt review", Map.of(), Optional.empty())));
+    }
+
     /** Keeps prior helper effects visible when later local review ends without publication. / 后续本机审阅未发布即结束时保留先前 helper 效果提示。
      * @param result actual preparation result / 实际准备结果
      * @param task original publication task / 原发布任务
@@ -681,29 +748,41 @@ public final class DeploymentStaticWorkflow {
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> priorEffects(
             OperationResult<DeploymentReferenceFlow.PreparedPublication> result, TaskContext task) throws ApiException {
         var retained = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
-        if (retained.isEmpty())
-            return result;
-        var facts = retained.orElseThrow().facts();
-        if ("INTENT".equals(facts.phase()))
-            return result;
-        if ("DISPATCHED".equals(facts.phase()))
+        var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task);
+        if (retained.isPresent() && "DISPATCHED".equals(retained.orElseThrow().facts().phase())) {
+            var facts = retained.orElseThrow().facts();
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_BOOTSTRAP_UNRESOLVED",
                             "Original helper installation needs exact receipt review",
                             Map.of("serverId", facts.serverId(), "operationId", facts.operationId().toString()),
                             Optional.empty())));
+        }
+        if (plan.isPresent() && !new DeploymentDatabaseStages(context).releaseKnown(task, plan.orElseThrow()))
+            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_DATABASE_PREPARATION_UNKNOWN",
+                            "Original database effects need exact receipt review",
+                            Map.of("serverId", plan.orElseThrow().facts().serverId()), Optional.empty())));
+        if (retained.isEmpty() && plan.isEmpty())
+            return result;
         var original = result.problem()
                 .orElseGet(() -> new Problem(
                         result.outcome() == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
-                        "DEPLOYMENT_STATIC_REVIEW_ENDED", "Static review ended after helper preparation", Map.of(),
+                        "DEPLOYMENT_STATIC_REVIEW_ENDED", "Static review ended after preparation", Map.of(),
                         Optional.empty()));
         var details = new HashMap<>(original.context());
-        details.put("helperServerId", facts.serverId());
-        details.put("helperOperationId", facts.operationId().toString());
-        details.put("helperPhase", facts.phase());
+        if (retained.isPresent() && !"INTENT".equals(retained.orElseThrow().facts().phase())) {
+            var facts = retained.orElseThrow().facts();
+            details.put("helperServerId", facts.serverId());
+            details.put("helperOperationId", facts.operationId().toString());
+            details.put("helperPhase", facts.phase());
+        }
+        if (plan.isPresent())
+            details.putAll(new DeploymentDatabaseStages(context).effectDetails(task, plan.orElseThrow()));
+        if (details.equals(original.context()))
+            return result;
         return new OperationResult<>(result.outcome(), Optional.empty(),
                 Optional.of(new Problem(original.code(), original.eventCode(),
-                        original.message() + "; review the original helper installation effect", details,
+                        original.message() + "; review earlier helper, database or secret effects", details,
                         original.diagnosticId())));
     }
 
@@ -863,11 +942,10 @@ public final class DeploymentStaticWorkflow {
     }
 
     /** Keeps classified refusal while dropping an unavailable payload. / 保留分类拒绝且丢弃不可用载荷。
-     * @param <T> original payload / 原载荷
+     * @param <T> expected payload / 预期载荷
      * @param result original result / 原结果
-     * @return prepared-publication result / 已准备发布结果 */
-    private static <T> OperationResult<DeploymentReferenceFlow.PreparedPublication> withoutValue(
-            OperationResult<T> result) {
+     * @return same classification without a payload / 相同分类且无载荷 */
+    private static <T> OperationResult<T> withoutValue(OperationResult<?> result) {
         return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
     }
 
