@@ -150,12 +150,15 @@ WindowsToLinux/
    │  ├─ pom.xml
    │  └─ deployment/                         官方部署主模块；业务迁移进行中
    │     ├─ Mod.java
+   │     ├─ ai/
    │     ├─ db/
    │     ├─ linux/
    │     ├─ secret/
    │     ├─ service/
+   │     │  ├─ agent/
    │     │  ├─ core/
    │     │  │  ├─ config/
+   │     │  │  ├─ delivery/
    │     │  │  └─ model/
    │     │  │     ├─ analysis/
    │     │  │     ├─ assessment/
@@ -217,6 +220,7 @@ WindowsToLinux/
    │     │     │  ├─ toolchain/
    │     │     │  └─ workload/
    │     │     └─ deploy/
+   │     │        ├─ assistance/
    │     │        ├─ build/
    │     │        │  ├─ contract/
    │     │        │  │  └─ spi/
@@ -1695,3 +1699,7 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 #### 当前与目标门禁的适用范围
 
 当前门禁适用于第 1～7 节的 0.x 结构。1.1 的已登记 Mod 入口允许简单类名同为 `Mod`，其他类型继续遵守既有命名约束；具体测试调整与验证见 [1.1 开发文档](development/PHASE-1.1.md#structure-gates)。
+
+### S5-03/S5-04 当前模式源码
+
+部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。完整活动图退出与全局架构门禁仍属 S3 待收尾项。

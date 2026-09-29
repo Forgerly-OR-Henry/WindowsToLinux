@@ -4,6 +4,7 @@
 
 - 更新日期：2026-09-26。
 - 状态：本文为 **1.1 完整目标规格，实现与本机验证进行中**。部分公开类型、任务、数据库及 SSH/审批适配已实现，完整作者 SDK、安装协调器和官方业务 Mod 尚未交付；具体证据见 [开发进度](development/PHASE-1.1.md)。本文的完整能力与示例仍是验收目标，不代表当前产品已全部支持。0.x 业务行为见 [Runtime.md](Runtime.md) 和 [产品手册](PRODUCT-MANUAL.md)。
+- 当前官方部署实现已复用公开 Task/Source/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。完整 S5 与发行 SDK 尚未完成。
 - 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，不宣称现有 SDK 可运行。
 - 职责：描述 Mod 的格式、行为、数据和公开能力。工程迁移、技术细化、开发步骤与验收统一见 [1.1 开发文档](development/PHASE-1.1.md#implementation)。本文不把接口示例当作已交付 SDK。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程主文档](development/PHASE-1.1.md) · [项目目标结构](File.md#phase-1-1-target) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)

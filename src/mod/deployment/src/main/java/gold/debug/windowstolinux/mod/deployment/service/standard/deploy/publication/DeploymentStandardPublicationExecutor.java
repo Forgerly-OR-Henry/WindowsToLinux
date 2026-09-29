@@ -151,6 +151,10 @@ public final class DeploymentStandardPublicationExecutor {
         final gold.debug.windowstolinux.appapi.linux.RemoteSession session;
         try {
             session = context.linux().connect(unit.server(), task);
+        } catch (ApiException denied) {
+            if (denied.problem().code() == ProblemCode.ACCESS_DENIED)
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(denied.problem()));
+            return unknown("DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED");
         } catch (Exception | LinkageError | AssertionError uncertain) {
             return unknown("DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED");
         }

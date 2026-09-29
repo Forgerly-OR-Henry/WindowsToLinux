@@ -96,6 +96,10 @@ final class ArchitectureSourceInspector {
             TypeMirror sqlException = task.getElements().getTypeElement("java.sql.SQLException").asType();
             TypeMirror problem = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Problem")
                     .asType();
+            TypeMirror optionalProblem = types.getDeclaredType(task.getElements().getTypeElement("java.util.Optional"),
+                    problem);
+            TypeMirror outcome = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Outcome")
+                    .asType();
             TypeMirror carrier = task.getElements()
                     .getTypeElement("gold.debug.windowstolinux.shared.model.failure.FailureCarrier").asType();
             TypeMirror definition = task.getElements()
@@ -109,13 +113,20 @@ final class ArchitectureSourceInspector {
                         if (!node.getSimpleName().isEmpty()) {
                             TypeElement element = (TypeElement) syntax.getElement(getCurrentPath());
                             TypeMirror type = types.erasure(element.asType());
-                            boolean publicProblem = javax.lang.model.util.ElementFilter
+                            var accessors = javax.lang.model.util.ElementFilter
                                     .methodsIn(task.getElements().getAllMembers(element)).stream()
-                                    .anyMatch(method -> method.getSimpleName().contentEquals("problem")
-                                            && method.getParameters().isEmpty()
+                                    .filter(method -> method.getParameters().isEmpty()
                                             && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
-                                            && !method.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)
-                                            && types.isSameType(method.getReturnType(), problem));
+                                            && !method.getModifiers()
+                                                    .contains(javax.lang.model.element.Modifier.STATIC))
+                                    .toList();
+                            boolean classifiedOutcome = accessors.stream()
+                                    .anyMatch(method -> method.getSimpleName().contentEquals("outcome")
+                                            && types.isSameType(method.getReturnType(), outcome));
+                            boolean publicProblem = accessors.stream()
+                                    .anyMatch(method -> method.getSimpleName().contentEquals("problem")
+                                            && (types.isSameType(method.getReturnType(), problem) || classifiedOutcome
+                                                    && types.isSameType(method.getReturnType(), optionalProblem)));
                             declarations.add(
                                     new JavaType(element.getQualifiedName().toString(), node.getSimpleName().toString(),
                                             node.getKind(), types.isAssignable(type, throwable),

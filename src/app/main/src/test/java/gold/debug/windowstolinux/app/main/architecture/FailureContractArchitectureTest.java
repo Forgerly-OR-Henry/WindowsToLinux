@@ -214,6 +214,33 @@ class FailureContractArchitectureTest {
                 package fixture;
                 import gold.debug.windowstolinux.appapi.task.Problem;
                 class PlatformFailures {
+                    static class ClassifiedException extends Exception {
+                        public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                        public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class MissingOutcomeException extends Exception {
+                        public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class WrongOptionalException extends Exception {
+                        public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                        public java.util.Optional<String> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class PrivateOutcomeException extends Exception {
+                        private gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                        public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class StaticOutcomeException extends Exception {
+                        public static gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                        public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class ForeignOutcomeException extends Exception {
+                        public SameNamed.Outcome outcome() { return null; }
+                        public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
+                    }
+                    static class ForeignProblemException extends Exception {
+                        public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                        public java.util.Optional<SameNamed.Problem> problem() { return java.util.Optional.empty(); }
+                    }
                     static class PublicProblemException extends Exception {
                         public Problem problem() { return null; }
                     }
@@ -229,11 +256,17 @@ class FailureContractArchitectureTest {
                     }
                     static class UntranslatedSqlException extends java.sql.SQLException { }
                 }
+                class SameNamed {
+                    enum Outcome { CANCELLED }
+                    record Problem(String message) { }
+                }
                 """));
         var violations = exceptionViolations(sources);
-        assertEquals(4, violations.size());
+        assertEquals(10, violations.size());
         for (String name : List.of("WrongReturnException", "PrivateProblemException", "StaticProblemException",
-                "UntranslatedSqlException"))
+                "UntranslatedSqlException", "MissingOutcomeException", "WrongOptionalException",
+                "PrivateOutcomeException", "StaticOutcomeException", "ForeignOutcomeException",
+                "ForeignProblemException"))
             assertTrue(violations.stream().anyMatch(value -> value.contains(name)), name);
         var registered = ArchitectureSourceInspector.production().stream().flatMap(source -> source.types().stream())
                 .filter(type -> SQL_BRIDGE_TYPES.contains(type.name())).toList();

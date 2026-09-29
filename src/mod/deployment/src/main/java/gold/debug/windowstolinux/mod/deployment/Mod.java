@@ -1,14 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
-import gold.debug.windowstolinux.appapi.ui.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.PageSpec;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
+import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPageService;
+import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
@@ -17,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
+import gold.debug.windowstolinux.mod.deployment.ui.DeploymentAgentPage;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
@@ -43,105 +46,59 @@ public final class Mod implements ModEntrypoint {
     /** Borrowed-material deterministic deployment planning entrypoint. / 借用原素材的确定性部署规划入口。 */
     private DeploymentStandardPlanner standardPlanner;
 
-    /** Active original-task recovery registration. / 活动原任务恢复登记。 */
-    private RecoveryRegistration recoveryRegistration;
-
-    /** Original Git source recovery registration. / 原 Git 来源恢复登记。 */
-    private RecoveryRegistration gitRecoveryRegistration;
-
-    /** Original secret revision recovery registration. / 原秘密修订恢复登记。 */
-    private RecoveryRegistration secretRecoveryRegistration;
-
-    /** Lazy normal-mode static deployment page registration. / 正常模式的惰性静态部署页面登记。 */
-    private PageRegistration pageRegistration;
-
-    /** Read-only server lookup recovery. / 只读服务器查询恢复。 */
-    private RecoveryRegistration serverListRecoveryRegistration;
-
-    /** Read-only secret choice recovery. / 只读秘密选项恢复。 */
-    private RecoveryRegistration secretListRecoveryRegistration;
-
     /** One original-task static review coordinator. / 单项原任务静态审阅协调器。 */
     private DeploymentStaticWorkflow staticWorkflow;
 
     /** Mod-level page query and running-task state. / Mod 级页面查询及运行任务状态。 */
     private DeploymentStaticPageService pageService;
 
+    /** Autonomous original-task workflow and recovery. / 自主原任务流程及恢复。 */
+    private DeploymentAgentWorkflow agentWorkflow;
+
+    /** Autonomous page query and submission service. / 自主页面查询与提交服务。 */
+    private DeploymentAgentPageService agentPageService;
+
+    /** Successful platform registrations in acquisition order, retained if close fails. / 按取得顺序保存成功平台登记，关闭失败时保留。 */
+    private final List<AutoCloseable> registrations = new ArrayList<>();
+
     /** Binds owned diagnostics after the platform has prepared the exact business generation. / 平台准备精确业务代次后绑定所属诊断。
      * @param context actual host-created context / 实际宿主创建的上下文
      * @throws Exception if identity or diagnostic registration is unavailable / 身份或诊断登记不可用时 */
     @Override
     public void start(ModContext context) throws Exception {
-        if (this.context != null)
-            throw new IllegalStateException("Deployment context is already bound");
+        if (this.context != null || !registrations.isEmpty())
+            throw new IllegalStateException("Deployment context is already bound or retained");
         DeploymentSchema.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
         var flow = new DeploymentReferenceFlow(context, new DeploymentStandardPublicationRecovery(context));
-        var registration = context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
-                new DeploymentStaticTaskRecovery(context, flow));
         var gitFlow = new DeploymentGitSourceFlow(context);
-        RecoveryRegistration gitRegistration;
-        try {
-            gitRegistration = context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow);
-        } catch (Exception failure) {
-            try {
-                registration.close();
-            } catch (Exception cleanup) {
-                failure.addSuppressed(cleanup);
-            }
-            throw failure;
-        }
         var secretFlow = new DeploymentSecretProvisionFlow(context);
-        RecoveryRegistration secretRegistration;
-        try {
-            secretRegistration = context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow);
-        } catch (Exception failure) {
-            try {
-                gitRegistration.close();
-            } catch (Exception cleanup) {
-                failure.addSuppressed(cleanup);
-            }
-            try {
-                registration.close();
-            } catch (Exception cleanup) {
-                failure.addSuppressed(cleanup);
-            }
-            throw failure;
-        }
         var workflow = new DeploymentStaticWorkflow(context, flow);
         var pageTasks = new DeploymentStaticPageService(context, workflow);
-        PageRegistration page = null;
-        RecoveryRegistration serverListRegistration = null;
-        RecoveryRegistration secretListRegistration = null;
+        var autonomous = new DeploymentAgentWorkflow(context);
+        var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         try {
-            serverListRegistration = context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK,
-                    pageTasks);
-            secretListRegistration = context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK,
-                    pageTasks);
+            registrations.add(context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
+                    new DeploymentStaticTaskRecovery(context, flow)));
+            registrations.add(context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow));
+            registrations.add(context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow));
+            registrations
+                    .add(context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK, pageTasks));
+            registrations
+                    .add(context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK, pageTasks));
+            registrations.add(context.tasks().registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, autonomous));
+            registrations.add(
+                    context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
-                page = context.ui().register(
+                registrations.add(context.ui().register(
                         new PageSpec("static-deployment", "deployment.page.title", "Static deployment", false),
-                        () -> new DeploymentStaticPage(pageTasks));
+                        () -> new DeploymentStaticPage(pageTasks)));
+                registrations.add(context.ui().register(
+                        new PageSpec("agent-deployment", "deployment.agent.page.title", "Autonomous deployment", false),
+                        () -> new DeploymentAgentPage(autonomousPageTasks)));
             }
         } catch (Exception failure) {
-            if (secretListRegistration != null)
-                try {
-                    secretListRegistration.close();
-                } catch (Exception cleanup) {
-                    failure.addSuppressed(cleanup);
-                }
-            if (serverListRegistration != null)
-                try {
-                    serverListRegistration.close();
-                } catch (Exception cleanup) {
-                    failure.addSuppressed(cleanup);
-                }
-            for (var registered : new AutoCloseable[]{secretRegistration, gitRegistration, registration})
-                try {
-                    registered.close();
-                } catch (Exception cleanup) {
-                    failure.addSuppressed(cleanup);
-                }
+            closeRegistrations(failure);
             throw failure;
         }
         this.publicationFlow = flow;
@@ -149,14 +106,10 @@ public final class Mod implements ModEntrypoint {
         this.secretProvisionFlow = secretFlow;
         this.standardAnalyzer = new DeploymentStandardAnalyzer();
         this.standardPlanner = new DeploymentStandardPlanner();
-        this.recoveryRegistration = registration;
-        this.gitRecoveryRegistration = gitRegistration;
-        this.secretRecoveryRegistration = secretRegistration;
         this.staticWorkflow = workflow;
         this.pageService = pageTasks;
-        this.pageRegistration = page;
-        this.serverListRecoveryRegistration = serverListRegistration;
-        this.secretListRecoveryRegistration = secretListRegistration;
+        this.agentWorkflow = autonomous;
+        this.agentPageService = autonomousPageTasks;
         this.context = context;
     }
 
@@ -205,76 +158,12 @@ public final class Mod implements ModEntrypoint {
      * @throws Exception if recovery registration cannot close / 恢复登记无法关闭时 */
     @Override
     public void stop(StopContext context) throws Exception {
-        Exception failure = null;
-        if (pageRegistration != null) {
-            try {
-                pageRegistration.close();
-                pageRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
-        if (secretRecoveryRegistration != null) {
-            try {
-                secretRecoveryRegistration.close();
-                secretRecoveryRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
-        if (serverListRecoveryRegistration != null) {
-            try {
-                serverListRecoveryRegistration.close();
-                serverListRecoveryRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
-        if (secretListRecoveryRegistration != null) {
-            try {
-                secretListRecoveryRegistration.close();
-                secretListRecoveryRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
-        if (gitRecoveryRegistration != null) {
-            try {
-                gitRecoveryRegistration.close();
-                gitRecoveryRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
-        if (recoveryRegistration != null) {
-            try {
-                recoveryRegistration.close();
-                recoveryRegistration = null;
-            } catch (Exception unclosed) {
-                if (failure == null)
-                    failure = unclosed;
-                else
-                    failure.addSuppressed(unclosed);
-            }
-        }
+        Exception failure = closeRegistrations(null);
         if (failure != null)
             throw failure;
         secretProvisionFlow = null;
+        agentWorkflow = null;
+        agentPageService = null;
         staticWorkflow = null;
         pageService = null;
         standardAnalyzer = null;
@@ -283,4 +172,22 @@ public final class Mod implements ModEntrypoint {
         publicationFlow = null;
         this.context = null;
     }
+
+    /** Closes owned registrations in reverse order and retains every unconfirmed close for retry. / 逆序关闭所属登记并保留每项未确认关闭供重试。
+     * @param failure original failure or null / 原失败或空
+     * @return original or first close failure, null after confirmed cleanup / 原失败或首次关闭失败，确认清理后为空 */
+    private Exception closeRegistrations(Exception failure) {
+        for (int index = registrations.size() - 1; index >= 0; index--)
+            try {
+                registrations.get(index).close();
+                registrations.remove(index);
+            } catch (Exception unclosed) {
+                if (failure == null)
+                    failure = unclosed;
+                else
+                    failure.addSuppressed(unclosed);
+            }
+        return failure;
+    }
+
 }

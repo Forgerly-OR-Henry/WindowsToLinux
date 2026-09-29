@@ -62,6 +62,9 @@ public final class DeploymentManagedHelper {
     /** Reviewed business revision used by both exact actions. / 两项精确动作共用的已审阅业务修订。 */
     private final String revision;
 
+    /** Caller-owned check immediately before remote dispatch. / 远端发送紧前调用方持有的核对。 */
+    private final DeploymentSendGuard beforeSend;
+
     /** Binds one original task and its borrowed session. / 绑定一项原任务及其借用会话。
      * @param session original authenticated session / 原已认证会话
      * @param interaction host review capability / 宿主审核能力
@@ -70,11 +73,24 @@ public final class DeploymentManagedHelper {
      * @param revision reviewed business revision / 已审阅业务修订 */
     public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
             TaskContext task, String revision) {
+        this(session, interaction, server, task, revision, DeploymentSendGuard.NONE);
+    }
+
+    /** Binds an additional caller-owned pre-dispatch check. / 绑定调用方附加的发送前核对。
+     * @param session original authenticated session / 原已认证会话
+     * @param interaction host review capability / 宿主审核能力
+     * @param server original admitted server / 原准入服务器
+     * @param task original accepted task / 原任务
+     * @param revision reviewed business revision / 已审阅业务修订
+     * @param beforeSend caller-owned check / 调用方持有的核对 */
+    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
+            TaskContext task, String revision, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
         this.task = Objects.requireNonNull(task);
         this.revision = Objects.requireNonNull(revision);
+        this.beforeSend = Objects.requireNonNull(beforeSend);
         if (revision.isBlank() || revision.length() > 512 || revision.indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid reviewed revision");
     }
@@ -91,6 +107,7 @@ public final class DeploymentManagedHelper {
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(grant);
             final OperationResult<CommandResult> response;
+            beforeSend.verify();
             try {
                 response = session.execute(request, grant.value().orElseThrow());
             } catch (ApiException uncertain) {
@@ -134,6 +151,7 @@ public final class DeploymentManagedHelper {
                 return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
                         Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_HELPER_INSTALL_UNSENT")));
             beforeExecute.run();
+            beforeSend.verify();
             return session.execute(request, grant.value().orElseThrow());
         }
     }
@@ -150,6 +168,7 @@ public final class DeploymentManagedHelper {
             var grant = interaction.approve(intent("deployment.helper.install.status.v1", request), task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            beforeSend.verify();
             return session.execute(request, grant.value().orElseThrow());
         } finally {
             java.util.Arrays.fill(script, (byte) 0);
@@ -164,6 +183,7 @@ public final class DeploymentManagedHelper {
             var grant = interaction.approve(intent("deployment.helper.probe.v1", request), task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(grant);
+            beforeSend.verify();
             var response = session.execute(request, grant.value().orElseThrow());
             if (response.outcome() == Outcome.CANCELLED || response.outcome() == Outcome.UNKNOWN)
                 return withoutValue(response);

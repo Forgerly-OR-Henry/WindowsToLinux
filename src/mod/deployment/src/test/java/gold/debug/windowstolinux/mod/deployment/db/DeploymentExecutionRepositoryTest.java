@@ -17,6 +17,29 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentExecutionRepositoryTest extends DeploymentExecutionFixture {
+    /** Preserves the original operation while using the shared formal publication request format. / 使用共享正式发布请求格式并保留原操作。
+     * @param operation original execution engine / 原执行引擎
+     * @throws Exception if actual journal read rejects the request / 实际账本读取拒绝请求时 */
+    @ParameterizedTest
+    @ValueSource(strings = {"deployment-agent", "deployment-restore"})
+    void formalEnginesRetainPublicationTemplateFraming(String operation) throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            server(runtime);
+            run(runtime, task -> {
+                var journal = journal(runtime);
+                var id = UUID.randomUUID();
+                journal.begin(task, identity(task, id), operation, List.of(intent()), Optional.empty(), OBSERVED);
+                var record = journal.find(task, id).orElseThrow();
+                assertEquals(DeploymentExecutionCodec.PUBLICATION_VERSION, DeploymentExecutionCodec.version(record));
+                assertTrue(record.requestJson().contains("\"publicationTemplate\":null"));
+                assertTrue(record.requestJson().contains(operation));
+                return success();
+            });
+        }
+    }
+
     @Test
     void formalResultAndActualPublicationCommitTogetherAndSurviveRestartWithPrivateJsonLibraries() throws Exception {
         enable();

@@ -41,6 +41,9 @@ public final class DeploymentBuildCommandChannel {
     /** One cumulative remote execution budget; approval waits are excluded. / 一份累计远端执行预算；不计审核等待。 */
     private final DeploymentBuildBudget budget;
 
+    /** Caller-owned check immediately before remote dispatch. / 远端发送紧前调用方持有的核对。 */
+    private final DeploymentSendGuard beforeSend;
+
     /** Binds the original task, server and borrowed session; the caller closes the session. / 绑定原任务、服务器和借用会话；由调用方关闭会话。
      * @param session original authenticated session / 原已认证会话
      * @param interaction actual host review / 实际宿主审核
@@ -50,6 +53,19 @@ public final class DeploymentBuildCommandChannel {
      * @param budget cumulative execution budget / 累计执行预算 */
     public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
             TaskContext task, String planRevision, DeploymentBuildBudget budget) {
+        this(session, interaction, server, task, planRevision, budget, DeploymentSendGuard.NONE);
+    }
+
+    /** Binds an additional caller-owned pre-dispatch check. / 绑定调用方附加的发送前核对。
+     * @param session original authenticated session / 原已认证会话
+     * @param interaction actual host review / 真实宿主审核
+     * @param server exact saved server / 精确已保存服务器
+     * @param task original task / 原任务
+     * @param planRevision reviewed plan digest / 已审阅计划摘要
+     * @param budget shared build budget / 共用构建预算
+     * @param beforeSend caller-owned check / 调用方持有的核对 */
+    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+            TaskContext task, String planRevision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -58,6 +74,7 @@ public final class DeploymentBuildCommandChannel {
             throw new IllegalArgumentException("Reviewed plan identity required");
         this.planRevision = planRevision;
         this.budget = Objects.requireNonNull(budget);
+        this.beforeSend = Objects.requireNonNull(beforeSend);
     }
 
     /** Prepares one catalog branch with the helper's fixed official release protocol. / 使用 helper 的固定官方发布协议准备一个目录分支。
@@ -199,6 +216,7 @@ public final class DeploymentBuildCommandChannel {
         var grant = interaction.approve(intent, task);
         if (grant.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+        beforeSend.verify();
         try {
             long started = System.nanoTime();
             try {

@@ -24,6 +24,16 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 
 /** Owner-bound static deployment page; task callbacks remain with their original task after a confirmed view closes. / 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务。 */
 public final class DeploymentStaticPage implements ModPage {
+    /** Related source-mode controls sharing one view lifetime. / 共用视图寿命的相关来源模式控件。 */
+    private static final class ModeControls {
+        /** Creates controls for this original page instance. / 为当前原页面实例创建控件。 */
+        private ModeControls() {
+        }
+        /** Explicit bounded-assistance opt-in. / 明确有界辅助选择。 */
+        private final JCheckBox assisted = new JCheckBox();
+        /** Localized source-mode label. / 本地化来源模式标签。 */
+        private final JLabel label = new JLabel();
+    }
     /** Supported source form modes. / 支持的来源表单模式。 */
     private enum SourceMode {
         /** Original local directory chooser. / 原本地目录选择器。 */
@@ -56,6 +66,8 @@ public final class DeploymentStaticPage implements ModPage {
 
     /** Explicit source mode and Git inputs. / 明确来源模式及 Git 输入。 */
     private final JComboBox<SourceMode> sourceMode = new JComboBox<>(SourceMode.values());
+    /** Source-mode label and explicit assistance choice. / 来源模式标签与明确辅助选择。 */
+    private final ModeControls modeControls = new ModeControls();
 
     /** Git-only input component created after the locale is known. / 语言确定后创建的仅 Git 输入组件。 */
     private DeploymentGitSourceForm gitForm;
@@ -72,8 +84,6 @@ public final class DeploymentStaticPage implements ModPage {
     /** Current server label and source label. / 当前服务器与来源标签。 */
     private final JLabel serverLabel = new JLabel(), sourceLabel = new JLabel();
 
-    /** Localized source mode label. / 本地化来源方式标签。 */
-    private final JLabel modeLabel = new JLabel();
 
     /** Reload action. / 重新读取操作。 */
     private final JButton refreshButton = new JButton();
@@ -138,8 +148,8 @@ public final class DeploymentStaticPage implements ModPage {
         sourceLabel.setText(text("sourceName"));
         controls.add(sourceLabel);
         controls.add(sourceName);
-        modeLabel.setText(text("sourceMode"));
-        controls.add(modeLabel);
+        modeControls.label.setText(text("sourceMode"));
+        controls.add(modeControls.label);
         controls.add(sourceMode);
         gitForm = new DeploymentGitSourceForm(this);
         sourceMode.setRenderer((list, value, index, selected, focus) -> {
@@ -161,6 +171,7 @@ public final class DeploymentStaticPage implements ModPage {
         var sourceControls = new JPanel();
         sourceControls.setLayout(new BoxLayout(sourceControls, BoxLayout.Y_AXIS));
         sourceControls.add(controls);
+        sourceControls.add(modeControls.assisted);
         sourceControls.add(gitForm.panel());
         secretControls = new DeploymentStaticSecretControls(this, service);
         sourceControls.add(secretControls.panel());
@@ -186,7 +197,9 @@ public final class DeploymentStaticPage implements ModPage {
                 ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         serverLabel.setText(text("server"));
         sourceLabel.setText(text(sourceMode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
-        modeLabel.setText(text("sourceMode"));
+        modeControls.label.setText(text("sourceMode"));
+        modeControls.assisted.setText(environment.locale().getLanguage().equals("zh") ? "辅助部署（AI 建议仍须人工审阅）"
+                : "Assisted deployment (AI suggestions still require review)");
         gitForm.localize();
         secretControls.localize();
         secretControls.updateAvailability();
@@ -296,7 +309,7 @@ public final class DeploymentStaticPage implements ModPage {
                             .submit(server,
                                     new DeploymentStaticWorkflow.Draft(name, 2L * 1024 * 1024 * 1024, 100_000,
                                             2L * 1024 * 1024 * 1024),
-                                    git, new DeploymentStaticPageReviewer(this, view));
+                                    git, new DeploymentStaticPageReviewer(this, view), modeControls.assisted.isSelected());
                     admitted = true;
                     currentTask = handle;
                     if (closed || locked || generation.get() != view)

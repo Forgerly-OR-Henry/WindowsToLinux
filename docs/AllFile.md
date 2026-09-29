@@ -2208,3 +2208,32 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/30-managed-installation.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/toolchain/40-binding-protocol.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
 - `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/workspace/source-operations.py`：受管 helper 固定协议资源，按原字节参与完整包身份校验。
+
+### S5-03/S5-04 已迁入的模式构件
+
+- `mod/deployment/ai/DeploymentAgentPatch.java`：Revision-bound structured patch for task-owned source only. / 仅用于任务所属源码、与修订绑定的结构化补丁。
+- `mod/deployment/ai/DeploymentAgentPlan.java`：Evidence-backed neutral application graph proposed by the autonomous model. / 自主模型提出、由证据支持的中立应用图。
+- `mod/deployment/ai/DeploymentAgentPlanProtocol.java`：Converts a strict autonomous graph into existing typed deployment values. / 将严格自主图转换为既有类型化部署值。
+- `mod/deployment/ai/DeploymentAgentProposal.java`：One strict serial autonomous tool request. / 一项严格串行的自主工具请求。
+- `mod/deployment/ai/DeploymentAgentProtocol.java`：Strict autonomous action schema with no execution authority. / 不具执行权限的严格自主动作模式。
+- `mod/deployment/ai/DeploymentAiJson.java`：Sends bounded deployment-only JSON requests through the real platform AI capability. / 通过真实平台 AI 能力发送有界的部署专用 JSON 请求。
+- `mod/deployment/linux/DeploymentSendGuard.java`：Checks a caller-owned binding immediately before remote dispatch. / 在远端发送紧前核对调用方持有的绑定。
+- `mod/deployment/service/agent/DeploymentAgentDeliveryPort.java`：Narrow real remote tools and common managed publication for the independent Agent engine. / 供独立自主引擎使用的窄真实远端工具与共用受管发布能力。
+- `mod/deployment/service/agent/DeploymentAgentJournal.java`：Durable agent-only state and action evidence, independent of standard deployment. / 独立于标准部署的持久自主任务状态与动作依据。
+- `mod/deployment/service/agent/DeploymentAgentPageService.java`：Provides agent-only page queries and original task admission. / 提供自主专用页面查询与原任务接纳。
+- `mod/deployment/service/agent/DeploymentAgentProjectChannel.java`：Sends only the old protected agent helper verbs through the task-owned reviewed SSH session. / 仅经任务所属已审核 SSH 会话发送旧受保护 agent helper 动作。
+- `mod/deployment/service/agent/DeploymentAgentRecovery.java`：Reconciles only an agent's retained original proposal and remote effects. / 仅核对自主任务留存的原提案与远端影响。
+- `mod/deployment/service/agent/DeploymentAgentRemoteTools.java`：Adapts the original authenticated task to protected agent tools and shared publication. / 将原认证任务适配至受保护自主工具与共用发布。
+- `mod/deployment/service/agent/DeploymentAgentReview.java`：Independent action reviewer with exact policy and human escalation. / 具精确策略及人工升级的独立动作审核者。
+- `mod/deployment/service/agent/DeploymentAgentSession.java`：Serial evidence-driven deployment loop, independent of standard analysis. / 独立于标准分析的串行证据驱动部署循环。
+- `mod/deployment/service/agent/DeploymentAgentWorkflow.java`：Owns one independent agent task and reconciles only its original durable effects. / 持有一项独立自主任务并仅核对其原持久效果。
+- `mod/deployment/service/core/delivery/DeploymentGraphPublisher.java`：Executes one neutral managed graph publication with actual health and known-failure rollback. / 以真实健康和已知失败回滚执行一项中立受管图发布。
+- `mod/deployment/service/core/delivery/DeploymentManagedUnitResolver.java`：Resolves canonical ownership for either deployment mode without using source or plan hashes. / 为两种部署模式解析规范归属，不使用来源或计划散列。
+- `mod/deployment/service/core/delivery/DeploymentOriginalPublicationCommit.java`：Commits a verified graph inside an already admitted original task with exact reference protection. / 在已接纳原任务内以精确引用保护提交经核实图。
+- `mod/deployment/service/standard/DeploymentStaticAssistance.java`：Keeps source advice, human review and assisted publication identity within the deterministic workflow. / 在确定性流程内组织来源建议、人工审阅及辅助发布身份。
+- `mod/deployment/service/standard/deploy/assistance/DeploymentAssistedAdvisor.java`：Offers bounded advice only after a verified deterministic failure. / 仅在确定性步骤出现已证实失败后提供有界建议。
+- `mod/deployment/service/standard/deploy/assistance/DeploymentAssistedAnalysis.java`：Bounded read-only source analysis for missing technical input, without an execution port. / 不持有执行端口、用于技术缺项的有界只读源码分析。
+- `mod/deployment/service/standard/deploy/assistance/DeploymentAssistedScope.java`：Freezes one original assisted task without replacing platform authority. / 冻结一项原辅助任务而不替换平台权限。
+- `mod/deployment/service/standard/deploy/assistance/DeploymentAssistedSession.java`：Rechecks the assisted binding immediately before every actual SSH dispatch. / 每次真实 SSH 发送前立即复核辅助绑定。
+- `mod/deployment/source/DeploymentSourceBrowser.java`：Read-only paginated access to an owned frozen source, shared by assistance and agent. / 供辅助与自主部署共用的所属冻结源码只读分页访问。
+- `mod/deployment/ui/DeploymentAgentPage.java`：Agent-only owner-bound page for local or pinned Git tasks. / 用于本地或固定 Git 任务的自主专属所属页面。

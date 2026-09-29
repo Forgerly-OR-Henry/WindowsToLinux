@@ -48,7 +48,7 @@ final class DeploymentExecutionCodec {
                 .filter(intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER && !intent
                         .businessKey().equals(DeploymentReferenceKey.applicationKey(identity.applicationId())))
                 .count();
-        int version = operationType.equals("deployment-publication")
+        int version = publicationOperation(operationType)
                 ? unitCount > 1 ? GRAPH_PUBLICATION_VERSION : PUBLICATION_VERSION
                 : VERSION;
         var node = envelope(identity, version).put("operationType", operationType);
@@ -81,6 +81,13 @@ final class DeploymentExecutionCodec {
                 version == GRAPH_PUBLICATION_VERSION
                         ? REQUEST_LIMIT
                         : version == PUBLICATION_VERSION ? SINGLE_REQUEST_LIMIT : 1_048_576);
+    }
+
+    /** Identifies the three engines using the same immutable formal publication template. / 识别使用同一不可变正式发布模板的三个引擎。
+     * @param operationType exact persisted operation name / 精确持久操作名
+     * @return whether formal publication framing applies / 是否适用正式发布信封 */
+    private static boolean publicationOperation(String operationType) {
+        return Set.of("deployment-publication", "deployment-agent", "deployment-restore").contains(operationType);
     }
 
     /** Records UUIDs only after they have been observed for original indexed intents. / 仅在观察到原索引意图的UUID后记录。
@@ -209,7 +216,7 @@ final class DeploymentExecutionCodec {
         else
             identity(request, record.identity(), "operationType", "references", "projectSource");
         if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
-                && !"deployment-publication".equals(string(request, "operationType")))
+                && !publicationOperation(string(request, "operationType")))
             throw new SQLException("Publication template format belongs to another operation");
         if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
                 && !request.path("publicationTemplate").isNull()) {

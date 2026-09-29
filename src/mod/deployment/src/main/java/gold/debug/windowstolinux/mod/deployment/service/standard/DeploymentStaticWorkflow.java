@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
@@ -30,6 +31,8 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.compone
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ProjectComponentDiscovery;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedScope;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.DeploymentReviewConsent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentNativeDatabaseReview;
@@ -65,6 +68,9 @@ public final class DeploymentStaticWorkflow {
 
     /** Existing original whole-graph publication. / 既有原整图发布。 */
     private final DeploymentMultiComponentPublicationExecutor multi;
+
+    /** Original bounded assistance review and mode binding. / 原有界辅助审阅及模式绑定。 */
+    private final DeploymentStaticAssistance assistance;
 
     /** Initial limits; component types are selected only after frozen-source discovery. / 初始限额；组件类型仅在冻结来源发现后选择。
      * @param logicalRootName reviewed source name / 审阅的来源名称
@@ -252,6 +258,7 @@ public final class DeploymentStaticWorkflow {
         this.units = new DeploymentStaticUnitResolver(context.db());
         this.single = new DeploymentStandardPublicationExecutor(context, references);
         this.multi = new DeploymentMultiComponentPublicationExecutor(context, references);
+        this.assistance = new DeploymentStaticAssistance(context, this);
     }
 
     /** Admits one publication task and performs all local review before formal effects. / 接纳一项发布任务，并在正式副作用前完成全部本机审阅。
@@ -273,6 +280,19 @@ public final class DeploymentStaticWorkflow {
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<Void> submit(ServerRef server, Draft draft, Optional<GitSource> git, Reviewer reviewer)
             throws ApiException {
+        return submit(server, draft, git, reviewer, false);
+    }
+
+    /** Admits an explicitly selected bounded assisted route on the same deterministic workflow. / 在同一确定性工作流中准入明确选择的有界辅助路线。
+     * @param server exact target / 精确目标
+     * @param draft frozen source limits / 冻结来源限额
+     * @param git optional pinned Git / 可选固定 Git
+     * @param reviewer owner review / 所属审阅
+     * @param assisted whether bounded source advice is enabled / 是否启用有界源码建议
+     * @return original publication task / 原发布任务
+     * @throws ApiException on failed admission / 准入失败时 */
+    public TaskHandle<Void> submit(ServerRef server, Draft draft, Optional<GitSource> git, Reviewer reviewer,
+            boolean assisted) throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(draft);
         Objects.requireNonNull(git);
@@ -280,7 +300,21 @@ public final class DeploymentStaticWorkflow {
         if (git.isPresent() && draft.logicalRootName().isBlank())
             throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_NAME_REQUIRED",
                     "Git source requires an explicit project name", Map.of(), Optional.empty()));
-        return references.submitPrepared(server, task -> prepare(server, draft, git, reviewer, task));
+        return references.submitPrepared(server, task -> {
+            if (!assisted)
+                return prepare(server, draft, git, reviewer, task, false);
+            try {
+                var scoped = new DeploymentStaticWorkflow(DeploymentAssistedScope.freeze(context, task), references);
+                return scoped.prepare(server, draft, git, reviewer, task, true);
+            } catch (ApiException unavailable) {
+                var code = unavailable.problem().code();
+                return new OperationResult<>(
+                        code == ProblemCode.UNKNOWN
+                                ? Outcome.UNKNOWN
+                                : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        Optional.empty(), Optional.of(unavailable.problem()));
+            }
+        });
     }
 
     /** Retains local evidence before original selection, then hands off only a complete reviewed publication. / 原选材前保留本机依据，且只交接完整审阅发布。
@@ -290,9 +324,10 @@ public final class DeploymentStaticWorkflow {
      * @param reviewer original review / 原审阅
      * @param task original task / 原任务
      * @return actual prepared publication / 实际已准备发布
+     * @param assisted whether source advice and bounded form recovery were selected / 是否选择来源建议及有界表单恢复
      * @throws Exception if original cleanup or checkpoint cannot be confirmed / 原清理或检查点无法确认时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepare(ServerRef server, Draft draft,
-            Optional<GitSource> git, Reviewer reviewer, TaskContext task) throws Exception {
+            Optional<GitSource> git, Reviewer reviewer, TaskContext task, boolean assisted) throws Exception {
         var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
         DeploymentSourceMaterial material = null;
         DeploymentGitSourceFlow.PublicationSource pinned = null;
@@ -329,28 +364,33 @@ public final class DeploymentStaticWorkflow {
             var chosen = reviewer.select(server, material.snapshot().sha256(), discovered, task);
             if (chosen.outcome() == Outcome.CANCELLED)
                 marker.cancelled();
-            if (chosen.outcome() != Outcome.SUCCEEDED)
+            if (chosen.outcome() != Outcome.SUCCEEDED) {
+                retainMarker = chosen.outcome() == Outcome.UNKNOWN;
                 return withoutValue(chosen);
+            }
             var choices = chosen.value().orElseThrow();
             if (!validSelection(discovered, choices))
                 return rejected("DEPLOYMENT_STATIC_SELECTION_INVALID");
+            DeploymentAssistedAdvisor advice = assisted ? new DeploymentAssistedAdvisor(context) : null;
             OperationResult<DeploymentReferenceFlow.PreparedPublication> ready = discovered.size() == 1
                     ? prepareSingle(server, draft, logicalName, reviewer, task, material, discovered.getFirst(),
-                            choices, archives, pinned)
+                            choices, archives, pinned, advice)
                     : prepareGraph(server, draft, logicalName, reviewer, task, material, discovered, choices, archives,
-                            pinned);
+                            pinned, advice);
             if (ready.outcome() == Outcome.CANCELLED)
                 marker.cancelled();
-            if (ready.outcome() != Outcome.SUCCEEDED)
+            if (ready.outcome() != Outcome.SUCCEEDED) {
+                retainMarker = ready.outcome() == Outcome.UNKNOWN;
                 return priorEffects(ready, task);
+            }
             if (pinned != null)
                 pinned.close();
             marker.close();
             transferred = true;
-            return ready;
+            return advice == null ? ready : DeploymentStaticAssistance.publication(ready);
         } catch (ApiException failure) {
             var code = failure.problem().code();
-            retainMarker = code == ProblemCode.UNKNOWN && git.isPresent();
+            retainMarker = code == ProblemCode.UNKNOWN;
             var outcome = code == ProblemCode.CANCELLED
                     ? Outcome.CANCELLED
                     : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
@@ -428,12 +468,13 @@ public final class DeploymentStaticWorkflow {
      * @param selection reviewed type / 经审阅类型
      * @param archives owned archives to release on failure / 失败时释放的所属归档
      * @param pinned optional original Git material / 可选原 Git 素材
+     * @param advice optional original bounded assistance / 可选原有界辅助
      * @return prepared original publication / 已准备原发布
      * @throws Exception if original review or storage fails / 原审阅或存储失败时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareSingle(ServerRef server, Draft draft,
             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
             DiscoveredProjectComponent discovered, Selection selection, List<DeploymentSourceArchive> archives,
-            DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
+            DeploymentGitSourceFlow.PublicationSource pinned, DeploymentAssistedAdvisor advice) throws Exception {
         String id = discovered.id();
         var type = selection.choices().get(id).type();
         var initial = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
@@ -449,8 +490,10 @@ public final class DeploymentStaticWorkflow {
         if (database.outcome() != Outcome.SUCCEEDED)
             return withoutValue(database);
         var databaseLocal = database.value().orElseThrow();
-        var prompt = prompt(id, facts, assessed.runtimeSuggestion().orElse(null), databaseLocal.hasBindings());
-        var reviewed = reviewer.review(server, material.snapshot().sha256(), List.of(prompt), task);
+        var prompt = assistance.prompt(server,
+                prompt(id, facts, assessed.runtimeSuggestion().orElse(null), databaseLocal.hasBindings()), advice,
+                material, task);
+        var reviewed = assistance.review(server, material.snapshot().sha256(), List.of(prompt), reviewer, advice, task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reviewed);
         var supplied = reviewed.value().orElseThrow();
@@ -516,20 +559,23 @@ public final class DeploymentStaticWorkflow {
      * @param selection reviewed graph / 经审阅整图
      * @param archives owned archives / 所属归档
      * @param pinned optional original Git material / 可选原 Git 素材
+     * @param advice optional original bounded assistance / 可选原有界辅助
      * @return prepared original publication / 已准备原发布
      * @throws Exception if review or storage fails / 审阅或存储失败时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareGraph(ServerRef server, Draft draft,
             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
             List<DiscoveredProjectComponent> discovered, Selection selection, List<DeploymentSourceArchive> archives,
-            DeploymentGitSourceFlow.PublicationSource pinned) throws Exception {
+            DeploymentGitSourceFlow.PublicationSource pinned, DeploymentAssistedAdvisor advice) throws Exception {
         var prompts = new ArrayList<Prompt>();
         var facts = new HashMap<String, DeploymentProjectFacts>();
         var databaseLocal = new HashMap<String, DeploymentDatabaseStages.Local>();
-        var collected = graphPrompts(server, material, discovered, selection, reviewer, task, facts, databaseLocal);
+        var collected = graphPrompts(server, material, discovered, selection, reviewer, task, facts, databaseLocal,
+                advice);
         if (collected.outcome() != Outcome.SUCCEEDED)
             return withoutValue(collected);
         prompts.addAll(collected.value().orElseThrow());
-        var reviewed = reviewer.review(server, material.snapshot().sha256(), List.copyOf(prompts), task);
+        var reviewed = assistance.review(server, material.snapshot().sha256(), List.copyOf(prompts), reviewer, advice,
+                task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(reviewed);
         var supplied = reviewed.value().orElseThrow();
@@ -643,12 +689,13 @@ public final class DeploymentStaticWorkflow {
      * @param task original publication task / 原发布任务
      * @param facts collected actual component facts / 收集的实际组件事实
      * @param databaseLocal collected source-backed database plans / 收集的源码绑定数据库计划
+     * @param advice optional assisted analysis / 可选辅助分析
      * @return complete local prompts or original refusal / 完整本机问题或原拒绝
      * @throws Exception if source inspection or review fails / 来源检查或审阅失败时 */
     private OperationResult<List<Prompt>> graphPrompts(ServerRef server, DeploymentSourceMaterial material,
             List<DiscoveredProjectComponent> discovered, Selection selection, Reviewer reviewer, TaskContext task,
-            Map<String, DeploymentProjectFacts> facts, Map<String, DeploymentDatabaseStages.Local> databaseLocal)
-            throws Exception {
+            Map<String, DeploymentProjectFacts> facts, Map<String, DeploymentDatabaseStages.Local> databaseLocal,
+            DeploymentAssistedAdvisor advice) throws Exception {
         var prompts = new ArrayList<Prompt>();
         for (var component : discovered) {
             var initial = analyzer.analyzeComponent(material, component.relativeRoot(), component.id(),
@@ -667,8 +714,9 @@ public final class DeploymentStaticWorkflow {
             if (database.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(database);
             databaseLocal.put(component.id(), database.value().orElseThrow());
-            prompts.add(prompt(component.id(), observed, assessed.runtimeSuggestion().orElse(null),
-                    database.value().orElseThrow().hasBindings()));
+            prompts.add(assistance.prompt(server, prompt(component.id(), observed,
+                    assessed.runtimeSuggestion().orElse(null), database.value().orElseThrow().hasBindings()), advice,
+                    material, task));
         }
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(List.copyOf(prompts)), Optional.empty());
     }

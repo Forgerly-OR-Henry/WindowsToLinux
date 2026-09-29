@@ -56,7 +56,16 @@ public class DeploymentRuntimeFixture {
             runtime.security().unlock(PASSWORD.toCharArray());
         else
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
-        runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
+        runtime.setInteractionPresenter(interactionPrompts());
+        runtime.setSourcePicker((title, task, cancel) -> selectedSourceDirectory());
+        runtime.started();
+        return runtime;
+    }
+
+    /** Supplies the presenter before the real platform installs it exactly once. / 在真实平台恰好安装一次前提供交互呈现器。
+     * @return default refusal presenter or a scenario's controlled presenter / 默认拒绝呈现器或场景受控呈现器 */
+    protected PlatformInteractionService.Prompts interactionPrompts() {
+        return new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
                     TaskSnapshot task, CancellationToken cancellation) {
                 throw new AssertionError("No remote interaction expected");
@@ -79,10 +88,7 @@ public class DeploymentRuntimeFixture {
                     CancellationToken cancellation) {
                 throw new AssertionError("No input expected");
             }
-        });
-        runtime.setSourcePicker((title, task, cancel) -> selectedSourceDirectory());
-        runtime.started();
-        return runtime;
+        };
     }
 
     protected Path selectedSourceDirectory() {
