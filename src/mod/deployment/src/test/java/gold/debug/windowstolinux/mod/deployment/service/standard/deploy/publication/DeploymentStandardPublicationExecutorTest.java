@@ -28,6 +28,7 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
@@ -37,6 +38,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentHelperBootstrapJournal;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
@@ -153,11 +155,27 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         runStaticWorkflow(false, true);
     }
 
+    /** Installs a missing fixed helper under the reviewed page task before ordinary publication. / 普通发布前在页面已审阅原任务下安装缺失的固定 helper。
+     * @throws Exception if original preparation or publication fails / 原准备或发布失败时 */
+    @Test
+    void staticWorkflowBootstrapsMissingHelperInOriginalPublicationTask() throws Exception {
+        runStaticWorkflow(false, false, true);
+    }
+
     /** Shares the original CLASS/H2 publication fixture across local, Git and SQLite sources. / 为本地、Git 和 SQLite 来源复用原 CLASS/H2 发布夹具。
      * @param git whether real local Git is used / 是否使用真实本机 Git
      * @param sqlite whether source declares SQLite / 源码是否声明 SQLite
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite) throws Exception {
+        runStaticWorkflow(git, sqlite, false);
+    }
+
+    /** Runs the same publication with optional first-server helper installation. / 使用可选首次服务器 helper 安装运行同一发布。
+     * @param git whether Git is selected / 是否选择 Git
+     * @param sqlite whether SQLite is declared / 是否声明 SQLite
+     * @param installHelper whether the first publication finds no fixed helper / 首次发布是否缺少固定 helper
+     * @throws Exception if the original task fails / 原任务失败时 */
+    private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
@@ -226,7 +244,12 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var path = new AtomicReference<Path>();
                 var candidate = new AtomicReference<DeploymentRemoteWorkspace>();
                 var callbackEnded = new CountDownLatch(1);
-                var session = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
+                var reviewedTask = new AtomicReference<TaskContext>();
+                var helperInstalls = new AtomicInteger();
+                var existing = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
+                var session = installHelper && publication == 1
+                        ? missingHelper(existing, original, reviewedTask, helperInstalls)
+                        : existing;
                 var bound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
                 var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
                 var observedTask = new AtomicReference<UUID>();
@@ -257,6 +280,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             List<DiscoveredProjectComponent> discovered, TaskContext task) {
                         assertEquals(server, exact);
                         assertEquals(1, discovered.size());
+                        reviewedTask.set(task);
                         observedTask.set(task.id());
                         manifestSha.set(manifest);
                         return new OperationResult<>(Outcome.SUCCEEDED,
@@ -349,6 +373,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(1, actions.stream().filter("publish"::equals).count());
                 assertEquals(1, actions.stream().filter("upload"::equals).count());
+                assertEquals(installHelper && publication == 1 ? 1 : 0, helperInstalls.get());
                 assertEquals(1, actions.stream().filter("stage-secret-page-application"::equals).count(),
                         "The reviewed revision and protected bytes must reach the controlled stage command");
                 if (sqlite) {
@@ -907,6 +932,46 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         return method.invoke(real, args);
                     } catch (InvocationTargetException failure) {
                         throw failure.getCause();
+                    }
+                });
+    }
+
+    /** Adds one initially missing helper to the existing controlled publication session. / 为既有受控发布会话补入一次初始缺失的 helper。
+     * @param existing original controlled publication session / 原受控发布会话
+     * @param context original Mod capabilities / 原 Mod 能力
+     * @param task current reviewed task / 当前审阅任务
+     * @param installs actual installer dispatch count / 实际安装发送次数
+     * @return borrowed controlled session / 借用受控会话 */
+    private static RemoteSession missingHelper(RemoteSession existing, ModContext context,
+            AtomicReference<TaskContext> task, AtomicInteger installs) {
+        var closes = new AtomicInteger();
+        return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("execute")) {
+                        var request = (CommandRequest) args[0];
+                        if (request.script().contains("sha256sum --check --status") && installs.get() == 0)
+                            return reply(1, "");
+                        if (request.script().contains("--noprofile")) {
+                            String input = new String(request.stdin(), StandardCharsets.UTF_8);
+                            if (input.contains("prepare_stage=platform-packages")) {
+                                installs.incrementAndGet();
+                                return reply("HELPER_INSTALL=1\nPROTOCOL=12\nSHA256="
+                                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                            }
+                            if (input.contains("bootstrap_receipt")) {
+                                var facts = DeploymentHelperBootstrapJournal.find(context.tasks(), task.get())
+                                        .orElseThrow().facts();
+                                return reply(DeploymentHelperInstallerScript.receipt(task.get().id(),
+                                        facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
+                            }
+                        }
+                    }
+                    if (method.getName().equals("close") && closes.incrementAndGet() == 1)
+                        return null;
+                    try {
+                        return method.invoke(existing, args);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
                     }
                 });
     }

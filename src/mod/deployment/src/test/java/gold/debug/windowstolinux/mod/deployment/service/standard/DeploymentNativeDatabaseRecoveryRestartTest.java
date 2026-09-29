@@ -22,6 +22,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import org.apache.sshd.server.channel.ChannelSession;
@@ -42,6 +43,9 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
 
     /** Any forbidden recovery replay. / 任意禁止的恢复重发。 */
     private final AtomicInteger replayCalls = new AtomicInteger();
+
+    /** Whether this fixture is settling the original first helper installation. / 此夹具是否结清原首次 helper 安装。 */
+    private boolean bootstrap;
 
     /** One original STARTED response is lost; registered recovery waits on missing evidence then settles the exact receipt. / 一次原 STARTED 响应丢失；登记恢复在缺依据时等待，随后结清精确回执。
      * @throws Exception if child, loopback SSH or original recovery fails / 子进程、回环 SSH 或原恢复失败时 */
@@ -106,9 +110,74 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         }
     }
 
+    /** Recovers the original helper installation through the registered Mod and actual SSH status channel. / 经正式 Mod 与实际 SSH 状态通道恢复原 helper 安装。
+     * @throws Exception if original child, receipt or registered recovery fails / 原子进程、回执或正式恢复失败时 */
+    @org.junit.jupiter.api.Test
+    void registeredRecoverySettlesOriginalHelperInstallWithoutReinstalling() throws Exception {
+        bootstrap = true;
+        remote = Files.createDirectory(root.resolve("bootstrap-remote"));
+        try (var ssh = new LoopbackSshServer(root, server -> {
+            server.setPasswordAuthenticator(
+                    (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
+            server.setCommandFactory((channel, command) -> new FramedReply());
+        })) {
+            var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
+                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--bootstrap", root.toString(),
+                    Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
+            try {
+                assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original helper child timed out");
+                String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                assertEquals(0, child.exitValue(), output);
+                assertTrue(output.contains("ORIGINAL_BOOTSTRAP_UNKNOWN"), output);
+            } finally {
+                if (child.isAlive()) {
+                    child.destroyForcibly();
+                    assertTrue(child.waitFor(5, TimeUnit.SECONDS));
+                }
+            }
+            try (var runtime = open()) {
+                var report = runtime.startDevelopmentMods(workspace(), pages());
+                assertTrue(report.running().isEmpty());
+                assertEquals(List.of("MOD_RECOVERY_READY"),
+                        report.problems().stream().map(Problem::eventCode).toList());
+                var original = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                assertEquals(TaskState.UNKNOWN,
+                        runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                assertEquals(1, statusCalls.get());
+                assertEquals(1, checkpoint(runtime, original, DeploymentHelperBootstrapJournal.KEY));
+                statusStage.set(1);
+                assertEquals(TaskState.UNKNOWN,
+                        runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                assertEquals(2, statusCalls.get());
+                statusStage.set(2);
+                var settled = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
+                assertEquals(TaskState.ENDED, settled.state(), settled.toString());
+                assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
+                assertEquals(3, statusCalls.get());
+                assertEquals(0, replayCalls.get());
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                runtime.releaseModRecovery();
+            }
+        }
+    }
+
     /** Runs an isolated original UNKNOWN task; this process intentionally exits instead of falsely closing held resources. / 隔离运行原 UNKNOWN 任务；本进程刻意退出，不假称已释放占用资源。
      * @param args exact child marker, data root and loopback port / 精确子进程标记、数据根及回环端口 */
     public static void main(String[] args) {
+        if (args.length == 3 && "--bootstrap".equals(args[0])) {
+            try {
+                var fixture = new DeploymentNativeDatabaseRecoveryRestartTest();
+                fixture.root = Path.of(args[1]);
+                fixture.remote = fixture.root.resolve("bootstrap-remote");
+                fixture.originalBootstrap(Integer.parseInt(args[2]));
+                System.out.println("ORIGINAL_BOOTSTRAP_UNKNOWN");
+                System.exit(0);
+            } catch (Throwable failure) {
+                failure.printStackTrace();
+                System.exit(1);
+            }
+        }
         if (args.length != 4 || !"--original".equals(args[0]))
             throw new IllegalArgumentException("Original native DB fixture only");
         try {
@@ -122,6 +191,45 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             failure.printStackTrace();
             System.exit(1);
         }
+    }
+
+    private void originalBootstrap(int port) throws Exception {
+        enable();
+        var runtime = open();
+        start(runtime, true);
+        var server = new ServerRef("native-database-server");
+        runtime.servers().saveServerProfile(
+                ServerProfile.fromStored(
+                        new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
+                "fixture-password".toCharArray());
+        var context = runtime.modContexts().get(OWNER).context();
+        var session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("close"))
+                        return null;
+                    var request = (CommandRequest) arguments[0];
+                    if (request.script().contains("--noprofile"))
+                        return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_INSTALL_REPLY_LOST",
+                                        "Original installer reply was not observed", Map.of(), Optional.empty())));
+                    return new OperationResult<CommandResult>(Outcome.SUCCEEDED,
+                            Optional.of(new CommandResult(Optional.of(1), "", "", false)), Optional.empty());
+                });
+        var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+                "Original helper installation", List.of(server.id()), true), task -> {
+                    DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
+                    var outcome = new DeploymentHelperBootstrap(context.tasks(), task, server, session,
+                            context.interaction()).ensure();
+                    var facts = DeploymentHelperBootstrapJournal.find(context.tasks(), task).orElseThrow().facts();
+                    assertEquals("DISPATCHED", facts.phase());
+                    Files.writeString(remote.resolve("bootstrap-receipt"), DeploymentHelperInstallerScript.receipt(
+                            task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
+                    return new OperationResult<Void>(outcome.outcome(), Optional.empty(), outcome.problem());
+                });
+        for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
+            Thread.sleep(50);
+        assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentHelperBootstrapJournal.KEY));
     }
 
     private void original(int port, boolean knownFailure) throws Exception {
@@ -217,11 +325,15 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
     }
 
     private static long checkpoint(PlatformRuntime runtime, UUID task) throws Exception {
+        return checkpoint(runtime, task, DeploymentNativeDatabaseJournal.KEY);
+    }
+
+    private static long checkpoint(PlatformRuntime runtime, UUID task, String key) throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
                 var query = connection.prepareStatement("SELECT COUNT(*) FROM platform_task_resource"
                         + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND released_at IS NULL")) {
             query.setObject(1, task);
-            query.setString(2, OWNER + "/checkpoint/" + DeploymentNativeDatabaseJournal.KEY);
+            query.setString(2, OWNER + "/checkpoint/" + key);
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
                 return rows.getLong(1);
@@ -235,6 +347,30 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
     }
 
     private String response(String script, InputStream input) throws Exception {
+        if (bootstrap) {
+            if (script.contains("--noprofile")) {
+                byte[] payload = input.readNBytes(2049);
+                assertTrue(payload.length <= 2048, "Recovery must send only bounded status input");
+                String statusScript = new String(payload, StandardCharsets.UTF_8);
+                assertTrue(statusScript.contains("bootstrap_receipt"),
+                        "Recovery must query the original receipt without reinstalling");
+                statusCalls.incrementAndGet();
+                if (statusStage.get() == 0)
+                    return "";
+                String receipt = Files.readString(remote.resolve("bootstrap-receipt"));
+                if (statusStage.get() == 1) {
+                    String conflicted = receipt.replaceFirst("SERVER_SHA256=[^\\n]+",
+                            "SERVER_SHA256=" + "f".repeat(64));
+                    assertNotEquals(receipt, conflicted);
+                    return conflicted;
+                }
+                return receipt;
+            }
+            if (script.contains("sha256sum --check --status"))
+                return "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+            replayCalls.incrementAndGet();
+            throw new AssertionError("Recovery must not reinstall the helper: " + script);
+        }
         if (script.contains("native-db status")) {
             statusCalls.incrementAndGet();
             byte[] frame = input.readNBytes(3 * 1024 * 1024 + 1);

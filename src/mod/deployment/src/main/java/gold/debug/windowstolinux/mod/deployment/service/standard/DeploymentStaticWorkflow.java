@@ -340,7 +340,7 @@ public final class DeploymentStaticWorkflow {
             if (ready.outcome() == Outcome.CANCELLED)
                 marker.cancelled();
             if (ready.outcome() != Outcome.SUCCEEDED)
-                return ready;
+                return priorEffects(ready, task);
             if (pinned != null)
                 pinned.close();
             marker.close();
@@ -348,25 +348,27 @@ public final class DeploymentStaticWorkflow {
             return ready;
         } catch (ApiException failure) {
             var code = failure.problem().code();
-            retainMarker = git.isPresent() && code == ProblemCode.UNKNOWN;
+            retainMarker = code == ProblemCode.UNKNOWN && git.isPresent();
             var outcome = code == ProblemCode.CANCELLED
                     ? Outcome.CANCELLED
                     : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
             if (outcome == Outcome.CANCELLED)
                 marker.cancelled();
-            return new OperationResult<>(outcome, Optional.empty(), Optional.of(failure.problem()));
+            return priorEffects(new OperationResult<>(outcome, Optional.empty(), Optional.of(failure.problem())), task);
         } catch (CancellationException cancelled) {
             marker.cancelled();
-            return cancelled();
+            return priorEffects(cancelled(), task);
         } catch (SQLException readFailure) {
-            return ioFailure("DEPLOYMENT_STATIC_METADATA_UNAVAILABLE");
+            return priorEffects(ioFailure("DEPLOYMENT_STATIC_METADATA_UNAVAILABLE"), task);
         } catch (IOException sourceFailure) {
-            return ioFailure("DEPLOYMENT_STATIC_DISCOVERY_UNAVAILABLE");
+            return priorEffects(ioFailure("DEPLOYMENT_STATIC_DISCOVERY_UNAVAILABLE"), task);
         } catch (IllegalArgumentException invalid) {
-            return rejected("DEPLOYMENT_STATIC_REVIEW_INVALID");
+            return priorEffects(rejected("DEPLOYMENT_STATIC_REVIEW_INVALID"), task);
         } finally {
-            if (!transferred)
+            if (!transferred) {
+                retainMarker |= unresolvedRemotePreparation(task);
                 closePreparation(archives, material, pinned, marker, retainMarker);
+            }
         }
     }
 
@@ -375,11 +377,13 @@ public final class DeploymentStaticWorkflow {
      * @param material original frozen source still owned here / 此处仍持有的原冻结来源
      * @param pinned optional original Git material and checkpoint / 可选的原 Git 素材及检查点
      * @param marker original static preparation marker / 原静态准备标记
-     * @param retainMarker unresolved Git work still needs the original static recovery entry / 未决 Git 工作仍需原静态恢复入口
+     * @param retainMarker unresolved Git or remote work still needs all original preparation resources / 未决 Git 或远端操作仍需全部原准备资源
      * @throws Exception if any original resource release is unconfirmed / 任一原资源释放未确认时 */
     private static void closePreparation(List<DeploymentSourceArchive> archives, DeploymentSourceMaterial material,
             DeploymentGitSourceFlow.PublicationSource pinned, DeploymentStaticPreparationJournal marker,
             boolean retainMarker) throws Exception {
+        if (retainMarker)
+            return;
         Exception cleanup = null;
         for (var archive : archives)
             try {
@@ -401,7 +405,7 @@ public final class DeploymentStaticWorkflow {
             else
                 cleanup.addSuppressed(failure);
         }
-        if (cleanup == null && !retainMarker)
+        if (cleanup == null)
             try {
                 marker.close();
             } catch (Exception failure) {
@@ -478,6 +482,9 @@ public final class DeploymentStaticWorkflow {
         var plan = planned.value().orElseThrow();
         var unit = units.resolve(task, facts.applicationId(), server);
         var credentials = credentials(task, plan.request().secretReferences());
+        var helper = ensureHelper(server, task);
+        if (helper.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(helper);
         Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
         return single.prepareWithinTask(task, unit, project, credentials,
                 original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan), Optional.empty()));
@@ -577,6 +584,9 @@ public final class DeploymentStaticWorkflow {
         var healthId = selection.healthComponent().orElseThrow();
         var healthPrompt = prompts.stream().filter(value -> value.componentId().equals(healthId)).findFirst()
                 .orElseThrow();
+        var helper = ensureHelper(server, task);
+        if (helper.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(helper);
         Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
         return multi.prepareWithinTask(task, server, project, owners, credentials, healthId,
                 runtime.health(completed(healthPrompt, supplied.get(healthId))),
@@ -623,6 +633,78 @@ public final class DeploymentStaticWorkflow {
         return new OperationResult<>(Outcome.SUCCEEDED, Optional
                 .of(DeploymentSqlitePreparation.prepare(facts.sourceRoot(), applicationId, completed, approved, task)),
                 Optional.empty());
+    }
+
+    /** Ensures the fixed helper after final review but before ordinary publication effects. / 最终审阅后、普通发布副作用前确保固定 helper。
+     * @param server exact reviewed target / 精确审阅目标
+     * @param task original publication task / 原发布任务
+     * @return known helper readiness or retained uncertainty / 已知 helper 就绪或留存未知
+     * @throws ApiException if original access or persistence fails / 原访问或持久化失败时 */
+    private OperationResult<Void> ensureHelper(ServerRef server, TaskContext task) throws ApiException {
+        try (var session = context.linux().connect(server, task)) {
+            var checked = new DeploymentHelperBootstrap(context.tasks(), task, server, session, context.interaction())
+                    .ensure();
+            return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
+        }
+    }
+
+    /** Detects an unresolved original remote preparation before releasing its marker or source. / 释放标记或来源前识别未决原远端准备。
+     * @param task original publication task / 原发布任务
+     * @return whether an effect still needs original recovery / 是否仍需原恢复核对效果 */
+    private boolean unresolvedRemotePreparation(TaskContext task) {
+        try {
+            var helper = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
+            var database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
+            return helper.filter(value -> {
+                try {
+                    return "DISPATCHED".equals(value.facts().phase());
+                } catch (ApiException unreadable) {
+                    return true;
+                }
+            }).isPresent() || database.filter(value -> {
+                try {
+                    return "DISPATCHED".equals(value.facts().phase());
+                } catch (ApiException unreadable) {
+                    return true;
+                }
+            }).isPresent();
+        } catch (ApiException | IllegalArgumentException unreadable) {
+            return true;
+        }
+    }
+
+    /** Keeps prior helper effects visible when later local review ends without publication. / 后续本机审阅未发布即结束时保留先前 helper 效果提示。
+     * @param result actual preparation result / 实际准备结果
+     * @param task original publication task / 原发布任务
+     * @return result with non-secret prior-effect context / 带非秘密先前效果上下文的结果
+     * @throws ApiException if original evidence cannot be read / 原依据无法读取时 */
+    private OperationResult<DeploymentReferenceFlow.PreparedPublication> priorEffects(
+            OperationResult<DeploymentReferenceFlow.PreparedPublication> result, TaskContext task) throws ApiException {
+        var retained = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
+        if (retained.isEmpty())
+            return result;
+        var facts = retained.orElseThrow().facts();
+        if ("INTENT".equals(facts.phase()))
+            return result;
+        if ("DISPATCHED".equals(facts.phase()))
+            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_HELPER_BOOTSTRAP_UNRESOLVED",
+                            "Original helper installation needs exact receipt review",
+                            Map.of("serverId", facts.serverId(), "operationId", facts.operationId().toString()),
+                            Optional.empty())));
+        var original = result.problem()
+                .orElseGet(() -> new Problem(
+                        result.outcome() == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
+                        "DEPLOYMENT_STATIC_REVIEW_ENDED", "Static review ended after helper preparation", Map.of(),
+                        Optional.empty()));
+        var details = new HashMap<>(original.context());
+        details.put("helperServerId", facts.serverId());
+        details.put("helperOperationId", facts.operationId().toString());
+        details.put("helperPhase", facts.phase());
+        return new OperationResult<>(result.outcome(), Optional.empty(),
+                Optional.of(new Problem(original.code(), original.eventCode(),
+                        original.message() + "; review the original helper installation effect", details,
+                        original.diagnosticId())));
     }
 
     /** Projects exact selected and resolved Git identity into final consent. / 将精确选定并解析的 Git 身份投影到最终同意。

@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.linux.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
@@ -24,6 +25,14 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
 
 /** Runs the fixed helper installation and probe through one borrowed, host-authorized remote session. / 通过借用的宿主授权远端会话执行固定 helper 安装与探测。 */
 public final class DeploymentManagedHelper {
+    /** Durable transition immediately before the reviewed installer is sent. / 经审核安装发送紧前的持久阶段转换。 */
+    @FunctionalInterface
+    public interface BeforeExecute {
+        /** Persists the original dispatch phase. / 持久保存原发送阶段。
+         * @throws ApiException if the original transition fails / 原阶段转换失败时 */
+        void run() throws ApiException;
+    }
+
     /** Exact immutable helper protocol identity. / 精确不可变 helper 协议身份。
      * @param protocol observed protocol version / 已观察协议版本
      * @param sha256 observed helper byte digest / 已观察 helper 字节摘要 */
@@ -75,31 +84,75 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review fails before dispatch / 发送前审核失败时 */
     public OperationResult<Identity> install() throws ApiException {
         byte[] body = DeploymentHelperInstallerScript.render().getBytes(StandardCharsets.UTF_8);
-        var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2), 131072);
-        java.util.Arrays.fill(body, (byte) 0);
-        var grant = interaction.approve(intent("deployment.helper.install.v1", request), task);
-        if (grant.outcome() != Outcome.SUCCEEDED)
-            return withoutValue(grant);
-        final OperationResult<CommandResult> response;
-        try {
-            response = session.execute(request, grant.value().orElseThrow());
-        } catch (ApiException uncertain) {
-            if (uncertain.problem().code() == ProblemCode.ACCESS_DENIED
-                    || uncertain.problem().code() == ProblemCode.INVALID_INPUT)
-                throw uncertain;
-            return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
+        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2),
+                131072)) {
+            java.util.Arrays.fill(body, (byte) 0);
+            var grant = interaction.approve(intent("deployment.helper.install.v1", request), task);
+            if (grant.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(grant);
+            final OperationResult<CommandResult> response;
+            try {
+                response = session.execute(request, grant.value().orElseThrow());
+            } catch (ApiException uncertain) {
+                if (uncertain.problem().code() == ProblemCode.ACCESS_DENIED
+                        || uncertain.problem().code() == ProblemCode.INVALID_INPUT)
+                    throw uncertain;
+                return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
+            }
+            if (response.outcome() == Outcome.CANCELLED)
+                return withoutValue(response);
+            if (!complete(response, installTail(), false))
+                return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
+            try {
+                var observed = probe();
+                return observed.outcome() == Outcome.SUCCEEDED
+                        ? observed
+                        : unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
+            } catch (ApiException uncertain) {
+                return unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
+            }
+        } finally {
+            java.util.Arrays.fill(body, (byte) 0);
         }
-        if (response.outcome() == Outcome.CANCELLED)
-            return withoutValue(response);
-        if (!complete(response, installTail(), false))
-            return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
-        try {
-            var observed = probe();
-            return observed.outcome() == Outcome.SUCCEEDED
-                    ? observed
-                    : unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
-        } catch (ApiException uncertain) {
-            return unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
+    }
+
+    /** Sends a caller-owned operation-specific installer after exact approval. / 精确审核后发送调用方持有的操作专属安装程序。
+     * @param script complete caller-owned installer bytes / 调用方持有的完整安装字节
+     * @param beforeExecute original durable dispatch transition / 原持久发送阶段转换
+     * @return original platform command observation / 原平台命令观察
+     * @throws ApiException if review, transition or transport fails / 审核、阶段转换或传输失败时 */
+    public OperationResult<CommandResult> installTracked(byte[] script, BeforeExecute beforeExecute)
+            throws ApiException {
+        Objects.requireNonNull(script);
+        Objects.requireNonNull(beforeExecute);
+        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
+                131072)) {
+            var grant = interaction.approve(intent("deployment.helper.install.tracked.v1", request), task);
+            if (grant.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            if (task.cancellation().requested())
+                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                        Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_HELPER_INSTALL_UNSENT")));
+            beforeExecute.run();
+            return session.execute(request, grant.value().orElseThrow());
+        }
+    }
+
+    /** Reads an original root-owned installer receipt without running the installed helper. / 不运行已安装 helper 而读取原 root 回执。
+     * @param operationId original installer UUID / 原安装 UUID
+     * @return bounded original status observation / 有界原状态观察
+     * @throws ApiException if review or transport fails / 审核或传输失败时 */
+    public OperationResult<CommandResult> installationStatus(UUID operationId) throws ApiException {
+        byte[] script = DeploymentHelperInstallerScript.renderStatus(operationId).getBytes(StandardCharsets.UTF_8);
+        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofSeconds(30),
+                2048)) {
+            java.util.Arrays.fill(script, (byte) 0);
+            var grant = interaction.approve(intent("deployment.helper.install.status.v1", request), task);
+            if (grant.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            return session.execute(request, grant.value().orElseThrow());
+        } finally {
+            java.util.Arrays.fill(script, (byte) 0);
         }
     }
 
@@ -107,20 +160,21 @@ public final class DeploymentManagedHelper {
      * @return verified helper identity or an explicit mismatch / 经核实的 helper 身份或明确不匹配
      * @throws ApiException if review or original remote access fails / 审核或原远端访问失败时 */
     public OperationResult<Identity> probe() throws ApiException {
-        var request = new CommandRequest(probeScript(), new byte[0], Duration.ofSeconds(30), 4096);
-        var grant = interaction.approve(intent("deployment.helper.probe.v1", request), task);
-        if (grant.outcome() != Outcome.SUCCEEDED)
-            return withoutValue(grant);
-        var response = session.execute(request, grant.value().orElseThrow());
-        if (response.outcome() == Outcome.CANCELLED || response.outcome() == Outcome.UNKNOWN)
-            return withoutValue(response);
-        if (complete(response, probeOutput(), true))
-            return new OperationResult<>(Outcome.SUCCEEDED,
-                    Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
-                            DeploymentManagedHelperBundle.EXPECTED_SHA256)),
-                    Optional.empty());
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+        try (var request = new CommandRequest(probeScript(), new byte[0], Duration.ofSeconds(30), 4096)) {
+            var grant = interaction.approve(intent("deployment.helper.probe.v1", request), task);
+            if (grant.outcome() != Outcome.SUCCEEDED)
+                return withoutValue(grant);
+            var response = session.execute(request, grant.value().orElseThrow());
+            if (response.outcome() == Outcome.CANCELLED || response.outcome() == Outcome.UNKNOWN)
+                return withoutValue(response);
+            if (complete(response, probeOutput(), true))
+                return new OperationResult<>(Outcome.SUCCEEDED,
+                        Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
+                                DeploymentManagedHelperBundle.EXPECTED_SHA256)),
+                        Optional.empty());
+            return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+        }
     }
 
     /** Produces a stable, exact platform review for one fixed helper operation. / 为固定 helper 操作生成稳定且精确的平台审核。
