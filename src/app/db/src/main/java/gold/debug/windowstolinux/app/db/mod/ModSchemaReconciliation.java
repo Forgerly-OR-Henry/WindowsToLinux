@@ -431,41 +431,8 @@ public final class ModSchemaReconciliation {
                         "Original chain inventory changed");
                 var plan = new ModRestartLedger.Preparation(uuid(node, "intent"), operation, target,
                         uuid(node, "writer"), uuid(node, "reader"), UUID.fromString(r.getString(7)), source, steps);
-                int index = 0;
-                try (var q = c.prepareStatement(
-                        "SELECT step_number,from_version,to_version,migration_class,source_schema,target_schema FROM mod_migration_step WHERE operation_id=? ORDER BY step_number")) {
-                    q.setObject(1, operation);
-                    try (var data = q.executeQuery()) {
-                        while (data.next()) {
-                            require(index < steps.size(), "Unexpected migration step");
-                            var step = steps.get(index++);
-                            var declared = node.path("steps").path(step.index());
-                            var physical = ModRestartLedger.targetCoordinates(plan, step);
-                            require(data.getInt(1) == step.index() && data.getString(2).equals(step.from())
-                                    && data.getString(3).equals(step.to()) && data.getString(4).equals(step.className())
-                                    && data.getString(5)
-                                            .equals(ModRestartLedger.sourceCoordinates(plan, step).physicalName())
-                                    && data.getString(6).equals(physical.physicalName())
-                                    && physical.physicalName().equals(declared.path("physicalSchema").asText())
-                                    && physical.databaseUser().equals(declared.path("databaseUser").asText()),
-                                    "Migration inventory changed");
-                        }
-                    }
-                }
-                require(index == steps.size(), "Migration steps disappeared");
-                String request;
-                try (var q = c.prepareStatement(
-                        "SELECT o.request_json FROM mod_operation o JOIN mod_registry m ON m.mod_id=o.mod_id WHERE o.operation_id=? AND o.mod_id=? AND o.state='UNKNOWN' AND (o.operation_type IN ('ENABLE','SWITCH') OR o.operation_type='MIGRATE' AND o.operation_id=?) AND o.target_generation=? AND o.accepted_revision=? AND m.revision=o.accepted_revision AND m.enabled AND m.selected_version=o.target_version AND m.actual_version IS NULL AND m.last_runtime_state IN ('STOPPED','FAILED')")) {
-                    q.setObject(1, plan.intent());
-                    q.setString(2, owner);
-                    q.setObject(3, operation);
-                    q.setObject(4, target.generation());
-                    q.setLong(5, r.getLong(5));
-                    try (var parent = q.executeQuery()) {
-                        require(parent.next(), "Original intent or closed runtime changed");
-                        request = parent.getString(1);
-                    }
-                }
+                verifyMigrationInventory(c, plan, node);
+                String request = originalRequest(c, plan, r.getLong(5));
                 var parent = object(request);
                 if (plan.intent().equals(plan.operation())) {
                     require(fields(parent)
@@ -492,42 +459,7 @@ public final class ModSchemaReconciliation {
                         }
                     }
                 }
-                var data = parent.path("data");
-                require(parent.path("formatVersion").asInt() == 1 && owner.equals(parent.path("ownerId").textValue())
-                        && parent.path("target").path("enabled").asBoolean()
-                        && version.equals(parent.path("target").path("version").textValue())
-                        && target.schemaVersion().equals(data.path("target").textValue()),
-                        "Original request identity changed");
-                if (source.isPresent()) {
-                    require("MIGRATE".equals(data.path("mode").textValue())
-                            && source.get().schemaVersion().equals(data.path("source").textValue())
-                            && source.get().generation().equals(uuid(data, "generation"))
-                            && data.path("steps").size() == steps.size(), "Original confirmed source changed");
-                    String previous = source.get().schemaVersion();
-                    var declarations = object(r.getString(8)).path("migrations");
-                    for (var step : steps) {
-                        var edge = data.path("steps").path(step.index());
-                        boolean declared = false;
-                        for (var declaration : declarations)
-                            if (step.from().equals(declaration.path("from").asText())
-                                    && step.to().equals(declaration.path("to").asText())
-                                    && step.className().equals(declaration.path("class").asText()))
-                                declared = true;
-                        require(previous.equals(step.from())
-                                && new java.math.BigInteger(step.from())
-                                        .compareTo(new java.math.BigInteger(step.to())) < 0
-                                && step.from().equals(edge.path("from").textValue())
-                                && step.to().equals(edge.path("to").textValue())
-                                && step.className().equals(edge.path("className").textValue()) && declared,
-                                "Original confirmed chain changed");
-                        previous = step.to();
-                    }
-                    require(previous.equals(target.schemaVersion()) && steps.getLast().target().equals(target)
-                            && steps.getLast().writer().equals(plan.writer())
-                            && steps.getLast().reader().equals(plan.reader()),
-                            "Original final migration identities changed");
-                } else
-                    require("INITIALIZE".equals(data.path("mode").textValue()), "Original initialization mode changed");
+                verifyOriginalChain(plan, parent, version, manifest.path("migrations"));
                 return new Review(plan, version, r.getString(8), r.getString(9), recovery, request, r.getLong(5),
                         uuid(node, "bootId"));
             }
@@ -724,4 +656,107 @@ public final class ModSchemaReconciliation {
          * @throws SQLException if transition fails / 转换失败时 */
         T run(Connection connection) throws SQLException;
     }
+
+    /** Cross-checks each original migration edge against its persisted physical coordinates. / 按持久物理坐标交叉检查每条原迁移边。
+     * @param c original serialized connection / 原串行连接
+     * @param plan original preparation / 原准备
+     * @param node original recovery inventory / 原恢复清单
+     * @throws SQLException if an edge or coordinate changed / 边或坐标变化时 */
+    private void verifyMigrationInventory(Connection c, ModRestartLedger.Preparation plan, JsonNode node)
+            throws SQLException {
+        var steps = plan.steps();
+        UUID operation = plan.operation();
+        int index = 0;
+        try (var q = c.prepareStatement(
+                "SELECT step_number,from_version,to_version,migration_class,source_schema,target_schema FROM mod_migration_step WHERE operation_id=? ORDER BY step_number")) {
+            q.setObject(1, operation);
+            try (var data = q.executeQuery()) {
+                while (data.next()) {
+                    require(index < steps.size(), "Unexpected migration step");
+                    var step = steps.get(index++);
+                    var declared = node.path("steps").path(step.index());
+                    var physical = ModRestartLedger.targetCoordinates(plan, step);
+                    require(data.getInt(1) == step.index() && data.getString(2).equals(step.from())
+                            && data.getString(3).equals(step.to()) && data.getString(4).equals(step.className())
+                            && data.getString(5).equals(ModRestartLedger.sourceCoordinates(plan, step).physicalName())
+                            && data.getString(6).equals(physical.physicalName())
+                            && physical.physicalName().equals(declared.path("physicalSchema").asText())
+                            && physical.databaseUser().equals(declared.path("databaseUser").asText()),
+                            "Migration inventory changed");
+                }
+            }
+        }
+        require(index == steps.size(), "Migration steps disappeared");
+    }
+
+    /** Reads the original parent intent under its unchanged registry revision and closed runtime. / 按未改变登记修订及已关闭运行态读取原父意图。
+     * @param c original serialized connection / 原串行连接
+     * @param plan original preparation / 原准备
+     * @param revision original accepted revision / 原接纳修订
+     * @return exact original request text / 精确原请求文本
+     * @throws SQLException if the intent or runtime changed / 意图或运行态变化时 */
+    private String originalRequest(Connection c, ModRestartLedger.Preparation plan, long revision) throws SQLException {
+        String owner = plan.target().ownerId();
+        UUID operation = plan.operation();
+        var target = plan.target();
+        try (var q = c.prepareStatement(
+                "SELECT o.request_json FROM mod_operation o JOIN mod_registry m ON m.mod_id=o.mod_id WHERE o.operation_id=? AND o.mod_id=? AND o.state='UNKNOWN' AND (o.operation_type IN ('ENABLE','SWITCH') OR o.operation_type='MIGRATE' AND o.operation_id=?) AND o.target_generation=? AND o.accepted_revision=? AND m.revision=o.accepted_revision AND m.enabled AND m.selected_version=o.target_version AND m.actual_version IS NULL AND m.last_runtime_state IN ('STOPPED','FAILED')")) {
+            q.setObject(1, plan.intent());
+            q.setString(2, owner);
+            q.setObject(3, operation);
+            q.setObject(4, target.generation());
+            q.setLong(5, revision);
+            try (var parent = q.executeQuery()) {
+                require(parent.next(), "Original intent or closed runtime changed");
+                return parent.getString(1);
+            }
+        }
+    }
+
+    /** Verifies the original request and declared increasing chain without running migration. / 不运行迁移地核验原请求及已声明递增链。
+     * @param plan original preparation / 原准备
+     * @param parent exact original parent request / 精确原父请求
+     * @param version original selected program version / 原选定程序版本
+     * @param declarations original manifest migration edges / 原清单迁移边
+     * @throws SQLException if the confirmed source or chain changed / 确认来源或链变化时 */
+    private void verifyOriginalChain(ModRestartLedger.Preparation plan, JsonNode parent, String version,
+            JsonNode declarations) throws SQLException {
+        var target = plan.target();
+        String owner = target.ownerId();
+        var source = plan.source();
+        var steps = plan.steps();
+        var data = parent.path("data");
+        require(parent.path("formatVersion").asInt() == 1 && owner.equals(parent.path("ownerId").textValue())
+                && parent.path("target").path("enabled").asBoolean()
+                && version.equals(parent.path("target").path("version").textValue())
+                && target.schemaVersion().equals(data.path("target").textValue()), "Original request identity changed");
+        if (source.isPresent()) {
+            require("MIGRATE".equals(data.path("mode").textValue())
+                    && source.get().schemaVersion().equals(data.path("source").textValue())
+                    && source.get().generation().equals(uuid(data, "generation"))
+                    && data.path("steps").size() == steps.size(), "Original confirmed source changed");
+            String previous = source.get().schemaVersion();
+            for (var step : steps) {
+                var edge = data.path("steps").path(step.index());
+                boolean declared = false;
+                for (var declaration : declarations)
+                    if (step.from().equals(declaration.path("from").asText())
+                            && step.to().equals(declaration.path("to").asText())
+                            && step.className().equals(declaration.path("class").asText()))
+                        declared = true;
+                require(previous.equals(step.from())
+                        && new java.math.BigInteger(step.from()).compareTo(new java.math.BigInteger(step.to())) < 0
+                        && step.from().equals(edge.path("from").textValue())
+                        && step.to().equals(edge.path("to").textValue())
+                        && step.className().equals(edge.path("className").textValue()) && declared,
+                        "Original confirmed chain changed");
+                previous = step.to();
+            }
+            require(previous.equals(target.schemaVersion()) && steps.getLast().target().equals(target)
+                    && steps.getLast().writer().equals(plan.writer()) && steps.getLast().reader().equals(plan.reader()),
+                    "Original final migration identities changed");
+        } else
+            require("INITIALIZE".equals(data.path("mode").textValue()), "Original initialization mode changed");
+    }
+
 }

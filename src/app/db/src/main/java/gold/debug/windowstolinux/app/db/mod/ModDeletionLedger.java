@@ -20,6 +20,9 @@ import gold.debug.windowstolinux.appapi.task.*;
 /** Persists exact installed-release or whole-Mod deletion before unregistering verified cleanup. / 持久化精确安装版本或整 Mod 删除，核验清理后才注销。
  * File removal belongs to the installer; this ledger independently proves the registered directory is absent. / 文件由安装服务移除；本账本独立证明登记目录已不存在。 */
 public final class ModDeletionLedger {
+    /** Existing-state responsibility collaborator. / 既有状态职责协作者。 */
+    private final DeletionEvidence evidence = new DeletionEvidence();
+
     /** Exclusive physical engine. / 独占物理引擎。 */
     private final PlatformDatabase database;
 
@@ -101,7 +104,7 @@ public final class ModDeletionLedger {
         /** Lists all exact generations covered by this review. / 列出此审阅覆盖的全部精确代次。
          * @return immutable removal identities / 不可变移除身份 */
         public List<SchemaIdentity> removedSchemas() {
-            return request.removals().stream().map(v -> identity(request, v)).toList();
+            return request.removals().stream().map(v -> DeletionEvidence.identity(request, v)).toList();
         }
 
         /** Lists exact category identities whose emergency files must be removed by the host. / 列出其应急文件须由宿主移除的精确类别身份。
@@ -161,13 +164,13 @@ public final class ModDeletionLedger {
      * @throws SQLException if activity, maintenance, source mode or ownership prevents deletion / 活动、维护、源码模式或归属阻止删除时 */
     public Review review(String owner, String version) throws SQLException {
         return locked(c -> {
-            var request = snapshot(c, owner, version);
-            validate(request);
-            drained(c, owner, null);
-            dependents(c, owner);
+            var request = evidence.snapshot(c, owner, version);
+            evidence.validate(request);
+            DeletionEvidence.drained(c, owner, null);
+            DeletionEvidence.dependents(c, owner);
             for (var data : request.removals())
-                physicalSafe(c, new SchemaCoordinates(identity(request, data)));
-            encode(request);
+                physicalSafe(c, new SchemaCoordinates(DeletionEvidence.identity(request, data)));
+            DeletionEvidence.encode(request);
             return new Review(request);
         });
     }
@@ -182,15 +185,16 @@ public final class ModDeletionLedger {
         review.attempted = true;
         return locked(c -> {
             var before = review.request;
-            require(before.equals(snapshot(c, before.owner(), before.version())), "Reviewed release or data changed");
+            require(before.equals(evidence.snapshot(c, before.owner(), before.version())),
+                    "Reviewed release or data changed");
             require(files != null && files.length() <= 4 * 1024 * 1024, "Physical deletion scope exceeds bounds");
             var request = new Request(before.format(), before.home(), before.owner(), before.version(),
                     before.ownerState(), before.versions(), before.schemas(), before.targets(), before.pins(),
                     before.secrets(), files);
-            drained(c, request.owner(), null);
-            dependents(c, request.owner());
+            DeletionEvidence.drained(c, request.owner(), null);
+            DeletionEvidence.dependents(c, request.owner());
             for (var data : request.removals())
-                physicalSafe(c, new SchemaCoordinates(identity(request, data)));
+                physicalSafe(c, new SchemaCoordinates(DeletionEvidence.identity(request, data)));
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
                     "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,source_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'RUNNING','QUIESCENT',?,?,?,?,?)")) {
@@ -201,8 +205,8 @@ public final class ModDeletionLedger {
                 p.setString(5, request.version() == null ? null : request.release().schema());
                 p.setObject(6, request.sourceGeneration());
                 p.setLong(7, request.ownerState().revision());
-                p.setString(8, encode(request));
-                p.setString(9, recovery());
+                p.setString(8, DeletionEvidence.encode(request));
+                p.setString(9, evidence.recovery());
                 p.setString(10, review.archiveId.toString());
                 p.setLong(11, now);
                 p.setLong(12, now);
@@ -238,8 +242,8 @@ public final class ModDeletionLedger {
      * @throws SQLException if the original range is absent or changed / 原范围缺失或变化时 */
     public Execution execution(UUID operation) throws SQLException {
         return locked(c -> {
-            var row = load(c, operation);
-            unchanged(c, row);
+            var row = evidence.load(c, operation);
+            evidence.unchanged(c, row);
             var request = row.request();
             return new Execution(operation, request.owner(), request.version(), request.program(), row.phase(),
                     row.state(), request.files(), request.selected().stream().map(Release::version).toList(),
@@ -273,7 +277,7 @@ public final class ModDeletionLedger {
         transition(operation, "PROGRAM_REMOVED", "DATA_REMOVED", (c, row) -> {
             absentProgram(row.request());
             for (var data : row.request().removals()) {
-                var coordinates = new SchemaCoordinates(identity(row.request(), data));
+                var coordinates = new SchemaCoordinates(DeletionEvidence.identity(row.request(), data));
                 coordinates.requireRegistered(c, Set.of("DELETE_PENDING"));
                 try (var ddl = database.openConnection()) {
                     physicalSafe(ddl, coordinates);
@@ -297,7 +301,7 @@ public final class ModDeletionLedger {
             var request = row.request();
             absentOwnedFiles(request);
             for (var data : request.removals()) {
-                var schema = identity(request, data);
+                var schema = DeletionEvidence.identity(request, data);
                 physicalAbsent(c, new SchemaCoordinates(schema));
                 for (var table : List.of("mod_server_reference", "mod_credential_reference"))
                     update(c, "DELETE FROM " + table + " WHERE mod_id=? AND schema_generation=?", schema.ownerId(),
@@ -311,7 +315,8 @@ public final class ModDeletionLedger {
                 ModNavigationPreferences.removeOwner(c, request.owner());
                 for (var secret : request.secrets())
                     if (!secret.shared()) {
-                        require(!sharedSecret(c, request.owner(), secret.id()), "Credential gained a shared reference");
+                        require(!DeletionEvidence.sharedSecret(c, request.owner(), secret.id()),
+                                "Credential gained a shared reference");
                         update(c, "DELETE FROM credential WHERE credential_id=?", secret.id());
                     }
             }
@@ -327,7 +332,7 @@ public final class ModDeletionLedger {
             absentProgram(request);
             absentOwnedFiles(request);
             for (var data : request.removals()) {
-                var schema = identity(request, data);
+                var schema = DeletionEvidence.identity(request, data);
                 physicalAbsent(c, new SchemaCoordinates(schema));
                 require(noReferences(c, schema), "Removed data still has registered references");
                 update(c, "DELETE FROM mod_schema WHERE mod_id=? AND generation=?", request.owner(),
@@ -387,14 +392,14 @@ public final class ModDeletionLedger {
      * @throws SQLException if evidence, occupancy or state changed / 证据、占用或状态变化时 */
     public String resume(UUID operation) throws SQLException {
         return locked(c -> {
-            var row = load(c, operation);
+            var row = evidence.load(c, operation);
             require("UNKNOWN".equals(row.state()), "Deletion is not waiting for explicit reconciliation");
-            unchanged(c, row);
-            drained(c, row.request().owner(), operation);
-            dependents(c, row.request().owner());
+            evidence.unchanged(c, row);
+            DeletionEvidence.drained(c, row.request().owner(), operation);
+            DeletionEvidence.dependents(c, row.request().owner());
             update(c,
                     "UPDATE mod_operation SET state='RUNNING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=?",
-                    recovery(), System.currentTimeMillis(), operation);
+                    evidence.recovery(), System.currentTimeMillis(), operation);
             return row.phase();
         });
     }
@@ -443,309 +448,19 @@ public final class ModDeletionLedger {
      * @return verified original row / 已核验原行
      * @throws SQLException if claim or evidence differs / 取得记录或证据不同时 */
     private Row active(Connection c, UUID operation, String phase) throws SQLException {
-        var row = load(c, operation);
-        require("RUNNING".equals(row.state()) && phase.equals(row.phase()) && recovery().equals(row.recovery()),
-                "Deletion does not own this boot and phase");
-        unchanged(c, row);
-        drained(c, row.request().owner(), operation);
-        dependents(c, row.request().owner());
+        var row = evidence.load(c, operation);
+        require("RUNNING".equals(row.state()) && phase.equals(row.phase())
+                && evidence.recovery().equals(row.recovery()), "Deletion does not own this boot and phase");
+        evidence.unchanged(c, row);
+        DeletionEvidence.drained(c, row.request().owner(), operation);
+        DeletionEvidence.dependents(c, row.request().owner());
         return row;
-    }
-
-    /** Reads exact restart and version evidence without inferring reference counts from selection. / 读取精确重启及版本证据，不从单选推断引用数。
-     * @param c serialized transaction / 串行事务
-     * @param owner exact Mod / 精确 Mod
-     * @param version requested release; null for the complete owner / 请求版本，空值表示完整所有者
-     * @return immutable bounded request / 不可变有界请求
-     * @throws SQLException if release or restart acknowledgement is unavailable / 版本或重启确认不可用时 */
-    private Request snapshot(Connection c, String owner, String version) throws SQLException {
-        var state = owner(c, owner);
-        var versions = releases(c, owner);
-        require(versions.stream().allMatch(v -> "READY".equals(v.state())), "Installed owner has pending maintenance");
-        var data = new ArrayList<Schema>();
-        if (version == null) {
-            data.addAll(schemas(c, owner));
-        } else {
-            var release = versions.stream().filter(v -> v.version().equals(version)).findFirst()
-                    .orElseThrow(() -> new SQLException("Installed release is absent"));
-            var target = schema(c, owner, release.schema());
-            if (target != null)
-                data.add(target);
-        }
-        return new Request(2, home.toString(), owner, version, state, versions, List.copyOf(data),
-                version == null ? targets(c, owner) : List.of(), version == null ? ownerPins(c, owner) : List.of(),
-                version == null ? secrets(c, owner) : List.of(), "{}");
-    }
-
-    /** Rechecks the reviewed catalog with only this operation's confirmed changes allowed. / 复核已审阅目录，仅允许此操作已确认变更。
-     * @param c serialized transaction / 串行事务
-     * @param row original operation / 原操作
-     * @throws SQLException if catalog, generation or intent changed / 目录、代次或意图变化时 */
-    private void unchanged(Connection c, Row row) throws SQLException {
-        var request = row.request();
-        boolean removed = PHASES.indexOf(row.phase()) >= PHASES.indexOf("REGISTRY_REMOVED");
-        var before = request.ownerState();
-        boolean whole = request.version() == null;
-        if (whole && removed) {
-            require(count(c, "SELECT COUNT(*) FROM mod_registry WHERE mod_id=?", request.owner()) == 0,
-                    "Removed owner reappeared");
-        } else {
-            var expectedOwner = removed && Objects.equals(request.version(), before.selected())
-                    ? new Owner(before.revision(), null, before.initialized(), before.ackBoot())
-                    : before;
-            require(expectedOwner.equals(owner(c, request.owner())), "Accepted disabled intent changed");
-        }
-        var expected = request.versions().stream().filter(v -> !removed || !request.selects(v))
-                .map(v -> !removed && request.selects(v) ? v.pending() : v).toList();
-        require(expected.equals(releases(c, request.owner())),
-                "Installed versions or retained Schema references changed");
-        var expectedData = request.schemas().stream().filter(v -> !removed || !request.removals().contains(v))
-                .map(v -> !removed && request.removals().contains(v) ? v.pending() : v).toList();
-        if (whole) {
-            require(expectedData.equals(schemas(c, request.owner())), "Owned Schema catalog changed");
-            boolean referencesGone = PHASES.indexOf(row.phase()) >= PHASES.indexOf("REFERENCES_REMOVED");
-            require((referencesGone ? List.of() : request.targets()).equals(targets(c, request.owner())),
-                    "Owned log targets changed");
-            require((referencesGone ? List.of() : request.pins()).equals(ownerPins(c, request.owner())),
-                    "Owned navigation preferences changed");
-            if (referencesGone) {
-                require(noOwnerReferences(c, request.owner()), "Owned references reappeared");
-                require(request.secrets().stream().filter(Secret::shared).map(Secret::id).toList()
-                        .equals(CredentialReferenceRepository.ownedIdentities(c, request.owner())),
-                        "Owned credential cleanup changed");
-            } else
-                require(request.secrets().equals(secrets(c, request.owner())),
-                        "Owned credential identities or shared references changed");
-        } else {
-            var actual = schema(c, request.owner(), request.release().schema());
-            require(expectedData.equals(actual == null ? List.of() : List.of(actual)),
-                    "Original Schema registration changed");
-        }
-    }
-
-    /** Reads only a fully stopped and restart-acknowledged owner. / 仅读取完全停止且重启确认的所有者。
-     * @param c serialized connection / 串行连接
-     * @param owner exact identity / 精确身份
-     * @return original disabled choice / 原禁用选择
-     * @throws SQLException if shutdown has not been acknowledged / 尚未确认停用时 */
-    private static Owner owner(Connection c, String owner) throws SQLException {
-        var value = ModProgramMaintenance.stopped(c, owner);
-        return new Owner(value.revision(), value.selected(), value.initialized(), value.ackBoot());
-    }
-
-    /** Reads all retained versions, including unselected and previously failed activations. / 读取全部保留版本，包括未选中及过去启用失败版本。
-     * @param c serialized connection / 串行连接
-     * @param owner exact identity / 精确身份
-     * @return immutable releases / 不可变版本
-     * @throws SQLException if catalog exceeds the review bound / 目录超出审阅边界时 */
-    private static List<Release> releases(Connection c, String owner) throws SQLException {
-        var values = new ArrayList<Release>();
-        try (var p = c.prepareStatement(
-                "SELECT version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? ORDER BY version")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                while (r.next()) {
-                    require(values.size() < 1024 && r.getString(6).length() <= 1024 * 1024,
-                            "Installed catalog exceeds deletion review bounds");
-                    values.add(new Release(r.getString(1), r.getString(2), r.getString(3), r.getString(4),
-                            r.getString(5), r.getString(6), r.getString(7), r.getString(8)));
-                }
-            }
-        }
-        return List.copyOf(values);
-    }
-
-    /** Reads a prepared generation independently of release selection. / 独立于版本单选读取已准备代次。
-     * @param c serialized connection / 串行连接
-     * @param owner exact identity / 精确身份
-     * @param version data version, or null for stateless release / 数据版本，无状态版本为空
-     * @return registration, possibly absent / 登记，可不存在
-     * @throws SQLException if reading fails / 读取失败时 */
-    private static Schema schema(Connection c, String owner, String version) throws SQLException {
-        if (version == null)
-            return null;
-        try (var p = c.prepareStatement(
-                "SELECT generation,physical_name,database_user,state,ever_used,validated_at,validation_digest FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
-            p.setString(1, owner);
-            p.setString(2, version);
-            try (var r = p.executeQuery()) {
-                return !r.next()
-                        ? null
-                        : new Schema(version, r.getObject(1, UUID.class).toString(), r.getString(2), r.getString(3),
-                                r.getString(4), r.getBoolean(5), (Long) r.getObject(6), r.getString(7));
-            }
-        }
-    }
-
-    /** Reads every registered generation, including those no release references. / 读取全部登记代次，包含无版本引用者。
-     * @param c original transaction / 原事务
-     * @param owner exact owner / 精确所有者
-     * @return ordered complete data catalog / 有序完整数据目录
-     * @throws SQLException if catalog reading fails or exceeds bounds / 目录读取失败或超限时 */
-    private static List<Schema> schemas(Connection c, String owner) throws SQLException {
-        var values = new ArrayList<Schema>();
-        try (var p = c
-                .prepareStatement("SELECT schema_version FROM mod_schema WHERE mod_id=? ORDER BY schema_version")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                while (r.next()) {
-                    require(values.size() < 1024, "Owned schema catalog exceeds bounds");
-                    values.add(schema(c, owner, r.getString(1)));
-                }
-            }
-        }
-        return List.copyOf(values);
-    }
-
-    /** Captures immutable owned category rows without requiring their tables to remain usable. / 捕获不可变自有类别行，不要求其表仍可用。
-     * @param c original transaction / 原事务
-     * @param owner exact owner / 精确所有者
-     * @return ordered registered targets / 有序登记目标
-     * @throws SQLException if identities are corrupt or exceed bounds / 身份损坏或超限时 */
-    private static List<LogRepository.Target> targets(Connection c, String owner) throws SQLException {
-        var values = new ArrayList<LogRepository.Target>();
-        try (var p = c
-                .prepareStatement("SELECT * FROM log_category WHERE owner_id=? ORDER BY logical_schema,category")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                while (r.next()) {
-                    require(values.size() < 4096 && r.getInt("format_version") == 1, "Owned log catalog is invalid");
-                    values.add(new LogRepository.Target(r.getObject("target_key", UUID.class), owner,
-                            r.getString("logical_schema"), r.getObject("schema_generation", UUID.class),
-                            r.getString("physical_schema"), r.getString("category"), r.getString("target_table"),
-                            r.getString("display_name")));
-                }
-            }
-        } catch (IllegalArgumentException | NullPointerException invalid) {
-            throw new SQLException("Invalid log catalog", invalid);
-        }
-        return List.copyOf(values);
-    }
-
-    /** Reads only this owner's navigation identities while validating the shared preference. / 校验共用偏好，仅返回此所有者导航身份。
-     * @param c original transaction / 原事务
-     * @param owner exact owner / 精确所有者
-     * @return original owned navigation order / 原自有导航顺序
-     * @throws SQLException if stored preferences cannot be verified / 无法核验已存偏好时 */
-    private static List<ModNavigationPreferences.PagePin> ownerPins(Connection c, String owner) throws SQLException {
-        return ModNavigationPreferences.read(c).stream().filter(pin -> pin.ownerId().equals(owner)).toList();
-    }
-
-    /** Captures owned protected values as identities only, preserving pre-existing shared references. / 仅以身份捕获自有受保护值，保留既有共享引用。
-     * @param c serialized connection / 串行连接
-     * @param owner exact owner / 精确所有者
-     * @return original credential cleanup scope / 原凭据清理范围
-     * @throws SQLException if ownership cannot be verified / 无法核验归属时 */
-    private static List<Secret> secrets(Connection c, String owner) throws SQLException {
-        var result = new ArrayList<Secret>();
-        for (String id : CredentialReferenceRepository.ownedIdentities(c, owner))
-            result.add(new Secret(id, sharedSecret(c, owner, id)));
-        return List.copyOf(result);
-    }
-
-    /** Checks all platform and other-Mod consumers before removing a protected value. / 移除受保护值前检查全部平台及其他 Mod 使用方。
-     * @param c serialized connection / 串行连接
-     * @param owner deleted owner / 被删所有者
-     * @param id exact credential identity / 精确凭据身份
-     * @return whether a shared consumer protects the value / 是否存在保护该值的共享使用方
-     * @throws SQLException if reference reading fails / 引用读取失败时 */
-    private static boolean sharedSecret(Connection c, String owner, String id) throws SQLException {
-        return count(c,
-                "SELECT (SELECT COUNT(*) FROM server_profile WHERE credential_id=?)+(SELECT COUNT(*) FROM ai_model WHERE credential_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE credential_id=? AND mod_id<>?)",
-                id, id, id, owner) != 0;
     }
 
     /** Owned credential identity without any protected payload. / 不含受保护载荷的自有凭据身份。
      * @param id exact platform-issued identity / 精确平台签发身份
      * @param shared whether an existing outside consumer requires preservation / 既有外部使用方是否要求保留 */
     private record Secret(String id, boolean shared) {
-    }
-
-    /** Rejects active own or cross-Mod work and all other retained maintenance. / 拒绝活动自有或跨 Mod 工作及其他全部保留维护。
-     * @param c serialized transaction / 串行事务
-     * @param owner exact identity / 精确身份
-     * @param operation current deletion, null before admission / 当前删除，准入前为空
-     * @throws SQLException if unresolved occupancy exists / 存在未解决占用时 */
-    private static void drained(Connection c, String owner, UUID operation) throws SQLException {
-        ModProgramMaintenance.drained(c, owner, operation);
-    }
-
-    /** Requires the existing explicit cascade-disable flow to have handled enabled consumers. / 要求既有明确连带禁用流程已处理开启的使用方。
-     * @param c serialized connection / 串行连接
-     * @param owner removed provider / 被删除提供方
-     * @throws SQLException if enabled declared consumers remain / 仍有开启的声明使用方时 */
-    private static void dependents(Connection c, String owner) throws SQLException {
-        ModProgramMaintenance.dependents(c, owner);
-    }
-
-    /** Validates persisted request shape and trusted program/data coordinates. / 校验持久请求形状及可信程序与数据坐标。
-     * @param request retained request / 保留请求
-     * @throws SQLException if any identity or derived range is invalid / 任一身份或派生范围无效时 */
-    private void validate(Request request) throws SQLException {
-        try {
-            boolean whole = request.version() == null;
-            require(request.format() == 2 && home.toString().equals(request.home()) && request.ownerState() != null
-                    && request.ownerState().revision() >= 0 && request.versions() != null
-                    && (whole || !request.versions().isEmpty()) && request.versions().size() <= 1024
-                    && request.files() != null && request.files().length() <= 4 * 1024 * 1024
-                    && request.schemas() != null && request.schemas().size() <= 1024 && request.targets() != null
-                    && request.targets().size() <= 4096 && request.pins() != null && request.pins().size() <= 1024
-                    && request.secrets() != null && request.secrets().size() <= 10000, "Invalid deletion request");
-            UUID.fromString(request.ownerState().ackBoot());
-            require(segment(request.owner()) && !Set.of("app", "@platform").contains(request.owner())
-                    && (whole || segment(request.version())), "Invalid installed path identity");
-            require(request.versions().stream().map(Release::version).distinct().count() == request.versions().size()
-                    && request.versions().stream().allMatch(v -> "READY".equals(v.state()))
-                    && (whole || request.release() != null), "Invalid original releases");
-            for (var release : request.selected())
-                require(segment(release.version()) && Set.of("LOCAL", "BUNDLED", "STORE").contains(release.origin())
-                        && home.resolve("mod").resolve(request.owner()).resolve(release.version()).toString()
-                                .equals(release.path()),
-                        "Only registered ordinary installed programs can be removed; CLASS sources are not install directories");
-            require(request.schemas().stream().map(Schema::version).distinct().count() == request.schemas().size(),
-                    "Duplicate owned data");
-            for (var data : request.schemas()) {
-                var coordinates = new SchemaCoordinates(identity(request, data));
-                require(coordinates.physicalName().equals(data.physical())
-                        && coordinates.databaseUser().equals(data.user())
-                        && Set.of("PREPARING", "READY", "FAILED", "UNKNOWN").contains(data.state()),
-                        "Invalid original Schema ownership");
-                require(whole || data.version().equals(request.release().schema()), "Unrelated single-version data");
-            }
-            require(whole || request.schemas().size() <= 1 && request.targets().isEmpty() && request.pins().isEmpty()
-                    && request.secrets().isEmpty(), "Invalid version-only range");
-            require(request.targets().stream().map(LogRepository.Target::key).distinct().count() == request.targets()
-                    .size() && new HashSet<>(request.pins()).size() == request.pins().size(),
-                    "Duplicate owned references");
-            for (var target : request.targets()) {
-                require(target.owner().equals(request.owner()), "Foreign log ownership");
-                if (target.logical().equals("app"))
-                    require(target.physical().equals("app") && target.table().equals("runtime_log")
-                            && target.category().equals("runtime") && target.generation().equals(database.generation()),
-                            "Invalid runtime log generation");
-                else
-                    require(request.schemas().stream()
-                            .anyMatch(v -> target.logical().equals("v" + v.version())
-                                    && target.generation().toString().equals(v.generation())
-                                    && target.physical().equals(v.physical())),
-                            "Unowned business log data");
-            }
-            require(request.pins().stream().allMatch(pin -> pin.ownerId().equals(request.owner())),
-                    "Foreign navigation preference");
-            require(request.secrets().stream().map(Secret::id).distinct().count() == request.secrets().size()
-                    && request.secrets().stream()
-                            .allMatch(v -> CredentialReferenceRepository.ownedIdentity(request.owner(), v.id())),
-                    "Invalid owned credential identities");
-        } catch (IllegalArgumentException | NullPointerException invalid) {
-            throw new SQLException("Invalid original deletion evidence", invalid);
-        }
-    }
-
-    /** Rejects path separators, traversal and ambiguous Windows terminal dots. / 拒绝路径分隔符、越界及 Windows 末尾点歧义。
-     * @param value exact path component / 精确路径分量
-     * @return whether it is a safe component / 是否为安全分量 */
-    private static boolean segment(String value) {
-        return value != null && value.matches("[A-Za-z0-9_][A-Za-z0-9_.+\\-]{0,511}") && !value.endsWith(".");
     }
 
     /** Proves absence without following links or treating access errors as missing paths. / 不跟随链接、不将访问错误当成路径缺失地证明不存在。
@@ -882,7 +597,7 @@ public final class ModDeletionLedger {
             require(count(c, "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=?", request.owner(),
                     release.version()) == 0, "Original release remains registered");
         for (var data : request.removals()) {
-            var schema = identity(request, data);
+            var schema = DeletionEvidence.identity(request, data);
             physicalAbsent(c, new SchemaCoordinates(schema));
             require(noReferences(c, schema)
                     && count(c, "SELECT COUNT(*) FROM mod_schema WHERE generation=?", schema.generation()) == 0,
@@ -913,81 +628,7 @@ public final class ModDeletionLedger {
     private static boolean noOwnerReferences(Connection c, String owner) throws SQLException {
         return count(c,
                 "SELECT (SELECT COUNT(*) FROM mod_server_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM log_category WHERE owner_id=?)+(SELECT COUNT(*) FROM runtime_log WHERE owner_id=?)",
-                owner, owner, owner, owner) == 0 && ownerPins(c, owner).isEmpty();
-    }
-
-    /** Loads bounded retained evidence and cross-checks its relational operation identity. / 加载有界保留证据并交叉检查关系操作身份。
-     * @param c serialized connection / 串行连接
-     * @param operation exact operation / 精确操作
-     * @return validated row / 已校验行
-     * @throws SQLException if absent or invalid / 缺失或无效时 */
-    private Row load(Connection c, UUID operation) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND outcome IS NULL")) {
-            p.setObject(1, operation);
-            try (var r = p.executeQuery()) {
-                require(r.next(), "Original deletion evidence is absent");
-                try {
-                    String value = r.getString("request_json"), recovery = r.getString("recovery_json");
-                    require(value.length() <= 8 * 1024 * 1024 && recovery.length() <= 256,
-                            "Deletion evidence exceeds bounds");
-                    var request = decode(value);
-                    validate(request);
-                    var resume = JSON.readTree(recovery);
-                    require(resume != null && resume.isObject() && resume.size() == 1 && resume.path("boot").isTextual()
-                            && UUID.fromString(resume.path("boot").textValue()).toString()
-                                    .equals(resume.path("boot").textValue()),
-                            "Invalid deletion recovery identity");
-                    require(request.owner().equals(r.getString("mod_id"))
-                            && Objects.equals(request.version(), r.getString("source_version"))
-                            && request.type().equals(r.getString("operation_type"))
-                            && r.getString("target_version") == null
-                            && Objects.equals(request.version() == null ? null : request.release().schema(),
-                                    r.getString("source_schema_version"))
-                            && r.getString("target_schema_version") == null
-                            && Objects.equals(request.sourceGeneration(), r.getObject("target_generation", UUID.class))
-                            && r.getObject("accepted_revision") != null
-                            && request.ownerState().revision() == r.getLong("accepted_revision")
-                            && PHASES.contains(r.getString("phase"))
-                            && Set.of("RUNNING", "UNKNOWN").contains(r.getString("state")),
-                            "Original deletion identity changed");
-                    return new Row(request, r.getString("phase"), r.getString("state"), recovery,
-                            UUID.fromString(r.getString("archive_log_id")));
-                } catch (IOException | IllegalArgumentException | NullPointerException invalid) {
-                    throw new SQLException("Invalid retained deletion evidence", invalid);
-                }
-            }
-        }
-    }
-
-    /** Reads the current scope or translates the already persisted single-release format without rewriting it. / 读取当前范围，或转换既有持久单版本格式，不重写原记录。
-     * @param value bounded original JSON / 有界原 JSON
-     * @return equivalent exact request / 等价精确请求
-     * @throws IOException if strict decoding fails / 严格解码失败时
-     * @throws SQLException if older evidence cannot prove its original range / 旧证据无法证明原范围时 */
-    private static Request decode(String value) throws IOException, SQLException {
-        var raw = JSON.readTree(value);
-        if (raw != null && raw.isObject() && raw.path("format").isInt() && raw.path("format").intValue() == 1) {
-            var original = JSON.treeToValue(raw, OriginalRequest.class);
-            require(original.version() != null && original.versions() != null, "Invalid original version deletion");
-            var release = original.versions().stream().filter(v -> original.version().equals(v.version())).findFirst()
-                    .orElseThrow(() -> new SQLException("Original release evidence is absent"));
-            var data = original.schema();
-            require(data != null && (data.isNull() || data.isObject() && data.size() == 7),
-                    "Invalid original data evidence");
-            var schemas = new ArrayList<Schema>();
-            if (!data.isNull()) {
-                var translated = ((com.fasterxml.jackson.databind.node.ObjectNode) data).deepCopy();
-                translated.put("version", release.schema());
-                schemas.add(JSON.treeToValue(translated, Schema.class));
-            }
-            var request = new Request(2, original.home(), original.owner(), original.version(), original.ownerState(),
-                    original.versions(), List.copyOf(schemas), List.of(), List.of(), List.of(), original.files());
-            require(original.removeSchema() == !request.removals().isEmpty(),
-                    "Original last-reference evidence differs");
-            return request;
-        }
-        return JSON.treeToValue(raw, Request.class);
+                owner, owner, owner, owner) == 0 && DeletionEvidence.ownerPins(c, owner).isEmpty();
     }
 
     /** Original persisted version-only request, retained solely to finish already accepted work. / 原持久单版本请求，仅用于完成已接纳工作。
@@ -1002,34 +643,6 @@ public final class ModDeletionLedger {
      * @param files original host physical scope / 原宿主物理范围 */
     private record OriginalRequest(int format, String home, String owner, String version, Owner ownerState,
             List<Release> versions, JsonNode schema, boolean removeSchema, String files) {
-    }
-
-    /** Serializes a bounded immutable request. / 序列化有界不可变请求。
-     * @param request original request / 原请求
-     * @return strict JSON / 严格 JSON
-     * @throws SQLException if serialization exceeds limits or fails / 序列化超限或失败时 */
-    private static String encode(Request request) throws SQLException {
-        try {
-            String value = JSON.writeValueAsString(request);
-            require(value.length() <= 8 * 1024 * 1024, "Deletion evidence exceeds bounds");
-            return value;
-        } catch (IOException invalid) {
-            throw new SQLException("Deletion evidence cannot be encoded", invalid);
-        }
-    }
-
-    /** Returns the exact original generation. / 返回精确原代次。
-     * @param request original request / 原请求
-     * @param data original registered data / 原登记数据
-     * @return original identity / 原身份 */
-    private static SchemaIdentity identity(Request request, Schema data) {
-        return new SchemaIdentity(request.owner(), data.version(), UUID.fromString(data.generation()));
-    }
-
-    /** Binds the active claim to the current physical boot. / 将活动取得记录绑定到当前物理启动。
-     * @return canonical recovery JSON / 规范恢复 JSON */
-    private String recovery() {
-        return "{\"boot\":\"" + database.bootId() + "\"}";
     }
 
     /** Quotes only registered internal identifiers. / 仅引用登记的内部标识。
@@ -1233,5 +846,410 @@ public final class ModDeletionLedger {
      * @param recovery claimed boot / 已取得启动
      * @param archive fixed archive identity / 固定归档身份 */
     private record Row(Request request, String phase, String state, String recovery, UUID archive) {
+    }
+
+    /** Captures and validates original deletion evidence and continuing admission. / 捕获并校验原删除证据及持续准入。 */
+    private final class DeletionEvidence {
+        /** Binds the existing ledger state only. / 仅绑定既有账本状态。 */
+        private DeletionEvidence() {
+        }
+
+        /** Reads exact restart and version evidence without inferring reference counts from selection. / 读取精确重启及版本证据，不从单选推断引用数。
+         * @param c serialized transaction / 串行事务
+         * @param owner exact Mod / 精确 Mod
+         * @param version requested release; null for the complete owner / 请求版本，空值表示完整所有者
+         * @return immutable bounded request / 不可变有界请求
+         * @throws SQLException if release or restart acknowledgement is unavailable / 版本或重启确认不可用时 */
+        private Request snapshot(Connection c, String owner, String version) throws SQLException {
+            var state = owner(c, owner);
+            var versions = releases(c, owner);
+            require(versions.stream().allMatch(v -> "READY".equals(v.state())),
+                    "Installed owner has pending maintenance");
+            var data = new ArrayList<Schema>();
+            if (version == null) {
+                data.addAll(schemas(c, owner));
+            } else {
+                var release = versions.stream().filter(v -> v.version().equals(version)).findFirst()
+                        .orElseThrow(() -> new SQLException("Installed release is absent"));
+                var target = schema(c, owner, release.schema());
+                if (target != null)
+                    data.add(target);
+            }
+            return new Request(2, home.toString(), owner, version, state, versions, List.copyOf(data),
+                    version == null ? targets(c, owner) : List.of(), version == null ? ownerPins(c, owner) : List.of(),
+                    version == null ? secrets(c, owner) : List.of(), "{}");
+        }
+
+        /** Rechecks the reviewed catalog with only this operation's confirmed changes allowed. / 复核已审阅目录，仅允许此操作已确认变更。
+         * @param c serialized transaction / 串行事务
+         * @param row original operation / 原操作
+         * @throws SQLException if catalog, generation or intent changed / 目录、代次或意图变化时 */
+        private void unchanged(Connection c, Row row) throws SQLException {
+            var request = row.request();
+            boolean removed = PHASES.indexOf(row.phase()) >= PHASES.indexOf("REGISTRY_REMOVED");
+            var before = request.ownerState();
+            boolean whole = request.version() == null;
+            if (whole && removed) {
+                require(count(c, "SELECT COUNT(*) FROM mod_registry WHERE mod_id=?", request.owner()) == 0,
+                        "Removed owner reappeared");
+            } else {
+                var expectedOwner = removed && Objects.equals(request.version(), before.selected())
+                        ? new Owner(before.revision(), null, before.initialized(), before.ackBoot())
+                        : before;
+                require(expectedOwner.equals(owner(c, request.owner())), "Accepted disabled intent changed");
+            }
+            var expected = request.versions().stream().filter(v -> !removed || !request.selects(v))
+                    .map(v -> !removed && request.selects(v) ? v.pending() : v).toList();
+            require(expected.equals(releases(c, request.owner())),
+                    "Installed versions or retained Schema references changed");
+            var expectedData = request.schemas().stream().filter(v -> !removed || !request.removals().contains(v))
+                    .map(v -> !removed && request.removals().contains(v) ? v.pending() : v).toList();
+            if (whole) {
+                require(expectedData.equals(schemas(c, request.owner())), "Owned Schema catalog changed");
+                boolean referencesGone = PHASES.indexOf(row.phase()) >= PHASES.indexOf("REFERENCES_REMOVED");
+                require((referencesGone ? List.of() : request.targets()).equals(targets(c, request.owner())),
+                        "Owned log targets changed");
+                require((referencesGone ? List.of() : request.pins()).equals(ownerPins(c, request.owner())),
+                        "Owned navigation preferences changed");
+                if (referencesGone) {
+                    require(noOwnerReferences(c, request.owner()), "Owned references reappeared");
+                    require(request.secrets().stream().filter(Secret::shared).map(Secret::id).toList()
+                            .equals(CredentialReferenceRepository.ownedIdentities(c, request.owner())),
+                            "Owned credential cleanup changed");
+                } else
+                    require(request.secrets().equals(secrets(c, request.owner())),
+                            "Owned credential identities or shared references changed");
+            } else {
+                var actual = schema(c, request.owner(), request.release().schema());
+                require(expectedData.equals(actual == null ? List.of() : List.of(actual)),
+                        "Original Schema registration changed");
+            }
+        }
+
+        /** Reads only a fully stopped and restart-acknowledged owner. / 仅读取完全停止且重启确认的所有者。
+         * @param c serialized connection / 串行连接
+         * @param owner exact identity / 精确身份
+         * @return original disabled choice / 原禁用选择
+         * @throws SQLException if shutdown has not been acknowledged / 尚未确认停用时 */
+        private static Owner owner(Connection c, String owner) throws SQLException {
+            var value = ModProgramMaintenance.stopped(c, owner);
+            return new Owner(value.revision(), value.selected(), value.initialized(), value.ackBoot());
+        }
+
+        /** Reads all retained versions, including unselected and previously failed activations. / 读取全部保留版本，包括未选中及过去启用失败版本。
+         * @param c serialized connection / 串行连接
+         * @param owner exact identity / 精确身份
+         * @return immutable releases / 不可变版本
+         * @throws SQLException if catalog exceeds the review bound / 目录超出审阅边界时 */
+        private static List<Release> releases(Connection c, String owner) throws SQLException {
+            var values = new ArrayList<Release>();
+            try (var p = c.prepareStatement(
+                    "SELECT version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? ORDER BY version")) {
+                p.setString(1, owner);
+                try (var r = p.executeQuery()) {
+                    while (r.next()) {
+                        require(values.size() < 1024 && r.getString(6).length() <= 1024 * 1024,
+                                "Installed catalog exceeds deletion review bounds");
+                        values.add(new Release(r.getString(1), r.getString(2), r.getString(3), r.getString(4),
+                                r.getString(5), r.getString(6), r.getString(7), r.getString(8)));
+                    }
+                }
+            }
+            return List.copyOf(values);
+        }
+
+        /** Reads a prepared generation independently of release selection. / 独立于版本单选读取已准备代次。
+         * @param c serialized connection / 串行连接
+         * @param owner exact identity / 精确身份
+         * @param version data version, or null for stateless release / 数据版本，无状态版本为空
+         * @return registration, possibly absent / 登记，可不存在
+         * @throws SQLException if reading fails / 读取失败时 */
+        private static Schema schema(Connection c, String owner, String version) throws SQLException {
+            if (version == null)
+                return null;
+            try (var p = c.prepareStatement(
+                    "SELECT generation,physical_name,database_user,state,ever_used,validated_at,validation_digest FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+                p.setString(1, owner);
+                p.setString(2, version);
+                try (var r = p.executeQuery()) {
+                    return !r.next()
+                            ? null
+                            : new Schema(version, r.getObject(1, UUID.class).toString(), r.getString(2), r.getString(3),
+                                    r.getString(4), r.getBoolean(5), (Long) r.getObject(6), r.getString(7));
+                }
+            }
+        }
+
+        /** Reads every registered generation, including those no release references. / 读取全部登记代次，包含无版本引用者。
+         * @param c original transaction / 原事务
+         * @param owner exact owner / 精确所有者
+         * @return ordered complete data catalog / 有序完整数据目录
+         * @throws SQLException if catalog reading fails or exceeds bounds / 目录读取失败或超限时 */
+        private static List<Schema> schemas(Connection c, String owner) throws SQLException {
+            var values = new ArrayList<Schema>();
+            try (var p = c
+                    .prepareStatement("SELECT schema_version FROM mod_schema WHERE mod_id=? ORDER BY schema_version")) {
+                p.setString(1, owner);
+                try (var r = p.executeQuery()) {
+                    while (r.next()) {
+                        require(values.size() < 1024, "Owned schema catalog exceeds bounds");
+                        values.add(schema(c, owner, r.getString(1)));
+                    }
+                }
+            }
+            return List.copyOf(values);
+        }
+
+        /** Captures immutable owned category rows without requiring their tables to remain usable. / 捕获不可变自有类别行，不要求其表仍可用。
+         * @param c original transaction / 原事务
+         * @param owner exact owner / 精确所有者
+         * @return ordered registered targets / 有序登记目标
+         * @throws SQLException if identities are corrupt or exceed bounds / 身份损坏或超限时 */
+        private static List<LogRepository.Target> targets(Connection c, String owner) throws SQLException {
+            var values = new ArrayList<LogRepository.Target>();
+            try (var p = c
+                    .prepareStatement("SELECT * FROM log_category WHERE owner_id=? ORDER BY logical_schema,category")) {
+                p.setString(1, owner);
+                try (var r = p.executeQuery()) {
+                    while (r.next()) {
+                        require(values.size() < 4096 && r.getInt("format_version") == 1,
+                                "Owned log catalog is invalid");
+                        values.add(new LogRepository.Target(r.getObject("target_key", UUID.class), owner,
+                                r.getString("logical_schema"), r.getObject("schema_generation", UUID.class),
+                                r.getString("physical_schema"), r.getString("category"), r.getString("target_table"),
+                                r.getString("display_name")));
+                    }
+                }
+            } catch (IllegalArgumentException | NullPointerException invalid) {
+                throw new SQLException("Invalid log catalog", invalid);
+            }
+            return List.copyOf(values);
+        }
+
+        /** Reads only this owner's navigation identities while validating the shared preference. / 校验共用偏好，仅返回此所有者导航身份。
+         * @param c original transaction / 原事务
+         * @param owner exact owner / 精确所有者
+         * @return original owned navigation order / 原自有导航顺序
+         * @throws SQLException if stored preferences cannot be verified / 无法核验已存偏好时 */
+        private static List<ModNavigationPreferences.PagePin> ownerPins(Connection c, String owner)
+                throws SQLException {
+            return ModNavigationPreferences.read(c).stream().filter(pin -> pin.ownerId().equals(owner)).toList();
+        }
+
+        /** Captures owned protected values as identities only, preserving pre-existing shared references. / 仅以身份捕获自有受保护值，保留既有共享引用。
+         * @param c serialized connection / 串行连接
+         * @param owner exact owner / 精确所有者
+         * @return original credential cleanup scope / 原凭据清理范围
+         * @throws SQLException if ownership cannot be verified / 无法核验归属时 */
+        private static List<Secret> secrets(Connection c, String owner) throws SQLException {
+            var result = new ArrayList<Secret>();
+            for (String id : CredentialReferenceRepository.ownedIdentities(c, owner))
+                result.add(new Secret(id, sharedSecret(c, owner, id)));
+            return List.copyOf(result);
+        }
+
+        /** Checks all platform and other-Mod consumers before removing a protected value. / 移除受保护值前检查全部平台及其他 Mod 使用方。
+         * @param c serialized connection / 串行连接
+         * @param owner deleted owner / 被删所有者
+         * @param id exact credential identity / 精确凭据身份
+         * @return whether a shared consumer protects the value / 是否存在保护该值的共享使用方
+         * @throws SQLException if reference reading fails / 引用读取失败时 */
+        private static boolean sharedSecret(Connection c, String owner, String id) throws SQLException {
+            return count(c,
+                    "SELECT (SELECT COUNT(*) FROM server_profile WHERE credential_id=?)+(SELECT COUNT(*) FROM ai_model WHERE credential_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE credential_id=? AND mod_id<>?)",
+                    id, id, id, owner) != 0;
+        }
+
+        /** Rejects active own or cross-Mod work and all other retained maintenance. / 拒绝活动自有或跨 Mod 工作及其他全部保留维护。
+         * @param c serialized transaction / 串行事务
+         * @param owner exact identity / 精确身份
+         * @param operation current deletion, null before admission / 当前删除，准入前为空
+         * @throws SQLException if unresolved occupancy exists / 存在未解决占用时 */
+        private static void drained(Connection c, String owner, UUID operation) throws SQLException {
+            ModProgramMaintenance.drained(c, owner, operation);
+        }
+
+        /** Requires the existing explicit cascade-disable flow to have handled enabled consumers. / 要求既有明确连带禁用流程已处理开启的使用方。
+         * @param c serialized connection / 串行连接
+         * @param owner removed provider / 被删除提供方
+         * @throws SQLException if enabled declared consumers remain / 仍有开启的声明使用方时 */
+        private static void dependents(Connection c, String owner) throws SQLException {
+            ModProgramMaintenance.dependents(c, owner);
+        }
+
+        /** Validates persisted request shape and trusted program/data coordinates. / 校验持久请求形状及可信程序与数据坐标。
+         * @param request retained request / 保留请求
+         * @throws SQLException if any identity or derived range is invalid / 任一身份或派生范围无效时 */
+        private void validate(Request request) throws SQLException {
+            try {
+                boolean whole = request.version() == null;
+                require(request.format() == 2 && home.toString().equals(request.home()) && request.ownerState() != null
+                        && request.ownerState().revision() >= 0 && request.versions() != null
+                        && (whole || !request.versions().isEmpty()) && request.versions().size() <= 1024
+                        && request.files() != null && request.files().length() <= 4 * 1024 * 1024
+                        && request.schemas() != null && request.schemas().size() <= 1024 && request.targets() != null
+                        && request.targets().size() <= 4096 && request.pins() != null && request.pins().size() <= 1024
+                        && request.secrets() != null && request.secrets().size() <= 10000, "Invalid deletion request");
+                UUID.fromString(request.ownerState().ackBoot());
+                require(segment(request.owner()) && !Set.of("app", "@platform").contains(request.owner())
+                        && (whole || segment(request.version())), "Invalid installed path identity");
+                require(request.versions().stream().map(Release::version).distinct().count() == request.versions()
+                        .size() && request.versions().stream().allMatch(v -> "READY".equals(v.state()))
+                        && (whole || request.release() != null), "Invalid original releases");
+                for (var release : request.selected())
+                    require(segment(release.version()) && Set.of("LOCAL", "BUNDLED", "STORE").contains(release.origin())
+                            && home.resolve("mod").resolve(request.owner()).resolve(release.version()).toString()
+                                    .equals(release.path()),
+                            "Only registered ordinary installed programs can be removed; CLASS sources are not install directories");
+                require(request.schemas().stream().map(Schema::version).distinct().count() == request.schemas().size(),
+                        "Duplicate owned data");
+                for (var data : request.schemas()) {
+                    var coordinates = new SchemaCoordinates(identity(request, data));
+                    require(coordinates.physicalName().equals(data.physical())
+                            && coordinates.databaseUser().equals(data.user())
+                            && Set.of("PREPARING", "READY", "FAILED", "UNKNOWN").contains(data.state()),
+                            "Invalid original Schema ownership");
+                    require(whole || data.version().equals(request.release().schema()),
+                            "Unrelated single-version data");
+                }
+                require(whole || request.schemas().size() <= 1 && request.targets().isEmpty()
+                        && request.pins().isEmpty() && request.secrets().isEmpty(), "Invalid version-only range");
+                require(request.targets().stream().map(LogRepository.Target::key).distinct().count() == request
+                        .targets().size() && new HashSet<>(request.pins()).size() == request.pins().size(),
+                        "Duplicate owned references");
+                for (var target : request.targets()) {
+                    require(target.owner().equals(request.owner()), "Foreign log ownership");
+                    if (target.logical().equals("app"))
+                        require(target.physical().equals("app") && target.table().equals("runtime_log")
+                                && target.category().equals("runtime")
+                                && target.generation().equals(database.generation()), "Invalid runtime log generation");
+                    else
+                        require(request.schemas().stream()
+                                .anyMatch(v -> target.logical().equals("v" + v.version())
+                                        && target.generation().toString().equals(v.generation())
+                                        && target.physical().equals(v.physical())),
+                                "Unowned business log data");
+                }
+                require(request.pins().stream().allMatch(pin -> pin.ownerId().equals(request.owner())),
+                        "Foreign navigation preference");
+                require(request.secrets().stream().map(Secret::id).distinct().count() == request.secrets().size()
+                        && request.secrets().stream()
+                                .allMatch(v -> CredentialReferenceRepository.ownedIdentity(request.owner(), v.id())),
+                        "Invalid owned credential identities");
+            } catch (IllegalArgumentException | NullPointerException invalid) {
+                throw new SQLException("Invalid original deletion evidence", invalid);
+            }
+        }
+
+        /** Rejects path separators, traversal and ambiguous Windows terminal dots. / 拒绝路径分隔符、越界及 Windows 末尾点歧义。
+         * @param value exact path component / 精确路径分量
+         * @return whether it is a safe component / 是否为安全分量 */
+        private static boolean segment(String value) {
+            return value != null && value.matches("[A-Za-z0-9_][A-Za-z0-9_.+\\-]{0,511}") && !value.endsWith(".");
+        }
+
+        /** Loads bounded retained evidence and cross-checks its relational operation identity. / 加载有界保留证据并交叉检查关系操作身份。
+         * @param c serialized connection / 串行连接
+         * @param operation exact operation / 精确操作
+         * @return validated row / 已校验行
+         * @throws SQLException if absent or invalid / 缺失或无效时 */
+        private Row load(Connection c, UUID operation) throws SQLException {
+            try (var p = c.prepareStatement(
+                    "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND outcome IS NULL")) {
+                p.setObject(1, operation);
+                try (var r = p.executeQuery()) {
+                    require(r.next(), "Original deletion evidence is absent");
+                    try {
+                        String value = r.getString("request_json"), recovery = r.getString("recovery_json");
+                        require(value.length() <= 8 * 1024 * 1024 && recovery.length() <= 256,
+                                "Deletion evidence exceeds bounds");
+                        var request = decode(value);
+                        validate(request);
+                        var resume = JSON.readTree(recovery);
+                        require(resume != null && resume.isObject() && resume.size() == 1
+                                && resume.path("boot").isTextual() && UUID.fromString(resume.path("boot").textValue())
+                                        .toString().equals(resume.path("boot").textValue()),
+                                "Invalid deletion recovery identity");
+                        require(request.owner().equals(r.getString("mod_id"))
+                                && Objects.equals(request.version(), r.getString("source_version"))
+                                && request.type().equals(r.getString("operation_type"))
+                                && r.getString("target_version") == null
+                                && Objects.equals(request.version() == null ? null : request.release().schema(),
+                                        r.getString("source_schema_version"))
+                                && r.getString("target_schema_version") == null
+                                && Objects.equals(request.sourceGeneration(),
+                                        r.getObject("target_generation", UUID.class))
+                                && r.getObject("accepted_revision") != null
+                                && request.ownerState().revision() == r.getLong("accepted_revision")
+                                && PHASES.contains(r.getString("phase"))
+                                && Set.of("RUNNING", "UNKNOWN").contains(r.getString("state")),
+                                "Original deletion identity changed");
+                        return new Row(request, r.getString("phase"), r.getString("state"), recovery,
+                                UUID.fromString(r.getString("archive_log_id")));
+                    } catch (IOException | IllegalArgumentException | NullPointerException invalid) {
+                        throw new SQLException("Invalid retained deletion evidence", invalid);
+                    }
+                }
+            }
+        }
+
+        /** Reads the current scope or translates the already persisted single-release format without rewriting it. / 读取当前范围，或转换既有持久单版本格式，不重写原记录。
+         * @param value bounded original JSON / 有界原 JSON
+         * @return equivalent exact request / 等价精确请求
+         * @throws IOException if strict decoding fails / 严格解码失败时
+         * @throws SQLException if older evidence cannot prove its original range / 旧证据无法证明原范围时 */
+        private static Request decode(String value) throws IOException, SQLException {
+            var raw = JSON.readTree(value);
+            if (raw != null && raw.isObject() && raw.path("format").isInt() && raw.path("format").intValue() == 1) {
+                var original = JSON.treeToValue(raw, OriginalRequest.class);
+                require(original.version() != null && original.versions() != null, "Invalid original version deletion");
+                var release = original.versions().stream().filter(v -> original.version().equals(v.version()))
+                        .findFirst().orElseThrow(() -> new SQLException("Original release evidence is absent"));
+                var data = original.schema();
+                require(data != null && (data.isNull() || data.isObject() && data.size() == 7),
+                        "Invalid original data evidence");
+                var schemas = new ArrayList<Schema>();
+                if (!data.isNull()) {
+                    var translated = ((com.fasterxml.jackson.databind.node.ObjectNode) data).deepCopy();
+                    translated.put("version", release.schema());
+                    schemas.add(JSON.treeToValue(translated, Schema.class));
+                }
+                var request = new Request(2, original.home(), original.owner(), original.version(),
+                        original.ownerState(), original.versions(), List.copyOf(schemas), List.of(), List.of(),
+                        List.of(), original.files());
+                require(original.removeSchema() == !request.removals().isEmpty(),
+                        "Original last-reference evidence differs");
+                return request;
+            }
+            return JSON.treeToValue(raw, Request.class);
+        }
+
+        /** Serializes a bounded immutable request. / 序列化有界不可变请求。
+         * @param request original request / 原请求
+         * @return strict JSON / 严格 JSON
+         * @throws SQLException if serialization exceeds limits or fails / 序列化超限或失败时 */
+        private static String encode(Request request) throws SQLException {
+            try {
+                String value = JSON.writeValueAsString(request);
+                require(value.length() <= 8 * 1024 * 1024, "Deletion evidence exceeds bounds");
+                return value;
+            } catch (IOException invalid) {
+                throw new SQLException("Deletion evidence cannot be encoded", invalid);
+            }
+        }
+
+        /** Returns the exact original generation. / 返回精确原代次。
+         * @param request original request / 原请求
+         * @param data original registered data / 原登记数据
+         * @return original identity / 原身份 */
+        private static SchemaIdentity identity(Request request, Schema data) {
+            return new SchemaIdentity(request.owner(), data.version(), UUID.fromString(data.generation()));
+        }
+
+        /** Binds the active claim to the current physical boot. / 将活动取得记录绑定到当前物理启动。
+         * @return canonical recovery JSON / 规范恢复 JSON */
+        private String recovery() {
+            return "{\"boot\":\"" + database.bootId() + "\"}";
+        }
     }
 }
