@@ -40,6 +40,9 @@ public final class DeploymentPublicationChannel {
     /** Reviewed plan identity, never a final release identity. / 已审阅计划身份，不是最终发布身份。 */
     private final String planRevision;
 
+    /** Caller-owned check immediately before remote dispatch. / 远端发送紧前调用方持有的核对。 */
+    private final DeploymentSendGuard beforeSend;
+
     /** Binds one original publication session without taking ownership of it. / 绑定一份原发布会话而不接管其寿命。
      * @param session original connection / 原连接
      * @param interaction actual host review / 真实宿主审核
@@ -48,6 +51,18 @@ public final class DeploymentPublicationChannel {
      * @param planRevision original reviewed plan digest / 原已审阅计划摘要 */
     public DeploymentPublicationChannel(RemoteSession session, InteractionService interaction, ServerRef server,
             TaskContext task, String planRevision) {
+        this(session, interaction, server, task, planRevision, DeploymentSendGuard.NONE);
+    }
+
+    /** Binds an additional caller-owned pre-dispatch check. / 绑定调用方附加的发送前核对。
+     * @param session original connection / 原连接
+     * @param interaction actual host review / 真实宿主审核
+     * @param server exact reviewed server / 精确服务器
+     * @param task original task / 原任务
+     * @param planRevision reviewed plan digest / 已审阅计划摘要
+     * @param beforeSend caller-owned check / 调用方持有的核对 */
+    public DeploymentPublicationChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+            TaskContext task, String planRevision, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -55,6 +70,7 @@ public final class DeploymentPublicationChannel {
         if (planRevision == null || !planRevision.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Reviewed plan identity required");
         this.planRevision = planRevision;
+        this.beforeSend = Objects.requireNonNull(beforeSend);
     }
 
     /** Creates one original helper rollback snapshot; an incomplete reply never means first deployment. / 创建一份原helper回滚快照；不完整回执绝不表示首次部署。
@@ -255,7 +271,7 @@ public final class DeploymentPublicationChannel {
 
     /** Seals exactly one built candidate and accepts only the fixed completion receipt. / 封存恰好一个已构建候选且仅接受固定完成回执。
      * @param unit exact reviewed target / 精确已审阅目标
-     * @param facts original analyzed facts / 原分析事实
+     * @param facts original analyzed facts, absent only for neutral managed process or container / 原分析事实，仅中立受管进程或容器可缺失
      * @param runtime reviewed runtime / 已审阅运行时
      * @param resources reviewed persistent bindings / 已审阅持久绑定
      * @param configurationSha256 staged configuration identity / 已暂存配置身份
@@ -271,8 +287,10 @@ public final class DeploymentPublicationChannel {
             Map<DeploymentSecretReference, String> secrets, String candidateId, String releaseSha256,
             String toolchainBindingSha256, boolean hasTools) throws ApiException {
         requireUnit(unit);
-        Objects.requireNonNull(facts);
         Objects.requireNonNull(runtime);
+        if (!(runtime instanceof DeploymentRuntimeDefinition.ManagedProcess)
+                && !(runtime instanceof DeploymentRuntimeDefinition.Container))
+            Objects.requireNonNull(facts);
         if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}") || releaseSha256 == null
                 || !releaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact built candidate and release required");
@@ -725,6 +743,7 @@ public final class DeploymentPublicationChannel {
             var grant = interaction.approve(intent, task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+            beforeSend.verify();
             try {
                 var executed = session.execute(request, grant.value().orElseThrow());
                 if (executed.outcome() == Outcome.CANCELLED

@@ -1,0 +1,389 @@
+package gold.debug.windowstolinux.mod.deployment.ui;
+
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+
+import javax.swing.*;
+
+import gold.debug.windowstolinux.appapi.server.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.mod.deployment.service.agent.*;
+import gold.debug.windowstolinux.mod.deployment.source.git.*;
+
+/** Agent-only owner-bound page for local or pinned Git tasks. / 用于本地或固定 Git 任务的自主专属所属页面。 */
+public final class DeploymentAgentPage implements ModPage {
+    /** Own page admission and persisted task queries. / 所属页面准入与持久任务查询。 */
+    private final DeploymentAgentPageService service;
+    /** Serial background page actions. / 串行后台页面动作。 */
+    private final ExecutorService actions = Executors.newSingleThreadExecutor(r -> {
+        var thread = new Thread(r, "deployment-agent-page");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** Revocable view generation. / 可撤销的视图代次。 */
+    private final AtomicLong generation = new AtomicLong();
+    /** Root owned by this view. / 此视图持有的根组件。 */
+    private final JPanel root = new JPanel(new BorderLayout(8, 8));
+    /** Exact configured target choices. / 精确已配置目标选择。 */
+    private final JComboBox<ServerInfo> servers = new JComboBox<>();
+    /** Explicit user approval policy. / 明确用户审批策略。 */
+    private final JComboBox<String> mode = new JComboBox<>(new String[]{"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"});
+    /** Explicit source transport. / 明确来源传输方式。 */
+    private final JComboBox<String> source = new JComboBox<>(new String[]{"LOCAL", "GIT"});
+    /** Reviewed Git project display name. / 已审阅 Git 项目显示名称。 */
+    private final JTextField name = new JTextField(28);
+    /** Credential-free remote location. / 不含凭据的远端位置。 */
+    private final JTextField url = new JTextField(28);
+    /** Selected immutable Git reference category. / 所选不可变 Git 引用类别。 */
+    private final JComboBox<String> referenceKind = new JComboBox<>(new String[]{"DEFAULT", "BRANCH", "TAG", "COMMIT"});
+    /** Original requested branch, tag or commit. / 原请求的分支、标签或提交。 */
+    private final JTextField reference = new JTextField(28);
+    /** Explicit local Git executable. / 明确本机 Git 可执行文件。 */
+    private final JTextField executable = new JTextField(28);
+    /** Explicit local-repository allowance. / 明确本地仓库允许选择。 */
+    private final JCheckBox localGit = new JCheckBox();
+    /** Bounded nonsecret human constraints. / 有界且不含秘密的人工约束。 */
+    private final JTextArea requirements = new JTextArea(5, 48);
+    /** Persisted task feedback visible to the user. / 用户可见的持久任务反馈。 */
+    private final JTextArea status = new JTextArea(10, 60);
+    /** Original task submission control. / 原任务提交控件。 */
+    private final JButton start = new JButton();
+    /** Persisted snapshot reload control. / 持久快照重载控件。 */
+    private final JButton refresh = new JButton();
+    /** Cooperative original task cancellation control. / 原任务协作取消控件。 */
+    private final JButton cancel = new JButton();
+    /** Locale-bound visible labels. / 依语言变化的可见标签。 */
+    private final List<JLabel> labels = new ArrayList<>();
+    /** Unanswered short-lived server lookup. / 未回答的短时服务器查询。 */
+    private volatile TaskHandle<List<ServerInfo>> lookup;
+    /** Accepted task retained independently of this view. / 独立于此视图留存的已接纳任务。 */
+    private volatile TaskHandle<DeploymentAgentDeliveryPort.Published> current;
+    /** Whether this view has closed. / 此视图是否已关闭。 */
+    private volatile boolean closed;
+    /** Current host lock state. / 当前宿主锁定状态。 */
+    private volatile boolean locked;
+    /** Whether submission is admitted or awaiting completion. / 提交是否已准入或正等待结束。 */
+    private volatile boolean busy;
+    /** Current locale resource bundle. / 当前语言资源包。 */
+    private ResourceBundle messages;
+
+    /** Creates a fresh lazy view of one original agent service. / 为一项原自主服务创建新的惰性视图。
+     * @param service owner-bound page operations / 所属页面操作 */
+    public DeploymentAgentPage(DeploymentAgentPageService service) {
+        this.service = Objects.requireNonNull(service);
+        servers.setRenderer((list, value, index, selected, focus) -> {
+            var label = new JLabel(value == null ? "" : value.name() + " (" + value.host() + ")");
+            label.setOpaque(true);
+            label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
+            label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
+            return label;
+        });
+    }
+
+    /** Builds the real owner-bound controls on the EDT. / 在 EDT 构建真实所属控件。
+     * @param environment host UI state / 宿主界面状态
+     * @return page root / 页面根 */
+    @Override
+    public JComponent create(UiEnvironment environment) {
+        requireEdt();
+        locale(environment);
+        locked = environment.locked();
+        var form = new JPanel(new GridLayout(0, 2, 8, 8));
+        row(form, "server", servers);
+        row(form, "approval", mode);
+        row(form, "source", source);
+        row(form, "projectName", name);
+        row(form, "gitUrl", url);
+        row(form, "gitKind", referenceKind);
+        row(form, "gitRef", reference);
+        row(form, "gitExecutable", executable);
+        row(form, "allowLocal", localGit);
+        row(form, "requirements", new JScrollPane(requirements));
+        requirements.setText("applicationId=example-app\nhealthEndpoint=/health");
+        source.addActionListener(ignored -> sourceChanged(form));
+        referenceKind.addActionListener(ignored -> reference.setEnabled(!"DEFAULT".equals(referenceKind.getSelectedItem())));
+        sourceChanged(form);
+        var buttons = new JPanel();
+        start.addActionListener(ignored -> submit());
+        refresh.addActionListener(ignored -> refresh());
+        cancel.addActionListener(ignored -> cancel());
+        buttons.add(start);
+        buttons.add(refresh);
+        buttons.add(cancel);
+        status.setEditable(false);
+        root.add(new JScrollPane(form), BorderLayout.NORTH);
+        root.add(new JScrollPane(status), BorderLayout.CENTER);
+        root.add(buttons, BorderLayout.SOUTH);
+        localize();
+        loadServers();
+        refresh();
+        return root;
+    }
+
+    /** Applies a new locale or lock and revokes only an unanswered lookup. / 应用新语言或锁定，并仅撤销未回答查询。
+     * @param environment current host UI state / 当前宿主界面状态 */
+    @Override
+    public void environmentChanged(UiEnvironment environment) {
+        requireEdt();
+        locale(environment);
+        locked = environment.locked();
+        localize();
+        if (locked) {
+            generation.incrementAndGet();
+            cancelLookup();
+        } else if (servers.getItemCount() == 0)
+            loadServers();
+        availability();
+    }
+
+    /** Closes only this view; accepted original agent tasks remain observable. / 仅关闭此视图；已接纳原自主任务仍可观察。 */
+    @Override
+    public void close() {
+        requireEdt();
+        closed = true;
+        generation.incrementAndGet();
+        cancelLookup();
+        actions.shutdown();
+    }
+
+    /** Adds one localized form label with its control. / 添加一项带控件的本地化表单标签。
+     * @param form original control container / 原控件容器
+     * @param key message key / 文案键
+     * @param value control / 控件 */
+    private void row(JPanel form, String key, JComponent value) {
+        var label = new JLabel();
+        label.putClientProperty("key", key);
+        labels.add(label);
+        form.add(label);
+        form.add(value);
+    }
+
+    /** Reads only configured servers in a short separate task. / 仅在独立短任务中读取已配置服务器。 */
+    private void loadServers() {
+        long view = generation.get();
+        actions.execute(() -> {
+            try {
+                var handle = service.servers();
+                lookup = handle;
+                if (closed || locked || generation.get() != view)
+                    handle.requestCancel();
+                handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
+                    if (lookup == handle)
+                        lookup = null;
+                    if (closed || locked || generation.get() != view)
+                        return;
+                    if (error != null || result.outcome() != Outcome.SUCCEEDED) {
+                        status.setText(text("serverError"));
+                        return;
+                    }
+                    servers.removeAllItems();
+                    result.value().orElseThrow().forEach(servers::addItem);
+                    availability();
+                }));
+            } catch (Exception failure) {
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && generation.get() == view)
+                        status.setText(text("serverError"));
+                });
+            }
+        });
+    }
+
+    /** Submits exactly the visible local or Git source and bounded policy. / 精确提交可见本地或 Git 来源与有界策略。 */
+    private void submit() {
+        requireEdt();
+        if (closed || locked || busy || servers.getSelectedItem() == null)
+            return;
+        final Submission input;
+        try {
+            input = capture();
+        } catch (RuntimeException invalid) {
+            status.setText(text("invalid"));
+            return;
+        }
+        busy = true;
+        availability();
+        long view = generation.get();
+        actions.execute(() -> {
+            try {
+                var handle = input.git().isPresent()
+                        ? service.submitGit(input.server().ref(), input.request(), input.git().orElseThrow(),
+                                input.executable(), input.name())
+                        : service.submitLocal(input.server().ref(), input.request());
+                current = handle;
+                handle.completion().whenComplete((result, failure) -> {
+                    busy = false;
+                    SwingUtilities.invokeLater(() -> {
+                        if (!closed) {
+                            availability();
+                            if (generation.get() == view)
+                                refresh();
+                        }
+                    });
+                });
+                refresh();
+            } catch (Exception failure) {
+                busy = false;
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed) {
+                        if (generation.get() == view)
+                            status.setText(text("submitError") + ": " + failure.getClass().getSimpleName());
+                        availability();
+                    }
+                });
+            }
+        });
+    }
+
+    /** Captures only bounded, nonsecret EDT form values. / 仅抓取 EDT 中有界且不含秘密的表单值。
+     * @return immutable submission / 不可变提交 */
+    private Submission capture() {
+        var facts = new LinkedHashMap<String, String>();
+        for (String line : requirements.getText().split("\\R")) {
+            if (line.isBlank())
+                continue;
+            int separator = line.indexOf('=');
+            if (separator < 1 || separator == line.length() - 1)
+                throw new IllegalArgumentException("Requirement needs key=value");
+            if (facts.putIfAbsent(line.substring(0, separator).trim(), line.substring(separator + 1).trim()) != null)
+                throw new IllegalArgumentException("Duplicate requirement");
+        }
+        var request = new DeploymentAgentWorkflow.Request(facts, (String) mode.getSelectedItem(),
+                2L * 1024 * 1024 * 1024, 100000, 2L * 1024 * 1024 * 1024);
+        var selected = (ServerInfo) servers.getSelectedItem();
+        if ("LOCAL".equals(source.getSelectedItem()))
+            return new Submission(selected, request, Optional.empty(), null, "");
+        String projectName = name.getText().trim();
+        if (projectName.isBlank())
+            throw new IllegalArgumentException("Project name missing");
+        var remote = DeploymentGitRemote.parse(url.getText().trim());
+        var ref = switch ((String) referenceKind.getSelectedItem()) {
+            case "DEFAULT" -> new DeploymentGitReference.DefaultBranch();
+            case "BRANCH" -> new DeploymentGitReference.Branch(reference.getText().trim());
+            case "TAG" -> new DeploymentGitReference.Tag(reference.getText().trim());
+            case "COMMIT" -> new DeploymentGitReference.Commit(reference.getText().trim());
+            default -> throw new IllegalArgumentException("Git reference missing");
+        };
+        var allowed = remote.host().map(Set::of).orElseGet(Set::of);
+        var git = new DeploymentGitRequest(remote, ref, allowed, 2L * 1024 * 1024 * 1024,
+                localGit.isSelected());
+        var binary = Path.of(executable.getText().trim());
+        if (!binary.isAbsolute())
+            throw new IllegalArgumentException("Native Git path must be absolute");
+        return new Submission(selected, request, Optional.of(git), binary, projectName);
+    }
+
+    /** Frozen UI admission values. / 冻结的界面准入值。
+     * @param server selected server / 所选服务器
+     * @param request policy / 策略
+     * @param git optional Git source / 可选 Git 来源
+     * @param executable optional native Git binary / 可选原生 Git 程序
+     * @param name reviewed saved name / 经审阅已存名称 */
+    private record Submission(ServerInfo server, DeploymentAgentWorkflow.Request request,
+            Optional<DeploymentGitRequest> git, Path executable, String name) { }
+
+    /** Reads original persisted task snapshots without resetting the engine. / 读取原持久任务快照而不重置引擎。 */
+    private void refresh() {
+        if (closed || actions.isShutdown())
+            return;
+        long view = generation.get();
+        actions.execute(() -> {
+            try {
+                var snapshots = service.tasks();
+                var shown = snapshots.stream().map(item -> item.id() + "  " + item.state() + "  "
+                        + item.outcome().map(Object::toString).orElse(item.progressText()))
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && generation.get() == view)
+                        status.setText(shown.isBlank() ? text("noTasks") : shown);
+                });
+            } catch (Exception failure) {
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && !locked && generation.get() == view)
+                        status.setText(text("taskError"));
+                });
+            }
+        });
+    }
+
+    /** Requests cooperative cancellation of only the displayed original task. / 仅请求取消所显示原任务的协作执行。 */
+    private void cancel() {
+        var handle = current;
+        if (handle == null)
+            return;
+        actions.execute(() -> {
+            try {
+                handle.requestCancel();
+            } catch (ApiException unavailable) {
+                SwingUtilities.invokeLater(() -> status.setText(text("cancelError")));
+            }
+            refresh();
+        });
+    }
+
+    /** Updates locale-bound visible text and lock availability. / 更新依语言变化的可见文案与锁定可用性。 */
+    private void localize() {
+        labels.forEach(label -> label.setText(text((String) label.getClientProperty("key"))));
+        start.setText(text("start"));
+        refresh.setText(text("refresh"));
+        cancel.setText(text("cancel"));
+        localGit.setText(text("allowLocal"));
+        availability();
+    }
+
+    /** Shows only controls relevant to the selected source. / 仅显示所选来源相关控件。
+     * @param form original view's source controls / 原视图来源控件 */
+    private void sourceChanged(JPanel form) {
+        boolean git = "GIT".equals(source.getSelectedItem());
+        for (int row = 3; row <= 8; row++) {
+            form.getComponent(row * 2).setVisible(git);
+            form.getComponent(row * 2 + 1).setVisible(git);
+        }
+        reference.setEnabled(git && !"DEFAULT".equals(referenceKind.getSelectedItem()));
+        form.revalidate();
+    }
+
+    /** Stores current host locale. / 保存当前宿主语言。
+     * @param environment host state / 宿主状态 */
+    private void locale(UiEnvironment environment) {
+        messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-agent-page",
+                environment.locale(), ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
+    }
+
+    /** Looks up one owned localized message. / 查找一项所属本地化文案。
+     * @param key message key / 文案键
+     * @return localized text / 本地化文本 */
+    private String text(String key) {
+        return messages.getString(key);
+    }
+
+    /** Reflects current target, owner and lock state. / 反映当前目标、所属者和锁定状态。 */
+    private void availability() {
+        start.setEnabled(!closed && !locked && !busy && servers.getSelectedItem() != null);
+        refresh.setEnabled(!closed && !locked);
+        cancel.setEnabled(!closed && !locked && current != null);
+    }
+
+    /** Cancels only an in-flight read-only view query. / 仅取消进行中的视图只读查询。 */
+    private void cancelLookup() {
+        var handle = lookup;
+        if (handle != null)
+            try {
+                handle.requestCancel();
+            } catch (ApiException unavailable) {
+                // The short original query keeps its own retained result. / 原短查询自行保留结果。
+            }
+    }
+
+    /** Enforces the host Swing owner thread. / 强制宿主 Swing 所属线程。 */
+    private static void requireEdt() {
+        if (!SwingUtilities.isEventDispatchThread())
+            throw new IllegalStateException("Agent page requires EDT");
+    }
+}

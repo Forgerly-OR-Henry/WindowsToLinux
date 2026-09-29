@@ -33,6 +33,9 @@ public final class DeploymentCandidateChannel {
     /** Shared cumulative build execution budget. / 共用的累计构建执行预算。 */
     private final DeploymentBuildCommandChannel commands;
 
+    /** Caller-owned check immediately before each send. / 每次发送紧前调用方持有的核对。 */
+    private final DeploymentSendGuard beforeSend;
+
     /** Binds original capabilities without taking ownership of the session or archive. / 绑定原能力，不接管会话或归档所有权。
      * @param session original borrowed session / 原借用会话
      * @param interaction actual host review / 真实宿主审核
@@ -42,12 +45,27 @@ public final class DeploymentCandidateChannel {
      * @param budget shared cumulative build budget / 共用累计构建预算 */
     public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
             TaskContext task, String revision, DeploymentBuildBudget budget) {
+        this(session, interaction, server, task, revision, budget, DeploymentSendGuard.NONE);
+    }
+
+    /** Binds an additional caller-owned pre-dispatch check. / 绑定调用方附加的发送前核对。
+     * @param session original borrowed session / 原借用会话
+     * @param interaction actual host review / 真实宿主审核
+     * @param server exact saved server / 精确已保存服务器
+     * @param task original task / 原任务
+     * @param revision reviewed plan digest / 已审阅计划摘要
+     * @param budget shared build budget / 共用构建预算
+     * @param beforeSend caller-owned check / 调用方持有的核对 */
+    public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+            TaskContext task, String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
         this.task = Objects.requireNonNull(task);
         this.revision = Objects.requireNonNull(revision);
-        this.commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget);
+        this.beforeSend = Objects.requireNonNull(beforeSend);
+        this.commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget,
+                beforeSend);
     }
 
     /** Collects the original typed read-only host matrix with the actual SSH fingerprint. / 以实际SSH指纹采集原类型化只读主机矩阵。
@@ -150,6 +168,7 @@ public final class DeploymentCandidateChannel {
         if (grant.outcome() != Outcome.SUCCEEDED)
             return withoutValue(grant);
         final OperationResult<TransferResult> result;
+        beforeSend.verify();
         try {
             result = session.upload(request, grant.value().orElseThrow());
         } catch (ApiException failure) {
