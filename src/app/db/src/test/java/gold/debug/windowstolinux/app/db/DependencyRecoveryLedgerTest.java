@@ -35,28 +35,28 @@ class DependencyRecoveryLedgerTest {
                         "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_acquire CHECK(resource_kind<>'SCHEMA')");
             }
             assertThrows(SQLException.class, () -> ledger.retainDependency(task, first, c -> first.claims()));
-            assertTrue(ledger.dependencies(task).isEmpty());
-            assertFalse(ledger.holds(task, first.claims().getFirst()));
+            assertTrue(ledger.queries().dependencies(task).isEmpty());
+            assertFalse(ledger.queries().holds(task, first.claims().getFirst()));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_acquire");
             }
             var one = ledger.retainDependency(task, first, c -> first.claims());
             var two = ledger.retainDependency(task, second, c -> second.claims());
-            assertEquals(2, ledger.dependencies(task).size());
+            assertEquals(2, ledger.queries().dependencies(task).size());
             assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, two));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
                         "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_release CHECK(resource_kind<>'SCHEMA' OR released_at IS NULL)");
             }
             assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, one));
-            assertEquals(2, ledger.dependencies(task).size());
+            assertEquals(2, ledger.queries().dependencies(task).size());
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_release");
             }
             ledger.releaseDependency(task, first, one);
             ledger.releaseDependency(task, first, one);
-            assertEquals(Set.of(second), ledger.dependencies(task).keySet());
-            assertTrue(ledger.holds(task, first.claims().getFirst()));
+            assertEquals(Set.of(second), ledger.queries().dependencies(task).keySet());
+            assertTrue(ledger.queries().holds(task, first.claims().getFirst()));
             assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
             ledger.releaseDependency(task, second, two);
             assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
@@ -80,11 +80,11 @@ class DependencyRecoveryLedgerTest {
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(Set.of(original), ledger.dependencies(task).keySet());
+            assertEquals(Set.of(original), ledger.queries().dependencies(task).keySet());
             assertThrows(SQLException.class, () -> ledger.releasePreviousSshConnections(task, "provider", "2.0.0"));
             ledger.releasePreviousSshConnections(task, "provider", "1.0.0");
-            assertFalse(ledger.hasDependencyResources(task, Set.of("provider")));
-            assertTrue(ledger.hasDependencyResources(task, Set.of("caller")));
+            assertFalse(ledger.queries().hasDependencyResources(task, Set.of("provider")));
+            assertTrue(ledger.queries().hasDependencyResources(task, Set.of("caller")));
             ledger.releasePreviousSshConnections(task, "caller", "1.0.0");
             try (var c = db.openConnection();
                     var p = c.prepareStatement(
@@ -92,7 +92,7 @@ class DependencyRecoveryLedgerTest {
                 p.setObject(1, task);
                 p.executeUpdate();
             }
-            assertThrows(SQLException.class, () -> ledger.dependencies(task));
+            assertThrows(SQLException.class, () -> ledger.queries().dependencies(task));
         }
     }
 

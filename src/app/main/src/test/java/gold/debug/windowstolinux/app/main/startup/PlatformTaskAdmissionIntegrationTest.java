@@ -119,7 +119,7 @@ class PlatformTaskAdmissionIntegrationTest {
             try {
                 state(task, TaskState.FINISHING);
                 var ledger = new TaskLedger(db);
-                assertTrue(ledger.holds(task.id(),
+                assertTrue(ledger.queries().holds(task.id(),
                         new TaskResource("SCHEMA", identity.generation().toString(), OWNER, false)));
                 assertEquals(1, count(db, "SELECT COUNT(*) FROM mod_schema WHERE ever_used=TRUE"));
                 assertThrows(SQLException.class, runtime::close);

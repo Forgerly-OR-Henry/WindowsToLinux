@@ -27,14 +27,14 @@ class TaskRecoveryLedgerTest {
             assertTrue(ledger.tryStart(task));
             lease = ledger.retain(task, resource, facts, false);
             assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
-            assertEquals(List.of("FILE: sftp:original"), ledger.snapshot(task).blockers());
+            assertEquals(List.of("FILE: sftp:original"), ledger.queries().snapshot(task).blockers());
             assertThrows(SQLException.class, () -> ledger.retain(task, resource));
             assertThrows(SQLException.class, () -> ledger.retain(task, resource,
                     new ResourceRecovery("sftp.v1", Map.of("temporaryPath", "/other")), false));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(task).state());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(task).state());
             assertEquals(lease, ledger.retain(task, resource, facts, false));
             var waiting = new TaskLedgerTest().queue(ledger, "two", "A");
             assertFalse(ledger.tryStart(waiting));
@@ -66,7 +66,7 @@ class TaskRecoveryLedgerTest {
                     p.executeUpdate();
                 }
                 assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
-                assertEquals(List.of("FILE: sftp:corrupt"), ledger.snapshot(task).blockers());
+                assertEquals(List.of("FILE: sftp:corrupt"), ledger.queries().snapshot(task).blockers());
                 assertThrows(SQLException.class, () -> ledger.release(task, lease), malformed);
                 assertThrows(SQLException.class, () -> ledger.retain(task, resource), malformed);
             }

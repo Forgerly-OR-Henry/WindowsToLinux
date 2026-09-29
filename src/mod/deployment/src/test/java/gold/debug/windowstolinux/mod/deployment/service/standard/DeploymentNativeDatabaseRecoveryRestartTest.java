@@ -89,7 +89,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var unfinished = new TaskLedger(runtime.persistence().database()).unfinished();
+                var unfinished = new TaskLedger(runtime.persistence().database()).queries().unfinished();
                 assertEquals(1, unfinished.size());
                 var original = unfinished.getFirst();
                 var held = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
@@ -141,7 +141,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var original = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                var original = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 var address = new DeploymentDatabasePlanJournal.Entry("service", "main").key();
                 assertEquals(1, checkpoint(runtime, original, DeploymentDatabasePlanJournal.KEY));
                 assertEquals(1, checkpoint(runtime, original, DeploymentNativeDatabaseJournal.KEY + "." + address));
@@ -193,7 +193,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var original = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                var original = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 assertEquals(TaskState.UNKNOWN,
                         runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(1, statusCalls.get());

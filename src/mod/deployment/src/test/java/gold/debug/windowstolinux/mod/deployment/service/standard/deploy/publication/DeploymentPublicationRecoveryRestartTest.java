@@ -110,7 +110,7 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                         report.problems().stream().map(Problem::eventCode).toList());
-                var unfinished = new TaskLedger(runtime.persistence().database()).unfinished();
+                var unfinished = new TaskLedger(runtime.persistence().database()).queries().unfinished();
                 assertEquals(1, unfinished.size());
                 assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
                         + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));

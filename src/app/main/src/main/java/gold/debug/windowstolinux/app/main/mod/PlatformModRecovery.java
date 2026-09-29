@@ -122,8 +122,8 @@ final class PlatformModRecovery {
      * @throws SQLException if retained task inventory cannot be read / 无法读取保留任务清单时 */
     private Set<String> collectTasks(List<Candidate> candidates, Map<String, Problem> issues) throws SQLException {
         var invalid = new HashSet<String>();
-        for (UUID task : tasks.retained()) {
-            var snapshot = tasks.snapshot(task);
+        for (UUID task : tasks.queries().retained()) {
+            var snapshot = tasks.queries().snapshot(task);
             if (snapshot.ownerId().equals("@platform"))
                 continue;
             blocked.add(snapshot.ownerId());
@@ -141,10 +141,10 @@ final class PlatformModRecovery {
             blocked.addAll(affected);
             TaskRecoveryGraph graph = null;
             try {
-                graph = tasks.recoveryGraph(task)
+                graph = tasks.queries().recoveryGraph(task)
                         .orElseThrow(() -> new SQLException("Original recovery graph is absent"));
                 block(graph);
-                for (var dependency : tasks.dependencies(task).keySet()) {
+                for (var dependency : tasks.queries().dependencies(task).keySet()) {
                     var original = graph.release(dependency.provider());
                     if (!original.version().equals(dependency.version())
                             || !original.schema().equals(dependency.schema()))

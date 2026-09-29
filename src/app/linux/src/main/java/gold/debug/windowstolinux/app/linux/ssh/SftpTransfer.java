@@ -18,6 +18,8 @@ import org.apache.sshd.sftp.common.*;
 
 /** Stages one reviewed regular file and publishes it only after content verification. / 暂存一个已审核普通文件，仅在内容验证后发布。 */
 final class SftpTransfer {
+    /** Original destination publication and observed recovery completion. / 原目标发布及已观察恢复收尾。 */
+    private final SftpCompletion completion = new SftpCompletion();
     /** Authenticated parent transport retained by its connection. / 由连接保留的已认证父传输。 */
     private final ClientSession session;
 
@@ -278,26 +280,7 @@ final class SftpTransfer {
             check();
             remote.close();
             local.close();
-            phase = "publish";
-            destination.publish(size, digest);
-            regularRemote(sftp.lstat(destination.remote()), size);
-            regularLocal(destination.local());
-            phase = "published-verification";
-            if (upload) {
-                try (var published = sftp.open(destination.remote(), SftpClient.OpenMode.Read)) {
-                    if (!digest.equals(hashRemote(published, size, true, TransferProgress.Stage.VERIFYING_RESULT)))
-                        throw new IOException("Published remote content changed");
-                }
-            } else {
-                local = FileChannel.open(destination.local(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
-                if (!digest.equals(hashLocal(size, true, TransferProgress.Stage.VERIFYING_RESULT)))
-                    throw new IOException("Published local content changed");
-                local.close();
-            }
-            resolved = true;
-            return new OperationResult<>(Outcome.SUCCEEDED,
-                    Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
-                    Optional.empty());
+            return completion.publishVerified(destination, size);
         } catch (Exception failure) {
             var result = problem("SFTP_NOT_VERIFIED",
                     cancellation.requested() || failure instanceof CancellationException
@@ -420,28 +403,7 @@ final class SftpTransfer {
                     throw new IOException("Local staging was replaced");
             }
         }
-        verifyLocalParents(request.localPath());
-        verifyRemoteParents();
-        check();
-        if (discard) {
-            phase = "recovery-discard";
-            destination.verifyStaged(extent, verifiedPrefix);
-            progress.begin(TransferProgress.Stage.CLEANING, -1, 0);
-            if (upload)
-                sftp.remove(destination.remoteTemporary());
-            else
-                Files.delete(destination.localTemporary());
-            if (stagingSize(destination) >= 0)
-                throw new IOException("Staging cleanup was not observed");
-        } else {
-            phase = "recovery-publish";
-            destination.publish(size, digest);
-            phase = "recovery-published-verification";
-            if (!destination.isPublished(recovery.source()))
-                throw new IOException("Resumed publication content differs");
-        }
-        resolved = true;
-        return recoveredResult(destination);
+        return completion.finishRecovery(destination, extent, verifiedPrefix, size);
     }
 
     /** Observes an ordinary staging file without trusting a saved offset. / 观察普通暂存文件，不信任已保存偏移。
@@ -859,6 +821,73 @@ final class SftpTransfer {
             return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException impossible) {
             throw new AssertionError(impossible);
+        }
+    }
+
+    /** Completes verified destination publication without changing original worker or cancellation ownership. / 完成已核实目标发布，不改变原工作线程或取消归属。 */
+    private final class SftpCompletion {
+        /** Creates this ledger/runtime collaborator. / 创建此账本或运行时职责协作者。 */
+        private SftpCompletion() { }
+
+        /** Publishes only after the original handles closed, then hashes the actual named result. / 仅原句柄关闭后发布，随后散列实际命名结果。
+         * @param destination exact original destination / 精确原目标
+         * @param size verified original byte count / 已核实原字节数
+         * @return verified original transfer receipt / 已核实原传输凭据
+         * @throws Exception if publication or its observed bytes are unconfirmed / 发布或其观测字节未确认时 */
+        private OperationResult<TransferResult> publishVerified(SftpDestination destination, long size) throws Exception {
+            phase = "publish";
+            destination.publish(size, digest);
+            regularRemote(sftp.lstat(destination.remote()), size);
+            regularLocal(destination.local());
+            phase = "published-verification";
+            if (upload) {
+                try (var published = sftp.open(destination.remote(), SftpClient.OpenMode.Read)) {
+                    if (!digest.equals(hashRemote(published, size, true, TransferProgress.Stage.VERIFYING_RESULT)))
+                        throw new IOException("Published remote content changed");
+                }
+            } else {
+                local = FileChannel.open(destination.local(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+                if (!digest.equals(hashLocal(size, true, TransferProgress.Stage.VERIFYING_RESULT)))
+                    throw new IOException("Published local content changed");
+                local.close();
+            }
+            resolved = true;
+            return new OperationResult<>(Outcome.SUCCEEDED,
+                    Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
+                    Optional.empty());
+        }
+
+        /** Concludes the original retained staging through approved discard or verified publication. / 通过已批准丢弃或已核实发布结束原保留暂存。
+         * @param destination exact retained destination / 精确保留目标
+         * @param extent observed staging byte extent / 已观察暂存字节区间
+         * @param verifiedPrefix measured original prefix digest / 实测原前缀摘要
+         * @param size original source byte count / 原来源字节数
+         * @return verified original publication or staging cleanup / 已核实原发布或暂存清理
+         * @throws Exception if original boundaries, cleanup or publication are unconfirmed / 原边界、清理或发布未确认时 */
+        private OperationResult<TransferResult> finishRecovery(SftpDestination destination, long extent, String verifiedPrefix, long size)
+                throws Exception {
+            verifyLocalParents(request.localPath());
+            verifyRemoteParents();
+            check();
+            if (discard) {
+                phase = "recovery-discard";
+                destination.verifyStaged(extent, verifiedPrefix);
+                progress.begin(TransferProgress.Stage.CLEANING, -1, 0);
+                if (upload)
+                    sftp.remove(destination.remoteTemporary());
+                else
+                    Files.delete(destination.localTemporary());
+                if (stagingSize(destination) >= 0)
+                    throw new IOException("Staging cleanup was not observed");
+            } else {
+                phase = "recovery-publish";
+                destination.publish(size, digest);
+                phase = "recovery-published-verification";
+                if (!destination.isPublished(recovery.source()))
+                    throw new IOException("Resumed publication content differs");
+            }
+            resolved = true;
+            return recoveredResult(destination);
         }
     }
 }

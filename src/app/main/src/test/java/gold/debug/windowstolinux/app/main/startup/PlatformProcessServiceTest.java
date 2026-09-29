@@ -59,7 +59,7 @@ class PlatformProcessServiceTest {
             var handle = binding.submit(request(), task -> {
                 assertThrows(ApiException.class, () -> foreign.start(spec("normal"), task));
                 try (var child = processes.start(spec("normal"), task)) {
-                    var facts = new TaskLedger(runtime.persistence().database()).recoveries(task.id(), "PROCESS",
+                    var facts = new TaskLedger(runtime.persistence().database()).queries().recoveries(task.id(), "PROCESS",
                             "process-v1:");
                     assertEquals(1, facts.size());
                     var checkpoint = ProcessRecovery.decode(facts.values().iterator().next());

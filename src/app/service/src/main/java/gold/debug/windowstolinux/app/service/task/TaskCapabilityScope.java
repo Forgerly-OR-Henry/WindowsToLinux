@@ -89,7 +89,7 @@ public final class TaskCapabilityScope implements AutoCloseable {
             throw failure;
         }
         try {
-            if (schema.isPresent() && !ledger.holds(task.id(),
+            if (schema.isPresent() && !ledger.queries().holds(task.id(),
                     new TaskResource("SCHEMA", schema.orElseThrow().generation().toString(), owner, false)))
                 throw error(ProblemCode.ACCESS_DENIED, "CAPABILITY_SCHEMA",
                         "The task does not hold this schema generation");

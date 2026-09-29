@@ -12,14 +12,15 @@ import gold.debug.windowstolinux.appapi.task.*;
 
 /** Persists atomic admission and actual resource release independently of business SQL. / 独立于业务 SQL 持久化原子准入及实际资源释放。 */
 public final class TaskLedger {
+    /** Read-only task and occupancy facts on the same original transactions. / 同一原事务上的只读任务及占用依据。 */
+    private final TaskLedgerQueries queries = new TaskLedgerQueries();
+
+    /** Original conclusion, summary and durable archival operations. / 原结论、摘要及持久归档操作。 */
+    private final TaskFinalization finalizationSupport = new TaskFinalization();
     /** Original storage generation for finalization receipts. / 终态收尾凭据所属的原存储代次。 */
     private final PlatformDatabase database;
 
-    /** Fixed platform summary target, initialized before entering a task transaction. / 进入任务事务前初始化的固定平台摘要目标。 */
-    private LogRepository.Target summaryTarget;
 
-    /** Rescue summary category initialized outside task transactions. / 在任务事务之外初始化的救援摘要类别。 */
-    private LogRepository.Target recoverySummaryTarget;
 
     /** Engine boot identity used to refuse execution of previous-process tasks. / 用于拒绝执行前一进程任务的引擎启动身份。 */
     private final UUID bootId;
@@ -142,35 +143,6 @@ public final class TaskLedger {
     }
 
     /**
-     * Prevents endpoint changes for accepted work, including queued and uncertain tasks. / 防止修改已接纳工作使用的端点，包括排队及未知任务。
-     * @param connection platform transaction already holding the state lock / 已持有状态锁的平台事务
-     * @param serverId exact saved server identity / 精确已保存服务器身份
-     * @throws SQLException if any accepted task requires the server or metadata cannot be verified / 已接纳任务需要服务器或无法核实元数据时
-     */
-    public static void requireServerIdle(Connection connection, String serverId) throws SQLException {
-        var mapper = new ObjectMapper()
-                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-        try (var statement = connection.prepareStatement("SELECT request_json FROM platform_task WHERE state<>'ENDED'");
-                var rows = statement.executeQuery()) {
-            while (rows.next()) {
-                try {
-                    var ids = mapper.readTree(rows.getString(1)).required("serverIds");
-                    if (!ids.isArray())
-                        throw new SQLException("Accepted task server metadata is invalid");
-                    for (var id : ids) {
-                        if (!id.isTextual() || id.asText().isBlank())
-                            throw new SQLException("Accepted task server metadata is invalid");
-                        if (id.asText().equals(serverId))
-                            throw new SQLException("Accepted tasks still require this server configuration");
-                    }
-                } catch (java.io.IOException | IllegalArgumentException failure) {
-                    throw new SQLException("Accepted task server metadata cannot be verified", failure);
-                }
-            }
-        }
-    }
-
-    /**
      * Sorts and rejects duplicate claims in the required global order. / 按要求的全局顺序排序并拒绝重复申请。
      * @param claims complete claim set / 完整申请集合
      * @return immutable ordered claims / 不可变有序申请
@@ -210,14 +182,14 @@ public final class TaskLedger {
                         return false;
                     List<TaskResource> claims;
                     try {
-                        var node = admissionDocument(r.getString(3), r.getString(4), r.getString(5));
+                        var node = queries.admissionDocument(r.getString(3), r.getString(4), r.getString(5));
                         claims = orderedClaims(
                                 Arrays.asList(json.treeToValue(node.required("initialClaims"), TaskResource[].class)));
                     } catch (java.io.IOException | IllegalArgumentException failure) {
                         throw new SQLException("Invalid task recovery material", failure);
                     }
                     for (var claim : claims)
-                        if (conflicts(c, taskId, claim))
+                        if (queries.conflicts(c, taskId, claim))
                             return false;
                     for (var claim : claims)
                         insertLease(c, taskId, claim, ResourceRecovery.TASK_END);
@@ -226,74 +198,6 @@ public final class TaskLedger {
                 return true;
             }
         });
-    }
-
-    /** Reads retained original code and data without using current Mod selection. / 不使用当前 Mod 选择，读取保留原代码及数据。
-     * @param taskId original task / 原任务
-     * @return captured graph, absent for host or pre-capture records / 捕获图，宿主或捕获能力加入前的记录不存在
-     * @throws SQLException if the record is missing or malformed / 记录缺失或损坏时 */
-    public Optional<TaskRecoveryGraph> recoveryGraph(UUID taskId) throws SQLException {
-        try (var c = connections.open();
-                var p = c.prepareStatement(
-                        "SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
-            p.setObject(1, taskId);
-            try (var r = p.executeQuery()) {
-                if (!r.next())
-                    throw new SQLException("Original task does not exist");
-                var node = admissionDocument(r.getString(3), r.getString(1), r.getString(2));
-                return node.path("formatVersion").intValue() == 1
-                        ? Optional.empty()
-                        : Optional.of(TaskRecoveryGraph.decode(node.path("graph")));
-            }
-        }
-    }
-
-    /** Validates admission metadata before execution or recovery. / 执行或恢复前校验准入元数据。
-     * @param value original stored document / 原存储文档
-     * @param owner original task owner / 原任务所有者
-     * @param version original task version / 原任务版本
-     * @return validated original document / 已校验原文档
-     * @throws SQLException if the shape or identity is inconsistent / 形状或身份不一致时 */
-    private com.fasterxml.jackson.databind.JsonNode admissionDocument(String value, String owner, String version)
-            throws SQLException {
-        try {
-            if (value == null || value.length() > 1024 * 1024)
-                throw new IllegalArgumentException("Invalid task metadata size");
-            var node = json.readTree(value);
-            if (node == null || !node.isObject() || !node.path("formatVersion").isInt()
-                    || !Set.of(1, 2).contains(node.path("formatVersion").intValue())
-                    || !node.path("initialClaims").isArray()
-                    || node.size() != (node.path("formatVersion").intValue() == 1 ? 2 : 3))
-                throw new IllegalArgumentException("Unsupported task admission document");
-            if (node.path("formatVersion").intValue() == 2)
-                TaskRecoveryGraph.decode(node.path("graph")).requireOwner(owner, version,
-                        Arrays.asList(json.treeToValue(node.path("initialClaims"), TaskResource[].class)));
-            return node;
-        } catch (java.io.IOException | IllegalArgumentException invalid) {
-            throw new SQLException("Invalid original task admission metadata", invalid);
-        }
-    }
-
-    /**
-     * Tests conflicts without taking any partial resource set. / 检查冲突而不取得部分资源集合。
-     * @param c scoped platform connection / 作用域平台连接
-     * @param taskId existing task identity / 已有任务身份
-     * @param resource desired resource / 期望资源
-     * @return whether another active holder conflicts / 是否与其他活动持有者冲突
-     * @throws SQLException if the ledger cannot be read / 无法读取账本时
-     */
-    private boolean conflicts(Connection c, UUID taskId, TaskResource resource) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind=? AND resource_id=? AND released_at IS NULL AND task_id<>? AND (? OR access_mode='EXCLUSIVE')")) {
-            p.setString(1, resource.kind());
-            p.setString(2, resource.id());
-            p.setObject(3, taskId);
-            p.setBoolean(4, resource.exclusive());
-            try (var r = p.executeQuery()) {
-                r.next();
-                return r.getLong(1) != 0;
-            }
-        }
     }
 
     /**
@@ -319,12 +223,12 @@ public final class TaskLedger {
         String metadata = recovery == null ? ResourceRecovery.EXPLICIT : recovery.encode();
         return locked(() -> {
             try (var c = connections.open()) {
-                String state = state(c, taskId);
+                String state = queries.state(c, taskId);
                 if (!Set.of("RUNNING", "CANCEL_REQUESTED", "UNKNOWN", "FINISHING").contains(state))
                     throw new SQLException("Task cannot acquire another owned resource");
                 if (resource.kind().equals("SERVER"))
                     throw new SQLException("Servers must be declared in initial admission");
-                if (conflicts(c, taskId, resource))
+                if (queries.conflicts(c, taskId, resource))
                     throw new SQLException("Resource is busy");
                 if (firstCreation)
                     try (var p = c.prepareStatement(
@@ -402,13 +306,13 @@ public final class TaskLedger {
             throw new SQLException("Dependency call belongs to another boot");
         return locked(() -> {
             try (var c = connections.open()) {
-                if (!Set.of("RUNNING", "CANCEL_REQUESTED", "UNKNOWN").contains(state(c, taskId)))
+                if (!Set.of("RUNNING", "CANCEL_REQUESTED", "UNKNOWN").contains(queries.state(c, taskId)))
                     throw new SQLException("Original task is not executing");
                 var claims = orderedClaims(resolver.resolve(c));
                 if (!claims.equals(orderedClaims(recovery.claims())))
                     throw new SQLException("Provider admission differs from its loaded generation");
                 for (var claim : claims)
-                    if (conflicts(c, taskId, claim))
+                    if (queries.conflicts(c, taskId, claim))
                         throw new DependencyBusyException();
                 var ids = new ArrayList<UUID>();
                 for (var claim : claims)
@@ -466,81 +370,6 @@ public final class TaskLedger {
             }
             return null;
         });
-    }
-
-    /** Loads retained dependency groups without interpreting other resource protocols. / 加载保留依赖组，不解释其他资源协议。
-     * @param taskId original task / 原任务
-     * @return original call identities and complete lease sets / 原调用身份及完整占用集合
-     * @throws SQLException if any recognized call is inconsistent / 任一识别的调用不一致时 */
-    public Map<DependencyRecovery, List<UUID>> dependencies(UUID taskId) throws SQLException {
-        return locked(() -> {
-            try (var c = connections.open()) {
-                return readDependencies(c, taskId);
-            }
-        });
-    }
-
-    /** Reads complete dependency groups using the caller's existing transaction. / 使用调用方已有事务读取完整依赖组。
-     * @param connection existing platform transaction / 已有平台事务
-     * @param taskId original task / 原任务
-     * @return validated original groups / 已校验原依赖组
-     * @throws SQLException if persisted claims or identities differ / 持久申请或身份不符时 */
-    public static Map<DependencyRecovery, List<UUID>> readDependencies(Connection connection, UUID taskId)
-            throws SQLException {
-        var groups = new LinkedHashMap<DependencyRecovery, List<UUID>>();
-        var resources = new HashMap<DependencyRecovery, List<TaskResource>>();
-        try (var p = connection.prepareStatement(
-                "SELECT lease_id,recovery_json,resource_kind,resource_id,owner_id,access_mode FROM platform_task_resource WHERE task_id=? AND resource_kind IN ('MOD','SCHEMA') AND released_at IS NULL")) {
-            p.setObject(1, taskId);
-            try (var rows = p.executeQuery()) {
-                while (rows.next()) {
-                    String value = rows.getString(2);
-                    if (ResourceRecovery.TASK_END.equals(value) || ResourceRecovery.EXPLICIT.equals(value))
-                        continue;
-                    var decoded = ResourceRecovery.decode(value);
-                    if (!decoded.protocol().equals("service.v1"))
-                        continue;
-                    DependencyRecovery identity;
-                    try {
-                        identity = DependencyRecovery.decode(decoded);
-                    } catch (RuntimeException invalid) {
-                        throw new SQLException("Invalid dependency recovery identity");
-                    }
-                    groups.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(rows.getObject(1, UUID.class));
-                    resources.computeIfAbsent(identity, ignored -> new ArrayList<>())
-                            .add(new TaskResource(rows.getString(3), rows.getString(4), rows.getString(5),
-                                    rows.getString(6).equals("EXCLUSIVE")));
-                }
-            }
-        }
-        var result = new LinkedHashMap<DependencyRecovery, List<UUID>>();
-        for (var entry : groups.entrySet()) {
-            if (entry.getValue().size() != entry.getKey().claims().size())
-                throw new SQLException("Incomplete dependency claim group");
-            if (!orderedClaims(resources.get(entry.getKey())).equals(orderedClaims(entry.getKey().claims())))
-                throw new SQLException("Dependency claim identity differs");
-            result.put(entry.getKey(), List.copyOf(entry.getValue()));
-        }
-        return Map.copyOf(result);
-    }
-
-    /** Checks physical claims of retained service providers before releasing their code/data ownership. / 释放代码及数据归属前检查保留服务提供方的物理申请。
-     * @param taskId original task / 原任务
-     * @param providers original provider identities / 原提供方身份
-     * @return whether any provider resource remains active / 是否仍有提供方资源活动
-     * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
-    public boolean hasDependencyResources(UUID taskId, Set<String> providers) throws SQLException {
-        try (var c = connections.open();
-                var p = c.prepareStatement(
-                        "SELECT owner_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND resource_kind NOT IN ('MOD','SCHEMA')")) {
-            p.setObject(1, taskId);
-            try (var rows = p.executeQuery()) {
-                while (rows.next())
-                    if (providers.contains(rows.getString(1)))
-                        return true;
-            }
-            return false;
-        }
     }
 
     /** Records the first actual PID and start time before any process HELLO is sent. / 发送任何进程 HELLO 前记录首个实际 PID 及启动时间。
@@ -702,35 +531,6 @@ public final class TaskLedger {
         });
     }
 
-    /** Reads outstanding recovery facts from an exact host-owned resource namespace. / 从精确宿主资源命名空间读取未完成恢复事实。
-     * @param taskId original task / 原任务
-     * @param kind exact resource kind / 精确资源种类
-     * @param prefix host-owned resource prefix / 宿主所属资源前缀
-     * @return immutable resource facts / 不可变资源事实
-     * @throws SQLException if any matching record is malformed / 任一匹配记录损坏时 */
-    public Map<TaskResource, ResourceRecovery> recoveries(UUID taskId, String kind, String prefix) throws SQLException {
-        return locked(() -> {
-            var found = new LinkedHashMap<TaskResource, ResourceRecovery>();
-            try (var c = connections.open();
-                    var p = c.prepareStatement(
-                            "SELECT resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND released_at IS NULL ORDER BY resource_id")) {
-                p.setObject(1, taskId);
-                p.setString(2, kind);
-                try (var rows = p.executeQuery()) {
-                    while (rows.next()) {
-                        if (!rows.getString(1).startsWith(prefix))
-                            continue;
-                        var resource = new TaskResource(kind, rows.getString(1), rows.getString(2),
-                                rows.getString(3).equals("EXCLUSIVE"));
-                        if (found.put(resource, ResourceRecovery.decode(rows.getString(4))) != null)
-                            throw new SQLException("Duplicate original recovery resource");
-                    }
-                }
-            }
-            return Map.copyOf(found);
-        });
-    }
-
     /** Releases vanished SSH clients from an earlier exclusive database boot, preserving file claims. / 释放更早独占数据库启动中已消失的 SSH 客户端，保留文件申请。
      * @param taskId original recovery task / 原恢复任务
      * @param owner original Mod identity / 原 Mod 身份
@@ -746,7 +546,7 @@ public final class TaskLedger {
                         if (!row.next())
                             throw new SQLException("Original SSH recovery owner differs");
                         if ((!owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
-                                && readDependencies(c, taskId).keySet().stream().noneMatch(
+                                && TaskLedgerQueries.readDependencies(c, taskId).keySet().stream().noneMatch(
                                         call -> call.provider().equals(owner) && call.version().equals(version)))
                             throw new SQLException("Original SSH recovery owner differs");
                         if (bootId.equals(row.getObject(1, UUID.class)))
@@ -796,32 +596,6 @@ public final class TaskLedger {
         });
     }
 
-    /** Checks all capability instances for another outstanding SSH client before file recovery. / 文件恢复前跨能力实例检查其他未释放 SSH 客户端。
-     * @param taskId original task / 原任务
-     * @param currentLease this authenticated connection lease / 此已认证连接占用
-     * @return whether only this SSH client remains / 是否仅余此 SSH 客户端
-     * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
-    public boolean soleSshConnection(UUID taskId, UUID currentLease) throws SQLException {
-        return locked(() -> {
-            boolean currentFound = false;
-            try (var c = connections.open();
-                    var p = c.prepareStatement(
-                            "SELECT lease_id,resource_id FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND released_at IS NULL")) {
-                p.setObject(1, taskId);
-                try (var rows = p.executeQuery()) {
-                    while (rows.next()) {
-                        if (!rows.getString(2).startsWith("ssh-"))
-                            continue;
-                        if (!currentLease.equals(rows.getObject(1, UUID.class)))
-                            return false;
-                        currentFound = true;
-                    }
-                }
-            }
-            return currentFound;
-        });
-    }
-
     /**
      * Persists cooperative cancellation without inventing termination. / 持久化协作取消，不虚构任务终止。
      * @param taskId selected task / 选中的任务
@@ -856,7 +630,7 @@ public final class TaskLedger {
                         throw new SQLException("Task does not support cancellation");
                     if (state.equals("QUEUED")) {
                         beforeEnd.run();
-                        finish(c, taskId, Outcome.CANCELLED);
+                        finalizationSupport.finish(c, taskId, Outcome.CANCELLED);
                         return true;
                     }
                     if (state.equals("RUNNING"))
@@ -899,7 +673,7 @@ public final class TaskLedger {
             throw new SQLException("Task result evidence is too large");
         return locked(() -> {
             try (var c = connections.open()) {
-                String state = state(c, taskId);
+                String state = queries.state(c, taskId);
                 if (state.equals("ENDED")) {
                     try (var p = c.prepareStatement("SELECT outcome FROM platform_task WHERE task_id=?")) {
                         p.setObject(1, taskId);
@@ -936,7 +710,7 @@ public final class TaskLedger {
                     }
                 }
                 beforeEnd.run();
-                finish(c, taskId, outcome);
+                finalizationSupport.finish(c, taskId, outcome);
                 return true;
             }
         });
@@ -1005,7 +779,7 @@ public final class TaskLedger {
      * @throws SQLException if the observation or archival cannot be confirmed / 观察或归档无法确认时 */
     public TaskSnapshot completeAndArchive(UUID taskId, Outcome outcome, String evidence, boolean reconciliation,
             Runnable beforeEnd) throws SQLException {
-        return finalizeTransaction(taskId, () -> complete(taskId, outcome, evidence, reconciliation, beforeEnd));
+        return finalizationSupport.finalizeTransaction(taskId, () -> complete(taskId, outcome, evidence, reconciliation, beforeEnd));
     }
 
     /** Archives queued cancellation without executing its business callback. / 归档排队取消，不执行其业务回调。
@@ -1014,132 +788,7 @@ public final class TaskLedger {
      * @return committed cancellation request or ended snapshot / 已提交取消请求或结束快照
      * @throws SQLException if cancellation or archive is unconfirmed / 取消或归档未确认时 */
     public TaskSnapshot cancelAndArchive(UUID taskId, Runnable beforeEnd) throws SQLException {
-        return finalizeTransaction(taskId, () -> cancel(taskId, beforeEnd));
-    }
-
-    /** Shares the original outer commit across conclusion and archive. / 结论及归档共用原最外层提交。
-     * @param taskId original identity / 原身份
-     * @param conclusion original state transition / 原状态转换
-     * @return committed observation / 已提交观察
-     * @throws SQLException if original conclusion or archive is unconfirmed / 原结论或归档未确认时 */
-    private TaskSnapshot finalizeTransaction(UUID taskId, Query<Boolean> conclusion) throws SQLException {
-        var target = summaryTarget();
-        var recoveryTarget = recoverySummaryTarget(snapshot(taskId));
-        Finalization[] original = {null};
-        try {
-            return locked(() -> {
-                boolean ended = conclusion.run();
-                var current = snapshot(taskId);
-                if (ended) {
-                    try (var c = connections.open()) {
-                        original[0] = finalization(c, current);
-                        archive(c, target, recoveryTarget, original[0]);
-                    }
-                }
-                return current;
-            });
-        } catch (SQLException failure) {
-            if (original[0] != null)
-                throw new FinalizationException(original[0], failure);
-            throw failure;
-        }
-    }
-
-    /** Obtains the stable summary category outside the outer task transaction. / 在最外层任务事务之外取得稳定摘要类别。
-     * @return verified platform category / 已验证平台类别
-     * @throws SQLException if registration cannot be confirmed / 登记无法确认时 */
-    private synchronized LogRepository.Target summaryTarget() throws SQLException {
-        if (summaryTarget == null)
-            summaryTarget = new LogRepository(database).register("app", Optional.empty(),
-                    new LogCategory("platform_task", "platform_task", Optional.empty()));
-        return summaryTarget;
-    }
-
-    /** Registers rescue summaries only for the original host protocol before its task lock. / 仅为原宿主协议在任务锁之前登记救援摘要。
-     * @param task original task observation / 原任务观察
-     * @return original rescue target, or null for other tasks / 原救援目标，其他任务为空
-     * @throws SQLException if original registration cannot be confirmed / 无法确认原登记时 */
-    private synchronized LogRepository.Target recoverySummaryTarget(TaskSnapshot task) throws SQLException {
-        if (!BrowserRecoveryArchival.owns(task))
-            return null;
-        if (recoverySummaryTarget == null)
-            recoverySummaryTarget = new LogRepository(database).register("app", Optional.empty(),
-                    new LogCategory("browser_recovery", "browser_recovery", Optional.empty()));
-        return recoverySummaryTarget;
-    }
-
-    /** Captures fixed identity and original diagnostics for an actually ended row. / 为实际结束行捕获固定身份及原诊断。
-     * @param c original transaction / 原事务
-     * @param snapshot original terminal observation / 原终态观察
-     * @return opaque original receipt / 不透明原凭据
-     * @throws SQLException if original metadata is inconsistent / 原元数据不一致时 */
-    private Finalization finalization(Connection c, TaskSnapshot snapshot) throws SQLException {
-        if (snapshot.state() != TaskState.ENDED || snapshot.outcome().isEmpty() || snapshot.endedAt().isEmpty()
-                || !snapshot.blockers().isEmpty())
-            throw new SQLException("Task is not a fully drained known result");
-        try (var p = c.prepareStatement("SELECT archive_log_id,result_json FROM platform_task WHERE task_id=?")) {
-            p.setObject(1, snapshot.id());
-            try (var r = p.executeQuery()) {
-                if (!r.next())
-                    throw new SQLException("Original task disappeared before archival");
-                try {
-                    return new Finalization(database.generation(), UUID.fromString(r.getString(1)), snapshot,
-                            Objects.requireNonNullElse(r.getString(2), "{}"));
-                } catch (IllegalArgumentException invalid) {
-                    throw new SQLException("Invalid original task summary identity", invalid);
-                }
-            }
-        }
-    }
-
-    /** Stores a bounded fixed summary and removes only the fully released original execution. / 保存有界固定摘要，并仅移除完全释放的原执行。
-     * @param c original serialized transaction / 原串行事务
-     * @param target original platform category / 原平台类别
-     * @param recoveryTarget rescue category if applicable / 适用时的救援类别
-     * @param original original concluded execution / 原已得出结论执行
-     * @throws SQLException if summary, retained ownership or cleanup fails / 摘要、保留归属或清理失败时 */
-    private void archive(Connection c, LogRepository.Target target, LogRepository.Target recoveryTarget,
-            Finalization original) throws SQLException {
-        var value = original.snapshot;
-        try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
-            p.setObject(1, value.id());
-            try (var r = p.executeQuery()) {
-                r.next();
-                if (r.getLong(1) != 0)
-                    throw new SQLException("Original task resources are still held");
-            }
-        }
-        var outcome = value.outcome().orElseThrow();
-        String details = encode(Map.of("taskType", LogRecordCodec.redact(value.type()), "startedAt",
-                value.startedAt().toEpochMilli(), "endedAt", value.endedAt().orElseThrow().toEpochMilli(),
-                "progressText", LogRecordCodec.redact(value.progressText()), "result",
-                LogRecordCodec.redact(original.evidence)));
-        LogRecordCodec.Record record;
-        try {
-            record = LogRecordCodec.createSummary(target, value.ownerVersion(),
-                    new LogEvent(outcome == Outcome.FAILED ? LogLevel.ERROR : LogLevel.INFO, "PLATFORM_TASK_" + outcome,
-                            "Platform task finished: " + outcome, Optional.of(details), Optional.of(value.id()),
-                            Optional.empty(), Optional.of(outcome)),
-                    original.archive, value.endedAt().orElseThrow().toEpochMilli(),
-                    value.ownerId().equals("@platform") ? null : value.ownerId());
-        } catch (IllegalArgumentException invalid) {
-            throw new SQLException("Original task summary cannot be encoded", invalid);
-        }
-        new LogRepository(database).store(c, target, List.of(record), 100);
-        BrowserRecoveryArchival.archive(database, c, recoveryTarget, original.archive, value);
-        try (var p = c
-                .prepareStatement("DELETE FROM platform_task_resource WHERE task_id=? AND released_at IS NOT NULL")) {
-            p.setObject(1, value.id());
-            p.executeUpdate();
-        }
-        try (var p = c
-                .prepareStatement("DELETE FROM platform_task WHERE task_id=? AND state='ENDED' AND archive_log_id=?")) {
-            p.setObject(1, value.id());
-            p.setString(2, original.archive.toString());
-            if (p.executeUpdate() != 1)
-                throw new SQLException("Original task cleanup could not be confirmed");
-        }
+        return finalizationSupport.finalizeTransaction(taskId, () -> cancel(taskId, beforeEnd));
     }
 
     /** Retries only an original proven finalization, never a business callback or missing history. / 仅重试原已证明收尾，不调用业务回调或重建缺失历史。
@@ -1150,12 +799,12 @@ public final class TaskLedger {
     public TaskSnapshot retryFinalization(Finalization original, Runnable beforeEnd) throws SQLException {
         if (!database.generation().equals(original.generation))
             throw new SQLException("Finalization belongs to another database generation");
-        var target = summaryTarget();
-        var recoveryTarget = recoverySummaryTarget(original.snapshot);
+        var target = finalizationSupport.summaryTarget();
+        var recoveryTarget = finalizationSupport.recoverySummaryTarget(original.snapshot);
         try {
             return locked(() -> {
                 try (var c = connections.open()) {
-                    if (!matches(c, original))
+                    if (!finalizationSupport.matches(c, original))
                         return original.snapshot;
                     complete(original.snapshot.id(), original.snapshot.outcome().orElseThrow(), original.evidence, true,
                             beforeEnd);
@@ -1166,7 +815,7 @@ public final class TaskLedger {
                         if (p.executeUpdate() != 1)
                             throw new SQLException("Original task is no longer drained");
                     }
-                    archive(c, target, recoveryTarget, original);
+                    finalizationSupport.archive(c, target, recoveryTarget, original);
                     return original.snapshot;
                 }
             });
@@ -1184,7 +833,7 @@ public final class TaskLedger {
             throw new SQLException("Finalization belongs to another database generation");
         return locked(() -> {
             try (var c = connections.open()) {
-                if (!matches(c, original))
+                if (!finalizationSupport.matches(c, original))
                     return false;
                 try (var p = c.prepareStatement(
                         "UPDATE platform_task SET state='FINISHING',outcome=?,ended_at=?,result_json=? WHERE task_id=?")) {
@@ -1198,85 +847,6 @@ public final class TaskLedger {
                 return true;
             }
         });
-    }
-
-    /** Reads only a retained terminal row or explicitly persisted finalization marker. / 仅读取保留终态行或明确持久化的收尾标记。
-     * @param taskId original retained task / 原保留任务
-     * @return exact original finalization if known / 已知时返回精确原收尾
-     * @throws SQLException if marker or ownership is inconsistent / 标记或归属不一致时 */
-    public Optional<Finalization> pendingFinalization(UUID taskId) throws SQLException {
-        return locked(() -> {
-            try (var c = connections.open();
-                    var p = c.prepareStatement("SELECT state,outcome,ended_at FROM platform_task WHERE task_id=?")) {
-                p.setObject(1, taskId);
-                try (var r = p.executeQuery()) {
-                    if (!r.next())
-                        throw new SQLException("Original task is absent");
-                    if (!Set.of("FINISHING", "ENDED").contains(r.getString(1)) || r.getString(2) == null
-                            || r.getObject(3) == null)
-                        return Optional.empty();
-                    var value = snapshot(taskId);
-                    if (!value.blockers().isEmpty())
-                        throw new SQLException("Finalization still has explicit resources");
-                    var terminal = new TaskSnapshot(value.id(), value.ownerId(), value.ownerVersion(), value.type(),
-                            TaskState.ENDED, Optional.of(Outcome.valueOf(r.getString(2))), value.progressText(),
-                            value.startedAt(), Optional.of(Instant.ofEpochMilli(r.getLong(3))), List.of());
-                    return Optional.of(finalization(c, terminal));
-                }
-            }
-        });
-    }
-
-    /** Compares immutable original execution identity without consulting retained log history. / 比较不可变原执行身份，不查询保留日志历史。
-     * @param c original transaction / 原事务
-     * @param original original receipt / 原凭据
-     * @return whether the original execution still exists / 原执行是否仍存在
-     * @throws SQLException if an existing identity differs / 已有身份不同时 */
-    private boolean matches(Connection c, Finalization original) throws SQLException {
-        try (var p = c.prepareStatement(
-                "SELECT owner_id,owner_version,task_type,started_at,archive_log_id,outcome,ended_at,result_json FROM platform_task WHERE task_id=?")) {
-            p.setObject(1, original.snapshot.id());
-            try (var r = p.executeQuery()) {
-                if (!r.next())
-                    return false;
-                var value = original.snapshot;
-                if (!value.ownerId().equals(r.getString(1)) || !value.ownerVersion().equals(r.getString(2))
-                        || !value.type().equals(r.getString(3)) || value.startedAt().toEpochMilli() != r.getLong(4)
-                        || !original.archive.toString().equals(r.getString(5)))
-                    throw new SQLException("Original task identity changed");
-                if (r.getObject(7) != null && (!value.outcome().orElseThrow().name().equals(r.getString(6))
-                        || value.endedAt().orElseThrow().toEpochMilli() != r.getLong(7)
-                        || !original.evidence.equals(Objects.requireNonNullElse(r.getString(8), "{}"))))
-                    throw new SQLException("Original task conclusion changed");
-                return true;
-            }
-        }
-    }
-
-    /**
-     * Completes logical claims and a known result in the same transaction. / 在同一事务中结束逻辑申请及已知结果。
-     * @param c scoped platform connection / 作用域平台连接
-     * @param taskId task with no explicit resources remaining / 已无显式资源残留的任务
-     * @param outcome known terminal outcome / 已知终态结果
-     * @throws SQLException if persistence fails / 持久化失败时
-     */
-    private void finish(Connection c, UUID taskId, Outcome outcome) throws SQLException {
-        long now = System.currentTimeMillis();
-        try (var p = c.prepareStatement(
-                "UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND released_at IS NULL AND recovery_json=?")) {
-            p.setLong(1, now);
-            p.setObject(2, taskId);
-            p.setString(3, "{\"release\":\"TASK_END\"}");
-            p.executeUpdate();
-        }
-        try (var p = c.prepareStatement(
-                "UPDATE platform_task SET state='ENDED',outcome=?,ended_at=CASE WHEN started_at>? THEN started_at ELSE ? END WHERE task_id=?")) {
-            p.setString(1, outcome.name());
-            p.setLong(2, now);
-            p.setLong(3, now);
-            p.setObject(4, taskId);
-            p.executeUpdate();
-        }
     }
 
     /**
@@ -1299,119 +869,6 @@ public final class TaskLedger {
     }
 
     /**
-     * Reads the actual persisted state and outstanding explicit resource descriptions. / 读取实际持久化状态及尚未释放的显式资源描述。
-     * @param taskId task identity / 任务身份
-     * @return immutable public snapshot / 不可变公开快照
-     * @throws SQLException if the task does not exist or cannot be read / 任务不存在或无法读取时
-     */
-    public TaskSnapshot snapshot(UUID taskId) throws SQLException {
-        return locked(() -> {
-            try (var c = connections.open();
-                    var p = c.prepareStatement(
-                            "SELECT owner_id,owner_version,task_type,state,outcome,progress_text,started_at,ended_at FROM platform_task WHERE task_id=?")) {
-                p.setObject(1, taskId);
-                try (var r = p.executeQuery()) {
-                    if (!r.next())
-                        throw new SQLException("Task does not exist");
-                    var blockers = new ArrayList<String>();
-                    try (var leases = c.prepareStatement(
-                            "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND (recovery_json IS NULL OR recovery_json<>?) ORDER BY resource_kind,resource_id")) {
-                        leases.setObject(1, taskId);
-                        leases.setString(2, ResourceRecovery.TASK_END);
-                        try (var rows = leases.executeQuery()) {
-                            while (rows.next())
-                                blockers.add(rows.getString(1) + ": " + rows.getString(2));
-                        }
-                    }
-                    if (r.getString(4).equals("UNKNOWN"))
-                        blockers.add("Business result requires explicit reconciliation");
-                    Long ended = r.getString(4).equals("ENDED") ? r.getObject(8, Long.class) : null;
-                    String result = r.getString(4).equals("ENDED") ? r.getString(5) : null;
-                    return new TaskSnapshot(taskId, r.getString(1), r.getString(2), r.getString(3),
-                            TaskState.valueOf(r.getString(4)),
-                            result == null ? Optional.empty() : Optional.of(Outcome.valueOf(result)), r.getString(6),
-                            Instant.ofEpochMilli(r.getLong(7)),
-                            ended == null ? Optional.empty() : Optional.of(Instant.ofEpochMilli(ended)), blockers);
-                }
-            }
-        });
-    }
-
-    /** Lists execution rows requiring startup recovery or completion of retained archival. / 列出需要启动恢复或完成保留归档的执行行。
-     * @return original retained identities / 原保留身份
-     * @throws SQLException if storage cannot be read / 存储无法读取时 */
-    public List<UUID> retained() throws SQLException {
-        try (var c = connections.open();
-                var s = c.createStatement();
-                var r = s.executeQuery("SELECT task_id FROM platform_task ORDER BY started_at,task_id")) {
-            var ids = new ArrayList<UUID>();
-            while (r.next())
-                ids.add(r.getObject(1, UUID.class));
-            return List.copyOf(ids);
-        }
-    }
-
-    /**
-     * Lists retained unfinished identities for host recovery and shutdown checks. / 列出保留的未结束身份，供宿主恢复及关闭检查。
-     * @return immutable identities across boot sessions / 跨启动会话的不可变身份列表
-     * @throws SQLException if the ledger cannot be read / 无法读取账本时
-     */
-    public List<UUID> unfinished() throws SQLException {
-        try (var c = connections.open();
-                var p = c.prepareStatement(
-                        "SELECT task_id FROM platform_task WHERE state<>'ENDED' ORDER BY started_at,task_id");
-                var r = p.executeQuery()) {
-            var ids = new ArrayList<UUID>();
-            while (r.next())
-                ids.add(r.getObject(1, UUID.class));
-            return List.copyOf(ids);
-        }
-    }
-
-    /**
-     * Finds unfinished work owned by or currently borrowing the given Mod. / 查找所属或当前借用指定 Mod 的未结束工作。
-     * @param ownerId exact Mod identity across its versions / 跨版本的精确 Mod 身份
-     * @return retained task identities including dependency callers / 包含依赖调用方的保留任务身份
-     * @throws SQLException if occupancy cannot be read / 无法读取占用时
-     */
-    public List<UUID> ownedTasks(String ownerId) throws SQLException {
-        try (var c = connections.open();
-                var p = c.prepareStatement(
-                        "SELECT t.task_id FROM platform_task t WHERE t.state<>'ENDED' AND (t.owner_id=? OR EXISTS(SELECT 1 FROM platform_task_resource r WHERE r.task_id=t.task_id AND r.owner_id=? AND r.released_at IS NULL)) ORDER BY t.started_at,t.task_id")) {
-            p.setString(1, ownerId);
-            p.setString(2, ownerId);
-            try (var r = p.executeQuery()) {
-                var ids = new ArrayList<UUID>();
-                while (r.next())
-                    ids.add(r.getObject(1, UUID.class));
-                return List.copyOf(ids);
-            }
-        }
-    }
-
-    /**
-     * Checks an exact already-held host resource without acquiring another lock. / 检查精确的已有宿主资源占用，不取得额外资源锁。
-     * @param taskId accepted task identity / 已接纳任务身份
-     * @param resource required kind, identity and owner / 所需类型、身份及所有者
-     * @return whether an unreleased matching claim exists / 是否存在未释放的匹配占用
-     * @throws SQLException if the ledger cannot be read / 无法读取账本时
-     */
-    public boolean holds(UUID taskId, TaskResource resource) throws SQLException {
-        try (var c = connections.open();
-                var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND owner_id=? AND released_at IS NULL")) {
-            p.setObject(1, taskId);
-            p.setString(2, resource.kind());
-            p.setString(3, resource.id());
-            p.setString(4, resource.ownerId());
-            try (var r = p.executeQuery()) {
-                r.next();
-                return r.getLong(1) > 0;
-            }
-        }
-    }
-
-    /**
      * Retains an uncertain transition without releasing any resource or replaying work. / 保留不确定的状态转换，不释放资源或重放工作。
      * @param taskId possibly accepted task / 可能已经接纳的任务
      * @throws SQLException if uncertainty itself cannot be persisted / 不确定状态本身无法持久化时
@@ -1419,29 +876,11 @@ public final class TaskLedger {
     public void uncertain(UUID taskId) throws SQLException {
         locked(() -> {
             try (var c = connections.open()) {
-                if (!state(c, taskId).equals("ENDED"))
+                if (!queries.state(c, taskId).equals("ENDED"))
                     setState(c, taskId, "UNKNOWN");
             }
             return null;
         });
-    }
-
-    /**
-     * Reads one state within an admitted transaction. / 在已准入事务内读取一个状态。
-     * @param c scoped platform connection / 作用域平台连接
-     * @param taskId task identity / 任务身份
-     * @return persisted state / 持久化状态
-     * @throws SQLException if the task is absent / 任务不存在时
-     */
-    private String state(Connection c, UUID taskId) throws SQLException {
-        try (var p = c.prepareStatement("SELECT state FROM platform_task WHERE task_id=?")) {
-            p.setObject(1, taskId);
-            try (var r = p.executeQuery()) {
-                if (!r.next())
-                    throw new SQLException("Task does not exist");
-                return r.getString(1);
-            }
-        }
     }
 
     /**
@@ -1504,5 +943,595 @@ public final class TaskLedger {
         } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
             throw new SQLException("Task metadata encoding failed", failure);
         }
+    }
+
+    /** Returns existing read-only facts while reusing the ledger transaction and lock. / 复用账本事务及锁，返回既有只读依据。
+     * @return original read-only query capability / 原只读查询能力 */
+    public TaskLedgerQueries queries() { return queries; }
+
+    /** Reads original task, resource and dependency facts using the same ledger transaction. / 使用同一账本事务读取原任务、资源及依赖依据。 */
+    public final class TaskLedgerQueries {
+        /** Creates this ledger/runtime collaborator. / 创建此账本或运行时职责协作者。 */
+        private TaskLedgerQueries() { }
+
+        /**
+         * Prevents endpoint changes for accepted work, including queued and uncertain tasks. / 防止修改已接纳工作使用的端点，包括排队及未知任务。
+         * @param connection platform transaction already holding the state lock / 已持有状态锁的平台事务
+         * @param serverId exact saved server identity / 精确已保存服务器身份
+         * @throws SQLException if any accepted task requires the server or metadata cannot be verified / 已接纳任务需要服务器或无法核实元数据时
+         */
+        public static void requireServerIdle(Connection connection, String serverId) throws SQLException {
+            var mapper = new ObjectMapper()
+                    .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+            try (var statement = connection.prepareStatement("SELECT request_json FROM platform_task WHERE state<>'ENDED'");
+                    var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    try {
+                        var ids = mapper.readTree(rows.getString(1)).required("serverIds");
+                        if (!ids.isArray())
+                            throw new SQLException("Accepted task server metadata is invalid");
+                        for (var id : ids) {
+                            if (!id.isTextual() || id.asText().isBlank())
+                                throw new SQLException("Accepted task server metadata is invalid");
+                            if (id.asText().equals(serverId))
+                                throw new SQLException("Accepted tasks still require this server configuration");
+                        }
+                    } catch (java.io.IOException | IllegalArgumentException failure) {
+                        throw new SQLException("Accepted task server metadata cannot be verified", failure);
+                    }
+                }
+            }
+        }
+
+        /** Reads retained original code and data without using current Mod selection. / 不使用当前 Mod 选择，读取保留原代码及数据。
+         * @param taskId original task / 原任务
+         * @return captured graph, absent for host or pre-capture records / 捕获图，宿主或捕获能力加入前的记录不存在
+         * @throws SQLException if the record is missing or malformed / 记录缺失或损坏时 */
+        public Optional<TaskRecoveryGraph> recoveryGraph(UUID taskId) throws SQLException {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, taskId);
+                try (var r = p.executeQuery()) {
+                    if (!r.next())
+                        throw new SQLException("Original task does not exist");
+                    var node = queries.admissionDocument(r.getString(3), r.getString(1), r.getString(2));
+                    return node.path("formatVersion").intValue() == 1
+                            ? Optional.empty()
+                            : Optional.of(TaskRecoveryGraph.decode(node.path("graph")));
+                }
+            }
+        }
+
+        /** Loads retained dependency groups without interpreting other resource protocols. / 加载保留依赖组，不解释其他资源协议。
+         * @param taskId original task / 原任务
+         * @return original call identities and complete lease sets / 原调用身份及完整占用集合
+         * @throws SQLException if any recognized call is inconsistent / 任一识别的调用不一致时 */
+        public Map<DependencyRecovery, List<UUID>> dependencies(UUID taskId) throws SQLException {
+            return locked(() -> {
+                try (var c = connections.open()) {
+                    return TaskLedgerQueries.readDependencies(c, taskId);
+                }
+            });
+        }
+
+        /** Reads complete dependency groups using the caller's existing transaction. / 使用调用方已有事务读取完整依赖组。
+         * @param connection existing platform transaction / 已有平台事务
+         * @param taskId original task / 原任务
+         * @return validated original groups / 已校验原依赖组
+         * @throws SQLException if persisted claims or identities differ / 持久申请或身份不符时 */
+        public static Map<DependencyRecovery, List<UUID>> readDependencies(Connection connection, UUID taskId)
+                throws SQLException {
+            var groups = new LinkedHashMap<DependencyRecovery, List<UUID>>();
+            var resources = new HashMap<DependencyRecovery, List<TaskResource>>();
+            try (var p = connection.prepareStatement(
+                    "SELECT lease_id,recovery_json,resource_kind,resource_id,owner_id,access_mode FROM platform_task_resource WHERE task_id=? AND resource_kind IN ('MOD','SCHEMA') AND released_at IS NULL")) {
+                p.setObject(1, taskId);
+                try (var rows = p.executeQuery()) {
+                    while (rows.next()) {
+                        String value = rows.getString(2);
+                        if (ResourceRecovery.TASK_END.equals(value) || ResourceRecovery.EXPLICIT.equals(value))
+                            continue;
+                        var decoded = ResourceRecovery.decode(value);
+                        if (!decoded.protocol().equals("service.v1"))
+                            continue;
+                        DependencyRecovery identity;
+                        try {
+                            identity = DependencyRecovery.decode(decoded);
+                        } catch (RuntimeException invalid) {
+                            throw new SQLException("Invalid dependency recovery identity");
+                        }
+                        groups.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(rows.getObject(1, UUID.class));
+                        resources.computeIfAbsent(identity, ignored -> new ArrayList<>())
+                                .add(new TaskResource(rows.getString(3), rows.getString(4), rows.getString(5),
+                                        rows.getString(6).equals("EXCLUSIVE")));
+                    }
+                }
+            }
+            var result = new LinkedHashMap<DependencyRecovery, List<UUID>>();
+            for (var entry : groups.entrySet()) {
+                if (entry.getValue().size() != entry.getKey().claims().size())
+                    throw new SQLException("Incomplete dependency claim group");
+                if (!orderedClaims(resources.get(entry.getKey())).equals(orderedClaims(entry.getKey().claims())))
+                    throw new SQLException("Dependency claim identity differs");
+                result.put(entry.getKey(), List.copyOf(entry.getValue()));
+            }
+            return Map.copyOf(result);
+        }
+
+        /** Checks physical claims of retained service providers before releasing their code/data ownership. / 释放代码及数据归属前检查保留服务提供方的物理申请。
+         * @param taskId original task / 原任务
+         * @param providers original provider identities / 原提供方身份
+         * @return whether any provider resource remains active / 是否仍有提供方资源活动
+         * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
+        public boolean hasDependencyResources(UUID taskId, Set<String> providers) throws SQLException {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT owner_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND resource_kind NOT IN ('MOD','SCHEMA')")) {
+                p.setObject(1, taskId);
+                try (var rows = p.executeQuery()) {
+                    while (rows.next())
+                        if (providers.contains(rows.getString(1)))
+                            return true;
+                }
+                return false;
+            }
+        }
+
+        /** Reads outstanding recovery facts from an exact host-owned resource namespace. / 从精确宿主资源命名空间读取未完成恢复事实。
+         * @param taskId original task / 原任务
+         * @param kind exact resource kind / 精确资源种类
+         * @param prefix host-owned resource prefix / 宿主所属资源前缀
+         * @return immutable resource facts / 不可变资源事实
+         * @throws SQLException if any matching record is malformed / 任一匹配记录损坏时 */
+        public Map<TaskResource, ResourceRecovery> recoveries(UUID taskId, String kind, String prefix) throws SQLException {
+            return locked(() -> {
+                var found = new LinkedHashMap<TaskResource, ResourceRecovery>();
+                try (var c = connections.open();
+                        var p = c.prepareStatement(
+                                "SELECT resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND released_at IS NULL ORDER BY resource_id")) {
+                    p.setObject(1, taskId);
+                    p.setString(2, kind);
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            if (!rows.getString(1).startsWith(prefix))
+                                continue;
+                            var resource = new TaskResource(kind, rows.getString(1), rows.getString(2),
+                                    rows.getString(3).equals("EXCLUSIVE"));
+                            if (found.put(resource, ResourceRecovery.decode(rows.getString(4))) != null)
+                                throw new SQLException("Duplicate original recovery resource");
+                        }
+                    }
+                }
+                return Map.copyOf(found);
+            });
+        }
+
+        /** Checks all capability instances for another outstanding SSH client before file recovery. / 文件恢复前跨能力实例检查其他未释放 SSH 客户端。
+         * @param taskId original task / 原任务
+         * @param currentLease this authenticated connection lease / 此已认证连接占用
+         * @return whether only this SSH client remains / 是否仅余此 SSH 客户端
+         * @throws SQLException if the ledger cannot be read / 无法读取账本时 */
+        public boolean soleSshConnection(UUID taskId, UUID currentLease) throws SQLException {
+            return locked(() -> {
+                boolean currentFound = false;
+                try (var c = connections.open();
+                        var p = c.prepareStatement(
+                                "SELECT lease_id,resource_id FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND released_at IS NULL")) {
+                    p.setObject(1, taskId);
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            if (!rows.getString(2).startsWith("ssh-"))
+                                continue;
+                            if (!currentLease.equals(rows.getObject(1, UUID.class)))
+                                return false;
+                            currentFound = true;
+                        }
+                    }
+                }
+                return currentFound;
+            });
+        }
+
+        /** Reads only a retained terminal row or explicitly persisted finalization marker. / 仅读取保留终态行或明确持久化的收尾标记。
+         * @param taskId original retained task / 原保留任务
+         * @return exact original finalization if known / 已知时返回精确原收尾
+         * @throws SQLException if marker or ownership is inconsistent / 标记或归属不一致时 */
+        public Optional<Finalization> pendingFinalization(UUID taskId) throws SQLException {
+            return locked(() -> {
+                try (var c = connections.open();
+                        var p = c.prepareStatement("SELECT state,outcome,ended_at FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var r = p.executeQuery()) {
+                        if (!r.next())
+                            throw new SQLException("Original task is absent");
+                        if (!Set.of("FINISHING", "ENDED").contains(r.getString(1)) || r.getString(2) == null
+                                || r.getObject(3) == null)
+                            return Optional.empty();
+                        var value = queries.snapshot(taskId);
+                        if (!value.blockers().isEmpty())
+                            throw new SQLException("Finalization still has explicit resources");
+                        var terminal = new TaskSnapshot(value.id(), value.ownerId(), value.ownerVersion(), value.type(),
+                                TaskState.ENDED, Optional.of(Outcome.valueOf(r.getString(2))), value.progressText(),
+                                value.startedAt(), Optional.of(Instant.ofEpochMilli(r.getLong(3))), List.of());
+                        return Optional.of(finalizationSupport.finalization(c, terminal));
+                    }
+                }
+            });
+        }
+
+        /**
+         * Reads the actual persisted state and outstanding explicit resource descriptions. / 读取实际持久化状态及尚未释放的显式资源描述。
+         * @param taskId task identity / 任务身份
+         * @return immutable public snapshot / 不可变公开快照
+         * @throws SQLException if the task does not exist or cannot be read / 任务不存在或无法读取时
+         */
+        public TaskSnapshot snapshot(UUID taskId) throws SQLException {
+            return locked(() -> {
+                try (var c = connections.open();
+                        var p = c.prepareStatement(
+                                "SELECT owner_id,owner_version,task_type,state,outcome,progress_text,started_at,ended_at FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var r = p.executeQuery()) {
+                        if (!r.next())
+                            throw new SQLException("Task does not exist");
+                        var blockers = new ArrayList<String>();
+                        try (var leases = c.prepareStatement(
+                                "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL AND (recovery_json IS NULL OR recovery_json<>?) ORDER BY resource_kind,resource_id")) {
+                            leases.setObject(1, taskId);
+                            leases.setString(2, ResourceRecovery.TASK_END);
+                            try (var rows = leases.executeQuery()) {
+                                while (rows.next())
+                                    blockers.add(rows.getString(1) + ": " + rows.getString(2));
+                            }
+                        }
+                        if (r.getString(4).equals("UNKNOWN"))
+                            blockers.add("Business result requires explicit reconciliation");
+                        Long ended = r.getString(4).equals("ENDED") ? r.getObject(8, Long.class) : null;
+                        String result = r.getString(4).equals("ENDED") ? r.getString(5) : null;
+                        return new TaskSnapshot(taskId, r.getString(1), r.getString(2), r.getString(3),
+                                TaskState.valueOf(r.getString(4)),
+                                result == null ? Optional.empty() : Optional.of(Outcome.valueOf(result)), r.getString(6),
+                                Instant.ofEpochMilli(r.getLong(7)),
+                                ended == null ? Optional.empty() : Optional.of(Instant.ofEpochMilli(ended)), blockers);
+                    }
+                }
+            });
+        }
+
+        /** Lists execution rows requiring startup recovery or completion of retained archival. / 列出需要启动恢复或完成保留归档的执行行。
+         * @return original retained identities / 原保留身份
+         * @throws SQLException if storage cannot be read / 存储无法读取时 */
+        public List<UUID> retained() throws SQLException {
+            try (var c = connections.open();
+                    var s = c.createStatement();
+                    var r = s.executeQuery("SELECT task_id FROM platform_task ORDER BY started_at,task_id")) {
+                var ids = new ArrayList<UUID>();
+                while (r.next())
+                    ids.add(r.getObject(1, UUID.class));
+                return List.copyOf(ids);
+            }
+        }
+
+        /**
+         * Lists retained unfinished identities for host recovery and shutdown checks. / 列出保留的未结束身份，供宿主恢复及关闭检查。
+         * @return immutable identities across boot sessions / 跨启动会话的不可变身份列表
+         * @throws SQLException if the ledger cannot be read / 无法读取账本时
+         */
+        public List<UUID> unfinished() throws SQLException {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT task_id FROM platform_task WHERE state<>'ENDED' ORDER BY started_at,task_id");
+                    var r = p.executeQuery()) {
+                var ids = new ArrayList<UUID>();
+                while (r.next())
+                    ids.add(r.getObject(1, UUID.class));
+                return List.copyOf(ids);
+            }
+        }
+
+        /**
+         * Finds unfinished work owned by or currently borrowing the given Mod. / 查找所属或当前借用指定 Mod 的未结束工作。
+         * @param ownerId exact Mod identity across its versions / 跨版本的精确 Mod 身份
+         * @return retained task identities including dependency callers / 包含依赖调用方的保留任务身份
+         * @throws SQLException if occupancy cannot be read / 无法读取占用时
+         */
+        public List<UUID> ownedTasks(String ownerId) throws SQLException {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT t.task_id FROM platform_task t WHERE t.state<>'ENDED' AND (t.owner_id=? OR EXISTS(SELECT 1 FROM platform_task_resource r WHERE r.task_id=t.task_id AND r.owner_id=? AND r.released_at IS NULL)) ORDER BY t.started_at,t.task_id")) {
+                p.setString(1, ownerId);
+                p.setString(2, ownerId);
+                try (var r = p.executeQuery()) {
+                    var ids = new ArrayList<UUID>();
+                    while (r.next())
+                        ids.add(r.getObject(1, UUID.class));
+                    return List.copyOf(ids);
+                }
+            }
+        }
+
+        /**
+         * Checks an exact already-held host resource without acquiring another lock. / 检查精确的已有宿主资源占用，不取得额外资源锁。
+         * @param taskId accepted task identity / 已接纳任务身份
+         * @param resource required kind, identity and owner / 所需类型、身份及所有者
+         * @return whether an unreleased matching claim exists / 是否存在未释放的匹配占用
+         * @throws SQLException if the ledger cannot be read / 无法读取账本时
+         */
+        public boolean holds(UUID taskId, TaskResource resource) throws SQLException {
+            try (var c = connections.open();
+                    var p = c.prepareStatement(
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND resource_kind=? AND resource_id=? AND owner_id=? AND released_at IS NULL")) {
+                p.setObject(1, taskId);
+                p.setString(2, resource.kind());
+                p.setString(3, resource.id());
+                p.setString(4, resource.ownerId());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    return r.getLong(1) > 0;
+                }
+            }
+        }
+
+        /** Validates admission metadata before execution or recovery. / 执行或恢复前校验准入元数据。
+         * @param value original stored document / 原存储文档
+         * @param owner original task owner / 原任务所有者
+         * @param version original task version / 原任务版本
+         * @return validated original document / 已校验原文档
+         * @throws SQLException if the shape or identity is inconsistent / 形状或身份不一致时 */
+        private com.fasterxml.jackson.databind.JsonNode admissionDocument(String value, String owner, String version)
+                throws SQLException {
+            try {
+                if (value == null || value.length() > 1024 * 1024)
+                    throw new IllegalArgumentException("Invalid task metadata size");
+                var node = json.readTree(value);
+                if (node == null || !node.isObject() || !node.path("formatVersion").isInt()
+                        || !Set.of(1, 2).contains(node.path("formatVersion").intValue())
+                        || !node.path("initialClaims").isArray()
+                        || node.size() != (node.path("formatVersion").intValue() == 1 ? 2 : 3))
+                    throw new IllegalArgumentException("Unsupported task admission document");
+                if (node.path("formatVersion").intValue() == 2)
+                    TaskRecoveryGraph.decode(node.path("graph")).requireOwner(owner, version,
+                            Arrays.asList(json.treeToValue(node.path("initialClaims"), TaskResource[].class)));
+                return node;
+            } catch (java.io.IOException | IllegalArgumentException invalid) {
+                throw new SQLException("Invalid original task admission metadata", invalid);
+            }
+        }
+
+        /**
+         * Tests conflicts without taking any partial resource set. / 检查冲突而不取得部分资源集合。
+         * @param c scoped platform connection / 作用域平台连接
+         * @param taskId existing task identity / 已有任务身份
+         * @param resource desired resource / 期望资源
+         * @return whether another active holder conflicts / 是否与其他活动持有者冲突
+         * @throws SQLException if the ledger cannot be read / 无法读取账本时
+         */
+        private boolean conflicts(Connection c, UUID taskId, TaskResource resource) throws SQLException {
+            try (var p = c.prepareStatement(
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind=? AND resource_id=? AND released_at IS NULL AND task_id<>? AND (? OR access_mode='EXCLUSIVE')")) {
+                p.setString(1, resource.kind());
+                p.setString(2, resource.id());
+                p.setObject(3, taskId);
+                p.setBoolean(4, resource.exclusive());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    return r.getLong(1) != 0;
+                }
+            }
+        }
+
+        /**
+         * Reads one state within an admitted transaction. / 在已准入事务内读取一个状态。
+         * @param c scoped platform connection / 作用域平台连接
+         * @param taskId task identity / 任务身份
+         * @return persisted state / 持久化状态
+         * @throws SQLException if the task is absent / 任务不存在时
+         */
+        private String state(Connection c, UUID taskId) throws SQLException {
+            try (var p = c.prepareStatement("SELECT state FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, taskId);
+                try (var r = p.executeQuery()) {
+                    if (!r.next())
+                        throw new SQLException("Task does not exist");
+                    return r.getString(1);
+                }
+            }
+        }
+
+    }
+
+    /** Owns exact original summary receipts and atomic archival on the same ledger transaction. / 在同一账本事务持有精确原摘要凭据及原子归档。 */
+    private final class TaskFinalization {
+        /** Creates this ledger/runtime collaborator. / 创建此账本或运行时职责协作者。 */
+        private TaskFinalization() { }
+
+        /** Stable original platform summary category. / 稳定原平台摘要类别。 */
+        private LogRepository.Target summaryTarget;
+
+        /** Original host recovery summary category. / 原宿主恢复摘要类别。 */
+        private LogRepository.Target recoverySummaryTarget;
+
+        /** Shares the original outer commit across conclusion and archive. / 结论及归档共用原最外层提交。
+         * @param taskId original identity / 原身份
+         * @param conclusion original state transition / 原状态转换
+         * @return committed observation / 已提交观察
+         * @throws SQLException if original conclusion or archive is unconfirmed / 原结论或归档未确认时 */
+        private TaskSnapshot finalizeTransaction(UUID taskId, Query<Boolean> conclusion) throws SQLException {
+            var target = finalizationSupport.summaryTarget();
+            var recoveryTarget = finalizationSupport.recoverySummaryTarget(queries.snapshot(taskId));
+            Finalization[] original = {null};
+            try {
+                return locked(() -> {
+                    boolean ended = conclusion.run();
+                    var current = queries.snapshot(taskId);
+                    if (ended) {
+                        try (var c = connections.open()) {
+                            original[0] = finalizationSupport.finalization(c, current);
+                            finalizationSupport.archive(c, target, recoveryTarget, original[0]);
+                        }
+                    }
+                    return current;
+                });
+            } catch (SQLException failure) {
+                if (original[0] != null)
+                    throw new FinalizationException(original[0], failure);
+                throw failure;
+            }
+        }
+
+        /** Obtains the stable summary category outside the outer task transaction. / 在最外层任务事务之外取得稳定摘要类别。
+         * @return verified platform category / 已验证平台类别
+         * @throws SQLException if registration cannot be confirmed / 登记无法确认时 */
+        private LogRepository.Target summaryTarget() throws SQLException {
+            synchronized (TaskLedger.this) {
+                if (summaryTarget == null)
+                    summaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                            new LogCategory("platform_task", "platform_task", Optional.empty()));
+                return summaryTarget;
+            }
+        }
+
+        /** Registers rescue summaries only for the original host protocol before its task lock. / 仅为原宿主协议在任务锁之前登记救援摘要。
+         * @param task original task observation / 原任务观察
+         * @return original rescue target, or null for other tasks / 原救援目标，其他任务为空
+         * @throws SQLException if original registration cannot be confirmed / 无法确认原登记时 */
+        private LogRepository.Target recoverySummaryTarget(TaskSnapshot task) throws SQLException {
+            synchronized (TaskLedger.this) {
+                if (!BrowserRecoveryArchival.owns(task))
+                    return null;
+                if (recoverySummaryTarget == null)
+                    recoverySummaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                            new LogCategory("browser_recovery", "browser_recovery", Optional.empty()));
+                return recoverySummaryTarget;
+            }
+        }
+
+        /** Captures fixed identity and original diagnostics for an actually ended row. / 为实际结束行捕获固定身份及原诊断。
+         * @param c original transaction / 原事务
+         * @param snapshot original terminal observation / 原终态观察
+         * @return opaque original receipt / 不透明原凭据
+         * @throws SQLException if original metadata is inconsistent / 原元数据不一致时 */
+        private Finalization finalization(Connection c, TaskSnapshot snapshot) throws SQLException {
+            if (snapshot.state() != TaskState.ENDED || snapshot.outcome().isEmpty() || snapshot.endedAt().isEmpty()
+                    || !snapshot.blockers().isEmpty())
+                throw new SQLException("Task is not a fully drained known result");
+            try (var p = c.prepareStatement("SELECT archive_log_id,result_json FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, snapshot.id());
+                try (var r = p.executeQuery()) {
+                    if (!r.next())
+                        throw new SQLException("Original task disappeared before archival");
+                    try {
+                        return new Finalization(database.generation(), UUID.fromString(r.getString(1)), snapshot,
+                                Objects.requireNonNullElse(r.getString(2), "{}"));
+                    } catch (IllegalArgumentException invalid) {
+                        throw new SQLException("Invalid original task summary identity", invalid);
+                    }
+                }
+            }
+        }
+
+        /** Stores a bounded fixed summary and removes only the fully released original execution. / 保存有界固定摘要，并仅移除完全释放的原执行。
+         * @param c original serialized transaction / 原串行事务
+         * @param target original platform category / 原平台类别
+         * @param recoveryTarget rescue category if applicable / 适用时的救援类别
+         * @param original original concluded execution / 原已得出结论执行
+         * @throws SQLException if summary, retained ownership or cleanup fails / 摘要、保留归属或清理失败时 */
+        private void archive(Connection c, LogRepository.Target target, LogRepository.Target recoveryTarget,
+                Finalization original) throws SQLException {
+            var value = original.snapshot;
+            try (var p = c.prepareStatement(
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
+                p.setObject(1, value.id());
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    if (r.getLong(1) != 0)
+                        throw new SQLException("Original task resources are still held");
+                }
+            }
+            var outcome = value.outcome().orElseThrow();
+            String details = encode(Map.of("taskType", LogRecordCodec.redact(value.type()), "startedAt",
+                    value.startedAt().toEpochMilli(), "endedAt", value.endedAt().orElseThrow().toEpochMilli(),
+                    "progressText", LogRecordCodec.redact(value.progressText()), "result",
+                    LogRecordCodec.redact(original.evidence)));
+            LogRecordCodec.Record record;
+            try {
+                record = LogRecordCodec.createSummary(target, value.ownerVersion(),
+                        new LogEvent(outcome == Outcome.FAILED ? LogLevel.ERROR : LogLevel.INFO, "PLATFORM_TASK_" + outcome,
+                                "Platform task finished: " + outcome, Optional.of(details), Optional.of(value.id()),
+                                Optional.empty(), Optional.of(outcome)),
+                        original.archive, value.endedAt().orElseThrow().toEpochMilli(),
+                        value.ownerId().equals("@platform") ? null : value.ownerId());
+            } catch (IllegalArgumentException invalid) {
+                throw new SQLException("Original task summary cannot be encoded", invalid);
+            }
+            new LogRepository(database).store(c, target, List.of(record), 100);
+            BrowserRecoveryArchival.archive(database, c, recoveryTarget, original.archive, value);
+            try (var p = c
+                    .prepareStatement("DELETE FROM platform_task_resource WHERE task_id=? AND released_at IS NOT NULL")) {
+                p.setObject(1, value.id());
+                p.executeUpdate();
+            }
+            try (var p = c
+                    .prepareStatement("DELETE FROM platform_task WHERE task_id=? AND state='ENDED' AND archive_log_id=?")) {
+                p.setObject(1, value.id());
+                p.setString(2, original.archive.toString());
+                if (p.executeUpdate() != 1)
+                    throw new SQLException("Original task cleanup could not be confirmed");
+            }
+        }
+
+        /** Compares immutable original execution identity without consulting retained log history. / 比较不可变原执行身份，不查询保留日志历史。
+         * @param c original transaction / 原事务
+         * @param original original receipt / 原凭据
+         * @return whether the original execution still exists / 原执行是否仍存在
+         * @throws SQLException if an existing identity differs / 已有身份不同时 */
+        private boolean matches(Connection c, Finalization original) throws SQLException {
+            try (var p = c.prepareStatement(
+                    "SELECT owner_id,owner_version,task_type,started_at,archive_log_id,outcome,ended_at,result_json FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, original.snapshot.id());
+                try (var r = p.executeQuery()) {
+                    if (!r.next())
+                        return false;
+                    var value = original.snapshot;
+                    if (!value.ownerId().equals(r.getString(1)) || !value.ownerVersion().equals(r.getString(2))
+                            || !value.type().equals(r.getString(3)) || value.startedAt().toEpochMilli() != r.getLong(4)
+                            || !original.archive.toString().equals(r.getString(5)))
+                        throw new SQLException("Original task identity changed");
+                    if (r.getObject(7) != null && (!value.outcome().orElseThrow().name().equals(r.getString(6))
+                            || value.endedAt().orElseThrow().toEpochMilli() != r.getLong(7)
+                            || !original.evidence.equals(Objects.requireNonNullElse(r.getString(8), "{}"))))
+                        throw new SQLException("Original task conclusion changed");
+                    return true;
+                }
+            }
+        }
+
+        /**
+         * Completes logical claims and a known result in the same transaction. / 在同一事务中结束逻辑申请及已知结果。
+         * @param c scoped platform connection / 作用域平台连接
+         * @param taskId task with no explicit resources remaining / 已无显式资源残留的任务
+         * @param outcome known terminal outcome / 已知终态结果
+         * @throws SQLException if persistence fails / 持久化失败时
+         */
+        private void finish(Connection c, UUID taskId, Outcome outcome) throws SQLException {
+            long now = System.currentTimeMillis();
+            try (var p = c.prepareStatement(
+                    "UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND released_at IS NULL AND recovery_json=?")) {
+                p.setLong(1, now);
+                p.setObject(2, taskId);
+                p.setString(3, "{\"release\":\"TASK_END\"}");
+                p.executeUpdate();
+            }
+            try (var p = c.prepareStatement(
+                    "UPDATE platform_task SET state='ENDED',outcome=?,ended_at=CASE WHEN started_at>? THEN started_at ELSE ? END WHERE task_id=?")) {
+                p.setString(1, outcome.name());
+                p.setLong(2, now);
+                p.setLong(3, now);
+                p.setObject(4, taskId);
+                p.executeUpdate();
+            }
+        }
+
     }
 }

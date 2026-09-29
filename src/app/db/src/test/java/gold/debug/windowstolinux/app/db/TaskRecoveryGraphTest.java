@@ -79,17 +79,17 @@ class TaskRecoveryGraphTest {
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
             id = enqueue(ledger, graph);
-            assertEquals(Optional.of(graph), ledger.recoveryGraph(id));
+            assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(id));
             assertEquals(2, new ObjectMapper().readTree(metadata(db, id)).path("formatVersion").intValue());
             assertTrue(ledger.tryStart(id));
             assertEquals(2, new TaskLedgerTest().active(db, id));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
-            assertEquals(Optional.of(graph), ledger.recoveryGraph(id));
+            assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(id));
             assertThrows(SQLException.class, () -> ledger.tryStart(id));
             ledger.uncertain(id);
-            assertEquals(Optional.of(graph), ledger.recoveryGraph(id));
+            assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(id));
             assertTrue(ledger.complete(id, Outcome.FAILED, "{}", true));
         }
     }
@@ -134,9 +134,9 @@ class TaskRecoveryGraphTest {
             mutations.add(" ".repeat(1024 * 1024) + original);
             for (String value : mutations) {
                 metadata(db, id, value);
-                assertThrows(SQLException.class, () -> ledger.recoveryGraph(id));
+                assertThrows(SQLException.class, () -> ledger.queries().recoveryGraph(id));
                 assertThrows(SQLException.class, () -> ledger.tryStart(id));
-                assertEquals(TaskState.QUEUED, ledger.snapshot(id).state());
+                assertEquals(TaskState.QUEUED, ledger.queries().snapshot(id).state());
                 assertEquals(0, new TaskLedgerTest().active(db, id));
             }
             metadata(db, id, original);
@@ -165,7 +165,7 @@ class TaskRecoveryGraphTest {
                                 return Optional.of(graph);
                             }
                         }));
-                assertThrows(SQLException.class, () -> ledger.snapshot(id));
+                assertThrows(SQLException.class, () -> ledger.queries().snapshot(id));
                 assertEquals(0, new TaskLedgerTest().active(db, id));
             }
         }
@@ -177,7 +177,7 @@ class TaskRecoveryGraphTest {
             var ledger = new TaskLedger(db);
             var id = ledger.enqueue(UUID.randomUUID(), OWNER, VERSION, REQUEST,
                     List.of(new TaskResource("MOD", OWNER, OWNER, false)));
-            assertTrue(ledger.recoveryGraph(id).isEmpty());
+            assertTrue(ledger.queries().recoveryGraph(id).isEmpty());
             assertTrue(ledger.tryStart(id));
             assertEquals(1, new ObjectMapper().readTree(metadata(db, id)).path("formatVersion").intValue());
         }

@@ -56,7 +56,7 @@ class PlatformTaskRecoveryGraphTest {
             TaskHandle<TaskRecoveryGraph> queued = null;
             try {
                 state(first, TaskState.RUNNING);
-                var graph = ledger.recoveryGraph(first.id()).orElseThrow();
+                var graph = ledger.queries().recoveryGraph(first.id()).orElseThrow();
                 assertEquals(OWNER, graph.owner());
                 assertEquals(Set.of(OWNER, PROVIDER, LEAF), graph.releases().stream()
                         .map(TaskRecoveryGraph.Release::owner).collect(java.util.stream.Collectors.toSet()));
@@ -65,13 +65,13 @@ class PlatformTaskRecoveryGraphTest {
                 assertEquals("3".repeat(64), graph.release(LEAF).digest());
                 assertTrue(graph.release(OWNER).schema().isEmpty());
                 queued = tasks.submit(request("server"), context -> {
-                    var original = ledger.recoveryGraph(context.id()).orElseThrow();
+                    var original = ledger.queries().recoveryGraph(context.id()).orElseThrow();
                     observed.set(original);
                     return success(original);
                 });
                 assertEquals(TaskState.QUEUED, queued.snapshot().state());
                 assertNull(observed.get());
-                assertEquals(Optional.of(graph), ledger.recoveryGraph(queued.id()));
+                assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(queued.id()));
                 // Deliberate storage drift proves retained observations are not rebuilt from mutable current choices. / 刻意存储漂移证明保留观察不从可变当前选择重建。
                 sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'9.0.0','fixture-other',?,'1',?,'CLASS',1,'READY')",
                         PROVIDER, "9".repeat(64),
@@ -79,8 +79,8 @@ class PlatformTaskRecoveryGraphTest {
                 sql(db, "UPDATE mod_registry SET selected_version='9.0.0' WHERE mod_id=?", PROVIDER);
                 sql(db, "UPDATE mod_schema SET generation=? WHERE mod_id=?", UUID.randomUUID(), PROVIDER);
                 sql(db, "UPDATE mod_version SET content_sha256=? WHERE mod_id=?", "f".repeat(64), LEAF);
-                assertEquals(Optional.of(graph), ledger.recoveryGraph(first.id()));
-                assertEquals(Optional.of(graph), ledger.recoveryGraph(queued.id()));
+                assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(first.id()));
+                assertEquals(Optional.of(graph), ledger.queries().recoveryGraph(queued.id()));
                 assertThrows(ApiException.class, () -> tasks.submit(request(), context -> {
                     throw new AssertionError();
                 }));
@@ -134,7 +134,7 @@ class PlatformTaskRecoveryGraphTest {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             runtime.started();
             var task = runtime.tasks().bind("@platform", runtime.version(), false).submit(request(), context -> {
-                assertTrue(new TaskLedger(runtime.persistence().database()).recoveryGraph(context.id()).isEmpty());
+                assertTrue(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(context.id()).isEmpty());
                 return success(null);
             });
             assertEquals(Outcome.SUCCEEDED, task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());

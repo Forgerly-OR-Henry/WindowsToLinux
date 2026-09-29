@@ -345,7 +345,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             schema = context.db().identity();
             var probe = context.tasks().submit(new TaskRequest(DeploymentSecretProvisionFlow.TASK_TYPE,
                     "Capture original secret task graph", List.of(SERVER.id()), true), task -> {
-                        graph.set(new TaskLedger(runtime.persistence().database()).recoveryGraph(task.id())
+                        graph.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
                                 .orElseThrow());
                         var journal = DeploymentSecretProvisionJournal.begin(context.tasks(), task, SERVER, REVISION,
                                 PURPOSE, CREATED);

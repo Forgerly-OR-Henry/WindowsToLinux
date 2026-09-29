@@ -46,7 +46,7 @@ class TaskLedgerTest {
             var combined = queue(ledger, "two", "B", "A");
             assertFalse(ledger.tryStart(combined));
             assertEquals(0, active(db, combined));
-            assertEquals(TaskState.QUEUED, ledger.snapshot(combined).state());
+            assertEquals(TaskState.QUEUED, ledger.queries().snapshot(combined).state());
             var independent = queue(ledger, "three", "B");
             assertTrue(ledger.tryStart(independent));
             assertTrue(ledger.complete(first, Outcome.SUCCEEDED, "{}", false));
@@ -55,7 +55,7 @@ class TaskLedgerTest {
             assertTrue(ledger.tryStart(combined));
             assertEquals(3, active(db, combined));
             assertTrue(ledger.complete(combined, Outcome.SUCCEEDED, "{}", false));
-            assertEquals(List.of(), ledger.unfinished());
+            assertEquals(List.of(), ledger.queries().unfinished());
         }
     }
 
@@ -90,16 +90,16 @@ class TaskLedgerTest {
             var lease = ledger.retain(first, new TaskResource("CONNECTION", "physical-1", "one", false));
             var waiting = queue(ledger, "two", "A");
             assertFalse(ledger.complete(first, Outcome.SUCCEEDED, "{\"operation\":\"observed\"}", false));
-            assertEquals(TaskState.FINISHING, ledger.snapshot(first).state());
-            assertTrue(ledger.snapshot(first).outcome().isEmpty());
-            assertEquals(1, ledger.snapshot(first).blockers().size());
+            assertEquals(TaskState.FINISHING, ledger.queries().snapshot(first).state());
+            assertTrue(ledger.queries().snapshot(first).outcome().isEmpty());
+            assertEquals(1, ledger.queries().snapshot(first).blockers().size());
             assertFalse(ledger.tryStart(waiting));
             assertThrows(SQLException.class, () -> ledger.release(waiting, lease));
             assertEquals(3, active(db, first));
             ledger.release(first, lease);
             ledger.release(first, lease);
             assertTrue(ledger.complete(first, Outcome.SUCCEEDED, "{}", false));
-            assertTrue(ledger.snapshot(first).endedAt().isPresent());
+            assertTrue(ledger.queries().snapshot(first).endedAt().isPresent());
             assertEquals(0, active(db, first));
             assertTrue(ledger.tryStart(waiting));
         }
@@ -121,7 +121,7 @@ class TaskLedgerTest {
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             assertEquals(generation, db.generation());
             var ledger = new TaskLedger(db);
-            assertEquals(TaskState.UNKNOWN, ledger.snapshot(unknown).state());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(unknown).state());
             assertThrows(SQLException.class, () -> ledger.tryStart(unknown));
             var waiting = queue(ledger, "two", "A");
             assertFalse(ledger.tryStart(waiting));
@@ -137,11 +137,11 @@ class TaskLedgerTest {
             var running = queue(ledger, "one", "A");
             assertTrue(ledger.tryStart(running));
             assertFalse(ledger.cancel(running));
-            assertEquals(TaskState.CANCEL_REQUESTED, ledger.snapshot(running).state());
+            assertEquals(TaskState.CANCEL_REQUESTED, ledger.queries().snapshot(running).state());
             assertEquals(2, active(db, running));
             var queued = queue(ledger, "two", "A");
             assertTrue(ledger.cancel(queued));
-            assertEquals(Outcome.CANCELLED, ledger.snapshot(queued).outcome().orElseThrow());
+            assertEquals(Outcome.CANCELLED, ledger.queries().snapshot(queued).outcome().orElseThrow());
             assertFalse(ledger.tryStart(queued));
             assertEquals(0, active(db, queued));
             assertTrue(ledger.complete(running, Outcome.CANCELLED, "{}", false));
@@ -156,7 +156,7 @@ class TaskLedgerTest {
             var request = new TaskRequest("fixture", "fixture", List.of("A", "B"), true);
             assertThrows(SQLException.class, () -> ledger.enqueue(UUID.randomUUID(), "one", "1.0.0", request, List
                     .of(new TaskResource("MOD", "one", "one", false), new TaskResource("SERVER", "A", "one", true))));
-            assertTrue(ledger.unfinished().isEmpty());
+            assertTrue(ledger.queries().unfinished().isEmpty());
             var task = queue(ledger, "one", "A");
             assertTrue(ledger.tryStart(task));
             assertThrows(SQLException.class, () -> ledger.retain(task, new TaskResource("SERVER", "B", "one", true)));
