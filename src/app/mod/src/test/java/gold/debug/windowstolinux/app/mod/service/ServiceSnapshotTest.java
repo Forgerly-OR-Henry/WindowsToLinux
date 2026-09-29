@@ -11,6 +11,9 @@ class ServiceSnapshotTest {
     public record Snapshot(List<String> values) {
     }
 
+    public record BinarySnapshot(byte[] runtime) {
+    }
+
     @Test
     void copiesNestedRecordsAndCollectionsBeforeOriginalMutation() throws Exception {
         var values = new ArrayList<>(List.of("before"));
@@ -31,5 +34,25 @@ class ServiceSnapshotTest {
             assertThrows(IllegalArgumentException.class, () -> ServiceSnapshot.copy(value, type -> true));
         assertThrows(IllegalArgumentException.class,
                 () -> ServiceSnapshot.copy(new Snapshot(List.of()), type -> false));
+    }
+
+    @Test
+    void copiesOneFullRuntimePayloadAndBoundsAggregateBinaryBytes() throws Exception {
+        byte[] original = new byte[16 * 1024 * 1024];
+        original[0] = 7;
+        var copied = (BinarySnapshot) ServiceSnapshot.copy(new BinarySnapshot(original),
+                type -> type == BinarySnapshot.class);
+        original[0] = 3;
+        assertEquals(7, copied.runtime()[0]);
+        assertNotSame(original, copied.runtime());
+        var returned = (BinarySnapshot) ServiceSnapshot.copy(copied, type -> type == BinarySnapshot.class);
+        copied.runtime()[0] = 5;
+        assertEquals(7, returned.runtime()[0]);
+        assertNotSame(copied.runtime(), returned.runtime());
+        byte[] shared = new byte[8 * 1024 * 1024 + 1];
+        assertThrows(IllegalArgumentException.class,
+                () -> ServiceSnapshot.copy(List.of(new BinarySnapshot(shared), new BinarySnapshot(shared)),
+                        type -> type == BinarySnapshot.class));
+        assertThrows(IllegalArgumentException.class, () -> ServiceSnapshot.copy(new char[1], type -> true));
     }
 }

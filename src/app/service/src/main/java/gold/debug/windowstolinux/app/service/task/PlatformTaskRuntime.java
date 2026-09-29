@@ -1252,6 +1252,22 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
+        /** Reads only the authentic task passed through the current owner or delegated callback. / 仅读取当前所属或被委托回调传入的真实任务。
+         * @param task original host-created context / 宿主创建的原上下文
+         * @return authenticated original root identity / 已认证的原根身份
+         * @throws ApiException if binding, context or callback scope is invalid / 绑定、上下文或回调作用域无效时 */
+        @Override
+        public TaskSnapshot inspect(TaskContext task) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                            "The owning Mod activation has closed");
+                return requireCleanup(task, owner, version);
+            }
+        }
+
         /** Observes original explicit leases without releasing them. / 只观察原任务显式占用，不执行释放。
          * @param task authentic running or reconciling task / 真实执行或核对任务
          * @return whether the finalization predicate sees no explicit lease / 收尾判据是否未见显式占用

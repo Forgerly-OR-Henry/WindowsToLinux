@@ -196,6 +196,58 @@ class PlatformAiServiceTest {
     }
 
     @Test
+    void frozenRouteRejectsOutputLimitChangeBeforeHttpFallback() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "first", "/reject", AiCapabilityType.TEXT, 128);
+            model(runtime, fixture, "second", "/chat", AiCapabilityType.TEXT, 128);
+            route(runtime, AiPurposeType.DEPLOYMENT, "first", "second");
+            fixture.handler.set(exchange -> {
+                try {
+                    runtime.persistence().aiProfiles().saveOutputLimit("second", 64);
+                } catch (java.sql.SQLException failure) {
+                    throw new IOException(failure);
+                }
+                Fixture.reply(exchange, 429, RESPONSE);
+            });
+            var ai = runtime.ai(OWNER, VERSION);
+            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                String frozen = ai.configurationRevision(AiPurpose.LANGUAGE, task);
+                assertEquals("AI_CONFIGURATION_CHANGED",
+                        assertThrows(ApiException.class, () -> ai.call(message(AiPurpose.LANGUAGE), frozen, task))
+                                .problem().eventCode());
+                assertNotEquals(frozen, ai.configurationRevision(AiPurpose.LANGUAGE, task));
+                return success(null);
+            }));
+            assertEquals(1, fixture.calls.get());
+            assertEquals("/reject", fixture.requests.take().path());
+        }
+    }
+
+    @Test
+    void frozenRevisionIncludesDisabledOrderedPurposeMembers() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "first", "/chat", AiCapabilityType.TEXT, 128);
+            model(runtime, fixture, "disabled", "/unused", AiCapabilityType.TEXT, 128);
+            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
+                    List.of(new AiPurposeAssignment("first", true), new AiPurposeAssignment("disabled", false)));
+            var ai = runtime.ai(OWNER, VERSION);
+            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                String before = ai.configurationRevision(AiPurpose.LANGUAGE, task);
+                runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
+                        List.of(new AiPurposeAssignment("disabled", false), new AiPurposeAssignment("first", true)));
+                assertNotEquals(before, ai.configurationRevision(AiPurpose.LANGUAGE, task));
+                assertEquals("AI_CONFIGURATION_CHANGED",
+                        assertThrows(ApiException.class, () -> ai.call(message(AiPurpose.LANGUAGE), before, task))
+                                .problem().eventCode());
+                return success(null);
+            }));
+            assertEquals(0, fixture.calls.get());
+        }
+    }
+
+    @Test
     void malformedSuccessIsReportedWithoutReplayingTheRequestOnAnotherModel() throws Exception {
         try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
