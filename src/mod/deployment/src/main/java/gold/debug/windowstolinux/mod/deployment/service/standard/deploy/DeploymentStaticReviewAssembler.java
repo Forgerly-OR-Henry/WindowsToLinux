@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer.SnapshotAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentDatabaseReviewModeType;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticInputParser;
@@ -69,7 +70,7 @@ public final class DeploymentStaticReviewAssembler {
      * @return typed plan or refusal / 类型化计划或拒绝 */
     public OperationResult<ReviewedDeploymentPlan> plan(ServerRef server, DeploymentSourceMaterial material,
             DeploymentSourceArchive archive, SnapshotAssessment<DeploymentProjectAssessment> analysis,
-            DeploymentStaticReviewAnswers answers, DeploymentSqlitePreparation.Prepared prepared, TaskContext task) {
+            DeploymentStaticReviewAnswers answers, DeploymentPreparedDatabase prepared, TaskContext task) {
         return plan(server, material, archive, analysis, answers, Optional.of(prepared), task);
     }
 
@@ -84,8 +85,7 @@ public final class DeploymentStaticReviewAssembler {
      * @return typed plan or refusal / 类型化计划或拒绝 */
     private OperationResult<ReviewedDeploymentPlan> plan(ServerRef server, DeploymentSourceMaterial material,
             DeploymentSourceArchive archive, SnapshotAssessment<DeploymentProjectAssessment> analysis,
-            DeploymentStaticReviewAnswers answers, Optional<DeploymentSqlitePreparation.Prepared> prepared,
-            TaskContext task) {
+            DeploymentStaticReviewAnswers answers, Optional<DeploymentPreparedDatabase> prepared, TaskContext task) {
         Objects.requireNonNull(server);
         Objects.requireNonNull(material);
         Objects.requireNonNull(archive);
@@ -162,7 +162,7 @@ public final class DeploymentStaticReviewAssembler {
             DeploymentSourceMaterial material, Map<String, DeploymentSourceArchive> archives,
             SnapshotAssessment<MultiComponentProjectAssessment> analysis,
             Map<String, DeploymentStaticReviewAnswers> answers,
-            Map<String, DeploymentSqlitePreparation.Prepared> databases, TaskContext task) {
+            Map<String, ? extends DeploymentPreparedDatabase> databases, TaskContext task) {
         Objects.requireNonNull(server);
         Objects.requireNonNull(material);
         archives = Map.copyOf(archives);
@@ -255,8 +255,7 @@ public final class DeploymentStaticReviewAssembler {
      * @return complete reviewed request / 完整已审阅请求 */
     private ReviewedDeploymentRequest request(ServerRef server, DeploymentProjectFacts facts,
             DeploymentRuntimeAssessment suggestion, DeploymentSourceMaterial material, DeploymentSourceArchive archive,
-            String host, DeploymentStaticReviewAnswers answers,
-            Optional<DeploymentSqlitePreparation.Prepared> prepared) {
+            String host, DeploymentStaticReviewAnswers answers, Optional<DeploymentPreparedDatabase> prepared) {
         Map<String, String> values = new LinkedHashMap<>(
                 runtime.defaults(facts.projectType(), suggestion, facts.sourceRoot()));
         values.putAll(answers.values());
@@ -268,7 +267,9 @@ public final class DeploymentStaticReviewAssembler {
         prepared.ifPresent(value -> entries.addAll(value.configuration()));
         var configuration = DeploymentConfigurationSnapshot.create(facts.applicationId(),
                 answers.configurationRevision(), "1", answers.consent().confirmedAt(), entries);
-        var secrets = DeploymentConfigurationInput.secrets(values.getOrDefault("secrets", ""));
+        var secrets = new java.util.ArrayList<>(
+                DeploymentConfigurationInput.secrets(values.getOrDefault("secrets", "")));
+        prepared.ifPresent(value -> secrets.addAll(value.secrets()));
         var mode = DeploymentDatabaseReviewModeType.valueOf(values.getOrDefault("databaseMode", "UNREVIEWED"));
         var databases = prepared.filter(value -> !value.bindings().isEmpty()).map(value -> {
             if (mode != DeploymentDatabaseReviewModeType.NONE || !values.getOrDefault("databaseDetails", "").isBlank())

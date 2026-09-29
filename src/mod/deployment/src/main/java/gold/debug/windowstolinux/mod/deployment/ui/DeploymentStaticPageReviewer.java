@@ -15,11 +15,15 @@ import javax.swing.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Inventory;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 
 /** Translates one current owner-view decision into typed static review values. / 将当前所属视图的一次决定转换为类型化静态审阅值。 */
@@ -106,6 +110,160 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         if (!page.approve(view, panel, page.text("sqliteFirstInitialization"), task))
             return cancelled();
         return success(Boolean.TRUE);
+    }
+
+    /** Selects an observed running instance by its exact helper identity. / 按 helper 精确身份选择已观察运行实例。
+     * @param server selected server / 选中服务器
+     * @param componentId frozen component / 冻结组件
+     * @param database completed declaration / 已补齐声明
+     * @param inventory exact helper inventory / 精确 helper 库存
+     * @param task original task / 原任务
+     * @return selected exact ID or refusal / 选中精确 ID 或拒绝 */
+    @Override
+    public OperationResult<String> choose(ServerRef server, String componentId, DatabaseRequirement database,
+            Inventory inventory, TaskContext task) {
+        var selected = page.onEdt(() -> {
+            var values = inventory.instances().stream().map(Instance::id).toArray(String[]::new);
+            var box = new JComboBox<>(values);
+            var panel = new JPanel(new GridLayout(0, 1));
+            panel.add(new JLabel(componentId + " / " + database.id() + " / " + database.engine()));
+            for (var instance : inventory.instances())
+                panel.add(new JLabel(instance.id() + " / " + instance.version() + " / " + instance.service() + " / "
+                        + (instance.running()
+                                ? page.text("database.nativeRunning")
+                                : page.text("database.nativeStopped"))));
+            panel.add(box);
+            return new java.util.AbstractMap.SimpleImmutableEntry<>(panel, box);
+        });
+        if (!page.approve(view, selected.getKey(), page.text("database.nativeChoose"), task))
+            return cancelled();
+        return success(page.onEdt(() -> (String) selected.getValue().getSelectedItem()));
+    }
+
+    /** Confirms the exact package before installing an absent database family. / 缺失数据库族安装前确认精确软件包。
+     * @param server admitted server / 已准入服务器
+     * @param database source requirement / 来源要求
+     * @param candidate observed package / 已观察软件包
+     * @param task original task / 原任务
+     * @return explicit decision / 明确决定 */
+    @Override
+    public OperationResult<Boolean> install(ServerRef server, DatabaseRequirement database, Candidate candidate,
+            TaskContext task) {
+        var panel = page.onEdt(() -> {
+            var rows = new JPanel(new GridLayout(0, 1));
+            rows.add(new JLabel(page.text("database.nativeInstallWarning")));
+            rows.add(new JLabel(server.id() + " / " + database.engine() + " / " + database.id()));
+            rows.add(new JLabel(
+                    candidate.name() + " / " + candidate.packageVersion() + " / " + candidate.engineVersion()));
+            return rows;
+        });
+        return page.approve(view, panel, page.text("database.nativeInstallTitle"), task)
+                ? success(Boolean.TRUE)
+                : cancelled();
+    }
+
+    /** Confirms backup and downtime before exact package replacement. / 精确替换软件包前确认自行备份与停机。
+     * @param server admitted server / 已准入服务器
+     * @param previous selected instance / 选中实例
+     * @param candidate exact candidate / 精确候选
+     * @param task original task / 原任务
+     * @return explicit decision / 明确决定 */
+    @Override
+    public OperationResult<Boolean> replacement(ServerRef server, Instance previous, Candidate candidate,
+            TaskContext task) {
+        var panel = page.onEdt(() -> {
+            var rows = new JPanel(new GridLayout(0, 1));
+            rows.add(new JLabel(page.text("database.nativeReplacementWarning")));
+            rows.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
+            rows.add(new JLabel(previous.version() + " → " + candidate.engineVersion()));
+            rows.add(new JLabel(candidate.name() + " / " + candidate.packageVersion()));
+            return rows;
+        });
+        return page.approve(view, panel, page.text("database.nativeReplacementTitle"), task)
+                ? success(Boolean.TRUE)
+                : cancelled();
+    }
+
+    /** Confirms user-completed restoration after package replacement. / 软件包替换后确认用户已完成人工恢复。
+     * @param server admitted server / 已准入服务器
+     * @param instance newly observed instance / 新观察实例
+     * @param task original task / 原任务
+     * @return explicit decision / 明确决定 */
+    @Override
+    public OperationResult<Boolean> restored(ServerRef server, Instance instance, TaskContext task) {
+        var panel = page.onEdt(() -> {
+            var rows = new JPanel(new GridLayout(0, 1));
+            rows.add(new JLabel(page.text("database.nativeRestoreWarning")));
+            rows.add(new JLabel(server.id() + " / " + instance.engine() + " / " + instance.id()));
+            rows.add(new JLabel(instance.version() + " / " + instance.service()));
+            return rows;
+        });
+        return page.approve(view, panel, page.text("database.nativeRestoreTitle"), task)
+                ? success(Boolean.TRUE)
+                : cancelled();
+    }
+
+    /** Requests a short-lived administrator password after the helper actually reports AUTH_REQUIRED. / helper 实际报告 AUTH_REQUIRED 后请求短期管理员密码。
+     * @param server selected server / 选中服务器
+     * @param instance exact instance / 精确实例
+     * @param task original task / 原任务
+     * @return caller-owned UTF-8 bytes or cancellation / 调用方所属 UTF-8 字节或取消
+     * @throws Exception if the current view fails / 当前视图失败时 */
+    @Override
+    public OperationResult<byte[]> administratorPassword(ServerRef server, Instance instance, TaskContext task)
+            throws Exception {
+        try {
+            return success(
+                    DeploymentStaticPasswordInput.request(page, view, task, page.text("database.nativeAdminTitle"),
+                            instance.id() + " / " + page.text("database.nativeAdminPassword"), true, () -> {
+                            }));
+        } catch (CancellationException declined) {
+            return cancelled();
+        }
+    }
+
+    /** Requests a short-lived application password without converting it to String. / 不转换为 String 地请求短期应用密码。
+     * @param server selected server / 选中服务器
+     * @param database completed declaration / 已补齐声明
+     * @param task original task / 原任务
+     * @return caller-owned UTF-8 bytes or cancellation / 调用方所属 UTF-8 字节或取消
+     * @throws Exception if the current view fails / 当前视图失败时 */
+    @Override
+    public OperationResult<byte[]> applicationPassword(ServerRef server, DatabaseRequirement database, TaskContext task)
+            throws Exception {
+        try {
+            return success(DeploymentStaticPasswordInput.request(page, view, task,
+                    page.text("database.nativeApplicationTitle"),
+                    database.id() + " / " + page.text("database.nativeApplicationPassword"), false, () -> {
+                    }));
+        } catch (CancellationException declined) {
+            return cancelled();
+        }
+    }
+
+    /** Requires a separate existing-schema decision bound to the component digest. / 要求绑定组件摘要的独立已有结构决定。
+     * @param server selected server / 选中服务器
+     * @param componentId frozen component / 冻结组件
+     * @param database completed declaration / 已补齐声明
+     * @param sourceDigest actual component inspection digest / 实际组件检查摘要
+     * @param task original task / 原任务
+     * @return explicit affirmative decision or cancellation / 显式肯定决定或取消 */
+    @Override
+    public OperationResult<Boolean> existingSchema(ServerRef server, String componentId, DatabaseRequirement database,
+            String sourceDigest, TaskContext task) {
+        var panel = page.onEdt(() -> {
+            var rows = new JPanel(new GridLayout(0, 1));
+            rows.add(new JLabel(page.text("database.nativeExistingSchema")));
+            rows.add(new JLabel(server.id() + " / " + componentId + " / " + database.id() + " / " + database.engine()
+                    + " / " + database.database()));
+            rows.add(new JLabel(page.text("database.inspectionDigest") + ": " + sourceDigest));
+            rows.add(new JLabel(
+                    page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
+            return rows;
+        });
+        return page.approve(view, panel, page.text("database.nativeExistingSchema"), task)
+                ? success(Boolean.TRUE)
+                : cancelled();
     }
 
     /** Bounded non-secret database fields on the EDT. / EDT 上有界非秘密数据库字段。 */
@@ -353,8 +511,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return current explicit confirmation / 当前明确确认 */
     @Override
     public OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-            Map<String, DeploymentStaticWorkflow.Answers> answers,
-            Map<String, DeploymentSqlitePreparation.Prepared> databases,
+            Map<String, DeploymentStaticWorkflow.Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
             Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
         var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, databases, git));
         if (!page.approve(view, panel, page.text("finalConfirm"), task, true))
@@ -373,8 +530,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return confirmation rows / 确认行 */
     private static JPanel confirmation(DeploymentStaticPage page, ServerRef server, String sourceSha256,
             Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
-            Map<String, DeploymentSqlitePreparation.Prepared> databases,
-            Optional<DeploymentStaticWorkflow.GitReview> git) {
+            Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git) {
         var panel = new JPanel(new GridLayout(0, 1));
         panel.add(new JLabel(page.text("server") + ": " + server.id()));
         git.ifPresent(identity -> panel.add(new JLabel(page.text("gitSource") + ": " + identity.remote() + " / "
@@ -394,12 +550,19 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             var database = databases.get(entry.getKey());
             if (database != null)
                 database.bindings().forEach(binding -> {
-                    var sqlite = (DeploymentDatabaseConnection.Sqlite) binding.connection();
-                    panel.add(new JLabel("  " + page.text("database.sqliteBinding") + ": " + binding.databaseId()
-                            + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
-                    panel.add(new JLabel("  " + page.text("database.seed") + ": " + sqlite.seedFile()));
-                    panel.add(new JLabel("  " + page.text("database.initialize") + ": "
-                            + String.join(", ", sqlite.initializationFiles())));
+                    if (binding.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
+                        panel.add(new JLabel("  " + page.text("database.sqliteBinding") + ": " + binding.databaseId()
+                                + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
+                        panel.add(new JLabel("  " + page.text("database.seed") + ": " + sqlite.seedFile()));
+                        panel.add(new JLabel("  " + page.text("database.initialize") + ": "
+                                + String.join(", ", sqlite.initializationFiles())));
+                    } else if (binding.connection() instanceof DeploymentDatabaseConnection.Server nativeDatabase) {
+                        panel.add(new JLabel("  " + binding.databaseId() + ": " + nativeDatabase.engine() + " / "
+                                + nativeDatabase.host() + ":" + nativeDatabase.port() + " / "
+                                + nativeDatabase.database() + " / " + nativeDatabase.username()));
+                        panel.add(new JLabel("  " + nativeDatabase.passwordReference().identifier() + ":"
+                                + nativeDatabase.passwordReference().revision()));
+                    }
                     panel.add(new JLabel(
                             "  " + page.text("database.planned") + ": " + database.schemaReview().isPresent()));
                 });

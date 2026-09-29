@@ -29,8 +29,11 @@ import gold.debug.windowstolinux.appapi.task.TaskState;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
@@ -42,6 +45,55 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Checks the actual lazily registered Swing view, lock/close lifetime and optional visual evidence. / 检查真实惰性登记Swing视图、锁定关闭寿命及可选视觉证据。 */
 class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
+    /** Shows each actual native package and restoration decision on the owner EDT. / 在所属 EDT 展示各原生软件包及恢复决定。
+     * @throws Exception if the original task or modal handoff fails / 原任务或模态交接失败时 */
+    @Test
+    void nativeInstallReplacementAndRestoreUseActualOwnerModals() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            SwingUtilities
+                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+            var server = new gold.debug.windowstolinux.appapi.server.ServerRef("native-modal-server");
+            var previous = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "15.6", 5432,
+                    "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), false);
+            var installed = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "16.6", 5432,
+                    "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), true);
+            var candidate = new Candidate("postgresql-16", "16.6-1", "16.6");
+            var database = new gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement(
+                    "main", DeploymentDatabaseEngineType.POSTGRESQL, ">=16", "sampledb", "sampleuser", "DB",
+                    "DB_PASSWORD", List.of(), false, "fixture");
+            var handle = context.tasks().submit(new TaskRequest("native-modal-test", "Native review", List.of(), true),
+                    task -> {
+                        var reviewer = new DeploymentStaticPageReviewer(page, page.viewGeneration());
+                        for (var result : List.of(reviewer.install(server, database, candidate, task),
+                                reviewer.replacement(server, previous, candidate, task),
+                                reviewer.restored(server, installed, task)))
+                            if (result.outcome() != Outcome.SUCCEEDED)
+                                return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
+            var install = awaitDialog("安装数据库软件包");
+            captureDialog(install, "native-install");
+            acceptDialog(install);
+            var replacement = awaitDialog("替换数据库软件包");
+            captureDialog(replacement, "native-replacement");
+            acceptDialog(replacement);
+            var restoration = awaitDialog("确认人工恢复数据库");
+            captureDialog(restoration, "native-restoration");
+            acceptDialog(restoration);
+            assertEquals(Outcome.SUCCEEDED,
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            SwingUtilities.invokeAndWait(page::close);
+        }
+    }
+
     /** A confirmed secret task completes after its owning page closes. / 已确认秘密任务在所属页关闭后继续完成。
      * @throws Exception if original task handoff fails / 原任务交接失败时 */
     @Test

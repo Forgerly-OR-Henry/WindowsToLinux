@@ -24,7 +24,9 @@ import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -110,6 +112,57 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         }
     }
 
+    /** Reconciles one indexed native operation and saved secret through the registered original task. / 经已登记原任务核对一项索引原生操作与已存秘密。
+     * @throws Exception if isolated task, protected storage or real SSH recovery fails / 隔离任务、保护存储或真实 SSH 恢复失败时 */
+    @org.junit.jupiter.api.Test
+    void registeredRecoverySettlesIndexedDatabaseAndSecretWithoutReplay() throws Exception {
+        remote = Files.createDirectory(root.resolve("native-remote"));
+        try (var ssh = new LoopbackSshServer(root, server -> {
+            server.setPasswordAuthenticator(
+                    (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
+            server.setCommandFactory((channel, command) -> new FramedReply());
+        })) {
+            var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
+                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--indexed", root.toString(),
+                    Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
+            try {
+                assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original indexed native DB child timed out");
+                String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                assertEquals(0, child.exitValue(), output);
+                assertTrue(output.contains("ORIGINAL_INDEXED_NATIVE_DB_UNKNOWN"), output);
+            } finally {
+                if (child.isAlive()) {
+                    child.destroyForcibly();
+                    assertTrue(child.waitFor(5, TimeUnit.SECONDS));
+                }
+            }
+            try (var runtime = open()) {
+                var report = runtime.startDevelopmentMods(workspace(), pages());
+                assertTrue(report.running().isEmpty());
+                assertEquals(List.of("MOD_RECOVERY_READY"),
+                        report.problems().stream().map(Problem::eventCode).toList());
+                var original = new TaskLedger(runtime.persistence().database()).unfinished().getFirst();
+                var address = new DeploymentDatabasePlanJournal.Entry("service", "main").key();
+                assertEquals(1, checkpoint(runtime, original, DeploymentDatabasePlanJournal.KEY));
+                assertEquals(1, checkpoint(runtime, original, DeploymentNativeDatabaseJournal.KEY + "." + address));
+                assertEquals(TaskState.UNKNOWN,
+                        runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                statusStage.set(1);
+                assertEquals(TaskState.UNKNOWN,
+                        runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                statusStage.set(2);
+                var settled = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
+                assertEquals(TaskState.ENDED, settled.state(), settled.toString());
+                assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
+                assertEquals(3, statusCalls.get());
+                assertEquals(0, replayCalls.get());
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                runtime.releaseModRecovery();
+            }
+        }
+    }
+
     /** Recovers the original helper installation through the registered Mod and actual SSH status channel. / 经正式 Mod 与实际 SSH 状态通道恢复原 helper 安装。
      * @throws Exception if original child, receipt or registered recovery fails / 原子进程、回执或正式恢复失败时 */
     @org.junit.jupiter.api.Test
@@ -165,6 +218,19 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
     /** Runs an isolated original UNKNOWN task; this process intentionally exits instead of falsely closing held resources. / 隔离运行原 UNKNOWN 任务；本进程刻意退出，不假称已释放占用资源。
      * @param args exact child marker, data root and loopback port / 精确子进程标记、数据根及回环端口 */
     public static void main(String[] args) {
+        if (args.length == 3 && "--indexed".equals(args[0])) {
+            try {
+                var fixture = new DeploymentNativeDatabaseRecoveryRestartTest();
+                fixture.root = Path.of(args[1]);
+                fixture.remote = fixture.root.resolve("native-remote");
+                fixture.originalIndexed(Integer.parseInt(args[2]));
+                System.out.println("ORIGINAL_INDEXED_NATIVE_DB_UNKNOWN");
+                System.exit(0);
+            } catch (Throwable failure) {
+                failure.printStackTrace();
+                System.exit(1);
+            }
+        }
         if (args.length == 3 && "--bootstrap".equals(args[0])) {
             try {
                 var fixture = new DeploymentNativeDatabaseRecoveryRestartTest();
@@ -267,6 +333,68 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             Thread.sleep(50);
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
         assertEquals(1, checkpoint(runtime, handle.id()));
+    }
+
+    /** Starts a durable indexed operation after saving one exact immutable secret in the same original task. / 同一原任务保存精确不可变秘密后发起持久索引操作。
+     * @param port actual controlled SSH port / 真实受控 SSH 端口
+     * @throws Exception if original state cannot be retained / 原状态无法保留时 */
+    private void originalIndexed(int port) throws Exception {
+        enable();
+        var runtime = open();
+        start(runtime, true);
+        var server = new ServerRef("native-database-server");
+        runtime.servers().saveServerProfile(
+                ServerProfile.fromStored(
+                        new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
+                "fixture-password".toCharArray());
+        var context = runtime.modContexts().get(OWNER).context();
+        var session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("close"))
+                        return null;
+                    var request = (CommandRequest) arguments[0];
+                    if (request.script().contains("native-db start")) {
+                        peer(remote, "start", request.stdin());
+                        return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
+                                        "Original helper reply was not observed", Map.of(), Optional.empty())));
+                    }
+                    return reply(
+                            "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                });
+        var entry = new DeploymentDatabasePlanJournal.Entry("service", "main");
+        var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+                "Original indexed native database", List.of(server.id()), true), task -> {
+                    DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
+                    var plan = DeploymentDatabasePlanJournal.begin(context.tasks(), task, server, "a".repeat(64),
+                            List.of(entry));
+                    byte[] password = "controlled-password".getBytes(StandardCharsets.UTF_8);
+                    try {
+                        var saved = new DeploymentSecretProvisionFlow(context).saveBorrowedWithinTask(task, server,
+                                "deployment-secret-revision." + entry.key(),
+                                new DeploymentSecretReference("controlled-database", 1), "deployment-database",
+                                java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), password);
+                        assertEquals(Outcome.SUCCEEDED, saved.outcome(), saved.toString());
+                    } finally {
+                        Arrays.fill(password, (byte) 0);
+                    }
+                    return new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
+                            .perform(context.tasks(), plan, entry, "start",
+                                    Map.of("engine", "POSTGRESQL", "instanceId", "postgresql-16", "fingerprint",
+                                            "a".repeat(64)),
+                                    Map.of(), "service/main")
+                            .outcome() == Outcome.UNKNOWN
+                                    ? new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                                            Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
+                                                    "Original helper reply was not observed", Map.of(),
+                                                    Optional.empty())))
+                                    : new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.empty());
+                });
+        for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
+            Thread.sleep(50);
+        assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentDatabasePlanJournal.KEY));
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentNativeDatabaseJournal.KEY + "." + entry.key()));
     }
 
     @Override

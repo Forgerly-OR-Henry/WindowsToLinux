@@ -47,6 +47,33 @@ public final class DeploymentSecretRepository {
         }
     }
 
+    /** Reads the latest immutable revision for one exact business identifier and purpose. / 仅读取一个精确业务标识与用途的最新不可变修订。
+     * @param task original author task / 原作者任务
+     * @param identifier exact business identifier / 精确业务标识
+     * @param purpose exact recorded purpose / 精确已记录用途
+     * @return latest exact metadata or absence / 最新精确元数据或不存在
+     * @throws SQLException if stored metadata is invalid / 已存元数据无效时
+     * @throws ApiException if task access fails / 任务访问失败时 */
+    public Optional<DeploymentSecretRevision> latestRevision(TaskContext task, String identifier, String purpose)
+            throws SQLException, ApiException {
+        new DeploymentSecretReference(identifier, 1);
+        if (purpose == null || purpose.isBlank() || purpose.length() > 128)
+            throw new IllegalArgumentException("Secret purpose is invalid");
+        try (var connection = connection(task);
+                var statement = connection.prepareStatement(
+                        "SELECT secret_revision FROM secret_revision WHERE secret_id=? ORDER BY secret_revision DESC FETCH FIRST 1 ROW ONLY")) {
+            statement.setString(1, identifier);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next())
+                    return Optional.empty();
+                var latest = readRevision(connection, new DeploymentSecretReference(identifier, rows.getLong(1)));
+                if (latest.isPresent() && !latest.orElseThrow().purpose().equals(Optional.of(purpose)))
+                    throw new SQLException("Latest secret revision has another purpose");
+                return latest;
+            }
+        }
+    }
+
     /** Lists bounded selectable revisions with a recorded purpose, without exposing credential IDs. / 列出有已记录用途的有界可选修订，不暴露凭据 ID。
      * @param task original read-only author task / 原只读作者任务
      * @param limit maximum returned references / 最多返回引用数

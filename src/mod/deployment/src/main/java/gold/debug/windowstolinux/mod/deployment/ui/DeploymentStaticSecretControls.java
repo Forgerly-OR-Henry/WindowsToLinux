@@ -207,7 +207,8 @@ final class DeploymentStaticSecretControls {
                     var handle = service.createSecret(server.orElseThrow(), reference, task -> {
                         if (!once.compareAndSet(false, true))
                             throw new IllegalStateException("Secret input was already requested");
-                        return password(view, task);
+                        return DeploymentStaticPasswordInput.request(page, view, task, page.text("secretPasswordTitle"),
+                                page.text("secretPassword"), false, () -> confirmedCreation = true);
                     });
                     creation = handle;
                     if (!page.active(view) && !confirmedCreation)
@@ -220,82 +221,6 @@ final class DeploymentStaticSecretControls {
             });
         } catch (RejectedExecutionException unavailable) {
             finish(view, page.text("secretCancelled"));
-        }
-    }
-
-    /** Requests a one-shot password on the EDT only after original task admission. / 仅在原任务准入后于 EDT 请求一次密码。
-     * @param view original view generation / 原视图代次
-     * @param task original executing task / 原执行任务
-     * @return newly owned UTF-8 bytes / 新所属 UTF-8 字节
-     * @throws Exception if the view or input is unavailable / 视图或输入不可用时 */
-    private byte[] password(long view, TaskContext task) throws Exception {
-        var field = page.onEdt(JPasswordField::new);
-        var form = page.onEdt(() -> {
-            var value = new JPanel(new GridLayout(0, 1));
-            value.add(new JLabel(page.text("secretPassword")));
-            value.add(field);
-            return value;
-        });
-        boolean accepted = page.approveSecret(view, form, page.text("secretPasswordTitle"), task,
-                () -> confirmedCreation = true);
-        char[] chars = capturePassword(field);
-        try {
-            if (!accepted)
-                throw new CancellationException("Secret input was cancelled");
-            if (chars.length == 0 || chars.length > 262_144)
-                throw new IllegalArgumentException("Secret input size is invalid");
-            var buffer = ByteBuffer.allocate(chars.length * 4);
-            try {
-                var encoder = StandardCharsets.UTF_8.newEncoder();
-                var encoded = encoder.encode(CharBuffer.wrap(chars), buffer, true);
-                if (encoded.isError())
-                    encoded.throwException();
-                var flushed = encoder.flush(buffer);
-                if (flushed.isError())
-                    flushed.throwException();
-                if (buffer.position() == 0 || buffer.position() > 1024 * 1024)
-                    throw new IllegalArgumentException("Secret input size is invalid");
-                return Arrays.copyOf(buffer.array(), buffer.position());
-            } finally {
-                Arrays.fill(buffer.array(), (byte) 0);
-            }
-        } finally {
-            Arrays.fill(chars, '\0');
-        }
-    }
-
-    /** Captures and clears the Swing field even when the waiting worker is interrupted. / 即使等待线程中断也取得并清空 Swing 字段。
-     * @param field current password control / 当前密码控件
-     * @return owned characters / 所属字符
-     * @throws InterruptedException if the original worker was interrupted / 原工作线程中断时
-     * @throws ExecutionException if the EDT capture failed / EDT 获取失败时 */
-    private static char[] capturePassword(JPasswordField field) throws InterruptedException, ExecutionException {
-        var captured = new CompletableFuture<char[]>();
-        var abandoned = new AtomicBoolean();
-        SwingUtilities.invokeLater(() -> {
-            char[] value = null;
-            try {
-                value = field.getPassword();
-                if (abandoned.get())
-                    Arrays.fill(value, '\0');
-                else {
-                    captured.complete(value);
-                    value = null;
-                }
-            } catch (RuntimeException failure) {
-                captured.completeExceptionally(failure);
-            } finally {
-                if (value != null)
-                    Arrays.fill(value, '\0');
-                field.setText("");
-            }
-        });
-        try {
-            return captured.get();
-        } catch (InterruptedException interrupted) {
-            abandoned.set(true);
-            captured.thenAccept(value -> Arrays.fill(value, '\0'));
-            throw interrupted;
         }
     }
 
