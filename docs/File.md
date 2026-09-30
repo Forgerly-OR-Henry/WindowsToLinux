@@ -4,14 +4,15 @@
 
 ## 文档信息
 
-当前根 Maven 聚合已切换为 `src/appapi`、`src/app` 和 `src/mod`；旧 shared/web 与 SQLite JDBC 已退出活动依赖。APP 默认入口保持 H2 2.5.250、原任务与能力授权、常驻服务器/模型配置、救援和 Mod 生命周期。官方 deployment Mod 已承接确定性、辅助和自主模式及部署后管理；功能闭环按各批实际证据记录，当前源码结构不代表未通过的跨 Mod、恢复或最终 GUI 验收已经完成。
+当前根 Maven 聚合已切换为 `src/appapi`、`src/app` 和 `src/mod`；旧 shared/web 与 SQLite JDBC 已退出活动依赖。APP 默认入口保持 H2 2.5.250、原任务与能力授权、常驻服务器/模型配置、救援和 Mod 生命周期。官方 deployment Mod 已承接确定性、辅助和自主模式及部署后管理；功能验收按各批有效实际结果合集记录，源码结构及编译成功不作为真实远端验收证据。
 
-- 文档状态：1.1 源码迁移进行中；活动根已切换，完整干净根编译、结构门禁及剩余本机行为仍待集中验证。
+- 文档状态：S1～S5 活动源码迁移和首次完整根测试编译已完成；本机适用功能按有效实际结果合集验证，API 外形与界面精修后置。
 - 当前实现范围：12 个 Maven 叶子模块；平台装配在 `app/main`，公开 Mod 合同在 `appapi`，业务实现及其 helper、资源和 H2 Schema 在 `mod/deployment`。目录只列实际源码包，不创建空职责包。
 - 历史边界：`history-src` 保持冻结；仍存的旧 `src/shared`/`src/web` 文件不属于根活动构建，S6 备份 Mod 与 S7 发行打包仍暂缓。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-09-30（活动根切换；最终验收未完成）
+- 宿主失败报告复用 `app/db/log` 应急编码与 `app/service/log` 回填；`app/main/diagnostic` 仅提取有界安全证据和绑定实时平台日志，不新增文本日志目录或独立日志框架。
+- 更新日期：2026-10-01（完整活动根测试编译；本机适用合同验收）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
 - 功能分工：[分析与 Linux 部署链](development/PHASE-0.3.md#architecture)
 
@@ -866,7 +867,7 @@ mod/deployment ──→ appapi
 
 ## 8. 1.1 职责设计与 Mod 规范（实际结构见第 1 节）
 
-**本节全部为尚未实施的目标设计**，不进入第 1 节当前目录树或第 5 节依赖解析区域，也不要求现在创建目录或模块。[1.1 开发文档](development/PHASE-1.1.md)维护迁移表、实施步骤、归档、技术细化和验收；本节是新结构唯一详细目录来源。
+**本节为目标职责设计，含未实现和后置模块**；实际活动目录及依赖以第 1～7 节为准，不要求为未来职责创建空目录或模块。[1.1 开发文档](development/PHASE-1.1.md)维护迁移表、实施步骤、归档、技术细化和验收；本节是新结构唯一详细目录来源。
 
 <a id="phase-1-1-reading"></a>
 
@@ -895,7 +896,7 @@ mod/deployment ──→ appapi
 ### 8.2 完整目标目录与逐项职责
 
 ```text
-WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚未实施
+WindowsToLinux/                             # [PLANNED] 1.1 目标结构；含后置模块，非当前活动树
 ├─ pom.xml                                 # [构建文件] 聚合新活动模块，不聚合 history-src
 ├─ README.md                               # [文档] 项目介绍、当前能力、构建运行和文档导航
 ├─ LICENSE                                 # [许可文件] 项目开源许可证
@@ -1137,11 +1138,11 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 
 API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serverId，与 TaskRequest 的服务器身份一致；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
 
-官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 以 Schema 3 初始化及只读核验，固定 SQL 资源位于同名资源包；Schema 1、2资源冻结，显式 `DeploymentSchemaMigration12`、`DeploymentSchemaMigration23` 共用固定迁移复制器，经受限来源读者与独立新目标写者迁移，不改原源结构或猜测旧秘密用途；结构3新增空管理操作账本，2→3路径尚待本机验证；业务启动绑定当前数据身份、deployment 日志类别及固定 deployment-publication、deployment-git-source、deployment-secret-revision 原任务恢复器。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID、原精确用途及修订时间，不解析或读取平台存储；新修订用途不可变，旧行缺用途可只读但不得据标识猜用途或进入发布。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
+官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 以 Schema 3 初始化及只读核验，固定 SQL 资源位于同名资源包；Schema 1、2资源冻结，显式 `DeploymentSchemaMigration12`、`DeploymentSchemaMigration23` 共用固定迁移复制器，经受限来源读者与独立新目标写者迁移，不改原源结构或猜测旧秘密用途；结构3新增空管理操作账本，2→3 路径已通过本机受限来源账户及独立目标代次验证，源摘要保持不变，异常来源结构在写目标前拒绝；业务启动绑定当前数据身份、deployment 日志类别及固定 deployment-publication、deployment-git-source、deployment-secret-revision 原任务恢复器。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID、原精确用途及修订时间，不解析或读取平台存储；新修订用途不可变，旧行缺用途可只读但不得据标识猜用途或进入发布。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
 
 单组件发布的原执行记录以格式 5 嵌套保存完整非秘密发布模板；整图执行新增格式 6 和整图模板格式 2，保留原格式 5／模板格式 1 的规范字节与准入。整图执行在首次远端效果前登记一个根检查点和每个唯一组件的短检查点，在停止旧运行或发布前保存一次完整非秘密整图模板；真实执行准入最多 16 组件，分析与持久应用图的 64 组件模型上限不变。整图先预检所有来源和总容量、构建全部候选并封存配置，再保存全部旧快照、逆序停止、拓扑发布与逐组件健康、整图复查及独立整应用健康；只在全部已知成功时一次提交正式业务。已知失败按原快照逆序恢复，远端未知不盲目重发。标准发布恢复经 `service/core` 的窄端口由 Mod 装配，宿主在调用原作者核对前释放原任务旧 SSH 连接；启动只登记恢复器，不自动访问远端。显式原任务恢复须经原任务身份、精确审批和协议 11 固定只读观察核对原服务器、应用、候选、当前版本、旧快照、维护及运行设施；整图还须逐项核实原索引与全图结论，混合或缺失证据保持 UNKNOWN，不重发构建、发布或回滚。业务已核实而本机正式提交丢失时，按原完整模板及必要远端事实补原事务；若原远端收尾已持久核实、检查点已释放，只补本机事务，不重复连远端。清理只推进原检查点允许的原资源。`app/main` 的受限 `test-support` 附件只向本 Mod 的测试作用域提供 loopback SSH 夹具，不进入生产依赖。
 
-官方 deployment 的 `source` 当前包含实际本地筛选和冻结流程：经公开 SourceService 的原任务目录句柄逐层发现，业务排除与 source.include 由 Mod 决定，平台持有目录读取、不可变快照及释放。source 仅使用 appapi 和 service/core/model 的纯相对路径值规则，不引用 APP 私有实现；core/model 不反向依赖 source。素材返回原平台句柄和明确文件清单，后续分析/执行共享直到关闭。确定性 ustar/gzip 归档写入平台 SourceWorkspace 并冻结成独立 SourceSnapshot，保留实际归档字节 SHA，临时文件归属/释放仍在 APP source/service。`source/git` 提供受管 worker 固定 Git 提交的本机取材构件及同一筛选/归档复用。`service/core/DeploymentProjectSourceRecorder` 将真实本地选择或 Git 固定取材与 `db/DeploymentProjectRepository` 接通；`service/core/model/DeploymentProjectSource` 只保存来源纯值，db 不依赖取材实现。执行账本冻结已审阅完整项目修订；同一项目后续更新不会改写旧执行。固定 Git 来源原任务现持久化原请求、工作目录/进程身份、物理回执和完整项目保存边界，并在 Mod 启动时登记只读原任务恢复；SSH 凭据/信任、部署页面及引擎调用仍待实现，不能把来源任务视为完整部署入口。
+官方 deployment 的 `source` 当前包含实际本地筛选和冻结流程：经公开 SourceService 的原任务目录句柄逐层发现，业务排除与 source.include 由 Mod 决定，平台持有目录读取、不可变快照及释放。source 仅使用 appapi 和 service/core/model 的纯相对路径值规则，不引用 APP 私有实现；core/model 不反向依赖 source。素材返回原平台句柄和明确文件清单，后续分析/执行共享直到关闭。确定性 ustar/gzip 归档写入平台 SourceWorkspace 并冻结成独立 SourceSnapshot，保留实际归档字节 SHA，临时文件归属/释放仍在 APP source/service。`source/git` 提供受管 worker 固定 Git 提交的本机取材构件及同一筛选/归档复用。`service/core/DeploymentProjectSourceRecorder` 将真实本地选择或 Git 固定取材与 `db/DeploymentProjectRepository` 接通；`service/core/model/DeploymentProjectSource` 只保存来源纯值，db 不依赖取材实现。执行账本冻结已审阅完整项目修订；同一项目后续更新不会改写旧执行。固定 Git 来源原任务现持久化原请求、工作目录/进程身份、物理回执和完整项目保存边界，并在 Mod 启动时登记只读原任务恢复；本地目录和固定 Git 来源已接默认部署页面及原单/多执行引擎；SSH Git 凭据/信任仍为非阻断未决项，不能由本机来源验证推定真实 SSH Git 支持。
 
 作者工具复用 `app/mod/installation` 的包读取/校验能力，以命令行模式运行，不启动 APP。构建配置和 SDK 父 POM 归 `.mvn/mod/` 维护，不新增业务叶子模块；正式源码任务才创建这些文件，AllFile 不提前登记工具类或示例。完整结构门禁映射见 [工程门禁](development/PHASE-1.1.md#129-工程门禁映射)。
 
@@ -1155,7 +1156,7 @@ API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serve
 
 ### 8.4 已确认的 Mod 源码结构与命名
 
-本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认；官方 deployment 已迁入固定取材、秘密修订、完整静态分析、确定性审阅输入与计划、已审阅单/多组件执行构件，并在 NORMAL 模式登记默认静态页面。页面已接同一原任务的本地与固定 Git 来源、SQLite 首次初始化确认，以及服务器数据库全图预检、库存/精确版本、安装或替换与人工恢复、目标/SQL/保护修订和单/多组件发布。本机 CLASS/H2 受控 helper 与实际 owner 模态已验证本轮接线，入口 UNKNOWN 留存与独立正式跨 JVM 原回执恢复分别验证；真实 Linux 操作、完整 S5 源码迁移及全部本机门禁仍待验收。这不改变第 1～7 节当前代码的结构门禁。九类职责包继续按需出现，不为补齐结构建空包。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
+本节适用于 1.1 官方与第三方 Mod 的主 JAR 源码。结构规则已确认；官方 deployment 已迁入固定取材、秘密修订、完整静态分析、确定性审阅输入与计划、已审阅单/多组件执行构件，并在 NORMAL 模式登记默认静态页面。页面已接同一原任务的本地与固定 Git 来源、SQLite 首次初始化确认，以及服务器数据库全图预检、库存/精确版本、安装或替换与人工恢复、目标/SQL/保护修订和单/多组件发布。本机 CLASS/H2 受控 helper 与实际 owner 模态已验证本轮接线，入口 UNKNOWN 留存与独立正式跨 JVM 原回执恢复分别验证；S5 活动源码与本机适用门禁已验证；真实 Linux 操作仍未验收。这不改变第 1～7 节当前代码的结构门禁。九类职责包继续按需出现，不为补齐结构建空包。分发包目录和清单另见 [Mod 包格式](Mod.md#contents-draft)，本文仅规定源码组织。
 
 #### 主模块结构
 
@@ -1227,8 +1228,8 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 
 ### S5-03/S5-04 当前模式源码
 
-部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。活动根已退出旧 shared/web；完整全局门禁与本机验收仍属 S3 待收尾项。
+部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。活动根已退出旧 shared/web；S3/S4/S5 本机适用合同及受影响门禁已按有效实际结果合集验证。
 
 ### S3 平台库存值接线
 
-`app/ai/catalog` 保存实际平台配置与模型调用使用的三个纯值。数据库和 UI 均显式依赖 `app-ai`，平台服务继续通过既有 AI 能力适配；不反向引入 DB/UI 依赖，也不向 `appapi` 混入内部 DEPLOYMENT 枚举。旧 AiModelGroupType 无活动生产调用，移除其测试未用 import，未在新包建立占位类型。旧 shared/web 已退出活动图；最终测试迁移与全局门禁仍待收尾。
+`app/ai/catalog` 保存实际平台配置与模型调用使用的三个纯值。数据库和 UI 均显式依赖 `app-ai`，平台服务继续通过既有 AI 能力适配；不反向引入 DB/UI 依赖，也不向 `appapi` 混入内部 DEPLOYMENT 枚举。旧 AiModelGroupType 无活动生产调用，移除其测试未用 import，未在新包建立占位类型。旧 shared/web 已退出活动图；当前活动测试源已完整根编译，受影响结构门禁已通过。

@@ -1,6 +1,6 @@
 # WindowsToLinux 全文件架构索引
 
-> 状态：1.1 改造进行中；以下按当前根 Maven 活动模块及实际文件生成。文件存在与生产编译通过不代表尚未通过的恢复、界面或完整 S3～S5 验收已经完成。
+> 状态：S1～S5 活动源码迁移与首次完整根测试编译已完成；以下按当前根 Maven 活动模块及实际文件生成。本机功能按有效实际结果合集验证，源码索引不代表真实远端验收。
 > 范围：根与活动模块的 Maven 描述、Mod 描述、非测试 Java 源及运行资源；测试、编译产物、退出活动图的旧 shared/web 与冻结 history-src 不纳入。
 > 排序：Maven 描述置顶，其余同级按名称排序；模块的 resources 目录置后。
 > 粒度：Java 文件说明与文件同名的顶级主类型；路径省略重复的 Maven 源码、资源与项目域名前缀。实际模块、包结构与维护规则见 [File.md](File.md)。
@@ -129,7 +129,7 @@ WindowsToLinux/
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
    │  │  ├─ AppMain.java  # 桌面应用入口
    │  │  ├─ diagnostic/  # 专属诊断
-   │  │  │  ├─ DesktopFailureReportStore.java  # 在固定数据目录下写入有界、轮转且无秘密的 UTF-8 失败报告
+   │  │  │  ├─ DesktopFailureReportStore.java  # 将有界宿主失败送入既有数据库或启动应急队列
    │  │  │  ├─ DesktopStartupException.java  # 阻止桌面安全启动的结构化失败
    │  │  │  ├─ DesktopSystemFailureType.java  # 持有的桌面进程失败类型
    │  │  │  └─ DesktopUncaughtFailureBoundary.java  # 桌面未捕获失败的最终进程边界

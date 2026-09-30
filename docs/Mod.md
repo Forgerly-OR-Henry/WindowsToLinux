@@ -2,10 +2,10 @@
 
 ## 文档状态与范围
 
-- 更新日期：2026-09-26。
-- 状态：本文为 **1.1 完整目标规格，实现与本机验证进行中**。部分公开类型、任务、数据库及 SSH/审批适配已实现，完整作者 SDK、安装协调器和官方业务 Mod 尚未交付；具体证据见 [开发进度](development/PHASE-1.1.md)。本文的完整能力与示例仍是验收目标，不代表当前产品已全部支持。0.x 业务行为见 [Runtime.md](Runtime.md) 和 [产品手册](PRODUCT-MANUAL.md)。
-- 当前官方部署实现已复用公开 Task/Source/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。完整 S5 与发行 SDK 尚未完成。
-- 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，不宣称现有 SDK 可运行。
+- 更新日期：2026-10-01。
+- 状态：本文为 **1.1 完整目标规格**。S1～S5 活动源码、平台能力和官方部署 Mod 的本机适用合同已按有效实际结果合集验证，完整根测试编译已通过；S6 备份、S7 正式 APP/JAR/SDK 发行和真实远端验收暂缓；具体证据见 [开发进度](development/PHASE-1.1.md)。本文的完整能力与示例仍是验收目标，不代表当前产品已全部支持。0.x 业务行为见 [Runtime.md](Runtime.md) 和 [产品手册](PRODUCT-MANUAL.md)。
+- 当前官方部署实现已复用公开 Task/Source/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
+- 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，示例不替代实际源码与验证边界，正式 SDK 发行仍暂缓。
 - 职责：描述 Mod 的格式、行为、数据和公开能力。工程迁移、技术细化、开发步骤与验收统一见 [1.1 开发文档](development/PHASE-1.1.md#implementation)。本文不把接口示例当作已交付 SDK。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程主文档](development/PHASE-1.1.md) · [项目目标结构](File.md#phase-1-1-target) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)
 
@@ -164,7 +164,7 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 
 ## 4. 运行模式与 Mod 加载来源
 
-以下是 1.1 已确认的目标行为。当前工程已有 CLASS/JAR/APP 模式识别、CLASS 描述生成/校验及工作区发现基础，并经真实加载器和完整上下文验收；默认 CLASS 启动已接当前构建登记、原已启用选择、依赖启动、原意图归档和逆序停止，支持无数据、已有 READY 数据、首次初始化及已确认跨版本迁移验证后启动；新发现默认关闭。Maven 构建自动生成已接通；明确首次失败重试后端已接通；默认已下载页已接选择审阅、撤销及明确核对/重试；原包读取、安装事务及 JAR/APP 原包管理界面已接通，静态代码准入已接通；商店下载及已安装图启动仍未完成，不把已准备的 CLASS 启停视为全部三种模式完成。
+以下是 1.1 已确认的目标行为。当前工程已有 CLASS/JAR/APP 模式识别、CLASS 描述生成/校验及工作区发现基础，并经真实加载器和完整上下文验收；默认 CLASS 启动已接当前构建登记、原已启用选择、依赖启动、原意图归档和逆序停止，支持无数据、已有 READY 数据、首次初始化及已确认跨版本迁移验证后启动；新发现默认关闭。Maven 构建自动生成已接通；明确首次失败重试后端已接通；默认已下载页已接选择审阅、撤销及明确核对/重试；原包读取、安装事务及 JAR/APP 原包管理界面已接通，静态代码准入已接通；已安装图启动源码已通过本机验证；商店下载与正式发行仍后置，不把 CLASS 启停或隔离安装验证视为正式发行验收。
 
 | 运行模式 | Mod 来源与定位依据                                                                                       | 新增 Mod 的操作                                                                               |
 | -------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -379,7 +379,7 @@ Mod、安装版本和实际 Schema 分别登记。多个安装版本可引用同
 
 #### 设置中的数据库管理与日志清理
 
-本节为 **1.1 日志规格，核心存储、公开接口适配和默认数据库管理页已实现**。当前支持已登记目标的 H2 写入、100/10 条保留、应急文件与原 ID 回填、所属 Schema 校验、有界脱敏查看及失败反馈，已通过本机 H2 和实际窗口验证。受管进程 stderr 已接入；Mod 未执行意图取消、已准备重启意图成功及已关闭启动失败的摘要已支持原子归档。旧 Logback/失败报告、H2 打开前的启动诊断、任务及安装/迁移/删除等其他 Mod 操作摘要仍待迁移，不能认为全部旧日志已统一迁移。完整 ModContext 已装配，官方业务 Mod 仍待迁移。具体改造流程只在 [1.1 数据库实施](development/PHASE-1.1.md#database-implementation)维护。
+本节为 **1.1 日志规格，核心存储、公开接口适配和默认数据库管理页已实现**。当前支持已登记目标的 H2 写入、100/10 条保留、应急文件与原 ID 回填、所属 Schema 校验、有界脱敏查看及失败反馈，已通过本机 H2 和实际窗口验证。受管进程 stderr、平台任务及 Mod 安装、迁移、删除的操作摘要已接入；必要摘要与原执行记录移除、资源释放按各自原事务收尾，归档失败保留原意图供核对，不重复执行迁移边。活动根使用明确的 SLF4J 无操作绑定，不再装配 Logback。宿主 H2 打开前的失败写固定 app/runtime 启动应急队列；后续启动保留原 ID、时间和脱敏内容回填，只有确认数据库提交后才清队列，失败保留原字节。实时宿主失败优先使用既有平台日志服务，H2 成功不返回虚构文件路径。报告采用现行 16 KiB 完整记录、100 条应急上限，优先保存结构化因果及 suppressed 身份，再截断堆栈；原 256 KiB/50 份文本报告不再生成，既有旧文件不删除。这些启动、回填、失败留证及迁移归档故障分支已通过本机定向验证。完整 ModContext 已装配，官方部署 Mod 的本机适用合同已验证，备份 Mod 随 S6 暂缓。具体改造流程只在 [1.1 数据库实施](development/PHASE-1.1.md#database-implementation)维护。
 
 <a id="log-storage"></a>
 
@@ -1211,7 +1211,7 @@ public interface SchemaMigration {
 
 迁移图要求所选来源到目标存在唯一完整路径，多条路径拒绝歧义；不自动选择最短路径。多步迁移在操作专属临时 Schema 中逐步输出，第一步读保留源，后一步读前一步输出，最后一步写正式目标；中间 Schema 不登记成用户可选版本。先由首条迁移建立其中间结构，目标结构由最后一条迁移建立；空安装调用当前 `initialize`。每步关闭连接后记录结果，全部完成后用当前 `validate` 验证正式目标；目标达到 READY 前不运行业务。临时身份、授权及中间 Schema 在明确完成或已核实失败后清理，未知时保留定位依据。DDL 自提交的结果通过实际结构、平台记录和作者验证共同核对。[H2 命令](https://h2database.com/html/commands.html)、[JDBC Connection](https://docs.oracle.com/en/java/javase/21/docs/api/java.sql/java/sql/Connection.html)
 
-官方 deployment 当前使用 Schema 2。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。Schema 1 固定资源保持冻结；`DeploymentSchemaMigration12` 以受限来源读者和新目标写者复制，不改源结构或臆造旧秘密用途，并保留原事件身份下一值。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
+官方 deployment 当前源码清单使用 Schema 3；新增管理操作账本，已有业务表沿用结构2。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。Schema 1 固定资源保持冻结；显式 `DeploymentSchemaMigration12` 和 `DeploymentSchemaMigration23` 分别按冻结的1→2、2→3资源，以受限来源读者和独立新目标写者复制，不改源结构或臆造旧秘密用途，并保留原事件身份下一值；新管理账本初始为空。2→3 迁移已通过本机真实受限来源账户和独立目标代次验证：原行、源摘要及事件下一值保留，管理账本初始为空；异常来源列在目标写入前拒绝。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
 
 ### 8.5 server 与 secret：共享配置引用
 
@@ -1332,6 +1332,15 @@ public record TransferResult(long transferredBytes, String sha256,
 public enum TransferConflictChoice { OVERWRITE, KEEP_BOTH, TERMINATE }
 public record TransferConflict(TransferRequest request, boolean upload,
     long incomingBytes, long existingBytes) {}
+public record TransferProgress(java.util.UUID transferId, Stage stage,
+    long completedBytes, long totalBytes) {
+    public enum Stage { PREPARING, VERIFYING_SOURCE, VERIFYING_TARGET,
+        VERIFYING_PREFIX, TRANSFERRING, VERIFYING_STAGING, PUBLISHING,
+        VERIFYING_RESULT, CLEANING }
+}
+public enum TransferStallChoice { RETRY, TERMINATE }
+public record TransferStall(TransferProgress progress, TransferRequest request,
+    boolean upload, java.time.Duration idleTimeout) {}
 public record TransferCheckpoint(java.util.UUID id, ServerRef server, boolean upload,
     TransferRequest request, String sha256, long size, boolean overwrite) {}
 public interface RemoteSession extends AutoCloseable {
@@ -1516,7 +1525,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 `DeploymentStaticReviewAssembler` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析保留旧默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；已独立确认的 SQLite 配置与资源按最终组件身份合并，冲突拒绝，不用运行表单的数据库模式伪造结构批准。无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
 
-`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerRef.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；旧 v5 的输入为归档 tar 字节 SHA-256，不沿旧域名改变语义。旧容器卷名仍以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面已接本机流程，完整 S5 与实际目标机尚未验收。
+`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerRef.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；旧 v5 的输入为归档 tar 字节 SHA-256，不沿旧域名改变语义。旧容器卷名仍以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面及完整 S5 本机适用合同已验证，实际目标机未验收。
 
 当前 `deployment/linux` 已迁完整受管 helper 包的 41 个固定片段、5 个插入资源和独立 build-entry，以原资源和组装顺序为基础，为原任务只读观察更新四份片段并增补 53 片段，此前形成协议 11；本轮原生数据库回执升级为协议 12 与新固定 SHA-256；纯工具链选择策略已供受控构建入口的精确绑定使用。`DeploymentManagedHelper` 只借用调用方已在原任务下取得的 `RemoteSession`，自身不连接、保管 SSH 凭据或关闭会话；安装与只读探测分别通过固定 `RemoteActions.command`、带版本的 helper `ActionSemantics`、真实 `InteractionService.approve` 和原 `ApprovalGrant` 执行。调用方仍须持有原任务与会话；平台决定普通逐次审核或已批准工作流范围，本适配器不假定每条动作都会弹窗。安装脚本在目标上检查 root、固定包集合、helper 实际 SHA、恢复 unit、协议探测及安全状态，必须已知退出 0、输出未截断且末尾回执完整；随后独立探测要求完整 stdout、空 stderr、原 helper 协议与 SHA 一致。安装已可能产生副作用而回执不全、探测冲突或探测取消时返回 `UNKNOWN`，不得重新安装；宿主明确发送前拒绝保留原问题，发送前确认取消保持 `CANCELLED`。本机 Git Bash/Python 合同和 CLASS/H2 原任务审批验证不是实际目标机安装证据，不代表 S5-02 全流程完成。
 
@@ -1524,7 +1533,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction 与受控会话测试只证明调用、授权及协议边界；实际目标机执行、发布及原候选/构建任务的持久恢复尚未验收。
 
-`DeploymentStandardPublicationExecutor` 与 `DeploymentMultiComponentPublicationExecutor` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；原执行格式 6 的模板格式 2 保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 12 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理，混合状态保持 UNKNOWN。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面已登记且本机分闭环已接线，完整 S5 尚未完成。
+`DeploymentStandardPublicationExecutor` 与 `DeploymentMultiComponentPublicationExecutor` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；原执行格式 6 的模板格式 2 保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 14 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
 
@@ -1748,7 +1757,6 @@ import java.util.Optional;
 import java.util.UUID;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.OperationResult;
 import gold.debug.windowstolinux.appapi.task.PageSlice;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
@@ -1785,30 +1793,32 @@ public interface DeploymentApi {
     OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application,
-        String expectedRevisionSha256, DeploymentLifecycleAction action, ApprovalGrant grant,
+        String expectedRevisionSha256, DeploymentLifecycleAction action,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> reviewCollection(DeploymentCollectionRequest request,
         TaskContext task) throws ApiException;
-    OperationResult<DeploymentCollection> collect(UUID handoffId, ApprovalGrant grant,
+    OperationResult<DeploymentCollection> collect(UUID handoffId,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> finishCollection(UUID handoffId, TaskContext task)
         throws ApiException;
+    OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archivedApplication,
+        ServerRef target, String archiveSha256, TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> prepareRestore(DeploymentRestoreRequest request,
-        ApprovalGrant grant, TaskContext task) throws ApiException;
-    OperationResult<DeploymentActivation> activate(UUID handoffId, ApprovalGrant grant,
+        TaskContext task) throws ApiException;
+    OperationResult<DeploymentActivation> activate(UUID handoffId,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> discard(UUID handoffId, TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> reconcile(UUID handoffId, TaskContext task) throws ApiException;
 }
 ```
 
-`listApplications` 返回持久化摘要，`observedAt` 是最后观测时间；`inspect` 才复核目标、所有权和当前运行状态。生命周期与所有 handoff 方法校验原调用 Mod、任务、应用身份、修订、服务器集合及已审阅授权，不能仅凭可猜测 ID 操作别人的 handoff。快照中的 `bindings` 是已审阅绑定，`kind` 首版为 CONFIG/FILE/DATABASE，`engine` 为已有受管数据库类型或空字符串；`runtime` 使用现有版本化的只读描述字节，备份可以保存/转交但不能在不知道版本时自行修改。备份不能把归档秘密引用当作当前目标已经授权的引用。
+`listApplications` 返回持久化摘要，`observedAt` 是最后观测时间；`inspect` 才复核目标、所有权、各组件实际 CURRENT 摘要和当前运行状态。生命周期与所有 handoff 方法校验已认证原任务的调用 Mod、应用身份、修订及服务器集合；部署提供方在原跨 Mod 调用内按精确实际命令申请并消费自身的宿主授权，调用方不能传入另一个 Mod 所有的 `ApprovalGrant`。快照中的 `bindings` 是已审阅绑定，公开 `id` 为全应用唯一的 `componentId:localId`，helper 仍使用该组件内的 localId；`kind` 首版为 CONFIG/FILE/DATABASE，`engine` 为已有受管数据库类型或空字符串。`VersionedRuntime` 的当前未发行格式为 3：同一有界封套保存完整发布图、健康策略、每组件不可变 typed configuration 和必要的非秘密 credential identity/purpose 元数据，配置按原修订与规范摘要绑定；完整载荷最多 16 MiB，超额拒绝，不截断。getter 返回字节副本，备份可以保存/转交完整描述，但未知格式不能自行解释或修改。恢复再次严格校验规范摘要和元数据字段类型，并按当前目标服务器及原 purpose 核对平台秘密授权；归档引用不是当前授权。恢复快照中的来源 `ServerRef` 只是历史身份，不要求已移除的来源配置或 deployment 行仍然存在。
 
 `reviewCollection` 只创建本次审阅快照及 handoff，不改变远端；修订漂移要求重新审阅。`collect` 由部署执行其拥有的停写/生命周期及 helper 业务端口，备份确定要采集哪些已审阅绑定并组织归档；只返回本次操作所属的完整远端采集文件，备份经平台 Linux 能力下载并核对摘要。下载/归档成功或失败都调用 `finishCollection` 恢复本次改变前的运行状态并清除本次维护标记；已停止的应用不能被恢复逻辑擅自启动。原始失败、恢复失败、清理失败分别记录，取消不免除必要恢复。
 
-恢复由备份检查归档、口令和素材，组织已验证 `RestoreFile`；`prepareRestore` 由部署复核目标身份/绑定并建立候选，`activate` 由部署负责候选启动、整体健康门槛和受管切换。目标审阅摘要、文件摘要或应用修订改变时拒绝旧授权。`discard` 只清理本次未激活候选及其明确所属资源，不能删除已经切换的当前应用；激活未知先 `reconcile`，不能用丢弃候选来解除未知状态。reconcile 仅观察已有状态并执行已确认必要收尾，不自动重复切换。
+恢复由备份检查归档、口令和素材，组织全部已验证 `RestoreFile`；先调用 `reviewRestoreTarget` 获取绑定当前真实端点、信任事实及各组件旧 CURRENT 或空目标的摘要，再将该摘要交给 `prepareRestore`。部署复核目标身份、完整配置/绑定及文件后建立候选，`activate` 负责整体健康门槛、受管切换和原资源收尾。多个数据库绑定各有独立候选，归属同一原交接与任务。目标审阅摘要、文件摘要或应用修订改变时拒绝旧审阅。`discard` 只清理本次未激活候选及其明确所属资源，不能删除已经切换的当前应用；激活未知先 `reconcile`，不能用丢弃候选来解除未知状态。reconcile 仅核对原步骤持久回执、身份及健康；没有完成回执的未知效果不重新准备、上传、导出或切换。
 
-首版 handoff 不跨不同平台任务复用；重新核对使用原任务的恢复上下文。备份迁移任务同时声明源/目标服务器，并按“采集 → 源恢复 → 目标候选 → 健康与切换 → 归档/结果保存 → 清理”推进；迁移成功不自动删除或停止源应用。标准、辅助、自主部署生成的受管应用使用同一公开协作契约。
+首版 handoff 不跨不同平台任务复用。调用方在自己的根任务 callback 内用自身 `TaskService.beginCheckpoint` 持有根检查点，贯穿 review、采集/准备及明确收尾的连续 service calls，仅在交接 `FINISHED` 且自身下载、归档等资源已确认关闭后关闭检查点；`UNKNOWN` 保留检查点和原任务，恢复 callback 查找原检查点并用同一原任务调用 `reconcile`/收尾，关闭自身实际资源及根检查点后返回本次已核实结果；宿主随后按原依赖作用域结清确属原任务的已释放资源。首次 `prepareRestore` 若因原依赖资源未释放而没有返回 handoff，调用方在自己的原恢复 callback 中先用可靠保存的同一完整 request 查询原准备：已有准备副作用或终态的意图只返回原 handoff 与阶段，不重新读取已消费的本地文件或重发准备；UNKNOWN 返回的值用于后续原任务核对。明确放弃准备时调用原 `discard`，提供方精确核对属于原 attempted 文件的宿主传输检查点，申请自身的原传输丢弃审批，仅清理原暂存后再丢弃候选；已有最终文件不由传输丢弃修改，仍有暂存时缺失原源文件或摘要不符继续 UNKNOWN。当前平台生产恢复入口已接入原 service dependency 的确证收尾，跨 Mod 首次丢值及原资源释放已通过本机 CLASS/H2 与受控传输验证：原准备已完成或未完成的两分支均保留原任务，只核对原交接、不重新准备，并在确认原资源收尾后释放；这不代表真实远端验收；调用方不获取私有宿主清理权限。调用方自行可靠保存完整 request，根检查点最多保存 12,000 UTF-8 字节的无秘密身份和引用，不把 16 MiB runtime 封套塞入检查点。提供方只持久记录自己的 handoff 事实，各次同步调用关闭自己的 SSH 等实际资源；它不伪装根所有者，不替调用方关闭检查点，也不在跨调用间转授资源句柄。此检查点责任由调用契约要求，`inspect` 并不证明检查点实际存在。备份迁移任务同时声明源/目标服务器，并按“采集 → 源恢复 → 目标候选 → 健康与切换 → 归档/结果保存 → 清理”推进；迁移成功不自动删除或停止源应用。标准、辅助、自主部署生成的受管应用使用同一公开协作契约。
 
 ## 9. 技术依据
 
