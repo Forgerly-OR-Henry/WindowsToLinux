@@ -30,6 +30,13 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             start(runtime, true);
             server(runtime, ssh.server().getPort(), "tester");
             var actual = context(runtime);
+            peer.scanIssues = List.of("DOCKER_PERMISSION");
+            var publicScan = await(new DeploymentApplicationsService(actual).scan(new ServerRef("server")));
+            assertEquals(Outcome.SUCCEEDED, publicScan.outcome());
+            assertEquals(List.of("DOCKER_PERMISSION"), publicScan.value().orElseThrow().issues());
+            assertEquals(1, publicScan.value().orElseThrow().applications().size());
+            assertEquals(0, peer.effects.get(),
+                    "A nonfatal Docker permission issue must preserve read-only scan behavior");
             var external = new DeploymentExternalApplications(actual);
             var handle = rootTask(runtime, task -> {
                 var scanned = external.scan(new ServerRef("server"), task);

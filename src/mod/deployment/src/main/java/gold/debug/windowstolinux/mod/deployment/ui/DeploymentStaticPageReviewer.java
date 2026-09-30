@@ -171,17 +171,56 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
     @Override
     public OperationResult<Boolean> replacement(ServerRef server, Instance previous, Candidate candidate,
             TaskContext task) {
-        var panel = page.onEdt(() -> {
-            var rows = new JPanel(new GridLayout(0, 1));
-            rows.add(new JLabel(page.text("database.nativeReplacementWarning")));
-            rows.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
-            rows.add(new JLabel(previous.version() + " → " + candidate.engineVersion()));
-            rows.add(new JLabel(candidate.name() + " / " + candidate.packageVersion()));
-            return rows;
-        });
-        return page.approve(view, panel, page.text("database.nativeReplacementTitle"), task)
-                ? success(Boolean.TRUE)
-                : cancelled();
+        var form = page.onEdt(() -> new NativeReplacementForm(page, server, previous, candidate));
+        while (page.active(view)) {
+            if (!page.approve(view, form.panel, page.text("database.nativeReplacementTitle"), task))
+                return cancelled();
+            if (page.onEdt(form::confirmed))
+                return success(Boolean.TRUE);
+            page.onEdt(() -> {
+                form.error.setText(page.text("database.nativeReplacementCheckAll"));
+                return null;
+            });
+        }
+        return cancelled();
+    }
+
+    /** Keeps three independent initially refused replacement consents on the same form. / 在同一表单保留三项独立且默认拒绝的替换同意。 */
+    private static final class NativeReplacementForm {
+        /** Original visible reviewed facts and decisions. / 原可见审阅事实及决定。 */
+        private final JPanel panel = new JPanel(new GridLayout(0, 1));
+
+        /** Backup, downtime and exact software replacement are independent decisions. / 备份、停机与精确软件替换是独立决定。 */
+        private final List<JCheckBox> confirmations = new ArrayList<>();
+
+        /** Visible feedback without accepting an incomplete decision. / 不接受不完整决定的可见反馈。 */
+        private final JLabel error = new JLabel();
+
+        /** Binds actual original instance and candidate facts without performing effects. / 绑定实际原实例及候选事实，不执行效果。
+         * @param page original owner labels / 原所属标签
+         * @param server admitted target / 已准入目标
+         * @param previous exact original instance / 精确原实例
+         * @param candidate selected replacement / 选定替换 */
+        private NativeReplacementForm(DeploymentStaticPage page, ServerRef server, Instance previous,
+                Candidate candidate) {
+            panel.add(new JLabel(page.text("database.nativeReplacementWarning")));
+            panel.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
+            panel.add(new JLabel(previous.version() + " → " + candidate.engineVersion()));
+            panel.add(new JLabel(candidate.name() + " / " + candidate.packageVersion()));
+            for (String key : List.of("backup", "downtime", "software")) {
+                var check = new JCheckBox(page.text("database.nativeReplacement." + key), false);
+                check.setName("database.replacement." + key);
+                confirmations.add(check);
+                panel.add(check);
+            }
+            panel.add(error);
+        }
+
+        /** Requires all exact current decisions before returning consent. / 返回同意前要求当前全部精确决定。
+         * @return whether all independent decisions were explicitly selected / 全部独立决定是否均已明确选择 */
+        private boolean confirmed() {
+            return confirmations.stream().allMatch(JCheckBox::isSelected);
+        }
     }
 
     /** Confirms user-completed restoration after package replacement. / 软件包替换后确认用户已完成人工恢复。

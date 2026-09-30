@@ -45,6 +45,45 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Checks the actual lazily registered Swing view, lock/close lifetime and optional visual evidence. / 检查真实惰性登记Swing视图、锁定关闭寿命及可选视觉证据。 */
 class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
+    @Test
+    void reviewRuntimeExceptionsKeepTheirOriginalIdentityOnAndOffEdt() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                            new DeploymentStaticWorkflow(context,
+                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                                            context))));
+            try {
+                SwingUtilities
+                        .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", true)));
+                assertFalse(SwingUtilities.isEventDispatchThread());
+                for (RuntimeException original : List.of(new IllegalArgumentException("invalid reviewed input"),
+                        new java.util.concurrent.CancellationException("original review cancelled"))) {
+                    assertSame(original, assertThrows(original.getClass(), () -> page.onEdt(() -> {
+                        throw original;
+                    })));
+                    SwingUtilities.invokeAndWait(() -> {
+                        assertTrue(SwingUtilities.isEventDispatchThread());
+                        assertSame(original, assertThrows(original.getClass(), () -> page.onEdt(() -> {
+                            throw original;
+                        })));
+                    });
+                }
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (runtime.security().securityState().activeTasks() != 0 && System.nanoTime() < deadline)
+                    Thread.sleep(10);
+                assertEquals(0, runtime.security().securityState().activeTasks());
+                assertEquals(0,
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            } finally {
+                SwingUtilities.invokeAndWait(page::close);
+            }
+        }
+    }
+
     /** Shows each actual native package and restoration decision on the owner EDT. / 在所属 EDT 展示各原生软件包及恢复决定。
      * @throws Exception if the original task or modal handoff fails / 原任务或模态交接失败时 */
     @Test
@@ -52,7 +91,25 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var context = runtime.modContexts().get(OWNER).context();
+            var actual = runtime.modContexts().get(OWNER).context();
+            var remoteCalls = new java.util.concurrent.atomic.AtomicInteger();
+            var linux = Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{gold.debug.windowstolinux.appapi.linux.LinuxService.class},
+                    (proxy, method, args) -> {
+                        remoteCalls.incrementAndGet();
+                        throw new AssertionError("Modal review cannot perform SSH effects");
+                    });
+            var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("linux"))
+                            return linux;
+                        try {
+                            return method.invoke(actual, args);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    });
+            var originalTask = new AtomicReference<UUID>();
             var page = new DeploymentStaticPage(
                     new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                             new DeploymentStaticWorkflow(context,
@@ -71,6 +128,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     "DB_PASSWORD", List.of(), false, "fixture");
             var handle = context.tasks().submit(new TaskRequest("native-modal-test", "Native review", List.of(), true),
                     task -> {
+                        assertTrue(originalTask.compareAndSet(null, task.id()));
                         var reviewer = new DeploymentStaticPageReviewer(page, page.viewGeneration());
                         for (var result : List.of(reviewer.install(server, database, candidate, task),
                                 reviewer.replacement(server, previous, candidate, task),
@@ -84,13 +142,52 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             acceptDialog(install);
             var replacement = awaitDialog("替换数据库软件包");
             captureDialog(replacement, "native-replacement");
-            acceptDialog(replacement);
+            var panel = new AtomicReference<JPanel>();
+            var checks = new AtomicReference<List<JCheckBox>>();
+            SwingUtilities.invokeAndWait(() -> {
+                panel.set(assertInstanceOf(JPanel.class,
+                        assertInstanceOf(JScrollPane.class, findOptionPane(replacement).getMessage()).getViewport()
+                                .getView()));
+                checks.set(Arrays.stream(panel.get().getComponents()).filter(JCheckBox.class::isInstance)
+                        .map(JCheckBox.class::cast).toList());
+                assertEquals(
+                        List.of("database.replacement.backup", "database.replacement.downtime",
+                                "database.replacement.software"),
+                        checks.get().stream().map(JCheckBox::getName).toList());
+                checks.get().forEach(check -> assertFalse(check.isSelected()));
+            });
+            var current = replacement;
+            for (int selected = 0; selected < 3; selected++) {
+                int accepted = selected;
+                SwingUtilities.invokeAndWait(() -> {
+                    for (int index = 0; index < checks.get().size(); index++)
+                        assertEquals(index < accepted, checks.get().get(index).isSelected());
+                });
+                assertEquals(handle.id(), originalTask.get());
+                assertEquals(0, remoteCalls.get());
+                assertFalse(handle.completion().toCompletableFuture().isDone());
+                acceptDialog(current);
+                current = awaitDialog("替换数据库软件包");
+                var repeated = current;
+                SwingUtilities.invokeAndWait(() -> {
+                    assertSame(panel.get(), assertInstanceOf(JScrollPane.class, findOptionPane(repeated).getMessage())
+                            .getViewport().getView());
+                    for (int index = 0; index < checks.get().size(); index++)
+                        assertSame(checks.get().get(index), panel.get().getComponent(index + 4));
+                    checks.get().get(accepted).setSelected(true);
+                });
+            }
+            acceptDialog(current);
             var restoration = awaitDialog("确认人工恢复数据库");
             captureDialog(restoration, "native-restoration");
             acceptDialog(restoration);
             assertEquals(Outcome.SUCCEEDED,
                     handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(handle.id(), originalTask.get());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(0, remoteCalls.get());
             SwingUtilities.invokeAndWait(page::close);
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }
     }
 

@@ -13,10 +13,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
+import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -28,6 +30,8 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
@@ -223,6 +227,21 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     }
 
     /** Controlled native package scenarios. / 受控原生软件包场景。 */
+    @Test
+    void nodeWithoutEndpointPublishesProcessHealthAndPersistsOriginalRuntimeWithoutLeakedResources() throws Exception {
+        runStaticWorkflow(false, false, false, false, false, false, NativeInstallType.NO_PORT_NODE);
+    }
+
+    @Test
+    void nativeAdministratorAndApplicationRetriesRequireRenewedSchemaConsentAndClearOwnedInputs() throws Exception {
+        runStaticWorkflow(false, false, false, true, true, false, NativeInstallType.AUTH_SCHEMA_APPROVED);
+    }
+
+    @Test
+    void fullControlCannotOverrideIndependentNativeSchemaRefusalAfterAuthenticationRetries() throws Exception {
+        runStaticWorkflow(false, false, false, true, true, false, NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED);
+    }
+
     private enum NativeInstallType {
         /** An existing compatible instance. / 既有兼容实例。 */
         NONE,
@@ -237,7 +256,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         /** Independently approved existing schema. / 独立批准已有结构。 */
         EXISTING_SCHEMA_APPROVED,
         /** Independently refused existing schema. / 独立拒绝已有结构。 */
-        EXISTING_SCHEMA_REFUSED
+        EXISTING_SCHEMA_REFUSED, AUTH_SCHEMA_APPROVED, AUTH_SCHEMA_FULL_CONTROL_REFUSED, NO_PORT_NODE
     }
 
     /** Shares the original CLASS/H2 publication fixture across local, Git and SQLite sources. / 为本地、Git 和 SQLite 来源复用原 CLASS/H2 发布夹具。
@@ -304,10 +323,21 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
             boolean authRetry, boolean rotateStored, NativeInstallType nativeInstall) throws Exception {
+        boolean noPortNode = nativeInstall == NativeInstallType.NO_PORT_NODE;
         Files.createDirectories(selectedSourceDirectory());
-        Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
-        Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
-        Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        if (noPortNode) {
+            Files.writeString(selectedSourceDirectory().resolve("package.json"),
+                    "{\"name\":\"service\",\"version\":\"1.0.0\",\"engines\":{\"node\":\"22\"},"
+                            + "\"scripts\":{\"build\":\"node build.js\",\"start\":\"node worker.js\"}}");
+            Files.writeString(selectedSourceDirectory().resolve("package-lock.json"),
+                    "{\"name\":\"service\",\"version\":\"1.0.0\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"service\",\"version\":\"1.0.0\"}}}");
+            Files.writeString(selectedSourceDirectory().resolve("build.js"), "console.log('build complete');\n");
+            Files.writeString(selectedSourceDirectory().resolve("worker.js"), "setInterval(() => {}, 1000);\n");
+        } else {
+            Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
+            Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
+            Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
+        }
         if (sqlite) {
             Files.writeString(selectedSourceDirectory().resolve("windowstolinux-db.properties"),
                     "db=main\ndb.main.engine=SQLITE\ndb.main.path=DEFAULT\ndb.main.pathEnvironment=DB_PATH\n"
@@ -375,15 +405,21 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             nativeState.prepared = authRetry;
             nativeState.authFailuresRemaining = authRetry ? 1 : 0;
             var passwordPrompts = new AtomicInteger();
-            for (int publication = 1; publication <= 2; publication++) {
+            var ownedInputs = new ArrayList<byte[]>();
+            boolean chainedAuthentication = nativeInstall == NativeInstallType.AUTH_SCHEMA_APPROVED
+                    || nativeInstall == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED;
+            boolean fullControl = nativeInstall == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED;
+            for (int publication = 1; publication <= (noPortNode ? 1 : 2); publication++) {
                 final int currentPublication = publication;
                 boolean schemaReview = nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED
-                        || nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED;
+                        || nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED || chainedAuthentication;
+                if (chainedAuthentication)
+                    nativeState.adminFailuresRemaining = 1;
                 if (schemaReview) {
                     nativeState.schemaFailureRemaining = 1;
                     nativeState.initialized = false;
                 }
-                if (!nativeDatabase)
+                if (!nativeDatabase && !noPortNode)
                     Files.writeString(selectedSourceDirectory().resolve("main.go"),
                             "package main\nfunc main() { /* publication " + publication + " */ }\n");
                 if (rotateStored && publication == 2) {
@@ -405,13 +441,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var callbackEnded = new CountDownLatch(1);
                 var reviewedTask = new AtomicReference<TaskContext>();
                 var helperInstalls = new AtomicInteger();
-                var existing = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded);
+                var existing = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded,
+                        noPortNode);
                 var session = nativeDatabase
                         ? nativePeer(existing, original, reviewedTask, nativeState, actions, grants)
                         : installHelper && publication == 1
                                 ? missingHelper(existing, original, reviewedTask, helperInstalls)
                                 : existing;
-                var bound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
+                var remoteBound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
+                var independentReviews = new AtomicInteger();
+                var bound = fullControl
+                        ? withFullControlModels(remoteBound, reviewedTask, independentReviews)
+                        : remoteBound;
                 var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
                 var observedTask = new AtomicReference<UUID>();
                 var reviewedApplication = new AtomicReference<String>();
@@ -446,16 +487,33 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
 
                     @Override
+                    public OperationResult<byte[]> administratorPassword(ServerRef exact,
+                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance instance,
+                            TaskContext task) {
+                        assertTrue(chainedAuthentication);
+                        assertEquals(server, exact);
+                        assertSame(reviewedTask.get(), task);
+                        assertEquals("postgresql-16", instance.id());
+                        assertEquals(0, nativeState.adminFailuresRemaining);
+                        byte[] owned = "fresh-administrator".getBytes(StandardCharsets.UTF_8);
+                        ownedInputs.add(owned);
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(owned), Optional.empty());
+                    }
+
+                    @Override
                     public OperationResult<byte[]> applicationPassword(ServerRef exact,
                             gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
                             TaskContext task) {
                         if (!authRetry && !rotateStored)
                             throw new AssertionError("A new owned target must use its generated and saved password");
                         int prompt = passwordPrompts.incrementAndGet();
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of((prompt == 1
+                        assertSame(reviewedTask.get(), task);
+                        byte[] owned = (prompt == 1
                                 ? "incorrect"
                                 : rotateStored && currentPublication == 2 ? "rotated-password" : "correct-password")
-                                .getBytes(StandardCharsets.UTF_8)), Optional.empty());
+                                .getBytes(StandardCharsets.UTF_8);
+                        ownedInputs.add(owned);
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(owned), Optional.empty());
                     }
 
                     @Override
@@ -503,8 +561,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         manifestSha.set(manifest);
                         return new OperationResult<>(Outcome.SUCCEEDED,
                                 Optional.of(new DeploymentStaticWorkflow.Selection(discovered.getFirst().id(),
-                                        Map.of(discovered.getFirst().id(), new DeploymentStaticWorkflow.Choice(
-                                                DeploymentProjectKind.GO_SERVICE, Set.of())),
+                                        Map.of(discovered.getFirst().id(),
+                                                new DeploymentStaticWorkflow.Choice(noPortNode
+                                                        ? DeploymentProjectKind.NODE_SERVICE
+                                                        : DeploymentProjectKind.GO_SERVICE, Set.of())),
                                         Optional.empty())),
                                 Optional.empty());
                     }
@@ -537,7 +597,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         }
                         assertEquals(currentPublication, ++nativeState.schemaReviews);
                         return new OperationResult<>(Outcome.SUCCEEDED,
-                                Optional.of(nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED),
+                                Optional.of(nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED
+                                        || nativeInstall == NativeInstallType.AUTH_SCHEMA_APPROVED),
                                 Optional.empty());
                     }
 
@@ -552,6 +613,14 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         values.put("version", "1.24");
                         values.put("port", "8080");
                         values.put("healthMode", "TCP");
+                        if (noPortNode) {
+                            assertEquals("", prompt.defaults().getOrDefault("port", ""));
+                            values.put("primary", "");
+                            values.put("secondary", "");
+                            values.put("version", "22");
+                            values.put("port", "");
+                            values.put("healthMode", "PROCESS");
+                        }
                         values.put("exposure", "INTERNAL");
                         values.put("secrets", "page-application:1");
                         var answer = new DeploymentStaticWorkflow.Answers(values, List.of(),
@@ -611,7 +680,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         : Optional.<DeploymentStaticWorkflow.GitSource>empty();
                 var handle = workflow.submit(server,
                         new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
-                        gitInput, reviewer);
+                        gitInput, reviewer, fullControl, fullControl ? "FULL_CONTROL" : "MANUAL_REVIEW");
                 if (nativeInstall == NativeInstallType.START_UNKNOWN) {
                     long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
                     while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
@@ -644,7 +713,27 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                                             "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
                             unfinished);
                 }
-                if (nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED) {
+                if (chainedAuthentication) {
+                    assertEquals(2, actions.stream().filter("native-target"::equals).count());
+                    assertEquals(0, nativeState.adminFailuresRemaining);
+                    for (var owned : ownedInputs)
+                        assertArrayEquals(new byte[owned.length], owned,
+                                "Consumed reviewer-owned input must be cleared");
+                }
+                if (nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED || fullControl) {
+                    if (fullControl) {
+                        assertTrue(independentReviews.get() > 0, "Independent fixed-action approvals actually ran");
+                        try (var access = scope(runtime, true);
+                                var connection = access.openConnection();
+                                var statement = connection.createStatement();
+                                var rows = statement.executeQuery(
+                                        "SELECT preference_key,preference_value FROM preference WHERE preference_key IN ('deploy_mode','deploy_approval')")) {
+                            var choices = new HashMap<String, String>();
+                            while (rows.next())
+                                choices.put(rows.getString(1), rows.getString(2));
+                            assertEquals(Map.of("deploy_mode", "ASSISTED", "deploy_approval", "FULL_CONTROL"), choices);
+                        }
+                    }
                     assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
                     assertEquals("DEPLOYMENT_NATIVE_DB_DECLINED", result.problem().orElseThrow().eventCode());
                     assertFalse(nativeState.initialized);
@@ -677,6 +766,91 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 assertEquals(installHelper && publication == 1 ? 1 : 0, helperInstalls.get());
                 assertEquals(1, actions.stream().filter("stage-secret-page-application"::equals).count(),
                         "The reviewed revision and protected bytes must reach the controlled stage command");
+                if (noPortNode) {
+                    var sentReleases = actions.stream().filter(value -> value.startsWith("wire-release="))
+                            .map(value -> value.substring("wire-release=".length())).toList();
+                    assertEquals(1, sentReleases.size());
+                    String publishedRelease = sentReleases.getFirst();
+                    assertNotEquals(sha.get(), publishedRelease,
+                            "The complete reviewed release identity also binds runtime, configuration and tools");
+                    assertEquals(1, actions.stream().filter("observe"::equals).count(),
+                            "Successful DAEMON publication must pass the actual typed RUNNING observation");
+                    var inspectionFailure = new AtomicReference<Throwable>();
+                    var inspected = original.tasks().submit(new TaskRequest("node-process-publication-inspect",
+                            "Inspect original process publication", List.of(server.id()), false), task -> {
+                                try {
+                                    var graph = new DeploymentGraphRepository(original.db())
+                                            .find(task, reviewedApplication.get()).orElseThrow();
+                                    assertInstanceOf(DeploymentHealthCheck.Process.class, graph.healthCheck());
+                                    var component = graph.components().getFirst();
+                                    assertInstanceOf(DeploymentRuntimeDefinition.NodeService.class,
+                                            component.reviewedRuntime());
+                                    assertInstanceOf(DeploymentHealthCheck.Process.class,
+                                            component.runtime().healthCheck());
+                                    assertTrue(component.runtime().userAccessUrl().isEmpty());
+                                    assertEquals(22, ((DeploymentRuntimeDefinition.NodeService) component.reviewedRuntime()).nodeMajorVersion());
+                                    assertEquals(DeploymentWorkload.ExecutionMode.DAEMON, component.runtime().workload().mode());
+                                    assertTrue(component.runtime().workload().endpoints().isEmpty());
+                                    UUID applicationReleaseId;
+                                    String applicationReleaseSha;
+                                    UUID originalExecutionId;
+                                    try (var connection = original.db().openConnection(task);
+                                            var query = connection.prepareStatement(
+                                                    "SELECT u.current_release_sha256,e.outcome,r.release_sha256,e.platform_task_id,e.phase,e.business_committed,e.cleanup_complete,r.release_id,e.execution_id "
+                                                            + "FROM deployment_unit u JOIN managed_application_component c ON c.deployment_unit_id=u.deployment_unit_id "
+                                                            + "JOIN deployment_release r ON r.application_id=c.application_id "
+                                                            + "JOIN deployment_execution e ON e.execution_id=r.execution_id "
+                                                            + "WHERE u.deployment_unit_id=? AND c.application_id=? AND r.state='ACTIVE'")) {
+                                        query.setString(1, component.unit().id());
+                                        query.setString(2, graph.applicationId());
+                                        try (var rows = query.executeQuery()) {
+                                            assertTrue(rows.next());
+                                            assertEquals(publishedRelease, rows.getString(1));
+                                            assertEquals("SUCCEEDED", rows.getString(2));
+                                            applicationReleaseSha = rows.getString(3);
+                                            assertEquals(handle.id(), rows.getObject(4, UUID.class));
+                                            assertEquals("FINISHED", rows.getString(5));
+                                            assertTrue(rows.getBoolean(6));
+                                            assertTrue(rows.getBoolean(7));
+                                            applicationReleaseId = rows.getObject(8, UUID.class);
+                                            originalExecutionId = rows.getObject(9, UUID.class);
+                                            assertFalse(rows.next());
+                                        }
+                                    }
+                                    var releases = new DeploymentReleaseRepository(original.db());
+                                    var applicationRelease = releases.find(task, graph.applicationId(), applicationReleaseId).orElseThrow();
+                                    assertEquals(applicationReleaseSha, applicationRelease.identity().sha256());
+                                    assertEquals(originalExecutionId, applicationRelease.executionId());
+                                    assertEquals(DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE, applicationRelease.state());
+                                    var retained = releases.snapshot(applicationRelease);
+                                    assertEquals(graph, retained.graph());
+                                    assertEquals(1, retained.bindings().size());
+                                    assertEquals(component.unit().id(), retained.bindings().getFirst().unitId());
+                                    assertEquals(publishedRelease, retained.bindings().getFirst().releaseSha256());
+                                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(),
+                                            Optional.empty());
+                                } catch (Exception | AssertionError failed) {
+                                    inspectionFailure.set(failed);
+                                    throw failed;
+                                }
+                            });
+                    try {
+                        assertEquals(Outcome.SUCCEEDED,
+                                inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                    } catch (TimeoutException unfinished) {
+                        var failure = new AssertionError("Original Node publication inspection unfinished: publication="
+                                + handle.snapshot() + ", inspection=" + inspected.snapshot() + ", originalFailure="
+                                + inspectionFailure.get() + ", actions=" + actions + ", activeResources="
+                                + scalar(runtime,
+                                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                                unfinished);
+                        if (inspectionFailure.get() != null)
+                            failure.addSuppressed(inspectionFailure.get());
+                        throw failure;
+                    }
+                    assertEquals(0,
+                            scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                }
                 if (sqlite) {
                     long revision = publication;
                     var inspected = original.tasks().submit(new TaskRequest("sqlite-publication-inspect",
@@ -1299,6 +1473,52 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param real original Mod context / 原Mod上下文
      * @param session controlled original session / 受控原会话
      * @return delegated context / 委托上下文 */
+    private ModContext withFullControlModels(ModContext real, AtomicReference<TaskContext> originalTask,
+            AtomicInteger independentReviews) {
+        AiService models = new AiService() {
+            public String configurationRevision(AiPurpose purpose, TaskContext task) {
+                assertTrue(purpose == AiPurpose.LANGUAGE || purpose == AiPurpose.APPROVAL);
+                return "a".repeat(64);
+            }
+
+            public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
+                return call(request, "a".repeat(64), task);
+            }
+
+            public OperationResult<AiResponse> call(AiRequest request, String revision, TaskContext task) {
+                assertEquals("a".repeat(64), revision);
+                assertSame(originalTask.get(), task);
+                try {
+                    var facts = new ObjectMapper().readTree(request.messages().getLast().text());
+                    if (request.purpose() == AiPurpose.APPROVAL) {
+                        assertEquals("FULL_CONTROL", facts.path("policy").textValue());
+                        assertFalse(facts.path("operation").textValue().isBlank());
+                        independentReviews.incrementAndGet();
+                    }
+                    String output = request.purpose() == AiPurpose.APPROVAL
+                            ? "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact fixed effect only\"}"
+                            : "{\"action\":\"ADVISE\",\"sourceRevision\":\"" + facts.path("sourceRevision").textValue()
+                                    + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep deterministic inputs\",\"unresolved\":[]}}";
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new AiResponse(output,
+                            "controlled-independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
+                            Optional.empty());
+                } catch (Exception invalid) {
+                    throw new AssertionError(invalid);
+                }
+            }
+        };
+        return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("ai"))
+                        return models;
+                    try {
+                        return method.invoke(real, args);
+                    } catch (InvocationTargetException failed) {
+                        throw failed.getCause();
+                    }
+                });
+    }
+
     private ModContext withControlledSession(ModContext real, RemoteSession session, PlatformRuntime runtime,
             ScenarioType scenario) {
         var commitRefused = new AtomicBoolean();
@@ -1416,6 +1636,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         /** One controlled known authentication failure. / 一次受控已知认证失败。 */
         private int authFailuresRemaining;
 
+        private int adminFailuresRemaining;
+
         /** Permits one confirmed new password after a stored revision is rejected. / 已存修订被拒后允许一份已确认新密码。 */
         private boolean acceptRotation;
 
@@ -1526,8 +1748,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                                     assertEquals("sampleuser", frame.fields.get("username"));
                                     assertEquals(state.applicationId, frame.fields.get("applicationId"));
                                 }
-                                if (action.equals("target"))
+                                if (action.equals("target")) {
+                                    if (state.adminFailuresRemaining > 0) {
+                                        assertFalse(frame.sensitive.containsKey("adminPassword"));
+                                        state.adminFailuresRemaining--;
+                                        return nativeReply(Map.of("status", "AUTH_REQUIRED"));
+                                    }
+                                    if (state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
+                                            || state.install == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED)
+                                        assertArrayEquals("fresh-administrator".getBytes(StandardCharsets.UTF_8),
+                                                frame.sensitive.get("adminPassword"));
                                     return nativeReply(nativeTarget(state, ""));
+                                }
                                 if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action))
                                     throw new AssertionError("Unexpected native action: " + action);
                                 var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task.get())
@@ -1572,8 +1804,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                                 if (action.equals("initialize") && !denied && !schemaChanged) {
                                     assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
                                     assertEquals(state.install == NativeInstallType.EXISTING_SCHEMA_APPROVED
-                                            ? "true"
-                                            : "false", frame.fields.get("existingApproved"));
+                                            || state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
+                                                    ? "true"
+                                                    : "false",
+                                            frame.fields.get("existingApproved"));
                                     assertArrayEquals(
                                             "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
                                             frame.sensitive.get("sql"));
@@ -1711,6 +1945,12 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     private RemoteSession peer(ScenarioType scenario, List<String> actions, AtomicReference<String> sha,
             AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
             CountDownLatch callbackEnded) {
+        return peer(scenario, actions, sha, bytes, path, candidate, callbackEnded, false);
+    }
+
+    private RemoteSession peer(ScenarioType scenario, List<String> actions, AtomicReference<String> sha,
+            AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
+            CountDownLatch callbackEnded, boolean noPortNode) {
         var configStages = new AtomicInteger();
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
@@ -1757,6 +1997,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
                     if (script.contains("prepare-toolchains 'prepare'")) {
                         actions.add("prepare-tools");
+                        if (noPortNode)
+                            return reply(
+                                    "TOOLCHAIN=NODE|22.14.0|/usr/local/lib/windowstolinux/toolchains/versions/node-"
+                                            + "b".repeat(64) + "|MANAGED|https://official.example/node|"
+                                            + "b".repeat(64) + "\n");
                         return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
                                 + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
                     }
@@ -1784,7 +2029,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     if (script.startsWith("exec /usr/bin/python3 -I -c ")) {
                         actions.add("build");
                         return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
-                                + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
+                                + "\nUID=1001\nENGINE=ordinary\nTOOL=" + (noPortNode ? "NPM" : "GO_MODULE")
+                                + "\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
                     }
                     if (script.contains("stage-config")) {
                         actions.add("stage-config");
@@ -1820,6 +2066,14 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                                 : "PREVIOUS=0\n");
                     }
                     if (script.contains("publish-deployment")) {
+                        if (noPortNode) {
+                            var wire = java.util.regex.Pattern
+                                    .compile("'publish-deployment' 'service' '([a-z0-9-]+)' '([0-9a-f]{64})'")
+                                    .matcher(script);
+                            assertTrue(wire.find(), script);
+                            assertEquals(candidate.get().candidateId(), wire.group(1));
+                            actions.add("wire-release=" + wire.group(2));
+                        }
                         actions.add("publish");
                         if (scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_UNKNOWN
                                 || scenario == ScenarioType.RETAIN_UNKNOWN
@@ -1835,6 +2089,21 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         return scenario == ScenarioType.PUBLISH_UNKNOWN ? unknown() : reply("PUBLISHED=1\n");
                     }
                     if (script.contains("application-health")) {
+                        if (noPortNode) {
+                            var quoted = java.util.regex.Pattern.compile("'([^']*)'").matcher(script);
+                            String payload = null;
+                            while (quoted.find())
+                                payload = quoted.group(1);
+                            assertNotNull(payload, script);
+                            var fields = new String(Base64.getDecoder().decode(payload), StandardCharsets.UTF_8)
+                                    .split("\\x00", -1);
+                            assertEquals(5, fields.length);
+                            assertEquals("health-v1", fields[0]);
+                            assertEquals("PROCESS", fields[1]);
+                            assertTrue(Integer.parseInt(fields[2]) > 0);
+                            assertTrue(Integer.parseInt(fields[3]) >= 0);
+                            assertEquals("", fields[4]);
+                        }
                         actions.add("health");
                         return scenario == ScenarioType.HEALTH_FAILED_ROLLBACK
                                 || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE

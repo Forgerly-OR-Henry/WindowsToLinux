@@ -82,9 +82,18 @@ class ModTest extends DeploymentRuntimeFixture {
                 assertTrue(new DeploymentSchema().validate(access).valid());
                 assertThrows(SQLException.class, () -> statement.executeUpdate("DELETE FROM preference"));
                 try (var rows = statement.executeQuery(
-                        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=CURRENT_SCHEMA AND table_type='BASE TABLE'")) {
-                    assertTrue(rows.next());
-                    assertEquals(18, rows.getInt(1));
+                        "SELECT table_name FROM information_schema.tables WHERE table_schema=CURRENT_SCHEMA AND table_type='BASE TABLE'")) {
+                    var actual = new TreeSet<String>();
+                    while (rows.next())
+                        actual.add(rows.getString(1));
+                    assertEquals(Set.of("deployment_unit", "managed_application", "managed_application_component",
+                            "managed_application_dependency", "external_application",
+                            "deployment_unit_configuration_snapshot", "deployment_unit_configuration_entry",
+                            "deployment_unit_release_binding", "secret_revision",
+                            "deployment_unit_release_secret_reference", "deployment_agent_task",
+                            "deployment_agent_event", "deployment_project", "deployment_execution",
+                            "deployment_release", "deployment_handoff", "preference", "deployment_log",
+                            "deployment_management_operation"), actual);
                 }
             }
         }
