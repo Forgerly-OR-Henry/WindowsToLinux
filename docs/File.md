@@ -1703,3 +1703,5 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 ### S5-03/S5-04 当前模式源码
 
 部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。完整活动图退出与全局架构门禁仍属 S3 待收尾项。
+
+受管 helper 发布证据由 `DeploymentPublicationEvidenceChannel` 与 `DeploymentPublicationReceipt` 承担，原 Channel 保留远端准入及业务命令。协议 14 显式组装 58 个维护资源；新增 native 操作、数据库只读检查、应用准入及恢复收尾片段保留原函数正文与顺序，独立尝试 snapshot 片段保存根任务／操作双身份并在锁内验证旧 CURRENT。

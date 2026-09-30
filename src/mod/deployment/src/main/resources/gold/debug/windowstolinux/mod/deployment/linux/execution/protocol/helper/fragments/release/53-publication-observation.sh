@@ -1,9 +1,19 @@
 publication_original_status() {
     [ "$#" -eq 7 ] || reject publication-status-arguments
-    local app="$1" manifest="$2" task="$3" candidate_id="$4" release="$5" backend="$6" engine="$7"
+    publication_original_status_owned "$1" "$2" "$3" "$3" "$4" "$5" "$6" "$7" 0
+}
+publication_original_status_attempt() {
+    [ "$#" -eq 8 ] || reject publication-status-attempt-arguments
+    publication_original_status_owned "$@" 1
+}
+publication_original_status_owned() {
+    [ "$#" -eq 9 ] || reject publication-status-owned-arguments
+    local app="$1" manifest="$2" task="$3" operation="$4" candidate_id="$5" release="$6" backend="$7" engine="$8" attempt="$9"
     require_app "$app"
     require_digest "$manifest"
     require_snapshot_token "$task"
+    require_snapshot_token "$operation"
+    case "$attempt" in 0 | 1) ;; *) reject publication-attempt-flag ;; esac
     require_candidate "$app" "$candidate_id"
     if [ "$release" != none ]; then require_digest "$release"; fi
     case "$backend:$engine" in native:none | container:docker | container:podman) ;; *) reject publication-status-backend ;; esac
@@ -41,13 +51,17 @@ publication_original_status() {
     local snapshot=none old=none old_kind=none old_running=none path original previous
     if [ -e "$snapshots_root" ] || [ -L "$snapshots_root" ]; then
         assert_root_owned_directory "$snapshots_root"
-        path="$(snapshot_root "$app" "$task")"
+        path="$(snapshot_root "$app" "$operation")"
         if [ -e "$path" ] || [ -L "$path" ]; then
             assert_root_owned_directory "$path"
             assert_root_owned_regular "$path/.deployment-task"
             original="$(cat -- "$path/.deployment-task")"
             [ "$original" = "$task" ] || reject publication-snapshot-foreign
-            snapshot="$task"
+            if [ "$attempt" = 1 ]; then
+                assert_root_owned_regular "$path/.deployment-operation"
+                [ "$(cat -- "$path/.deployment-operation")" = "$operation" ] || reject publication-snapshot-operation
+            fi
+            snapshot="$operation"
             assert_root_owned_regular "$path/current-path"
             assert_root_owned_regular "$path/runtime"
             previous="$(cat -- "$path/current-path")"
@@ -125,17 +139,31 @@ publication_original_status() {
 
 discard_original_snapshot() {
     [ "$#" -eq 3 ] || reject discard-snapshot-arguments
-    local app="$1" manifest="$2" task="$3" root path previous old marker
+    discard_original_snapshot_owned "$1" "$2" "$3" "$3" 0
+}
+discard_original_snapshot_attempt() {
+    [ "$#" -eq 4 ] || reject discard-snapshot-attempt-arguments
+    discard_original_snapshot_owned "$@" 1
+}
+discard_original_snapshot_owned() {
+    [ "$#" -eq 5 ] || reject discard-snapshot-owned-arguments
+    local app="$1" manifest="$2" task="$3" operation="$4" attempt="$5" root path previous old marker
     require_app "$app"
     require_digest "$manifest"
     require_snapshot_token "$task"
+    require_snapshot_token "$operation"
+    case "$attempt" in 0 | 1) ;; *) reject discard-attempt-flag ;; esac
     application_maintenance "$app"
     root="$(app_root "$app")"
-    path="$(snapshot_root "$app" "$task")"
+    path="$(snapshot_root "$app" "$operation")"
     assert_root_owned_directory "$root"
     assert_root_owned_directory "$path"
     assert_root_owned_regular "$path/.deployment-task"
     [ "$(cat -- "$path/.deployment-task")" = "$task" ] || reject discard-snapshot-foreign
+    if [ "$attempt" = 1 ]; then
+        assert_root_owned_regular "$path/.deployment-operation"
+        [ "$(cat -- "$path/.deployment-operation")" = "$operation" ] || reject discard-snapshot-operation
+    fi
     assert_root_owned_regular "$path/current-path"
     previous="$(cat -- "$path/current-path")"
     old="${previous##*/}"
@@ -150,7 +178,7 @@ discard_original_snapshot() {
     [ ! -e "$marker" ] && [ ! -L "$marker" ] || reject discard-maintenance-active
     if [ -e "$root/.migration-snapshot" ] || [ -L "$root/.migration-snapshot" ]; then
         assert_root_owned_regular "$root/.migration-snapshot"
-        [ "$(cat -- "$root/.migration-snapshot")" = "$task" ] || reject discard-migration-foreign
+        [ "$(cat -- "$root/.migration-snapshot")" = "$operation" ] || reject discard-migration-foreign
         rm -f -- "$root/.migration-snapshot"
     fi
     rm -rf --one-file-system -- "$path"

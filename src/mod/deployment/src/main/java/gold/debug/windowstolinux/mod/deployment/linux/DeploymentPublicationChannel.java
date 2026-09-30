@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import static gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationReceipt.*;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -43,6 +45,9 @@ public final class DeploymentPublicationChannel {
     /** Caller-owned check immediately before remote dispatch. / 远端发送紧前调用方持有的核对。 */
     private final DeploymentSendGuard beforeSend;
 
+    /** Root-task and attempt evidence consumer. / 根任务与尝试证据使用方。 */
+    private final DeploymentPublicationEvidenceChannel evidence;
+
     /** Binds one original publication session without taking ownership of it. / 绑定一份原发布会话而不接管其寿命。
      * @param session original connection / 原连接
      * @param interaction actual host review / 真实宿主审核
@@ -71,6 +76,7 @@ public final class DeploymentPublicationChannel {
             throw new IllegalArgumentException("Reviewed plan identity required");
         this.planRevision = planRevision;
         this.beforeSend = Objects.requireNonNull(beforeSend);
+        this.evidence = new DeploymentPublicationEvidenceChannel(task, this::send);
     }
 
     /** Creates one original helper rollback snapshot; an incomplete reply never means first deployment. / 创建一份原helper回滚快照；不完整回执绝不表示首次部署。
@@ -81,30 +87,21 @@ public final class DeploymentPublicationChannel {
     public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
             DeploymentRuntimeDefinition runtime) throws ApiException {
         requireUnit(unit);
-        String verb = runtime instanceof DeploymentRuntimeDefinition.Container
-                ? "snapshot-container"
-                : "snapshot-deployment";
-        var observed = send("deployment.publication.snapshot.v1", unit, verb,
-                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString()), Duration.ofSeconds(30), 4096);
-        if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
-        if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
-            return withoutValue(observed);
-        if (!complete(observed))
-            return unknown("DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
-        String output = observed.value().orElseThrow().stdout();
-        if (output.equals("PREVIOUS=0\n"))
-            return success(new DeploymentRemoteReleaseSnapshot(Optional.empty(), false, Optional.empty(), "none"));
-        var match = java.util.regex.Pattern.compile(
-                "SNAPSHOT_TOKEN=([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\\nPREVIOUS=1\\nPREVIOUS_RUNNING=([01])\\nPREVIOUS_DIGEST=([0-9a-f]{64})\\nPREVIOUS_KIND=(ordinary|deployment|container)\\n")
-                .matcher(output);
-        if (!match.matches())
-            return unknown("DEPLOYMENT_SNAPSHOT_RECEIPT_INVALID");
-        if (!task.id().toString().equals(match.group(1))
-                || runtime instanceof DeploymentRuntimeDefinition.Container != "container".equals(match.group(4)))
-            return unknown("DEPLOYMENT_SNAPSHOT_RECEIPT_INVALID");
-        return success(new DeploymentRemoteReleaseSnapshot(Optional.of(match.group(1)), "1".equals(match.group(2)),
-                Optional.of(match.group(3)), match.group(4)));
+        return evidence.snapshot(unit, runtime, task.id(), Optional.empty(), false);
+    }
+
+    /** Creates one distinct attempt snapshot under the reviewed previous CURRENT. / 按已审阅旧CURRENT创建独立尝试快照。
+     * @param unit exact owned unit / 精确所属单元
+     * @param runtime reviewed runtime / 已审阅运行定义
+     * @param operation distinct operation UUID / 独立操作UUID
+     * @param expectedCurrent reviewed old digest or explicit empty / 已审阅旧摘要或明确为空
+     * @return exact snapshot or uncertainty / 精确快照或未知
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
+            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent)
+            throws ApiException {
+        requireUnit(unit);
+        return evidence.snapshot(unit, runtime, operation, expectedCurrent, true);
     }
 
     /** Reads only the original task's owned publication evidence without replaying an effect. / 仅读取原任务所属发布证据而不重放副作用。
@@ -118,61 +115,23 @@ public final class DeploymentPublicationChannel {
     public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
             String candidateId, Optional<String> releaseSha256, String backend, String engine) throws ApiException {
         requireUnit(unit);
-        Objects.requireNonNull(releaseSha256);
-        if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}")
-                || releaseSha256.isPresent() && !releaseSha256.orElseThrow().matches("[0-9a-f]{64}"))
-            throw new IllegalArgumentException("Original publication identity required");
-        if (!Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine))
-            throw new IllegalArgumentException("Original backend and engine required");
-        var observed = send("deployment.publication.original-status.v1", unit, "publication-original-status",
-                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), candidateId,
-                        releaseSha256.orElse("none"), backend, engine),
-                Duration.ofSeconds(30), 4096);
-        if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
-        if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
-            return withoutValue(observed);
-        if (!complete(observed))
-            return unknown("DEPLOYMENT_ORIGINAL_STATUS_UNCONFIRMED");
-        var values = fields(observed.value().orElseThrow().stdout());
-        if (!values.keySet()
-                .equals(Set.of("PUBLICATION_STATUS", "CURRENT", "CURRENT_KIND", "CURRENT_MODE", "SNAPSHOT",
-                        "SNAPSHOT_OLD", "SNAPSHOT_KIND", "SNAPSHOT_RUNNING", "MAINTENANCE", "CANDIDATE", "BUILD_ACTIVE",
-                        "UNIT_PRESENT", "CONTAINER_PRESENT", "RETAINED_COUNT"))
-                || !"1".equals(values.get("PUBLICATION_STATUS"))
-                || !Set.of("none", task.id().toString()).contains(values.get("SNAPSHOT"))
-                || !Set.of("none", "0", "1").contains(values.get("SNAPSHOT_RUNNING"))
-                || ("none".equals(values.get("SNAPSHOT")) != "none".equals(values.get("SNAPSHOT_RUNNING")))
-                || !("none".equals(values.get("MAINTENANCE")) || releaseSha256.isPresent()
-                        && ("deployment-" + releaseSha256.orElseThrow()).equals(values.get("MAINTENANCE")))
-                || !Set.of("owned", "absent").contains(values.get("CANDIDATE"))
-                || !Set.of("yes", "no").contains(values.get("BUILD_ACTIVE"))
-                || !Set.of("yes", "no").contains(values.get("UNIT_PRESENT"))
-                || !Set.of("yes", "no", "not-applicable").contains(values.get("CONTAINER_PRESENT"))
-                || (backend.equals("native") != "not-applicable".equals(values.get("CONTAINER_PRESENT"))))
-            return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
-        try {
-            if (!values.get("RETAINED_COUNT").matches("0|[1-9][0-9]{0,3}"))
-                return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
-            return success(new DeploymentOriginalPublicationStatus(
-                    "none".equals(values.get("CURRENT")) ? Optional.empty() : Optional.of(values.get("CURRENT")),
-                    values.get("CURRENT_KIND"), values.get("CURRENT_MODE"), !"none".equals(values.get("SNAPSHOT")),
-                    "none".equals(values.get("SNAPSHOT_OLD"))
-                            ? Optional.empty()
-                            : Optional.of(values.get("SNAPSHOT_OLD")),
-                    values.get("SNAPSHOT_KIND"),
-                    "none".equals(values.get("SNAPSHOT_RUNNING"))
-                            ? Optional.empty()
-                            : Optional.of("1".equals(values.get("SNAPSHOT_RUNNING"))),
-                    !"none".equals(values.get("MAINTENANCE")), "owned".equals(values.get("CANDIDATE")),
-                    "yes".equals(values.get("BUILD_ACTIVE")), "yes".equals(values.get("UNIT_PRESENT")),
-                    "not-applicable".equals(values.get("CONTAINER_PRESENT"))
-                            ? Optional.empty()
-                            : Optional.of("yes".equals(values.get("CONTAINER_PRESENT"))),
-                    Integer.parseInt(values.get("RETAINED_COUNT"))));
-        } catch (IllegalArgumentException malformed) {
-            return unknown("DEPLOYMENT_ORIGINAL_STATUS_INVALID");
-        }
+        return evidence.originalStatus(unit, candidateId, releaseSha256, backend, engine, task.id(), false);
+    }
+
+    /** Reads the original root task and exact later operation without replay. / 读取原根任务及精确后续操作而不重放。
+     * @param unit exact owned unit / 精确所属单元
+     * @param candidateId original candidate / 原候选
+     * @param releaseSha256 attempted release / 尝试发布
+     * @param backend original backend / 原后端
+     * @param engine original engine / 原引擎
+     * @param operation exact operation UUID / 精确操作UUID
+     * @return exact original evidence or uncertainty / 精确原证据或未知
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
+            String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation)
+            throws ApiException {
+        requireUnit(unit);
+        return evidence.originalStatus(unit, candidateId, releaseSha256, backend, engine, operation, true);
     }
 
     /** Discards only a task-bound prepublish snapshot after read-only proof that old current is unchanged. / 只在只读证明旧当前版本未变后丢弃原任务发布前快照。
@@ -181,15 +140,18 @@ public final class DeploymentPublicationChannel {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit) throws ApiException {
         requireUnit(unit);
-        var observed = send("deployment.publication.snapshot-discard.v1", unit, "snapshot-discard-task",
-                List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString()), Duration.ofSeconds(60), 4096);
-        if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
-            return withoutValue(observed);
-        if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
-            return withoutValue(observed);
-        if (!complete(observed) || !"SNAPSHOT_DISCARDED=1\n".equals(observed.value().orElseThrow().stdout()))
-            return unknown("DEPLOYMENT_SNAPSHOT_DISCARD_UNCONFIRMED");
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return evidence.discardSnapshot(unit, task.id(), false);
+    }
+
+    /** Cleans only the exact root-owned attempt snapshot. / 仅清理精确根任务所属的尝试快照。
+     * @param unit exact owned unit / 精确所属单元
+     * @param operation exact operation UUID / 精确操作UUID
+     * @return verified cleanup or uncertainty / 已核实清理或未知
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    public OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit, java.util.UUID operation)
+            throws ApiException {
+        requireUnit(unit);
+        return evidence.discardSnapshot(unit, operation, true);
     }
 
     /** Stages one immutable normal configuration payload through the original approval. / 经原授权暂存一份不可变普通配置。
@@ -373,8 +335,10 @@ public final class DeploymentPublicationChannel {
             case "ordinary" -> "lifecycle";
             default -> throw new IllegalArgumentException("Original runtime kind cannot be stopped");
         };
-        var observed = send("deployment.publication.stop-old.v1", unit, verb,
-                List.of(unit.id(), "stop", unit.ownershipManifestSha256()), Duration.ofSeconds(45), 4096);
+        var arguments = snapshot.previousKind().equals("ordinary")
+                ? List.of(unit.id(), "stop", unit.ownershipManifestSha256())
+                : List.of(unit.id(), "stop", unit.ownershipManifestSha256(), snapshot.previousDigest().orElseThrow());
+        var observed = send("deployment.publication.stop-old.v1", unit, verb, arguments, Duration.ofSeconds(45), 4096);
         if (observed.outcome() != Outcome.SUCCEEDED) {
             if (observed.outcome() == Outcome.FAILED && observed.value().isPresent())
                 return new OperationResult<>(Outcome.FAILED, Optional.empty(), observed.problem());
@@ -398,6 +362,46 @@ public final class DeploymentPublicationChannel {
     public OperationResult<DeploymentRemoteRuntimeObservation> observe(DeploymentUnitIdentity unit,
             DeploymentRuntimeDefinition runtime) throws ApiException {
         return observeCurrent(unit, runtime);
+    }
+
+    /** Changes one confirmed owned daemon and verifies its resulting state. / 改变一个已确认归属的守护进程并核实结果状态。
+     * @param unit exact managed unit / 精确受管单元
+     * @param runtime saved runtime definition / 已保存运行定义
+     * @param action start, stop or restart / 启动、停止或重启
+     * @param expectedReleaseSha256 exact reviewed current unit release / 精确已审阅当前单元发布
+     * @return confirmed lifecycle result or retained uncertainty / 已确认生命周期结果或保留未知
+     * @throws ApiException if host admission fails / 宿主准入失败时 */
+    public OperationResult<Void> lifecycle(DeploymentUnitIdentity unit, DeploymentRuntimeDefinition runtime,
+            String action, String expectedReleaseSha256) throws ApiException {
+        requireUnit(unit);
+        if (expectedReleaseSha256 == null || !expectedReleaseSha256.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("Exact reviewed current release required");
+        Objects.requireNonNull(runtime);
+        if (!Set.of("start", "stop", "restart").contains(action) || runtime.workload()
+                .mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
+            throw new IllegalArgumentException("Only a reviewed daemon lifecycle action is supported");
+        var before = observe(unit, runtime);
+        if (before.outcome() != Outcome.SUCCEEDED || before.value().isEmpty())
+            return withoutValue(before);
+        String verb = runtime instanceof DeploymentRuntimeDefinition.Container
+                ? "lifecycle-container"
+                : "lifecycle-deployment";
+        var observed = send("deployment.application.lifecycle.v1", unit, verb,
+                List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256),
+                Duration.ofSeconds(45), 4096);
+        if (observed.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(observed);
+        if (!complete(observed) || !("LIFECYCLE=" + action + "\n").equals(observed.value().orElseThrow().stdout()))
+            return unknown("DEPLOYMENT_LIFECYCLE_UNCONFIRMED");
+        var after = observe(unit, runtime);
+        if (after.outcome() != Outcome.SUCCEEDED || after.value().isEmpty())
+            return unknown("DEPLOYMENT_LIFECYCLE_STATE_UNCONFIRMED");
+        var expected = "stop".equals(action)
+                ? DeploymentRemoteRuntimeObservation.StateType.STOPPED
+                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+        return after.value().orElseThrow().state() == expected
+                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+                : unknown("DEPLOYMENT_LIFECYCLE_STATE_CHANGED");
     }
 
     /** Observes the restored old release's actual saved kind and mode. / 观测恢复的旧发布实际已保存类别和模式。
@@ -436,7 +440,7 @@ public final class DeploymentPublicationChannel {
         }
         if (identity.equals("KIND=ordinary\n"))
             return expected == null ? observeOrdinary(unit) : unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
-        var values = fields(identity);
+        var values = DeploymentPublicationReceipt.fields(identity);
         String mode = values.get("MODE");
         if (mode == null || !Set.of("DAEMON", "ON_DEMAND").contains(mode))
             return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
@@ -473,7 +477,7 @@ public final class DeploymentPublicationChannel {
                             ? success(new DeploymentRemoteRuntimeObservation(
                                     DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
                             : unknown("DEPLOYMENT_ON_DEMAND_OBSERVATION_INVALID");
-        var values = fields(output);
+        var values = DeploymentPublicationReceipt.fields(output);
         if (!"1".equals(values.get("OWNER")) || !"1".equals(values.get("QUERY_OK"))
                 || !values.keySet().containsAll(Set.of("RUNNING", "ENABLED", "ActiveState", "SubState", "Result",
                         "ExecMainCode", "ExecMainStatus", "MainPID")))
@@ -517,7 +521,7 @@ public final class DeploymentPublicationChannel {
             return withoutValue(observed);
         if (!complete(observed))
             return unknown("DEPLOYMENT_RESTORED_OBSERVATION_UNCONFIRMED");
-        var values = fields(observed.value().orElseThrow().stdout());
+        var values = DeploymentPublicationReceipt.fields(observed.value().orElseThrow().stdout());
         if (!values.keySet()
                 .containsAll(Set.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID")))
             return unknown("DEPLOYMENT_RESTORED_OBSERVATION_INVALID");
@@ -573,30 +577,13 @@ public final class DeploymentPublicationChannel {
             return withoutValue(observed);
         if (!complete(observed))
             return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_UNCONFIRMED");
-        var values = fields(observed.value().orElseThrow().stdout());
+        var values = DeploymentPublicationReceipt.fields(observed.value().orElseThrow().stdout());
         if (!"1".equals(values.get("OWNER")) || values.get("RUNNING") == null
                 || !Set.of("true", "false").contains(values.get("RUNNING")) || !values.containsKey("ENABLED"))
             return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_INVALID");
         return success(new DeploymentRemoteRuntimeObservation("true".equals(values.get("RUNNING"))
                 ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
                 : DeploymentRemoteRuntimeObservation.StateType.STOPPED));
-    }
-
-    /** Decodes unique bounded helper key-value lines without accepting conflicting evidence. / 解码唯一有界helper键值行而不接受冲突证据。
-     * @param output complete bounded stdout / 完整有界标准输出
-     * @return unique fields or empty on malformed input / 唯一字段；畸形输入为空 */
-    private static Map<String, String> fields(String output) {
-        var values = new java.util.HashMap<String, String>();
-        if (output.length() > 4096 || !output.endsWith("\n"))
-            return Map.of();
-        for (String line : output.split("\n")) {
-            int separator = line.indexOf('=');
-            if (separator < 1 || !line.substring(0, separator).matches("[A-Za-z_]{1,32}")
-                    || values.containsKey(line.substring(0, separator)))
-                return Map.of();
-            values.put(line.substring(0, separator), line.substring(separator + 1));
-        }
-        return Map.copyOf(values);
     }
 
     /** Rolls back only a known failed original release and requires a complete helper receipt. / 仅回滚已知失败的原发布并要求完整helper回执。
@@ -664,7 +651,7 @@ public final class DeploymentPublicationChannel {
         if (releaseSha256 == null || !releaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact maintenance release required");
         var observed = send("deployment.publication.maintenance-end.v1", unit, "application-maintenance",
-                List.of("end", unit.id(), unit.ownershipManifestSha256(), "deployment-" + releaseSha256),
+                List.of("end", unit.id(), unit.ownershipManifestSha256(), "deployment-" + releaseSha256, releaseSha256),
                 Duration.ofSeconds(30), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
@@ -766,47 +753,4 @@ public final class DeploymentPublicationChannel {
             throw new IllegalArgumentException("Publication unit belongs to another server");
     }
 
-    /** Requires an observed untruncated successful process exit. / 要求已观察且未截断的成功进程退出。
-     * @param result original remote result / 原远端结果
-     * @return whether the receipt is complete / 回执是否完整 */
-    private static boolean complete(OperationResult<CommandResult> result) {
-        return result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
-                && !result.value().orElseThrow().truncated()
-                && result.value().orElseThrow().exitCode().equals(Optional.of(0));
-    }
-
-    /** Retains a non-success without inventing a value. / 不补造值而保留非成功结果。
-     * @param result original result / 原结果
-     * @param <T> requested result type / 所需结果类型
-     * @return original outcome and problem / 原结果与问题 */
-    private static <T> OperationResult<T> withoutValue(OperationResult<?> result) {
-        return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-    }
-
-    /** Reports exact successful evidence. / 报告精确成功证据。
-     * @param value verified value / 已核实值
-     * @param <T> value type / 值类型
-     * @return successful result / 成功结果 */
-    private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
-    }
-
-    /** Retains an uncertain effect. / 保留未确认副作用。
-     * @param event stable event code / 稳定事件码
-     * @param <T> requested result type / 所需结果类型
-     * @return explicit unknown / 显式未知 */
-    private static <T> OperationResult<T> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Publication effect is unconfirmed", Map.of(), Optional.empty())));
-    }
-
-    /** Reports one known non-secret health failure. / 报告一项已知且不含秘密的健康失败。
-     * @param code stable category / 稳定类别
-     * @param event stable event / 稳定事件
-     * @param <T> requested type / 请求类型
-     * @return known failure / 已知失败 */
-    private static <T> OperationResult<T> failure(ProblemCode code, String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(code, event, "Reviewed publication step failed", Map.of(), Optional.empty())));
-    }
 }

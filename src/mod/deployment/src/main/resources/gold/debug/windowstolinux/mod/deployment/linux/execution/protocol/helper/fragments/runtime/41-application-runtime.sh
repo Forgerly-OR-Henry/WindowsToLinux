@@ -1,31 +1,3 @@
-application_lock_directory() {
-    require_app "$1"
-    local directory="$base_root/application-locks/$1"
-    assert_storage_parent "$directory"
-    install -d -o root -g root -m 700 -- "$directory"
-    assert_root_owned_directory "$directory"
-    printf '%s' "$directory"
-}
-application_maintenance() {
-    local directory deadline=$((SECONDS + 30))
-    directory="$(application_lock_directory "$1")"
-    exec {application_admission_fd}>"$directory/admission"
-    flock -w 30 -x "$application_admission_fd" || reject application-busy
-    exec {application_run_fd}>"$directory/run"
-    flock -w "$((deadline > SECONDS ? deadline - SECONDS : 0))" -x "$application_run_fd" || reject application-busy
-    application_assert_no_orphan "$directory"
-}
-application_admit_run() {
-    local directory
-    directory="$(application_lock_directory "$1")"
-    exec {application_admission_fd}>"$directory/admission"
-    flock -n -x "$application_admission_fd" || reject application-maintenance-in-progress
-    [ "${application_validation:-0}" = 1 ] || [ ! -e "$directory/maintenance" ] || reject application-maintenance-in-progress
-    exec {application_run_fd}>"$directory/run"
-    flock -n -x "$application_run_fd" || reject application-busy
-    application_assert_no_orphan "$directory"
-    flock -u "$application_admission_fd"
-}
 application_assert_inputs() {
     local index=0 source target part current container_user user="$(service_identity_name "${runtime_identity_override:-$1}")" binding target_root
     while [ "$index" -lt "${#application_input_sources[@]}" ]; do
@@ -249,9 +221,11 @@ application_assert_no_orphan() {
     }
 }
 application_maintenance_control() {
-    [ "$#" = 4 ] || reject application-maintenance-arguments
-    local action="$1" app="$2" manifest="$3" token="$4" directory
+    [ "$#" = 5 ] || reject application-maintenance-arguments
+    local action="$1" app="$2" manifest="$3" token="$4" expected="$5" directory
     [[ "$token" =~ ^((backup|restore)-[0-9a-f]{32}|deployment-[0-9a-f]{64})$ ]] || reject application-maintenance-token
+    [ "$expected" = empty ] || require_digest "$expected"
+    require_digest "$manifest"
     directory="$(application_lock_directory "$app")"
     application_maintenance "$app"
     if [ -e "$directory/maintenance" ]; then
@@ -260,7 +234,12 @@ application_maintenance_control() {
     fi
     case "$action" in
         begin)
-            if [ -L "$(app_root "$app")/current" ]; then application_load_current "$app" "$manifest"; fi
+            if [ "$expected" = empty ]; then
+                [ ! -e "$(app_root "$app")/current" ] && [ ! -L "$(app_root "$app")/current" ] || reject application-maintenance-current-drift
+            else
+                application_load_current "$app" "$manifest"
+                [ "$application_release" = "$(app_root "$app")/releases/$expected" ] || reject application-maintenance-current-drift
+            fi
             printf '%s\n' "$token" >"$directory/maintenance"
             chmod 600 -- "$directory/maintenance"
             ;;

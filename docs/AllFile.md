@@ -2142,6 +2142,8 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/linux/DeploymentContainerArguments.java`：按旧固定 helper 合同组织容器运行参数。
 - `mod/deployment/linux/DeploymentPublicationArguments.java`：约束单组件发布的固定配置、运行及内容输入。
 - `mod/deployment/linux/DeploymentPublicationChannel.java`：用原任务及精确审批发送封存、快照、发布、健康、观察、回滚和候选清理命令。
+- `mod/deployment/linux/DeploymentPublicationEvidenceChannel.java`：在真实原任务审批下传递独立 operation UUID，核对快照、只读状态与精确清理回执。
+- `mod/deployment/linux/DeploymentPublicationReceipt.java`：集中解析固定发布回执并保留已知失败、取消与未确认状态。
 - `mod/deployment/linux/DeploymentOriginalPublicationStatus.java`：严格表达原任务、原候选、当前发布、旧快照、维护和运行设施的只读远端观察。
 - `mod/deployment/linux/DeploymentRemoteReleaseSnapshot.java`：区分首次发布与携带原 token 和运行状态的远端旧版快照。
 - `mod/deployment/linux/DeploymentRemoteRuntimeObservation.java`：表达已核实运行、按需安装、停止与错误状态。
@@ -2154,7 +2156,7 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/linux/DeploymentPlatformCapabilityParser.java`：按原有界类型和缺字段规则解析固定主机能力回执为纯值，不凭空补造远端事实。
 - `mod/deployment/linux/DeploymentPlatformCapabilityProbe.java`：生成发行版、架构、安全与运行能力的固定只读探测。
 - `mod/deployment/linux/DeploymentBuildOutputProtocol.java`：不改原helper资源，将最多128MiB构建流压成平台8MiB以内的固定短回执与已遮蔽诊断。
-- `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按固定片段、5 插入和独立 build-entry 组装协议 12 受管 helper，逐字节核对固定摘要。
+- `mod/deployment/linux/DeploymentManagedHelperBundle.java`：按固定片段、5 插入和独立 build-entry 组装协议 14 受管 helper，逐字节核对固定摘要。
 - `mod/deployment/linux/DeploymentNativeDatabaseWire.java`：编码有界 Base64 请求帧、解析无重复键回执，并经原任务精确审核发送固定 helper 动作；不持有业务日志。
 - `mod/deployment/linux/DeploymentHelperInstallerScript.java`：渲染 root 管理的固定安装、安全不变量、原操作安装回执与不依赖新 helper 的只读状态脚本。
 - `mod/deployment/service/core/model/toolchain/DeploymentToolchainSelectionPolicy.java`：按原纯策略从已审阅支持目录中选择精确候选发布。
@@ -2237,3 +2239,17 @@ APP 数据库不再维护迁移链或旧结构读取分支；Web 节点保持原
 - `mod/deployment/service/standard/deploy/assistance/DeploymentAssistedSession.java`：Rechecks the assisted binding immediately before every actual SSH dispatch. / 每次真实 SSH 发送前立即复核辅助绑定。
 - `mod/deployment/source/DeploymentSourceBrowser.java`：Read-only paginated access to an owned frozen source, shared by assistance and agent. / 供辅助与自主部署共用的所属冻结源码只读分页访问。
 - `mod/deployment/ui/DeploymentAgentPage.java`：Agent-only owner-bound page for local or pinned Git tasks. / 用于本地或固定 Git 任务的自主专属所属页面。
+
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/21-native-operations.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/63-database-inspection.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/68-handoff-database.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/55-publication-snapshot.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/release/58-retained-activation.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/56-restore-recovery.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/restore/59-handoff-restore.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+- `mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/runtime/41-application-admission.sh`：协议 14 固定 helper 片段；应用锁准入、操作证据或数据库／恢复职责按显式清单组装，不暴露平台业务 API。
+
+- `app/main/src/test/resources/architecture/publication-resource-baseline.properties`：081 已提交 helper 固定资源的 37 项完整路径与原始 SHA256，独立协议候选继续核对不变字节。

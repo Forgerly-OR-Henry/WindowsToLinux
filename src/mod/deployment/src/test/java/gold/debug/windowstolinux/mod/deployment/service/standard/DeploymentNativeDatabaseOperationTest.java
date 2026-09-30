@@ -108,7 +108,8 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
             var borrowed = session(request -> {
                 if (request.script().contains("native-db start"))
                     starts.incrementAndGet();
-                return reply("HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var review = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
@@ -216,7 +217,8 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     observedStatus.set(status);
                     return reply(status);
                 }
-                return reply("HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                     new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
@@ -307,7 +309,8 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
 
     private String peer(Path state, String action, byte[] frame) throws Exception {
         var script = workspace().resolve("src/mod/deployment/src/test/python/test_native_database_operation.py");
-        var process = new ProcessBuilder("python", script.toString(), "peer", state.toString(), action).start();
+        var process = new ProcessBuilder(System.getProperty("managed.test.python", "python"), script.toString(), "peer",
+                state.toString(), action).start();
         try {
             try (var input = process.getOutputStream()) {
                 input.write(frame);

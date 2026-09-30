@@ -401,29 +401,74 @@ class PackageStructureArchitectureTest {
                 .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux");
         Set<String> expected = new HashSet<>(HELPER_FRAGMENTS);
         expected.add("53-publication-observation.sh");
+        expected.addAll(Set.of("58-retained-activation.sh", "59-handoff-restore.sh", "59-handoff-database-restore.sh",
+                "59-handoff-restore-cleanup.sh", "68-handoff-database.sh", "69-handoff-backup-status.sh",
+                "55-publication-snapshot.sh", "21-native-operations.sh", "63-database-inspection.sh",
+                "41-application-admission.sh", "56-restore-recovery.sh"));
         expected.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh", "selinux-command-entry.sh",
                 "centos-source-repositories.py"));
-        assertEquals(47, expected.size());
+        assertEquals(58, expected.size());
         assertEquals(expected, fileNamesRecursively(resources));
         assertEquals(Set.of("source-operations.py"), fileNames(resources.resolve("workspace")));
         assertEquals(Set.of("10-release-metadata.py", "20-installation-boundaries.py", "30-managed-installation.py",
                 "40-binding-protocol.py"), fileNames(resources.resolve("toolchain")));
+        var actual = new HashSet<String>();
+        try (var files = Files.walk(resources)) {
+            files.filter(Files::isRegularFile)
+                    .forEach(file -> actual.add(resources.relativize(file).toString().replace('\\', '/')));
+        }
+        var packaged = new HashSet<String>();
+        String bundle = Files.readString(projectRoot().resolve(
+                "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentManagedHelperBundle.java"));
+        String declaredResources = bundle.substring(0, bundle.indexOf("private DeploymentManagedHelperBundle()"));
+        var references = Pattern.compile("\"([a-z0-9/.-]+\\.(?:sh|py))\"").matcher(declaredResources);
+        while (references.find())
+            packaged.add(references.group(1));
+        assertEquals(actual, packaged, "Every maintained helper resource must be explicitly assembled or inserted");
         assertMaximumLinesRecursively(resources, 300);
-        Path original = projectRoot()
-                .resolve("src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd");
-        Set<String> changed = Set.of("00-protocol-foundation.sh", "70-command-dispatch.sh", "40-typed-runtime.sh",
-                "52-container-recovery.sh", "53-publication-observation.sh");
+        Set<String> changed = Set.of("execution/protocol/helper/fragments/00-protocol-foundation.sh",
+                "execution/protocol/helper/fragments/70-command-dispatch.sh",
+                "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
+                "execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh",
+                "execution/protocol/helper/fragments/database/20-native-targets.sh",
+                "execution/protocol/helper/fragments/database/21-native-operations.sh",
+                "execution/protocol/helper/fragments/database/63-database-inspection.sh",
+                "execution/protocol/helper/fragments/database/65-database-backup.sh",
+                "execution/protocol/helper/fragments/database/68-handoff-database.sh",
+                "execution/protocol/helper/fragments/release/52-container-recovery.sh",
+                "execution/protocol/helper/fragments/release/53-publication-observation.sh",
+                "execution/protocol/helper/fragments/release/55-publication-snapshot.sh",
+                "execution/protocol/helper/fragments/release/58-retained-activation.sh",
+                "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
+                "execution/protocol/helper/fragments/restore/56-restore-recovery.sh",
+                "execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh",
+                "execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh",
+                "execution/protocol/helper/fragments/restore/59-handoff-restore.sh",
+                "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
+                "execution/protocol/helper/fragments/runtime/41-application-admission.sh",
+                "execution/protocol/helper/fragments/runtime/41-application-runtime.sh");
         List<Path> unchanged;
         try (Stream<Path> files = Files.walk(resources)) {
             unchanged = files.filter(Files::isRegularFile)
-                    .filter(file -> !changed.contains(file.getFileName().toString())).toList();
+                    .filter(file -> !changed.contains(resources.relativize(file).toString().replace('\\', '/')))
+                    .toList();
         }
-        assertEquals(42, unchanged.size());
+        assertEquals(37, unchanged.size());
+        var baseline = new java.util.Properties();
+        try (var input = getClass().getResourceAsStream("/architecture/publication-resource-baseline.properties")) {
+            assertTrue(input != null, "Committed baseline resource proofs must be present");
+            baseline.load(input);
+        }
+        Set<String> unchangedPaths = unchanged.stream()
+                .map(file -> resources.relativize(file).toString().replace('\\', '/'))
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(unchangedPaths, baseline.stringPropertyNames(),
+                "Every unchanged resource requires its committed byte identity");
         for (Path file : unchanged) {
-            Path relative = resources.relativize(file);
-            assertTrue(
-                    java.util.Arrays.equals(Files.readAllBytes(original.resolve(relative)), Files.readAllBytes(file)),
-                    relative.toString());
+            String relative = resources.relativize(file).toString().replace('\\', '/');
+            String digest = java.util.HexFormat.of()
+                    .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
+            assertEquals(baseline.getProperty(relative), digest, relative);
         }
     }
 

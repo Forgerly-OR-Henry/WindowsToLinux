@@ -1,30 +1,40 @@
 restore_snapshot_current() {
-    [ "$#" -eq 3 ] || reject restore-snapshot-arguments
-    local candidate="$1" token="$2" component="$3" root kind output app owner release previous snapshot_token
+    [ "$#" -eq 4 ] || reject restore-snapshot-arguments
+    local candidate="$1" token="$2" component="$3" expected="$4" root kind output app owner release previous snapshot_token marker original_task
+    require_restore_token "$token"
+    original_task="${token:0:8}-${token:8:4}-${token:12:4}-${token:16:4}-${token:20:12}"
     root="$(restore_component_root "$candidate" "$component")"
     kind="$(cat -- "$root/kind")"
     mapfile -t identity <"$root/identity"
     app="${identity[0]}"
     owner="${identity[1]}"
     release="${identity[2]}"
-    (application_maintenance_control begin "$app" "$owner" "restore-$token") >/dev/null
-    if [ -e "$root/previous" ]; then
-        assert_root_owned_regular "$root/previous"
-        printf 'SNAPSHOT=1\nPREVIOUS=%s\n' "$(head -n1 -- "$root/previous")"
-        return
-    fi
+    assert_root_owned_regular "$root/activation-token"
+    [ "$(cat -- "$root/activation-token")" = "$token" ] || reject restore-snapshot-token
+    [ ! -e "$root/previous" ] && [ ! -L "$root/previous" ] || reject restore-snapshot-already-attempted
+    application_maintenance "$app"
+    if [ "$kind" = deployment ]; then assert_deployment_current_or_empty "$app" "$owner"
+    else current_application="$app"; container_current_release "$app" "$owner"; fi
+    if [ "$expected" = empty ]; then [ "$previous_present" = 0 ] || reject restore-current-drift
+    else require_digest "$expected"; [ "$previous_path" = "$(app_root "$app")/releases/$expected" ] || reject restore-current-drift; fi
+    marker="$(application_lock_directory "$app")/maintenance"
+    [ ! -e "$marker" ] && [ ! -L "$marker" ] || reject restore-maintenance-conflict
+    printf '%s\n' "restore-$token" >"$marker"; chown root:root -- "$marker"; chmod 600 -- "$marker"
     if [ "$kind" = deployment ]; then
-        output="$(snapshot_deployment "$app" "$owner")"
+        output="$(snapshot_deployment "$app" "$owner" "$original_task")"
     else
         current_application="$app"
         load_container_parameters "$root/release/.windowstolinux-container-parameters"
-        output="$(snapshot_container "$app" "$owner")"
+        output="$(snapshot_container "$app" "$owner" "$original_task")"
     fi
     previous="$(printf '%s\n' "$output" | awk -F= '$1=="PREVIOUS"{print $2}')"
     [ "$previous" = 0 ] || [ "$previous" = 1 ] || reject restore-snapshot-evidence
     snapshot_token="$(printf '%s\n' "$output" | awk -F= '$1=="SNAPSHOT_TOKEN"{print $2}')"
-    if [ "$previous" = 1 ]; then require_snapshot_token "$snapshot_token"; else snapshot_token=-; fi
-    printf '%s\n%s\n' "$previous" "$snapshot_token" >"$root/previous"
+    if [ "$previous" = 1 ]; then [ "$snapshot_token" = "$original_task" ] || reject restore-snapshot-original-task; else snapshot_token=-; fi
+    local previous_running="$(printf '%s\n' "$output" | awk -F= '$1=="PREVIOUS_RUNNING"{print $2}')"
+    if [ "$previous" = 0 ]; then previous_running=0; fi
+    require_boolean "$previous_running"
+    printf '%s\n%s\n%s\n%s\n' "$previous" "$snapshot_token" "$expected" "$previous_running" >"$root/previous"
     chown root:root -- "$root/previous"
     chmod 400 -- "$root/previous"
     if [ "$previous" = 1 ]; then
@@ -208,98 +218,6 @@ restore_start_formal() {
         start_container_release "$app" "$release" "$owner"
     fi
     printf 'FORMAL_STARTED=1\nAPP=%s\n' "$app"
-}
-restore_quiesce_recovery() {
-    [ "$#" -eq 3 ] || reject restore-recovery-quiesce-arguments
-    local candidate="$1" token="$2" component="$3" root kind app owner
-    restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || reject restore-candidate-stop-failed
-    root="$(restore_component_root "$candidate" "$component")"
-    [ -e "$root" ] || {
-        printf 'QUIESCED=1\n'
-        return
-    }
-    kind="$(cat -- "$root/kind")"
-    mapfile -t identity <"$root/identity"
-    app="${identity[0]}"
-    owner="${identity[1]}"
-    if [ -f "$root/previous" ]; then
-        if [ "$kind" = deployment ]; then
-            stop_application_unit "$app"
-        else
-            current_application="$app"
-            load_container_parameters "$root/release/.windowstolinux-container-parameters"
-            if [ -L "$(app_root "$app")/current" ]; then
-                container_current_release "$app" "$owner"
-                stop_container_runtime "$app"
-            fi
-        fi
-    fi
-    printf 'QUIESCED=1\n'
-}
-restore_restore_managed_data() {
-    local root="$1" app="$2" kind="$3" rollback spec target status journal token
-    rollback="$(restore_data_snapshot_root "$root" "$app")"
-    [ -d "$rollback" ] || return 0
-    token="$(cat -- "$root/activation-token")"
-    require_restore_token "$token"
-    current_application="$app"
-    if [ "$kind" = deployment ]; then
-        load_deployment_parameters "$root/release/.windowstolinux-deployment-parameters"
-    else load_container_parameters "$root/release/.windowstolinux-container-parameters"; fi
-    for spec in "${managed_data_bindings[@]}"; do
-        managed_binding_parts "$spec"
-        [ "$storage_kind" = FILE ] || continue
-        [ -e "$rollback/$binding.present" ] || continue
-        assert_root_owned_regular "$rollback/$binding.present"
-        status="$(cat -- "$rollback/$binding.present")"
-        target="$(managed_storage_target)"
-        assert_storage_parent "$target"
-        journal="${target%/*}/.windowstolinux-restore-$token-$binding"
-        assert_root_owned_directory "$journal"
-        if [ "$status" = 1 ] && [ -d "$journal/previous" ]; then
-            (assert_storage_tree "$journal/previous" "$target")
-            if [ -e "$target" ] || [ -L "$target" ]; then
-                (assert_storage_tree "$target")
-                mv -T -- "$target" "$journal/failed"
-            fi
-            mv -T -- "$journal/previous" "$target"
-        elif [ "$status" = 1 ]; then
-            # If the old directory was not moved, next must still be present; otherwise the state is ambiguous.
-            [ -d "$journal/next" ] && [ -d "$target" ] || reject restore-data-recovery-unprovable
-            (assert_storage_tree "$target")
-        elif [ "$status" = 0 ]; then
-            if [ -e "$target" ] || [ -L "$target" ]; then
-                (assert_storage_tree "$target")
-                mv -T -- "$target" "$journal/failed"
-            fi
-        else reject restore-data-recovery-state; fi
-        sync -f "${target%/*}"
-    done
-}
-restore_recover_component() {
-    [ "$#" -eq 3 ] || reject restore-recover-arguments
-    local candidate="$1" token="$2" component="$3" root kind app owner release previous snapshot_token
-    root="$(restore_component_root "$candidate" "$component")"
-    [ -e "$root" ] || {
-        printf 'RECOVERED=1\nPREVIOUS=0\n'
-        return
-    }
-    kind="$(cat -- "$root/kind")"
-    mapfile -t identity <"$root/identity"
-    app="${identity[0]}"
-    owner="${identity[1]}"
-    release="${identity[2]}"
-    restore_stop_candidate "$candidate" "$token" "$component" >/dev/null || reject restore-candidate-stop-failed
-    if [ -f "$root/previous" ]; then
-        mapfile -t saved <"$root/previous"
-        previous="${saved[0]}"
-        snapshot_token="${saved[1]}"
-        restore_restore_managed_data "$root" "$app" "$kind"
-        if [ "$kind" = deployment ]; then
-            if [ "$previous" = 1 ]; then rollback_deployment "$app" "$release" "$owner" "$snapshot_token"; else rollback_deployment_first "$app" "$release" "$owner"; fi
-        else if [ "$previous" = 1 ]; then rollback_container "$app" "$release" "$owner" "$snapshot_token"; else rollback_container_first "$app" "$release" "$owner"; fi; fi
-    fi
-    printf 'RECOVERED=1\nPREVIOUS=%s\nAPP=%s\n' "${previous:-0}" "$app"
 }
 cleanup_restore_candidates() {
     local candidate="$1" root component token

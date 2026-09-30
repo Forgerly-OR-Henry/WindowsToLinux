@@ -16,6 +16,13 @@ prepare_backup_operation() {
         chown root:root -- "$root/.deployer"
         chmod 400 -- "$root/.deployer"
     fi
+    assert_backup_operation "$operation"
+}
+assert_backup_operation() {
+    local operation="$1" root
+    require_backup_operation "$operation"
+    root="$(backup_operation_root "$operation")"
+    assert_root_owned_directory "$backups_root"
     assert_root_owned_directory "$root"
     assert_root_owned_regular "$root/.deployer"
     [ "$(cat -- "$root/.deployer")" = "$deployer" ] || reject backup-deployer
@@ -89,6 +96,7 @@ backup_create_artifact() {
     require_backup_limit "$maximum"
     [[ "$resource" =~ ^[a-z0-9][a-z0-9-]{0,127}$ ]] || reject backup-resource
     case "$kind" in file | release | oci) ;; *) reject backup-kind ;; esac
+    handoff_operation_lock "$operation" write
     prepare_backup_operation "$operation"
     current_application="$app"
     local artifact root target source current_digest spec found image image_id
@@ -147,8 +155,10 @@ backup_create_artifact() {
             reject backup-limit
         }
     fi
+    handoff_backup_seal "$operation" "$application" "$component" "$app" "$release" "$manifest" "$kind" "$resource" "$maximum" "$target"
     printf 'ARTIFACT=%s\nKIND=%s\nSIZE=%s\nSHA256=%s\n' "$artifact" "$kind" \
         "$(stat -c '%s' -- "$target")" "$(sha256sum -- "$target" | awk '{print $1}')"
+    handoff_operation_unlock
 }
 backup_read_artifact() {
     [ "$#" -eq 5 ] || reject backup-read-arguments
@@ -158,24 +168,29 @@ backup_read_artifact() {
     require_digest "$expected_digest"
     [[ "$expected_size" =~ ^[1-9][0-9]{0,10}$ ]] || reject backup-size
     case "$kind" in file | release | volume) extension=pax ;; oci) extension=oci ;; *) reject backup-kind ;; esac
-    prepare_backup_operation "$operation"
+    handoff_operation_lock "$operation" observe
+    assert_backup_operation "$operation"
     root="$(backup_operation_root "$operation")"
     target="$root/$artifact.$extension"
     assert_root_owned_regular "$target"
     [ "$(stat -c '%s' -- "$target")" = "$expected_size" ] \
         && [ "$(sha256sum -- "$target" | awk '{print $1}')" = "$expected_digest" ] || reject backup-artifact-identity
     cat -- "$target"
+    handoff_operation_unlock
 }
 backup_discard_operation() {
     [ "$#" -eq 1 ] || reject backup-discard-arguments
     local operation="$1" root
     require_backup_operation "$operation"
+    handoff_operation_lock "$operation" observe
     root="$(backup_operation_root "$operation")"
     if [ ! -e "$root" ] && [ ! -L "$root" ]; then
         printf 'DISCARDED=1\n'
+        handoff_operation_unlock
         return
     fi
-    prepare_backup_operation "$operation"
+    assert_backup_operation "$operation"
     rm -rf --one-file-system -- "$root"
     printf 'DISCARDED=1\n'
+    handoff_operation_unlock
 }

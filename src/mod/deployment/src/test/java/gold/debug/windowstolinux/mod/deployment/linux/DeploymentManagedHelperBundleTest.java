@@ -68,7 +68,11 @@ class DeploymentManagedHelperBundleTest {
     void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
         String helper = DeploymentManagedHelperBundle.renderScript();
 
-        assertEquals(12, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
+        assertEquals(14, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
+        assertTrue(helper.contains("snapshot-deployment-attempt) snapshot_deployment_attempt \"$@\""));
+        assertTrue(helper.contains("snapshot-container-attempt) snapshot_container_attempt \"$@\""));
+        assertTrue(helper.contains("publication-original-status-attempt) publication_original_status_attempt \"$@\""));
+        assertTrue(helper.contains("snapshot-discard-attempt) discard_original_snapshot_attempt \"$@\""));
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
         assertTrue(helper.contains("gradle)"));
         assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
@@ -97,6 +101,15 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("backup-create) backup_create_artifact \"$@\""));
         assertTrue(helper.contains("backup-read) backup_read_artifact \"$@\""));
         assertTrue(helper.contains("backup-discard) backup_discard_operation \"$@\""));
+        assertTrue(helper.contains("handoff-backup-status) handoff_backup_status \"$@\""));
+        assertTrue(helper.contains("handoff-maintenance-status) handoff_maintenance_status \"$@\""));
+        assertTrue(helper.contains("handoff-database-export) handoff_database_export \"$@\""));
+        assertTrue(helper.contains("handoff-database-status) handoff_database_status \"$@\""));
+        assertTrue(helper.contains("handoff-database-discard) handoff_database_discard \"$@\""));
+        assertTrue(helper.contains("activate-retained) activate_retained \"$@\""));
+        assertTrue(helper.contains("rollback-retained) rollback_retained \"$@\""));
+        assertTrue(helper.contains("finish-retained) finish_retained \"$@\""));
+        assertTrue(helper.contains("retained-status) retained_status \"$@\""));
         assertTrue(helper.contains("data_root=/var/opt/windowstolinux/apps"));
         assertTrue(helper.matches("(?s).*rm -f -- \"\\$pgpass\"\\s+reject database-restore-failed.*"));
         assertTrue(helper.contains("DROP DATABASE IF EXISTS"));

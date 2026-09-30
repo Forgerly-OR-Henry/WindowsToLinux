@@ -1292,7 +1292,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             String input = new String(request.stdin(), StandardCharsets.UTF_8);
                             if (input.contains("prepare_stage=platform-packages")) {
                                 installs.incrementAndGet();
-                                return reply("HELPER_INSTALL=1\nPROTOCOL=12\nSHA256="
+                                return reply("HELPER_INSTALL=1\nPROTOCOL=14\nSHA256="
                                         + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
                             }
                             if (input.contains("bootstrap_receipt")) {
@@ -1634,8 +1634,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     String script = command.script();
                     if (script.contains("managed-helper' probe")) {
                         actions.add("helper-probe");
-                        return reply("HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
-                                + "\n");
+                        return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                                + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
                     }
                     if (script.contains("DISTRO_ID=")) {
                         actions.add("host-facts");

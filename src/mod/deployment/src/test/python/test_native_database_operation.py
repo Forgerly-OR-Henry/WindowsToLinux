@@ -23,7 +23,7 @@ FRAGMENTS = (
     / 'main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database'
 )
 SOURCE = ''.join((FRAGMENTS / part).read_text(encoding='utf-8') for part in
-                 ('10-native-instances.sh', '20-native-targets.sh'))
+                 ('10-native-instances.sh', '20-native-targets.sh', '21-native-operations.sh'))
 CODE = SOURCE.split("<<'WTL_NATIVE_DB_PY'\n", 1)[1].split('\nWTL_NATIVE_DB_PY', 1)[0]
 DB = {'__name__': 'native_database_operation_test'}
 exec(compile(CODE, str(FRAGMENTS), 'exec'), DB)
