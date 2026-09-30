@@ -32,7 +32,8 @@ class RepositoryTransactionExecutorTest {
                     throw new SQLException("fixture transaction failure");
                 }));
 
-        assertEquals(DesktopPersistenceFailureType.ROLLBACK_FAILED, failure.failure().definition());
+        assertEquals(DesktopPersistenceFailureType.ROLLBACK_FAILED.code(), failure.problem().eventCode());
+        org.junit.jupiter.api.Assertions.assertTrue(failure.problem().diagnosticId().isPresent());
         assertEquals(1, failure.getCause().getSuppressed().length);
     }
 }

@@ -1,30 +1,20 @@
 package gold.debug.windowstolinux.app.service.recovery;
 
-import static gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot.State.*;
+import static gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySnapshot.State.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
-import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.linux.recovery.BrowserTerminalSession;
-import gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot;
-import gold.debug.windowstolinux.app.service.SecurityTestFixture;
-import gold.debug.windowstolinux.app.service.ai.RecoveryAiUseCase;
-import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.shared.ai.recovery.RecoveryModelClient;
-import gold.debug.windowstolinux.shared.ai.transport.RoleChatResult;
+import gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySnapshot;
+import gold.debug.windowstolinux.appapi.task.*;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-class BrowserRecoverySessionTest extends SecurityTestFixture {
-    @TempDir
-    Path directory;
+class BrowserRecoverySessionTest {
     static class Browser implements BrowserTerminalSession {
         volatile long generation;
 
@@ -88,28 +78,25 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
             closed = true;
         }
     }
-    private BrowserRecoverySession create(DesktopPersistence db, Browser browser, AtomicReference<String> ssh,
+    private BrowserRecoverySession create(Browser browser, AtomicReference<String> ssh,
             ReentrantLock lock) throws Exception {
-        return create(db, browser, ssh, lock, System::nanoTime, () -> {
+        return create(browser, ssh, lock, System::nanoTime, () -> {
         });
     }
 
-    private BrowserRecoverySession create(DesktopPersistence db, Browser browser, AtomicReference<String> ssh,
+    private BrowserRecoverySession create(Browser browser, AtomicReference<String> ssh,
             ReentrantLock lock, java.util.function.LongSupplier clock, Runnable onDecision) throws Exception {
-        var secrets = SecurityTestFixture.secrets(db);
-        try (var store = secrets.open()) {
-            store.save("ai/key", "api-key".toCharArray());
-        }
-        db.aiProfiles().saveVerified(
-                new StoredAiProviderProfile("regular", "https://example.test/v1/chat/completions", "regular", "ai/key"),
-                "regular", java.time.Instant.now());
-        db.aiProfiles().purposes().save(gold.debug.windowstolinux.shared.model.ai.AiPurposeType.DEPLOYMENT,
-                java.util.List.of(new gold.debug.windowstolinux.shared.model.ai.AiPurposeAssignment("regular", true)));
-        var ai = new RecoveryAiUseCase(db.aiProfiles(), secrets, new RecoveryModelClient((u, k, b) -> {
-            onDecision.run();
-            return new RoleChatResult(200,
-                    "{\"choices\":[{\"message\":{\"content\":\"{\\\"command\\\":\\\"uname -a\\\",\\\"reason\\\":\\\"inspect\\\",\\\"expected\\\":\\\"hello\\\",\\\"highImpact\\\":false}\"}}]}");
-        }));
+        // This suite verifies the controller. Real host authorization and model transport remain in RecoveryGraphTest/PlatformAiTest.
+        var ai = new RecoveryModels() {
+            public Result observe(TerminalObservation observation) {
+                return new Result("ok", observation.text(), Map.of());
+            }
+
+            public Result decide(String observation) {
+                onDecision.run();
+                return new Result("ok", "{\"command\":\"uname -a\",\"reason\":\"inspect\",\"expected\":\"hello\",\"highImpact\":false}", Map.of());
+            }
+        };
         return new BrowserRecoverySession(browser, ai, () -> probeResult(ssh.get()), ignored -> {
         }, new RecoveryTarget("server", "127.0.0.1", 22), lock, clock);
     }
@@ -117,26 +104,19 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
     private static RecoveryProbeResult probeResult(String code) {
         if (code.equals("recovered"))
             return RecoveryProbeResult.recovered();
-        var type = switch (code) {
-            case "connectionFailed" ->
-                gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.CONNECTION_FAILED;
-            case "authentication" ->
-                gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.AUTHENTICATION_FAILED;
-            case "identityConflict" ->
-                gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType.HOST_KEY_REJECTED;
+        String event = switch (code) {
+            case "connectionFailed" -> "SSH_CONNECTION_FAILED";
+            case "authentication" -> "SSH_AUTHENTICATION_FAILED";
+            case "identityConflict" -> "SSH_HOST_KEY_REJECTED";
             default -> throw new IllegalArgumentException(code);
         };
-        return RecoveryProbeAdapter.failed(
-                gold.debug.windowstolinux.shared.linux.error.LinuxOperationException.create(type, "test probe"));
+        return RecoveryProbeAdapter.failed(new ApiException(new Problem(
+                code.equals("connectionFailed") ? ProblemCode.IO_FAILURE : ProblemCode.ACCESS_DENIED,
+                event, "test probe", Map.of(), Optional.of(UUID.randomUUID()))));
     }
 
-    private Thread worker(DesktopPersistence db, Runnable session) {
-        var task = SecurityTestFixture.secrets(db).captureTask();
-        return new Thread(() -> {
-            try (task) {
-                task.run(session);
-            }
-        });
+    private Thread worker(Runnable session) {
+        return new Thread(session);
     }
 
     @Test
@@ -201,7 +181,7 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
             public void close() {
                 super.close();
                 throw new gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException(
-                        gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException.Reason.CLEANUP_FAILED,
+                        gold.debug.windowstolinux.app.linux.recovery.BrowserRecoveryException.ReasonType.CLEANUP_FAILED,
                         null);
             }
         };
@@ -235,15 +215,15 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         var browser = new Browser();
         var ssh = new AtomicReference<>("connectionFailed");
         browser.afterSubmit = () -> ssh.set("recovered");
-        try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = worker(db, s);
+        try (var s = create(browser, ssh, new ReentrantLock())) {
+            var worker = worker(s);
             worker.start();
             bind(s);
             String token = s.snapshot().confirmation();
             assertEquals(0, browser.submitted);
             s.confirmAction(token, false);
             s.confirmAction(token, false);
-            RecoverySnapshot end = s.await();
+            BrowserRecoverySnapshot end = s.await();
             worker.join(2000);
             assertEquals(RECOVERED, end.state());
             assertFalse(end.resultUnknown());
@@ -257,8 +237,8 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
     void pauseRevokesConfirmationAndRequiresIdentityConsentAndFreshHandoff() throws Exception {
         var browser = new Browser();
         var ssh = new AtomicReference<>("connectionFailed");
-        try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = worker(db, s);
+        try (var s = create(browser, ssh, new ReentrantLock())) {
+            var worker = worker(s);
             worker.start();
             bind(s);
             String old = s.snapshot().confirmation();
@@ -285,8 +265,8 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
         var browser = new Browser();
         var ssh = new AtomicReference<>("connectionFailed");
         browser.afterSubmit = () -> browser.generation++;
-        try (var db = DesktopPersistence.open(directory); var s = create(db, browser, ssh, new ReentrantLock())) {
-            var worker = worker(db, s);
+        try (var s = create(browser, ssh, new ReentrantLock())) {
+            var worker = worker(s);
             worker.start();
             bind(s);
             String token = s.snapshot().confirmation();
@@ -307,17 +287,17 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
 
     @Test
     void authenticationAndServerMutexStopBeforeBrowserHandoff() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        {
             var browser = new Browser();
-            var s = create(db, browser, new AtomicReference<>("authentication"), new ReentrantLock());
+            var s = create(browser, new AtomicReference<>("authentication"), new ReentrantLock());
             s.run();
             assertEquals(FAILED, s.snapshot().state());
             assertEquals("authentication", s.snapshot().messageCode());
             var lock = new ReentrantLock();
             lock.lock();
             try {
-                var busy = create(db, new Browser(), new AtomicReference<>("connectionFailed"), lock);
-                var worker = worker(db, busy);
+                var busy = create(new Browser(), new AtomicReference<>("connectionFailed"), lock);
+                var worker = worker(busy);
                 worker.start();
                 assertEquals("serverBusy", busy.await().messageCode());
                 worker.join(2000);
@@ -347,11 +327,11 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
     @Test
     void userWaitDoesNotConsumeActiveBudgetButModelWorkDoes() throws Exception {
         var time = new java.util.concurrent.atomic.AtomicLong(1);
-        try (var db = DesktopPersistence.open(directory)) {
-            var waiting = create(db, new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
+        {
+            var waiting = create(new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
                     time::get, () -> {
                     });
-            var worker = worker(db, waiting);
+            var worker = worker(waiting);
             worker.start();
             try {
                 bind(waiting);
@@ -363,9 +343,9 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
                 waiting.await();
                 worker.join(2000);
             }
-            var active = create(db, new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
+            var active = create(new Browser(), new AtomicReference<>("connectionFailed"), new ReentrantLock(),
                     time::get, () -> time.addAndGet(TimeUnit.MINUTES.toNanos(16)));
-            worker = worker(db, active);
+            worker = worker(active);
             worker.start();
             try {
                 until(() -> active.snapshot().state() == WAITING_TERMINAL);
@@ -384,11 +364,10 @@ class BrowserRecoverySessionTest extends SecurityTestFixture {
     void thirtiethDecisionCanCompleteButDoesNotProduceAnotherProposal() throws Exception {
         var time = new java.util.concurrent.atomic.AtomicLong(1);
         var browser = new Browser();
-        try (var db = DesktopPersistence.open(directory);
-                var s = create(db, browser, new AtomicReference<>("connectionFailed"), new ReentrantLock(), time::get,
+        try (var s = create(browser, new AtomicReference<>("connectionFailed"), new ReentrantLock(), time::get,
                         () -> {
                         })) {
-            var worker = worker(db, s);
+            var worker = worker(s);
             worker.start();
             try {
                 bind(s);

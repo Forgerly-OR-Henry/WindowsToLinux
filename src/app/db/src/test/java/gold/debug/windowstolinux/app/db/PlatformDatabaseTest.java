@@ -36,7 +36,7 @@ class PlatformDatabaseTest {
 
     @Test
     void schemaOwnerCredentialsRemainCompatibleWithExistingUsersAcrossRestart() throws Exception {
-        var coordinates = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
+        var coordinates = new gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates(
                 new gold.debug.windowstolinux.appapi.db.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
         UUID generation;
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);

@@ -8,7 +8,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
