@@ -77,6 +77,10 @@ class DeploymentConfigurationSnapshotTest {
                 () -> DeploymentConfigurationInput.secrets("database-password:0"));
         assertThrows(IllegalArgumentException.class,
                 () -> DeploymentConfigurationInput.secrets("database-password:invalid"));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentConfigurationInput.secrets("missing-revision"));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentConfigurationInput.secrets("database-password:"));
+        assertThrows(DeploymentConfigurationException.class,
+                () -> DeploymentConfigurationInput.secrets("database-password:-1"));
         assertThrows(DeploymentConfigurationException.class,
                 () -> DeploymentConfigurationSnapshot.create("../demo", 1, "v1", Instant.EPOCH, List.of()));
     }

@@ -56,13 +56,15 @@ final class DeploymentMultiComponentPublicationRecovery {
                 return unknown("DEPLOYMENT_GRAPH_TRANSFER_PENDING");
             OperationResult<DeploymentPublicationProposal> verified;
             try (RemoteSession session = context.linux().connect(identity.server(), task)) {
-                var observations = observe(task, record, components, session);
+                var observations = observe(task, components, session);
                 if (observations.isEmpty())
                     return unknown("DEPLOYMENT_GRAPH_REMOTE_STATUS_UNCONFIRMED");
                 verified = known.outcome() == Outcome.UNKNOWN
                         ? prove(task, record, root, proposal, components, observations, session)
                         : known;
-                if (verified.outcome() == Outcome.UNKNOWN
+                if (verified.outcome() == Outcome.FAILED && root.facts().path("phase").asText().equals("ROLLING_BACK"))
+                    observations = observe(task, components, session);
+                if (verified.outcome() == Outcome.UNKNOWN || observations.isEmpty()
                         || !businessMatches(task, record, root, proposal, components, observations, session, verified))
                     return unknown("DEPLOYMENT_GRAPH_BUSINESS_STATE_CHANGED");
                 if (known.outcome() == Outcome.UNKNOWN && !root.verified(verified.outcome(), verified.problem()))
@@ -92,7 +94,8 @@ final class DeploymentMultiComponentPublicationRecovery {
             DeploymentGraphPublicationJournal root) throws Exception {
         for (var index : root.indexes()) {
             var child = DeploymentPublicationCleanupJournal.reopen(context, task, index.key());
-            if (child.isEmpty() || !DeploymentPublicationAttemptRecovery.child(context, task, record, child.orElseThrow())
+            if (child.isEmpty()
+                    || !DeploymentPublicationAttemptRecovery.child(context, task, record, child.orElseThrow())
                     || !DeploymentAssistedReviewRecovery.child(context, task, record, child.orElseThrow()))
                 return false;
         }
@@ -176,17 +179,20 @@ final class DeploymentMultiComponentPublicationRecovery {
 
     /** Reads every original helper status on the same recovered session without remote writes. / 在同一恢复会话只读全部原helper状态。
      * @param task original task / 原任务
-     * @param record original execution / 原执行
      * @param components exact indexed components / 精确索引组件
      * @param session borrowed recovery session / 借用恢复会话
      * @return complete observations or absence / 完整观察或不存在
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
-    private Map<String, DeploymentOriginalPublicationStatus> observe(TaskContext task, DeploymentExecutionRecord record,
+    private Map<String, DeploymentOriginalPublicationStatus> observe(TaskContext task,
             Map<String, Component> components, RemoteSession session) throws ApiException {
         var observed = new LinkedHashMap<String, DeploymentOriginalPublicationStatus>();
         for (var index : components.values()) {
             var facts = index.facts();
-            var read = facts.operation().isEmpty() ? channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
+            var read = facts.operation().isEmpty()
+                    ? channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(),
+                            facts.backend(), facts.engine())
+                    : channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(),
+                            facts.backend(), facts.engine(), facts.operation().orElseThrow());
             if (read.outcome() != Outcome.SUCCEEDED || read.value().isEmpty())
                 return Map.of();
             observed.put(index.index().componentId(), read.value().orElseThrow());
@@ -213,6 +219,10 @@ final class DeploymentMultiComponentPublicationRecovery {
                 component -> component.facts().release().isPresent() && publishAttempted(component.facts().phase()))
                 && healthy(task, proposal.orElseThrow(), components, statuses, session))
             return new OperationResult<>(Outcome.SUCCEEDED, proposal, Optional.empty());
+        if (phase.equals("PUBLISHING") && proposal.isPresent()
+                && components.values().stream().anyMatch(component -> publishAttempted(component.facts().phase()))
+                && components.values().stream().anyMatch(component -> !publishAttempted(component.facts().phase())))
+            return restorePartial(task, root, proposal.orElseThrow(), components, statuses, session);
         if (phase.equals("ROLLING_BACK")) {
             var failure = components.values().stream().map(component -> component.facts().failure())
                     .flatMap(Optional::stream).findFirst();
@@ -226,6 +236,53 @@ final class DeploymentMultiComponentPublicationRecovery {
                     Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_PUBLISH_NOT_STARTED",
                             "Original whole-graph publish did not begin", Map.of(), Optional.empty())));
         return unknown("DEPLOYMENT_GRAPH_PREPUBLISH_NOT_VERIFIED");
+    }
+
+    /** Restores a partially published original graph only after all affected and untouched states are independently known. / 仅全部已影响及未影响状态均获独立确认后恢复原部分发布图。
+     * @param task original recovery task / 原恢复任务
+     * @param root original graph journal / 原图账本
+     * @param proposal exact formal graph / 精确正式图
+     * @param components original indexed checkpoints / 原索引检查点
+     * @param statuses complete original observations / 完整原观察
+     * @param session original recovery session / 原恢复会话
+     * @return confirmed failed restoration or retained uncertainty / 已确认失败恢复或保留未知
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    private OperationResult<DeploymentPublicationProposal> restorePartial(TaskContext task,
+            DeploymentGraphPublicationJournal root, DeploymentPublicationProposal proposal,
+            Map<String, Component> components, Map<String, DeploymentOriginalPublicationStatus> statuses,
+            RemoteSession session) throws ApiException {
+        var affected = new java.util.ArrayList<DeploymentApplicationGraph.Component>();
+        for (var value : proposal.graph().components()) {
+            var component = components.get(value.componentId());
+            if (publishAttempted(component.facts().phase())) {
+                if (!java.util.Set.of("PUBLISH_MAY_HAVE_RUN", "PUBLISHED_VERIFIED").contains(component.facts().phase())
+                        || component.facts().snapshot().isEmpty()
+                        || !componentHealthy(task, value, component, statuses.get(value.componentId()), session))
+                    return unknown("DEPLOYMENT_GRAPH_PARTIAL_PUBLISH_UNCONFIRMED");
+                affected.add(value);
+            } else if (!prepublishUnchanged(task, Map.of(value.componentId(), component),
+                    Map.of(value.componentId(), statuses.get(value.componentId())), session, false))
+                return unknown("DEPLOYMENT_GRAPH_PARTIAL_PREVIOUS_UNCONFIRMED");
+        }
+        var failure = new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_PARTIAL_PUBLICATION",
+                "Original graph publication stopped before every component was published", Map.of(), Optional.empty());
+        if (!root.mark("ROLLING_BACK"))
+            return unknown("DEPLOYMENT_GRAPH_ROLLBACK_BOUNDARY_UNCONFIRMED");
+        java.util.Collections.reverse(affected);
+        for (var value : affected) {
+            var component = components.get(value.componentId());
+            if (!component.journal().rollbackStarting(failure))
+                return unknown("DEPLOYMENT_GRAPH_ROLLBACK_EVIDENCE_UNCONFIRMED");
+            var rollback = channel(session, task, component).rollback(component.facts().unit(),
+                    component.facts().release().orElseThrow(), component.facts().snapshot().orElseThrow(),
+                    value.reviewedRuntime());
+            if (rollback.outcome() != Outcome.SUCCEEDED || !component.journal().mark("ROLLBACK_VERIFIED"))
+                return unknown("DEPLOYMENT_GRAPH_ROLLBACK_UNCONFIRMED");
+        }
+        var refreshed = observe(task, components, session);
+        if (refreshed.isEmpty() || !restored(task, components, refreshed, session))
+            return unknown("DEPLOYMENT_GRAPH_ROLLBACK_NOT_PROVEN");
+        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
     }
 
     /** Proves that this task never began publication and every original snapshot still describes the old state. / 证明本任务从未开始发布且各原快照仍描述原状态。
@@ -296,19 +353,7 @@ final class DeploymentMultiComponentPublicationRecovery {
             Map<String, DeploymentOriginalPublicationStatus> statuses, RemoteSession session) throws ApiException {
         for (var value : proposal.graph().components()) {
             var component = components.get(value.componentId());
-            var facts = component.facts();
-            var status = statuses.get(value.componentId());
-            if (status.buildActive() || facts.release().isEmpty() || !status.current().equals(facts.release()))
-                return false;
-            var channel = channel(session, task, component);
-            var observed = channel.observe(facts.unit(), value.reviewedRuntime());
-            var expected = value.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
-                    ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
-                    : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
-            if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
-                    || observed.value().orElseThrow().state() != expected
-                    || channel.healthCheck(facts.unit(), value.reviewedRuntime().healthCheck())
-                            .outcome() != Outcome.SUCCEEDED)
+            if (!componentHealthy(task, value, component, statuses.get(value.componentId()), session))
                 return false;
         }
         var owner = proposal.graph().components().stream()
@@ -316,6 +361,32 @@ final class DeploymentMultiComponentPublicationRecovery {
                 .orElseThrow();
         return channel(session, task, components.get(owner.componentId()))
                 .healthCheck(owner.unit(), proposal.graph().healthCheck()).outcome() == Outcome.SUCCEEDED;
+    }
+
+    /** Independently verifies one exact attempted release and its reviewed runtime health. / 独立核实一项精确尝试发布及其已审阅运行健康。
+     * @param task original task / 原任务
+     * @param value formal component / 正式组件
+     * @param component original checkpoint / 原检查点
+     * @param status original exact observation / 原精确观察
+     * @param session recovery session / 恢复会话
+     * @return whether this component is independently healthy / 本组件是否独立健康
+     * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
+    private boolean componentHealthy(TaskContext task, DeploymentApplicationGraph.Component value, Component component,
+            DeploymentOriginalPublicationStatus status, RemoteSession session) throws ApiException {
+        var facts = component.facts();
+        if (status.buildActive() || facts.release().isEmpty() || !status.current().equals(facts.release()))
+            return false;
+        var channel = channel(session, task, component);
+        var observed = channel.observe(facts.unit(), value.reviewedRuntime());
+        var expected = value.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
+                ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
+                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+        if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
+                || observed.value().orElseThrow().state() != expected
+                || channel.healthCheck(facts.unit(), value.reviewedRuntime().healthCheck())
+                        .outcome() != Outcome.SUCCEEDED)
+            return false;
+        return true;
     }
 
     /** Requires every old release and its prior runtime state, including first-deployment absence. / 要求全部旧发布及先前运行状态，包括首次部署的确证不存在。
@@ -406,7 +477,9 @@ final class DeploymentMultiComponentPublicationRecovery {
             if (!successful && status.snapshot()) {
                 if (publishAttempted(phase) || phase.equals("SNAPSHOT_DISCARD_MAY_HAVE_RUN")
                         || !DeploymentPublicationCleanupAttempt.run(journal, "SNAPSHOT_DISCARD_MAY_HAVE_RUN",
-                                () -> facts.operation().isEmpty() ? channel.discardSnapshot(facts.unit()) : channel.discardSnapshot(facts.unit(), facts.operation().orElseThrow())))
+                                () -> facts.operation().isEmpty()
+                                        ? channel.discardSnapshot(facts.unit())
+                                        : channel.discardSnapshot(facts.unit(), facts.operation().orElseThrow())))
                     return false;
                 status = reread(channel, facts);
                 if (status == null || status.snapshot() || !journal.mark("SNAPSHOT_DISCARDED"))
@@ -479,7 +552,11 @@ final class DeploymentMultiComponentPublicationRecovery {
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static DeploymentOriginalPublicationStatus reread(DeploymentPublicationChannel channel,
             DeploymentPublicationRecoveryFacts facts) throws ApiException {
-        var read = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
+        var read = facts.operation().isEmpty()
+                ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(),
+                        facts.engine())
+                : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(),
+                        facts.engine(), facts.operation().orElseThrow());
         return read.outcome() == Outcome.SUCCEEDED ? read.value().orElse(null) : null;
     }
 
