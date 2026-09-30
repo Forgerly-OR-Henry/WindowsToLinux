@@ -7,9 +7,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 
 /**
@@ -32,7 +32,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
  */
 public record DeploymentComponent(String componentId, Path sourceRoot, DeploymentProjectFacts facts,
         Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths, Set<Integer> ports,
-        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentDataPath> dataPaths,
+        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentStoragePath> dataPaths,
         Set<String> dependencies, boolean required, ComponentIsolationSpecification isolation) {
     /**
      * Validates a complete bounded component record. / 验证完整有界组件记录。
@@ -78,7 +78,7 @@ public record DeploymentComponent(String componentId, Path sourceRoot, Deploymen
         secretIdentifiers = sortedDistinct(secretIdentifiers, value -> identifier(value, "secret identifier"),
                 "secretIdentifiers");
         dataPaths = List.copyOf(Objects.requireNonNull(dataPaths, "dataPaths"));
-        if (dataPaths.stream().map(DeploymentDataPath::path).distinct().count() != dataPaths.size()) {
+        if (dataPaths.stream().map(DeploymentStoragePath::path).distinct().count() != dataPaths.size()) {
             throw new IllegalArgumentException("component data paths must be unique");
         }
         dependencies = java.util.Collections.unmodifiableSet(

@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.app.ai.recovery.RecoveryProtocol;
 import gold.debug.windowstolinux.app.linux.recovery.*;
 import gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryModels;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,7 +42,7 @@ class PlatformRecoveryModelsTest {
             String language = response(PROPOSAL);
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200,
                     exchange.getRequestURI().getPath().equals("/vision") ? vision : language));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var escaped = new AtomicReference<PlatformRecoveryModels>();
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 var models = new PlatformRecoveryModels(ai, task);
@@ -88,7 +88,7 @@ class PlatformRecoveryModelsTest {
             String malformed = response(
                     "{\"command\":\"private malformed proposal\",\"reason\":\"x\",\"expected\":\"x\",\"highImpact\":false,\"execute\":true}");
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, malformed));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     task -> success(new PlatformRecoveryModels(ai, task).decide("fixture"))));
             assertEquals("modelInvalid", result.code());
@@ -110,7 +110,7 @@ class PlatformRecoveryModelsTest {
                 exchange.sendResponseHeaders(200, 1000);
                 exchange.getResponseBody().write('{');
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var original = new AtomicReference<TaskContext>();
             var rejected = new AtomicReference<Problem>();
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
@@ -148,12 +148,72 @@ class PlatformRecoveryModelsTest {
                 boolean rejected = exchange.getRequestURI().getPath().equals("/first");
                 Fixture.reply(exchange, rejected ? 503 : 200, rejected ? "unavailable" : valid);
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     task -> success(new PlatformRecoveryModels(ai, task).decide("fixture"))));
             assertEquals("ok", result.code());
             assertEquals(Map.of("second", "VALID"), result.attempts());
             assertEquals(2, fixture.calls.get());
+        }
+    }
+
+    @Test
+    void emptyLanguagePurposeReturnsKnownModelUnavailableWithoutUsingVisionOrInventory() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "inventory", "/inventory", AiCapabilityType.TEXT, 128);
+            model(runtime, fixture, "vision", "/vision", AiCapabilityType.VISION, 64);
+            route(runtime, AiPurposeType.VISION, "vision");
+            route(runtime, AiPurposeType.DEPLOYMENT);
+            assertTrue(runtime.persistence().aiProfiles().purposes().list(AiPurposeType.DEPLOYMENT).isEmpty());
+            String valid = response(PROPOSAL);
+            fixture.handler.set(exchange -> Fixture.reply(exchange, 200, valid));
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
+                    task -> success(new PlatformRecoveryModels(ai, task).decide("Original local terminal facts")));
+            var result = completed(handle);
+            assertEquals("modelUnavailable", result.code());
+            assertEquals("", result.content());
+            assertEquals(Map.of("platform", "AI_PURPOSE_UNAVAILABLE"), result.attempts());
+            assertFalse(result.attempts().containsKey("inventory"));
+            assertFalse(result.attempts().containsKey("vision"));
+            assertEquals(0, fixture.calls.get(), "An empty LANGUAGE purpose cannot select the independent VISION route or inventory");
+            assertTrue(fixture.requests.isEmpty());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome(), "A known unavailable advice result is distinct from an uncertain model send");
+            assertEquals(0, count(runtime.persistence().database(),
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
+    @Test
+    void terminalWithoutUsableTextOrImageReturnsVisionUnsupportedBeforeAnyConfiguredModelSend() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "vision", "/vision", AiCapabilityType.VISION, 64);
+            model(runtime, fixture, "language", "/language", AiCapabilityType.TEXT, 128);
+            route(runtime, AiPurposeType.VISION, "vision");
+            route(runtime, AiPurposeType.DEPLOYMENT, "language");
+            String valid = response("{\"observation\":\"unexpected remote inference\"}");
+            fixture.handler.set(exchange -> Fixture.reply(exchange, 200, valid));
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                var models = new PlatformRecoveryModels(ai, task);
+                for (String text : List.of("", " \n\t")) {
+                    var observed = models.observe(new TerminalObservation(text, new byte[0], 1));
+                    assertEquals("visionUnsupported", observed.code());
+                    assertEquals("", observed.content());
+                    assertTrue(observed.attempts().isEmpty());
+                }
+                return success(null);
+            });
+            completed(handle);
+            assertEquals(0, fixture.calls.get(), "Missing terminal evidence must not be guessed through a configured model");
+            assertTrue(fixture.requests.isEmpty());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
+            assertEquals(0, count(runtime.persistence().database(),
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }
     }
 }

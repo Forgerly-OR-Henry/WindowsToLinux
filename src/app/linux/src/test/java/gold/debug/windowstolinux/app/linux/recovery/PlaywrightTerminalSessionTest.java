@@ -52,7 +52,7 @@ class PlaywrightTerminalSessionTest {
             long stale = text;
             var staleFailure = assertThrows(BrowserRecoveryException.class, () -> browser.submit(stale, "stale"));
             assertEquals("linux.browser.operation-failed", staleFailure.problem().eventCode());
-            assertEquals(BrowserRecoveryException.Reason.OPERATION_FAILED, staleFailure.reason());
+            assertEquals(BrowserRecoveryException.ReasonType.OPERATION_FAILED, staleFailure.reason());
             assertNotNull(staleFailure.problem().diagnosticId().orElseThrow());
             assertFalse(staleFailure.problem().toString().contains("terminal-changed"));
             targets = browser.targets();

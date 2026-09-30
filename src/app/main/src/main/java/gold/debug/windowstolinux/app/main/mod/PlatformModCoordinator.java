@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.mod.*;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.lifecycle.*;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
@@ -117,40 +117,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 for (var issue : programs.refresh())
                     issues.put("source:" + issues.size(), issue);
                 issues.putAll(recovery.start());
-                var ready = new LinkedHashMap<String, Prepared>();
-                for (var selected : selections()) {
-                    if (recovery.blocks(selected.owner()))
-                        continue;
-                    Prepared prepared = null;
-                    try {
-                        prepared = prepare(selected);
-                        if (!selected.enabled())
-                            continue;
-                        var build = programs.read(selected.owner(), selected.version());
-                        if (!Objects.equals(selected.version(), build.manifest().version().toString())
-                                || !selected.manifest().equals(build.manifest().json())
-                                || !selected.digest().equals(build.contentDigest())) {
-                            reject(prepared,
-                                    failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
-                                            "The selected release has no matching current program",
-                                            ProblemCode.UNAVAILABLE).problem());
-                            continue;
-                        }
-                        programs.verify(build);
-                        ready.put(selected.owner(),
-                                new Prepared(selected, prepared.schema(), prepared.intent(), build));
-                    } catch (Exception | LinkageError | AssertionError failure) {
-                        var issue = failure instanceof java.io.IOException
-                                ? failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
-                                        "The selected program could not be verified against its original registration",
-                                        ProblemCode.UNAVAILABLE).problem()
-                                : problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
-                        if (prepared != null && selected.enabled())
-                            reject(prepared, issue);
-                        else
-                            issues.put(selected.owner(), issue);
-                    }
-                }
+                var ready = prepareSelections();
                 var plan = ModDependencyPlan.resolve(ready.values().stream().map(p -> p.build().manifest()).toList(),
                         api, Runtime.version().feature());
                 for (var entry : plan.failures().entrySet())
@@ -236,6 +203,47 @@ public final class PlatformModCoordinator implements AutoCloseable {
         } finally {
             operation.set(false);
         }
+    }
+
+    /** Prepares only original selected programs inside the existing startup admission. / 在既有启动准入内仅准备原已选程序。
+     * @return verified enabled programs in original selection order / 按原选择顺序排列的已验证启用程序
+     * @throws SQLException if original selections cannot be read / 无法读取原选择时 */
+    private LinkedHashMap<String, Prepared> prepareSelections() throws SQLException {
+        var ready = new LinkedHashMap<String, Prepared>();
+        for (var selected : selections()) {
+            if (recovery.blocks(selected.owner()))
+                continue;
+            Prepared prepared = null;
+            try {
+                prepared = prepare(selected);
+                if (!selected.enabled())
+                    continue;
+                var build = programs.read(selected.owner(), selected.version());
+                if (!Objects.equals(selected.version(), build.manifest().version().toString())
+                        || !selected.manifest().equals(build.manifest().json())
+                        || !selected.digest().equals(build.contentDigest())) {
+                    reject(prepared,
+                            failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
+                                    "The selected release has no matching current program",
+                                    ProblemCode.UNAVAILABLE).problem());
+                    continue;
+                }
+                programs.verify(build);
+                ready.put(selected.owner(),
+                        new Prepared(selected, prepared.schema(), prepared.intent(), build));
+            } catch (Exception | LinkageError | AssertionError failure) {
+                var issue = failure instanceof java.io.IOException
+                        ? failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
+                                "The selected program could not be verified against its original registration",
+                                ProblemCode.UNAVAILABLE).problem()
+                        : problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
+                if (prepared != null && selected.enabled())
+                    reject(prepared, issue);
+                else
+                    issues.put(selected.owner(), issue);
+            }
+        }
+        return ready;
     }
 
     /** Explicitly validates a retained unknown schema without restarting or migrating it. / 明确验证保留未知数据，不重启或迁移它。

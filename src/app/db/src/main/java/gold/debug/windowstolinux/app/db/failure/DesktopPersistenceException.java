@@ -3,19 +3,21 @@ package gold.debug.windowstolinux.app.db.failure;
 import java.sql.SQLException;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Structured desktop persistence failure. / 结构化桌面持久化失败。
  */
-public final class DesktopPersistenceException extends SQLException implements FailureCarrier {
+public final class DesktopPersistenceException extends SQLException {
     /**
      * Structured failure occurrence retained for safe reporting.
      * <p>保留用于安全报告的结构化失败实例。
      */
-    private final FailureDescriptor failure;
+    private final Problem failure;
 
     /**
      * Creates one persistence failure occurrence. / 创建一次持久化失败。
@@ -24,8 +26,8 @@ public final class DesktopPersistenceException extends SQLException implements F
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public DesktopPersistenceException(FailureDescriptor failure, Throwable cause) {
-        super(Objects.requireNonNull(failure, "failure").diagnostic(), cause);
+    public DesktopPersistenceException(Problem failure, Throwable cause) {
+        super(Objects.requireNonNull(failure, "failure").message(), cause);
         this.failure = failure;
     }
 
@@ -39,7 +41,7 @@ public final class DesktopPersistenceException extends SQLException implements F
      */
     public static DesktopPersistenceException create(DesktopPersistenceFailureType type, String diagnostic,
             Throwable cause) {
-        return new DesktopPersistenceException(FailureDescriptor.create(type, OperationIdentity.create(), diagnostic),
+        return new DesktopPersistenceException(evidence(type, diagnostic, cause),
                 cause);
     }
 
@@ -49,8 +51,41 @@ public final class DesktopPersistenceException extends SQLException implements F
      *
      * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      */
-    @Override
-    public FailureDescriptor failure() {
+    public Problem problem() {
         return failure;
+    }
+
+    /** Preserves SDK evidence and an explicitly known local rollback failure. / 保留SDK依据及明确已知的本地回滚失败。
+     * @param type actual persistence classification / 实际持久化分类
+     * @param diagnostic nonsecret local diagnostic / 非秘密本地诊断
+     * @param cause actual nested failure or absence / 实际嵌套失败或不存在
+     * @return exact known event with the original diagnostic identity / 带原诊断身份的精确已知事件
+     * @throws NullPointerException if a required local value is absent / 必需本地值缺失时 */
+    private static Problem evidence(DesktopPersistenceFailureType type, String diagnostic, Throwable cause) {
+        Objects.requireNonNull(type, "type");
+        ApiException api = cause instanceof ApiException direct ? direct
+                : cause != null && cause.getCause() instanceof ApiException nested ? nested : null;
+        if (api == null) return type.problem(UUID.randomUUID(), diagnostic);
+        if (type != DesktopPersistenceFailureType.ROLLBACK_FAILED) return api.problem();
+        var original = api.problem();
+        var local = type.problem(original.diagnosticId().orElseGet(UUID::randomUUID), diagnostic);
+        var context = new HashMap<>(original.context());
+        local.context().forEach((key, value) -> {
+            var previous = context.put(key, value);
+            if (previous != null && !previous.equals(value)) retainCause(context, "cause." + key, previous);
+        });
+        retainCause(context, "causeEventCode", original.eventCode());
+        return new Problem(local.code(), local.eventCode(), local.message(), context, local.diagnosticId());
+    }
+
+    /** Retains a cause value without replacing preexisting diagnostic information. / 不替换已有诊断信息地保留原因值。
+     * @param context actual immutable-boundary context being assembled / 正在组装的实际不可变边界上下文
+     * @param key preferred cause evidence key / 首选原因依据键
+     * @param value original cause evidence / 原原因依据 */
+    private static void retainCause(Map<String, String> context, String key, String value) {
+        String selected = key;
+        int suffix = 0;
+        while (context.containsKey(selected) && !context.get(selected).equals(value)) selected = key + "." + ++suffix;
+        context.putIfAbsent(selected, value);
     }
 }

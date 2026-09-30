@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
 import gold.debug.windowstolinux.shared.model.deployment.DatabaseReviewMode;
 import gold.debug.windowstolinux.shared.standard.deploy.input.DeploymentRuntimeParser;

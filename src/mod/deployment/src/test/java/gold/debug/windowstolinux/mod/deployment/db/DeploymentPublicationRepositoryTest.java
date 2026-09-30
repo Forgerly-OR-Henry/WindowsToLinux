@@ -124,6 +124,58 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
         }
     }
 
+    /** Preserves a pre-saved configuration through canonical publication binding and restart. / 保留预存配置，经规范发布绑定及重启仍完整一致。 */
+    @Test
+    void presavedSubmillisecondUnsortedConfigurationKeepsItsOriginalDigestAfterPublicationAndRestart() throws Exception {
+        enable();
+        var graph = graph("application");
+        var createdAt = OBSERVED.plusNanos(123456789);
+        var entries = DeploymentConfigurationInput.parse("ZETA=ready;PORT=8081");
+        assertEquals(List.of("ZETA", "PORT"), entries.stream().map(DeploymentConfigurationEntry::key).toList());
+        var records = publications(graph, 1, List.of()).stream().map(original -> new DeploymentUnitCommit(
+                original.unit(), original.runtime(), original.release(),
+                DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1", createdAt, entries),
+                original.secrets())).toList();
+        var canonicalEntries = entries.stream().sorted(Comparator.comparing(DeploymentConfigurationEntry::key)).toList();
+        var canonical = records.stream().map(original -> new DeploymentUnitCommit(original.unit(), original.runtime(),
+                original.release(), DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1",
+                        Instant.ofEpochMilli(createdAt.toEpochMilli()), canonicalEntries), original.secrets())).toList();
+        try (var runtime = open()) {
+            start(runtime, true);
+            server(runtime);
+            run(runtime, task -> {
+                var context = runtime.modContexts().get(OWNER).context();
+                var configurations = new DeploymentConfigurationRepository(context.db());
+                var reservations = new ArrayList<ServerReference>();
+                for (var record : records) {
+                    configurations.save(task, record.configuration());
+                    var saved = configurations.find(task, record.unit().id(), 1).orElseThrow();
+                    assertEquals(record.configuration().sha256(), saved.sha256());
+                    assertEquals(Instant.ofEpochMilli(createdAt.toEpochMilli()), saved.createdAt());
+                    assertEquals(canonicalEntries, saved.entries());
+                    assertTrue(configurations.findRelease(task, record.unit().id(), record.release().sha256()).isEmpty());
+                    reservations.add(context.servers().reserve(record.unit().server(), "unit:" + record.unit().id(), task));
+                }
+                new DeploymentPublicationRepository(context.db()).saveSuccessfulApplication(task, graph, records, OBSERVED);
+                for (var reservation : reservations)
+                    context.servers().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
+                verify(runtime, task, graph, canonical);
+                return success();
+            });
+            valid(runtime);
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+        try (var runtime = open()) {
+            start(runtime, true);
+            run(runtime, task -> {
+                verify(runtime, task, graph, canonical);
+                return success();
+            });
+            valid(runtime);
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
     @Test
     void revisionMetadataIsImmutableUsesExactOpaqueIdsAndEnforcesIntegerRange() throws Exception {
         enable();

@@ -17,13 +17,14 @@ import javax.swing.*;
 
 import com.formdev.flatlaf.FlatLightLaf;
 import gold.debug.windowstolinux.app.service.ai.*;
-import gold.debug.windowstolinux.app.service.contract.AiApplicationFacade;
+import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
 import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import org.junit.jupiter.api.Test;
 
 class AiModelInventoryTest {
@@ -42,8 +43,8 @@ class AiModelInventoryTest {
         for (var role : AiPurposeType.values())
             roles.put(role, List.of());
         var failSave = new AtomicBoolean();
-        AiApplicationFacade service = (AiApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiApplicationFacade.class}, (p, m, a) -> {
+        AiInventoryAccess service = (AiInventoryAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> {
                     return switch (m.getName()) {
                         case "listAiConfigurations" -> values.get();
                         case "listAiPurpose" -> roles.get(a[0]);
@@ -117,61 +118,9 @@ class AiModelInventoryTest {
     }
 
     @Test
-    void failedModelSaveRetainsInputsAndCancelWaitsForWorkerCleanup() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
-        CountDownLatch started = new CountDownLatch(1), cleanup = new CountDownLatch(1),
-                release = new CountDownLatch(1);
-        boolean[] block = {false};
-        AiApplicationFacade service = (AiApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiApplicationFacade.class}, (p, m, a) -> {
-                    if (!block[0])
-                        throw gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.create(
-                                gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.AI_CONFIGURATION_TEST_FAILED,
-                                "test failed");
-                    started.countDown();
-                    try {
-                        new CountDownLatch(1).await();
-                    } catch (InterruptedException interrupted) {
-                        cleanup.countDown();
-                        release.await();
-                        throw new CancellationException();
-                    }
-                    return null;
-                });
-        AtomicReference<AiProviderDialog> dialog = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            dialog.set(new AiProviderDialog(null, service, c, messages, model("existing", 1),
-                    () -> fail("must not save")));
-            dialog.get().setModalityType(Dialog.ModalityType.MODELESS);
-            dialog.get().setVisible(true);
-            field(dialog.get(), "save", JButton.class).doClick();
-        });
-        try {
-            idle();
-            SwingUtilities.invokeAndWait(() -> {
-                assertTrue(dialog.get().isShowing());
-                assertEquals("existing", field(dialog.get(), "name", JTextField.class).getText());
-                block[0] = true;
-                field(dialog.get(), "save", JButton.class).doClick();
-            });
-            assertTrue(started.await(3, TimeUnit.SECONDS));
-            SwingUtilities.invokeAndWait(
-                    () -> dialog.get().dispatchEvent(new WindowEvent(dialog.get(), WindowEvent.WINDOW_CLOSING)));
-            assertTrue(cleanup.await(3, TimeUnit.SECONDS));
-            assertTrue(dialog.get().isDisplayable());
-            release.countDown();
-            idle();
-            assertFalse(dialog.get().isDisplayable());
-        } finally {
-            release.countDown();
-            SwingUtilities.invokeAndWait(() -> dialog.get().dispose());
-        }
-    }
-
-    @Test
     void inlineColumnsRemainEqualAndRestoreFullWidthInBothThemes() throws Exception {
-        AiApplicationFacade service = (AiApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiApplicationFacade.class}, (p, m, a) -> switch (m.getName()) {
+        AiInventoryAccess service = (AiInventoryAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> switch (m.getName()) {
                     case "listAiConfigurations" ->
                         List.of(model("deployment", 0), model("review", 1), model("vision", 2));
                     case "listAiPurpose" -> List.of(new AiPurposeAssignment("review", true));

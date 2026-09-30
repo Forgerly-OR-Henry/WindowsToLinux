@@ -262,7 +262,7 @@ class PlatformModCatalogTest {
             var ledger = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(runtime.persistence().database());
             var prepared = ledger.begin(operation);
             var api = gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1");
-            var plan = gold.debug.windowstolinux.app.mod.lifecycle.ModDependencyPlan
+            var plan = gold.debug.windowstolinux.app.mod.execution.lifecycle.ModDependencyPlan
                     .resolve(List.of(build.candidate().manifest()), api, Runtime.version().feature());
             var urls = new ArrayList<java.net.URL>();
             for (var source : build.candidate().descriptor().sources())

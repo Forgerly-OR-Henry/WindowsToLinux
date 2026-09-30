@@ -28,7 +28,7 @@ public final class DeploymentProjectRepository {
     public void create(TaskContext task, DeploymentProjectRecord project) throws SQLException, ApiException {
         Objects.requireNonNull(project);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> {
+        DeploymentStorageTransaction.execute(connection, () -> {
             var existing = read(connection, project.id(), true);
             if (existing.isPresent()) {
                 if (!existing.get().equals(project))
@@ -60,7 +60,7 @@ public final class DeploymentProjectRepository {
                 || !next.updatedAt().isAfter(expected.updatedAt()))
             throw new SQLException("Project update requires original identity and a later observation");
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> {
+        DeploymentStorageTransaction.execute(connection, () -> {
             var current = read(connection, expected.id(), true)
                     .orElseThrow(() -> new SQLException("Original project is absent"));
             if (current.equals(next))

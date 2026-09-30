@@ -34,17 +34,16 @@ class DeploymentPublicationChannelTest {
                         + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n");
             return reply(0, "SNAPSHOT_DISCARDED=1\n");
         }, scripts);
-        assertEquals(Optional.of(operation.toString()),
-                peer.snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).value().orElseThrow().token());
+        assertEquals(Optional.of(operation.toString()), peer.snapshot(unit(), runtime(), operation,
+                Optional.of("d".repeat(64))).value().orElseThrow().token());
         assertEquals(Outcome.SUCCEEDED, peer.originalStatus(unit(), "demo-" + "a".repeat(16),
                 Optional.of("d".repeat(64)), "native", "none", operation).outcome());
         assertEquals(Outcome.SUCCEEDED, peer.discardSnapshot(unit(), operation).outcome());
         assertEquals(3, scripts.size());
         String identity = "'demo' '" + "b".repeat(64) + "' '11111111-1111-4111-8111-111111111111' '" + operation + "'";
-        assertTrue(scripts.get(0).contains("'snapshot-deployment-attempt' " + identity + " '" + "d".repeat(64) + "'"),
-                scripts.get(0));
-        assertTrue(scripts.get(1).contains("'publication-original-status-attempt' " + identity + " 'demo-"
-                + "a".repeat(16) + "' '" + "d".repeat(64) + "' 'native' 'none'"), scripts.get(1));
+        assertTrue(scripts.get(0).contains("'snapshot-deployment-attempt' " + identity + " '" + "d".repeat(64) + "'"), scripts.get(0));
+        assertTrue(scripts.get(1).contains("'publication-original-status-attempt' " + identity + " 'demo-" + "a".repeat(16)
+                + "' '" + "d".repeat(64) + "' 'native' 'none'"), scripts.get(1));
         assertTrue(scripts.get(2).contains("'snapshot-discard-attempt' " + identity), scripts.get(2));
     }
 
@@ -55,8 +54,8 @@ class DeploymentPublicationChannelTest {
         for (String body : List.of("PREVIOUS=0\n",
                 "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
                         + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n",
-                "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST=" + "e".repeat(64)
-                        + "\nPREVIOUS_KIND=deployment\n")) {
+                "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                        + "e".repeat(64) + "\nPREVIOUS_KIND=deployment\n")) {
             var scripts = new ArrayList<String>();
             assertEquals(Outcome.UNKNOWN, channel(request -> reply(0, body), scripts)
                     .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).outcome());
@@ -66,6 +65,56 @@ class DeploymentPublicationChannelTest {
         assertEquals(Outcome.SUCCEEDED, channel(request -> reply(0, "PREVIOUS=0\n"), scripts)
                 .snapshot(unit(), runtime(), operation, Optional.empty()).outcome());
         assertTrue(scripts.getFirst().endsWith(" 'empty'"), scripts.getFirst());
+    }
+
+    /** A correct digest/token cannot hide changed previous runtime kind. / 正确摘要和令牌不能掩盖旧运行类别变化。
+     * @throws Exception if admission fails / 准入失败时 */
+    @Test
+    void attemptSnapshotRejectsChangedPreviousKindWithoutReplayingSnapshot() throws Exception {
+        var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        var scripts = new ArrayList<String>();
+        var result = channel(request -> reply(0, "SNAPSHOT_TOKEN=" + operation
+                + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST=" + "d".repeat(64)
+                + "\nPREVIOUS_KIND=ordinary\n"), scripts)
+                .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
+        assertEquals(Outcome.UNKNOWN, result.outcome());
+        assertEquals("DEPLOYMENT_SNAPSHOT_PREVIOUS_CHANGED", result.problem().orElseThrow().eventCode());
+        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
+    }
+
+    /** A correct digest/token and kind cannot hide changed previous activity. / 正确摘要、令牌和类别不能掩盖旧运行状态变化。
+     * @throws Exception if admission fails / 准入失败时 */
+    @Test
+    void attemptSnapshotRejectsChangedPreviousActivityWithoutReplayingSnapshot() throws Exception {
+        var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        var scripts = new ArrayList<String>();
+        var result = channel(request -> reply(0, "SNAPSHOT_TOKEN=" + operation
+                + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
+                + "\nPREVIOUS_KIND=deployment\n"), scripts)
+                .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
+        assertEquals(Outcome.UNKNOWN, result.outcome());
+        assertEquals("DEPLOYMENT_SNAPSHOT_PREVIOUS_CHANGED", result.problem().orElseThrow().eventCode());
+        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
+    }
+
+    /** Empty previous state requires none/inactive before sending any snapshot. / 空旧状态在发送快照前必须是none和非运行。
+     * @throws Exception if admission fails / 准入失败时 */
+    @Test
+    void emptyAttemptSnapshotRequiresCompleteNoneAndInactiveBeforeDispatch() throws Exception {
+        var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        var scripts = new ArrayList<String>();
+        var peer = channel(request -> reply(0, "PREVIOUS=0\n"), scripts);
+        assertThrows(IllegalArgumentException.class,
+                () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "deployment", false));
+        assertThrows(IllegalArgumentException.class,
+                () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "none", true));
+        assertTrue(scripts.isEmpty());
+        var result = peer.snapshot(unit(), runtime(), operation, Optional.empty(), "none", false);
+        assertEquals(Outcome.SUCCEEDED, result.outcome());
+        assertEquals("none", result.value().orElseThrow().previousKind());
+        assertFalse(result.value().orElseThrow().previousRunning());
+        assertTrue(result.value().orElseThrow().token().isEmpty());
+        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
     }
 
     /** Rejects a missing first-release flag and preserves an exact previous token. / 拒绝缺失首次发布标志并保留精确旧令牌。 */

@@ -7,7 +7,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
 
 /** Edits only persisted platform policy, independently of AI approval. / 独立于 AI 审批，仅编辑持久平台策略。 */
@@ -62,18 +62,19 @@ public final class AuthorizationSettingsPane extends JPanel implements AutoClose
         });
         mode.setSelectedItem(null);
         mode.addActionListener(event -> save());
-        reload = components.secondaryButton(messages.text("authorization.reload"));
+        reload = messages.bind(components.secondaryButton(""), "authorization.reload");
         reload.setName("authorization.reload");
         reload.addActionListener(event -> reload());
-        var explanation = new JTextArea(messages.text("authorization.explanation"));
+        var explanation = new JTextArea();
         explanation.setEditable(false);
+        messages.bind(explanation, "authorization.explanation");
         explanation.setOpaque(false);
         explanation.setLineWrap(true);
         explanation.setWrapStyleWord(true);
         explanation.setRows(6);
         explanation.setFont(UIManager.getFont("Label.font"));
         var choices = components.transparent(new FlowLayout(FlowLayout.LEFT));
-        choices.add(new JLabel(messages.text("authorization.label")));
+        choices.add(messages.bind(new JLabel(), "authorization.label"));
         choices.add(mode);
         choices.add(reload);
         status.setName("authorization.status");

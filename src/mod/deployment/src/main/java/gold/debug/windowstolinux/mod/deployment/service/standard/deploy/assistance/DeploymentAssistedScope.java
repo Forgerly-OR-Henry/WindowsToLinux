@@ -12,19 +12,65 @@ import gold.debug.windowstolinux.appapi.source.SourceService;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
-/** Freezes one original assisted task without replacing platform authority. / 冻结一项原辅助任务而不替换平台权限。
- * @param original actual owner capabilities / 实际所有者能力
- * @param task original platform context / 原平台上下文
- * @param revision frozen whole AI routing / 冻结完整 AI 路由 */
-public record DeploymentAssistedScope(ModContext original, TaskContext task, String revision) implements ModContext {
+/** Freezes one original assisted task and its language-call budget without replacing platform authority. / 冻结一项原辅助任务及语言调用预算，不替换平台权限。 */
+public final class DeploymentAssistedScope implements ModContext {
+    /** Actual owner capabilities. / 实际所属能力。 */
+    private final ModContext original;
+    /** Authentic original task. / 真实原任务。 */
+    private final TaskContext task;
+    /** Frozen complete model routing revision. / 冻结完整模型路由修订。 */
+    private final String revision;
+    /** Explicit independent-review policy. / 明确独立审核策略。 */
+    private final String approvalMode;
+    /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
+    private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
+    /** Validates the task-local route and policy without replacing host authority. / 验证任务内部路由及策略，不替换宿主权限。
+     * @param original actual owner capabilities / 实际所属能力
+     * @param task original task / 原任务
+     * @param revision frozen complete revision / 冻结完整修订
+     * @param approvalMode selected exact policy / 所选精确策略 */
+    public DeploymentAssistedScope(ModContext original, TaskContext task, String revision, String approvalMode) {
+        this.original = Objects.requireNonNull(original);
+        this.task = Objects.requireNonNull(task);
+        this.revision = Objects.requireNonNull(revision);
+        if (!Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode))
+            throw new IllegalArgumentException("Invalid assisted approval policy");
+        this.approvalMode = approvalMode;
+    }
+
+    /** Returns the selected policy without changing it. / 返回所选策略，不改变其值。
+     * @return original exact policy / 原精确策略 */
+    public String approvalMode() { return approvalMode; }
+
+    /** Counts one logical language send; provider HTTP fallback is outside this counter. / 计算一次逻辑语言发送；提供方 HTTP 回退不属于该计数。
+     * @param purpose actual model purpose / 实际模型用途
+     * @throws ApiException if the original thirty-call budget is exhausted / 原三十次调用预算耗尽时 */
+    private void consume(AiPurpose purpose) throws ApiException {
+        if (purpose == AiPurpose.LANGUAGE && languageCalls.updateAndGet(value -> Math.min(31, value + 1)) > 30)
+            throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_DECISION_BUDGET",
+                    "Original assisted language-call budget is exhausted", Map.of("task", task.id().toString()), Optional.of(task.id())));
+    }
     /** Captures the usable language route once before any assisted work. / 辅助工作前一次捕获可用语言路由。
      * @param original actual capabilities / 实际能力
      * @param task original task / 原任务
      * @return task-bound frozen capabilities / 任务绑定冻结能力
      * @throws ApiException if configuration is unavailable / 配置不可用时 */
     public static DeploymentAssistedScope freeze(ModContext original, TaskContext task) throws ApiException {
-        return new DeploymentAssistedScope(original, task,
-                original.ai().configurationRevision(AiPurpose.LANGUAGE, task));
+        return freeze(original, task, "MANUAL_REVIEW");
+    }
+
+    /** Requires both selected model roles before freezing an automatic policy. / 冻结自动策略前要求两个所选模型角色可用。
+     * @param original actual owner capabilities / 实际所属能力
+     * @param task original authentic task / 真实原任务
+     * @param approvalMode selected policy / 所选策略
+     * @return exact frozen route / 精确冻结路由
+     * @throws ApiException if a required independent reviewer is absent or changed / 必需独立审核者缺失或变化时 */
+    public static DeploymentAssistedScope freeze(ModContext original, TaskContext task, String approvalMode) throws ApiException {
+        String revision = original.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+        if (!approvalMode.equals("MANUAL_REVIEW") && !revision.equals(original.ai().configurationRevision(AiPurpose.APPROVAL, task)))
+            throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
+                    "Independent assisted review route differs", Map.of("task", task.id().toString()), Optional.of(task.id())));
+        return new DeploymentAssistedScope(original, task, revision, approvalMode);
     }
 
     /** Verifies the original binding at actual dispatch time. / 在真实发送时验证原绑定。
@@ -33,6 +79,9 @@ public record DeploymentAssistedScope(ModContext original, TaskContext task, Str
         if (!revision.equals(original.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
                     "Assisted configuration changed", Map.of(), Optional.empty()));
+        if (!approvalMode.equals("MANUAL_REVIEW") && !revision.equals(original.ai().configurationRevision(AiPurpose.APPROVAL, task)))
+            throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
+                    "Independent assisted review configuration changed", Map.of("task", task.id().toString()), Optional.of(task.id())));
     }
 
     /** Preserves the exact task at every scoped capability call. / 每次限定能力调用均保留精确任务。
@@ -109,6 +158,7 @@ public record DeploymentAssistedScope(ModContext original, TaskContext task, Str
                 verify();
                 if (!revision.equals(expected))
                     throw new IllegalArgumentException("Assisted caller revision differs");
+                consume(request.purpose());
                 return original.ai().call(request, revision, supplied);
             }
         };
@@ -146,7 +196,28 @@ public record DeploymentAssistedScope(ModContext original, TaskContext task, Str
      * @return host review capability / 宿主审核能力 */
     @Override
     public InteractionService interaction() {
-        return original.interaction();
+        return new InteractionService() {
+            /** Applies the task's fixed policy before the original exact host review. / 原精确宿主审阅前应用任务固定策略。
+             * @param intent exact fixed intent / 精确固定意图
+             * @param supplied authentic original task / 真实原任务
+             * @return original host grant or refusal / 原宿主授权或拒绝
+             * @throws ApiException if routing or fixed review rejects / 路由或固定审阅拒绝时 */
+            public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
+                sameTask(supplied); verify();
+                var actual = DeploymentAssistedApproval.approve(DeploymentAssistedScope.this, original.interaction(), intent, supplied, revision, approvalMode);
+                verify(); return actual;
+            }
+            /** Preserves original human input authority. / 保留原人工输入权限。
+             * @param title original title / 原标题
+             * @param prompt original question / 原问题
+             * @param secret original secret classification / 原秘密分类
+             * @param supplied original authentic task / 原真实任务
+             * @return original classified answer / 原分类答案
+             * @throws ApiException if the frozen task is no longer admitted / 冻结任务不再准入时 */
+            public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext supplied) throws ApiException {
+                sameTask(supplied); verify(); return original.interaction().requestText(title, prompt, secret, supplied);
+            }
+        };
     }
 
     /** Returns original server references. / 返回原服务器引用。

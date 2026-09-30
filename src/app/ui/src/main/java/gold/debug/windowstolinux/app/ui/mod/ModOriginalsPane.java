@@ -12,7 +12,9 @@ import javax.swing.event.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
 import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation.*;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.i18n.LocaleBinding;
+import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.OperationResult;
 
 /** Manages explicitly discovered originals and their original interrupted installations. / 管理明确发现的原包及其原中断安装。 */
@@ -87,65 +89,8 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         this.installedChanged = installedChanged;
         setName("platform.originals");
         setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
-        var top = new JPanel(new BorderLayout(8, 8));
-        var location = new JTextArea(
-                messages.text("originals.location", Map.of("path", service.originalsDirectory().toString())));
-        location.setName("originals.location");
-        location.setEditable(false);
-        location.setLineWrap(true);
-        location.setWrapStyleWord(true);
-        location.setOpaque(false);
-        top.add(location, BorderLayout.NORTH);
-        search.setName("originals.search");
-        search.setToolTipText(messages.text("originals.search"));
-        var filter = new JPanel(new BorderLayout(8, 0));
-        filter.add(new JLabel(messages.text("originals.search")), BorderLayout.WEST);
-        filter.add(search);
-        top.add(filter, BorderLayout.CENTER);
-        keep.setName("originals.keep");
-        keep.setText(messages.text("originals.keep"));
-        keep.addActionListener(event -> saveRetention());
-        top.add(keep, BorderLayout.SOUTH);
-        add(top, BorderLayout.NORTH);
-        inventory.setName("originals.inventory");
-        inventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        inventory.setCellRenderer((list, value, index, selected, focused) -> {
-            var renderer = new DefaultListCellRenderer();
-            renderer.putClientProperty("html.disable", true);
-            return renderer.getListCellRendererComponent(list,
-                    value.file().getFileName() + " · " + state(value.state()), index, selected, focused);
-        });
-        inventory.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting())
-                render();
-        });
-        search.getDocument().addDocumentListener(new DocumentListener() {
-            /** Updates a pure in-memory filter. / 更新纯内存筛选。
-             * @param event changed text / 变化文本 */
-            public void insertUpdate(DocumentEvent event) {
-                filter();
-            }
-
-            /** Updates a pure in-memory filter. / 更新纯内存筛选。
-             * @param event changed text / 变化文本 */
-            public void removeUpdate(DocumentEvent event) {
-                filter();
-            }
-
-            /** Updates a pure in-memory filter. / 更新纯内存筛选。
-             * @param event changed text / 变化文本 */
-            public void changedUpdate(DocumentEvent event) {
-                filter();
-            }
-        });
-        details.setName("originals.details");
-        details.setEditable(false);
-        details.setLineWrap(true);
-        details.setWrapStyleWord(true);
-        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(inventory), new JScrollPane(details));
-        split.setResizeWeight(0.4);
-        split.setDividerLocation(320);
-        add(split);
+        prepareSearch();
+        prepareInventory();
         refresh = button(components, "refresh", this::refresh);
         install = button(components, "install", this::reviewInstall);
         delete = button(components, "delete", this::reviewDelete);
@@ -163,7 +108,8 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         });
         pending.addActionListener(event -> renderPending());
         var retained = new JPanel(new BorderLayout(8, 0));
-        retained.setBorder(BorderFactory.createTitledBorder(messages.text("originals.pending")));
+        retained.setBorder(BorderFactory.createTitledBorder(""));
+        LocaleBinding.border(retained, LocalizedMessage.of("originals.pending"), messages.catalog());
         retained.add(pending);
         var maintenanceActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         maintenanceActions.add(reconcile);
@@ -198,7 +144,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param action explicit user action / 明确用户动作
      * @return named control / 命名控件 */
     private JButton button(DesktopComponentFactory components, String key, Runnable action) {
-        var button = components.secondaryButton(messages.text("originals." + key));
+        var button = messages.bind(components.secondaryButton(""), "originals." + key);
         button.setName("originals." + key);
         button.addActionListener(event -> {
             if (!locked && !closed && !busy)
@@ -218,7 +164,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         all = List.of();
         rows.clear();
         pending.removeAllItems();
+        LocaleBinding.unbind(details);
         details.setText("");
+        LocaleBinding.unbind(status);
         status.setText("");
         search.setText("");
         keep.setSelected(false);
@@ -272,7 +220,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private void render() {
         var value = inventory.getSelectedValue();
         if (value == null)
-            details.setText(messages.text(all.isEmpty() ? "originals.empty" : "originals.noMatch"));
+            messages.bind(details, all.isEmpty() ? "originals.empty" : "originals.noMatch");
         else {
             var text = new StringBuilder(value.file().toString()).append("\n\n")
                     .append(messages.text("originals.local"));
@@ -281,6 +229,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             text.append("\n\n").append(state(value.state()));
             value.problem().ifPresent(
                     p -> text.append("\n").append(messages.text("originals.invalid")).append("\n").append(p.message()));
+            LocaleBinding.unbind(details);
             details.setText(text.toString());
         }
         details.setCaretPosition(0);
@@ -329,7 +278,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             service.keepOriginal(value);
             return value;
         }, result -> {
-            status.setText(messages.text("originals.preferenceSaved"));
+            messages.bind(status, "originals.preferenceSaved");
             refresh();
         }, true);
     }
@@ -357,7 +306,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
                     service.deleteOriginal(review);
                     return true;
                 }, removed -> {
-                    status.setText(messages.text("originals.deleted"));
+                    messages.bind(status, "originals.deleted");
                     refresh();
                 }, true);
         }, true);
@@ -369,6 +318,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         if (operation.type().equals("REINSTALL")) {
             if (confirm(messages.text("mods.confirmRepairReconcile", Map.of("id", operation.id().toString()))))
                 run(() -> service.reinstallation().reconcile(operation.id()), result -> {
+                    LocaleBinding.unbind(status);
                     status.setText(PlatformModsPane.repairMessage(messages, result));
                     changed();
                 }, true);
@@ -402,6 +352,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     /** Reports cancellation independently of installation success and preserves installed-view drafts. / 独立于安装成功报告撤销，并保留已安装页草稿。
      * @param result original cancellation observation / 原撤销观察 */
     private void cancelOutcome(OperationResult<CancellationReceipt> result) {
+        LocaleBinding.unbind(status);
         status.setText(result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.CANCELLED
                 ? messages.text("originals.cancelled")
                 : messages.text("originals.cancelUnconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
@@ -411,6 +362,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     /** Reports actual installation and original cleanup separately. / 分别报告实际安装及原包清理。
      * @param result original operation result / 原操作结果 */
     private void outcome(OperationResult<Receipt> result) {
+        LocaleBinding.unbind(status);
         if (result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED) {
             var receipt = result.value().orElseThrow();
             status.setText(messages.text("originals.installed") + " "
@@ -439,6 +391,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         area.setWrapStyleWord(true);
         var option = new JOptionPane(new JScrollPane(area), JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
         confirmation = option.createDialog(this, messages.text("originals.confirm"));
+        LocaleBinding.title(confirmation, LocalizedMessage.of("originals.confirm"), messages.catalog());
         try {
             confirmation.setVisible(true);
             return Objects.equals(option.getValue(), JOptionPane.OK_OPTION) && !closed && !locked && original == epoch;
@@ -485,6 +438,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             busy = false;
             controls();
             if (!closed && !locked) {
+                LocaleBinding.unbind(status);
                 status.setText(messages.safe(failure));
                 if (original != epoch || mutation)
                     refresh();
@@ -497,5 +451,73 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     public void close() {
         closed = true;
         setLocked(true);
+    }
+
+    /** Arranges source location, filtering and retention preference. / 布置来源位置、筛选及留存偏好。 */
+    private void prepareSearch() {
+        var top = new JPanel(new BorderLayout(8, 8));
+        var location = new JTextArea();
+        location.setName("originals.location");
+        location.setEditable(false);
+        LocaleBinding.bind(location, LocalizedMessage.of("originals.location", "path", service.originalsDirectory()),
+                messages.catalog());
+        location.setLineWrap(true);
+        location.setWrapStyleWord(true);
+        location.setOpaque(false);
+        top.add(location, BorderLayout.NORTH);
+        search.setName("originals.search");
+        LocaleBinding.tooltip(search, LocalizedMessage.of("originals.search"), messages.catalog());
+        var filter = new JPanel(new BorderLayout(8, 0));
+        filter.add(messages.bind(new JLabel(), "originals.search"), BorderLayout.WEST);
+        filter.add(search);
+        top.add(filter, BorderLayout.CENTER);
+        keep.setName("originals.keep");
+        messages.bind(keep, "originals.keep");
+        keep.addActionListener(event -> saveRetention());
+        top.add(keep, BorderLayout.SOUTH);
+        add(top, BorderLayout.NORTH);
+    }
+
+    /** Arranges plain inventory facts and installs the original selection listeners. / 布置纯清单事实并安装原选择监听。 */
+    private void prepareInventory() {
+        inventory.setName("originals.inventory");
+        inventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        inventory.setCellRenderer((list, value, index, selected, focused) -> {
+            var renderer = new DefaultListCellRenderer();
+            renderer.putClientProperty("html.disable", true);
+            return renderer.getListCellRendererComponent(list,
+                    value.file().getFileName() + " · " + state(value.state()), index, selected, focused);
+        });
+        inventory.addListSelectionListener(event -> {
+            if (!event.getValueIsAdjusting())
+                render();
+        });
+        search.getDocument().addDocumentListener(new DocumentListener() {
+            /** Updates a pure in-memory filter. / 更新纯内存筛选。
+             * @param event changed text / 变化文本 */
+            public void insertUpdate(DocumentEvent event) {
+                filter();
+            }
+
+            /** Updates a pure in-memory filter. / 更新纯内存筛选。
+             * @param event changed text / 变化文本 */
+            public void removeUpdate(DocumentEvent event) {
+                filter();
+            }
+
+            /** Updates a pure in-memory filter. / 更新纯内存筛选。
+             * @param event changed text / 变化文本 */
+            public void changedUpdate(DocumentEvent event) {
+                filter();
+            }
+        });
+        details.setName("originals.details");
+        details.setEditable(false);
+        details.setLineWrap(true);
+        details.setWrapStyleWord(true);
+        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(inventory), new JScrollPane(details));
+        split.setResizeWeight(0.4);
+        split.setDividerLocation(320);
+        add(split);
     }
 }

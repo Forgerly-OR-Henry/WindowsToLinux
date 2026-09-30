@@ -12,6 +12,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -43,7 +44,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class DeploymentStandardBuildExecutorTest extends DeploymentRuntimeFixture {
     /** One concrete host or remote boundary exercised by the shared CLASS task fixture. / 由共享CLASS任务夹具验证的单个宿主或远端边界。 */
     private enum ScenarioType {
-        SUCCESS, COMPILER_FAILURE, WRONG_BRANCH, COMPATIBLE_THEN_SUCCESS, COMPATIBLE_TWICE, FIRST_BUILD_UNKNOWN
+        SUCCESS, COMPILER_FAILURE, WRONG_BRANCH, COMPATIBLE_THEN_SUCCESS, COMPATIBLE_TWICE, FIRST_BUILD_UNKNOWN,
+        FAILED_WRONG_UID, FAILED_WRONG_ENGINE, FAILED_WRONG_TOOL
     }
 
     /** Exact host-reviewed actions. / 经宿主审核的精确动作。 */
@@ -96,7 +98,8 @@ class DeploymentStandardBuildExecutorTest extends DeploymentRuntimeFixture {
     /** Executes actual source/plan/task/approval and checks exact prepared tools and tar identity. / 执行真实来源、计划、任务与审核，并核对精确准备工具及tar身份。
      * @throws Exception if runtime or source setup fails / 运行或来源设置失败时 */
     @ParameterizedTest
-    @EnumSource(ScenarioType.class)
+    @EnumSource(value = ScenarioType.class, names = {"FAILED_WRONG_UID", "FAILED_WRONG_ENGINE", "FAILED_WRONG_TOOL",
+            "COMPILER_FAILURE", "COMPATIBLE_THEN_SUCCESS", "COMPATIBLE_TWICE"}, mode = EnumSource.Mode.EXCLUDE)
     void actualClassTaskBindsOriginalArchiveAndToolsBeforeRestrictedBuild(ScenarioType scenario) throws Exception {
         Path input = selectedSourceDirectory();
         Files.createDirectories(input);
@@ -161,10 +164,14 @@ class DeploymentStandardBuildExecutorTest extends DeploymentRuntimeFixture {
                         String encoded = Base64.getEncoder()
                                 .encodeToString(diagnostic.getBytes(StandardCharsets.UTF_8));
                         boolean failed = scenario == ScenarioType.COMPILER_FAILURE
+                                || Set.of(ScenarioType.FAILED_WRONG_UID, ScenarioType.FAILED_WRONG_ENGINE,
+                                        ScenarioType.FAILED_WRONG_TOOL).contains(scenario)
                                 || scenario == ScenarioType.COMPATIBLE_TWICE
                                 || scenario == ScenarioType.COMPATIBLE_THEN_SUCCESS && buildNumber == 1;
                         return reply("WTL_BUILD_REPORT=1\nEXIT=" + (failed ? 1 : 0) + "\nBYTES=100\nSHA256="
-                                + "c".repeat(64) + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT="
+                                + "c".repeat(64) + "\nUID=" + (scenario == ScenarioType.FAILED_WRONG_UID ? "0" : "1001")
+                                + "\nENGINE=" + (scenario == ScenarioType.FAILED_WRONG_ENGINE ? "docker" : "ordinary")
+                                + "\nTOOL=" + (scenario == ScenarioType.FAILED_WRONG_TOOL ? "MAVEN" : "GO_MODULE") + "\nCOMPAT="
                                 + (alternative ? 1 : 0) + "\nLIMIT=-\nCONFLICT=0\nHEAD=" + (failed ? encoded : "")
                                 + "\nTAIL=" + (failed ? encoded : "") + "\n");
                     });
@@ -229,6 +236,9 @@ class DeploymentStandardBuildExecutorTest extends DeploymentRuntimeFixture {
                                             result.problem().orElseThrow().eventCode());
                                 } else {
                                     assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
+                                    if (Set.of(ScenarioType.FAILED_WRONG_UID, ScenarioType.FAILED_WRONG_ENGINE,
+                                            ScenarioType.FAILED_WRONG_TOOL).contains(scenario))
+                                        assertEquals("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED", result.problem().orElseThrow().eventCode());
                                 }
                                 callbackFinished.countDown();
                                 return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
@@ -265,6 +275,24 @@ class DeploymentStandardBuildExecutorTest extends DeploymentRuntimeFixture {
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
+    }
+
+    /** Rejects complete nonzero receipts with wrong identity instead of enabling retry. / 拒绝身份错误的完整非零回执，而不允许重试。
+     * @param scenario actual wrong receipt field / 实际错误回执字段
+     * @throws Exception if authentic fixture execution fails / 真实夹具执行失败时 */
+    @ParameterizedTest
+    @EnumSource(value = ScenarioType.class, names = {"FAILED_WRONG_UID", "FAILED_WRONG_ENGINE", "FAILED_WRONG_TOOL"})
+    void failedReceiptMustStillProveOriginalExecutionIdentity(ScenarioType scenario) throws Exception {
+        actualClassTaskBindsOriginalArchiveAndToolsBeforeRestrictedBuild(scenario);
+    }
+
+    /** Preserves legal known failure and existing compatible fallback behavior. / 保留合法已知失败及既有兼容回退行为。
+     * @param scenario original legal receipt scenario / 原合法回执场景
+     * @throws Exception if authentic fixture execution fails / 真实夹具执行失败时 */
+    @ParameterizedTest
+    @EnumSource(value = ScenarioType.class, names = {"COMPILER_FAILURE", "COMPATIBLE_THEN_SUCCESS", "COMPATIBLE_TWICE"})
+    void exactFailedIdentityPreservesKnownFailureAndCompatibleFallback(ScenarioType scenario) throws Exception {
+        actualClassTaskBindsOriginalArchiveAndToolsBeforeRestrictedBuild(scenario);
     }
 
     /** Returns a confirmed zero-exit public command observation. / 返回已确认退出零的公开命令观测。

@@ -200,7 +200,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(TaskState.UNKNOWN,
                         runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(1, statusCalls.get());
-                assertEquals(1, checkpoint(runtime, original, DeploymentHelperBootstrapJournal.KEY));
+                assertEquals(1, checkpoint(runtime, original, DeploymentProtocolBootstrapJournal.KEY));
                 statusStage.set(1);
                 assertEquals(TaskState.UNKNOWN,
                         runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
@@ -287,9 +287,9 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
                 "Original helper installation", List.of(server.id()), true), task -> {
                     DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
-                    var outcome = new DeploymentHelperBootstrap(context.tasks(), task, server, session,
+                    var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, session,
                             context.interaction()).ensure();
-                    var facts = DeploymentHelperBootstrapJournal.find(context.tasks(), task).orElseThrow().facts();
+                    var facts = DeploymentProtocolBootstrapJournal.find(context.tasks(), task).orElseThrow().facts();
                     assertEquals("DISPATCHED", facts.phase());
                     Files.writeString(remote.resolve("bootstrap-receipt"), DeploymentHelperInstallerScript.receipt(
                             task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
@@ -298,7 +298,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
             Thread.sleep(50);
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
-        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentHelperBootstrapJournal.KEY));
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentProtocolBootstrapJournal.KEY));
     }
 
     private void original(int port, boolean knownFailure) throws Exception {

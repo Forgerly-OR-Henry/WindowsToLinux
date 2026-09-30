@@ -65,6 +65,50 @@ public final class PlatformDatabase implements AutoCloseable {
      * @throws Exception if paths, pairing, locks, DDL or database identity fail / 路径、配对、锁、DDL 或数据库身份失败时
      */
     public static PlatformDatabase open(Path directory, DatabaseProtection protection) throws Exception {
+        try {
+            return openOwned(directory, protection);
+        } catch (gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException classified) {
+            throw classified;
+        } catch (FileAlreadyExistsException | NotDirectoryException unavailable) {
+            throw gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException.create(
+                    gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
+                    "The platform data directory is unavailable", unavailable);
+        } catch (OverlappingFileLockException active) {
+            throw gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException.create(
+                    gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_LOCKED,
+                    "Another application owns the original platform database", active);
+        } catch (SQLException failure) {
+            var type = switch (failure.getErrorCode()) {
+                case org.h2.api.ErrorCode.FILE_CORRUPTED_1 -> gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_CORRUPTED;
+                case org.h2.api.ErrorCode.IO_EXCEPTION_1 -> corruptStore(failure)
+                        ? gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_CORRUPTED
+                        : gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_OPEN_FAILED;
+                case org.h2.api.ErrorCode.DATABASE_ALREADY_OPEN_1 -> gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_LOCKED;
+                case org.h2.api.ErrorCode.FILE_VERSION_ERROR_1 -> gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE;
+                default -> gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_OPEN_FAILED;
+            };
+            throw gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException.create(type,
+                    "The original platform database could not be opened safely", failure);
+        }
+    }
+
+    /** Distinguishes proven damaged MVStore data from ordinary input/output failures. / 区分确证损坏的MVStore数据与普通输入输出失败。
+     * @param failure actual H2 opening failure / 实际H2打开失败
+     * @return whether the store proves corruption or truncated input / 存储是否证明损坏或截断输入 */
+    private static boolean corruptStore(SQLException failure) {
+        if (!(failure.getCause() instanceof org.h2.mvstore.MVStoreException store))
+            return false;
+        return store.getErrorCode() == org.h2.mvstore.DataUtils.ERROR_FILE_CORRUPT
+                || store.getErrorCode() == org.h2.mvstore.DataUtils.ERROR_READING_FAILED
+                && store.getCause() instanceof java.io.EOFException;
+    }
+
+    /** Opens the original owned engine and releases every acquired physical handle on failure. / 打开原所属引擎，失败时释放每个已取得的物理句柄。
+     * @param directory selected data root / 已选数据根
+     * @param protection original bootstrap protector / 原引导保护器
+     * @return exclusive engine owner / 独占引擎所有者
+     * @throws Exception if original acquisition or validation fails / 原取得或校验失败时 */
+    private static PlatformDatabase openOwned(Path directory, DatabaseProtection protection) throws Exception {
         Objects.requireNonNull(directory);
         Objects.requireNonNull(protection);
         if (!directory.isAbsolute())
@@ -83,7 +127,9 @@ public final class PlatformDatabase implements AutoCloseable {
         try {
             lock = channel.tryLock();
             if (lock == null)
-                throw new java.io.IOException("Another application owns this database");
+                throw gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException.create(
+                        gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.DATABASE_LOCKED,
+                        "Another application owns the original platform database", null);
             material = DatabaseBootstrap.load(root, protection);
             String url = "jdbc:h2:" + root.resolve("platform")
                     + ";DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0"
@@ -160,8 +206,11 @@ public final class PlatformDatabase implements AutoCloseable {
                     var r = s.executeQuery(
                             "SELECT schema_version,script_sha256,state FROM app_schema_history ORDER BY schema_version DESC")) {
                 if (!r.next() || r.getInt(1) != 1 || !r.getString(2).equals(digest) || !r.getString(3).equals("READY"))
-                    throw new SQLException("Unsupported or incomplete platform schema");
+                    throw gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException.create(
+                            gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE,
+                            "Unsupported or incomplete platform schema", null);
             }
+            PlatformSchemaInventory.validate(anchor, ddl);
             anchor.setAutoCommit(false);
             try {
                 try (var p = anchor.prepareStatement(

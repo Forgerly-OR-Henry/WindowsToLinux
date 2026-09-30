@@ -182,8 +182,8 @@ class DeploymentGraphRepositoryTest extends DeploymentGraphFixture {
                                 var statement = connection.prepareStatement(
                                         "UPDATE managed_application_component SET reviewed_data_paths_payload=? WHERE component_id='web'")) {
                             statement.setBytes(1,
-                                    new DeploymentDataPathCodec().write(List.of(new DeploymentDataPath("uploads",
-                                            DeploymentDataPath.AccessMode.READ_WRITE, "uploads", false))));
+                                    new DeploymentStoragePathCodec().write(List.of(new DeploymentStoragePath("uploads",
+                                            DeploymentStoragePath.AccessMode.READ_WRITE, "uploads", false))));
                             statement.executeUpdate();
                         }
                     }

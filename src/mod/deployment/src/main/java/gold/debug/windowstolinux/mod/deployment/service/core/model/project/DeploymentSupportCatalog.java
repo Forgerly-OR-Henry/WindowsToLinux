@@ -7,7 +7,7 @@ import java.util.Set;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.LinuxDistroType;
 
 /**
@@ -162,7 +162,7 @@ public final class DeploymentSupportCatalog {
     public static DeploymentSupportProfile preview(SourceLanguageType language) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.RECOGNITION_PREVIEW, language, "none",
                 "Unclassified project", List.of(), List.of(),
-                List.of(LocalizedMessage.of("support.limitation.previewOnly")));
+                List.of(DeploymentLocalizedMessage.of("support.limitation.previewOnly")));
     }
 
     /**
@@ -173,7 +173,7 @@ public final class DeploymentSupportCatalog {
     public static DeploymentSupportProfile unrecognized() {
         return new DeploymentSupportProfile(DeploymentSupportLevel.UNRECOGNIZED, SourceLanguageType.UNKNOWN, "none",
                 "Unrecognized project", List.of(), List.of(),
-                List.of(LocalizedMessage.of("support.limitation.unrecognized")));
+                List.of(DeploymentLocalizedMessage.of("support.limitation.unrecognized")));
     }
 
     /**
@@ -188,7 +188,7 @@ public final class DeploymentSupportCatalog {
     private static DeploymentSupportProfile experimental(SourceLanguageType language, String architecture,
             String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.EXPERIMENTAL_ADAPTER, language, architecture,
-                framework, List.of(), List.of(), List.of(LocalizedMessage.of("support.limitation.runtimePending")));
+                framework, List.of(), List.of(), List.of(DeploymentLocalizedMessage.of("support.limitation.runtimePending")));
     }
 
     /**
@@ -203,7 +203,7 @@ public final class DeploymentSupportCatalog {
     private static DeploymentSupportProfile formal(SourceLanguageType language, String architecture, String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.FORMALLY_SUPPORTED, language, architecture,
                 framework, List.of(UBUNTU_2404), List.of(PHASE_THREE_EVIDENCE),
-                List.of(LocalizedMessage.of("support.limitation.listedMatrixOnly")));
+                List.of(DeploymentLocalizedMessage.of("support.limitation.listedMatrixOnly")));
     }
 
     /**

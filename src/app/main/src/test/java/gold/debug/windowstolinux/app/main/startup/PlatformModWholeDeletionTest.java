@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.platform.win32.*;
 import gold.debug.windowstolinux.app.db.log.LogRepository;
 import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
@@ -215,7 +215,7 @@ class PlatformModWholeDeletionTest {
                 assertEquals(1, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM log_category WHERE owner_id='" + OWNER + "'"));
                 accepted = request(runtime, operation);
-                assertThrows(IllegalStateException.class, () -> runtime.logs(OWNER, "1.0.0", Optional.empty()));
+                assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
             } finally {
                 assertTrue(Kernel32.INSTANCE.CloseHandle(handle));
             }

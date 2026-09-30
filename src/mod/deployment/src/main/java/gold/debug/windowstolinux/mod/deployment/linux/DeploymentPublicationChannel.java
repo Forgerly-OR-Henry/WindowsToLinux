@@ -98,10 +98,35 @@ public final class DeploymentPublicationChannel {
      * @return exact snapshot or uncertainty / 精确快照或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent)
-            throws ApiException {
+            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent) throws ApiException {
         requireUnit(unit);
         return evidence.snapshot(unit, runtime, operation, expectedCurrent, true);
+    }
+
+    /** Checks one distinct attempt snapshot against all confirmed previous facts. / 按全部已确认旧事实核对独立尝试快照。
+     * @param unit exact owned unit / 精确所属单元
+     * @param runtime reviewed runtime / 已审阅运行定义
+     * @param operation original attempt operation / 原尝试操作
+     * @param expectedCurrent confirmed old digest or explicit empty / 已确认旧摘要或明确为空
+     * @param expectedKind confirmed old owner kind / 已确认旧归属类别
+     * @param expectedRunning confirmed old activity / 已确认旧运行状态
+     * @return original snapshot or retained uncertainty / 原快照或保留未知
+     * @throws ApiException if original admission rejects / 原准入拒绝时 */
+    public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
+            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent,
+            String expectedKind, boolean expectedRunning) throws ApiException {
+        Objects.requireNonNull(expectedCurrent);
+        Objects.requireNonNull(expectedKind);
+        if (expectedCurrent.isEmpty() && (!expectedKind.equals("none") || expectedRunning)
+                || expectedCurrent.isPresent() && !Set.of("ordinary", "deployment", "container").contains(expectedKind))
+            throw new IllegalArgumentException("Complete confirmed previous publication facts required");
+        var observed = snapshot(unit, runtime, operation, expectedCurrent);
+        if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+            return observed;
+        var actual = observed.value().orElseThrow();
+        if (!expectedKind.equals(actual.previousKind()) || expectedRunning != actual.previousRunning())
+            return unknown("DEPLOYMENT_SNAPSHOT_PREVIOUS_CHANGED");
+        return observed;
     }
 
     /** Reads only the original task's owned publication evidence without replaying an effect. / 仅读取原任务所属发布证据而不重放副作用。
@@ -128,8 +153,7 @@ public final class DeploymentPublicationChannel {
      * @return exact original evidence or uncertainty / 精确原证据或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
-            String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation)
-            throws ApiException {
+            String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation) throws ApiException {
         requireUnit(unit);
         return evidence.originalStatus(unit, candidateId, releaseSha256, backend, engine, operation, true);
     }
@@ -148,8 +172,7 @@ public final class DeploymentPublicationChannel {
      * @param operation exact operation UUID / 精确操作UUID
      * @return verified cleanup or uncertainty / 已核实清理或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
-    public OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit, java.util.UUID operation)
-            throws ApiException {
+    public OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit, java.util.UUID operation) throws ApiException {
         requireUnit(unit);
         return evidence.discardSnapshot(unit, operation, true);
     }
@@ -377,18 +400,16 @@ public final class DeploymentPublicationChannel {
         if (expectedReleaseSha256 == null || !expectedReleaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact reviewed current release required");
         Objects.requireNonNull(runtime);
-        if (!Set.of("start", "stop", "restart").contains(action) || runtime.workload()
-                .mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
+        if (!Set.of("start", "stop", "restart").contains(action)
+                || runtime.workload().mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
             throw new IllegalArgumentException("Only a reviewed daemon lifecycle action is supported");
         var before = observe(unit, runtime);
         if (before.outcome() != Outcome.SUCCEEDED || before.value().isEmpty())
             return withoutValue(before);
         String verb = runtime instanceof DeploymentRuntimeDefinition.Container
-                ? "lifecycle-container"
-                : "lifecycle-deployment";
+                ? "lifecycle-container" : "lifecycle-deployment";
         var observed = send("deployment.application.lifecycle.v1", unit, verb,
-                List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256),
-                Duration.ofSeconds(45), 4096);
+                List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256), Duration.ofSeconds(45), 4096);
         if (observed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(observed);
         if (!complete(observed) || !("LIFECYCLE=" + action + "\n").equals(observed.value().orElseThrow().stdout()))
@@ -396,8 +417,7 @@ public final class DeploymentPublicationChannel {
         var after = observe(unit, runtime);
         if (after.outcome() != Outcome.SUCCEEDED || after.value().isEmpty())
             return unknown("DEPLOYMENT_LIFECYCLE_STATE_UNCONFIRMED");
-        var expected = "stop".equals(action)
-                ? DeploymentRemoteRuntimeObservation.StateType.STOPPED
+        var expected = "stop".equals(action) ? DeploymentRemoteRuntimeObservation.StateType.STOPPED
                 : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         return after.value().orElseThrow().state() == expected
                 ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())

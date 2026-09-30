@@ -95,7 +95,7 @@ final class DeploymentGraphPublicationJournal {
         try {
             JsonNode parsed = JSON.readTree(checkpoint.snapshot().payload());
             if (!(parsed instanceof ObjectNode facts) || !validFields(facts) || !facts.path("version").isInt()
-                    || facts.path("version").intValue() != 1
+                    || !Set.of(1, 2, 3).contains(facts.path("version").intValue())
                     || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("server").isTextual()
                     || facts.path("server").textValue().isBlank() || facts.path("server").textValue().length() > 512
                     || !facts.path("application").isTextual()
@@ -105,6 +105,8 @@ final class DeploymentGraphPublicationJournal {
                     || !PHASES.contains(facts.path("phase").textValue()))
                 throw new IllegalArgumentException("Original graph checkpoint is incomplete");
             indexes(facts);
+            requireReviewFacts(facts, checkpoint.snapshot().payload());
+            DeploymentPublicationAttemptPointers.requireRoot(facts);
             if (facts.has("verifiedOutcome")) {
                 if (!Set.of("SUCCEEDED", "FAILED", "CANCELLED").contains(facts.path("verifiedOutcome").textValue())
                         || facts.path("verifiedOutcome").textValue()
@@ -126,13 +128,37 @@ final class DeploymentGraphPublicationJournal {
      * @param facts original root document / 原根文档
      * @return whether every field belongs to this version / 全部字段是否属于此版本 */
     private static boolean validFields(ObjectNode facts) {
-        var allowed = Set.of("version", "task", "server", "application", "planSha256", "phase", "components",
-                "verifiedOutcome", "failureCode", "failureEvent");
+        var allowed = facts.path("version").asInt() >= 2
+                ? Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent",
+                        "buildReviewState", "buildReviewAttempt", "buildReviewUnit", "buildReviewPrevious", "buildReviewNext", "buildReviewIntent")
+                : Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent");
+        if (facts.path("version").asInt() == 3) {
+            var fields = new HashSet<>(allowed);
+            fields.addAll(Set.of("operation", "attemptState", "attemptRetry", "attemptUnit", "attemptPreviousOperation", "attemptNextOperation",
+                    "attemptRootPrevious", "attemptRootNext", "attemptIntent", "attemptReview")); allowed = fields;
+        }
         var fields = facts.fieldNames();
         while (fields.hasNext())
             if (!allowed.contains(fields.next()))
                 return false;
         return true;
+    }
+
+    /** Requires exact bounded root review types rather than numeric or textual coercion. / 要求精确有界根审阅类型，不使用数值或文本强制转换。
+     * @param facts original root facts / 原根事实
+     * @param payload actual retained envelope / 实际留存信封
+     * @throws IllegalArgumentException if exact retained review identity is incomplete / 精确留存审阅身份不完整时 */
+    private static void requireReviewFacts(JsonNode facts, String payload) {
+        if (payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
+            throw new IllegalArgumentException("Original graph checkpoint exceeds its admitted bound");
+        if (facts.path("version").intValue() != 2 && !facts.has("buildReviewState")) return;
+        if (!facts.path("buildReviewState").isTextual() || !Set.of("PENDING", "CONFIRMED").contains(facts.path("buildReviewState").textValue())
+                || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
+                || !facts.path("buildReviewUnit").isTextual() || indexes(facts).stream().noneMatch(index -> index.unitId().equals(facts.path("buildReviewUnit").textValue())))
+            throw new IllegalArgumentException("Original graph review pointer is incomplete");
+        for (String field : List.of("buildReviewPrevious", "buildReviewNext", "buildReviewIntent"))
+            if (!facts.path(field).isTextual() || !facts.path(field).textValue().matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("Original graph review digest is malformed");
     }
 
     /** One durable index into a separate original component checkpoint. / 指向独立原组件检查点的一项持久索引。
@@ -159,6 +185,55 @@ final class DeploymentGraphPublicationJournal {
      * @return detached JSON facts / 分离JSON事实 */
     JsonNode facts() {
         return facts.deepCopy();
+    }
+
+    /** Persists the original graph-to-next pointer before a component can consume its recovery consent. / 组件消费恢复同意前持久化原图、新图指针。
+     * @param intent complete original recovery consent / 完整原恢复同意
+     * @return whether this exact root pointer was confirmed / 此精确根指针是否获确认 */
+    boolean reviewPending(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
+        if (!facts.path("phase").asText().equals("ALL_PREPARED") || !facts.path("planSha256").asText().equals(intent.previousRoot()) || intent.originalGraph().isEmpty()) return false;
+        try {
+            var original = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeGraph(intent.originalGraph());
+            var before = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan());
+            if (!original.applicationId().equals(facts.path("application").asText()) || indexes().stream().anyMatch(index ->
+                    !original.namespaces().get(index.componentId()).equals(index.unitId()) || !original.identities().get(index.componentId()).equals(index.planSha256()))
+                    || indexes().stream().noneMatch(index -> index.unitId().equals(intent.unitId()) && index.planSha256().equals(before.reviewedRevision()))) return false;
+            facts.put("version", Math.max(2, facts.path("version").intValue())).put("buildReviewState", "PENDING").put("buildReviewAttempt", intent.attempt()).put("buildReviewUnit", intent.unitId())
+                    .put("buildReviewPrevious", intent.previousRoot()).put("buildReviewNext", intent.nextRoot())
+                    .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
+            return mark("ALL_PREPARED");
+        } catch (java.sql.SQLException invalid) { return false; }
+    }
+
+    /** Confirms a formally consumed single-child transition before building it again. / 再构建前确认正式已消费的单子节点转换。
+     * @param review actual persisted full review / 实际持久完整审阅
+     * @return whether root and exact child pointers were confirmed / 根与精确子指针是否获确认 */
+    boolean reviewConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview review) {
+        if (!facts.path("buildReviewState").asText().equals("PENDING") || facts.path("buildReviewAttempt").asInt() != review.attempt()
+                || !facts.path("buildReviewUnit").asText().equals(review.unitId()) || !facts.path("buildReviewPrevious").asText().equals(review.previousRoot())
+                || !facts.path("buildReviewNext").asText().equals(review.nextRoot()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())) return false;
+        try {
+            var child = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan());
+            for (var index : facts.withArray("components")) if (index.path("unitId").asText().equals(review.unitId())) ((ObjectNode) index).put("planSha256", child.reviewedRevision());
+            facts.put("planSha256", review.nextRoot()).put("buildReviewState", "CONFIRMED");
+            return mark("ALL_PREPARED");
+        } catch (java.sql.SQLException invalid) { return false; }
+    }
+
+    /** Persists the next complete graph pointer after all old remote and session cleanup. / 所有旧远端及会话清理后持久化下一完整图指针。
+     * @param intent full formally stored original consent / 完整正式已存原同意
+     * @return whether the exact pending root was confirmed / 精确待定根是否已确认 */
+    boolean attemptPending(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptIntent intent) {
+        if (!confirmed || !DeploymentPublicationAttemptPointers.pendingRoot(facts, intent)) return false;
+        return mark("SESSION_CLOSED");
+    }
+
+    /** Advances the same root only after the exact formal CAS and all child operation pointers. / 精确正式CAS及全部子操作指针后才推进同一根。
+     * @param review complete actually persisted final review / 完整实际持久最终审阅
+     * @return whether the current complete graph was confirmed / 当前完整图是否已确认 */
+    boolean attemptConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptReview review) {
+        if (!confirmed || !DeploymentPublicationAttemptPointers.confirmRoot(facts, review)) return false;
+        return mark("PREPARING");
     }
 
     /** Reads the exact deterministic index, including every unique unit and key. / 读取包括各唯一单元与键的精确确定性索引。

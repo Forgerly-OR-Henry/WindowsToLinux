@@ -12,7 +12,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.task.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,8 +51,8 @@ class PlatformLogServiceTest {
     @Test
     void realOwnerCategoriesRetainHundredThenTenAndNeverCreateNormalLogFiles() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var first = runtime.logs(OWNER, VERSION, Optional.empty());
-                var second = runtime.logs("example.other", VERSION, Optional.empty())) {
+                var first = runtime.capabilities().logs(OWNER, VERSION, Optional.empty());
+                var second = runtime.capabilities().logs("example.other", VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var a = first.register(CATEGORY);
             var b = second.register(CATEGORY);
@@ -84,7 +84,7 @@ class PlatformLogServiceTest {
     @Test
     void interruptedReplacementEndingAtACompleteLineNeverReplacesTheOriginalFile() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
@@ -113,7 +113,7 @@ class PlatformLogServiceTest {
     @Test
     void utf8EnvelopeIsBoundedAndSanitizedBeforeSqlAndDebugResetsOnReopen() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             var detail = "password=SECRET123 token:ABC999 Authorization: Bearer BEARER987 https://user:pw@example.invalid/private \"api_key\":\"KEYSECRET\"\n-----BEGIN PRIVATE KEY-----\nPRIVATEBYTES\n-----END PRIVATE KEY-----\n"
@@ -144,7 +144,7 @@ class PlatformLogServiceTest {
                             .storage());
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             var handle = logger.register(CATEGORY);
             assertEquals(LogStorage.NOT_SAVED, logger.write(handle, new LogEvent(LogLevel.DEBUG, "DEBUG_TEST",
                     "not retained", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())).storage());
@@ -158,7 +158,7 @@ class PlatformLogServiceTest {
         long recorded;
         LogTarget original;
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             original = logger.register(CATEGORY);
             trigger(runtime, "INSERT");
             try {
@@ -174,7 +174,7 @@ class PlatformLogServiceTest {
             }
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             var handle = logger.register(CATEGORY);
             assertEquals(original.key(), handle.key());
             var target = target(runtime, handle);
@@ -192,7 +192,7 @@ class PlatformLogServiceTest {
     @Test
     void insertAndRetentionRollbackTogetherAndEmergencyCopyCanRecover() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
             var repository = new LogRepository(runtime.persistence().database());
@@ -218,7 +218,7 @@ class PlatformLogServiceTest {
     @Test
     void conflictingReplayCannotOverwriteOrCleanCategoryButNewDiagnosticsStillPersist() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
@@ -243,7 +243,7 @@ class PlatformLogServiceTest {
     @Test
     void malformedAndPartialEmergencyRecordsRemainVisibleFailuresWithoutDeletingEvidence() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
             byte[] valid = LogRecordCodec.encode(target.key(),
@@ -273,7 +273,7 @@ class PlatformLogServiceTest {
     @Test
     void emergencyQuotaOfflineCleanupAndUnregisteredFilesUseExactCategoryScope() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
@@ -313,8 +313,8 @@ class PlatformLogServiceTest {
     @Test
     void concurrentReleaseBindingsShareQuotaAndFixedTemplateRejectsChangedPlatformNullability() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var first = runtime.logs(OWNER, VERSION, Optional.empty());
-                var second = runtime.logs(OWNER, "2.0.0", Optional.empty());
+                var first = runtime.capabilities().logs(OWNER, VERSION, Optional.empty());
+                var second = runtime.capabilities().logs(OWNER, "2.0.0", Optional.empty());
                 var workers = Executors.newFixedThreadPool(2)) {
             var a = first.register(CATEGORY);
             var b = second.register(CATEGORY);
@@ -350,7 +350,7 @@ class PlatformLogServiceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var identity = initialize(runtime, true);
             var schema = new SchemaCoordinates(identity).physicalName();
-            try (var logger = runtime.logs(OWNER, VERSION, Optional.of(identity));
+            try (var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.of(identity));
                     var c = runtime.persistence().database().openConnection()) {
                 c.setSchema(schema);
                 try (var s = c.createStatement()) {

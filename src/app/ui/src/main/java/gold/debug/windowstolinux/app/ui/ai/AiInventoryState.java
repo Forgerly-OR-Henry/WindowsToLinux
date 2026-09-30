@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.ui.ai;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 
 /** Nonsecret inline-editor state preserved across appearance changes. / 外观变化时保留的非秘密内联编辑状态。
  * @param purpose open purpose, or empty / 打开的用途或空

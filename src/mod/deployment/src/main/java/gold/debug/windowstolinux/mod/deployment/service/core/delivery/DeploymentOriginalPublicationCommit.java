@@ -5,8 +5,8 @@ import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
@@ -16,10 +16,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSec
 public final class DeploymentOriginalPublicationCommit {
     /** Original platform and formal execution repository. / 原平台与正式执行仓库。 */
     private final ModContext context;
-
     /** Original formal execution evidence repository. / 原正式执行依据仓库。 */
     private final DeploymentExecutionRepository executions;
-
     /** Retained current and historical reference associations. / 保留的当前及历史引用关联。 */
     private final DeploymentReferenceAssociations associations;
 
@@ -214,6 +212,35 @@ public final class DeploymentOriginalPublicationCommit {
      * @return known result only after all resources are released / 仅全部资源释放后返回已知结果
      * @throws Exception when original evidence or acknowledgement is unavailable / 原依据或回执不可用时 */
     public OperationResult<Void> finishKnown(TaskContext task, DeploymentExecutionRecord record) throws Exception {
+        var verified = verifyKnownReferences(task, record);
+        if (verified.outcome() != Outcome.SUCCEEDED)
+            return verified;
+        context.source().closeTaskResources(task);
+        if (!context.tasks().resourcesReleased(task))
+            return unknownVoid("DEPLOYMENT_AGENT_SOURCE_RETAINED");
+        executions.finishCleanup(task, record.identity().executionId(), Instant.now());
+        return new OperationResult<>(record.outcome().orElseThrow(), Optional.empty(), executions.problem(record));
+    }
+
+    /** Marks provider cleanup after verified remote release while the caller retains its own root checkpoint. / 调用方仍持有根检查点时，在已核实远端释放后标记提供方收尾。
+     * @param task original authenticated caller task / 原已认证调用方任务
+     * @param record exact original provider execution / 精确原提供方执行
+     * @return verified provider result without closing caller resources / 不关闭调用方资源的已核实提供方结果
+     * @throws Exception if formal identity or original reference evidence is unavailable / 正式身份或原引用依据不可用时 */
+    public OperationResult<Void> finishProviderKnown(TaskContext task, DeploymentExecutionRecord record) throws Exception {
+        var verified = verifyKnownReferences(task, record);
+        if (verified.outcome() != Outcome.SUCCEEDED)
+            return verified;
+        executions.finishCleanup(task, record.identity().executionId(), Instant.now());
+        return new OperationResult<>(record.outcome().orElseThrow(), Optional.empty(), executions.problem(record));
+    }
+
+    /** Verifies one exact known formal result and its retained business associations. / 核实一项精确已知正式结果及保留业务关联。
+     * @param task authentic original task / 真实原任务
+     * @param record original formal evidence / 原正式依据
+     * @return confirmed references or classified uncertainty / 已确认引用或分类未知
+     * @throws Exception if original evidence cannot be read or resolved / 无法读取或处理原依据时 */
+    private OperationResult<Void> verifyKnownReferences(TaskContext task, DeploymentExecutionRecord record) throws Exception {
         if (!record.identity().taskId().equals(task.id()) || record.outcome().isEmpty()
                 || record.outcome().orElseThrow() == Outcome.UNKNOWN
                 || record.businessCommitted() != (record.outcome().orElseThrow() == Outcome.SUCCEEDED))
@@ -235,19 +262,15 @@ public final class DeploymentOriginalPublicationCommit {
             if (!resolveObserved(task, record.identity(), intent))
                 return unknownVoid("DEPLOYMENT_AGENT_REFERENCE_ASSOCIATION_UNCONFIRMED");
         }
-        context.source().closeTaskResources(task);
-        if (!context.tasks().resourcesReleased(task))
-            return unknownVoid("DEPLOYMENT_AGENT_SOURCE_RETAINED");
-        executions.finishCleanup(task, record.identity().executionId(), Instant.now());
-        return new OperationResult<>(record.outcome().orElseThrow(), Optional.empty(), executions.problem(record));
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     /** Retains uncertainty without recasting an original problem. / 保留未知且不重写原问题。
      * @param event fixed diagnostic / 固定诊断
      * @return unknown result / 未知结果 */
     private static OperationResult<Void> unknownVoid(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(problem(ProblemCode.UNKNOWN,
+                event)));
     }
 
     /** Finds or reserves the exact original platform reference. / 查找或预留精确原平台引用。
@@ -310,10 +333,8 @@ public final class DeploymentOriginalPublicationCommit {
         var observed = associations.observe(task, identity, intent);
         if (observed == DeploymentReferenceAssociations.AssociationState.CONFLICT)
             return false;
-        resolve(task, intent,
-                observed == DeploymentReferenceAssociations.AssociationState.REFERENCED
-                        ? ReferenceResolution.REFERENCED
-                        : ReferenceResolution.NOT_REFERENCED);
+        resolve(task, intent, observed == DeploymentReferenceAssociations.AssociationState.REFERENCED
+                ? ReferenceResolution.REFERENCED : ReferenceResolution.NOT_REFERENCED);
         return true;
     }
 

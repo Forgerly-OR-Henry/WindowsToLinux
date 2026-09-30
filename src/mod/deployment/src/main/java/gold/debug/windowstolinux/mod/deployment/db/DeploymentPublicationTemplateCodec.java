@@ -60,7 +60,7 @@ final class DeploymentPublicationTemplateCodec {
     /** Writes one exact configuration without copying the whole graph for every unit. / 写入一份精确配置，不为各单元复制整图。
      * @param configuration target JSON object / 目标JSON对象
      * @param config immutable reviewed configuration / 不可变已审阅配置 */
-    private static void configuration(com.fasterxml.jackson.databind.node.ObjectNode configuration,
+    static void configuration(com.fasterxml.jackson.databind.node.ObjectNode configuration,
             DeploymentConfigurationSnapshot config) {
         configuration.put("revision", config.revision()).put("schemaVersion", config.schemaVersion())
                 .put("createdAt", config.createdAt().toEpochMilli()).put("sha256", config.sha256());
@@ -152,7 +152,7 @@ final class DeploymentPublicationTemplateCodec {
      * @param applicationId original application / 原应用
      * @return verified immutable configuration / 已核实不可变配置
      * @throws SQLException if fields, values or digest differ / 字段、值或摘要不符时 */
-    private static DeploymentConfigurationSnapshot configuration(JsonNode node, String applicationId)
+    static DeploymentConfigurationSnapshot configuration(JsonNode node, String applicationId)
             throws SQLException {
         fields(node, Set.of("revision", "schemaVersion", "createdAt", "sha256", "entries"));
         if (!node.path("revision").canConvertToLong() || !node.path("createdAt").canConvertToLong())

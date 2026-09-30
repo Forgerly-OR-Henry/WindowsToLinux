@@ -44,6 +44,111 @@ public final class DeploymentReleaseRepository {
         return DeploymentReleaseCodec.snapshot(record);
     }
 
+    /** Encodes the existing canonical nonsecret publication template for archive transport. / 为归档转交编码既有规范非秘密发布模板。
+     * @param proposal exact original proposal / 精确原提案
+     * @return canonical template / 规范模板
+     * @throws SQLException if original content is invalid or too large / 原内容无效或过大时 */
+    public String archiveTemplate(DeploymentPublicationProposal proposal) throws SQLException {
+        return DeploymentPublicationTemplateCodec.encodeTemplate(proposal);
+    }
+
+    /** Decodes an archived template and checks its complete original release digest. / 解码归档模板并核对完整原发布摘要。
+     * @param text canonical template / 规范模板
+     * @param revision original release digest / 原发布摘要
+     * @return verified complete proposal / 已核实完整提案
+     * @throws SQLException if format, configuration or complete digest differs / 格式、配置或完整摘要不符时 */
+    public DeploymentPublicationProposal archivedTemplate(String text, String revision) throws SQLException {
+        var proposal = DeploymentPublicationTemplateCodec.decodeTemplate(text,
+                UUID.nameUUIDFromBytes(revision.getBytes(StandardCharsets.UTF_8)));
+        var snapshot = DeploymentReleaseSnapshot.capture(proposal.graph(), proposal.units());
+        if (!DeploymentReleaseCodec
+                .digest(DeploymentReleaseCodec.runtime(snapshot), DeploymentReleaseCodec.health(snapshot))
+                .equals(revision))
+            throw new SQLException("Archived template differs from original release digest");
+        return proposal;
+    }
+
+    /** Lists complete retained histories for one exact application. / 列出一个精确应用的完整保留历史。
+     * @param task original task / 原任务
+     * @param applicationId application identity / 应用身份
+     * @return immutable history / 不可变历史
+     * @throws SQLException if stored content is invalid / 存储内容无效时
+     * @throws ApiException if access fails / 访问失败时 */
+    public List<DeploymentReleaseRecord> list(TaskContext task, String applicationId)
+            throws SQLException, ApiException {
+        DeploymentSchema.requireIdentity(database.identity());
+        var result = new ArrayList<DeploymentReleaseRecord>();
+        try (var connection = database.openConnection(task);
+                var query = connection.prepareStatement(
+                        "SELECT * FROM deployment_release WHERE application_id=? ORDER BY created_at DESC,release_id")) {
+            query.setString(1, applicationId);
+            try (var rows = query.executeQuery()) {
+                while (rows.next())
+                    result.add(row(rows));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /** Commits a verified retained switch with an exact active-history comparison. / 精确比较活动历史后提交已核实保留发布切换。
+     * @param task original task / 原任务
+     * @param expected original active digest / 原活动摘要
+     * @param selected retained target / 保留目标
+     * @param publications exact original component configuration and secrets / 精确原组件配置与秘密
+     * @param observedAt actual successful observation / 实际成功观测
+     * @throws SQLException if active or immutable content differs / 活动或不可变内容不符时
+     * @throws ApiException if access fails / 访问失败时 */
+    public void activateRetained(TaskContext task, String expected, DeploymentReleaseRecord selected,
+            List<DeploymentUnitCommit> publications, Instant observedAt) throws SQLException, ApiException {
+        DeploymentSchema.requireIdentity(database.identity());
+        var target = snapshot(selected);
+        if (!DeploymentReleaseSnapshot.capture(target.graph(), publications).equals(target))
+            throw new SQLException("Retained publication differs from original content");
+        var connection = database.openConnection(task);
+        DeploymentStorageTransaction.execute(connection, () -> {
+            var execution = new DeploymentExecutionIdentity(task.id(), task.id(), Optional.empty(),
+                    selected.applicationId(), target.graph().components().getFirst().unit().server(),
+                    DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, expected);
+            lockApplication(connection, execution);
+            var current = new ArrayList<DeploymentReleaseRecord>();
+            try (var query = connection
+                    .prepareStatement("SELECT * FROM deployment_release WHERE application_id=? AND state='ACTIVE'")) {
+                query.setString(1, selected.applicationId());
+                try (var rows = query.executeQuery()) {
+                    while (rows.next())
+                        current.add(row(rows));
+                }
+            }
+            if (current.size() != 1)
+                throw new SQLException("Exactly one active release is required");
+            var active = current.getFirst();
+            if (active.identity().equals(selected.identity())) {
+                if (!snapshot(active).equals(target))
+                    throw new SQLException("Committed retained identity differs");
+                DeploymentReleaseValidation.bindings(connection, target);
+                return;
+            }
+            if (!active.identity().sha256().equals(expected))
+                throw new SQLException("Active release changed");
+            var retained = read(connection, selected.applicationId(), selected.identity().id()).orElseThrow();
+            if (retained.state() != DeploymentReleaseState.RETIRED || !snapshot(retained).equals(target))
+                throw new SQLException("Selected retained release changed");
+            DeploymentReleaseValidation.bindings(connection, target);
+            DeploymentPublicationRepository.save(connection, target.graph(), publications, observedAt);
+            try (var retire = connection.prepareStatement(
+                    "UPDATE deployment_release SET state='RETIRED' WHERE application_id=? AND release_id=? AND state='ACTIVE'");
+                    var promote = connection.prepareStatement(
+                            "UPDATE deployment_release SET state='ACTIVE' WHERE application_id=? AND release_id=? AND state='RETIRED'")) {
+                retire.setString(1, selected.applicationId());
+                retire.setObject(2, active.identity().id());
+                promote.setString(1, selected.applicationId());
+                promote.setObject(2, selected.identity().id());
+                if (retire.executeUpdate() != 1 || promote.executeUpdate() != 1)
+                    throw new SQLException("Retained history comparison changed");
+            }
+        });
+    }
+
     /** Activates verified content after publication while preserving the first creating execution. / 在发布后激活已验证内容，同时保留首次创建执行。
      * @param connection caller-owned publication transaction / 调用方持有的发布事务
      * @param execution original committing execution / 原提交执行

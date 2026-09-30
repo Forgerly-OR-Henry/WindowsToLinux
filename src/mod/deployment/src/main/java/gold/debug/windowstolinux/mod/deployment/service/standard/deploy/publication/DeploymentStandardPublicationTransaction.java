@@ -61,6 +61,8 @@ public final class DeploymentStandardPublicationTransaction {
             throw new IllegalArgumentException("Publication differs from the original reviewed candidate");
         var channel = new DeploymentPublicationChannel(session, context.interaction(), request.server(), task,
                 ReviewedPlanIdentity.from(request));
+        if (!DeploymentPublicationOperationBinding.confirmed(context, task, build, journal))
+            return unknown("DEPLOYMENT_PUBLICATION_OPERATION_UNCONFIRMED");
         var staged = DeploymentPublicationStaging.stage(context, plan, unit, credentials, channel, task);
         if (staged.outcome() != Outcome.SUCCEEDED)
             return staged.outcome() == Outcome.FAILED
@@ -69,7 +71,11 @@ public final class DeploymentStandardPublicationTransaction {
         var digests = staged.value().orElseThrow();
         if (!journal.mark("SNAPSHOT_MAY_HAVE_RUN"))
             return unknown("DEPLOYMENT_SNAPSHOT_BOUNDARY_UNCONFIRMED");
-        var saved = channel.snapshot(unit, request.runtime());
+        var saved = build.operation().isEmpty() ? channel.snapshot(unit, request.runtime())
+                : channel.snapshot(unit, request.runtime(), build.operation().orElseThrow(),
+                        journal.facts().path("expectedDigest").asText().isEmpty() ? Optional.empty()
+                                : Optional.of(journal.facts().path("expectedDigest").asText()),
+                        journal.facts().path("expectedKind").asText(), journal.facts().path("expectedRunning").booleanValue());
         if (saved.outcome() != Outcome.SUCCEEDED)
             return uncertain(saved, "DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
         var snapshot = saved.value().orElseThrow();
@@ -116,7 +122,7 @@ public final class DeploymentStandardPublicationTransaction {
             return uncertain(health, "DEPLOYMENT_HEALTH_UNCONFIRMED");
         if (health.outcome() == Outcome.FAILED)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
-                    journal, health);
+                    journal, healthFailure(health, unit.id()));
         var observed = channel.observe(unit, request.runtime());
         if (observed.outcome() != Outcome.SUCCEEDED)
             return uncertain(observed, "DEPLOYMENT_RUNTIME_UNCONFIRMED");
@@ -126,7 +132,7 @@ public final class DeploymentStandardPublicationTransaction {
                 : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         if (state != expected)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
-                    journal, failed("DEPLOYMENT_RUNTIME_UNHEALTHY"));
+                    journal, healthFailure(failed("DEPLOYMENT_RUNTIME_UNHEALTHY"), unit.id()));
         if (!journal.verifiedBusiness(Outcome.SUCCEEDED, Optional.empty()))
             return unknown("DEPLOYMENT_VERIFIED_PUBLICATION_UNCONFIRMED");
         finishKnown(channel, unit, build.candidateId(), releaseSha256, true, journal);
@@ -222,6 +228,16 @@ public final class DeploymentStandardPublicationTransaction {
     private static OperationResult<Void> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
                 event, "Reviewed release did not reach its required state", Map.of(), Optional.empty())));
+    }
+
+    /** Marks an actually known health failure as eligible for restored-state review. / 将实际已知健康失败标记为可作恢复状态审阅。
+     * @param observed actual known health result / 实际已知健康结果
+     * @param unit original health owner / 原健康归属
+     * @return exact failure with its bounded eligibility / 带有界资格的精确失败 */
+    static OperationResult<Void> healthFailure(OperationResult<?> observed, String unit) {
+        var failure = observed.problem().orElseGet(() -> failed("DEPLOYMENT_RUNTIME_UNHEALTHY").problem().orElseThrow());
+        var facts = new HashMap<>(failure.context()); facts.put("publicationHealthFailure", unit);
+        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(failure.code(), failure.eventCode(), failure.message(), facts, failure.diagnosticId())));
     }
 
     /** Preserves a cancelled original task after a remote effect. / 远端副作用后保留已取消原任务。

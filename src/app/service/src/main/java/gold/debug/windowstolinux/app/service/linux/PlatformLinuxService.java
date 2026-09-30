@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 
 /** Adapts saved servers and reviewed effects to actual task-owned SSH resources. / 将已保存服务器及已审核副作用接入真实任务所属 SSH 资源。 */
 public final class PlatformLinuxService implements LinuxService, AutoCloseable {
@@ -181,7 +181,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     tasks.operationCancellation(task));
             tasks.requireServer(task, owner, version, server.id());
             servers.saveAuthenticatedServer(
-                    new ServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
+                    new StoredServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
                     expected);
         } finally {
             if (password != null)
@@ -679,7 +679,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param task original executing task / 原执行任务
      * @return immutable settings for this operation / 本操作不可变设置
      * @throws ApiException if identity or settings are unavailable / 身份或设置不可用时 */
-    private TransferSettings thresholds(TaskContext task) throws ApiException {
+    private TransferConfiguration thresholds(TaskContext task) throws ApiException {
         try {
             return tasks.authorized(task, owner, version, settings::read);
         } catch (ApiException failure) {

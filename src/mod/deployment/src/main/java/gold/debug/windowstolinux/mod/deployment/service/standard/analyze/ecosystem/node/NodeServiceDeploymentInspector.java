@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageFactKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.spi.DeploymentTypeAssessment;
@@ -60,22 +60,22 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
         Optional<NodeBuildFacts> inspected = node.inspect(root, source.logicalRootName(root));
         if (inspected.isEmpty()) {
             rejections.add(new RejectionReason("NODE_PACKAGE_JSON_MISSING",
-                    LocalizedMessage.of("analysis.deployment.rejection.nodePackageMissing"), "deployment"));
+                    DeploymentLocalizedMessage.of("analysis.deployment.rejection.nodePackageMissing"), "deployment"));
             return null;
         }
         NodeBuildFacts project = inspected.orElseThrow();
-        List<LocalizedMessage> missing = new ArrayList<>();
-        List<LocalizedMessage> conflicts = new ArrayList<>();
+        List<DeploymentLocalizedMessage> missing = new ArrayList<>();
+        List<DeploymentLocalizedMessage> conflicts = new ArrayList<>();
         if (project.lockFiles().isEmpty()) {
-            missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeLockfile"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.nodeLockfile"));
         } else if (project.lockFiles().size() > 1) {
-            conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multipleNodeLockfiles"));
+            conflicts.add(DeploymentLocalizedMessage.of("analysis.deployment.conflict.multipleNodeLockfiles"));
         }
         if (!project.hasBuildScript()) {
-            missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeBuildScript"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.nodeBuildScript"));
         }
         if (!project.hasStartScript()) {
-            missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeStartScript"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.nodeStartScript"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
                 project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.nodePackage",
@@ -87,10 +87,10 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
         if (nodeVersion != null) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION, nodeVersion);
         }
-        List<LocalizedMessage> required = new ArrayList<>();
-        required.add(LocalizedMessage.of("analysis.deployment.runtime.health"));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>();
+        required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health"));
         if (nodeVersion == null) {
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values,
                 Optional.empty(), Map.of(), List.of(),
@@ -113,9 +113,9 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
             String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(subject),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
                 source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
                 gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

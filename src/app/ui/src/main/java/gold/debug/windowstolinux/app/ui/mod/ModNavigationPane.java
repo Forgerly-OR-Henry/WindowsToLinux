@@ -10,7 +10,8 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.i18n.LocaleBinding;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
 import gold.debug.windowstolinux.appapi.task.ApiException;
@@ -110,8 +111,10 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
             return;
         try {
             pages.openView(key);
+            LocaleBinding.unbind(status);
             status.setText("");
         } catch (ApiException failure) {
+            LocaleBinding.unbind(status);
             status.setText(messages.safe(failure));
             publicationChanged();
         }
@@ -125,12 +128,13 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
             return;
         try {
             if (value && pages.contributions().stream().noneMatch(p -> p.key().equals(key))) {
-                status.setText(messages.text("mods.pageUnavailable"));
+                messages.bind(status, "mods.pageUnavailable");
                 publicationChanged();
                 return;
             }
             load(() -> service.pin(new PagePin(key.ownerId(), key.pageId()), value), true);
         } catch (ApiException failure) {
+            LocaleBinding.unbind(status);
             status.setText(messages.safe(failure));
         }
     }
@@ -141,6 +145,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         epoch++;
         locked = value;
         pins = List.of();
+        LocaleBinding.unbind(status);
         status.setText("");
         publicationChanged();
         if (!locked)
@@ -165,6 +170,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
             published = locked ? List.of() : pages.contributions();
         } catch (ApiException failure) {
             published = List.of();
+            LocaleBinding.unbind(status);
             status.setText(messages.safe(failure));
         }
         render();
@@ -214,13 +220,16 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 return;
             }
             pins = value;
-            if (mutation)
+            if (mutation) {
+                LocaleBinding.unbind(status);
                 status.setText("");
+            }
             publicationChanged();
         }, failure -> {
             busy = false;
             if (closed || locked)
                 return;
+            LocaleBinding.unbind(status);
             status.setText(messages.safe(failure));
             render();
             if (mutation || epoch != original)
@@ -235,10 +244,12 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         epoch++;
         pins = List.of();
         published = List.of();
+        LocaleBinding.unbind(status);
         status.setText("");
         try {
             subscription.close();
         } catch (Exception failure) {
+            LocaleBinding.unbind(status);
             status.setText(messages.safe(failure));
         }
         render();

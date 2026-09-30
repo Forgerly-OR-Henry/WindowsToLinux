@@ -5,7 +5,7 @@ import java.sql.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.service.ServiceSnapshot;
@@ -64,6 +64,15 @@ public final class PlatformModServices implements AutoCloseable {
             binding.close();
     }
 
+    /** Host-owned cleanup within an authenticated provider recovery scope. / 在已认证提供方恢复作用域内执行的宿主收尾。 */
+    @FunctionalInterface
+    public interface RecoveryCleanup {
+        /** Closes only this provider's actual resources for the original task. / 仅关闭此提供方对原任务持有的实际资源。
+         * @param task exact original task context / 精确原任务上下文
+         * @throws ApiException if actual release is not confirmed / 实际释放未确认时 */
+        void close(TaskContext task) throws ApiException;
+    }
+
     /** One loaded graph node providing the public author service interface. / 提供公开作者服务接口的单个已加载图节点。 */
     public final class Binding implements ModServices, ModHostLease.Contribution {
         /** Actual loader whose shared Class identities are authoritative. / 共享 Class 身份具有权威性的实际加载器。 */
@@ -81,6 +90,9 @@ public final class PlatformModServices implements AutoCloseable {
         /** Original discovery handles owned by this activation. / 此启用持有的原发现句柄。 */
         private final Set<Handle<?>> handles = Collections.newSetFromMap(new IdentityHashMap<>());
 
+        /** Cleanup captured from this activation's actual host context before publication. / 发布前从此启用实际宿主上下文捕获的收尾。 */
+        private RecoveryCleanup recoveryCleanup;
+
         /** Publication and permanent admission state. / 发布及永久准入状态。 */
         private boolean published, stopping, detached;
 
@@ -95,6 +107,17 @@ public final class PlatformModServices implements AutoCloseable {
             if (!loader.manifest().schemaVersion().equals(schema.map(SchemaIdentity::schemaVersion))
                     || schema.isPresent() && !schema.get().ownerId().equals(owner()))
                 throw new IllegalArgumentException("Service generation differs from its loaded manifest");
+        }
+
+        /** Binds the real host cleanup once while this contribution remains unpublished. / 此扩展仍未发布时一次绑定真实宿主收尾。
+         * @param cleanup same activation's physical-resource cleanup / 同一启用的物理资源收尾
+         * @throws IllegalStateException if cleanup was bound or publication already occurred / 已绑定收尾或已发布时 */
+        public void bindRecoveryCleanup(RecoveryCleanup cleanup) {
+            synchronized (PlatformModServices.this) {
+                if (published || stopping || detached || recoveryCleanup != null)
+                    throw new IllegalStateException("Provider cleanup must bind once before publication");
+                recoveryCleanup = Objects.requireNonNull(cleanup);
+            }
         }
 
         /** Returns actual owning Mod identity. / 返回实际所属 Mod 身份。
@@ -306,6 +329,12 @@ public final class PlatformModServices implements AutoCloseable {
                 return tasks.dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
                         provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
                         connection -> claims(connection, provider, task), () -> {
+                            if (tasks.reconciling(task)) {
+                                if (provider.recoveryCleanup == null)
+                                    throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_CLEANUP_MISSING",
+                                            "The original provider's host cleanup is not bound");
+                                provider.recoveryCleanup.close(task);
+                            }
                             var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
                             Thread thread = Thread.currentThread();
                             var publicType = (java.util.function.Predicate<Class<?>>) type -> provider.exported(type)

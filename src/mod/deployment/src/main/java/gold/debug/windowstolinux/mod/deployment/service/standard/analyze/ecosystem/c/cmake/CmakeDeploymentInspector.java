@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Evid
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -152,10 +152,10 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
         CmakeFacts architecture = new CmakeFacts(PRESET, target, languages, targetSources, missing, conflicts);
         ProjectLanguageFacts targetLanguageFacts = new ProjectLanguageFacts(languageFacts.ecosystems(), languages,
                 languageFacts.values(), languageFacts.evidence());
-        List<LocalizedMessage> localizedMissing = architecture.missingItems().stream()
-                .map(item -> LocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
-        List<LocalizedMessage> localizedConflicts = architecture.conflicts().stream()
-                .map(item -> LocalizedMessage.of("analysis.cmake.conflict", "detail", item)).toList();
+        List<DeploymentLocalizedMessage> localizedMissing = architecture.missingItems().stream()
+                .map(item -> DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
+        List<DeploymentLocalizedMessage> localizedConflicts = architecture.conflicts().stream()
+                .map(item -> DeploymentLocalizedMessage.of("analysis.cmake.conflict", "detail", item)).toList();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
                 ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
                 DeploymentBuildToolType.CMAKE, targetLanguageFacts,
@@ -168,10 +168,10 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_TARGET, target);
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.CMAKE_ARTIFACT, target);
         }
-        List<LocalizedMessage> required = new ArrayList<>(
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>(
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (target == null)
-            required.add(LocalizedMessage.of("analysis.cmake.target"));
+            required.add(DeploymentLocalizedMessage.of("analysis.cmake.target"));
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), values,
                 Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
     }
@@ -315,7 +315,7 @@ public final class CmakeDeploymentInspector implements DeploymentTypeInspector {
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static AnalysisEvidence evidence(String source) {
-        return new AnalysisEvidence(LocalizedMessage.of("analysis.cmake.metadata"), source,
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+        return new AnalysisEvidence(DeploymentLocalizedMessage.of("analysis.cmake.metadata"), source,
+                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

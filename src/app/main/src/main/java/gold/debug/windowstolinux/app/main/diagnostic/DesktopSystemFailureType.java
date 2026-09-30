@@ -1,65 +1,62 @@
 package gold.debug.windowstolinux.app.main.diagnostic;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
 
 /**
  * Desktop-process failures owned by app/main. / app/main 持有的桌面进程失败类型。
  */
-public enum DesktopSystemFailureType implements FailureDefinition {
+public enum DesktopSystemFailureType {
     /**
      * STARTUP LAYOUT INVALID classification within desktop system failure type.
      * <p>Desktop系统失败类型中的启动布局无效分类。
      */
     STARTUP_LAYOUT_INVALID("desktop.startup.layout-invalid", "startup", "desktop.error.startupLayoutInvalid",
-            FailureSeverityLevel.FATAL, FailureRecoveryAction.EXIT_PROCESS),
+            "FATAL", "EXIT_PROCESS"),
     /**
      * DATA DIRECTORY UNAVAILABLE classification within desktop system failure type.
      * <p>Desktop系统失败类型中的数据目录不可用分类。
      */
     DATA_DIRECTORY_UNAVAILABLE("desktop.startup.data-directory-unavailable", "startup",
-            "desktop.error.dataDirectoryUnavailable", FailureSeverityLevel.FATAL,
-            FailureRecoveryAction.REQUEST_USER_CORRECTION),
+            "desktop.error.dataDirectoryUnavailable", "FATAL",
+            "REQUEST_USER_CORRECTION"),
     /**
      * DATABASE INITIALIZATION FAILED classification within desktop system failure type.
      * <p>Desktop系统失败类型中的数据库初始化失败分类。
      */
     DATABASE_INITIALIZATION_FAILED("desktop.startup.database-initialization-failed", "startup",
-            "desktop.error.databaseInitializationFailed", FailureSeverityLevel.FATAL,
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+            "desktop.error.databaseInitializationFailed", "FATAL",
+            "REQUIRE_MANUAL_RECOVERY"),
     /**
      * UI INITIALIZATION FAILED classification within desktop system failure type.
      * <p>Desktop系统失败类型中的界面初始化失败分类。
      */
     UI_INITIALIZATION_FAILED("desktop.startup.ui-initialization-failed", "startup",
-            "desktop.error.uiInitializationFailed", FailureSeverityLevel.FATAL,
-            FailureRecoveryAction.RESTART_APPLICATION),
+            "desktop.error.uiInitializationFailed", "FATAL",
+            "RESTART_APPLICATION"),
     /**
      * UNKNOWN RUNTIME FAILURE classification within desktop system failure type.
      * <p>Desktop系统失败类型中的未知运行时失败分类。
      */
     UNKNOWN_RUNTIME_FAILURE("desktop.runtime.unknown-failure", "runtime", "desktop.error.unknownRuntimeFailure",
-            FailureSeverityLevel.ERROR, FailureRecoveryAction.RESTART_APPLICATION),
+            "ERROR", "RESTART_APPLICATION"),
     /**
      * DIAGNOSTIC REPORT WRITE FAILED classification within desktop system failure type.
      * <p>Desktop系统失败类型中的诊断报告写入失败分类。
      */
     DIAGNOSTIC_REPORT_WRITE_FAILED("desktop.diagnostic.report-write-failed", "diagnostic",
-            "desktop.error.diagnosticReportWriteFailed", FailureSeverityLevel.WARNING,
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+            "desktop.error.diagnosticReportWriteFailed", "WARNING",
+            "REQUIRE_MANUAL_RECOVERY"),
     /**
      * RESOURCE EXHAUSTED classification within desktop system failure type.
      * <p>Desktop系统失败类型中的资源已耗尽分类。
      */
     RESOURCE_EXHAUSTED("desktop.runtime.resource-exhausted", "runtime", "desktop.error.resourceExhausted",
-            FailureSeverityLevel.FATAL, FailureRecoveryAction.EXIT_PROCESS),
+            "FATAL", "EXIT_PROCESS"),
     /**
      * SHUTDOWN FAILED classification within desktop system failure type.
      * <p>Desktop系统失败类型中的关闭失败分类。
      */
-    SHUTDOWN_FAILED("desktop.shutdown.failed", "shutdown", "desktop.error.shutdownFailed", FailureSeverityLevel.ERROR,
-            FailureRecoveryAction.RESTART_APPLICATION);
+    SHUTDOWN_FAILED("desktop.shutdown.failed", "shutdown", "desktop.error.shutdownFailed", "ERROR",
+            "RESTART_APPLICATION");
 
     /**
      * Stable machine-readable classification code.
@@ -83,13 +80,13 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      * Severity level assigned to the failure definition.
      * <p>分配给失败定义的严重级别。
      */
-    private final FailureSeverityLevel severity;
+    private final String severity;
 
     /**
      * Action required to recover from the classified failure.
      * <p>从已分类失败中恢复所需的动作。
      */
-    private final FailureRecoveryAction recoveryAction;
+    private final String recoveryAction;
 
     /**
      * Binds the supplied dependencies and state for desktop system failure type.
@@ -101,8 +98,8 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      * @param severity severity level assigned to the failure definition / 分配给失败定义的严重级别
      * @param recoveryAction action required to recover from the classified failure / 从已分类失败中恢复所需的动作
      */
-    DesktopSystemFailureType(String code, String phase, String messageKey, FailureSeverityLevel severity,
-            FailureRecoveryAction recoveryAction) {
+    DesktopSystemFailureType(String code, String phase, String messageKey, String severity,
+            String recoveryAction) {
         this.code = code;
         this.phase = phase;
         this.messageKey = messageKey;
@@ -116,7 +113,6 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return stable machine-readable classification code / 稳定的机器可读分类码
      */
-    @Override
     public String code() {
         return code;
     }
@@ -127,7 +123,6 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return the module domain that owns this failure definition / 持有当前失败定义的模块领域
      */
-    @Override
     public String domain() {
         return "desktop";
     }
@@ -138,7 +133,6 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return stage associated with the result or failure / 结果或失败所属阶段
      */
-    @Override
     public String phase() {
         return phase;
     }
@@ -149,7 +143,6 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return stable localization key for user-facing text / 用户可见文本的稳定本地化键
      */
-    @Override
     public String messageKey() {
         return messageKey;
     }
@@ -160,8 +153,7 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return severity level assigned to the failure definition / 分配给失败定义的严重级别
      */
-    @Override
-    public FailureSeverityLevel severity() {
+    public String severity() {
         return severity;
     }
 
@@ -171,8 +163,28 @@ public enum DesktopSystemFailureType implements FailureDefinition {
      *
      * @return action required to recover from the classified failure / 从已分类失败中恢复所需的动作
      */
-    @Override
-    public FailureRecoveryAction recoveryAction() {
+    public String recoveryAction() {
         return recoveryAction;
+    }
+
+    /** Creates a public diagnostic with the original occurrence identity and local recovery metadata. / 以原发生身份和本地恢复元数据创建公开诊断。
+     * @param identity original diagnostic UUID / 原诊断UUID
+     * @param diagnostic safe non-secret explanation / 安全非秘密说明
+     * @return immutable diagnostic preserving the desktop classification / 保留桌面分类的不可变诊断
+     * @throws NullPointerException if an input is missing / 输入缺失时 */
+    public gold.debug.windowstolinux.appapi.task.Problem problem(java.util.UUID identity, String diagnostic) {
+        java.util.Objects.requireNonNull(identity, "identity");
+        java.util.Objects.requireNonNull(diagnostic, "diagnostic");
+        var category = switch (this) {
+            case STARTUP_LAYOUT_INVALID -> gold.debug.windowstolinux.appapi.task.ProblemCode.INVALID_INPUT;
+            case DATA_DIRECTORY_UNAVAILABLE, RESOURCE_EXHAUSTED -> gold.debug.windowstolinux.appapi.task.ProblemCode.UNAVAILABLE;
+            case DATABASE_INITIALIZATION_FAILED, DIAGNOSTIC_REPORT_WRITE_FAILED, SHUTDOWN_FAILED -> gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE;
+            case UI_INITIALIZATION_FAILED -> gold.debug.windowstolinux.appapi.task.ProblemCode.CONTRACT_VIOLATION;
+            case UNKNOWN_RUNTIME_FAILURE -> gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN;
+        };
+        return new gold.debug.windowstolinux.appapi.task.Problem(category, code, diagnostic,
+                java.util.Map.of("domain", domain(), "phase", phase, "messageKey", messageKey,
+                        "severity", severity, "recoveryAction", recoveryAction,
+                        "recoveryDisposition", "NOT_ATTEMPTED"), java.util.Optional.of(identity));
     }
 }

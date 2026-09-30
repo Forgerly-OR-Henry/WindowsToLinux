@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Evid
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageEcosystemType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * Collects first-path evidence using caller-owned language rules. / 按调用方提供的语言规则收集首个路径证据。
@@ -46,8 +46,8 @@ public final class SourceLanguageEvidence {
             return ProjectLanguageFacts.empty();
         List<AnalysisEvidence> evidence = firstEvidence.entrySet().stream()
                 .map(entry -> new AnalysisEvidence(
-                        LocalizedMessage.of("analysis.language.sourceMarker", "language", entry.getKey().name()),
-                        entry.getValue().toString(), LocalizedMessage.of("analysis.deployment.evidence.detected"),
+                        DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", entry.getKey().name()),
+                        entry.getValue().toString(), DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"),
                         EvidenceConfidenceLevel.HIGH))
                 .toList();
         return new ProjectLanguageFacts(Set.of(ecosystem), firstEvidence.keySet(), Map.of(), evidence);

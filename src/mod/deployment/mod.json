@@ -8,12 +8,20 @@
   "minJavaVersion": 21,
   "mainJar": "main/deployment.jar",
   "entryClass": "gold.debug.windowstolinux.mod.deployment.Mod",
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "migrations": [
     {
       "from": "1",
       "to": "2",
       "class": "gold.debug.windowstolinux.mod.deployment.db.DeploymentSchemaMigration12"
+    },
+    {
+      "from": "2",
+      "to": "3",
+      "class": "gold.debug.windowstolinux.mod.deployment.db.DeploymentSchemaMigration23"
     }
+  ],
+  "exports": [
+    "gold.debug.windowstolinux.mod.deployment.api"
   ]
 }

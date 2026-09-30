@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.appapi.server.ServerService;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.ComponentIsolationSpecification;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ComponentAnalysisRequest;
@@ -80,7 +81,7 @@ class DeploymentStaticReviewAssemblerTest extends DeploymentRuntimeFixture {
                                         Map.entry("databaseMode", "POSTGRESQL"), Map.entry("databaseDetails",
                                                 "primary|db.example.test|5432|shop|shop|database-password:3|required"));
                                 var files = List.of(new DeploymentFileBinding("data",
-                                        new DeploymentDataPath("data", DeploymentDataPath.AccessMode.READ_WRITE,
+                                        new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE,
                                                 "files", true),
                                         DeploymentStorageLocation.defaults(),
                                         DeploymentStorageLocation.StorageResourceType.FILE));
@@ -287,5 +288,143 @@ class DeploymentStaticReviewAssemblerTest extends DeploymentRuntimeFixture {
         return new ComponentAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE, Optional.of(runtime),
                 List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
                 true, ComponentIsolationSpecification.managed());
+    }
+
+    /** Preserves one Node component's complete reviewed fields through an actual source-bound graph plan. / 在实际来源绑定图计划中保留一个Node组件的完整已审阅字段。
+     * @throws Exception if actual CLASS source, analysis or review binding fails / 实际CLASS来源、分析或审阅绑定失败时 */
+    @Test
+    void originalTaskMapsReviewedNodeTcpComponentFieldsIntoItsBoundPlan() throws Exception {
+        for (String id : List.of("api", "database")) {
+            var directory = Files.createDirectories(selectedSourceDirectory().resolve(id));
+            Files.writeString(directory.resolve("package.json"), "{\"name\":\"" + id
+                    + "\",\"engines\":{\"node\":\"22\"},\"scripts\":{\"build\":\"node build.js\",\"start\":\"node main.js\"}}");
+            Files.writeString(directory.resolve("package-lock.json"), "{\"name\":\"" + id
+                    + "\",\"version\":\"1.0.0\",\"lockfileVersion\":3,\"requires\":true,\"packages\":{\"\":{\"name\":\""
+                    + id + "\",\"version\":\"1.0.0\"}}}");
+        }
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers().saveServerProfile(
+                    ServerProfile
+                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
+            var context = runtime.modContexts().get(OWNER).context();
+            var failure = new AtomicReference<Throwable>();
+            var originalTask = new AtomicReference<java.util.UUID>();
+            var handle = context.tasks().submit(
+                    new TaskRequest("node-component-input", "Review Node component", List.of("server"), true), task -> {
+                        try {
+                            originalTask.set(task.id());
+                            var selected = context.source().selectDirectory("Source", task);
+                            try (var material = new DeploymentSourcePreparer(context.source()).prepare(selected, 65536,
+                                    100, task);
+                                    var apiArchive = new DeploymentSourceArchiver(context.source()).prepare(material,
+                                            "api", 65536, task);
+                                    var databaseArchive = new DeploymentSourceArchiver(context.source())
+                                            .prepare(material, "database", 65536, task)) {
+                                var reviewedHealth = new DeploymentHealthCheck.Tcp(18081, 20, 1);
+                                var apiValues = Map.of("version", "22", "healthMode", "TCP", "port", "18081", "timeout",
+                                        "20", "stability", "1", "exposure", "INTERNAL", "configuration", "PORT=18081",
+                                        "secrets", "database-password:1", "databaseMode", "NONE");
+                                var apiRuntime = new DeploymentRuntimeDefinition.NodeService(22, reviewedHealth)
+                                        .withWorkload(ApplicationDeclaration.resolve(apiValues));
+                                var api = new ComponentAnalysisRequest("api", "api", DeploymentProjectKind.NODE_SERVICE,
+                                        Optional.of(apiRuntime), List.of("api/package.json"), Set.of(18081),
+                                        List.of("PORT"), List.of("database-password"), List.of(), Set.of("database"),
+                                        true, ComponentIsolationSpecification.managed());
+                                var databaseValues = Map.of("version", "22", "healthMode", "TCP", "port", "18082",
+                                        "timeout", "20", "stability", "1", "exposure", "INTERNAL", "configuration",
+                                        "PORT=18082", "databaseMode", "NONE");
+                                var databaseRuntime = new DeploymentRuntimeDefinition.NodeService(22,
+                                        new DeploymentHealthCheck.Tcp(18082, 20, 1))
+                                        .withWorkload(ApplicationDeclaration.resolve(databaseValues));
+                                var database = new ComponentAnalysisRequest("database", "database",
+                                        DeploymentProjectKind.NODE_SERVICE, Optional.of(databaseRuntime),
+                                        List.of("database/package.json"), Set.of(18082), List.of("PORT"), List.of(),
+                                        List.of(), Set.of(), true, ComponentIsolationSpecification.managed());
+                                var analysis = new DeploymentStandardAnalyzer().analyzeComponents(material,
+                                        "Reviewed Node Shop", "shop", List.of(api, database), Map.of(), false, task);
+                                assertEquals(Outcome.SUCCEEDED, analysis.outcome(), analysis.toString());
+                                assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
+                                        analysis.value().orElseThrow().assessment().admission());
+                                var analyzedApi = analysis.value().orElseThrow().assessment().components().stream()
+                                        .filter(component -> component.componentId().equals("api")).findFirst()
+                                        .orElseThrow();
+                                assertEquals(api.componentId(), analyzedApi.componentId());
+                                assertEquals(material.snapshot().directory().resolve("api"), analyzedApi.sourceRoot());
+                                assertEquals(api.dependencies(), analyzedApi.dependencies());
+                                assertEquals(api.ports(), analyzedApi.ports());
+                                assertEquals(api.configurationKeys(), analyzedApi.configurationKeys());
+                                assertEquals(api.secretIdentifiers(), analyzedApi.secretIdentifiers());
+                                assertEquals(api.runtime(), analyzedApi.runtime());
+                                assertEquals(api.isolation(), analyzedApi.isolation());
+                                assertFalse(analyzedApi.isolation().arbitraryShell());
+                                assertFalse(analyzedApi.isolation().hostPrivileges());
+                                assertTrue(analyzedApi.isolation().managedOnly());
+                                var consent = new DeploymentReviewConsent(analyzedApi.facts().applicationId(), "server",
+                                        material.snapshot().sha256(), apiArchive.sha256(), Instant.now());
+                                var apiAnswers = new DeploymentStaticReviewAnswers(apiValues, List.of(), 1,
+                                        DeploymentBuildLimits.defaultNonRoot(), consent, false, true);
+                                var analyzedDatabase = analysis.value().orElseThrow().assessment().components().stream()
+                                        .filter(component -> component.componentId().equals("database")).findFirst()
+                                        .orElseThrow();
+                                var databaseConsent = new DeploymentReviewConsent(
+                                        analyzedDatabase.facts().applicationId(), "server",
+                                        material.snapshot().sha256(), databaseArchive.sha256(), Instant.now());
+                                var databaseAnswers = new DeploymentStaticReviewAnswers(databaseValues, List.of(), 1,
+                                        DeploymentBuildLimits.defaultNonRoot(), databaseConsent, false, true);
+                                var result = new DeploymentStaticReviewAssembler(context.servers(),
+                                        new DeploymentStandardPlanner()).planComponents(new ServerRef("server"),
+                                                material, Map.of("api", apiArchive, "database", databaseArchive),
+                                                analysis.value().orElseThrow(),
+                                                Map.of("api", apiAnswers, "database", databaseAnswers), task);
+                                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                                assertEquals(List.of(List.of("database"), List.of("api")),
+                                        result.value().orElseThrow().ordering().buildWaves());
+                                var request = result.value().orElseThrow().components().get("api").request();
+                                assertEquals("shop-api", request.configuration().applicationId());
+                                assertEquals(1, request.configuration().revision());
+                                assertEquals(List.of(
+                                        new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationEntry(
+                                                "PORT",
+                                                gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType.RUNTIME,
+                                                new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationValue.Number(
+                                                        18081))),
+                                        request.configuration().entries());
+                                assertEquals(List.of(new DeploymentSecretReference("database-password", 1)),
+                                        request.secretReferences());
+                                assertEquals(List.of(), request.resources().databaseBindings().orElseThrow());
+                                assertEquals(apiRuntime, request.runtime());
+                                assertEquals(reviewedHealth, request.runtime().healthCheck());
+                                assertEquals(DeploymentBuildLimits.defaultNonRoot(), request.limits());
+                                assertFalse(request.limits().runAsRoot());
+                                assertSame(material, request.material());
+                                assertSame(apiArchive, request.archive());
+                                assertEquals(consent, request.review());
+                                assertEquals(material.snapshot().sha256(),
+                                        analysis.value().orElseThrow().snapshotSha256());
+                                assertEquals(originalTask.get(), task.id());
+                            }
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        } catch (Exception | AssertionError caught) {
+                            failure.set(caught);
+                            throw caught;
+                        }
+                    });
+            OperationResult<Void> completed;
+            try {
+                completed = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+            } catch (Exception unfinished) {
+                throw new AssertionError("Original Node review failed: " + handle.snapshot(),
+                        failure.get() == null ? unfinished : failure.get());
+            }
+            if (failure.get() != null)
+                throw new AssertionError("Original Node review failed", failure.get());
+            assertEquals(Outcome.SUCCEEDED, completed.outcome(), completed.toString());
+            assertEquals(handle.id(), originalTask.get());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
     }
 }

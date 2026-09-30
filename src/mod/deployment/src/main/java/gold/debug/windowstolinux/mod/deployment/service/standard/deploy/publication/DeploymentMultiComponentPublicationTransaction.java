@@ -58,6 +58,9 @@ final class DeploymentMultiComponentPublicationTransaction {
             throw new IllegalArgumentException("Complete graph builds are required");
         var channels = new HashMap<String, DeploymentPublicationChannel>();
         for (var id : ordering.startOrder())
+            if (!DeploymentPublicationOperationBinding.confirmed(context, task, builds.get(id), journals.get(id)))
+                return unknown("DEPLOYMENT_GRAPH_OPERATION_UNCONFIRMED");
+        for (var id : ordering.startOrder())
             channels.put(id, new DeploymentPublicationChannel(session, context.interaction(), units.get(id).server(),
                     task, journals.get(id).facts().path("planSha256").asText()));
         var secrets = new HashMap<String, Map<DeploymentSecretReference, String>>();
@@ -65,7 +68,7 @@ final class DeploymentMultiComponentPublicationTransaction {
         if (stagingFailure != null)
             return unknown(stagingFailure);
         var snapshots = new HashMap<String, DeploymentRemoteReleaseSnapshot>();
-        String snapshotFailure = snapshotAll(ordering, plans, units, channels, task, root, journals, snapshots);
+        String snapshotFailure = snapshotAll(ordering, plans, units, builds, channels, task, root, journals, snapshots);
         if (snapshotFailure != null)
             return unknown(snapshotFailure);
         var publication = proposal(ordering, plans, units, builds, healthComponent, health);
@@ -116,7 +119,7 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED");
             if (immediate.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                        immediate.problem().orElseGet(
+                        DeploymentStandardPublicationTransaction.healthFailure(immediate, units.get(id).id()).problem().orElseGet(
                                 () -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_COMPONENT_UNHEALTHY")));
         }
         for (var id : ordering.healthOrder()) {
@@ -125,7 +128,7 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED");
             if (repeated.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                        repeated.problem()
+                        DeploymentStandardPublicationTransaction.healthFailure(repeated, units.get(id).id()).problem()
                                 .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RECHECK_FAILED")));
         }
         var whole = channels.get(healthComponent).healthCheck(units.get(healthComponent), health);
@@ -133,7 +136,7 @@ final class DeploymentMultiComponentPublicationTransaction {
             return unknown("DEPLOYMENT_GRAPH_HEALTH_GATE_UNCONFIRMED");
         if (whole.outcome() == Outcome.FAILED)
             return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                    whole.problem()
+                    DeploymentStandardPublicationTransaction.healthFailure(whole, units.get(healthComponent).id()).problem()
                             .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_HEALTH_GATE_FAILED")));
         if (!root.verified(Outcome.SUCCEEDED, Optional.empty()))
             return unknown("DEPLOYMENT_GRAPH_VERIFIED_RESULT_UNCONFIRMED");
@@ -173,6 +176,7 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @param ordering original graph / 原图
      * @param plans reviewed plans / 已审阅计划
      * @param units exact owners / 精确归属
+     * @param builds actual confirmed operation candidates / 实际已确认操作候选
      * @param channels original channels / 原通道
      * @param task original task / 原任务
      * @param root original graph journal / 原图账本
@@ -181,14 +185,19 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return absent on success or bounded failure event / 成功为空，否则为有界失败事件
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static String snapshotAll(MultiComponentDeploymentPlan ordering, Map<String, ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentPublicationChannel> channels,
+            Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentVerifiedBuildResult> builds,
+            Map<String, DeploymentPublicationChannel> channels,
             TaskContext task, DeploymentGraphPublicationJournal root,
             Map<String, DeploymentPublicationCleanupJournal> journals,
             Map<String, DeploymentRemoteReleaseSnapshot> snapshots) throws ApiException {
         for (var id : ordering.rollbackOrder()) {
             if (cancelled(task) || !journals.get(id).mark("SNAPSHOT_MAY_HAVE_RUN"))
                 return "DEPLOYMENT_GRAPH_SNAPSHOT_BOUNDARY_UNCONFIRMED";
-            var saved = channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime());
+            var build = builds.get(id); var facts = journals.get(id).facts();
+            var saved = build.operation().isEmpty() ? channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime())
+                    : channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime(), build.operation().orElseThrow(),
+                            facts.path("expectedDigest").asText().isEmpty() ? Optional.empty() : Optional.of(facts.path("expectedDigest").asText()),
+                            facts.path("expectedKind").asText(), facts.path("expectedRunning").booleanValue());
             if (saved.outcome() != Outcome.SUCCEEDED || saved.value().isEmpty())
                 return "DEPLOYMENT_GRAPH_SNAPSHOT_UNCONFIRMED";
             var snapshot = saved.value().orElseThrow();
@@ -316,7 +325,8 @@ final class DeploymentMultiComponentPublicationTransaction {
                 var journal = journals.get(id);
                 if (!successful && !affected.contains(id)) {
                     if (!DeploymentPublicationCleanupAttempt.run(journal, "SNAPSHOT_DISCARD_MAY_HAVE_RUN",
-                            () -> channels.get(id).discardSnapshot(units.get(id)))
+                            () -> builds.get(id).operation().isEmpty() ? channels.get(id).discardSnapshot(units.get(id))
+                                    : channels.get(id).discardSnapshot(units.get(id), builds.get(id).operation().orElseThrow()))
                             || !journal.mark("SNAPSHOT_DISCARDED"))
                         return;
                     continue;

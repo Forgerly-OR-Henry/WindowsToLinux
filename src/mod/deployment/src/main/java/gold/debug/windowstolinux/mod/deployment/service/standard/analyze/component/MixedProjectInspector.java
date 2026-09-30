@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.appapi.task.CancellationToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.ComponentIssue;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.MultiComponentProjectAssessment;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.DeploymentComponent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
@@ -240,7 +240,7 @@ public final class MixedProjectInspector {
     private static ComponentIssue issue(ComponentIssue.SeverityLevel severity, String code, List<String> components,
             String key) {
         return new ComponentIssue(severity, code, components,
-                LocalizedMessage.of(key, "components", String.join(", ", components.stream().sorted().toList())));
+                DeploymentLocalizedMessage.of(key, "components", String.join(", ", components.stream().sorted().toList())));
     }
 
     /**

@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.appapi.ai.AiService;
+import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.source.SourceService;
@@ -26,10 +28,14 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database
 import gold.debug.windowstolinux.mod.deployment.source.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Exercises frozen-source discovery, edited input and archive confirmation within one real CLASS/H2 task. / 在真实CLASS/H2同一任务中验证冻结来源发现、编辑输入及归档确认。 */
 class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
+    private enum RefusalStageType {
+        GRAPH_SELECTION, RUNTIME_REVIEW, UNKNOWN_DATABASE_INPUTS
+    }
     private static final Path GIT = Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
             .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
             .toAbsolutePath().normalize();
@@ -69,6 +75,155 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     @Test
     void cancellationAfterSqliteConsentReleasesOriginalSourceWithoutPublication() throws Exception {
         runReview(1, true, false, true);
+    }
+
+    /** Refusal in each local review stage releases the actual source and checkpoint before any capability effect. / 各本机审阅阶段拒绝后，在任一能力效果前释放真实来源和检查点。
+     * @param stage exact original review boundary / 精确原审阅边界
+     * @throws Exception if original task or local source fails / 原任务或本机来源失败时 */
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(RefusalStageType.class)
+    void localGraphRuntimeAndUnknownDatabaseRefusalCancelTheOriginalTaskWithoutRemoteWork(RefusalStageType stage)
+            throws Exception {
+        int count = stage == RefusalStageType.GRAPH_SELECTION ? 2 : 1;
+        for (int i = 0; i < count; i++) {
+            Path directory = count == 1
+                    ? selectedSourceDirectory()
+                    : selectedSourceDirectory().resolve(i == 0 ? "api" : "web");
+            Files.createDirectories(directory);
+            Files.writeString(directory.resolve("go.mod"), "module example.test/refusal" + i + "\n\ngo 1.24\n");
+            Files.writeString(directory.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
+            Files.writeString(directory.resolve("main.go"), "package main\nfunc main() {}\n");
+            if (stage == RefusalStageType.UNKNOWN_DATABASE_INPUTS)
+                Files.writeString(directory.resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
+        }
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers().saveServerProfile(
+                    ServerProfile
+                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
+            var actual = runtime.modContexts().get(OWNER).context();
+            var sourceCalls = new AtomicInteger();
+            var snapshots = new AtomicInteger();
+            var ssh = new AtomicInteger();
+            var models = new AtomicInteger();
+            var source = (SourceService) Proxy.newProxyInstance(SourceService.class.getClassLoader(),
+                    new Class<?>[]{SourceService.class}, (proxy, method, arguments) -> {
+                        if (method.getName().equals("selectDirectory"))
+                            sourceCalls.incrementAndGet();
+                        if (method.getName().equals("snapshot"))
+                            snapshots.incrementAndGet();
+                        try {
+                            return method.invoke(actual.source(), arguments);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    });
+            var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
+                    new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
+                        ssh.incrementAndGet();
+                        throw new AssertionError("Local refusal cannot connect, observe or stage: " + method.getName());
+                    });
+            var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(),
+                    new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
+                        models.incrementAndGet();
+                        throw new AssertionError(
+                                "Ordinary local review cannot consult model inventory or send: " + method.getName());
+                    });
+            var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                    new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                        if (method.getName().equals("source"))
+                            return source;
+                        if (method.getName().equals("linux"))
+                            return linux;
+                        if (method.getName().equals("ai"))
+                            return ai;
+                        try {
+                            return method.invoke(actual, arguments);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                    });
+            var selected = new AtomicInteger();
+            var reviewed = new AtomicInteger();
+            var database = new AtomicInteger();
+            var original = new java.util.concurrent.atomic.AtomicReference<UUID>();
+            var reviewer = new DeploymentStaticWorkflow.Reviewer() {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
+                        List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
+                    selected.incrementAndGet();
+                    original.set(task.id());
+                    assertEquals(count, discovered.size());
+                    assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
+                            + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
+                    assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
+                            + "' AND resource_kind='CUSTOM' AND resource_id LIKE '%/checkpoint/%' AND released_at IS NULL") > 0);
+                    if (stage == RefusalStageType.GRAPH_SELECTION)
+                        return cancelled();
+                    String id = discovered.getFirst().id();
+                    return success(new DeploymentStaticWorkflow.Selection(id,
+                            Map.of(id, new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
+                            Optional.empty()));
+                }
+
+                public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+                        String sha, Path directory, String applicationId,
+                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                        TaskContext task) {
+                    assertEquals(RefusalStageType.UNKNOWN_DATABASE_INPUTS, stage);
+                    assertEquals(original.get(), task.id());
+                    database.incrementAndGet();
+                    assertTrue(assessment.unknownDatabase());
+                    assertTrue(assessment.databases().isEmpty());
+                    assertEquals(List.of("schema.sql"), assessment.sqlCandidates());
+                    return cancelled();
+                }
+
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                        String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                    assertEquals(RefusalStageType.RUNTIME_REVIEW, stage);
+                    assertEquals(original.get(), task.id());
+                    assertEquals(1, prompts.size());
+                    reviewed.incrementAndGet();
+                    return cancelled();
+                }
+
+                public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                        Map<String, DeploymentPreparedDatabase> databases,
+                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                    throw new AssertionError("Refused local fields cannot reach publication consent");
+                }
+            };
+            var handle = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound)).submit(
+                    new ServerRef("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
+                    Optional.empty(), reviewer);
+            var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
+            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(Optional.of(Outcome.CANCELLED), handle.snapshot().outcome());
+            assertEquals(original.get(), handle.id());
+            assertEquals(1, selected.get());
+            assertEquals(stage == RefusalStageType.RUNTIME_REVIEW ? 1 : 0, reviewed.get());
+            assertEquals(stage == RefusalStageType.UNKNOWN_DATABASE_INPUTS ? 1 : 0, database.get());
+            assertEquals(1, sourceCalls.get());
+            assertEquals(1, snapshots.get());
+            assertEquals(0, ssh.get());
+            assertEquals(0, models.get());
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
+                    + "' AND released_at IS NULL"));
+            try (var access = scope(runtime, true);
+                    var connection = access.openConnection();
+                    var statement = connection.createStatement()) {
+                for (String table : List.of("deployment_execution", "managed_application", "deployment_unit",
+                        "deployment_release", "deployment_project"))
+                    try (var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+                        assertTrue(rows.next());
+                        assertEquals(0, rows.getLong(1), table);
+                    }
+            }
+        }
     }
 
     /** Real page admission retains both original checkpoints when Git preparation cleanup is initially unknown. / 真实页面准入在 Git 准备收尾暂未知时保留两个原检查点。

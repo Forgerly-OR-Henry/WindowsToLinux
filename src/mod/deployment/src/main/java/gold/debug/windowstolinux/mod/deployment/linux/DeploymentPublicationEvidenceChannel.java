@@ -1,10 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
 import static gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationReceipt.*;
-
 import java.time.Duration;
 import java.util.*;
-
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
@@ -14,7 +12,6 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUni
 final class DeploymentPublicationEvidenceChannel {
     /** Original admitted task, never an operation alias. / 原准入任务，绝不是操作别名。 */
     private final TaskContext task;
-
     /** Existing reviewed publication transport. / 既有已审阅发布传输。 */
     private final CommandPort sender;
     /** Binds original task and transport. / 绑定原任务和传输。
@@ -49,21 +46,17 @@ final class DeploymentPublicationEvidenceChannel {
      * @return original snapshot or retained uncertainty / 原快照或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent,
-            boolean attempt) throws ApiException {
+            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent, boolean attempt) throws ApiException {
         Objects.requireNonNull(operation);
         Objects.requireNonNull(expectedCurrent);
         if (expectedCurrent.isPresent() && !expectedCurrent.orElseThrow().matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Reviewed previous current digest required");
-        String verb = (runtime instanceof DeploymentRuntimeDefinition.Container
-                ? "snapshot-container"
-                : "snapshot-deployment") + (attempt ? "-attempt" : "");
+        String verb = (runtime instanceof DeploymentRuntimeDefinition.Container ? "snapshot-container" : "snapshot-deployment")
+                + (attempt ? "-attempt" : "");
         var arguments = attempt
-                ? List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), operation.toString(),
-                        expectedCurrent.orElse("empty"))
+                ? List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), operation.toString(), expectedCurrent.orElse("empty"))
                 : List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString());
-        var observed = sender.send("deployment.publication.snapshot.v1", unit, verb, arguments, Duration.ofSeconds(30),
-                4096);
+        var observed = sender.send("deployment.publication.snapshot.v1", unit, verb, arguments, Duration.ofSeconds(30), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -72,8 +65,7 @@ final class DeploymentPublicationEvidenceChannel {
             return unknown("DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
         String output = observed.value().orElseThrow().stdout();
         if (output.equals("PREVIOUS=0\n"))
-            return attempt && expectedCurrent.isPresent()
-                    ? unknown("DEPLOYMENT_SNAPSHOT_CURRENT_CHANGED")
+            return attempt && expectedCurrent.isPresent() ? unknown("DEPLOYMENT_SNAPSHOT_CURRENT_CHANGED")
                     : success(new DeploymentRemoteReleaseSnapshot(Optional.empty(), false, Optional.empty(), "none"));
         var match = java.util.regex.Pattern.compile(
                 "SNAPSHOT_TOKEN=([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\\nPREVIOUS=1\\nPREVIOUS_RUNNING=([01])\\nPREVIOUS_DIGEST=([0-9a-f]{64})\\nPREVIOUS_KIND=(ordinary|deployment|container)\\n")
@@ -99,9 +91,8 @@ final class DeploymentPublicationEvidenceChannel {
      * @param attempt whether to require operation ownership / 是否要求操作归属
      * @return complete original status or retained uncertainty / 完整原状态或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
-    OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit, String candidateId,
-            Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation, boolean attempt)
-            throws ApiException {
+    OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
+            String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation, boolean attempt) throws ApiException {
         Objects.requireNonNull(releaseSha256);
         if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}")
                 || releaseSha256.isPresent() && !releaseSha256.orElseThrow().matches("[0-9a-f]{64}"))
@@ -110,10 +101,8 @@ final class DeploymentPublicationEvidenceChannel {
             throw new IllegalArgumentException("Original backend and engine required");
         Objects.requireNonNull(operation);
         var arguments = attempt
-                ? List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), operation.toString(),
-                        candidateId, releaseSha256.orElse("none"), backend, engine)
-                : List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), candidateId,
-                        releaseSha256.orElse("none"), backend, engine);
+                ? List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), operation.toString(), candidateId, releaseSha256.orElse("none"), backend, engine)
+                : List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), candidateId, releaseSha256.orElse("none"), backend, engine);
         var observed = sender.send("deployment.publication.original-status.v1", unit,
                 "publication-original-status" + (attempt ? "-attempt" : ""), arguments, Duration.ofSeconds(30), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
@@ -169,15 +158,13 @@ final class DeploymentPublicationEvidenceChannel {
      * @param attempt whether operation ownership is required / 是否要求操作归属
      * @return verified discard or retained uncertainty / 已核实丢弃或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
-    OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit, java.util.UUID operation, boolean attempt)
-            throws ApiException {
+    OperationResult<Void> discardSnapshot(DeploymentUnitIdentity unit, java.util.UUID operation, boolean attempt) throws ApiException {
         Objects.requireNonNull(operation);
         var arguments = attempt
                 ? List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString(), operation.toString())
                 : List.of(unit.id(), unit.ownershipManifestSha256(), task.id().toString());
         var observed = sender.send("deployment.publication.snapshot-discard.v1", unit,
-                attempt ? "snapshot-discard-attempt" : "snapshot-discard-task", arguments, Duration.ofSeconds(60),
-                4096);
+                attempt ? "snapshot-discard-attempt" : "snapshot-discard-task", arguments, Duration.ofSeconds(60), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)

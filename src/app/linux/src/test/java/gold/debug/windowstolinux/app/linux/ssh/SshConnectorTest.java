@@ -23,7 +23,7 @@ class SshConnectorTest {
         var passwords = new AtomicInteger();
         var keys = new AtomicInteger();
         var trusted = new AtomicReference<String>();
-        try (var server = new LoopbackSshServer(root, ssh -> {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> {
             ssh.setPasswordAuthenticator((user, password, session) -> {
                 passwords.incrementAndGet();
                 return user.equals("fixture") && password.equals("isolated-ssh-password");
@@ -58,7 +58,7 @@ class SshConnectorTest {
     @Test
     void rejectedHostKeyNeverOffersCredentialsAndFailureCanBeRetriedExplicitly() throws Exception {
         var attempts = new AtomicInteger();
-        try (var server = new LoopbackSshServer(root, ssh -> ssh.setPasswordAuthenticator((u, p, s) -> {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> ssh.setPasswordAuthenticator((u, p, s) -> {
             attempts.incrementAndGet();
             return true;
         })); var connector = new SshConnector()) {
@@ -77,7 +77,7 @@ class SshConnectorTest {
 
     @Test
     void authenticationFailureClosesActualClientWithoutRetainingSecretDiagnostics() throws Exception {
-        try (var server = new LoopbackSshServer(root, ssh -> ssh.setPasswordAuthenticator((u, p, s) -> false));
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> ssh.setPasswordAuthenticator((u, p, s) -> false));
                 var connector = new SshConnector()) {
             var denied = assertThrows(ApiException.class, () -> connector.connect(endpoint(server.server().getPort()),
                     "never-log-this-password".toCharArray(), (e, key) -> true, Duration.ofSeconds(3), () -> false));
@@ -92,7 +92,7 @@ class SshConnectorTest {
     void shutdownDoesNotAbandonATrustDecisionAndSealsLaterDelivery() throws Exception {
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        try (var server = new LoopbackSshServer(root, ssh -> {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> {
         }); var connector = new SshConnector(); var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var connecting = executor.submit(
                     () -> connector.connect(endpoint(server.server().getPort()), "fixture".toCharArray(), (e, key) -> {
@@ -197,7 +197,7 @@ class SshConnectorTest {
 
     @Test
     void peerDisconnectDoesNotDiscardOwnedClientResources() throws Exception {
-        try (var server = new LoopbackSshServer(root, ssh -> {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> {
         }); var connector = new SshConnector()) {
             var connection = connector.connect(endpoint(server.server().getPort()), "fixture".toCharArray(),
                     (e, key) -> true, Duration.ofSeconds(3), () -> false);

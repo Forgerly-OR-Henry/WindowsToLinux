@@ -46,8 +46,10 @@ class PlatformSourceWindowTest {
                 return window;
             });
             TaskHandle<?> pending = null;
+            var callbackThrowable = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+            var cancellationProblem = new java.util.concurrent.atomic.AtomicReference<Problem>();
             try {
-                var source = runtime.source(OWNER, VERSION);
+                var source = runtime.capabilities().source(OWNER, VERSION);
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var read = binding.submit(request(), task -> {
                     var selection = source.selectDirectory("选择源码目录", task);
@@ -77,16 +79,18 @@ class PlatformSourceWindowTest {
                 assertEquals("fixture", new String(completed(read).content()));
                 await(() -> dialog("task.interaction.dialog") == null);
                 var cancel = binding.submit(request(), task -> {
-                    var cancelled = assertThrows(ApiException.class, () -> source.selectDirectory("取消目录选择", task));
-                    assertEquals(ProblemCode.CANCELLED, cancelled.problem().code());
-                    return new OperationResult<>(Outcome.CANCELLED, java.util.Optional.empty(),
-                            java.util.Optional.of(cancelled.problem()));
+                    try {
+                        var cancelled = assertThrows(ApiException.class, () -> source.selectDirectory("取消目录选择", task));
+                        cancellationProblem.set(cancelled.problem());
+                        assertEquals(ProblemCode.CANCELLED, cancelled.problem().code());
+                        return new OperationResult<>(Outcome.CANCELLED, java.util.Optional.empty(), java.util.Optional.of(cancelled.problem()));
+                    } catch (RuntimeException | Error failure) { callbackThrowable.set(failure); throw failure; }
                 });
                 pending = cancel;
                 await(() -> dialog("task.interaction.dialog") != null);
                 cancel.requestCancel();
                 assertEquals(Outcome.CANCELLED,
-                        cancel.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
+                        completedWithDiagnostics(runtime, cancel, callbackThrowable, cancellationProblem).outcome());
                 assertNull(onEdt(() -> dialog("task.interaction.dialog")));
                 assertEquals(0, count(runtime.persistence().database(),
                         "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -100,8 +104,18 @@ class PlatformSourceWindowTest {
                     return null;
                 });
                 if (pending != null)
-                    pending.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+                    completedWithDiagnostics(runtime, pending, callbackThrowable, cancellationProblem);
             }
+        }
+    }
+    private static OperationResult<?> completedWithDiagnostics(PlatformRuntime runtime, TaskHandle<?> task,
+            java.util.concurrent.atomic.AtomicReference<Throwable> callbackThrowable,
+            java.util.concurrent.atomic.AtomicReference<Problem> cancellationProblem) throws Exception {
+        try { return task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS); }
+        catch (java.util.concurrent.TimeoutException timeout) {
+            var failure = new AssertionError("Original source chooser task=" + task.snapshot() + "; cancellationProblem=" + cancellationProblem.get() + "; activeResources=" + count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"), timeout);
+            if (callbackThrowable.get() != null) failure.addSuppressed(callbackThrowable.get());
+            throw failure;
         }
     }
 }

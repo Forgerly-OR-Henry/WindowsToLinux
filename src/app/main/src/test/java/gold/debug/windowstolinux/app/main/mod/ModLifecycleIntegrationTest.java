@@ -16,10 +16,10 @@ import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;

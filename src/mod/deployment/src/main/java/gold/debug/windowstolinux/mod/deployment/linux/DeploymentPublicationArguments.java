@@ -87,7 +87,7 @@ public final class DeploymentPublicationArguments {
                         ? sqlite.physicalPath(applicationId, database.databaseId())
                         : sqlite.accessPath();
                 binding(values, database.databaseId(),
-                        new DeploymentDataPath(path, DeploymentDataPath.AccessMode.READ_WRITE, "sqlite", true),
+                        new DeploymentStoragePath(path, DeploymentStoragePath.AccessMode.READ_WRITE, "sqlite", true),
                         DeploymentStorageLocation.StorageResourceType.DATABASE, sqlite.location(), sqlite.fileName(),
                         sqlite.seedFile(), sqlite.initializationFiles(), "");
             }
@@ -105,12 +105,12 @@ public final class DeploymentPublicationArguments {
      * @param seed source seed / 来源种子
      * @param initialization initialization files / 初始化文件
      * @param digest immutable configuration content / 不可变配置内容 */
-    private static void binding(List<String> values, String id, DeploymentDataPath path,
+    private static void binding(List<String> values, String id, DeploymentStoragePath path,
             DeploymentStorageLocation.StorageResourceType type, DeploymentStorageLocation location, String databaseFile,
             String seed, List<String> initialization, String digest) {
         values.add(id);
         values.add(path.path());
-        values.add(path.access() == DeploymentDataPath.AccessMode.READ_ONLY ? "ro" : "rw");
+        values.add(path.access() == DeploymentStoragePath.AccessMode.READ_ONLY ? "ro" : "rw");
         values.add(type.name());
         values.add(location.type().name());
         values.add(location.path().isEmpty() ? "-" : location.path());

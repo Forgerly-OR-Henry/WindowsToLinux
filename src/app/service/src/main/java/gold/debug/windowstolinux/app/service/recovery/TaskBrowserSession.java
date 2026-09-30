@@ -99,7 +99,7 @@ public final class TaskBrowserSession implements BrowserTerminalSession {
         try {
             tasks.requireExecuting(task, owner, version);
         } catch (ApiException failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OPERATION_FAILED, failure);
         }
     }
 
@@ -187,7 +187,7 @@ public final class TaskBrowserSession implements BrowserTerminalSession {
                     } catch (ApiException accounting) {
                         failure.addSuppressed(accounting);
                     }
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+                    throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
                 }
             }
         }

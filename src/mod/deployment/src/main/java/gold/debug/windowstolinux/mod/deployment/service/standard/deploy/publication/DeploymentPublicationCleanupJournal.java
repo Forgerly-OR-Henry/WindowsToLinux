@@ -23,7 +23,8 @@ final class DeploymentPublicationCleanupJournal {
     static final String KEY = "deployment-publication-remote";
 
     /** Bounded JSON writer; no secret values enter this journal. / 有界JSON写入器；秘密值不进入此账本。 */
-    private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+    private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Original durable occupancy. / 原持久占用。 */
     private final TaskCheckpoint checkpoint;
@@ -134,9 +135,11 @@ final class DeploymentPublicationCleanupJournal {
         try {
             JsonNode parsed = JSON.readTree(snapshot.payload());
             if (!(parsed instanceof com.fasterxml.jackson.databind.node.ObjectNode facts)
-                    || !facts.path("version").isInt() || facts.path("version").intValue() != 2
+                    || !facts.path("version").isInt() || !java.util.Set.of(2, 3, 4).contains(facts.path("version").intValue())
                     || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("phase").isTextual())
                 throw new IllegalArgumentException("Original publication checkpoint is unsupported");
+            requireBuildFacts(facts, snapshot.payload());
+            DeploymentPublicationAttemptPointers.requireChild(facts);
             var journal = new DeploymentPublicationCleanupJournal(checkpoint, facts);
             journal.remoteClean = java.util.Set.of("REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED", "CLEANUP_VERIFIED")
                     .contains(facts.path("phase").textValue());
@@ -152,6 +155,163 @@ final class DeploymentPublicationCleanupJournal {
      * @return copied original fields / 已复制原字段 */
     JsonNode facts() {
         return facts.deepCopy();
+    }
+
+    /** Rejects coerced or incomplete build pointers before any retained resource can be observed or cleaned. / 观察或清理任一留存资源前拒绝强制转换或不完整构建指针。
+     * @param facts original checkpoint facts / 原检查点事实
+     * @param payload exact original UTF-8 envelope / 精确原UTF-8信封
+     * @throws IllegalArgumentException if a retained type, bound or predecessor is invalid / 留存类型、边界或前驱不合法时 */
+    private static void requireBuildFacts(JsonNode facts, String payload) {
+        if (payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
+            throw new IllegalArgumentException("Original publication checkpoint exceeds its admitted bound");
+        var hashes = java.util.Set.of("buildPlan", "buildScript", "buildTools", "buildFailureEvidence", "environmentTools", "buildReviewPrevious",
+                "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent");
+        for (String field : hashes) if (facts.has(field) && (!facts.path(field).isTextual() || !facts.path(field).textValue().matches("[0-9a-f]{64}")))
+            throw new IllegalArgumentException("Original build checkpoint digest is malformed");
+        if (facts.path("version").intValue() == 2) {
+            if (hashes.stream().anyMatch(facts::has) || facts.has("buildReviewState") || facts.has("environmentRecovery") || facts.has("buildReviewAttempt"))
+                throw new IllegalArgumentException("Original checkpoint version does not contain build review pointers");
+            return;
+        }
+        if ((facts.path("version").intValue() == 3 || facts.has("buildPlan") || facts.has("buildScript") || facts.has("buildTools"))
+                && (!facts.has("buildPlan") || !facts.has("buildScript") || !facts.has("buildTools")))
+            throw new IllegalArgumentException("Original build dispatch binding is incomplete");
+        if (facts.has("environmentRecovery") && (!facts.path("environmentRecovery").isTextual()
+                || !java.util.Set.of("MAY_HAVE_RUN", "VERIFIED").contains(facts.path("environmentRecovery").textValue())
+                || facts.path("environmentRecovery").textValue().equals("VERIFIED") != facts.has("environmentTools")))
+            throw new IllegalArgumentException("Original environment recovery receipt is incomplete");
+        if (!facts.has("environmentRecovery") && facts.has("environmentTools"))
+            throw new IllegalArgumentException("Original tool receipt lacks its recovery boundary");
+        if (facts.has("buildReviewState")) {
+            if (!facts.path("buildReviewState").isTextual() || !java.util.Set.of("PENDING", "CONFIRMED").contains(facts.path("buildReviewState").textValue())
+                    || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
+                    || java.util.List.of("buildReviewPrevious", "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent").stream().anyMatch(field -> !facts.has(field)))
+                throw new IllegalArgumentException("Original full review pointer is incomplete");
+        } else if (facts.has("buildReviewAttempt") || java.util.List.of("buildReviewPrevious", "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent").stream().anyMatch(facts::has))
+            throw new IllegalArgumentException("Original review pointer lacks its state");
+    }
+
+    /** Binds an actual prepared script and installed tools before its first possible build send. / 首次可能构建发送前绑定实际准备脚本及已安装工具。
+     * @param plan exact actual plan SHA / 精确实际计划SHA
+     * @param script exact fixed input SHA / 精确固定输入SHA
+     * @param tools complete installed tool binding SHA / 完整安装工具绑定SHA
+     * @return whether the physical dispatch binding was confirmed / 物理发送绑定是否确认 */
+    boolean buildStarting(String plan, String script, String tools) {
+        if (!facts.path("phase").asText().equals("CANDIDATE_MAY_EXIST") || !facts.path("planSha256").asText().equals(plan)
+                || !script.matches("[0-9a-f]{64}") || !tools.matches("[0-9a-f]{64}")) return false;
+        facts.put("version", Math.max(3, facts.path("version").intValue())).put("buildPlan", plan).put("buildScript", script).put("buildTools", tools);
+        facts.remove("buildFailureEvidence");
+        return mark("CANDIDATE_MAY_EXIST");
+    }
+
+    /** Records complete known failure evidence only for the actually bound build dispatch. / 仅为实际已绑定构建发送记录完整已知失败依据。
+     * @param plan actual failed plan SHA / 实际失败计划SHA
+     * @param evidence exact physical receipt SHA / 精确物理回执SHA
+     * @return whether failure was durably paired with the original dispatch / 失败是否已持久配对原发送 */
+    boolean buildFailed(String plan, String evidence) {
+        if (!facts.path("buildPlan").asText().equals(plan) || !evidence.matches("[0-9a-f]{64}")) return false;
+        facts.put("buildFailureEvidence", evidence);
+        return mark("CANDIDATE_MAY_EXIST");
+    }
+
+    /** Checks full recovery intent against the original physical dispatch and receipt pointers. / 按原物理发送与回执指针检查完整恢复意图。
+     * @param intent full original recovery consent / 完整原恢复同意
+     * @return whether all original executed bindings match / 全部原执行绑定是否匹配 */
+    boolean actualBuild(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
+        try {
+            return facts.path("buildPlan").asText().equals(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan()).reviewedRevision())
+                    && facts.path("buildScript").asText().equals(digest(intent.previousScript())) && facts.path("buildTools").asText().equals(digest(intent.previousTools()))
+                    && facts.path("buildFailureEvidence").asText().equals(digest(intent.failureEvidence()));
+        } catch (java.sql.SQLException invalid) { return false; }
+    }
+
+    /** Records a possible fixed installation effect only after full formal consent is confirmed. / 完整正式同意确认后才记录可能的固定安装效果。
+     * @param intent exactly stored recovery consent / 精确已存恢复同意
+     * @return whether its original effect boundary was confirmed / 原效果边界是否确认 */
+    boolean recoveryStarting(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
+        if (!actualBuild(intent)) return false;
+        facts.put("environmentRecovery", "MAY_HAVE_RUN"); facts.remove("environmentTools");
+        return mark("CANDIDATE_MAY_EXIST");
+    }
+
+    /** Records complete physically observed installation and binding completion. / 记录完整物理观察的安装及绑定完成。
+     * @param tools exact observed complete binding SHA / 精确已观察完整绑定SHA
+     * @return whether completion was persisted / 完成是否持久 */
+    boolean recoveryObserved(String tools) {
+        if (!facts.path("environmentRecovery").asText().equals("MAY_HAVE_RUN") || !tools.matches("[0-9a-f]{64}")) return false;
+        facts.put("environmentRecovery", "VERIFIED").put("environmentTools", tools);
+        return mark("CANDIDATE_MAY_EXIST");
+    }
+
+    /** Hashes exact bounded persisted input without exposing it. / 哈希精确有界持久输入，不公开其内容。
+     * @param value actual input / 实际输入
+     * @return exact lowercase SHA / 精确小写SHA */
+    private static String digest(String value) {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
+        catch (java.security.NoSuchAlgorithmException invalid) { throw new IllegalStateException("JDK SHA-256 unavailable", invalid); }
+    }
+
+    /** Persists bounded original-to-next pointers before consuming a full formal recovery intent. / 消费完整正式恢复意图前持久化有界原、新指针。
+     * @param intent complete consent stored in the formal request / 正式请求所存完整同意
+     * @return whether this exact pending pointer was confirmed / 此精确待确认指针是否获确认 */
+    boolean reviewPending(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
+        if (!facts.path("phase").asText().equals("CANDIDATE_MAY_EXIST") || !actualBuild(intent)) return false;
+        try {
+            var before = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan());
+            var after = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.nextPlan());
+            if (!facts.path("application").asText().equals(intent.unitId()) || !facts.path("planSha256").asText().equals(before.reviewedRevision())) return false;
+            facts.put("version", Math.max(3, facts.path("version").intValue())).put("buildReviewState", "PENDING").put("buildReviewAttempt", intent.attempt())
+                    .put("buildReviewPrevious", before.reviewedRevision()).put("buildReviewNext", after.reviewedRevision())
+                    .put("buildReviewRootPrevious", intent.previousRoot()).put("buildReviewRootNext", intent.nextRoot())
+                    .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
+            return mark("CANDIDATE_MAY_EXIST");
+        } catch (java.sql.SQLException invalid) { return false; }
+    }
+
+    /** Confirms the exact consumed formal transition before any new build send. / 任一新构建发送前确认精确已消费正式转换。
+     * @param review actual formally persisted transition / 实际正式持久转换
+     * @return whether the child pointer now matches its formal review / 子指针现在是否匹配正式审阅 */
+    boolean reviewConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview review) {
+        try {
+            var after = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan());
+            if (!facts.path("buildReviewState").asText().equals("PENDING") || facts.path("buildReviewAttempt").asInt() != review.attempt()
+                    || !facts.path("buildReviewPrevious").asText().equals(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.previousPlan()).reviewedRevision())
+                    || !facts.path("buildReviewNext").asText().equals(after.reviewedRevision()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())
+                    || !facts.path("buildReviewRootPrevious").asText().equals(review.previousRoot()) || !facts.path("buildReviewRootNext").asText().equals(review.nextRoot())) return false;
+            facts.put("planSha256", after.reviewedRevision()).put("buildReviewState", "CONFIRMED");
+            return mark("CANDIDATE_MAY_EXIST");
+        } catch (java.sql.SQLException invalid) { return false; }
+    }
+
+    /** Keeps the complete old closed operation while marking the next fixed environment action uncertain before send. / 保持完整旧关闭操作，并在发送前标记下一固定环境动作不明。
+     * @param intent full formally persisted original consent / 完整正式持久原同意
+     * @return whether exact pending occupancy was confirmed / 精确待定占用是否确认 */
+    boolean attemptBoundary(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptIntent intent) {
+        if (!confirmed || !remoteClean || !sessionClosed || !facts.path("phase").asText().equals("SESSION_CLOSED")) return false;
+        if (!DeploymentPublicationAttemptPointers.pendingChild(facts, intent)) return false;
+        return mark("SESSION_CLOSED");
+    }
+
+    /** Confirms actual fixed tool observations without advancing the formally reviewed operation. / 确认实际固定工具观察，不推进正式已审阅操作。
+     * @param tools exact complete observed binding SHA / 精确完整观察绑定SHA
+     * @return whether the physical environment observation was persisted / 物理环境观察是否已持久化 */
+    boolean attemptObserved(String tools) {
+        if (!facts.path("attemptState").asText().equals("PENDING") || !facts.path("attemptEnvironment").asText().equals("MAY_HAVE_RUN")
+                || !tools.matches("[0-9a-f]{64}")) return false;
+        facts.put("attemptEnvironment", "VERIFIED").put("attemptTools", tools);
+        return mark("SESSION_CLOSED");
+    }
+
+    /** Replaces only current-operation pointers after the exact formal CAS and old operation proof. / 精确正式CAS及旧操作证明后仅替换当前操作指针。
+     * @param review complete actually persisted final review / 完整实际持久最终审阅
+     * @param plan exact complete current component SHA / 精确完整当前组件SHA
+     * @param runtime actual newly confirmed fixed backend / 实际新确认固定后端
+     * @return whether the same original checkpoint now confirms the next operation / 同一原检查点是否已确认下一操作 */
+    boolean attemptConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptReview review,
+            String plan, DeploymentRuntimeDefinition runtime) {
+        if (!confirmed || !remoteClean || !sessionClosed || !DeploymentPublicationAttemptPointers.confirmChild(facts, review, plan, runtime)) return false;
+        remoteClean = false; sessionClosed = false;
+        return mark("CANDIDATE_MAY_EXIST");
     }
 
     /** Reports whether the original explicit checkpoint was already released. / 报告原显式检查点是否已释放。

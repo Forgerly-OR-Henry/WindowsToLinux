@@ -51,6 +51,9 @@ final class DeploymentStandardBuildExecutor {
         /** Installed exact tool identities. / 已安装的精确工具身份。 */
         final DeploymentResolvedToolchains tools;
 
+        /** Exact tools of the most recent actual build send. / 最近实际构建发送的精确工具。 */
+        DeploymentResolvedToolchains executedTools;
+
         /** Selected build engine. / 已选构建引擎。 */
         final String engine;
 
@@ -92,6 +95,7 @@ final class DeploymentStandardBuildExecutor {
             this.commands = commands;
             this.requirements = requirements;
             this.tools = tools;
+            this.executedTools = tools;
             this.engine = engine;
             this.attempt = attempt;
             this.session = session;
@@ -169,6 +173,39 @@ final class DeploymentStandardBuildExecutor {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
             InteractionService interaction, TaskContext task, DeploymentBuildBudget budget) throws ApiException {
+        return prepareForUpload(plan, session, interaction, task, budget, 0, true);
+    }
+
+    /** Uses only an explicitly reviewed catalog branch while retaining the original cumulative time. / 保留原累计时间，仅使用明确审阅目录分支。
+     * @param plan actual newly reviewed plan / 实际新审阅计划
+     * @param session original session / 原会话
+     * @param interaction original exact approval / 原精确审批
+     * @param task original task / 原任务
+     * @param budget unchanged original time budget / 不变原时间预算
+     * @param branch explicitly admitted fixed branch / 明确准入固定分支
+     * @param fallback whether original static minimum fallback remains allowed / 是否仍允许原静态最低版本回退
+     * @return confirmed installed selection / 已确认安装选择
+     * @throws ApiException if original approval or transport rejects / 原审批或传输拒绝时 */
+    OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback) throws ApiException {
+        return prepareForUpload(plan, session, interaction, task, budget, branch, fallback,
+                new DeploymentRemoteWorkspace(plan.request().facts().applicationId(), plan.request().archive().sha256()));
+    }
+
+    /** Prepares an explicitly named later candidate under the unchanged task and cumulative budget. / 在不变任务及累计预算下准备明确命名的后续候选。
+     * @param plan actual full reviewed plan / 实际完整审阅计划
+     * @param session authentic current borrowed connection / 真实当前借用连接
+     * @param interaction exact frozen business approval / 精确冻结业务审批
+     * @param task authentic original task / 真实原任务
+     * @param budget original cumulative execution time / 原累计执行时间
+     * @param branch explicitly reviewed fixed catalog branch / 明确审阅固定目录分支
+     * @param fallback whether the remaining shared retry permits fallback / 剩余共用重试是否允许回退
+     * @param workspace source and operation bound candidate / 来源及操作绑定候选
+     * @return confirmed actual installed selection / 已确认实际安装选择
+     * @throws ApiException if original authority rejects / 原权限拒绝时 */
+    OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback,
+            DeploymentRemoteWorkspace workspace) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
@@ -177,7 +214,9 @@ final class DeploymentStandardBuildExecutor {
         var facts = request.facts();
         var runtime = request.runtime();
         var limits = request.limits();
-        var workspace = new DeploymentRemoteWorkspace(facts.applicationId(), request.archive().sha256());
+        if (!Objects.requireNonNull(workspace).applicationId().equals(facts.applicationId())
+                || !workspace.archiveSha256().equals(request.archive().sha256()))
+            throw new IllegalArgumentException("Prepared operation changed original source or unit");
         var buildValues = new LinkedHashMap<String, String>();
         for (var entry : request.configuration().entries()) {
             if (entry.scope() == DeploymentConfigurationScopeType.BUILD)
@@ -207,10 +246,10 @@ final class DeploymentStandardBuildExecutor {
                     : unknownPrepared("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
         List<ToolchainRequirement> requirements = DeploymentProjectToolchainRequirements.from(facts, runtime);
         var preparer = new DeploymentToolchainPreparer(commands, catalog);
-        int attempt = 0;
+        int attempt = branch;
         OperationResult<DeploymentResolvedToolchains> prepared = preparer.prepare(requirements, attempt,
                 (int) budget.remainingSeconds());
-        if (prepared.outcome() == Outcome.FAILED
+        if (fallback && prepared.outcome() == Outcome.FAILED
                 && prepared.problem().orElseThrow().eventCode().equals("DEPLOYMENT_TOOLCHAIN_MINIMUM")
                 && hasAlternative(requirements)) {
             attempt = 1;
@@ -234,6 +273,19 @@ final class DeploymentStandardBuildExecutor {
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<DeploymentVerifiedBuildResult> buildPrepared(Prepared prepared, DeploymentRemoteWorkspace uploaded,
             RemoteSession session, TaskContext task) throws ApiException {
+        return buildPrepared(prepared, uploaded, session, task, true);
+    }
+
+    /** Keeps assisted retries outside the original static compiler fallback. / 将辅助重试置于原静态编译器回退之外。
+     * @param prepared actual installed selection / 实际安装选择
+     * @param uploaded verified original candidate / 已核原候选
+     * @param session original session / 原会话
+     * @param task original task / 原任务
+     * @param fallback whether ordinary static fallback is allowed / 是否允许普通静态回退
+     * @return confirmed original build outcome / 已确认原构建结果
+     * @throws ApiException if original authority refuses / 原权限拒绝时 */
+    OperationResult<DeploymentVerifiedBuildResult> buildPrepared(Prepared prepared, DeploymentRemoteWorkspace uploaded,
+            RemoteSession session, TaskContext task, boolean fallback) throws ApiException {
         Objects.requireNonNull(prepared);
         if (!prepared.workspace.equals(uploaded))
             throw new IllegalArgumentException("Uploaded candidate differs from prepared source");
@@ -254,16 +306,17 @@ final class DeploymentStandardBuildExecutor {
         var preparer = new DeploymentToolchainPreparer(commands, catalog);
         var built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
                 engine, prepared.tools);
-        if (built.outcome() == Outcome.FAILED
+        if (fallback && built.outcome() == Outcome.FAILED
                 && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")
                 && attempt == 0 && hasAlternative(requirements) && budget.remainingSeconds() > 60) {
             var second = preparer.prepare(requirements, 1, (int) budget.remainingSeconds());
             if (second.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(second);
+            prepared.executedTools = second.value().orElseThrow();
             built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
                     engine, second.value().orElseThrow());
         }
-        if (built.outcome() == Outcome.FAILED
+        if (fallback && built.outcome() == Outcome.FAILED
                 && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")) {
             var original = built.problem().orElseThrow();
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
@@ -292,12 +345,7 @@ final class DeploymentStandardBuildExecutor {
         long remaining = budget.remainingSeconds();
         if (remaining <= 15)
             return failed(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED");
-        String script = DeploymentBuildEnvironmentRenderer.render(environment) + ToolchainBuildEnvironment.render(tools)
-                + base + CompanionBuildScript.render(request.runtime().workload())
-                + (request.runtime().workload().companions().isEmpty()
-                        ? ""
-                        : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes()
-                                + "\n");
+        String script = script(base, request, environment, tools);
         var observed = commands.build(workspace, request.limits(), remaining - 15, engine, script,
                 BuildCompatibilityPolicy.groups());
         if (observed.outcome() == Outcome.UNKNOWN || observed.outcome() == Outcome.CANCELLED)
@@ -316,17 +364,32 @@ final class DeploymentStandardBuildExecutor {
         }
         if (receipt.conflicting() || receipt.exit() < 0 || receipt.bytes() > request.limits().maxOutputBytes() + 65536L)
             return unknown("DEPLOYMENT_BUILD_EVIDENCE_CONFLICT");
+        if (!receipt.uid().matches("[1-9][0-9]{0,9}") || !engine.equals(receipt.engine())
+                || !request.facts().buildTool().name().equals(receipt.tool()))
+            return unknown("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED");
         if (receipt.exit() != 0)
             return failedBuild(receipt,
                     receipt.compatible() && receipt.limit().equals("-")
                             ? "DEPLOYMENT_BUILD_COMPATIBLE_FAILURE"
                             : receipt.limit().equals("-") ? "DEPLOYMENT_BUILD_FAILED" : "DEPLOYMENT_BUILD_LIMIT");
-        if (!receipt.limit().equals("-") || !receipt.uid().matches("[1-9][0-9]{0,9}")
-                || !engine.equals(receipt.engine()) || !request.facts().buildTool().name().equals(receipt.tool()))
+        if (!receipt.limit().equals("-"))
             return unknown("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED");
         var result = new DeploymentVerifiedBuildResult(workspace.archiveSha256(), workspace.candidateId(), tools,
-                DeploymentToolchainBindingCodec.identity(tools));
+                DeploymentToolchainBindingCodec.identity(tools), workspace.operation());
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(result), Optional.empty());
+    }
+
+    /** Reconstructs only the exact fixed script sent with a confirmed tool selection. / 仅重建随已确认工具选择发送的精确固定脚本。
+     * @param base actual architecture renderer text / 实际架构渲染文本
+     * @param request complete reviewed request / 完整审阅请求
+     * @param environment fixed configuration values / 固定配置值
+     * @param tools actual installed tools / 实际安装工具
+     * @return complete fixed build input / 完整固定构建输入 */
+    static String script(String base, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentRequest request,
+            DeploymentBuildEnvironment environment, DeploymentResolvedToolchains tools) {
+        return DeploymentBuildEnvironmentRenderer.render(environment) + ToolchainBuildEnvironment.render(tools) + base
+                + CompanionBuildScript.render(request.runtime().workload()) + (request.runtime().workload().companions().isEmpty()
+                        ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n");
     }
 
     /** Reports a complete successful host command without interpreting author text. / 不解释作者文本，仅报告完整成功的宿主命令。
@@ -409,7 +472,7 @@ final class DeploymentStandardBuildExecutor {
         String tail = receipt.tail();
         String diagnostic = head.equals(tail) ? head : head + "\n[... output omitted ...]\n" + tail;
         var context = Map.of("exit", Integer.toString(receipt.exit()), "outputBytes", Long.toString(receipt.bytes()),
-                "outputSha256", receipt.digest(), "diagnostic", diagnostic);
+                "outputSha256", receipt.digest(), "diagnostic", diagnostic, "uid", receipt.uid(), "engine", receipt.engine(), "tool", receipt.tool());
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
                 event, "Reviewed build failed: " + diagnostic, context, Optional.empty())));
     }

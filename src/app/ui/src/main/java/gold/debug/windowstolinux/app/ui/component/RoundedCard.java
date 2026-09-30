@@ -12,7 +12,7 @@ final class RoundedCard extends JPanel {
      * Outline.
      * <p>轮廓。
      */
-    private final Color outline;
+    private Color outline;
 
     /**
      * Binds the supplied dependencies and state for rounded card.
@@ -27,6 +27,13 @@ final class RoundedCard extends JPanel {
         this.outline = outline;
         setBackground(background);
         setOpaque(false);
+    }
+
+    /** Updates the explicitly themed outline of this existing card. / 更新已有卡片明确的主题轮廓。
+     * @param outline effective outline color / 生效轮廓颜色 */
+    void outline(Color outline) {
+        this.outline = outline;
+        repaint();
     }
 
     /**

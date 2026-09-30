@@ -16,10 +16,8 @@ class DeploymentConfigurationSnapshotTest {
         var entries = DeploymentConfigurationInput.parse("PORT=8080;BUILD:OPTIMIZE=true;LABEL=production");
         var now = Instant.parse("2026-09-27T00:00:00.123456Z");
         var snapshot = DeploymentConfigurationSnapshot.create("demo", 2, "v1", now, entries);
-        var legacy = gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot.create("demo", 2, "v1", now,
-                gold.debug.windowstolinux.shared.config.input.DeploymentConfigurationParser
-                        .parse("PORT=8080;BUILD:OPTIMIZE=true;LABEL=production"));
-        assertEquals(legacy.sha256(), snapshot.sha256());
+        // Frozen original digest; original-format-provenance.md records the archived writer. / 冻结的原摘要；出处见旧格式样本记录。
+        assertEquals("572a20bfd4263bfa7bc11b9a0ef0ce46b46710ea01439566982ce882ef2a3134", snapshot.sha256());
         assertEquals(snapshot.sha256(), DeploymentConfigurationSnapshot
                 .create("demo", 2, "v1", now.plusSeconds(1), entries.reversed()).sha256());
         assertNotEquals(snapshot.sha256(),

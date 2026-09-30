@@ -15,7 +15,7 @@ import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.appapi.task.CancellationToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * Performs the source tree's bounded, read-only safety traversal.
@@ -120,7 +120,7 @@ public final class BoundedSourceInspector {
      */
     private static RejectionReason reason(String code, String messageKey, String nextAction,
             java.util.Map<String, ?> arguments) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey, arguments), nextAction);
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(messageKey, arguments), nextAction);
     }
 
     /**

@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
 
 /**
  * Resolves application message keys and non-recursive named placeholders from a locale bundle.
@@ -54,13 +54,7 @@ public final class MessageCatalog {
      * Locale.
      * <p>区域。
      */
-    private final Locale locale;
-
-    /**
-     * Bundle.
-     * <p>资源包。
-     */
-    private final ResourceBundle bundle;
+    private volatile CatalogState state;
 
     /**
      * Validates and binds the inputs required by message catalog.
@@ -70,9 +64,7 @@ public final class MessageCatalog {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private MessageCatalog(Locale locale) {
-        this.locale = Objects.requireNonNull(locale, "locale");
-        this.bundle = ResourceBundle.getBundle(BUNDLE_NAME, locale,
-                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES));
+        this.state = load(Objects.requireNonNull(locale, "locale"));
     }
 
     /**
@@ -187,8 +179,28 @@ public final class MessageCatalog {
      * @return the operation result / 操作结果
      */
     public Locale locale() {
-        return locale;
+        return state.locale();
     }
+
+    /** Changes language while preserving this catalog's consumers. / 切换语言并保留本目录的使用方。
+     * @param languageTag supported language preference / 受支持语言偏好 */
+    public void language(String languageTag) {
+        state = load(SIMPLIFIED_CHINESE_TAG.equals(normalizeLanguageTag(languageTag))
+                ? Locale.SIMPLIFIED_CHINESE : Locale.ENGLISH);
+    }
+
+    /** Loads a locale and bundle as one published value. / 将区域和资源包加载为同一发布值。
+     * @param locale selected locale / 已选区域
+     * @return matching catalog state / 匹配的目录状态 */
+    private static CatalogState load(Locale locale) {
+        return new CatalogState(locale, ResourceBundle.getBundle(BUNDLE_NAME, locale,
+                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES)));
+    }
+
+    /** Atomically paired language and resources. / 原子配对的语言和资源。
+     * @param locale selected locale / 已选区域
+     * @param bundle matching resources / 匹配资源 */
+    private record CatalogState(Locale locale, ResourceBundle bundle) { }
 
     /**
      * Returns the distinct named placeholders referenced by the localized message.
@@ -217,7 +229,7 @@ public final class MessageCatalog {
      */
     private String lookup(String key) {
         try {
-            return bundle.getString(Objects.requireNonNull(key, "key"));
+            return state.bundle().getString(Objects.requireNonNull(key, "key"));
         } catch (MissingResourceException exception) {
             throw new IllegalArgumentException("missing message key: " + key, exception);
         }

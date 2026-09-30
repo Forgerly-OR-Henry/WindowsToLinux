@@ -13,8 +13,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 import gold.debug.windowstolinux.app.db.persistence.repository.ServerReferenceRepository;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.*;
@@ -56,7 +56,7 @@ class PlatformServerReferenceTest {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
             var business = new TaskModDatabase(db, runtime.tasks(), schema);
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var reference = completed(binding.submit(request("server"), task -> {
                 var reserved = access.reserve(SERVER, "application/42", task);
@@ -81,7 +81,7 @@ class PlatformServerReferenceTest {
                     OWNER, "0".repeat(64), PlatformModIntentsTest.manifest(OWNER, "1.0.1", Map.of(), "1", List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version='1.0.1',actual_version='1.0.1' WHERE mod_id=?",
                     OWNER);
-            var next = runtime.serverAccess(OWNER, "1.0.1", Optional.of(schema));
+            var next = runtime.capabilities().serverAccess(OWNER, "1.0.1", Optional.of(schema));
             completed(runtime.tasks().bind(OWNER, "1.0.1", false).submit(request("server"), task -> {
                 var retained = next.reserve(SERVER, "application/42", task);
                 assertEquals(reference, retained.id());
@@ -113,7 +113,7 @@ class PlatformServerReferenceTest {
             for (var id : List.of("server-a", "server-z"))
                 runtime.persistence().servers()
                         .saveServerProfile(new StoredServerProfile(id, "host.example", 22, "alice", "credential", id));
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var request = new TaskRequest("discover", "Discover servers", List.of(), true);
             var callbackFailure = new AtomicReference<Throwable>();
@@ -161,7 +161,7 @@ class PlatformServerReferenceTest {
             for (var id : List.of("server-a", "server-z"))
                 runtime.persistence().servers()
                         .saveServerProfile(new StoredServerProfile(id, "host.example", 22, "alice", "credential", id));
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.empty());
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.empty());
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var original = new AtomicReference<TaskContext>();
             var cursor = completed(binding.submit(request("server-a", "server-z"), task -> {
@@ -211,7 +211,7 @@ class PlatformServerReferenceTest {
     void cancellationAllowsOwnedReferenceCleanupButRefusesNewReservations() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
             var ready = new CountDownLatch(1);
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                 var reference = access.reserve(SERVER, "cancelled-draft", task);
@@ -242,7 +242,7 @@ class PlatformServerReferenceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var reference = new AtomicReference<ServerReference>();
             var original = new AtomicReference<TaskContext>();
@@ -280,7 +280,7 @@ class PlatformServerReferenceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_no_release CHECK(released_at IS NULL)");
             var original = new AtomicReference<TaskContext>();
@@ -310,8 +310,8 @@ class PlatformServerReferenceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var access = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var wrong = runtime.serverAccess(OWNER, VERSION,
+            var access = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var wrong = runtime.capabilities().serverAccess(OWNER, VERSION,
                     Optional.of(new SchemaIdentity(OWNER, "1", UUID.randomUUID())));
             var foreignReferences = new LinkedHashMap<SchemaIdentity, ServerReference>();
             for (var foreignOwner : List.of(OWNER, "example.foreign")) {

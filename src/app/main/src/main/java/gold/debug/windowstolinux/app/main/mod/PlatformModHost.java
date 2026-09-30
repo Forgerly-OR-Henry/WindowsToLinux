@@ -32,7 +32,7 @@ public interface PlatformModHost {
      * @param platformApi actual host API release / 实际宿主 API 版本
      * @return retained original lifecycle session / 保留的原生命周期会话
      * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
-    gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession modSession(
+    gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession modSession(
             gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
             java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
             gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
@@ -41,7 +41,7 @@ public interface PlatformModHost {
 
     /** Exposes original sessions for host cleanup retries without replaying author startup. / 向宿主清理重试提供原会话，不重放作者启动。
      * @return retained session identities / 保留会话身份 */
-    java.util.Map<String, gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession> modSessions();
+    java.util.Map<String, gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession> modSessions();
 
     /** Returns host-only Mod intent management using the actual compiled public API identity. / 使用实际编译公开 API 身份返回仅供宿主的 Mod 意图管理。
      * @return original management service / 原管理服务

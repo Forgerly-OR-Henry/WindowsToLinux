@@ -40,7 +40,7 @@ public record RecoverySnapshot(String id, State state, String messageCode, Optio
     /** Copies core state into the UI contract without exposing Linux types to the view. / 将核心状态复制到 UI 契约，不向视图暴露 Linux 类型。
      * @param value original core snapshot / 原核心快照
      * @return immutable UI observation with the original Problem / 带原 Problem 的不可变 UI 观察 */
-    public static RecoverySnapshot from(gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot value) {
+    public static RecoverySnapshot from(gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySnapshot value) {
         return new RecoverySnapshot(value.id(), State.valueOf(value.state().name()), value.messageCode(), value.action()
                 .map(action -> new Action(action.command(), action.reason(), action.expected(), action.highImpact())),
                 value.confirmation(), value.resultUnknown(), value.decisions(), value.modelAttempts(), value.failure());

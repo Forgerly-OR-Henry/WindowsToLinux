@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Evid
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageEcosystemType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
 
 /**
@@ -67,7 +67,7 @@ public final class JavaLanguageInspector {
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static AnalysisEvidence evidence(String key, String source) {
-        return new AnalysisEvidence(LocalizedMessage.of(key), source,
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+        return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), source,
+                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

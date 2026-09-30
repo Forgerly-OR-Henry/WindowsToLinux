@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.appapi.task.*;
 public final class TaskInteractionPresenter
         implements
             PlatformInteractionService.Prompts,
-            gold.debug.windowstolinux.app.service.source.PlatformSourceAccess.DirectoryPicker {
+            gold.debug.windowstolinux.app.service.contract.spi.SourceDirectoryPicker {
     /** Actual owner whose lock controller covers these dialogs. / 锁定控制器遮挡这些对话框的实际所有者。 */
     private final JFrame owner;
 

@@ -8,7 +8,7 @@ import javax.swing.table.DefaultTableModel;
 
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /** Host-only diagnostic inventory, bounded record view and explicit history cleanup. / 仅宿主的诊断清单、有界记录视图及明确历史清理。 */
 public final class LogSettingsPane extends JPanel implements AutoCloseable {
@@ -52,13 +52,14 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
         this.messages = Objects.requireNonNull(messages);
         setName("platform.logs");
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
-        reload = components.secondaryButton(messages.text("logs.reload"));
+        reload = messages.bind(components.secondaryButton(""), "logs.reload");
         reload.setName("logs.reload");
-        clean = components.secondaryButton(messages.text("logs.clean"));
+        clean = messages.bind(components.secondaryButton(""), "logs.clean");
         clean.setName("logs.clean");
-        inspect = components.secondaryButton(messages.text("logs.inspect"));
+        inspect = messages.bind(components.secondaryButton(""), "logs.inspect");
         inspect.setName("logs.inspect");
         debug = new JCheckBox(messages.text("logs.debug"), service.debug());
+        messages.bind(debug, "logs.debug");
         debug.setName("logs.debug");
         reload.addActionListener(event -> load(false));
         clean.addActionListener(event -> load(true));
@@ -70,7 +71,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
         actions.add(inspect);
         actions.add(debug);
         var heading = components.transparent(new BorderLayout(8, 8));
-        heading.add(new JLabel(messages.text("logs.explanation")), BorderLayout.NORTH);
+        heading.add(messages.bind(new JLabel(), "logs.explanation"), BorderLayout.NORTH);
         heading.add(actions, BorderLayout.CENTER);
         status.setName("logs.status");
         heading.add(status, BorderLayout.SOUTH);
@@ -141,7 +142,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
             }
         };
         for (var item : categories)
-            model.addRow(new Object[]{item.target().owner(), item.target().logical(), categoryName(item.target()),
+            model.addRow(new Object[]{item.target().owner(), item.target().logical(), categoryName(item.target().logical(), item.target().category(), item.target().displayName()),
                     count(item.databaseAfter()), count(item.databaseRemoved()), count(item.fileAfter()),
                     count(item.fileRemoved()),
                     messages.text(item.problem().isEmpty() ? "logs.verified" : "logs.unconfirmed")});
@@ -149,12 +150,12 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
     }
 
     /** Displays localized platform categories or the author's registered label. / 显示本地化平台类别或作者登记标签。
-     * @param target actual registered category / 实际登记类别
+     * @param logical original logical owner / 原逻辑归属
+     * @param category original category identifier / 原类别标识
+     * @param displayName author's registered category label / 作者登记的类别标签
      * @return visible category name / 可见类别名称 */
-    private String categoryName(gold.debug.windowstolinux.app.db.log.LogRepository.Target target) {
-        return target.logical().equals("app")
-                ? messages.text("logs.category." + target.category())
-                : target.displayName();
+    private String categoryName(String logical, String category, String displayName) {
+        return logical.equals("app") ? messages.text("logs.category." + category) : displayName;
     }
 
     /** Formats absence as unknown rather than zero. / 将缺失格式化为未知而不是零。

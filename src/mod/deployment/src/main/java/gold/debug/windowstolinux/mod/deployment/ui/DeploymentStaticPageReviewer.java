@@ -463,6 +463,97 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         return cancelled();
     }
 
+    /** Edits only four build fields while retaining the original resource decisions. / 仅编辑四个构建字段并保留原资源决定。
+     * @param server original target / 原目标
+     * @param sourceSha256 frozen source digest / 冻结来源摘要
+     * @param prompt original component and correction fields / 原组件及纠正字段
+     * @param original complete original answers / 完整原答案
+     * @param task original publication task / 原发布任务
+     * @return explicitly reviewed correction or cancellation / 明确审阅的纠正或取消 */
+    @Override
+    public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerRef server,
+            String sourceSha256, DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
+            TaskContext task) {
+        var form = page.onEdt(() -> new BuildCorrectionForm(page, sourceSha256, prompt, original));
+        while (page.active(view)) {
+            if (!page.approve(view, form.panel, page.text("runtimeReview"), task))
+                return cancelled();
+            try {
+                var answer = page.onEdt(form::answer);
+                page.validateReview(prompt, answer);
+                return success(answer);
+            } catch (IllegalArgumentException invalid) {
+                page.onEdt(() -> {
+                    form.error.setText(page.text("invalidForm"));
+                    return null;
+                });
+            }
+        }
+        return cancelled();
+    }
+
+    /** Four bounded build controls, without editable resource or risk controls. / 四项有界构建控件，不含可编辑资源或风险控件。 */
+    private static final class BuildCorrectionForm {
+        /** Original complete answers. / 完整原答案。 */
+        private final DeploymentStaticWorkflow.Answers original;
+
+        /** Visible correction fields. / 可见纠正字段。 */
+        private final Map<String, JComponent> fields = new LinkedHashMap<>();
+
+        /** Current owner-view form. / 当前所属视图表单。 */
+        private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+
+        /** Validation message. / 校验提示。 */
+        private final JLabel error = new JLabel();
+
+        /** Builds exactly the original component's four correction controls. / 仅创建原组件的四个纠正控件。
+         * @param page original owner view / 原所属视图
+         * @param sourceSha256 frozen source / 冻结来源
+         * @param prompt typed correction prompt / 类型化纠正问题
+         * @param original complete original answers / 完整原答案 */
+        private BuildCorrectionForm(DeploymentStaticPage page, String sourceSha256,
+                DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original) {
+            this.original = original;
+            panel.add(new JLabel(page.text("sourceDigest")));
+            panel.add(new JLabel(sourceSha256));
+            panel.add(new JLabel(page.text("application")));
+            panel.add(new JLabel(prompt.applicationId()));
+            for (var field : prompt.fields()) {
+                String prefix = prompt.componentId() + "/";
+                if (!field.id().startsWith(prefix))
+                    throw new IllegalArgumentException("Build correction belongs to another component");
+                String key = field.id().substring(prefix.length());
+                if (!Set.of("primary", "secondary", "version", "jvmTarget").contains(key) || fields.containsKey(key))
+                    throw new IllegalArgumentException("Build correction field differs from the original scope");
+                JComponent input = field.choices().isEmpty()
+                        ? new JTextField(field.value())
+                        : new JComboBox<>(field.choices().toArray(String[]::new));
+                if (input instanceof JComboBox<?> choices)
+                    choices.setSelectedItem(field.value());
+                input.setName(key);
+                fields.put(key, input);
+                panel.add(new JLabel(label(page, key)));
+                panel.add(input);
+            }
+            if (!fields.keySet().equals(Set.of("primary", "secondary", "version", "jvmTarget")))
+                throw new IllegalArgumentException("Build correction requires exactly four fields");
+            panel.add(error);
+            panel.add(new JLabel());
+        }
+
+        /** Copies the original answers and replaces only the four visible values. / 复制原答案并仅替换四项可见值。
+         * @return corrected values with identical resources, limits and risks / 资源、限额和风险相同的纠正值 */
+        private DeploymentStaticWorkflow.Answers answer() {
+            var values = new LinkedHashMap<>(original.values());
+            fields.forEach((key, control) -> values.put(key,
+                    control instanceof JTextField text
+                            ? text.getText().trim()
+                            : String.valueOf(((JComboBox<?>) control).getSelectedItem())));
+            return new DeploymentStaticWorkflow.Answers(values, original.files(), original.limits(),
+                    original.containerRisk(), original.adapterRisk());
+        }
+    }
+
     /** One complete editable review on the EDT. / EDT 上的一份完整可编辑审阅。 */
     private static final class ReviewForm {
         /** Tabbed review container. / 分页审阅容器。 */
@@ -742,8 +833,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         /** Forms a managed file identity from explicit row controls. / 由明确行控件生成受管文件身份。
          * @return reviewed file binding / 经审阅文件绑定 */
         private DeploymentFileBinding binding() {
-            var mode = DeploymentDataPath.AccessMode.valueOf((String) access.getSelectedItem());
-            var data = new DeploymentDataPath(path.getText().trim(), mode, schema.getText().trim(), true);
+            var mode = DeploymentStoragePath.AccessMode.valueOf((String) access.getSelectedItem());
+            var data = new DeploymentStoragePath(path.getText().trim(), mode, schema.getText().trim(), true);
             var storage = location.getText().isBlank()
                     ? DeploymentStorageLocation.defaults()
                     : DeploymentStorageLocation.custom(location.getText().trim());

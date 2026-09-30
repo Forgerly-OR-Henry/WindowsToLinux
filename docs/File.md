@@ -1,17 +1,17 @@
 # WindowsToLinux 源码模块与包结构
 
-> **1.1 目标结构：** [目录标记说明](#phase-1-1-reading) · [完整目标目录及逐项职责](#phase-1-1-tree) · [目标依赖关系](#phase-1-1-dependencies) · [已确认的 Mod 源码规范](#mod-source-layout)。第 1～7 节记录当前源码结构及维护规则；第 8 节记录已确认目标结构，二者不混用。
+> **1.1 目标结构：** [目录标记说明](#phase-1-1-reading) · [完整目标目录及逐项职责](#phase-1-1-tree) · [目标依赖关系](#phase-1-1-dependencies) · [已确认的 Mod 源码规范](#mod-source-layout)。第 1～7 节记录当前活动源码及维护规则；第 8 节保留 1.1 职责设计与 Mod 规范，未实现内容明确标记。
 
 ## 文档信息
 
-> 当前实现与 1.1 设计分开维护：第 1 节当前目录树和第 5 节依赖方向继续供现有架构门禁读取；新的详细目录只见文末 [1.1 目标结构](#phase-1-1-target)。当前仍有 `src/shared`；已增量加入 `src/appapi`、`src/app/mod`、`src/app/linux`、`src/app/ai`、`src/app/source` 及平台基础实现，默认入口已切换 H2 安全外壳、常驻模型配置/能力验证、服务器配置/SSH 认证检查、连接与传输阈值设置、独立平台授权偏好、日志查看/清理和保留任务取消/核对，受管辅助进程已接任务账本及日志，跨 Mod 同步服务已接真实类身份和逐调用资源占用；平台任务范围授权已接真实 SSH，官方业务 Mod 的 Git 来源与发布引用原任务已部分接线，部署页面和引擎接入仍待完成。下方当前包树已补入真实存在的 1.1 节点；旧 shared/web 仍活动，依赖门禁及完整活动图尚待 S3 切换。0.x 的未实施规划如与 1.1 冲突，已由 [1.1 工程](development/PHASE-1.1.md)取代。
+当前根 Maven 聚合已切换为 `src/appapi`、`src/app` 和 `src/mod`；旧 shared/web 与 SQLite JDBC 已退出活动依赖。APP 默认入口保持 H2 2.5.250、原任务与能力授权、常驻服务器/模型配置、救援和 Mod 生命周期。官方 deployment Mod 已承接确定性、辅助和自主模式及部署后管理；功能闭环按各批实际证据记录，当前源码结构不代表未通过的跨 Mod、恢复或最终 GUI 验收已经完成。
 
-- 文档版本：`4.0.0-standard-agent`
-- 文档状态：1.1 增量改造进行中；旧 shared/web 尚在根构建，完整活动模块与结构门禁待切换。0.x 业务尚未全部接入新默认入口；本机证据与远端未验收边界见 1.1 开发文档。
-- 当前实现范围：根构建增量包含 `appapi`、`app`、业务 `mod` 聚合、旧 `shared` 与旧 `web`；`app/mod` 已承载运行基础，`app/linux` 已承载独立 SSH 认证、命令及 SFTP，`app/ai` 已承载通用模型编解码与有界 HTTP 调用，service 已接公开任务、审批、服务器引用、秘密及 AiService 适配。默认 CLASS 与安装版入口已接已选 Mod 的依赖启动和逆序停止；`src/mod/pom.xml` 是明确开发工作区的聚合锚点，已接官方 deployment 子模块的入口、db、secret、source、service/core/config、model、service/standard/analyze 完整静态分析、service/standard/deploy 审阅计划与固定渲染，以及借用同一原任务、素材与会话的主机准入、工具准备、候选上传、受限构建、单组件与最多 16 组件整图的发布、健康及已知回滚；其余职责包随真实业务实现加入，不创建空包。旧 shared/ai 暂时复用 app/ai 的正文限额接收器，随业务迁移移除此过渡依赖。目标活动根为 `appapi`、`app` 和官方业务 `mod`，Web 后置。
+- 文档状态：1.1 源码迁移进行中；活动根已切换，完整干净根编译、结构门禁及剩余本机行为仍待集中验证。
+- 当前实现范围：12 个 Maven 叶子模块；平台装配在 `app/main`，公开 Mod 合同在 `appapi`，业务实现及其 helper、资源和 H2 Schema 在 `mod/deployment`。目录只列实际源码包，不创建空职责包。
+- 历史边界：`history-src` 保持冻结；仍存的旧 `src/shared`/`src/web` 文件不属于根活动构建，S6 备份 Mod 与 S7 发行打包仍暂缓。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
-- 更新日期：2026-09-28（1.1 增量实施；完整目标图仍待切换）
+- 更新日期：2026-09-30（活动根切换；最终验收未完成）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
 - 功能分工：[分析与 Linux 部署链](development/PHASE-0.3.md#architecture)
 
@@ -19,35 +19,25 @@
 
 ## 1. 完整目标结构
 
-本节保留当前 0.x 实现对应的目录及明确标记的历史预留，不代表 1.1 新结构。标题保留以兼容现有文档解析器。叶子模块下直接展示的是对应 Java 根包的子包，省略重复的 Maven `src/main/java` 路径；物理目录模板见第 4.1 节。`pom.xml` 作为聚合入口固定置顶，其余模块和内部包按英文名称排序。
+叶子模块下展示对应 Java 根包的真实子包，省略重复的 Maven `src/main/java` 路径；物理模板见第 4.1 节。根与聚合 `pom.xml` 固定置顶，内部包按英文名称排序。此树覆盖当前活动 Maven 源码，不以旧 shared/web 目录或规划包替代实际类型。
 
 ```text
 WindowsToLinux/
 ├─ pom.xml
 ├─ docs/
-│  ├─ development/                          开发总纲与各期工程文档
-│  │  ├─ DEVELOPMENT.md                    开发总纲与文档导航
-│  │  ├─ PHASE-0.1.md                             0.1 期主文档
-│  │  ├─ PHASE-0.2.md                             0.2 期主文档
-│  │  ├─ PHASE-0.3.md                             0.3 期主文档
-│  │  ├─ PHASE-0.4.md                             0.4 期主文档
-│  │  ├─ PHASE-0.5.md                             0.5 期主文档
-│  │  ├─ PHASE-0.6.md                             0.6 期历史主文档
-│  │  └─ PHASE-1.1.md                             1.1 期平台化设计与修改计划，待实施
-│  ├─ AllFile.md                               全文件架构索引
-│  ├─ APP.md                                APP 发布与安装布局
-│  ├─ File.md                                 源码模块、包结构与命名
-│  ├─ Mod.md                                官方与第三方共同使用的 Mod 包格式设计
-│  ├─ PRODUCT-MANUAL.md                       产品说明书
-│  └─ Runtime.md                            运行约定、数据库与安全机制
+├─ history-src/
 └─ src/
    ├─ app/
    │  ├─ pom.xml
    │  ├─ ai/
-   │  │  ├─ protocol/
+   │  │  ├─ pom.xml
+   │  │  ├─ catalog/
+   │  │  ├─ execution/
+   │  │  │  └─ protocol/
    │  │  ├─ recovery/
    │  │  └─ transport/
    │  ├─ db/
+   │  │  ├─ pom.xml
    │  │  ├─ bootstrap/
    │  │  ├─ entity/
    │  │  ├─ execution/
@@ -57,33 +47,35 @@ WindowsToLinux/
    │  │  ├─ mod/
    │  │  ├─ persistence/
    │  │  │  ├─ connection/
-   │  │  │  ├─ repository/
-   │  │  │  └─ serialization/
-   │  │  ├─ schema/
+   │  │  │  └─ repository/
    │  │  └─ task/
    │  ├─ linux/
+   │  │  ├─ pom.xml
    │  │  ├─ recovery/
    │  │  └─ ssh/
    │  ├─ main/
+   │  │  ├─ pom.xml
    │  │  ├─ diagnostic/
    │  │  ├─ mod/
    │  │  ├─ runtime/
    │  │  └─ startup/
    │  ├─ mod/
+   │  │  ├─ pom.xml
    │  │  ├─ development/
+   │  │  ├─ execution/
+   │  │  │  └─ lifecycle/
    │  │  ├─ installation/
-   │  │  ├─ lifecycle/
    │  │  ├─ loader/
    │  │  ├─ manifest/
    │  │  ├─ process/
    │  │  ├─ service/
    │  │  └─ version/
    │  ├─ secret/
+   │  │  ├─ pom.xml
    │  │  └─ crypto/
    │  ├─ service/
+   │  │  ├─ pom.xml
    │  │  ├─ ai/
-   │  │  ├─ backup/
-   │  │  ├─ config/
    │  │  ├─ contract/
    │  │  │  ├─ definition/
    │  │  │  ├─ profile/
@@ -91,16 +83,7 @@ WindowsToLinux/
    │  │  │  ├─ security/
    │  │  │  └─ spi/
    │  │  ├─ database/
-   │  │  ├─ deployment/
-   │  │  │  ├─ automatic/
-   │  │  │  ├─ multi/
-   │  │  │  └─ single/
-   │  │  ├─ execution/
-   │  │  │  ├─ environment/
-   │  │  │  └─ lifecycle/
-   │  │  ├─ failure/
    │  │  ├─ linux/
-   │  │  ├─ lock/
    │  │  ├─ log/
    │  │  ├─ mod/
    │  │  ├─ process/
@@ -111,25 +94,23 @@ WindowsToLinux/
    │  │  ├─ source/
    │  │  └─ task/
    │  ├─ source/
+   │  │  ├─ pom.xml
    │  │  ├─ boundary/
    │  │  └─ snapshot/
    │  ├─ ui/
+   │  │  ├─ pom.xml
    │  │  ├─ ai/
-   │  │  ├─ backup/
    │  │  ├─ component/
-   │  │  ├─ deployment/
-   │  │  │  ├─ automatic/
-   │  │  │  └─ multi/
    │  │  ├─ diagnostic/
    │  │  ├─ display/
    │  │  ├─ i18n/
-   │  │  ├─ managed/
    │  │  ├─ mod/
    │  │  ├─ recovery/
    │  │  ├─ server/
    │  │  ├─ setting/
    │  │  └─ shell/
    │  └─ windows/
+   │     ├─ pom.xml
    │     ├─ filesystem/
    │     ├─ security/
    │     ├─ uninstall/
@@ -137,6 +118,7 @@ WindowsToLinux/
    │     ├─ window/
    │     └─ workspace/
    ├─ appapi/
+   │  ├─ pom.xml
    │  ├─ ai/
    │  ├─ db/
    │  ├─ linux/
@@ -146,403 +128,114 @@ WindowsToLinux/
    │  ├─ source/
    │  ├─ task/
    │  └─ ui/
-   ├─ mod/                                  业务 Mod 聚合
-   │  ├─ pom.xml
-   │  └─ deployment/                         官方部署主模块；业务迁移进行中
-   │     ├─ Mod.java
-   │     ├─ ai/
-   │     ├─ db/
-   │     ├─ linux/
-   │     ├─ secret/
-   │     ├─ service/
-   │     │  ├─ agent/
-   │     │  ├─ core/
-   │     │  │  ├─ config/
-   │     │  │  ├─ delivery/
-   │     │  │  └─ model/
-   │     │  │     ├─ analysis/
-   │     │  │     ├─ assessment/
-   │     │  │     ├─ capability/
-   │     │  │     ├─ ecosystem/
-   │     │  │     │  └─ db/
-   │     │  │     ├─ language/
-   │     │  │     ├─ message/
-   │     │  │     ├─ project/
-   │     │  │     │  └─ component/
-   │     │  │     ├─ server/
-   │     │  │     │  └─ security/
-   │     │  │     └─ toolchain/
-   │     │  └─ standard/
-   │     │     ├─ analyze/
-   │     │     │  ├─ component/
-   │     │     │  ├─ contract/
-   │     │     │  │  ├─ policy/
-   │     │     │  │  └─ spi/
-   │     │     │  ├─ core/
-   │     │     │  ├─ ecosystem/
-   │     │     │  │  ├─ c/
-   │     │     │  │  │  └─ cmake/
-   │     │     │  │  ├─ db/
-   │     │     │  │  ├─ dotnet/
-   │     │     │  │  │  └─ dotnetsdk/
-   │     │     │  │  ├─ go/
-   │     │     │  │  │  └─ gomodule/
-   │     │     │  │  ├─ java/
-   │     │     │  │  │  ├─ gradle/
-   │     │     │  │  │  ├─ jar/
-   │     │     │  │  │  ├─ jdk/
-   │     │     │  │  │  └─ maven/
-   │     │     │  │  ├─ kotlin/
-   │     │     │  │  │  ├─ gradle/
-   │     │     │  │  │  └─ kotlinc/
-   │     │     │  │  ├─ node/
-   │     │     │  │  │  ├─ npm/
-   │     │     │  │  │  ├─ pnpm/
-   │     │     │  │  │  └─ yarn/
-   │     │     │  │  ├─ php/
-   │     │     │  │  │  ├─ composer/
-   │     │     │  │  │  └─ phpcli/
-   │     │     │  │  ├─ python/
-   │     │     │  │  │  ├─ pip/
-   │     │     │  │  │  ├─ pipenv/
-   │     │     │  │  │  ├─ poetry/
-   │     │     │  │  │  └─ uv/
-   │     │     │  │  ├─ ruby/
-   │     │     │  │  │  ├─ bundler/
-   │     │     │  │  │  └─ rubycli/
-   │     │     │  │  └─ rust/
-   │     │     │  │     └─ cargo/
-   │     │     │  ├─ extension/
-   │     │     │  │  └─ registry/
-   │     │     │  ├─ preview/
-   │     │     │  ├─ service/
-   │     │     │  ├─ source/
-   │     │     │  ├─ toolchain/
-   │     │     │  └─ workload/
-   │     │     └─ deploy/
-   │     │        ├─ assistance/
-   │     │        ├─ build/
-   │     │        │  ├─ contract/
-   │     │        │  │  └─ spi/
-   │     │        │  ├─ ecosystem/
-   │     │        │  │  ├─ java/
-   │     │        │  │  ├─ kotlin/
-   │     │        │  │  ├─ node/
-   │     │        │  │  ├─ php/
-   │     │        │  │  ├─ python/
-   │     │        │  │  └─ ruby/
-   │     │        │  ├─ extension/
-   │     │        │  │  └─ registry/
-   │     │        │  ├─ generation/
-   │     │        │  │  └─ script/
-   │     │        │  └─ workload/
-   │     │        ├─ contract/
-   │     │        │  └─ spi/
-   │     │        ├─ database/
-   │     │        ├─ extension/
-   │     │        │  ├─ adapter/
-   │     │        │  └─ registry/
-   │     │        ├─ input/
-   │     │        ├─ plan/
-   │     │        ├─ publication/
-   │     │        ├─ support/
-   │     │        │  ├─ distro/
-   │     │        │  └─ runtime/
-   │     │        └─ toolchain/
-   │     ├─ source/
-   │     │  └─ git/
-   │     └─ ui/
-   ├─ shared/
-   │  ├─ pom.xml
-   │  ├─ agent/
-   │  │  ├─ approval/
-   │  │  ├─ execution/
-   │  │  │  └─ protocol/
-   │  │  └─ tool/
-   │  ├─ ai/
-   │  │  ├─ client/
-   │  │  ├─ collaboration/
-   │  │  │  ├─ advice/
-   │  │  │  ├─ invocation/
-   │  │  │  └─ role/
-   │  │  ├─ execution/
-   │  │  │  └─ protocol/
-   │  │  ├─ generation/
-   │  │  │  └─ prompt/
-   │  │  ├─ parser/
-   │  │  ├─ provider/
-   │  │  ├─ recovery/
-   │  │  ├─ redaction/
-   │  │  └─ transport/
-   │  ├─ backup/
-   │  │  ├─ contract/
-   │  │  │  ├─ definition/
-   │  │  │  ├─ spi/
-   │  │  │  └─ validation/
-   │  │  ├─ crypto/
-   │  │  ├─ execution/
-   │  │  │  ├─ collection/
-   │  │  │  └─ migration/
-   │  │  ├─ extension/
-   │  │  │  ├─ adapter/
-   │  │  │  └─ registry/
-   │  │  ├─ format/
-   │  │  ├─ manifest/
-   │  │  └─ restore/
-   │  ├─ config/
-   │  │  ├─ contract/
-   │  │  │  └─ definition/
-   │  │  ├─ input/
-   │  │  ├─ persistence/
-   │  │  │  └─ serialization/
-   │  │  ├─ resource/
-   │  │  ├─ revision/
-   │  │  └─ secretref/
-   │  ├─ deploy/
-   │  │  ├─ approval/
-   │  │  ├─ contract/
-   │  │  │  ├─ result/
-   │  │  │  │  ├─ deployment/
-   │  │  │  │  └─ lifecycle/
-   │  │  │  └─ spi/
-   │  │  ├─ delivery/
-   │  │  ├─ error/
-   │  │  ├─ execution/
-   │  │  │  ├─ environment/
-   │  │  │  ├─ lifecycle/
-   │  │  │  └─ transaction/
-   │  │  ├─ publication/
-   │  │  └─ task/
-   │  ├─ git/
-   │  │  └─ snapshot/
-   │  ├─ linux-sshd/
-   │  │  ├─ backup/
-   │  │  │  ├─ execution/
-   │  │  │  │  └─ protocol/
-   │  │  │  └─ generation/
-   │  │  │     └─ script/
-   │  │  ├─ capability/
-   │  │  │  └─ ecosystem/
-   │  │  ├─ command/
-   │  │  ├─ connection/
-   │  │  ├─ distro/
-   │  │  │  └─ dnf/
-   │  │  ├─ execution/
-   │  │  │  ├─ protocol/
-   │  │  │  │  ├─ database/
-   │  │  │  │  ├─ helper/
-   │  │  │  │  ├─ input/
-   │  │  │  │  ├─ release/
-   │  │  │  │  ├─ restore/
-   │  │  │  │  └─ runtime/
-   │  │  │  └─ transfer/
-   │  │  ├─ runtime/
-   │  │  │  └─ systemd/
-   │  │  ├─ session/
-   │  │  └─ workspace/
-   │  ├─ linux/
-   │  │  ├─ build/
-   │  │  ├─ capability/
-   │  │  ├─ command/
-   │  │  ├─ connection/
-   │  │  ├─ distro/
-   │  │  ├─ ecosystem/
-   │  │  │  └─ db/
-   │  │  ├─ error/
-   │  │  ├─ protocol/
-   │  │  │  ├─ backup/
-   │  │  │  ├─ database/
-   │  │  │  └─ restore/
-   │  │  ├─ runtime/
-   │  │  ├─ session/
-   │  │  ├─ transfer/
-   │  │  └─ workspace/
-   │  ├─ model/
-   │  │  ├─ agent/
-   │  │  ├─ ai/
-   │  │  ├─ analysis/
-   │  │  ├─ archive/
-   │  │  ├─ assessment/
-   │  │  ├─ capability/
-   │  │  ├─ deployment/
-   │  │  ├─ ecosystem/
-   │  │  │  └─ db/
-   │  │  │     ├─ other/
-   │  │  │     └─ sql/
-   │  │  ├─ failure/
-   │  │  ├─ health/
-   │  │  ├─ language/
-   │  │  ├─ lifecycle/
-   │  │  ├─ managed/
-   │  │  ├─ message/
-   │  │  ├─ project/
-   │  │  │  ├─ application/
-   │  │  │  └─ component/
-   │  │  ├─ security/
-   │  │  ├─ server/
-   │  │  │  └─ security/
-   │  │  └─ toolchain/
-   │  ├─ source/
-   │  │  ├─ archive/
-   │  │  ├─ browse/
-   │  │  ├─ contract/
-   │  │  │  └─ validation/
-   │  │  ├─ manifest/
-   │  │  └─ snapshot/
-   │  └─ standard/
-   │     ├─ pom.xml
-   │     ├─ analyze/
-   │     │  ├─ component/
-   │     │  ├─ contract/
-   │     │  │  ├─ policy/
-   │     │  │  └─ spi/
-   │     │  ├─ core/
-   │     │  ├─ ecosystem/
-   │     │  │  ├─ c/
-   │     │  │  │  └─ cmake/
-   │     │  │  ├─ db/
-   │     │  │  ├─ dotnet/
-   │     │  │  │  └─ dotnetsdk/
-   │     │  │  ├─ go/
-   │     │  │  │  └─ gomodule/
-   │     │  │  ├─ java/
-   │     │  │  │  ├─ gradle/
-   │     │  │  │  ├─ jar/
-   │     │  │  │  ├─ jdk/
-   │     │  │  │  └─ maven/
-   │     │  │  ├─ kotlin/
-   │     │  │  │  ├─ gradle/
-   │     │  │  │  └─ kotlinc/
-   │     │  │  ├─ node/
-   │     │  │  │  ├─ npm/
-   │     │  │  │  ├─ pnpm/
-   │     │  │  │  └─ yarn/
-   │     │  │  ├─ php/
-   │     │  │  │  ├─ composer/
-   │     │  │  │  └─ phpcli/
-   │     │  │  ├─ python/
-   │     │  │  │  ├─ pip/
-   │     │  │  │  ├─ pipenv/
-   │     │  │  │  ├─ poetry/
-   │     │  │  │  └─ uv/
-   │     │  │  ├─ ruby/
-   │     │  │  │  ├─ bundler/
-   │     │  │  │  └─ rubycli/
-   │     │  │  └─ rust/
-   │     │  │     └─ cargo/
-   │     │  ├─ extension/
-   │     │  │  └─ registry/
-   │     │  ├─ preview/
-   │     │  ├─ service/
-   │     │  ├─ source/
-   │     │  ├─ toolchain/
-   │     │  └─ workload/
-   │     └─ deploy/
-   │        ├─ assistance/
-   │        │  └─ execution/
-   │        │     └─ protocol/
-   │        ├─ build/
-   │        │  ├─ contract/
-   │        │  │  └─ spi/
-   │        │  ├─ ecosystem/
-   │        │  │  ├─ java/
-   │        │  │  ├─ kotlin/
-   │        │  │  ├─ node/
-   │        │  │  ├─ php/
-   │        │  │  ├─ python/
-   │        │  │  └─ ruby/
-   │        │  ├─ extension/
-   │        │  │  └─ registry/
-   │        │  ├─ generation/
-   │        │  │  └─ script/
-   │        │  └─ workload/
-   │        ├─ contract/
-   │        │  ├─ result/
-   │        │  │  └─ compatibility/
-   │        │  └─ spi/
-   │        ├─ distro/
-   │        │  ├─ apt/
-   │        │  ├─ contract/
-   │        │  │  └─ profile/
-   │        │  ├─ dnf/
-   │        │  ├─ extension/
-   │        │  │  └─ registry/
-   │        │  └─ generation/
-   │        │     └─ script/
-   │        ├─ execution/
-   │        │  ├─ environment/
-   │        │  └─ transaction/
-   │        ├─ extension/
-   │        │  ├─ adapter/
-   │        │  └─ registry/
-   │        ├─ input/
-   │        ├─ plan/
-   │        ├─ support/
-   │        │  ├─ distro/
-   │        │  └─ runtime/
-   │        └─ toolchain/
-   └─ web/
+   └─ mod/
       ├─ pom.xml
-      ├─ api/
-      │  ├─ account/
-      │  ├─ audit/
-      │  ├─ config/
-      │  ├─ controller/
-      │  ├─ error/
-      │  ├─ filter/
-      │  ├─ release/
-      │  └─ workspace/
-      ├─ auth/
-      │  ├─ authorization/
-      │  ├─ csrf/
-      │  ├─ identity/
-      │  ├─ initialization/
-      │  ├─ login/
-      │  ├─ ratelimit/
-      │  └─ session/
-      ├─ db/
-      │  ├─ config/
-      │  ├─ entity/
-      │  ├─ execution/
-      │  │  └─ migration/
-      │  ├─ persistence/
-      │  │  ├─ mapper/
-      │  │  └─ repository/
-      │  └─ runtime/
-      ├─ file/
-      │  ├─ quota/
-      │  ├─ upload/
-      │  └─ workspace/
-      ├─ main/
-      │  ├─ config/
-      │  ├─ runtime/
-      │  └─ startup/
-      ├─ secret/
-      │  ├─ credential/
-      │  ├─ crypto/
-      │  ├─ masterkey/
-      │  └─ password/
-      ├─ service/
-      │  ├─ account/
-      │  ├─ ai/
-      │  ├─ audit/
-      │  ├─ backup/
-      │  ├─ config/
-      │  ├─ contract/
-      │  │  └─ validation/
-      │  ├─ deployment/
-      │  ├─ execution/
-      │  │  └─ lifecycle/
-      │  ├─ interaction/
-      │  ├─ persistence/
-      │  │  └─ serialization/
-      │  ├─ release/
-      │  ├─ server/
-      │  ├─ source/
-      │  └─ workspace/
-      └─ task/
-         ├─ model/
-         └─ scheduler/
+      └─ deployment/
+         ├─ pom.xml
+         ├─ ai/
+         ├─ api/
+         ├─ db/
+         ├─ linux/
+         ├─ secret/
+         ├─ service/
+         │  ├─ agent/
+         │  ├─ core/
+         │  │  ├─ config/
+         │  │  ├─ delivery/
+         │  │  ├─ execution/
+         │  │  └─ model/
+         │  │     ├─ analysis/
+         │  │     ├─ assessment/
+         │  │     ├─ capability/
+         │  │     ├─ ecosystem/
+         │  │     │  └─ db/
+         │  │     ├─ language/
+         │  │     ├─ message/
+         │  │     ├─ project/
+         │  │     │  └─ component/
+         │  │     ├─ server/
+         │  │     │  └─ security/
+         │  │     └─ toolchain/
+         │  └─ standard/
+         │     ├─ analyze/
+         │     │  ├─ component/
+         │     │  ├─ contract/
+         │     │  │  ├─ policy/
+         │     │  │  └─ spi/
+         │     │  ├─ core/
+         │     │  ├─ ecosystem/
+         │     │  │  ├─ c/
+         │     │  │  │  └─ cmake/
+         │     │  │  ├─ db/
+         │     │  │  ├─ dotnet/
+         │     │  │  │  └─ dotnetsdk/
+         │     │  │  ├─ go/
+         │     │  │  │  └─ gomodule/
+         │     │  │  ├─ java/
+         │     │  │  │  ├─ gradle/
+         │     │  │  │  ├─ jar/
+         │     │  │  │  ├─ jdk/
+         │     │  │  │  └─ maven/
+         │     │  │  ├─ kotlin/
+         │     │  │  │  ├─ gradle/
+         │     │  │  │  └─ kotlinc/
+         │     │  │  ├─ node/
+         │     │  │  │  ├─ npm/
+         │     │  │  │  ├─ pnpm/
+         │     │  │  │  └─ yarn/
+         │     │  │  ├─ php/
+         │     │  │  │  ├─ composer/
+         │     │  │  │  └─ phpcli/
+         │     │  │  ├─ python/
+         │     │  │  │  ├─ pip/
+         │     │  │  │  ├─ pipenv/
+         │     │  │  │  ├─ poetry/
+         │     │  │  │  └─ uv/
+         │     │  │  ├─ ruby/
+         │     │  │  │  ├─ bundler/
+         │     │  │  │  └─ rubycli/
+         │     │  │  └─ rust/
+         │     │  │     └─ cargo/
+         │     │  ├─ extension/
+         │     │  │  └─ registry/
+         │     │  ├─ preview/
+         │     │  ├─ service/
+         │     │  ├─ source/
+         │     │  ├─ toolchain/
+         │     │  └─ workload/
+         │     └─ deploy/
+         │        ├─ assistance/
+         │        ├─ build/
+         │        │  ├─ contract/
+         │        │  │  └─ spi/
+         │        │  ├─ ecosystem/
+         │        │  │  ├─ java/
+         │        │  │  ├─ kotlin/
+         │        │  │  ├─ node/
+         │        │  │  ├─ php/
+         │        │  │  ├─ python/
+         │        │  │  └─ ruby/
+         │        │  ├─ extension/
+         │        │  │  └─ registry/
+         │        │  ├─ generation/
+         │        │  │  └─ script/
+         │        │  └─ workload/
+         │        ├─ contract/
+         │        │  └─ spi/
+         │        ├─ database/
+         │        ├─ extension/
+         │        │  ├─ adapter/
+         │        │  └─ registry/
+         │        ├─ input/
+         │        ├─ plan/
+         │        ├─ publication/
+         │        ├─ support/
+         │        │  ├─ distro/
+         │        │  └─ runtime/
+         │        └─ toolchain/
+         ├─ source/
+         │  └─ git/
+         └─ ui/
 ```
 
 根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，分为 `single-language` 和 `multi-language`。单语言场景以 `success-` 或 `failure-` 标明预期部署结果，后接功能名称；多语言每种组合只保留一个完整成功样例。完整场景及用途见 [测试夹具说明](../test/README.md)。
@@ -562,35 +255,21 @@ test/
 
 多语言项目包括五个网页和三个控制台工具。Java、Go、C#、PHP、Kotlin、Python 分别拥有项目内 SQLite，Rust/C/C++ 工具通过子进程 JSON 协议协作；不引入数据库服务。`src/app/main/src/test/python/polyglot_runner.py` 在隔离副本构建、分配回环端口并执行验收，`src/app/main/src/test/browser` 独立管理与仓库同版本的 Playwright 依赖。源码覆盖由 `MultiLanguageFixtureMatrixTest` 门禁检查；本地行为与 Linux 产品部署证据分开维护，见 [多语言验证记录](../test/multi-language/VERIFICATION.md)。
 
-- 项目根目录的 [pom.xml](../pom.xml) 作为 Maven 父工程和总聚合入口。
-- `src/app/pom.xml` 作为桌面应用模块聚合入口，使用 Maven `pom` 打包类型，不放业务源码。
-- `db`、`main`、`secret`、`service`、`ui` 和 `windows` 都是独立 Maven 叶子模块。
-- `src/shared/pom.xml` 作为共用模块聚合入口，使用 Maven `pom` 打包类型，不放业务源码。
-- `ai`、`analyze`、`backup`、`config`、`deploy`、`git`、`linux`、`linux-sshd`、`model` 和 `source` 都是正式目标 Maven 叶子模块。
-- `shared/config` 的 artifactId 为 `windowstolinux-shared-config`，Java 根包为 `gold.debug.windowstolinux.shared.config`；`shared/linux-sshd` 的 artifactId 为 `windowstolinux-shared-linux-sshd`，Java 根包为 `gold.debug.windowstolinux.shared.linux.sshd`；`shared/source` 的 artifactId 为 `windowstolinux-shared-source`，Java 根包为 `gold.debug.windowstolinux.shared.source`。
-- `src/web/pom.xml` 作为 Web 后端模块聚合入口，使用 Maven `pom` 打包类型，不放业务源码。
-- `api`、`auth`、`db`、`file`、`main`、`secret`、`service` 和 `task` 都是独立 Maven 叶子模块。
-- `frontend` 是由 `package.json` 管理的 Vue 3、TypeScript 和 Vite 工程，不套用 Java Maven 叶子模块目录；`web/main` 的 Maven 构建安装本地 Node、执行 npm ci、类型检查和 Vite 构建，将产物打入 Spring Boot 静态资源。运行时只启动 Java，分发为 `web.jar` 与外置 `lib`；正式发布尚未实现，旧 0.6 期方向见历史文档，新官网方向见 1.1。`web/frontend/src/shared` 是前端复用目录，不是 `src/shared` Maven 聚合模块。
-- Maven 坐标统一使用 `gold.debug.windowstolinux`，根父工程为 `windowstolinux-parent:0.1.0-SNAPSHOT`，编译目标为 Java 21。
-- WindowsToLinux 自身构建使用开发机的系统 Maven 和系统本地仓库；项目 POM 不声明仓库位置，不创建项目专用 Maven 仓库，也不新增 Maven Wrapper 作为本项目构建入口。
-- 构建插件确需额外构建期依赖时，在根 POM 对应插件的 `<dependencies>` 中显式声明，供系统 Maven 同步；不得为了补插件缓存而把依赖加入业务叶子模块的运行时 classpath。
-- 第 1 节是正式目标结构。结构迁移必须原子更新包声明、物理路径、导入、测试和门禁；旧包前缀与薄包装类不保留兼容壳。
-- `shared/backup` 已实现平台无关归档、数据库适配、候选恢复和离线迁移核心；桌面 `app/service.backup` 已组合完整远端备份、受管目标恢复和双服务器离线迁移，`app/ui.backup` 已提供对应产品入口。`shared/backup.crypto` 使用独立调用级备份密码实现 Argon2id 64 MiB/3 次/1 路派生、AES-256-GCM 认证加密及严格秘密修订载荷，服务对象不持有密码或派生密钥。Windows 更新/卸载安全核心已存在，生产独立执行器尚未实现，旧 0.6 期规划仅作历史依据。Web 已实现 0.5 期回环内部测试服务台；`auth`、账号/空间/审计/发布和登录密码包仅有 0.6 期包文档预留。数据库先建立多用户表和作用域外键，0.5 期只启用固定内部身份。公共官网尚未实现；原正式多用户执行方向已由 1.1 工程取代。
+- 根 `pom.xml` 聚合 `src/appapi`、`src/app`、`src/mod`；后两项为不含业务源码的聚合模块。
+- 当前 12 个叶子模块为 `appapi`、`app/ai`、`app/db`、`app/linux`、`app/main`、`app/mod`、`app/secret`、`app/service`、`app/source`、`app/ui`、`app/windows`、`mod/deployment`；坐标统一使用 `gold.debug.windowstolinux`，Java 编译目标为 21。
+- Maven 使用开发机的系统安装和系统本地仓库；POM 不声明仓库位置，不创建项目专用仓库或 Maven Wrapper。构建插件的必要构建期依赖在根 POM 对应插件中声明，不加入业务运行时 classpath。
+- 结构迁移原子更新包声明、物理路径、导入、测试和门禁；退出活动图的 shared/web 及历史 SQLite 不作为兼容壳继续装配。`history-src` 保持冻结，S6 备份 Mod 与 S7 发行打包暂缓。
 
 ### 1.1 稳定职责边界
 
-- `shared.standard.analyze` 只读取有界源码并生成确定性事实；跨语言协调归 `core`，规则和 SPI 归 `contract`，注册归 `extension`，语言和构建架构实现归 `ecosystem`，数据库声明检查归 `ecosystem.db`，工作负载识别归 `workload`。
-- `shared.linux` 只定义平台无关的类型化 Linux 契约；受管备份制品只以固定种类、受管身份、摘要、长度和流式传输契约表达，Apache SSHD、Shell 渲染、目标机目录选择及 PAX/OCI 命令实现只位于 `shared.linux-sshd`。
-- `shared.standard.deploy.build` 保留构建执行入口；SPI、注册表和安全脚本分别归 `build.contract`、`build.extension`、`build.generation`，生态构建归 `build.ecosystem`，容器与静态站点构建归 `build.workload`。
-- `shared.linux-sshd.capability` 保留平台能力采集；语言、构建工具链及其版本解析归 `capability.ecosystem`，APT/DNF 包名不得进入该包。
-- `shared.standard.deploy.distro` 负责标准流程的发行版软件包选择和安装策略；APT 与 DNF 分别形成完整扩展单元，不实现语言构建命令。六种发行版各有一个具名准备类，直接位于 `distro.apt` 或 `distro.dnf`；不增加单文件发行版子包。具体类持有版本、包集合和额外准备选择，公共 Renderer 复用包管理器流程，`DistributionSetupCatalog` 仅装配这六种已有实现。
-- `shared.deploy` 保存公共任务/审批、发布与生命周期，静态专属请求、Adapter、注册表和支持判断归 `shared.standard.deploy`；不得以共用命名掩盖引擎职责。
-- `model` 保存跨模块共享的纯事实和值对象；DB 专属类型与规则统一归 `model.ecosystem.db`，语言枚举、项目事实、部署计划和 UI 模型保持既有职责包。
-- helper 的协议基础、输入、发布、运行和生命周期片段保持职责分组；语言或工具链分派片段位于 `execution/protocol/helper/fragments/ecosystem`，原生 DB 片段位于 `execution/protocol/helper/fragments/database`。仅 classpath 路径迁移不得改变组装字节、顺序、协议版本或固定摘要；身份与工作区协议如有行为变化，须同步对应协议、摘要及快照。
-- 服务器原生 DB 的模型、分析、远程契约使用各模块的 `ecosystem.db`；SSHD 实现归 `execution.protocol.database`，native helper 归 `execution/protocol/helper/fragments/database/`。UI、本地持久化、秘密、Git、备份及应用用例继续按自身职责分包，不按被部署项目的语言复制结构。
-- 运行能力与实机证据不由包结构决定；新增生态或构建架构必须在对应分期文档中单独定义实现、测试和验收范围。
-
-实际生产 Java 包必须出现在目标树；`[PLANNED]` 节点及其子树声明未实施职责；旧 Web 预留已被新方向取代，仅为解释现有包说明而保留标记，不要求继续实现。Web 只有包说明的 0.6 期节点继承该标记，前端实际文件由 [AllFile.md](AllFile.md) 记录。文档节点与依赖由反例测试检查，不因包或类型存在而宣称运行验收通过。
+- `appapi` 只定义公开 Mod 合同；原任务、资源、Schema、秘密、引用、素材和远程会话由 APP 实现并准入，Mod 不取得 H2 管理连接或原始 SSHD 对象。
+- `app/main` 装配实际平台；`app/service` 绑定任务、授权和能力，`app/db` 保存平台 H2 记录，`app/mod` 实现安装及生命周期。平台不读取 deployment 私有业务表。
+- `mod/deployment/service/standard/analyze` 只生成来源绑定的确定性事实；跨语言协调、规则、注册、生态与工作负载分别归其现有职责包。辅助与自主模式各自拥有提案和执行门禁，不反向依赖彼此的算法。
+- `mod/deployment/service/core/model` 保存多个引擎共用纯值；公共交付归 `service/core/delivery`，业务记录归 `db`，秘密引用归 `secret`。Source 和 Git 编排归 `source`，不复制平台素材能力。
+- 标准计划、构建、工具链、输入与发布分别归 `service/standard/deploy` 的实际职责包。发行版和运行时支持判断分别归 `support/distro`、`support/runtime`；不因类数或目录对称新增模块、空包或委托壳。
+- `app/linux` 独占 Apache SSHD 与物理命令、传输实现；Mod `linux` 通过公开受管 RemoteSession 发送固定业务协议。语言或工具链差异不得复制 SSH/SFTP、任务准入或通用执行逻辑。
+- helper 按显式清单组装；语言分派位于 `fragments/ecosystem`，原生数据库位于 `fragments/database`，其余基础、输入、发布、运行、备份和恢复片段按实际职责分组。仅资源迁移不改变组装字节、顺序、协议或固定摘要；行为变更需同步身份与合同。
+- 文件、包和类型存在不证明运行验收完成；真实 Linux 与本机受控回包分别记录。实际活动包必须出现在第一节，独立验收夹具不属于 Maven 业务模块。
 
 ## 2. 统一命名规范
 
@@ -617,7 +296,7 @@ test/
 | M-04 | 模块名不得包含实现阶段。                                   | `deploy`                     | `phase3-deploy`          |
 | M-05 | 模块名不得包含临时状态。                                   | `analyze`                    | `new-analyze`            |
 | M-06 | 模块名不得表达普通内部分类。                               | `linux`                      | `linux-renderers`        |
-| M-07 | 模块仅因已确认的独立职责调整；名称整理本身不构成拆分理由。 | `shared/deploy` 保持完整模块 | 将 `policy` 拆成独立模块 |
+| M-07 | 模块仅因已确认的独立职责调整；名称整理本身不构成拆分理由。 | `mod/deployment` 保持完整模块 | 将 `policy` 拆成独立模块 |
 | M-08 | 平台实现模块使用明确技术限定词。                           | `linux-sshd`                 | `linux-impl`             |
 
 ### 2.2 包结构与标准职责包
@@ -705,7 +384,7 @@ test/
 
 `persistence.connection` 只表示数据库或事务连接。`linux.connection` 等远程连接契约继续按所属功能命名，不迁入持久化功能组；公开结果统一归 `contract.result`。
 
-桌面持久化使用 `persistence.connection` 与 `persistence.repository`；Web 使用 `persistence.mapper`、`persistence.repository` 和 Spring 受管事务，连接池在 Web 启动配置中建立。平台无关运行时文档编解码位于 `shared.config.persistence.serialization`。0.6 期未实现职责只保留包说明。
+APP H2 连接基础与仓库分别归当前 `app/db` 的连接及 `persistence.repository` 职责；Mod 自有 Schema 的仓库及有界复杂列编解码归 `mod/deployment/db`。退出活动图的 Web/MyBatis 结构不作为当前实现例外，也不因通用职责名提前创建空包。
 
 ### 2.3 正交功能维度
 
@@ -968,7 +647,7 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 | E-02 | 名称必须说明失败边界。                                                                                                   | `SecretStoreException`                     | `OperationException`                   |
 | E-03 | 公共异常不得直接以底层实现细节命名。                                                                                     | `LinuxOperationException`                  | `SshChannelException`                  |
 | E-04 | 安全异常名称不得包含秘密内容。                                                                                           | `SecretStoreException`                     | `InvalidPasswordValueException`        |
-| E-05 | 1.1 受控失败以公开实例方法 `Problem problem()` 暴露安全原因；未迁移代码保留 `FailureCarrier`。本地化消息与安全诊断分离。 | `ApiException`、`BrowserRecoveryException` | 原始 `exception.getMessage()` 用户回退 |
+| E-05 | 1.1 受控失败以公开实例方法 `Problem problem()` 暴露安全原因。本地化消息与安全诊断分离。 | `ApiException`、`BrowserRecoveryException` | 原始 `exception.getMessage()` 用户回退 |
 | E-06 | 异常使用 `[FailureBoundary]Exception`，名称说明模块内失败边界。                                                          | `SourceArchiveException`                   | `SourceError`、`OperationException`    |
 | E-07 | 模块错误枚举使用 `[Boundary]FailureType`。                                                                               | `LinuxOperationFailureType`                | `LinuxError`、`FailureKind`            |
 | E-08 | 只有重复的确定性转换逻辑才建立 `[BoundaryOrTechnology]FailureMapper`。                                                   | `SqliteFailureMapper`                      | 单次使用的通用 `ErrorManager`          |
@@ -1026,92 +705,60 @@ UPPER_SNAKE_CASE
 
 ## 3. 模块职责
 
-### 3.1 `shared` 共用模块
+### 3.1 `appapi` 公开合同
 
-| 模块               | 职责                                                                           |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `model`            | 服务器、受管运行记录、配置/备份共享的数据契约；无引擎依赖                      |
-| `source`           | 目录冻结、快照摘要、受控目录/分页读取/搜索和源码归档                           |
-| `git`              | Git 取材与版本化源码准备                                                       |
-| `config`           | 版本化配置、秘密引用和资源绑定                                                 |
-| `ai`               | Provider、传输、通用结构化协议；不承载部署决策循环                             |
-| `linux`            | 命令/结果、传输、远端源码补丁、观察、受管运行端口                              |
-| `linux-sshd`       | SSHD 会话、受管 helper、身份/目录隔离及端口实现                                |
-| `deploy`           | 实际命令审批、任务控制、候选发布、健康检查、回滚和生命周期                     |
-| `backup`           | 既有应用备份恢复和迁移，依赖公共部署层                                         |
-| `standard`         | Maven 聚合，无 Java 源码                                                       |
-| `standard/analyze` | 独立 Maven 模块，静态识别与标准项目证据                                        |
-| `standard/deploy`  | 独立 Maven 模块，计划、适配器、构建命令、工具链、发行版安装策略及 `assistance` |
-| `agent`            | 独立 Maven 模块；内部以 Java 包组织自主循环、上下文、工具协议及部署提示词      |
+`appapi` 定义 Mod 的初始化、迁移、生命周期、页面、任务、数据库、交互、AI、素材、秘密、服务器及远程能力合同；不依赖具体 APP 实现或部署业务。API 版本与内部 Mod 用途枚举分别管理。
 
-`standard/deploy` 可以依赖 `standard/analyze`。`agent` 不依赖任何 `standard` 模块；两个引擎不得相互依赖。公共模块不得反向依赖两个引擎。标准流程把识别结果转换为公共交付输入，自主 Agent 根据实际读取证据构造通用进程/容器描述，公共层重新验证并执行发布。
+### 3.2 `app` 平台模块
 
-### 3.2 `app` 桌面应用模块
+| 叶子模块 | 当前职责 |
+| --- | --- |
+| `ai` | 平台配置目录值、通用模型消息、HTTP 传输与救援协议 |
+| `db` | H2 平台仓库、受管 Schema、任务、引用与操作账本 |
+| `linux` | Apache SSHD 连接、脚本标准输入、命令输出、SFTP 及所属救援浏览器 |
+| `main` | 入口、固定运行根、平台装配、Mod 协调及默认窗口 |
+| `mod` | 原包、描述、类加载、安装登记、依赖与生命周期 |
+| `secret` | 受保护凭据、当前用户保护、主密码与秘密存取 |
+| `service` | 原任务授权、公开能力适配、平台配置和安全用例 |
+| `source` | 受管本机目录、进程、Git、素材冻结、只读与归档能力 |
+| `ui` | 平台 Swing 组件、服务表单、页面挂载及本地化 |
+| `windows` | 原生保护与窗口隐私、文件/进程边界、签名与更新卸载安全核心 |
 
-| 模块      | 职责                                                                                                                                                                   | 明确不负责                                                                                                                                         |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ui`      | 实现 Swing/FlatLaf 界面、输入校验、进度展示和用户决定交互。                                                                                                            | 不直接访问 SQLite、SSH、AI、加密算法或 APP 数据库中的统一凭据库。                                                                                  |
-| `windows` | 选择和访问 Windows 本地项目、备份及工作目录，采集文件与环境事实，通过 `shared/source` 准备待上传项目包；持有桌面包签名/版本/架构验证、独立更新事务和受管卸载文件边界。 | 不自行定义源码归档格式，不执行远程上传，不解释备份格式，不处理加密、私钥、明文秘密或 Credential Manager 实现；卸载凭据只能经 `secret` 窄端口编排。 |
-| `db`      | 管理 SQLite 连接、表结构、版本化迁移和事务，保存非敏感数据、配置实例与历史版本、受管应用标识、最后观测状态及由 `secret` 生成的加密数据。                               | 不定义共用配置规则，不执行加解密，不派生或保存明文密钥，不直接访问 APP 数据库中的统一凭据库。                                                      |
-| `secret`  | 统一处理主密码、Argon2id 密钥派生、AES-256-GCM 加解密、DEK 包装、敏感信息存取和 APP 数据库中的统一凭据库。                                                             | 不负责普通业务数据、界面、项目打包、部署或远程连接。                                                                                               |
-| `service` | 实现桌面端部署和受管应用生命周期等用例、后台任务、同服务器修改互斥、事件、取消和模块协作，整合 `app` 与 `shared` 能力。                                                | 不自行实现界面、SQLite、加密算法、凭据平台接口、SSH/SFTP 或 Linux 生命周期动作。                                                                   |
-| `main`    | 提供应用启动入口，识别运行模式、解析应用与数据目录，装配模块和 `linux-sshd` 实现并管理生命周期。                                                                       | 不承载具体业务规则、界面逻辑、持久化、SSH/SFTP 或加密实现。                                                                                        |
+`app/ui` 通过平台服务协作；平台装配可组合必要实现，低层实现不反向依赖装配。Windows 更新、卸载的安全核心存在不等于 S7 独立执行器已经交付。
 
-桌面端所有加密、解密、密钥派生、密钥包装、敏感信息存取和 APP 数据库中的统一凭据库。`windows` 只处理非敏感的 Windows 本地能力；不得为了平台调用方便把任何安全实现放入 `windows`。
+### 3.3 `mod/deployment` 官方部署 Mod
 
-桌面调用方向固定为 `UI → app/service/contract → 窄用例 → shared 领域/契约`。`AiApplicationFacade`、`BackupApplicationFacade`、`DeploymentApplicationFacade`、`MultiComponentApplicationFacade`、`ServerApplicationFacade` 和 `ManagedApplicationFacade` 隔离页面所需能力；`DesktopApplicationFacade` 作为稳定门面和组合根实现这些门面，只转发到窄用例，不承载业务算法。
-
-### 3.3 `web` Web 应用模块
-
-本节描述 0.5 期内部服务台的当前代码与 0.6 期历史结构预留。其中未实现的生产认证、账号、工作区和执行服务规划已由 1.1 工程取代，不再要求继续补齐；新官网不要求下载者登录，网站细节暂缓。下表用于解释尚存的旧模块，不作为新官网任务清单。
-
-| 模块       | 职责                                                                                                                                                            | 明确不负责                                                                                           |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `frontend` | 实现 Vue 3/TypeScript 页面、用户交互、流式上传交互和 SSE 事件展示。                                                                                             | 不保存原始凭据，不直接访问数据库、文件系统、SSH/SFTP 或共用执行模块。                                |
-| `api`      | 通过 Spring MVC Controller 实现版本化 REST API、SSE 及输入输出边界，Filter 执行来源和容量检查，统一提供脱敏错误。                                               | 不直接访问 SQLite、受管文件目录、凭据或部署执行器，不承载业务流程或直接执行生命周期动作。            |
-| `auth`     | 旧 0.6 期身份、登录、会话与访问安全结构预留，当前无业务实现；该生产方向已由 1.1 取代。                                                                          | 0.5 期内部功能测试不得提前创建伪认证；本模块不自行实现密码哈希、加密算法、主密钥或普通业务编排。     |
-| `service`  | 实现 Web 部署、配置访问控制和受管应用生命周期等用例并整合 `db`、`file`、`secret` 与 `shared` 能力。                                                             | 不实现 HTTP/SSE、任务调度、SQLite、文件底层操作、密码学算法、SSHD 或 Linux 生命周期动作。            |
-| `task`     | 管理部署和生命周期等持久化任务的状态、调度、同服务器互斥、受控取消、重启恢复和结构化事件。                                                                      | 不传输 SSE，不重复实现分析、部署、生命周期、备份或迁移规则。                                         |
-| `db`       | 使用受管数据源、Spring 事务和 MyBatis-Plus Mapper 管理 Web SQLite、版本化迁移及持久化仓储，包括配置实例与历史版本、项目与环境关联、受管应用标识和最后观测状态。 | 不定义共用配置规则，不执行加解密，不管理上传文件、后台调度或接口协议，不把最后观测状态当作远端事实。 |
-| `file`     | 管理流式上传下载、配额、临时文件清理和受管工作目录，对上传容器执行配额和路径检查，完成后通过 `shared/source` 生成规范源码归档。                                 | 不定义第二套规范源码归档格式，不负责 SFTP、远程 Linux 文件、备份恢复语义或秘密加解密。               |
-| `secret`   | 0.5 期为内部功能测试处理测试主密钥和服务端凭据；旧 0.6 期认证密码学预留只作历史，不代表新官网要保存下载者账号。                                                 | 不负责登录会话流程、普通数据库业务、上传文件、部署或远程连接；不得因 0.5 期无登录而明文保存秘密。    |
-| `main`     | 提供 Spring Boot 无参入口及 YAML 绑定，装配后端模块、`linux-sshd`、数据源与前端静态资源，管理启动检查、健康检查和关闭。                                         | 不承载具体业务、接口、任务、持久化、文件、SSH/SFTP 或密码学实现。                                    |
-
-Web 主密钥和本地凭据加解密由 `web/secret` 独占；可移植备份密码格式由 App/Web 共用的 `shared/backup.crypto` 独占。0.5 期不实现登录或管理员密码；旧 0.6 期曾约定 `auth` 通过 `secret` 使用认证密码学，这属于未实施历史方向。其他 Web 模块不得直接接触明文密钥或实现加密算法。
+部署 Mod 独占静态分析、辅助与自主算法、部署配置、应用和发布业务表、秘密引用及固定 helper 协议。原任务通过 APP 公开能力取得素材、审批、服务器、Schema 和远程会话，正常停用只释放 Mod 自有资源，不能擅自停止已经部署的远端应用。备份 Mod 不在当前迁移范围；退出活动构建的旧 shared/web 不列为当前能力。
 
 ### 3.4 配置规则、存储与秘密边界
 
-1. `shared/config` 提供平台无关的配置类型、文本解析、规则和载荷编码，不读写文件或数据库，也不定义 Repository、数据库表或具体持久化技术；`persistence` 仅表示可复用编码，不承担平台存储。
-2. 桌面端配置实例及历史版本由 `app/db` 统一保存；Web 配置实例、项目、环境关联及历史版本由 `web/db` 统一保存，不为每名用户创建独立配置文件。Web 后续支持多用户或租户时，所有权关联同样由 `web/db` 保存。
-3. 0.5 期 Web 只能在明确回环内部测试模式访问配置，由 `web/service` 保持业务边界；旧 0.6 期上线权限协作仅属历史规划，新网站不继承用户执行服务。`shared/config` 不感知具体用户、租户、会话或授权策略。
-4. 敏感值由 `app/secret` 或 `web/secret` 处理；普通配置只保存秘密 ID、版本等不透明引用，不保存明文秘密。
-5. 桌面启动和固定数据根解析分别由 `app/main/startup` 与 `app/main/runtime` 承担；Web 启动配置位于 `web/main/config`，Spring 装配位于 `web/main/startup`，CLASS/JAR 数据根解析位于 `web/db/runtime`。这些应用启动职责不属于 `shared/config`。
-
-平台 UI 通过现有 `service.contract` 门面提交类型化表单，只使用门面显式暴露的纯数据契约。平台服务负责交互、凭据和存储记录构造；标准运行时及默认值解析归 `shared/standard/deploy/input`，普通配置文本解析和平台无关载荷编码归 `shared/config/input`、`shared/config/persistence`，数据库审阅模式归 `shared/model/deployment`。这些共享规则不读写平台数据库，不向 UI 开放解析器、远程端口或 SSHD 实现。
+1. APP 平台配置与模型目录由平台 H2 仓库保存；deployment 的配置实例、不可变修订、运行事实和发布账本由其自有 Schema 保存。平台不按表名读取 Mod 私有业务。
+2. Mod 配置解析与载荷编码归 `service/core/config`，来源绑定运行默认值归 `service/standard/deploy/input`；这些纯规则不读写平台数据库，不暴露原始远程能力。
+3. 普通配置只保存精确不可变秘密 ID/修订引用。APP 的秘密能力负责保护与权限，Mod 只保存所属业务引用；明文值、可清零缓冲和调用方借用数组按真实所有权处理，不用显示文本表达秘密身份。
+4. APP 的 CLASS/JAR 根解析归 `app/main/runtime`，装配归 `app/main/startup`。平台 UI 使用 `service/contract` 门面，Mod UI 使用自己的用例和原公开 TaskContext，不绕过授权访问内部仓库。
 
 ### 3.5 桌面端本地化与诊断边界
 
 1. 英文是桌面端生产代码、内部校验、程序生成诊断和默认消息资源的基准语言；`app/ui/i18n/messages/Messages.properties` 是消息目录的规范来源，简体中文只保存在 `Messages_zh_CN.properties`。
-2. 生产模块不得提前拼接英文或中文界面句子。1.1 失败通过公开 `Problem` 传递稳定事件码、安全英文诊断、上下文及原诊断身份；UI 按 `problem.<eventCode>` 查找固定本地化说明，未登记事件使用脱敏后的安全诊断。未迁移代码仍通过 `FailureCarrier.failure()` 暴露 `FailureDescriptor` 及原消息键；UI 是唯一负责解析显示语言的边界。
+2. 生产模块不得提前拼接英文或中文界面句子。1.1 失败通过公开 `Problem` 传递稳定事件码、安全英文诊断、上下文及原诊断身份；UI 按 `problem.<eventCode>` 查找固定本地化说明，未登记事件使用脱敏后的安全诊断。UI 是唯一负责解析显示语言的边界。
 3. 部署步骤、部署状态、置信度、运行状态、自启状态和生命周期动作必须以稳定代码、`record` 或 `enum` 跨模块传递，不得依赖 `Object.toString()` 或显示字符串表达业务状态。
 
 语言选择、原始诊断处理等运行规则见 [运行约定](Runtime.md)。
 
 ### 3.6 结构化错误契约与模块归属
 
-1. 错误识别、低层异常转换和安全恢复属于产生错误的模块，不新增中央 `error` Maven 模块，也不通过复制真实包结构集中保存模块私有异常。1.1 使用 `appapi.task` 的 `Problem`、`ProblemCode` 和 `ApiException`；内部异常可以保留原 cause，但平台公开出口只能携带安全 Problem。`shared.model.failure` 的七个旧契约仅用于尚未迁移的调用链。
-2. 旧错误码固定为 `<domain>.<operation>.<reason>`：全部小写，`reason` 使用 kebab-case，例如 `linux.connection.authentication-failed`；旧消息键为 `<domain>.error.<lowerCamelReason>`。迁移凭据错误时保留原八个事件码，采用公开 `ProblemCode` 分类，UI 消息键改为 `problem.<eventCode>`。已发布错误码不得复用、改义或静默删除；同一错误码在仓库内必须唯一。
-3. 系统级错误只由 `app/main/diagnostic/DesktopSystemFailureType` 管理，覆盖启动布局、数据目录、数据库初始化、UI 初始化、未知运行时异常、诊断报告写入、资源耗尽和关闭失败。运行时错误继续由 `ai`、`config`、`db`、`deploy`、`git`、`linux`、`secret`、`service`、`source`、`windows` 等产生错误的模块自己的 `FailureType` 管理。
-4. 已迁移调用链保留原 `Problem` 和诊断身份，UI 不经旧报告写入器重新生成身份；统一后台日志生产方迁移仍待完成。旧调用链继续使用“模块内识别与恢复 → 共用失败契约 → `deploy`/`service` 编排 → `app/ui/diagnostic` 安全展示 → `app/main/diagnostic` 本地报告”。旧 `DeploymentEvent` 只接受 `DeploymentTraceEvent`，可以携带 `FailureDescriptor`；部署与生命周期结果携带 `OperationIdentity` 和非致命警告列表，所含失败统一绑定到该操作标识。
-5. `FailureContractArchitectureTest` 以 JDK AST 遍历仍实现 `FailureDefinition` 的生产定义并与登记表双向核对，新增未登记、漏登记和失效登记均失败；按类型继承关系检查顶级及嵌套异常的 `Exception` 后缀，以及公开实例 `Problem problem()` 或未迁移的 `FailureCarrier`，不得按文件名筛选。继续检查旧错误码及凭据事件码格式和唯一性、模块归属、类型命名、中英文消息键一致、用户边界及静默捕获，并在 `target/failure-catalog.md` 生成不跟踪的旧失败目录。原生 DB 六类原因由 `linux.error` 提供结构化描述，服务边界保留既有 `service.database.*` 及恢复建议。
+1. 公开失败使用 `appapi/task` 的 Problem、ProblemCode、ApiException；错误识别与安全转换由产生错误的模块负责，不新增中央 error 模块或复制模块私有异常。
+2. 稳定事件码、分类、上下文及原诊断身份不能被显示文本或重写后的错误替代。已发布事件码不复用、改义或静默删除；内部 cause 不得越过公开安全边界暴露秘密。
+3. UI 按实际 `problem.<eventCode>` 本地化键呈现；未知事件使用脱敏后的安全诊断。原生 DB、发布和恢复失败保留原操作、请求、服务器、资源及 UNKNOWN 身份。
+4. `FailureContractArchitectureTest` 对当前活动生产源码执行真实 AST、异常类型、Problem 出口、事件登记、双语消息与捕获门禁。门禁通过只证明相应静态合同，不证明目标机结果或未知操作已经结清。
 
-重试、恢复、日志、备份和更新行为及验收边界见 [运行约定](Runtime.md)。
+重试、恢复、日志及运行数据规则见 [运行约定](Runtime.md)。
 
 ## 4. 叶子模块约定
 
 ### 4.1 Maven 通用目录结构
 
-本节描述当前 0.x 工程约定。其允许的旧 Web 预留仅解释已有文件，不授权继续新增；1.1 结构按文末目标结构章节及主文档门槛实施。
+本节描述当前活动 Java 叶子模块的物理目录约定；未实施的 Mod 与发行工具不提前建立空源码目录。
 
 每个 Java 叶子模块使用 Maven 标准目录：
 
@@ -1127,54 +774,17 @@ src/<group>/<module>/
       └─ resources/     # 有测试资源时创建
 ```
 
-`shared`、`app` 的 Java 叶子模块没有实现内容时不提前创建空目录。Web 现有 0.6 期 `package-info.java` 和说明性 `README.md` 是旧规划留下的职责预留，实际只实现 0.5 期功能；保留现有文件，不据此新增旧规划占位。`web/frontend` 使用前端工程自己的 `package.json`、源码和测试结构，不适用 Maven 目录。Java 包前缀固定为 `gold.debug.windowstolinux`。Web 账号、工作区、授权、审计和发布预留的历史原因见[0.6 期文档](development/PHASE-0.6.md#security)，后续方向以 1.1 为准。
+Java 包前缀固定为 `gold.debug.windowstolinux`，其后按 `appapi`、`app.<module>`、`mod.<mod-id>` 表达所属模块。没有实现内容时不提前创建空目录；历史 shared/web 保留源码不代表其仍参与当前 Maven 活动图。
 
 ### 4.2 适配协作边界
 
-语言生态、构建架构、工作负载、运行机制、发行版和 CPU 架构是相互独立的适配维度。分析、目标机构建和能力探测可以分别拥有 `ecosystem`，但必须共享模型、部署契约和机械执行流程。
+语言生态、构建架构、工作负载、运行机制、发行版与 CPU 架构保持正交。Mod 的分析和构建生态共享 `service/core/model` 的不可变事实；平台 Linux 只负责机械远程能力，业务 helper 只经原 TaskContext 与实际审批发送。
 
-```text
-analyze                        识别语言、构建工具、框架和工作负载事实
-linux.connection/session      定义连接、信任和类型化组合会话契约
-linux.transfer                定义受控传输契约
-linux.capability              定义发行版、版本、CPU 和运行能力采集契约
-linux.build                   定义受控目标机构建契约
-linux.runtime                 定义运行方式生命周期契约
-linux.distro                  定义发行版事实与环境准备契约
-linux.protocol.database       定义数据库固定远程操作、制品流和证据契约
-linux-sshd.command            实现不向上层暴露的受控 SSH 命令机械流程
-linux-sshd.backup             实现数据库固定协议、证据解析和流式制品传输
-standard.deploy.build.contract     定义目标机构建 SPI
-standard.deploy.build.ecosystem    实现语言与构建架构差异
-standard.deploy.build.extension    装配并校验构建实现
-standard.deploy.build.generation   生成安全构建脚本
-standard.deploy.build.workload     实现容器与静态站点构建形态
-linux-sshd.capability         实现平台能力采集
-linux-sshd.capability.ecosystem 实现工具链探测、版本解析和检查脚本生成
-linux-sshd.distro             定义准备渲染契约并执行受管环境准备
-standard.deploy.distro.apt         完整保存 APT 机械流程、包集合与 Debian 家族差异
-standard.deploy.distro.dnf         完整保存 DNF 机械流程、包集合与企业 Linux 差异
-standard.deploy.distro.contract.profile    保存不可变发行版与生态能力配置
-standard.deploy.distro.extension.registry  完成发行版配置装配与唯一注册
-standard.deploy.distro.generation.script   生成发行版通用准备脚本
-linux-sshd.execution.protocol 实现候选工作区和类型化远程协议
-linux-sshd.execution.transfer 实现 Apache SSHD 受控传输
-linux-sshd.runtime            实现语言无关生命周期
-standard.deploy.support                编排架构、systemd、发行版和运行时支持判断
-standard.deploy.support.distro         独立评估六种发行版的版本、CPU 和安全规则
-standard.deploy.support.runtime        匹配语言、容器和静态站点所需工具与版本
-standard.deploy.extension.adapter      按部署形态生成类型化计划，不镜像语言生态
-deploy.execution.transaction  编排上传、构建、发布、健康检查和回滚
-```
-
-1. `analyze.ecosystem` 在语言分组内聚合识别、构建事实和框架分析，数据库声明分析集中于同级 `db`。每个独立语言构建架构都按第 2.3 节使用工具或架构规范名子包。Java 的 Maven、Gradle 与 JAR 必须形成平行架构，Node 的 npm、pnpm 与 Yarn、Python 的 pip、Pipenv、Poetry 与 uv 也不得混为一个无名实现。
-2. `standard.deploy.build` 通过 `build.contract.spi`、`build.extension.registry` 和 `build.generation.script` 组织构建。生态差异进入 `build.ecosystem`，容器与静态站点进入 `build.workload`；构建执行器、SSH command、systemd 生命周期和 helper 调度不得复制到各生态。
-3. `linux-sshd.capability.ecosystem` 实现语言与工具链命令、版本解析和能力检查脚本；`distro` 只提供软件包集合与所需能力配置，两者通过窄契约组合。
-4. `standard.deploy.distro.apt` 完整保存 Ubuntu/Debian 的准备差异，`distro.dnf` 完整保存 CentOS Stream、Rocky Linux、AlmaLinux 与 Oracle Linux 的准备差异；具体发行版不得互相充当别名。
-5. `standard.deploy.extension.adapter` 只按部署形态组织，`linux-sshd.runtime` 只按实际运行机制实现生命周期；两者都不得镜像语言生态。
-6. CPU 架构、指令集和平台能力通过 `linux.capability` 契约采集；没有独立策略与实现时，不创建 `x86_64`、`arm64` 等执行包。
-7. 标准流程没有匹配到正式支持组合时，只返回识别预览或不支持结果，不得进入环境安装、构建、发布或生命周期接管。
-8. `linux` 公共契约不得引用 Apache SSHD 类型，向引擎提供绑定任务、身份和限制的命令/补丁端口，不暴露原始 SSHD、SFTP 或不受控宿主操作；具体远程实现只能位于 `linux-sshd`。
+1. 分析生态负责识别与预览；每个真实独立构建架构在其语言分类内命名，不用目录对称或类数建立空分组。
+2. 构建 SPI、注册与脚本生成归 `service/standard/deploy/build/{contract,extension,generation}`，生态和工作负载差异分别归 `ecosystem`、`workload`，不得复制通用候选、SSH、任务或 helper 准入逻辑。
+3. 工具链与发行版事实通过已审阅类型协作；环境准备、精确绑定、构建预算和人工审批等待分别核对。未知准备或绑定保持原意图，不能通过重发或重置预算掩盖。
+4. 静态分析未正式支持的组合只给预览或不支持结果；进入辅助或自主流程仍需其自己的来源、模型、人工审阅和受管能力准入，不把静态拒绝变成未经授权的自动执行。
+5. 平台 `app/linux` 独占 Apache SSHD；公开合同和 deployment `linux` 不引用其具体客户端、会话、通道或 SFTP 类型。Mod 不能绕过公开 RemoteSession 取得不受控宿主能力。
 
 ### 4.3 分包规则
 
@@ -1183,143 +793,58 @@ deploy.execution.transaction  编排上传、构建、发布、健康检查和�
 3. 测试包镜像对应生产包；根目录源码服务夹具使用 `test/single-language/<language>/<build-tool>/<framework-or-function>/<expected-result>-<function>` 分类，每个语言/工具组合固定三组正常部署与两组失败部署；由 `test/single-language/matrix.json` 及矩阵测试对照实际支持目录核对覆盖。正常组使用 `success-deployment-smoke`、`success-json-api`、`success-runtime-config`，失败组使用 `failure-health-rollback`、`failure-configuration-rejected`，具体故障按工具的健康检查与配置准入问题分配。`success-` / `failure-` 表示预期部署结果，不表示自动化测试应通过或报错。测试场景、文件、包及构建标识使用功能名称，不使用开发期数或执行批次；额外运行版本元数据放入模块测试资源，由验收辅助类实例化，不增加顶层场景数量。
 4. 模块、包、类、接口、枚举、异常和测试类名称统一遵守第 2 节，不得另立同义词、临时名称或兼容名称。
 5. `analyze` 的跨语言公共流程按 `core`、`source`、`service`、`component`、`workload` 与 `preview` 分包；规则和 SPI 进入 `contract.policy`、`contract.spi`，默认装配进入 `extension.registry`。`ecosystem` 内按语言及 `db` 分类；每个真实独立语言构建架构均按第 2.3 节建立架构名子包，语言识别器、跨架构公共事实、选择器和框架协调器留在语言根包，DB 声明检查归 `ecosystem.db`。`ProjectLanguageInspector` 固定汇总全部 10 个语言生态的检查器；`PreviewLanguageMarkerCatalog` 只识别尚无独立生态的长尾语言。`source.SourceLanguageEvidence` 只收集路径证据，具体语言规则由语言检查器提供。
-6. `deploy` 将不可变输入/计划、SPI、注册表、部署形态、支持矩阵和事务编排分离；请求及公共计划直接位于 `contract`，公开结果进入 `contract.result.{compatibility,deployment,lifecycle}`，SPI 进入 `contract.spi`，适配器与注册表进入 `extension.{adapter,registry}`，环境、生命周期与事务进入 `execution.{environment,lifecycle,transaction}`。`support` 只保留支持判断门面，发行版策略和规则进入 `support.distro`，运行时工具与版本判断进入 `support.runtime`，`plan` 不得直接构造具体实现。
-7. `linux` 按连接、会话、错误、传输、能力、构建、运行机制、发行版和协议组织公共远程契约，原生 DB 契约归 `ecosystem.db`，不因其中出现 `connection`、`protocol` 或 `transfer` 而迁入普通功能组；`linux-sshd` 的协议与传输实现进入 `execution.{protocol,transfer}`，语言生态实现进入 `build.ecosystem`、`capability.ecosystem` 和 `execution.protocol.helper` 资源 `ecosystem` 分组，原生 DB 的 SSHD 实现归 `execution.protocol.database`、资源归 `execution/protocol/helper/fragments/database`，工作负载构建只可进入 `build.workload`。
+6. `service.standard.deploy` 将不可变输入/计划、SPI、注册、支持判断、候选构建和发布编排分离。SPI 进入 `contract.spi`，适配器与注册进入 `extension.{adapter,registry}`，发行版及运行时判断分别进入 `support.{distro,runtime}`；`plan` 不直接构造具体实现。公共值归 `service.core.model`，正式持久事实归 Mod `db`。
+7. `appapi.linux` 保存平台远程合同，`app/linux` 实现 SSHD 机械执行与传输；Mod `linux` 保存部署业务的固定 helper 请求、回执与实际远程发送边界。语言分派与数据库脚本按 helper 实际资源职责分组，原生 DB 资源仍归 `execution/protocol/helper/fragments/database`。
 8. 分析层发现真实独立构建架构时必须建立架构名子包；执行层和能力层建立语言分组时以独立架构数量为依据，不以类数量为依据。不得为满足目录对称或门禁数量新增空分类、空接口、委托壳或无独立语义的数据类型。
 9. 界面、数据库、认证、秘密和普通业务用例不得按被部署项目的语言复制结构。
 10. 包结构不用于绕开模块职责。跨模块能力仍通过既有依赖和类型化契约协作，不复制模型，不开放原始 SFTP 或不受控 systemd、Docker、Podman 操作；Agent 生成的命令只能经绑定任务、身份与修订的受限命令接口执行。
-11. `linux` 的接口、请求、结果和异常不得导入或暴露 Apache SSHD 类型；`linux-sshd` 可以依赖 Apache SSHD，但不得把具体客户端、会话、通道或 SFTP 类型传递给上层模块。
+11. 公开 `appapi.linux` 与 deployment 的请求、结果、协议和异常不导入或暴露 Apache SSHD 类型；`app/linux` 可以依赖 Apache SSHD，但不把具体客户端、会话、通道或 SFTP 类型传递给 Mod。
 12. 生产包依赖不得成环；组合门面只能依赖下游窄契约和实现，低层 command、SPI、不可变契约与错误类型不得反向依赖注册表、默认实现、会话或业务编排。
-13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。官方 deployment 已实施的 `service.standard.analyze` 与 `service.standard.deploy` 是各自迁入旧标准分析及确定性部署的逻辑职责根，其后分别最多三层（如 `ecosystem.java.maven`、`build.generation.script`）；`service.core.model` 是多个引擎共用纯值的逻辑职责根，其后最多两层（如 `project.component`、`ecosystem.db`）。三个精确锚点不放宽其他包的三层上限，标准算法不得进入 core/model。旧 `shared.standard.analyze`、`shared.standard.deploy` 在根切换前继续受原模块根三层约束。第四层或更深结构若不属于这些已审锚点，必须先修改本文并单独评审。总包数、单包类型数量和目录对称不作为硬门禁。
-14. `contract`、`generation`、`extension`、`execution`、`persistence` 的直接子包只能使用第 2.2 节允许的职责名；标准职责不得绕过父功能组。`shared/linux` 公共远程契约、`shared/model.capability`、`shared/model.lifecycle`、`linux-sshd.capability` 与 `linux-sshd.connection` 是经评审的语义例外；`ecosystem`、`workload`、`runtime`、`distro` 保持正交，尤其不得建立 `execution.runtime`。`PackageStructureArchitectureTest` 已同步检查三层深度、功能组职责、例外、物理路径、旧包和测试镜像。
-15. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；稳定门面 `DesktopApplicationFacade` 只豁免直接声明方法数。
+13. 模块 Java 根包以下默认最多三层子包：第一层表达功能组或既有正交功能，第二层表达独立职责，第三层表达职责内部的真实分类或扩展轴。官方 deployment 的 `service.standard.analyze` 与 `service.standard.deploy` 是各自逻辑职责根，其后分别最多三层（如 `ecosystem.java.maven`、`build.generation.script`）；`service.core.model` 是多个引擎共用纯值的逻辑职责根，其后最多两层（如 `project.component`、`ecosystem.db`）。三个精确锚点不放宽其他包的三层上限，标准算法不得进入 core/model。其中 `service.core.model.capability` 仅保存 Linux/生态能力纯值，按该已审模型根归属，不映射为执行算法；实际应用生命周期操作归 `service.core.execution`。第四层或更深结构若不属于这些已审锚点，须先修改本文并单独评审；总包数、单包类型数量和目录对称不作为硬门禁。
+14. `contract`、`generation`、`extension`、`execution`、`persistence` 的直接子包只使用第 2.2 节允许的职责名；标准职责不得绕过父功能组。公开 API 的任务、远程、资源与模型契约及上述三个 Mod 逻辑根按实际语义核对，不能恢复旧模块的整包豁免。`ecosystem`、`workload`、`runtime`、`distro` 保持正交，尤其不建立 `execution.runtime`。
+15. 普通类最多 25 个实例字段、30 个直接声明方法，单方法最多 80 个 JDK AST 语句；退出活动图的旧门面不保留规模豁免。
 16. 合并依据是行为完全一致且差异可由受校验数据表达，拆分依据是存在可独立测试和命名的职责；领域记录、枚举、状态类型和 SPI 不因文件短小而合并，类也不因行数较长而机械拆分。
 
 ### 4.4 Linux 部署链内部依赖方向
 
-以下箭头表示左侧包可以依赖右侧包；反向依赖均禁止：
+平台依赖按第 5 节实际模块图检查。deployment 的公共模型、输入值与 Linux 机械合同不反向依赖 UI 或引擎编排；辅助分析不调用自主算法，自主循环不调用静态分析。
 
-```text
-standard.deploy.extension.adapter  ──→ deploy.contract.spi ──→ deploy.contract ──→ model
-standard.deploy.extension.registry ──→ deploy.contract.spi + standard.deploy.extension.adapter
-standard.deploy.plan               ──→ deploy.contract + standard.deploy.extension.registry
-deploy.execution.transaction ──→ standard.deploy.plan + deploy.contract.result.deployment + linux
-deploy.execution.lifecycle   ──→ deploy.contract.result.lifecycle + linux
-standard.deploy.support             ──→ standard.deploy.support.{distro,runtime} + deploy.contract.result.compatibility + model
-standard.deploy.support.distro      ──→ deploy.contract.result.compatibility + model
-standard.deploy.support.runtime ──→ model
+标准分析向计划提供确定性事实；已审阅计划交给候选、构建和发布用例，公共交付核对完整应用图并正式提交。业务仓库只通过所属受管 Schema 访问自己的表；远端协议只通过原任务与审批发送。注册与组合入口可以依赖具体实现，底层纯值、编解码和协议解析不能反向依赖入口，生产包图不得成环。
 
-linux.connection      ──→ linux.session ──→ linux.{build,capability,distro,protocol,runtime,transfer}
-linux.protocol.database ──→ linux.error
-linux.* operations    ──→ linux.error ──→ model.failure
+### 4.5 helper 资源与物理会话装配
 
-linux-sshd.command          ──→ linux.error + Apache SSHD
-linux-sshd.backup           ──→ linux.protocol.database + linux-sshd.command
-standard.deploy.build ──→ standard.deploy.{build.contract.spi,build.ecosystem,build.extension.registry,build.generation.script,build.workload} + linux.command
-standard.deploy.build.ecosystem  ──→ standard.deploy.{build.contract.spi,build.generation.script}
-standard.deploy.build.workload   ──→ standard.deploy.{build.contract.spi,build.generation.script}
-linux-sshd.capability       ──→ linux-sshd.capability.ecosystem
-linux-sshd.distro           ──→ linux-sshd.{distro.generation.script,capability.ecosystem,command}
-linux-sshd.distro.{apt,dnf} ──→ linux-sshd.{distro,distro.contract.profile,distro.generation.script}
-standard.deploy.distro.extension.registry ──→ linux-sshd.{distro,distro.apt,distro.dnf}
-standard.deploy.distro.generation.script  ──→ linux-sshd.{distro.contract.profile,execution.protocol.helper}
-linux-sshd.{execution.protocol,execution.transfer,runtime} ──→ linux-sshd.command
-linux-sshd.session          ──→ linux-sshd.{backup,build,capability,distro,execution.protocol,execution.transfer,runtime}
-linux-sshd.connection       ──→ linux-sshd.session + linux-sshd.command
-```
+`DeploymentManagedHelperBundle` 以显式顺序组装固定资源，`DeploymentPublicationEvidenceChannel` 与 `DeploymentPublicationReceipt` 分担原任务／独立操作证据和固定回执解析；Channel 保留实际远程准入与发送。协议 14 当前有 58 个维护资源，组装 SHA 与资源集合分别核对。37 项未改资源的完整路径和原始 SHA 对应已提交 081 基线，不能用更早 shared 版本代替。
 
-当前内部依赖方向如下；父包保存共享入口时可依赖职责子包，纯数据子包不得反向依赖协调入口：
-
-```text
-ai.collaboration            ──→ ai.collaboration.{invocation,advice}
-ai.collaboration.invocation ──→ ai.collaboration.{advice,role}
-app.ui.deployment.{automatic,multi} ──→ app.ui.deployment
-app.service.deployment      ──→ app.service.deployment.{single,multi}
-standard.deploy.support               ──→ deploy.contract.result.compatibility
-deploy.execution.transaction ──→ deploy.contract.result.deployment
-deploy.execution.lifecycle   ──→ deploy.contract.result.lifecycle
-model.project               ──→ model.language
-model.capability            ──→ model.server.security
-```
-
-### 4.5 平台兼容资源与会话装配
-
-| 功能                      | 所属模块与资源                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------- |
-| AppArmor 用户命名空间检查 | `linux-sshd` 的 `execution/protocol/helper/fragments/workspace/apparmor-namespace.sh` |
-| systemd 管理接口隔离      | `runtime/systemd/helper/systemd-manager-isolation.sh`                                 |
-| SELinux 普通服务入口      | `runtime/systemd/helper/selinux-command-entry.sh`                                     |
-| CentOS 源码依赖仓库       | `distro/dnf/centos-source-repositories.py`                                            |
-
-`ManagedHelperBundle` 按固定资源展开标记，`DnfSetupRenderer` 生成 CRB 事务参数，`CentosStreamSetupRenderer` 持有发行版选择；装配不依赖 runtime/distro 的 Java 实现类，不保留临时包装类。按职责拆片段并遵守默认 300 行门禁，不能用压缩代码规避。Eclipse/shfmt 展开同行语句后，`PackageStructureArchitectureTest.FORMATTED_LINE_CAPS` 对 1 个 Java 文件和 7 个 helper 片段登记格式化后的固定上限；不增加业务容量，不提供后续增长余量，其余文件沿用原门槛。后续超限必须审查职责，不能自动更新该表。
-
-会话持有已认证连接，通过 `databaseOperations()`、`backupArtifacts()`、`restoreActivation()` 返回绑定原会话的窄端口，不继承三组接口或复制转发。运行流程归 `runtime.ManagedRuntimeExecutor`，会话类遵守 30 方法上限；端口保留批准、归属与服务端检查，不暴露给 UI。资源一致性及本地验证见[0.4 期架构验收](development/PHASE-0.4.md#acceptance-architecture)。
+CLASS/JAR loader、SSH 客户端、物理会话、通道、线程、进程及 JDBC 连接分别由实际所有者关闭并核对退出；返回 close 或发出停止请求不自动清零资源账本。Mod.stop 只释放 Mod 所属资源，已经提交的远端部署和平台 H2 数据保留。
 
 ## 5. 依赖方向
 
-共用模块依赖固定为：
+活动模块的允许生产依赖为：
 
 ```text
-shared/agent ──→ shared/ai, shared/config, shared/deploy, shared/linux, shared/model, shared/source
-shared/ai ──→ shared/model
-shared/backup ──→ shared/config, shared/deploy, shared/linux, shared/model
-shared/config ──→ shared/model
-shared/deploy ──→ shared/ai, shared/config, shared/linux, shared/model
-shared/git ──→ shared/model, shared/source
-shared/linux ──→ shared/model
-shared/linux-sshd ──→ shared/linux, shared/model
-shared/model ──→ none
-shared/source ──→ shared/model
-shared/standard/analyze ──→ shared/model
-shared/standard/deploy ──→ shared/ai, shared/config, shared/deploy, shared/git, shared/linux, shared/model, shared/source, shared/standard/analyze
+appapi ──→ none
+app/ai ──→ appapi
+app/source ──→ app/windows, appapi
+app/linux ──→ app/ai, app/windows, appapi
+app/mod ──→ appapi
+app/ui ──→ app/ai, app/service, appapi
+app/windows ──→ appapi
+app/db ──→ app/ai, appapi
+app/secret ──→ app/db, appapi
+app/service ──→ app/ai, app/db, app/linux, app/mod, app/secret, app/source, app/windows, appapi
+app/main ──→ app/ai, app/db, app/linux, app/mod, app/secret, app/service, app/source, app/ui, app/windows, appapi
+mod/deployment ──→ appapi
 ```
 
-桌面应用模块依赖固定为：
+1. `appapi` 是独立公开合同，不反向依赖 APP 实现或业务 Mod。官方 deployment 的生产依赖仅为 appapi 和其明确外部编解码依赖；APP 的 Maven 主体不依赖业务 Mod。测试宿主依赖不构成生产授权。
+2. `app/main` 是实际装配根。平台 Linux、来源、秘密及 AI 实现不反向引用 UI，业务 Mod 不读取 APP 私有实现或其它 Mod 私有数据。
+3. `app/ai` 仅包含平台模型调用与库存纯值，不依赖数据库或界面。DB 和 UI 显式依赖 `app/ai`，仅复用 `AiCapabilityType`、`AiPurposeType`、`AiPurposeAssignment` 库存值；内部用途名称不替代公开 Mod 的 `AiPurpose` 合同。
+4. APP UI 经 `app/service` 发起平台操作，不能直接使用 DB、Windows、Linux、来源、秘密或 Mod 执行实现，也不能绕过服务直接调用公开 SDK 的 Linux、进程、来源写入或秘密能力。SDK 的任务、问题、UI、审阅和只读值合同可按实际用途使用，不设旧业务整包例外。
+5. 服务通过实际任务、审批、秘密与引用账本维护授权；不能靠传递依赖取得未声明的直接生产依赖。平台与业务均禁止循环依赖和全局静态状态绕过边界。
+6. 辅助分析只使用原冻结源码的只读 list/read/search 和有界 AI 请求；原候选构建、纠正、恢复和正式发布由已审阅的执行路径负责，分析不能取得执行、秘密或可写源码能力。
+7. 原 Windows 签名、协调及认证交接算法保留在平台职责中；当前未接生产安装器/后台更新 HostPort。旧 backup 工作区和业务实现的延后边界以冻结归档与 S6/S7 任务记录为准。
 
-```text
-app/db ──→ shared/config, shared/model
-app/main ──→ app/db, app/secret, app/service, app/ui, app/windows, shared/agent, shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/linux-sshd, shared/model, shared/standard/analyze, shared/standard/deploy
-app/secret ──→ appapi, app/db
-app/service ──→ app/db, app/secret, app/windows, shared/agent, shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/model, shared/source, shared/standard/analyze, shared/standard/deploy
-app/ui ──→ app/service, shared/model
-app/windows ──→ shared/model, shared/source
-```
-
-Web 模块依赖固定为：
-
-```text
-web/api ──→ shared/model, web/auth, web/service, web/task
-web/auth ──→ web/db, web/secret
-web/db ──→ shared/config, shared/model
-web/file ──→ shared/model, shared/source
-web/main ──→ shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/linux-sshd, shared/model, shared/standard/analyze, shared/standard/deploy, web/api, web/auth, web/db, web/file, web/secret, web/service, web/task
-web/secret ──→ shared/model, web/db
-web/service ──→ shared/ai, shared/backup, shared/config, shared/deploy, shared/git, shared/linux, shared/model, shared/source, shared/standard/analyze, shared/standard/deploy, web/db, web/file, web/secret
-web/task ──→ shared/model, web/db, web/service
-```
-
-依赖规则：
-
-1. `model` 不依赖其他业务模块。
-2. `config`、`source`、`standard/analyze`、`ai` 和 `linux` 只依赖 `model`；`git` 只依赖 `model` 与 `source`。除 `git → source` 外，这些模块彼此不直接依赖；`source` 不得依赖 `git`、`analyze`、`deploy`、`backup`、`app` 或 `web`。
-3. `deploy` 负责模式无关的受管发布与生命周期；只有 `backup` 可以调用它完成恢复候选版本的启动、健康检查和切换，`deploy` 不得反向依赖 `backup`。
-4. 禁止循环依赖，也不得通过复制模型或静态全局状态规避依赖边界。
-5. `deploy` 对 `ai` 的代码依赖不代表运行时必须配置 AI；没有可用 AI 时，受支持项目的确定性分析和部署流程仍须可用。
-6. `backup` 处理平台无关备份格式、迁移和归档秘密加密格式。平台本地目录、服务端凭据加密及主密钥仍由调用端文件模块与 `secret` 负责；备份密码只在调用期间存在。
-7. `shared` 不依赖 `app` 或 `web`；平台适配、数据存储和界面能力不得反向进入共用模块。
-8. `app/service` 只能通过 `app/secret` 使用敏感信息，不得直接处理加密算法、明文密钥或 APP 数据库中的统一凭据库。
-9. `app/ui` 只能通过 `app/service` 发起业务操作，不得直接调用 `app/db`、`app/secret` 或 `shared` 的执行型模块。门面公开的 `AutomaticDeploymentInteraction` 是纯输入/确认/秘密回调契约，和其他已登记数据契约一样可由 UI 实现，不授权 UI 调用部署引擎。
-10. `web/api` 不直接访问 `web/db`、`web/file`、`web/secret` 或 `shared` 的执行型模块；异步业务经 `web/task` 调用 `web/service`。
-11. `web/auth` 当前仅保留旧 0.6 期包职责说明，不提供认证接口；现有依赖允许表用于检查旧结构，不授权补齐已被 1.1 取代的上线方向。`web/file` 不实现 SFTP 或备份恢复规则，`web/task` 不承担 SSE 传输。
-12. `linux-sshd` 的项目依赖仅为 `linux`、`model`，外部依赖为 Apache SSHD 和 JSON 协议编解码；Apache SSHD 类型不得进入 `linux` 公共契约，也不得传递给上层模块。
-13. `deploy`、`backup`、`app/service` 和 `web/service` 只通过 `linux` 公共契约使用远程能力，不得直接依赖或构造 `linux-sshd`。
-14. 只有 `app/main` 和 `web/main` 作为组合根选择并注入 `linux-sshd`；具体 SSHD 实现不得进入业务服务、数据库、界面或 API 模块。
-15. `app/db` 和 `web/db` 可以依赖 `shared/config` 保存配置实例和版本；`shared/config` 不得反向依赖平台数据库、秘密、认证或服务模块。
-16. 桌面页面只能依赖对应的 `app/service/contract` 窄门面；门面依赖用例和 shared 契约，具体用例、注册表或 SSHD 实现不得反向依赖 UI。已批准的跨模块纯数据类型例外固定为 `AiCollaborationRoleKind`、`AiRoleInvocationResult`、`ProjectAnalysisRoleContext`、`DeploymentInputRoleContext`、`ComponentAnalysisRequest`、`ApplicationHealthGate`、`ManagedDatabaseBinding`、`ManagedDatabaseConnection`、`MultiComponentDeploymentResult` 和 `MultiComponentLifecycleResult` 及其嵌套类型；这些类型不要求 UI 增加执行模块依赖，也不允许扩大为整包例外。
-
-17. `app/service → shared/source` 是源码冻结和清理的显式复用边界，必须在 POM 声明。所有生产模块引用均须属于第 5 节允许的方向并有直接 POM 依赖，前述 UI 具体纯数据类型例外除外；传递依赖不自动授权新的业务调用方向。
-
-`ModuleDependencyArchitectureTest` 从本节读取允许方向，并核对所有叶子 POM、生产导入与显式全限定类型引用；`DocumentStructureArchitectureTest` 双向检查实际生产包与第 1 节目标树，未实现节点需明确标记 `[PLANNED]`。门禁包含禁止依赖、遗漏 POM、遗漏包节点与未标记规划目录的反例。
+`ModuleDependencyArchitectureTest` 读取本节允许方向并检查真实 Maven 叶子 POM、生产引用及安全反例；`DocumentStructureArchitectureTest` 双向核对实际包与第 1 节目录树。未实现节点不能通过建立空包消除门禁。
 
 ## 6. 桌面端数据目录
 
@@ -1327,19 +852,19 @@ web/task ──→ shared/model, web/db, web/service
 
 ## 7. 源码结构约束
 
-当前 0.x 结构见第 1～6 节，1.1 结构见第 8 节。结构变更、模块评估和门禁更新流程见 [1.1 开发文档](development/PHASE-1.1.md#structure-gates)。
+当前活动结构见第 1～6 节，1.1 职责设计与 Mod 规范见第 8 节。结构变更、模块评估和门禁更新流程见 [1.1 开发文档](development/PHASE-1.1.md#structure-gates)。
 
 1. 普通 Maven 叶子模块的目录名使用一个英文单词；只有把具体实现从公共契约模块独立隔离时，才使用 `<contract>-<implementation>`，例如 `linux-sshd`。
 2. Java 类存在接口与实现不代表必须拆分 Maven 模块；只有具体实现需要独立依赖或装配时才建立连字符实现模块。`source` 当前不拆分为 `source-tar`，源码归档格式属于其内部职责。
 3. 只有经过确认的目录、模块名称、职责和依赖方向才能写入正式结构；禁止通过复制模型、反射或静态全局状态绕开依赖约束。
 4. `.idea/`、`.ai-workspace/`、`target/`、`node_modules/`、`dist/`、缓存、日志和其他开发辅助或生成目录不纳入正式项目结构。
 5. 分期是开发路线与验收文档的组织方式，不是产品运行时架构。`src/` 中的模块、包、类、方法、字段、枚举、消息键、配置键、资源名、脚本名和测试名不得以 `PhaseOne`、`PhaseTwo`、`phase1`、`phase2`、0.1 期、0.2 期等期数命名；必须按稳定职责命名。正式文档保留分期标题，内部按功能组织；日期和版本仅为必要证据属性，不维护时间流水账，不把期数泄漏为代码 API 或持久化契约。
-6. `DeploymentAnalysisCoordinator` 不得导入具体项目类型实现；`ProjectLanguageInspector` 只负责组合确定性的语言事实检查器。低层语言与构建 Inspector 不得修改调用方提供的拒绝集合，生产包与测试包必须镜像，包依赖不得成环，且不得恢复按阶段或宽泛类别聚合实现的包。`standard.deploy.plan` 不得构造具体适配器，`linux.connection` 不得保存异常或组合会话，`linux-sshd.connection` 不得保存 command 或总会话；禁止以兼容壳保留旧类型。
-7. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及仅允许的 `AppMain.main` / `WebMain.main` 产品入口。Java 职责规模门禁仅排除 AST 识别的 Javadoc 行，正文、实现注释及嵌入脚本仍计入现有上限，脚本文件上限保持不变；双语文档另由 `JavadocCoverageTest` 负责。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
+6. `DeploymentAnalysisCoordinator` 不导入具体项目类型实现；`ProjectLanguageInspector` 只组合确定性的语言事实检查器。低层语言与构建 Inspector 不修改调用方拒绝集合，生产与测试包镜像，包依赖不成环，不按开发阶段或宽泛类别聚合实现。标准 `plan` 不构造具体适配器，APP SSH 机械层不保存业务状态，低层命令不反向依赖会话组合入口；不以兼容壳保留旧类型。
+7. `PackageStructureArchitectureTest` 使用 JDK 编译器 AST、物理路径和生产导入图自动检查文件与顶级类型同名、仓库级顶级类型唯一性、顶级及嵌套枚举语义后缀、禁限用词及封闭例外、资源文件名、复数后缀、缩写、测试后缀、模块根包以下最多三层、五个功能组及合法职责、远程契约和领域模型例外、语言/构建架构/发行版分类轴、禁用包名、全部包依赖环、测试包镜像、职责映射、反向依赖、旧 FQCN、旧物理包、旧 helper 资源路径、已删除包装类以及仅允许的 `AppMain.main` 产品入口。Java 职责规模门禁仅排除 AST 识别的 Javadoc 行，正文、实现注释及嵌入脚本仍计入现有上限，脚本文件上限保持不变；双语文档另由 `JavadocCoverageTest` 负责。门禁不设置总包数或单包类型数量硬上限，不得通过文本豁免隐藏结构回归；通过结果只证明当前本地静态结构，不构成新的 Linux 运行证据。
 
 <a id="phase-1-1-target"></a>
 
-## 8. 1.1 目标结构（已认可、待实施）
+## 8. 1.1 职责设计与 Mod 规范（实际结构见第 1 节）
 
 **本节全部为尚未实施的目标设计**，不进入第 1 节当前目录树或第 5 节依赖解析区域，也不要求现在创建目录或模块。[1.1 开发文档](development/PHASE-1.1.md)维护迁移表、实施步骤、归档、技术细化和验收；本节是新结构唯一详细目录来源。
 
@@ -1466,7 +991,7 @@ WindowsToLinux/                             # [PLANNED] 1.1 目标结构；尚�
 │  │     │  ├─ core/                       # [包] 标准与自主流程共用的部署业务
 │  │     │  │  ├─ config/                  # [包] 部署配置、不可变修订、秘密引用和资源绑定
 │  │     │  │  ├─ delivery/                # [包] 受管发布、候选健康验证、版本切换和回滚
-│  │     │  │  ├─ lifecycle/               # [包] 受管应用的状态、启停、重启及生命周期校验
+│  │     │  │  ├─ execution/               # [包] 受管应用的状态、启停、重启及生命周期校验
 │  │     │  │  └─ model/                   # [包] 部署、应用、发布与业务状态的私有模型
 │  │     │  │     ├─ analysis/            # [包] 准入、证据及拒绝纯值
 │  │     │  │     ├─ assessment/          # [包] 单项目与多组件类型化评估
@@ -1612,7 +1137,7 @@ Linux 的 `ssh` 与 `recovery` 是**同一个模块里的两个包**，没有各
 
 API 包保持无环：task 只依赖 JDK，审批目标使用精确 String serverId，与 TaskRequest 的服务器身份一致；server、ui、db、ai、source 依赖 task；secret 依赖 task/server；linux 依赖 task/server；mod 汇总各能力。公开能力不能反向引用 ModContext 或具体 Mod；平台内部可以使用装配端口衔接。db 中的标准 JDBC 类型是 JDK 类型，不是 H2 实现依赖；UI 中 Swing 类型同理。
 
-官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 以 Schema 2 初始化及只读核验，固定 SQL 资源位于同名资源包；Schema 1 冻结，独立 `DeploymentSchemaMigration12` 经受限来源读者与新目标写者迁移，不改原源结构或猜测旧秘密用途；业务启动绑定当前数据身份、deployment 日志类别及固定 deployment-publication、deployment-git-source、deployment-secret-revision 原任务恢复器。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID、原精确用途及修订时间，不解析或读取平台存储；新修订用途不可变，旧行缺用途可只读但不得据标识猜用途或进入发布。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
+官方 deployment 当前采用独立 `wtlmod-author-parent`，生产依赖为 `appapi`（provided）和私有 Jackson 2.18.1（沿用项目已有版本），后者用于执行记录的严格版本化 JSON；CLASS 描述列出 databind/core/annotations 三个 Maven 库。`app/main` 仅作为 test 依赖用于真实平台 CLASS 生命周期回归，不进入 Mod 私有运行库。`db/DeploymentSchema` 以 Schema 3 初始化及只读核验，固定 SQL 资源位于同名资源包；Schema 1、2资源冻结，显式 `DeploymentSchemaMigration12`、`DeploymentSchemaMigration23` 共用固定迁移复制器，经受限来源读者与独立新目标写者迁移，不改原源结构或猜测旧秘密用途；结构3新增空管理操作账本，2→3路径尚待本机验证；业务启动绑定当前数据身份、deployment 日志类别及固定 deployment-publication、deployment-git-source、deployment-secret-revision 原任务恢复器。`service/core/config` 放确定性配置条目、修订摘要及文本解析；`service/core/model` 放运行定义、健康契约、资源位置/绑定、精确秘密修订引用及共用输入失败。config 可引用 model，model 不反向引用 config；db 仓库和版本化编解码器可使用这些纯值，纯值不反向依赖 db。持久单元模型只保存精确平台 ServerRef，应用图仓库仅读取本 Mod 表，以同一事务替换已匹配单元的拓扑；配置/信任观测须经公开能力读取，不以 APP 私有表 JOIN 还原。仓库经原任务打开 ModDatabase，使用 H2 事务及条件更新维护不可变配置/秘密修订和精确发布绑定；发布仓库在同一事务内保存全部单元和拓扑，DeploymentUnitCommit 仅为 db 写入输入，不使 model 反向依赖 config。秘密元数据只存不透明凭据 ID、原精确用途及修订时间，不解析或读取平台存储；新修订用途不可变，旧行缺用途可只读但不得据标识猜用途或进入发布。 `DeploymentExecutionRepository` 在任何引用预留前保存精确原任务、审阅摘要及资源/用途/业务键，逐项记录原预留 UUID；开始副作用、业务提交、实际清理分别持久化。正式成功结果与整应用发布、完整历史登记及旧历史退役同一事务；DeploymentReleaseSnapshot/Record/Identity 保留原运行图及配置/秘密引用，ReleaseCodec 维护规范版本和内容摘要，ReleaseRepository 管理不可变历史与复用，ReleaseValidation 仅 SELECT 核验跨记录一致性，共用 DeploymentJsonDocument 严格 JSON 原语。失败或未知结果不伪装成功；不支持的 JSON 版本仅保留只读证据，不允许变更。提交或回滚无法确认时返回公开 UNKNOWN，不能自动覆盖或重试原业务。
 
 单组件发布的原执行记录以格式 5 嵌套保存完整非秘密发布模板；整图执行新增格式 6 和整图模板格式 2，保留原格式 5／模板格式 1 的规范字节与准入。整图执行在首次远端效果前登记一个根检查点和每个唯一组件的短检查点，在停止旧运行或发布前保存一次完整非秘密整图模板；真实执行准入最多 16 组件，分析与持久应用图的 64 组件模型上限不变。整图先预检所有来源和总容量、构建全部候选并封存配置，再保存全部旧快照、逆序停止、拓扑发布与逐组件健康、整图复查及独立整应用健康；只在全部已知成功时一次提交正式业务。已知失败按原快照逆序恢复，远端未知不盲目重发。标准发布恢复经 `service/core` 的窄端口由 Mod 装配，宿主在调用原作者核对前释放原任务旧 SSH 连接；启动只登记恢复器，不自动访问远端。显式原任务恢复须经原任务身份、精确审批和协议 11 固定只读观察核对原服务器、应用、候选、当前版本、旧快照、维护及运行设施；整图还须逐项核实原索引与全图结论，混合或缺失证据保持 UNKNOWN，不重发构建、发布或回滚。业务已核实而本机正式提交丢失时，按原完整模板及必要远端事实补原事务；若原远端收尾已持久核实、检查点已释放，只补本机事务，不重复连远端。清理只推进原检查点允许的原资源。`app/main` 的受限 `test-support` 附件只向本 Mod 的测试作用域提供 loopback SSH 夹具，不进入生产依赖。
 
@@ -1702,6 +1227,8 @@ mod-project/                              # [模块] Mod 主 JAR 的 Maven 工�
 
 ### S5-03/S5-04 当前模式源码
 
-部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。完整活动图退出与全局架构门禁仍属 S3 待收尾项。
+部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。活动根已退出旧 shared/web；完整全局门禁与本机验收仍属 S3 待收尾项。
 
-受管 helper 发布证据由 `DeploymentPublicationEvidenceChannel` 与 `DeploymentPublicationReceipt` 承担，原 Channel 保留远端准入及业务命令。协议 14 显式组装 58 个维护资源；新增 native 操作、数据库只读检查、应用准入及恢复收尾片段保留原函数正文与顺序，独立尝试 snapshot 片段保存根任务／操作双身份并在锁内验证旧 CURRENT。
+### S3 平台库存值接线
+
+`app/ai/catalog` 保存实际平台配置与模型调用使用的三个纯值。数据库和 UI 均显式依赖 `app-ai`，平台服务继续通过既有 AI 能力适配；不反向引入 DB/UI 依赖，也不向 `appapi` 混入内部 DEPLOYMENT 枚举。旧 AiModelGroupType 无活动生产调用，移除其测试未用 import，未在新包建立占位类型。旧 shared/web 已退出活动图；最终测试迁移与全局门禁仍待收尾。

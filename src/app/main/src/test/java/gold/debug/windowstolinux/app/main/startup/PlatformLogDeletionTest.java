@@ -68,7 +68,7 @@ class PlatformLogDeletionTest {
     }
 
     LogRepository.Target category(PlatformRuntime runtime) throws Exception {
-        try (var binding = runtime.logs(OWNER, "1.0.0", Optional.empty())) {
+        try (var binding = runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty())) {
             var handle = binding.register(CATEGORY);
             assertEquals(LogStorage.DATABASE, binding.write(handle, event("retained original")).storage());
             return target(runtime, handle);
@@ -101,8 +101,8 @@ class PlatformLogDeletionTest {
         var original = fixture.original("one.wtlmod", "1.0.0", "one");
         try (var runtime = fixture.runtime();
                 var installer = fixture.installer(runtime);
-                var binding = runtime.logs(OWNER, "1.0.0", Optional.empty());
-                var other = runtime.logs("example.other", "1.0.0", Optional.empty())) {
+                var binding = runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty());
+                var other = runtime.capabilities().logs("example.other", "1.0.0", Optional.empty())) {
             assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
             acknowledged(runtime);
             var target = binding.register(CATEGORY);
@@ -111,7 +111,7 @@ class PlatformLogDeletionTest {
             assertEquals(LogStorage.DATABASE, binding.write(target, event("not deleted")).storage());
             binding.close();
             try (var sealed = runtime.logs().sealDeletion(OWNER)) {
-                assertThrows(IllegalStateException.class, () -> runtime.logs(OWNER, "1.0.0", Optional.empty()));
+                assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
                 assertThrows(ApiException.class, () -> runtime.logs().close());
                 assertEquals(LogStorage.DATABASE, other.write(another, event("other remains available")).storage());
                 assertEquals(LogStorage.NOT_SAVED, binding.write(target, event("closed binding")).storage());
@@ -182,7 +182,7 @@ class PlatformLogDeletionTest {
             assertTrue(removed.fileBefore().isEmpty());
             assertFalse(Files.exists(emergency));
             sql(runtime, "DROP TRIGGER pause_log_read");
-            try (var replacement = runtime.logs(OWNER, "2.0.0", Optional.empty())) {
+            try (var replacement = runtime.capabilities().logs(OWNER, "2.0.0", Optional.empty())) {
                 var fresh = replacement.register(CATEGORY);
                 assertNotEquals(target.key(), fresh.key());
                 assertEquals(LogStorage.DATABASE, replacement.write(fresh, event("new owner activation")).storage());
@@ -216,14 +216,14 @@ class PlatformLogDeletionTest {
                 id = ledger.begin(ledger.review(OWNER), "{}");
                 ledger.unconfirmed(id);
             }
-            assertThrows(IllegalStateException.class, () -> runtime.logs(OWNER, "1.0.0", Optional.empty()));
+            assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
             var pending = runtime.logs().cleanHistory().stream().filter(r -> r.target().owner().equals(OWNER)).toList();
             assertEquals(1, pending.size());
             assertEquals("LOG_OWNER_DELETING", pending.getFirst().problem().orElseThrow().eventCode());
             assertArrayEquals(retained, Files.readAllBytes(emergency));
         }
         try (var runtime = fixture.runtime()) {
-            assertThrows(IllegalStateException.class, () -> runtime.logs(OWNER, "1.0.0", Optional.empty()));
+            assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
             assertArrayEquals(retained, Files.readAllBytes(emergency));
             var ledger = new ModDeletionLedger(runtime.persistence().database(), root);
             try (var scope = runtime.logs().sealDeletion(OWNER)) {
@@ -231,7 +231,7 @@ class PlatformLogDeletionTest {
                 finish(runtime, ledger, id, emergency);
             }
             assertFalse(Files.exists(emergency));
-            try (var allowed = runtime.logs(OWNER, "2.0.0", Optional.empty())) {
+            try (var allowed = runtime.capabilities().logs(OWNER, "2.0.0", Optional.empty())) {
                 assertNotNull(allowed.register(CATEGORY));
             }
         }
@@ -249,10 +249,10 @@ class PlatformLogDeletionTest {
             } finally {
                 sql(runtime, "DROP TRIGGER reject_category_read");
             }
-            assertThrows(IllegalStateException.class, () -> runtime.logs(OWNER, "1.0.0", Optional.empty()));
+            assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
             try (var recovered = runtime.logs().sealDeletion(OWNER)) {
             }
-            try (var binding = runtime.logs(OWNER, "1.0.0", Optional.empty())) {
+            try (var binding = runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty())) {
                 assertNotNull(binding.register(CATEGORY));
             }
         }

@@ -132,14 +132,14 @@ class PlatformModDeletionTest {
             install(installer, second);
             acknowledged(runtime);
             var identity = new gold.debug.windowstolinux.appapi.db.SchemaIdentity(OWNER, "1", UUID.randomUUID());
-            var names = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(identity);
+            var names = new gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates(identity);
             for (String version : List.of("1.0.0", "2.0.0"))
                 sql(runtime, "UPDATE mod_version SET schema_version='1',manifest_json=? WHERE mod_id=? AND version=?",
                         manifest(OWNER, version, Map.of(), "1", List.of()), OWNER, version);
             sql(runtime,
                     "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,'1',?,?,?,'PREPARING',1)",
                     OWNER, identity.generation(), names.physicalName(), names.databaseUser());
-            new gold.debug.windowstolinux.app.db.schema.SchemaProvisioner(runtime.persistence().database())
+            new gold.debug.windowstolinux.app.db.execution.schema.SchemaProvisioner(runtime.persistence().database())
                     .create(identity);
             sql(runtime, "CREATE TABLE " + names.physicalName() + ".items(id INT PRIMARY KEY)");
             sql(runtime, "INSERT INTO " + names.physicalName() + ".items VALUES(7)");
@@ -195,7 +195,7 @@ class PlatformModDeletionTest {
             assertThrows(IOException.class, () -> installer.deletion().delete(review, false));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             runtime.security().lock();
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> installer.deletion().review(OWNER, "1.0.0"));
             assertTrue(Files.exists(fixture.target("1.0.0").resolve("main/fixture.jar")));
         }

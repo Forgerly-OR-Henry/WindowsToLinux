@@ -97,7 +97,7 @@ class PlatformModInstallationCancellationTest {
             assertEquals("two", Files.readString(program(operation).resolve("README.md")));
             assertEquals("VALIDATED", phase(runtime));
             runtime.security().lock();
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> installer.reviewCancellation(operation));
         }
     }

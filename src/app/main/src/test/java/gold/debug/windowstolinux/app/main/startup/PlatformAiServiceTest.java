@@ -15,11 +15,11 @@ import java.util.concurrent.atomic.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.sun.net.httpserver.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
 import gold.debug.windowstolinux.app.service.ai.PlatformAiService;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -89,7 +89,7 @@ class PlatformAiServiceTest {
                 initialize(runtime, false);
                 model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
                 route(runtime, AiPurposeType.DEPLOYMENT, "text");
-                var ai = runtime.ai(OWNER, VERSION);
+                var ai = runtime.capabilities().ai(OWNER, VERSION);
                 var original = new AtomicReference<TaskContext>();
                 var response = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                     original.set(task);
@@ -120,7 +120,8 @@ class PlatformAiServiceTest {
                         runtime.persistence().database().bootId(), OWNER);
                 assertEquals(128, runtime.persistence().aiProfiles().outputLimit("text").orElseThrow());
                 assertEquals("text", completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
-                        task -> runtime.ai(OWNER, VERSION).call(message(AiPurpose.LANGUAGE), task))).modelId());
+                        task -> runtime.capabilities().ai(OWNER, VERSION).call(message(AiPurpose.LANGUAGE), task)))
+                        .modelId());
             }
         }
     }
@@ -135,7 +136,7 @@ class PlatformAiServiceTest {
             route(runtime, AiPurposeType.VISION, "vision");
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200,
                     "{\"choices\":[{\"message\":{\"content\":\"{\\\"ok\\\":true}\"},\"finish_reason\":\"stop\"}]}"));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var image = new AiImage("image/png", PNG);
             var vision = new AiRequest(AiPurpose.VISION, List.of(new AiMessage(AiRole.USER, "请看图", List.of(image))), 16,
                     Duration.ofSeconds(6), true);
@@ -184,7 +185,7 @@ class PlatformAiServiceTest {
             route(runtime, AiPurposeType.APPROVAL, "approval");
             fixture.handler.set(exchange -> Fixture.reply(exchange,
                     exchange.getRequestURI().getPath().equals("/reject") ? 429 : 200, RESPONSE));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             assertEquals("second", completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     task -> ai.call(message(AiPurpose.LANGUAGE), task))).modelId());
             assertEquals(List.of("/reject", "/chat"),
@@ -192,6 +193,29 @@ class PlatformAiServiceTest {
             assertEquals("approval", completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     task -> ai.call(message(AiPurpose.APPROVAL), task))).modelId());
             assertEquals("/review", fixture.requests.take().path());
+        }
+    }
+
+    @Test
+    void disabledFirstPurposeMemberNeverReceivesHttp() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "disabled", "/unused", AiCapabilityType.TEXT, 128);
+            model(runtime, fixture, "enabled", "/chat", AiCapabilityType.TEXT, 128);
+            var assignments = List.of(new AiPurposeAssignment("disabled", false),
+                    new AiPurposeAssignment("enabled", true));
+            runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT, assignments);
+            fixture.handler.set(exchange -> Fixture.reply(exchange, 200, RESPONSE));
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                String frozen = ai.configurationRevision(AiPurpose.LANGUAGE, task);
+                return ai.call(message(AiPurpose.LANGUAGE), frozen, task);
+            }));
+            assertEquals("enabled", result.modelId());
+            assertEquals(1, fixture.calls.get());
+            assertEquals("/chat", fixture.requests.take().path());
+            assertTrue(fixture.requests.isEmpty());
+            assertEquals(assignments, runtime.persistence().aiProfiles().purposes().list(AiPurposeType.DEPLOYMENT));
         }
     }
 
@@ -210,7 +234,7 @@ class PlatformAiServiceTest {
                 }
                 Fixture.reply(exchange, 429, RESPONSE);
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 String frozen = ai.configurationRevision(AiPurpose.LANGUAGE, task);
                 assertEquals("AI_CONFIGURATION_CHANGED",
@@ -232,7 +256,7 @@ class PlatformAiServiceTest {
             model(runtime, fixture, "disabled", "/unused", AiCapabilityType.TEXT, 128);
             runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
                     List.of(new AiPurposeAssignment("first", true), new AiPurposeAssignment("disabled", false)));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 String before = ai.configurationRevision(AiPurpose.LANGUAGE, task);
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
@@ -255,7 +279,7 @@ class PlatformAiServiceTest {
             model(runtime, fixture, "second", "/chat", AiCapabilityType.TEXT, 128);
             route(runtime, AiPurposeType.DEPLOYMENT, "first", "second");
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, "{\"choices\":[],\"choices\":[]}"));
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var result = runtime.tasks().bind(OWNER, VERSION, false)
                     .submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE), task)).completion()
                     .toCompletableFuture().get(8, TimeUnit.SECONDS);
@@ -271,7 +295,7 @@ class PlatformAiServiceTest {
             initialize(runtime, false);
             model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, null);
             route(runtime, AiPurposeType.DEPLOYMENT, "text");
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             completed(binding.submit(request(), task -> {
                 assertEquals(ProblemCode.UNAVAILABLE,
@@ -316,7 +340,7 @@ class PlatformAiServiceTest {
                 }
                 Fixture.reply(exchange, 200, RESPONSE);
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var original = new AtomicReference<TaskContext>();
             var request = new AiRequest(AiPurpose.LANGUAGE, message(AiPurpose.LANGUAGE).messages(), 32,
                     Duration.ofMillis(cancel ? 5000 : 1500), false);
@@ -356,7 +380,7 @@ class PlatformAiServiceTest {
                     exchange.getResponseBody().write('{');
                 }
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var original = new AtomicReference<TaskContext>();
             var observed = new AtomicReference<OperationResult<AiResponse>>();
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
@@ -383,7 +407,7 @@ class PlatformAiServiceTest {
             route(runtime, AiPurposeType.DEPLOYMENT, "text");
             var db = runtime.persistence().database();
             sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_ai_release CHECK(resource_kind<>'CONNECTION' OR released_at IS NULL)");
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var original = new AtomicReference<TaskContext>();
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 original.set(task);
@@ -416,7 +440,7 @@ class PlatformAiServiceTest {
                 }
                 Fixture.reply(exchange, 200, RESPONSE);
             });
-            var ai = runtime.ai(OWNER, VERSION);
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var handle = binding.submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE), task));
             try {
@@ -436,7 +460,7 @@ class PlatformAiServiceTest {
     }
 
     @FunctionalInterface
-    interface Handler {
+    interface ResponseAction {
         void serve(HttpExchange exchange) throws IOException;
     }
 
@@ -449,7 +473,8 @@ class PlatformAiServiceTest {
 
         final BlockingQueue<Sent> requests = new LinkedBlockingQueue<>();
 
-        final AtomicReference<Handler> handler = new AtomicReference<>(exchange -> reply(exchange, 200, RESPONSE));
+        final AtomicReference<ResponseAction> handler = new AtomicReference<>(
+                exchange -> reply(exchange, 200, RESPONSE));
 
         Fixture() throws IOException {
             server.setExecutor(executor);

@@ -192,7 +192,7 @@ class PlatformModInstallationTest {
             original("one.wtlmod", "1.0.0", "changed");
             assertThrows(IOException.class, () -> installer.install(fresh));
             runtime.security().lock();
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> installer.review(original));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
         }

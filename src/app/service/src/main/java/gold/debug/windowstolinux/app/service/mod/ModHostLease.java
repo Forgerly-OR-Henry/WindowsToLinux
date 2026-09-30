@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.service.mod;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.ContextLease;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 

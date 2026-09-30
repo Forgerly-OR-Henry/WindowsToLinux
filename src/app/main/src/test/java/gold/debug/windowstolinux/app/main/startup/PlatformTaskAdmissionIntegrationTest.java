@@ -10,13 +10,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -143,7 +143,7 @@ class PlatformTaskAdmissionIntegrationTest {
                 runtime.persistence().servers()
                         .saveServerProfile(profile("host.example", 22, "alice", "credential", "重命名"));
                 runtime.persistence().servers()
-                        .saveServer(new ServerIdentity("server", "host.example", 22, "SHA256:fixture"));
+                        .saveServer(new StoredServerIdentity("server", "host.example", 22, "SHA256:fixture"));
                 assertEquals("重命名",
                         runtime.persistence().servers().findServerProfile("server").orElseThrow().displayName());
             } finally {

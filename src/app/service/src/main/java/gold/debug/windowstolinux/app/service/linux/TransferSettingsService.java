@@ -36,12 +36,12 @@ public final class TransferSettingsService implements AutoCloseable {
     /** Reads one pair, using defaults only for absent keys. / 读取一对设置，仅为缺失键使用默认值。
      * @return validated current thresholds / 已校验当前阈值
      * @throws SQLException if storage or a stored value is invalid / 存储或已存值无效时 */
-    public synchronized TransferSettings read() throws SQLException {
+    public synchronized TransferConfiguration read() throws SQLException {
         requireOpen();
         try (var operation = security.enterOperation()) {
             try {
-                return new TransferSettings(seconds(CONNECT, TransferSettings.DEFAULTS.connectSeconds()),
-                        seconds(IDLE, TransferSettings.DEFAULTS.idleSeconds()));
+                return new TransferConfiguration(seconds(CONNECT, TransferConfiguration.DEFAULTS.connectSeconds()),
+                        seconds(IDLE, TransferConfiguration.DEFAULTS.idleSeconds()));
             } catch (IllegalArgumentException invalid) {
                 throw new SQLException("Stored transfer thresholds are invalid", invalid);
             }
@@ -52,7 +52,7 @@ public final class TransferSettingsService implements AutoCloseable {
      * @param settings validated requested thresholds / 已校验请求阈值
      * @return confirmed saved values / 确认已保存值
      * @throws SQLException if the atomic preference write fails / 原子偏好写入失败时 */
-    public synchronized TransferSettings save(TransferSettings settings) throws SQLException {
+    public synchronized TransferConfiguration save(TransferConfiguration settings) throws SQLException {
         requireOpen();
         Objects.requireNonNull(settings);
         try (var operation = security.enterOperation()) {

@@ -52,7 +52,7 @@ final class DeploymentPayloadValidation {
                 }
                 byte[] paths = DeploymentPayloadReader.read(rows, "reviewed_data_paths_payload");
                 if (paths != null)
-                    new DeploymentDataPathCodec().read(paths);
+                    new DeploymentStoragePathCodec().read(paths);
                 byte[] resources = DeploymentPayloadReader.read(rows, "reviewed_resource_bindings_payload");
                 if (resources != null)
                     new DeploymentResourceCodec().read(resources);

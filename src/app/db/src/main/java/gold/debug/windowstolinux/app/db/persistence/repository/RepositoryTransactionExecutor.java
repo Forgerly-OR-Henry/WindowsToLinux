@@ -6,7 +6,7 @@ import java.sql.SQLException;
 
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 
 /**
  * Shared transaction primitives used by focused repositories. / 由聚焦仓库使用的共享事务原语。
@@ -56,7 +56,7 @@ final class RepositoryTransactionExecutor {
      * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
-    static void upsertServer(Connection connection, ServerIdentity server) throws SQLException {
+    static void upsertServer(Connection connection, StoredServerIdentity server) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE server_profile SET trusted_host=?,trusted_ssh_port=?,host_key_sha256=?,host_key_format='SSH_WIRE'
                 WHERE server_profile_id=? AND host=? AND ssh_port=? AND

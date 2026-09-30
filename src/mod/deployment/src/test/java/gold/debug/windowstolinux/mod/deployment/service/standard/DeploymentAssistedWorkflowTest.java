@@ -29,7 +29,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 /** Uses the actual page workflow, frozen source and original H2 task for bounded assistance. / 使用真实页面流程、冻结来源及原 H2 任务验证有界辅助。 */
 class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
-    enum Scenario {
+    enum ScenarioType {
         REFUSAL, PUBLICATION, CONNECT_DRIFT
     }
     private final AtomicInteger calls = new AtomicInteger();
@@ -75,17 +75,17 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     /** AI proposals remain human-editable, and a confirmed pure form failure gets exactly one approved re-review. / AI 建议仍由人工编辑，已确认纯表单失败恰好获得一次批准重审。
      * @throws Exception if actual workflow or source validation fails / 实际流程或来源校验失败时 */
     @ParameterizedTest
-    @EnumSource(value = Scenario.class, names = {"PUBLICATION", "CONNECT_DRIFT"})
-    void sourceAdviceHumanPriorityAndPurePreflightRetryShareOneOriginalTask(Scenario scenario) throws Exception {
+    @EnumSource(value = ScenarioType.class, names = {"PUBLICATION", "CONNECT_DRIFT"})
+    void sourceAdviceHumanPriorityAndPurePreflightRetryShareOneOriginalTask(ScenarioType scenario) throws Exception {
         verifyScenario(scenario);
     }
 
     @Test
     void refusedPublicationPreservesOriginalTaskAndHumanPriority() throws Exception {
-        verifyScenario(Scenario.REFUSAL);
+        verifyScenario(ScenarioType.REFUSAL);
     }
 
-    private void verifyScenario(Scenario scenario) throws Exception {
+    private void verifyScenario(ScenarioType scenario) throws Exception {
         Files.createDirectories(selectedSourceDirectory());
         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/demo\n\ngo 1.24\n");
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
@@ -108,7 +108,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
                     connections.incrementAndGet();
                     return peer.session(task, () -> {
-                        if (scenario == Scenario.CONNECT_DRIFT)
+                        if (scenario == ScenarioType.CONNECT_DRIFT)
                             revision.set("b".repeat(64));
                     });
                 }
@@ -171,7 +171,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(original.get(), task.id());
                     assertEquals(1, archives.size());
                     assertEquals("9090", answers.values().iterator().next().values().get("port"));
-                    return success(scenario != Scenario.REFUSAL);
+                    return success(scenario != ScenarioType.REFUSAL);
                 }
             };
             var handle = page.submit(new ServerRef("server"),
@@ -179,15 +179,15 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(
-                    scenario == Scenario.REFUSAL
+                    scenario == ScenarioType.REFUSAL
                             ? Outcome.CANCELLED
-                            : scenario == Scenario.PUBLICATION ? Outcome.SUCCEEDED : Outcome.FAILED,
+                            : scenario == ScenarioType.PUBLICATION ? Outcome.SUCCEEDED : Outcome.FAILED,
                     result.outcome(), result.toString());
             assertEquals(handle.id(), original.get());
             assertEquals(2, reviews.get());
             assertEquals(3, calls.get());
             assertEquals(1, approvals.stream().filter("deployment.assisted.retry"::equals).count());
-            if (scenario == Scenario.REFUSAL) {
+            if (scenario == ScenarioType.REFUSAL) {
                 assertEquals(0, connections.get());
             } else {
                 try (var access = scope(runtime, true);
@@ -198,14 +198,14 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     assertTrue(rows.next());
                     assertEquals(handle.id(), rows.getObject(1, UUID.class));
                     assertEquals("ASSISTED", rows.getString(2));
-                    assertEquals(scenario == Scenario.PUBLICATION ? "SUCCEEDED" : "FAILED", rows.getString(3));
-                    assertEquals(scenario == Scenario.PUBLICATION, rows.getBoolean(4));
+                    assertEquals(scenario == ScenarioType.PUBLICATION ? "SUCCEEDED" : "FAILED", rows.getString(3));
+                    assertEquals(scenario == ScenarioType.PUBLICATION, rows.getBoolean(4));
                     assertFalse(rows.next());
                 }
-                assertEquals(scenario == Scenario.PUBLICATION ? 1 : 0, peer.publications.get());
-                assertEquals(scenario == Scenario.PUBLICATION ? 2 : 1, connections.get(),
+                assertEquals(scenario == ScenarioType.PUBLICATION ? 1 : 0, peer.publications.get());
+                assertEquals(scenario == ScenarioType.PUBLICATION ? 2 : 1, connections.get(),
                         "Frozen guard rejects before admitting a second SSH session");
-                if (scenario == Scenario.CONNECT_DRIFT)
+                if (scenario == ScenarioType.CONNECT_DRIFT)
                     assertEquals(ProblemCode.ACCESS_DENIED, result.problem().orElseThrow().code());
             }
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));

@@ -11,6 +11,7 @@ import javax.swing.*;
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.shared.model.deployment.*;
 import org.junit.jupiter.api.Test;
 

@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement;
 import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.Entry;
 import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Retained-task inspection and explicit original cancellation or reconciliation. / 保留任务检查及明确原任务取消或核对。 */
@@ -62,10 +62,10 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         Objects.requireNonNull(history);
         setName("platform.tasks");
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
-        reload = components.secondaryButton(messages.text("tasks.reload"));
-        cancel = components.secondaryButton(messages.text("tasks.cancel"));
-        reconcile = components.secondaryButton(messages.text("tasks.reconcile"));
-        this.history = components.secondaryButton(messages.text("tasks.history"));
+        reload = messages.bind(components.secondaryButton(""), "tasks.reload");
+        cancel = messages.bind(components.secondaryButton(""), "tasks.cancel");
+        reconcile = messages.bind(components.secondaryButton(""), "tasks.reconcile");
+        this.history = messages.bind(components.secondaryButton(""), "tasks.history");
         reload.setName("tasks.reload");
         cancel.setName("tasks.cancel");
         reconcile.setName("tasks.reconcile");
@@ -83,8 +83,9 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         actions.add(reconcile);
         actions.add(this.history);
         var heading = components.transparent(new BorderLayout(8, 8));
-        var explanation = new JTextArea(messages.text("tasks.explanation"));
+        var explanation = new JTextArea();
         explanation.setEditable(false);
+        messages.bind(explanation, "tasks.explanation");
         explanation.setOpaque(false);
         explanation.setLineWrap(true);
         explanation.setWrapStyleWord(true);
@@ -300,8 +301,16 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         table.setEnabled(available);
         cancel.setEnabled(available && entry != null && entry.cancellable());
         reconcile.setEnabled(available && entry != null && recoverable(entry));
-        reconcile.setText(messages.text(
-                entry != null && entry.recovery() == RecoveryState.ARCHIVE_ONLY ? "tasks.archive" : "tasks.reconcile"));
+        messages.bind(reconcile,
+                entry != null && entry.recovery() == RecoveryState.ARCHIVE_ONLY ? "tasks.archive" : "tasks.reconcile");
+    }
+
+    /** Re-renders the same immutable task observations without fetching or reconciling tasks. / 重绘同一不可变任务观察，不重新读取或核对任务。 */
+    public void localize() {
+        if (!closed) {
+            var selected = selected();
+            display(entries, selected == null ? null : selected.snapshot().id());
+        }
     }
 
     /** Disposes the exact confirmation without accepting its decision. / 销毁精确确认窗口，不接受其决定。 */

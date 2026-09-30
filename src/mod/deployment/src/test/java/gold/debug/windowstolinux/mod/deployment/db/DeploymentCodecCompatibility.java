@@ -1,47 +1,66 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Properties;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
+/** Checks independently frozen original bytes without a legacy runtime dependency. / 不依赖旧运行时地核对独立冻结的原字节。 */
 final class DeploymentCodecCompatibility {
+    private static final Properties ORIGINAL = originals();
+
+    private DeploymentCodecCompatibility() {
+    }
+
     static byte[] write(DeploymentRuntimeDefinition runtime) throws IOException {
-        var encoded = new DeploymentRuntimeCodec().write(runtime);
-        var previous = new gold.debug.windowstolinux.shared.config.persistence.serialization.DeploymentRuntimePersistenceCodec();
-        var health = new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec()
-                .read(write(runtime.healthCheck()));
-        assertArrayEquals(encoded, previous.write(previous.read(encoded, health)));
-        return encoded;
+        return original("runtime", new DeploymentRuntimeCodec().write(runtime));
     }
 
     static byte[] write(DeploymentHealthCheck health) throws IOException {
-        var encoded = new DeploymentHealthCodec().write(health);
-        var previous = new gold.debug.windowstolinux.shared.config.persistence.serialization.HealthCheckCodec();
-        assertArrayEquals(encoded, previous.write(previous.read(encoded)));
-        return encoded;
+        return original("health", new DeploymentHealthCodec().write(health));
     }
 
     static byte[] write(DeploymentUnitRuntimeConfiguration runtime) throws IOException {
-        var encoded = new DeploymentUnitRuntimeCodec().write(runtime);
-        var previous = new gold.debug.windowstolinux.shared.config.persistence.serialization.ApplicationRuntimeConfigurationCodec();
-        assertArrayEquals(encoded, previous.write(previous.read(encoded)));
-        return encoded;
+        return original("unit", new DeploymentUnitRuntimeCodec().write(runtime));
     }
 
     static byte[] write(DeploymentResourceBindings bindings) throws IOException {
-        var encoded = new DeploymentResourceCodec().write(bindings);
-        var previous = new gold.debug.windowstolinux.app.db.persistence.serialization.ManagedResourcePersistenceCodec();
-        assertArrayEquals(encoded, previous.write(previous.read(encoded)));
-        return encoded;
+        return original("resources", new DeploymentResourceCodec().write(bindings));
     }
 
-    static byte[] write(List<DeploymentDataPath> paths) throws IOException {
-        var encoded = new DeploymentDataPathCodec().write(paths);
-        var previous = new gold.debug.windowstolinux.app.db.persistence.serialization.ComponentPathPersistenceCodec();
-        assertArrayEquals(encoded, previous.write(previous.read(encoded)));
-        return encoded;
+    static byte[] write(List<DeploymentStoragePath> paths) throws IOException {
+        return original("paths", new DeploymentStoragePathCodec().write(paths));
+    }
+
+    private static byte[] original(String kind, byte[] encoded) {
+        try {
+            String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(encoded));
+            String frozen = ORIGINAL.getProperty(kind + "-" + digest);
+            assertNotNull(frozen, "No independently frozen original sample matches " + kind + "/" + digest);
+            byte[] expected = Base64.getDecoder().decode(frozen);
+            assertArrayEquals(expected, encoded);
+            return expected;
+        } catch (NoSuchAlgorithmException failure) {
+            throw new AssertionError("SHA-256 is required to identify original samples", failure);
+        }
+    }
+
+    private static Properties originals() {
+        var values = new Properties();
+        try (var input = DeploymentCodecCompatibility.class.getResourceAsStream("/original-codec-goldens.properties")) {
+            assertNotNull(input, "Original format fixtures must be packaged");
+            values.load(input);
+            return values;
+        } catch (IOException failure) {
+            throw new AssertionError("Original format fixtures cannot be read", failure);
+        }
     }
 }

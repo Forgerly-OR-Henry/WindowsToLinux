@@ -38,7 +38,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
     private Facts facts;
 
     /** Persisted state transitions; none permits Git replay during recovery. / 持久状态迁移；恢复均不允许重放 Git。 */
-    enum Phase {
+    enum PhaseState {
         /** No Git request was sent. / 尚未发送 Git 请求。 */
         PLANNED,
         /** The original request may have been sent. / 原请求可能已发送。 */
@@ -71,7 +71,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @param failure known business failure / 已知业务失败 */
     record Facts(UUID task, DeploymentGitPreparer.Planned plan, UUID project, String displayName, Instant observedAt,
             Optional<DeploymentProjectRecord> expected, DeploymentGitRequest request, long maximumBytes,
-            int maximumEntries, Phase phase, Optional<DeploymentGitPreparer.Receipt> receipt,
+            int maximumEntries, PhaseState phase, Optional<DeploymentGitPreparer.Receipt> receipt,
             Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
         /** Requires immutable, internally consistent facts. / 要求不可变且内部一致的依据。
          * @param task original task / 原任务
@@ -148,7 +148,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
         var plan = new DeploymentGitPreparer.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 UUID.randomUUID());
         var initial = new Facts(task.id(), plan, project, name, observedAt, expected, request, maximumBytes,
-                maximumEntries, Phase.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
+                maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         var handle = tasks.beginCheckpoint(task, KEY, encode(initial));
         return new DeploymentGitSourceJournal(task.id(), handle, handle.snapshot());
     }
@@ -166,7 +166,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
         var plan = new DeploymentGitPreparer.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
                 UUID.randomUUID());
         var probe = new Facts(UUID.randomUUID(), plan, project, name, observedAt, expected, request, maximumBytes,
-                maximumEntries, Phase.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
+                maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         if (encode(probe).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
             throw new IllegalArgumentException("Original Git request exceeds checkpoint budget");
     }
@@ -201,9 +201,9 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     @Override
     public void beforeRequest() throws ApiException {
-        if (facts.phase() != Phase.PLANNED)
+        if (facts.phase() != PhaseState.PLANNED)
             throw invalid();
-        advance(copy(Phase.REQUESTED, facts.receipt(), facts.next(), facts.failure()));
+        advance(copy(PhaseState.REQUESTED, facts.receipt(), facts.next(), facts.failure()));
     }
 
     /** Records only a complete verified physical result before control deletion. / 删除控制目录前仅记录完整已核实物理结果。
@@ -211,48 +211,48 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @throws ApiException if CAS or result shape cannot be confirmed / CAS 或结果形态无法确认时 */
     @Override
     public void receipt(DeploymentGitPreparer.Receipt value) throws ApiException {
-        if (facts.phase() != Phase.REQUESTED)
+        if (facts.phase() != PhaseState.REQUESTED)
             throw invalid();
-        advance(copy(Phase.RECEIPT, Optional.of(value), facts.next(), facts.failure()));
+        advance(copy(PhaseState.RECEIPT, Optional.of(value), facts.next(), facts.failure()));
     }
 
     /** Persists the full proposed project row before its save boundary. / 在保存边界前持久化完整拟保存项目行。
      * @param row exact proposed next row / 精确拟保存新行
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     void propose(DeploymentProjectRecord row) throws ApiException {
-        if (facts.phase() != Phase.RECEIPT || facts.receipt().orElseThrow().outcome() != Outcome.SUCCEEDED
+        if (facts.phase() != PhaseState.RECEIPT || facts.receipt().orElseThrow().outcome() != Outcome.SUCCEEDED
                 || !row.id().equals(facts.project()))
             throw invalid();
-        advance(copy(Phase.PROPOSED, facts.receipt(), Optional.of(row), facts.failure()));
+        advance(copy(PhaseState.PROPOSED, facts.receipt(), Optional.of(row), facts.failure()));
     }
 
     /** Records the only project write boundary. / 记录唯一项目写入边界。
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     void writeStarted() throws ApiException {
-        if (facts.phase() != Phase.PROPOSED)
+        if (facts.phase() != PhaseState.PROPOSED)
             throw invalid();
-        advance(copy(Phase.WRITE_STARTED, facts.receipt(), facts.next(), facts.failure()));
+        advance(copy(PhaseState.WRITE_STARTED, facts.receipt(), facts.next(), facts.failure()));
     }
 
     /** Confirms the original project save returned. / 确认原项目保存已返回。
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     void saved() throws ApiException {
-        if (facts.phase() != Phase.WRITE_STARTED)
+        if (facts.phase() != PhaseState.WRITE_STARTED)
             throw invalid();
-        advance(copy(Phase.SAVED, facts.receipt(), facts.next(), facts.failure()));
+        advance(copy(PhaseState.SAVED, facts.receipt(), facts.next(), facts.failure()));
     }
 
     /** Keeps a known failure ahead of later coincidentally equal project rows. / 将已知失败置于后来偶然相同的项目行之前。
      * @param problem bounded actual failure / 有界实际失败
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     void knownFailure(Problem problem) throws ApiException {
-        if (facts.phase() == Phase.SAVED || facts.phase() == Phase.KNOWN_FAILURE)
+        if (facts.phase() == PhaseState.SAVED || facts.phase() == PhaseState.KNOWN_FAILURE)
             throw invalid();
         var bounded = new Problem(problem.code(), problem.eventCode(), "Original Git project operation failed",
                 Map.of(), Optional.empty());
         if (bounded.code() == ProblemCode.UNKNOWN || !bounded.eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
             throw invalid();
-        advance(copy(Phase.KNOWN_FAILURE, facts.receipt(), facts.next(), Optional.of(bounded)));
+        advance(copy(PhaseState.KNOWN_FAILURE, facts.receipt(), facts.next(), Optional.of(bounded)));
     }
 
     /** Releases only after all original physical and business evidence is settled. / 仅在原物理与业务依据全部确定后释放。
@@ -276,7 +276,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @param next proposed row / 拟保存行
      * @param failure known failure / 已知失败
      * @return complete next facts / 完整下一依据 */
-    private Facts copy(Phase phase, Optional<DeploymentGitPreparer.Receipt> receipt,
+    private Facts copy(PhaseState phase, Optional<DeploymentGitPreparer.Receipt> receipt,
             Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
         return new Facts(task, facts.plan(), facts.project(), facts.displayName(), facts.observedAt(), facts.expected(),
                 facts.request(), facts.maximumBytes(), facts.maximumEntries(), phase, receipt, next, failure);
@@ -347,7 +347,8 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
             var facts = new Facts(uuid(root, "taskId"), plan, uuid(root, "projectId"), text(root, "displayName"),
                     Instant.ofEpochMilli(root.get("observedAt").longValue()), expected,
                     DeploymentGitMessages.decode(text(root, "request")), root.get("maximumBytes").longValue(),
-                    root.get("maximumEntries").intValue(), Phase.valueOf(text(root, "phase")), receipt, next, failure);
+                    root.get("maximumEntries").intValue(), PhaseState.valueOf(text(root, "phase")), receipt, next,
+                    failure);
             if (!facts.task().equals(task) || !encode(facts).equals(root.toString()) || !validPhase(facts))
                 throw new IllegalArgumentException();
             return facts;

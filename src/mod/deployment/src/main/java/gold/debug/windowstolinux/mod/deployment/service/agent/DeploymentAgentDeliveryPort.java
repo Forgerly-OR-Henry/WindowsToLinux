@@ -100,6 +100,13 @@ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
     OperationResult<Published> deliver(TaskContext task, DeploymentAgentPlan plan, Map<String, Prepared> candidates,
             Map<String, String> revisions, Map<String, String> artifacts) throws Exception;
 
+    /** Rebinds all actual sends after an explicitly authorized paused model replacement. / 明确授权暂停模型替换后重新绑定全部真实发送。
+     * @param revision newly verified whole-route revision / 新核实整路由修订
+     * @throws Exception if this tool cannot safely replace its original authority / 此工具不能安全替换原权限时 */
+    default void replaceConfiguration(String revision) throws Exception {
+        throw new UnsupportedOperationException("Tool does not support explicit model replacement");
+    }
+
     /** Releases only verified task-owned resources. / 仅释放已核实任务所属资源。
      * @throws Exception if release is unconfirmed / 释放无法确认时 */
     @Override

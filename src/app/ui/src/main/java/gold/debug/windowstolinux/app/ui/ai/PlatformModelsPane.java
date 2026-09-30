@@ -6,9 +6,9 @@ import java.util.List;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.ai.*;
+import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Permanent model inventory and explicit interrupted-probe recovery. / 常驻模型清单及明确的中断探测恢复。 */
@@ -71,9 +71,9 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
         checks.setRenderer((list, value, index, selected,
                 focus) -> new JLabel(value == null ? "" : value.progressText() + " · " + value.state()));
         actions.add(checks);
-        cancel = components.secondaryButton(messages.text("button.cancel"));
+        cancel = messages.bind(components.secondaryButton(""), "button.cancel");
         cancel.setName("models.cancel");
-        reconcile = components.secondaryButton(messages.text("platform.models.reconcile"));
+        reconcile = messages.bind(components.secondaryButton(""), "platform.models.reconcile");
         reconcile.setName("models.reconcile");
         cancel.addActionListener(event -> {
             var selected = (TaskSnapshot) checks.getSelectedItem();
@@ -104,7 +104,7 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
                         });
             }
         });
-        var reload = components.secondaryButton(messages.text("server.refresh"));
+        var reload = messages.bind(components.secondaryButton(""), "server.refresh");
         reload.setName("models.refresh");
         reload.addActionListener(event -> refresh());
         actions.add(cancel);
@@ -131,6 +131,11 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
     /** Disables conflicting inventory edits. / 禁止冲突的清单编辑。 */
     private void inventoryLock() {
         inventory.setLocked(locked || busy || closed);
+    }
+
+    /** Updates existing inventory labels without reading or modifying model configuration. / 更新已有清单标签，不读取或修改模型配置。 */
+    public void localize() {
+        inventory.localize();
     }
 
     /** Reloads non-secret settings through the background inventory loader. / 经后台清单加载器重读非秘密设置。 */

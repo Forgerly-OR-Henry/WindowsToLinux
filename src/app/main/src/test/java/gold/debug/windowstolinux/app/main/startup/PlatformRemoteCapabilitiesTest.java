@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.shell.ProcessShellFactory;
@@ -121,7 +121,7 @@ class PlatformRemoteCapabilitiesTest {
         return new CommandRequest(script, new byte[0], Duration.ofSeconds(5), 8192);
     }
 
-    static ApprovalGrant approve(PlatformRuntime.RemoteCapabilities capabilities, CommandRequest command,
+    static ApprovalGrant approve(PlatformRuntime.ModCapabilities.RemoteCapabilities capabilities, CommandRequest command,
             TaskContext task) throws Exception {
         return capabilities.interaction().approve(RemoteActions.command(SERVER, "revision-1", command), task).value()
                 .orElseThrow();
@@ -149,7 +149,7 @@ class PlatformRemoteCapabilitiesTest {
                 update.setBytes(1, new byte[stored.payload().length]);
                 assertEquals(1, update.executeUpdate());
             }
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     var failure = assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
                     assertEquals(ApiException.class, failure.getClass());
@@ -176,7 +176,7 @@ class PlatformRemoteCapabilitiesTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 byte[] bytes = "文件内容\0with bytes".getBytes(StandardCharsets.UTF_8);
                 var source = root.resolve("源 文件.bin");
                 Files.write(source, bytes);
@@ -266,7 +266,7 @@ class PlatformRemoteCapabilitiesTest {
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
             runtime.setInteractionPresenter(new Reviews());
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                     try (var session = capabilities.linux().connect(SERVER, task)) {
                         byte[] payload = "wire-data".getBytes(StandardCharsets.UTF_8);
@@ -336,7 +336,7 @@ class PlatformRemoteCapabilitiesTest {
             try (var c = runtime.persistence().database().openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource ADD CONSTRAINT reject_sftp CHECK(resource_kind<>'FILE')");
             }
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var original = new AtomicReference<TaskContext>();
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var handle = binding.submit(request("server"), task -> {
@@ -394,7 +394,7 @@ class PlatformRemoteCapabilitiesTest {
             Files.writeString(remote.files.resolve("file.txt"), "old");
             String digest = HexFormat.of().formatHex(
                     java.security.MessageDigest.getInstance("SHA-256").digest("new".getBytes(StandardCharsets.UTF_8)));
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                     try (var session = capabilities.linux().connect(SERVER, task)) {
                         var request = new TransferRequest(source, "/file.txt", 3);
@@ -440,7 +440,7 @@ class PlatformRemoteCapabilitiesTest {
             var source = Files.write(root.resolve("source"), new byte[100000]);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var original = new AtomicReference<TaskContext>();
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var task = binding.submit(request("server"), context -> {
                     original.set(context);
                     try (var session = capabilities.linux().connect(SERVER, context)) {
@@ -514,8 +514,8 @@ class PlatformRemoteCapabilitiesTest {
             var reviews = new Reviews();
             reviews.policy = intent -> !intent.type().equals("platform.ssh.execute");
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION);
-                    var foreign = runtime.remoteCapabilities("other.owner", VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                    var foreign = runtime.capabilities().remoteCapabilities("other.owner", VERSION)) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     assertThrows(ApiException.class, () -> foreign.linux().connect(SERVER, context));
                     assertThrows(ApiException.class,
@@ -542,7 +542,7 @@ class PlatformRemoteCapabilitiesTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 try (var operation = runtime.security().enterOperation();
                         var credentials = runtime.security().openCredentials()) {
                     credentials.save("credential", "wrong-password".toCharArray());
@@ -554,7 +554,7 @@ class PlatformRemoteCapabilitiesTest {
                 assertEquals(Outcome.SUCCEEDED, result(failed).outcome());
                 assertTrue(runtime.persistence().servers().findServer("server").isEmpty());
                 runtime.persistence().servers().saveServer(
-                        new ServerIdentity("server", "127.0.0.1", remote.listener.server().getPort(), "SHA256:wrong"));
+                        new StoredServerIdentity("server", "127.0.0.1", remote.listener.server().getPort(), "SHA256:wrong"));
                 reviews.approved.clear();
                 var changed = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
@@ -573,7 +573,7 @@ class PlatformRemoteCapabilitiesTest {
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
             runtime.setInteractionPresenter(new Reviews());
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var retained = new AtomicReference<RemoteSession>();
                 var context = new AtomicReference<TaskContext>();
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), active -> {
@@ -604,7 +604,7 @@ class PlatformRemoteCapabilitiesTest {
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
             runtime.setInteractionPresenter(new Reviews());
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var original = new AtomicReference<TaskContext>();
                 var callbackReturned = new CountDownLatch(1);

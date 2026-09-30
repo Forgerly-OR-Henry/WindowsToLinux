@@ -110,7 +110,7 @@ class PlatformAuthorizationWindowTest {
             runtime.authorization().saveMode(AuthorizationMode.FULL);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var accepted = new CompletableFuture<TaskHandle<Void>>();
                 var continueWork = new CountDownLatch(1);
                 var reads = new AtomicInteger();

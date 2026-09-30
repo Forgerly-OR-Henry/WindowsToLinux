@@ -6,9 +6,8 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 
 /** Stores model connection, capability and routing state in one row. / 在一行中保存模型连接、能力及路由状态。 */
 public final class AiProfileRepository {
@@ -16,12 +15,6 @@ public final class AiProfileRepository {
      */
     private final RepositoryConnections connections;
 
-    /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
-     * @param connections connections supplied to this boundary / 传入当前边界的connections值
-     */
-    public AiProfileRepository(DesktopConnectionFactory connections) {
-        this(connections.scoped());
-    }
 
     /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
      * @param connections platform transaction scope / 平台事务作用域

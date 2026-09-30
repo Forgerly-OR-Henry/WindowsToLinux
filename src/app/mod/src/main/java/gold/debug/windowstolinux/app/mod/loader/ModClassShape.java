@@ -371,17 +371,17 @@ final class ModClassShape extends ClassVisitor {
         if (!value.equals(roundtrip.toString()))
             throw new IllegalArgumentException("Incomplete generic signature");
         if (field)
-            reader.acceptType(new GenericTypes());
+            reader.acceptType(new TypeParameters());
         else
-            reader.accept(new GenericTypes());
+            reader.accept(new TypeParameters());
     }
 
     /** Tracks each generic type branch separately to preserve outer names. / 分别跟踪泛型类型分支以保留外层名称。 */
-    private final class GenericTypes extends SignatureVisitor {
+    private final class TypeParameters extends SignatureVisitor {
         /** Current nested class prefix. / 当前嵌套类前缀。 */
         private String current;
         /** Creates an independent branch. / 创建独立分支。 */
-        GenericTypes() {
+        TypeParameters() {
             super(Opcodes.ASM9);
         }
 
@@ -406,7 +406,7 @@ final class ModClassShape extends ClassVisitor {
          * @return independent branch / 独立分支 */
         @Override
         public SignatureVisitor visitTypeArgument(char wildcard) {
-            return new GenericTypes();
+            return new TypeParameters();
         }
     }
 }

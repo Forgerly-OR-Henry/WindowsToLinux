@@ -11,6 +11,9 @@ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedBuildCorrection;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 import gold.debug.windowstolinux.mod.deployment.source.*;
 
@@ -28,6 +31,49 @@ public final class DeploymentStaticAssistance {
     public DeploymentStaticAssistance(ModContext context, DeploymentStaticWorkflow workflow) {
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
+    }
+
+    /** Keeps one original form available for explicit typed build correction. / 保留一份原表单供明确类型化构建纠正。
+     * @param prompt source-backed original form / 源码依据原表单
+     * @param initial actually reviewed answer / 实际审阅答案
+     * @param reviewer original human view / 原人工视图
+     * @param advisor task-local bounded advisor / 任务内部有界建议器
+     * @return same-source correction callback / 同一来源纠正回调 */
+    public DeploymentAssistedBuildCorrection correction(Prompt prompt, Answers initial, Reviewer reviewer, DeploymentAssistedAdvisor advisor) {
+        var prior = new java.util.concurrent.atomic.AtomicReference<>(initial);
+        return (previous, failure, task) -> {
+            var before = prior.get(); var request = previous.request();
+            var values = new LinkedHashMap<>(prompt.defaults()); values.putAll(before.values());
+            var fields = List.of("primary", "secondary", "version", "jvmTarget").stream()
+                    .map(key -> DeploymentStaticRuntimeResolver.field(prompt.componentId(), key, values.getOrDefault(key, ""), List.of())).toList();
+            String phase = failure.context().getOrDefault("recoveryPhase", "BUILD");
+            if (!Set.of("BUILD", "ROLLBACK_VERIFIED").contains(phase)) throw new IllegalArgumentException("Unsupported fixed correction boundary");
+            var retry = advisor.afterFailure(request.server(), phase, new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(failure)),
+                    request.material().snapshot().sha256(), fields, task);
+            if (!retry.retry()) return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
+            var answers = reviewer.reviewBuildCorrection(request.server(), request.material().snapshot().sha256(),
+                    new Prompt(prompt.componentId(), prompt.applicationId(), prompt.projectType(), values, fields), before, task);
+            if (answers.outcome() != Outcome.SUCCEEDED) return new OperationResult<>(answers.outcome(), Optional.empty(), answers.problem());
+            var after = answers.value().orElseThrow();
+            var nextValues = new LinkedHashMap<>(values); nextValues.putAll(after.values());
+            for (var entry : nextValues.entrySet())
+                if (!Set.of("primary", "secondary", "version", "jvmTarget").contains(entry.getKey()) && !Objects.equals(values.get(entry.getKey()), entry.getValue()))
+                    throw new SecurityException("Build correction changed an immutable original field");
+            if (!before.files().equals(after.files()) || !before.limits().equals(after.limits()) || before.containerRisk() != after.containerRisk() || before.adapterRisk() != after.adapterRisk())
+                throw new SecurityException("Build correction changed original resources or limits");
+            var definition = new DeploymentStaticRuntimeResolver().runtime(prompt.projectType(), nextValues);
+            boolean changed = !definition.equals(request.runtime());
+            int branch = changed ? 0 : failure.eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE") ? 1 : -1;
+            if (branch < 0) return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
+            var consent = new DeploymentReviewConsent(request.facts().applicationId(), request.server().id(), request.material().snapshot().sha256(), request.archive().sha256(), java.time.Instant.now());
+            var corrected = new ReviewedDeploymentRequest(request.server(), request.facts(), request.material(), request.archive(), request.configuration(),
+                    request.secretReferences(), request.resources(), definition, request.userAccessUrl(), request.limits(), consent, request.containerDaemonRiskAccepted(), request.experimentalAdapterRiskAccepted());
+            var actual = new gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedDeploymentPlanner().plan(corrected);
+            var checked = new gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner().render(actual, task);
+            if (checked.outcome() != Outcome.SUCCEEDED) return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
+            prior.set(new Answers(Map.copyOf(nextValues), before.files(), before.limits(), before.containerRisk(), before.adapterRisk()));
+            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new DeploymentAssistedBuildCorrection.Correction(actual, values, nextValues, branch)), Optional.empty());
+        };
     }
 
     /** Gives a known pure form rejection one bounded, explicitly approved review retry. / 为已知纯表单拒绝提供一次有界且明确批准的审阅重试。

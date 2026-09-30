@@ -7,7 +7,7 @@ import java.util.List;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.spi.DeploymentTypeInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.php.composer.PhpComposerDeploymentInspector;
@@ -59,7 +59,7 @@ public final class PhpServiceDeploymentInspector implements DeploymentTypeInspec
                 || ServiceMetadataInspector.present(root, "composer.lock");
         if (nativeMetadata && composerMetadata) {
             rejections.add(new RejectionReason("PHP_ARCHITECTURE_CONFLICT",
-                    LocalizedMessage.of("analysis.php.architectureConflict"), "deployment"));
+                    DeploymentLocalizedMessage.of("analysis.php.architectureConflict"), "deployment"));
             return null;
         }
         return nativeMetadata

@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -56,7 +56,7 @@ public final class PreviewInspector implements DeploymentTypeInspector {
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
                 ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
                 DeploymentBuildToolType.NONE_PREVIEW, support, languageFacts, languageFacts.evidence(), List.of(),
-                List.of(LocalizedMessage.of("analysis.preview.noDeployment")));
+                List.of(DeploymentLocalizedMessage.of("analysis.preview.noDeployment")));
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), Map.of(),
                 Optional.empty(), Map.of(), List.of(), List.of(), List.of()));
     }

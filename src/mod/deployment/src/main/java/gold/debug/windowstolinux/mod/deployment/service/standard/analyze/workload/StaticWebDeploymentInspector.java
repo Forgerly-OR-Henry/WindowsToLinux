@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Anal
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageFactKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -79,11 +79,11 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
         Optional<NodeBuildFacts> nodeProject = node.inspect(root);
         if (!hasIndex && nodeProject.isEmpty()) {
             rejections.add(new RejectionReason("STATIC_SITE_ENTRY_MISSING",
-                    LocalizedMessage.of("analysis.deployment.rejection.staticSiteEntryMissing"), "deployment"));
+                    DeploymentLocalizedMessage.of("analysis.deployment.rejection.staticSiteEntryMissing"), "deployment"));
             return null;
         }
-        List<LocalizedMessage> missing = new ArrayList<>();
-        List<LocalizedMessage> conflicts = new ArrayList<>();
+        List<DeploymentLocalizedMessage> missing = new ArrayList<>();
+        List<DeploymentLocalizedMessage> conflicts = new ArrayList<>();
         DeploymentBuildToolType tool = DeploymentBuildToolType.STATIC_SITE_BUILD;
         String applicationId = ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root));
         if (nodeProject.isPresent()) {
@@ -91,12 +91,12 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             applicationId = project.applicationId();
             tool = project.buildTool();
             if (project.lockFiles().isEmpty()) {
-                missing.add(LocalizedMessage.of("analysis.deployment.missing.nodeLockfile"));
+                missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.nodeLockfile"));
             } else if (project.lockFiles().size() > 1) {
-                conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multipleNodeLockfiles"));
+                conflicts.add(DeploymentLocalizedMessage.of("analysis.deployment.conflict.multipleNodeLockfiles"));
             }
             if (!project.hasBuildScript()) {
-                missing.add(LocalizedMessage.of("analysis.deployment.missing.staticBuildScript"));
+                missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.staticBuildScript"));
             }
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, applicationId, projectType(), tool,
@@ -108,8 +108,8 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment
                 .valuesFor(projectType());
         List<AnalysisEvidence> runtimeEvidence = new ArrayList<>();
-        List<LocalizedMessage> required = new ArrayList<>(
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>(
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (nodeProject.isPresent()) {
             String packageJson = BoundedMetadataInspector.read(root.resolve("package.json"));
             if (VITE_BUILD.matcher(packageJson).find()) {
@@ -121,7 +121,7 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             }
             String nodeVersion = languageFacts.values().get(LanguageFactKind.NODE_MAJOR_VERSION);
             if (nodeVersion == null) {
-                required.add(LocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
+                required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
             } else {
                 values.put(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION, nodeVersion);
                 languageFacts.evidence().stream()
@@ -130,7 +130,7 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
             }
         }
         if (!values.containsKey(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY)) {
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.staticOutput"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.staticOutput"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values,
                 Optional.empty(), Map.of(), List.of(), runtimeEvidence, required);
@@ -173,9 +173,9 @@ public final class StaticWebDeploymentInspector implements DeploymentTypeInspect
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
             String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(subject),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
                 source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
                 gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

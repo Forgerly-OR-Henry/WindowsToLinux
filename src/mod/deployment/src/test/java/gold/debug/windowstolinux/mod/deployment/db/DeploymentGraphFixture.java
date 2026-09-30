@@ -27,7 +27,8 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
         var unit = DeploymentUnitIdentity.forManaged(id, new ServerRef(server), "a".repeat(64));
         var runtime = new DeploymentUnitRuntimeConfiguration(health, Optional.empty(), definition.identityPolicy(),
                 definition.workload());
-        var path = new DeploymentDataPath("uploads", DeploymentDataPath.AccessMode.READ_WRITE, "uploads-v1", false);
+        var path = new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1",
+                false);
         var binding = new DeploymentFileBinding("uploads", path, DeploymentStorageLocation.defaults(),
                 DeploymentStorageLocation.StorageResourceType.FILE);
         return new DeploymentApplicationGraph.Component(id, unit, runtime, dependencies, definition, List.of(path),
@@ -53,7 +54,13 @@ abstract class DeploymentGraphFixture extends DeploymentRuntimeFixture {
                         throw failure;
                     }
                 });
-        var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+        OperationResult<Void> result;
+        try {
+            result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            throw new AssertionError("Original fixture work did not conclude: " + handle.snapshot(),
+                    observed.get() == null ? timeout : observed.get());
+        }
         if (observed.get() != null)
             throw new AssertionError("Original fixture work failed", observed.get());
         assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());

@@ -8,7 +8,7 @@ import java.util.*;
 import javax.swing.JComponent;
 
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;

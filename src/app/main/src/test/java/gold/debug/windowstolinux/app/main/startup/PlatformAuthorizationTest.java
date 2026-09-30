@@ -34,8 +34,8 @@ class PlatformAuthorizationTest {
         return reviews.approved.stream().filter(intent -> intent.type().equals("platform.ssh.execute")).count();
     }
 
-    static OperationResult<Void> repeat(PlatformRuntime.RemoteCapabilities capabilities, TaskContext task)
-            throws Exception {
+    static OperationResult<Void> repeat(PlatformRuntime.ModCapabilities.RemoteCapabilities capabilities,
+            TaskContext task) throws Exception {
         try (var session = capabilities.linux().connect(SERVER, task)) {
             for (int i = 0; i < 3; i++) {
                 var command = command("builtin printf 'restart app-a'");
@@ -55,7 +55,7 @@ class PlatformAuthorizationTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 for (var mode : AuthorizationMode.values()) {
                     runtime.authorization().saveMode(mode);
                     long before = prompts(reviews);
@@ -90,7 +90,7 @@ class PlatformAuthorizationTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = capabilities.launcher()
                         .submit(new Launch<>(request("server"), Set.of(APP, OTHER), task -> {
                             try (var session = capabilities.linux().connect(SERVER, task)) {
@@ -134,7 +134,7 @@ class PlatformAuthorizationTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 runtime.authorization().saveMode(AuthorizationMode.ONCE);
                 assertEquals(Outcome.SUCCEEDED,
                         result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
@@ -169,7 +169,7 @@ class PlatformAuthorizationTest {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
                     try (var session = capabilities.linux().connect(SERVER, task);
                             var workers = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -217,7 +217,7 @@ class PlatformAuthorizationTest {
                 return TransferConflictChoice.TERMINATE;
             };
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
                     assertThrows(ApiException.class, () -> capabilities.interaction()
                             .approve(action(command("true"), "application.restart", OTHER), task));
@@ -251,7 +251,7 @@ class PlatformAuthorizationTest {
             runtime.authorization().saveMode(AuthorizationMode.FULL);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var grant = new java.util.concurrent.atomic.AtomicReference<ApprovalGrant>();
                 var lease = new java.util.concurrent.atomic.AtomicReference<ResourceLease>();
                 var intent = action(command("true"), "application.restart", APP);
@@ -296,7 +296,7 @@ class PlatformAuthorizationTest {
             assertEquals("MANUAL_REVIEW", runtime.persistence().preferences().find("deploy_approval").orElseThrow());
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     runtime.authorization()::mode);
             runtime.security().unlock(PASSWORD.toCharArray());
             assertEquals(AuthorizationMode.FULL, runtime.authorization().mode());

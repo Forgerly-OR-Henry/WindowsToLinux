@@ -6,10 +6,10 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaProvisioner;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaValidation;
 import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;

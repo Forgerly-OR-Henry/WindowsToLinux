@@ -22,10 +22,7 @@ final class JavadocCoverageInspector {
     }
 
     static List<Path> productionPaths() throws IOException {
-        try (var paths = Files.walk(ArchitectureSourceInspector.projectRoot().resolve("src"))) {
-            return paths.filter(Files::isRegularFile).filter(path -> path.toString().replace('\\', '/')
-                    .matches(".*/src/(shared|app|web)/[^/]+/src/main/java/.*\\.java")).sorted().toList();
-        }
+        return ArchitectureSourceInspector.productionPaths();
     }
 
     static Inspection production() throws IOException {

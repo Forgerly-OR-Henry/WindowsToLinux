@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.app.db.persistence.repository;
 import java.sql.SQLException;
 import java.time.Instant;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /**
@@ -15,14 +14,6 @@ public final class BrowserRecoveryRepository {
      * <p>限定作用域数据库连接的工厂。
      */
     private final RepositoryConnections connections;
-    /**
-     * Binds the desktop connection factory. / 绑定桌面连接工厂。
-     *
-     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
-     */
-    public BrowserRecoveryRepository(DesktopConnectionFactory connections) {
-        this(connections.scoped());
-    }
 
     /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
      * @param connections platform transaction scope / 平台事务作用域

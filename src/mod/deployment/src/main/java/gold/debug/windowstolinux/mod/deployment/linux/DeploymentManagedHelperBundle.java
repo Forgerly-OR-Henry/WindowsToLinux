@@ -197,8 +197,7 @@ public final class DeploymentManagedHelperBundle {
                 }
                 // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
                 output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")
-                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh")
-                        || fragment.endsWith("23-container-builder.sh")
+                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh") || fragment.endsWith("23-container-builder.sh")
                         || fragment.endsWith("12-container-image-input.sh")
                         || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-"))
                                 ? content

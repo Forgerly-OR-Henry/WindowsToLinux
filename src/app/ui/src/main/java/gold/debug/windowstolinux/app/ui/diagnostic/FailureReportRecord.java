@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Result of a best-effort local diagnostic write. / 本地诊断尽力写入的结果。
@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
  * @param diagnosticsDirectory diagnostics directory / 诊断目录
  * @param reportPath report path / 报告路径
  */
-public record FailureReportRecord(FailureDescriptor failure, Path diagnosticsDirectory, Optional<Path> reportPath) {
+public record FailureReportRecord(Problem failure, Path diagnosticsDirectory, Optional<Path> reportPath) {
     /**
      * Validates the safe report reference. / 校验安全报告引用。
      *

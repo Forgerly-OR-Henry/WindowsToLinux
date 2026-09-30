@@ -6,7 +6,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
 import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.app.mod.lifecycle.*;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;

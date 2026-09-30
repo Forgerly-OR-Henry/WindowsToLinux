@@ -10,7 +10,7 @@ import java.util.Locale;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.linux.TransferSettings;
+import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
 import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
@@ -51,14 +51,14 @@ class PlatformTransferSettingsWindowTest {
                     return null;
                 });
                 await(() -> ((JLabel) named(frame, "transfer.settings.status")).getText().startsWith("已保存"));
-                assertEquals(new TransferSettings(12, 40), runtime.transfers().read());
+                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
                 onEdt(() -> {
                     ((JTextField) named(frame, "transfer.settings.connect")).setText("0");
                     ((JButton) named(frame, "transfer.settings.save")).doClick(0);
                     assertTrue(((JLabel) named(frame, "transfer.settings.status")).getText().contains("1～86400"));
                     return null;
                 });
-                assertEquals(new TransferSettings(12, 40), runtime.transfers().read());
+                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
                 sql(runtime.persistence().database(),
                         "ALTER TABLE desktop_preference ADD CONSTRAINT fixture_transfer_save CHECK(preference_value <> '41')");
                 try {
@@ -76,7 +76,7 @@ class PlatformTransferSettingsWindowTest {
                         capture(frame, "platform-transfer-settings.png");
                         return null;
                     });
-                    assertEquals(new TransferSettings(12, 40), runtime.transfers().read());
+                    assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
                 } finally {
                     sql(runtime.persistence().database(),
                             "ALTER TABLE desktop_preference DROP CONSTRAINT fixture_transfer_save");
@@ -86,11 +86,11 @@ class PlatformTransferSettingsWindowTest {
                     return null;
                 });
                 await(() -> !named(frame, "transfer.settings.save").isEnabled());
-                assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+                assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                         runtime.transfers()::read);
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "transfer.settings.save").isEnabled());
-                assertEquals(new TransferSettings(12, 40), runtime.transfers().read());
+                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
                 await(() -> !DesktopTaskExecutor.hasActiveTasks());
             } finally {
                 onEdt(() -> {

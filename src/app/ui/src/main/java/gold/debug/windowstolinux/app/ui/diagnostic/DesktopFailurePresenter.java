@@ -9,9 +9,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Converts task failures into safe localized UI text and report references. / 将任务失败转换为安全的本地化 UI 文本和报告引用。
@@ -65,85 +64,64 @@ public final class DesktopFailurePresenter {
      */
     public String present(Throwable throwable) {
         Throwable root = unwrap(Objects.requireNonNull(throwable, "throwable"));
-        if (root instanceof gold.debug.windowstolinux.appapi.task.ApiException api)
-            return present(api.problem());
         Optional<FailureReportRecord> recorded = reports.record(root);
-        FailureDescriptor descriptor = recorded.map(FailureReportRecord::failure)
+        Problem descriptor = recorded.map(FailureReportRecord::failure)
                 .orElseGet(() -> findStructured(root).orElse(null));
-        if (descriptor == null) {
+        return render(descriptor, recorded);
+    }
+
+    /** Displays an existing public snapshot without another report write. / 展示既有公开快照且不再次写入报告。
+     * @param problem original safe platform diagnostic / 原安全平台诊断
+     * @return localized explanation, event and original identity / 本地化说明、事件及原身份 */
+    public String present(gold.debug.windowstolinux.appapi.task.Problem problem) {
+        return redact(explanation(problem)) + "\n[" + redact(problem.eventCode()) + "]"
+                + problem.diagnosticId().map(id -> "\n" + id).orElse("");
+    }
+
+    /** Reports the original exception while supplying already classified startup evidence. / 报告原始异常并提供已分类启动依据。
+     * @param throwable original exception preserving its causes / 保留原因链的原异常
+     * @param problem original classified evidence / 原分类依据
+     * @return localized diagnostic and retained report reference / 本地化诊断及保留报告引用
+     * @throws NullPointerException if an input is missing / 输入缺失时 */
+    public String present(Throwable throwable, Problem problem) {
+        Objects.requireNonNull(problem, "problem");
+        return render(problem, reports.record(Objects.requireNonNull(throwable, "throwable")));
+    }
+
+    /** Renders concrete platform recovery metadata without replacing its diagnostic identity. / 展示具体平台恢复元数据且不替换其诊断身份。
+     * @param problem original classified evidence, or null / 原分类依据或null
+     * @param recorded best-effort report reference / 尽力保存的报告引用
+     * @return redacted localized presentation / 脱敏本地化展示 */
+    private String render(Problem problem, Optional<FailureReportRecord> recorded) {
+        if (problem == null)
             return text("diagnostic.unknown");
-        }
         String report = recorded.flatMap(FailureReportRecord::reportPath)
                 .or(() -> recorded.map(FailureReportRecord::diagnosticsDirectory)).map(Path::toString)
                 .orElseGet(() -> reports.diagnosticsDirectory().map(Path::toString)
                         .orElse(text("failure.report.unavailable")));
+        String disposition = problem.context().getOrDefault("recoveryDisposition", "NOT_ATTEMPTED");
         return text("failure.presentation",
-                Map.of("message", messages.apply(descriptor.userMessage()), "code", descriptor.code(), "operationId",
-                        descriptor.operationIdentity().toString(), "summary", redact(descriptor.diagnostic()),
-                        "recovery",
-                        text("failure.recovery." + descriptor.recoveryDisposition().name().toLowerCase(Locale.ROOT)),
-                        "report", report));
+                Map.of("message", redact(explanation(problem)), "code", redact(problem.eventCode()), "operationId",
+                        problem.diagnosticId().map(Object::toString).orElse(""), "summary", redact(problem.message()),
+                        "recovery", text("failure.recovery." + disposition.toLowerCase(Locale.ROOT)), "report",
+                        report));
     }
 
-    /** Displays public evidence without replacing its diagnostic identity through the legacy writer. / 展示公开证据，不经旧写入器替换诊断身份。
-     * @param problem original safe platform diagnostic / 原安全平台诊断
-     * @return localized explanation, event and original identity / 本地化说明、事件及原身份 */
-    public String present(gold.debug.windowstolinux.appapi.task.Problem problem) {
-        String key = "problem." + problem.eventCode();
-        String explanation = problem.message();
+    /** Resolves registered metadata or a public event translation without requiring author-defined events in the host catalog. / 解析登记元数据或公开事件翻译，不要求宿主目录包含作者自定义事件。
+     * @param problem original safe diagnostic / 原安全诊断
+     * @return localized explanation or original safe message / 本地化说明或原安全消息 */
+    private String explanation(Problem problem) {
+        var arguments = new java.util.LinkedHashMap<>(problem.context());
+        problem.context().forEach((key, value) -> {
+            if (key.startsWith("argument."))
+                arguments.put(key.substring("argument.".length()), value);
+        });
+        String key = problem.context().getOrDefault("messageKey", "problem." + problem.eventCode());
         try {
-            String localized = text(key, problem.context());
-            if (!localized.equals(key))
-                explanation = localized;
+            String localized = text(key, arguments);
+            return localized.equals(key) ? problem.message() : localized;
         } catch (IllegalArgumentException untranslated) {
-            // Public events, including author-defined events, need not have a host translation. / 公开事件包括作者自定义事件，不要求宿主提供翻译。
-        }
-        return redact(explanation) + "\n[" + redact(problem.eventCode()) + "]"
-                + problem.diagnosticId().map(id -> "\n" + id).orElse("");
-    }
-
-    /**
-     * Formats a classified failure through the existing redaction, localization and bounded report path. Unknown exception messages are not used as user-facing diagnostics.
-     * <p>通过既有脱敏、本地化及有界报告路径格式化分类失败。不将未知异常消息用作用户可见诊断。
-     *
-     * @param descriptor descriptor / 描述符
-     * @return a classified failure through the existing redaction, localization and bounded report path / 通过既有脱敏、本地化及有界报告路径格式化分类失败
-     */
-    public String present(FailureDescriptor descriptor) {
-        return present(new SnapshotFailureException(descriptor));
-    }
-
-    /**
-     * Adapts a structured snapshot to the existing safe diagnostic report interface.
-     * <p>将结构化快照适配到既有安全诊断报告接口。
-     */
-    private static final class SnapshotFailureException extends RuntimeException implements FailureCarrier {
-        /**
-         * Structured failure occurrence retained for safe reporting.
-         * <p>保留用于安全报告的结构化失败实例。
-         */
-        private final FailureDescriptor failure;
-        /**
-         * Validates and binds the inputs required by snapshot failure exception.
-         * <p>校验并绑定快照失败异常所需输入。
-         *
-         * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
-         * @throws NullPointerException if a required input is absent / 必需输入缺失时
-         */
-        private SnapshotFailureException(FailureDescriptor failure) {
-            super("Structured recovery snapshot");
-            this.failure = Objects.requireNonNull(failure, "failure");
-        }
-
-        /**
-         * Returns structured failure occurrence retained for safe reporting.
-         * <p>返回保留用于安全报告的结构化失败实例。
-         *
-         * @return structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
-         */
-        @Override
-        public FailureDescriptor failure() {
-            return failure;
+            return problem.message();
         }
     }
 
@@ -182,12 +160,14 @@ public final class DesktopFailurePresenter {
      * @param throwable throwable / 异常原因
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
-    private static Optional<FailureDescriptor> findStructured(Throwable throwable) {
+    private static Optional<Problem> findStructured(Throwable throwable) {
         Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof FailureCarrier carrier) {
-                return Optional.of(carrier.failure());
-            }
+        var visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        while (current != null && visited.size() < 16 && visited.add(current)) {
+            if (current instanceof gold.debug.windowstolinux.appapi.task.ApiException failure)
+                return Optional.of(failure.problem());
+            if (current instanceof gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException failure)
+                return Optional.of(failure.problem());
             current = current.getCause();
         }
         return Optional.empty();

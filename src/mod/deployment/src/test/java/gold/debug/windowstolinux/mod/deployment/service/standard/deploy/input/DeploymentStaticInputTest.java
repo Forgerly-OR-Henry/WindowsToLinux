@@ -2,13 +2,22 @@ package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeLanguageInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeServiceDeploymentInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
 import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Preserves the six legacy deterministic input and correction contracts on Mod values. / 用 Mod 值保留六项旧确定性输入及修正契约。 */
 class DeploymentStaticInputTest {
@@ -38,6 +47,44 @@ class DeploymentStaticInputTest {
                 () -> resolver.health(Map.of("port", "8080", "healthMode", "invalid")));
         assertThrows(IllegalArgumentException.class,
                 () -> resolver.access(Map.of("healthMode", "TCP", "accessUrl", "https://example.test"), "192.0.2.1"));
+    }
+
+    /** Rejects a target-local health address as a user-declared business URL. / 拒绝把目标机本地健康地址作为用户声明业务URL。
+     */
+    @Test
+    void rejectsLoopbackAsAUserBusinessUrl() {
+        var publicUrl = java.net.URI.create("https://example.test/application");
+        assertEquals(publicUrl, new DeploymentAccessUrl(publicUrl).url());
+        assertThrows(IllegalArgumentException.class,
+                () -> new DeploymentAccessUrl(java.net.URI.create("http://127.0.0.1:8080/")));
+    }
+
+    /** Retains source-backed process health when Node declares no network endpoint. / Node源码未声明网络端点时保留有源码依据的进程健康检查。
+     * @param root actual bounded Node source directory / 真实有界Node源码目录
+     * @throws Exception if source inspection fails / 源码检查失败时 */
+    @Test
+    void sourceBackedNodeWithoutAPortDefaultsToProcessHealthAndNoNetworkEndpoint(@TempDir Path root) throws Exception {
+        String metadata = "{\"name\":\"node-process\",\"engines\":{\"node\":\"22\"},\"scripts\":{\"build\":\"node build.js\",\"start\":\"node main.js\"}}";
+        Files.writeString(root.resolve("package.json"), metadata);
+        Files.writeString(root.resolve("package-lock.json"), "{\"name\":\"node-process\",\"lockfileVersion\":3}");
+        var source = new SourceInspectionFacts(2, List.of(Path.of("package.json"), Path.of("package-lock.json")),
+                metadata);
+        var language = new NodeLanguageInspector().inspect(root, source);
+        var rejected = new ArrayList<RejectionReason>();
+        var assessment = new NodeServiceDeploymentInspector().inspect(root, source, language, rejected);
+        assertNotNull(assessment);
+        assertTrue(rejected.isEmpty());
+        assertTrue(assessment.runtimeSuggestion().suggestedHealthPort().isEmpty());
+        var values = resolver.defaults(DeploymentProjectKind.NODE_SERVICE, assessment.runtimeSuggestion(), root);
+        assertFalse(values.containsKey("port"));
+        assertEquals("PROCESS", values.get("healthMode"));
+        values.put("exposure", "INTERNAL");
+        var runtime = assertInstanceOf(DeploymentRuntimeDefinition.NodeService.class,
+                resolver.runtime(DeploymentProjectKind.NODE_SERVICE, values));
+        assertEquals(22, runtime.nodeMajorVersion());
+        assertEquals(new DeploymentHealthCheck.Process(10, 5), runtime.healthCheck());
+        assertTrue(runtime.workload().endpoints().isEmpty());
+        assertTrue(resolver.access(values, "192.0.2.1").isEmpty());
     }
 
     /** Keeps missing reviewed database details in the correction form. / 在修正表单保留缺失的数据库审阅详情。 */
@@ -92,5 +139,35 @@ class DeploymentStaticInputTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.MARIADB,
                         "primary|db.example.test|3306|shop|shop|database-password:1|unknown"));
+    }
+
+    /** Retains explicit typed health choices and leaves absent TCP input for human completion. / 保留显式类型化健康选择，并将缺失TCP输入留给人工补全。 */
+    @Test
+    void explicitHttpAndTcpInputsKeepTheirReviewedEndpointsWithoutGuessingMissingPorts() {
+        var endpoint = java.net.URI.create("http://127.0.0.1:18080/health");
+        var http = assertInstanceOf(DeploymentHealthCheck.Http.class, resolver.health(Map.of("healthMode", "HTTP",
+                "healthEndpoint", endpoint.toString(), "port", "18080", "expectedStatus", "204", "timeout", "20")));
+        assertEquals(endpoint, http.endpoint());
+        assertEquals(204, http.expectedStatus());
+        assertEquals(20, http.timeoutSeconds());
+        assertThrows(IllegalArgumentException.class, () -> resolver
+                .health(Map.of("healthMode", "HTTP", "healthEndpoint", "file:///tmp/health", "port", "18080")));
+        assertEquals(new DeploymentHealthCheck.Tcp(18081, 20, 1),
+                resolver.health(Map.of("healthMode", "TCP", "port", "18081", "timeout", "20", "stability", "1")));
+        var incomplete = Map.of("healthMode", "TCP", "version", "22", "exposure", "INTERNAL");
+        assertTrue(resolver.missing("api", DeploymentProjectKind.NODE_SERVICE, incomplete).stream()
+                .anyMatch(field -> field.id().equals("api/port") && field.value().isEmpty()));
+        assertFalse(incomplete.containsKey("port"));
+        assertThrows(IllegalArgumentException.class, () -> resolver.health(incomplete));
+    }
+
+    /** Converts the explicit tag index while rejecting every unsupported reference choice. / 转换显式标签索引，并拒绝每项不受支持的引用选择。 */
+    @Test
+    void typedGitTagIndexRetainsItsReferenceAndRejectsUnsupportedIndexes() {
+        var tag = assertInstanceOf(DeploymentGitReference.Tag.class,
+                DeploymentStaticInputParser.gitReference(1, "release-one"));
+        assertEquals("release-one", tag.value());
+        for (int index : List.of(-1, 3, 9))
+            assertThrows(IllegalArgumentException.class, () -> DeploymentStaticInputParser.gitReference(index, "main"));
     }
 }

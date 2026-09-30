@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -59,17 +59,17 @@ public final class ServiceInspectionAssembler {
     public static DeploymentTypeAssessment assemble(Path root, String logicalRootName,
             DeploymentProjectKind projectType, DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts,
             ServiceProjectFacts shape, boolean requiresServicePort) {
-        List<LocalizedMessage> missing = new ArrayList<>();
+        List<DeploymentLocalizedMessage> missing = new ArrayList<>();
         shape.missingFiles()
-                .forEach(file -> missing.add(LocalizedMessage.of("analysis.service.missingFile", "file", file)));
+                .forEach(file -> missing.add(DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", file)));
         if (shape.version() == null) {
-            missing.add(LocalizedMessage.of("analysis.service.missingVersion"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.service.missingVersion"));
         }
         if (shape.artifactName() == null) {
-            missing.add(LocalizedMessage.of("analysis.service.missingArtifact"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.service.missingArtifact"));
         }
         if (shape.entrypoint() == null) {
-            missing.add(LocalizedMessage.of("analysis.service.missingEntrypoint"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.service.missingEntrypoint"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
                 ProjectIdentityResolver.rootApplicationId(logicalRootName), projectType, buildTool, languageFacts,
@@ -87,19 +87,19 @@ public final class ServiceInspectionAssembler {
         if (shape.entrypoint() != null) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT, shape.entrypoint());
         }
-        List<LocalizedMessage> required = new ArrayList<>();
-        required.add(LocalizedMessage.of("analysis.deployment.runtime.health"));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>();
+        required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health"));
         if (requiresServicePort) {
-            required.add(LocalizedMessage.of("analysis.service.servicePort"));
+            required.add(DeploymentLocalizedMessage.of("analysis.service.servicePort"));
         }
         if (shape.version() == null) {
-            required.add(LocalizedMessage.of("analysis.service.missingVersion"));
+            required.add(DeploymentLocalizedMessage.of("analysis.service.missingVersion"));
         }
         if (shape.artifactName() == null) {
-            required.add(LocalizedMessage.of("analysis.service.missingArtifact"));
+            required.add(DeploymentLocalizedMessage.of("analysis.service.missingArtifact"));
         }
         if (shape.entrypoint() == null) {
-            required.add(LocalizedMessage.of("analysis.service.missingEntrypoint"));
+            required.add(DeploymentLocalizedMessage.of("analysis.service.missingEntrypoint"));
         }
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType, values,
                 Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
@@ -115,7 +115,7 @@ public final class ServiceInspectionAssembler {
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static AnalysisEvidence evidence(String subject, String source, String conclusion) {
-        return new AnalysisEvidence(LocalizedMessage.of(subject), source, LocalizedMessage.of(conclusion),
+        return new AnalysisEvidence(DeploymentLocalizedMessage.of(subject), source, DeploymentLocalizedMessage.of(conclusion),
                 EvidenceConfidenceLevel.HIGH);
     }
 }

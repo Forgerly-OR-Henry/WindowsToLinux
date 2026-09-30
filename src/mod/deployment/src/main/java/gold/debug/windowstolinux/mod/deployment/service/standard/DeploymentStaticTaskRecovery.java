@@ -42,11 +42,11 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws Exception {
         if (!DeploymentReferenceFlow.TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id()))
             return unknown();
-        Optional<DeploymentHelperBootstrapJournal> bootstrap;
+        Optional<DeploymentProtocolBootstrapJournal> bootstrap;
         Optional<DeploymentNativeDatabaseJournal> database;
         Optional<DeploymentDatabasePlanJournal> databasePlan;
         try {
-            bootstrap = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
+            bootstrap = DeploymentProtocolBootstrapJournal.find(context.tasks(), task);
             database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
             databasePlan = DeploymentDatabasePlanJournal.find(context.tasks(), task);
         } catch (IllegalArgumentException damaged) {
@@ -75,7 +75,7 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             return unknown();
         if (databasePlan.isPresent() && !settleDatabasePlan(task, databasePlan.orElseThrow()))
             return unknown();
-        Optional<DeploymentHelperBootstrapJournal.Facts> bootstrapFacts;
+        Optional<DeploymentProtocolBootstrapJournal.Facts> bootstrapFacts;
         Optional<DeploymentNativeDatabaseJournal.Facts> databaseFacts;
         try {
             bootstrapFacts = bootstrap.isPresent() ? Optional.of(bootstrap.orElseThrow().facts()) : Optional.empty();
@@ -117,15 +117,15 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
      * @param journal original installation journal / 原安装日志
      * @return true only when this installation is known and released / 仅安装已知且释放时为真
      * @throws ApiException if original capabilities cannot be read / 原能力无法读取时 */
-    private boolean settleBootstrap(TaskContext task, DeploymentHelperBootstrapJournal journal) throws ApiException {
+    private boolean settleBootstrap(TaskContext task, DeploymentProtocolBootstrapJournal journal) throws ApiException {
         var facts = journal.facts();
         if (!"DISPATCHED".equals(facts.phase())) {
             journal.close();
             return true;
         }
         try (RemoteSession session = context.linux().connect(new ServerRef(facts.serverId()), task)) {
-            var result = new DeploymentHelperBootstrap(context.tasks(), task, new ServerRef(facts.serverId()), session,
-                    context.interaction()).reconcile(journal);
+            var result = new DeploymentProtocolBootstrap(context.tasks(), task, new ServerRef(facts.serverId()),
+                    session, context.interaction()).reconcile(journal);
             return result.outcome() != Outcome.UNKNOWN;
         } catch (ApiException unavailable) {
             return false;
@@ -137,7 +137,7 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
      * @param database optional original database facts / 可选原数据库事实
      * @param indexed exact retained indexed database and saved-secret facts / 精确保留的索引数据库及已存秘密事实
      * @return non-secret recovery context / 非秘密恢复上下文 */
-    private static Map<String, String> effectContext(Optional<DeploymentHelperBootstrapJournal.Facts> bootstrap,
+    private static Map<String, String> effectContext(Optional<DeploymentProtocolBootstrapJournal.Facts> bootstrap,
             Optional<DeploymentNativeDatabaseJournal.Facts> database, Map<String, String> indexed) {
         var details = new java.util.LinkedHashMap<String, String>();
         details.putAll(indexed);

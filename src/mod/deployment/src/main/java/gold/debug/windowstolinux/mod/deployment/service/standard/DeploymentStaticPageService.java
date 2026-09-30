@@ -51,6 +51,49 @@ public final class DeploymentStaticPageService implements TaskRecovery {
         this.revisions = new DeploymentSecretRepository(context.db());
     }
 
+    /** Loads the owned page selection off the EDT, filling only missing defaults. / 在EDT外加载所属页面选择，仅补缺失默认值。
+     * @return original preference query / 原偏好查询
+     * @throws ApiException if original query admission fails / 原查询准入失败时 */
+    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> preferences()
+            throws ApiException {
+        return preferences(Optional.empty());
+    }
+
+    /** Saves an explicit page edit before any publication is started. / 在任何发布开始前保存明确页面编辑。
+     * @param selection captured mode and approval / 已抓取模式与审批
+     * @return original observable metadata task / 原可观察元数据任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> savePreferences(
+            gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection selection) throws ApiException {
+        return preferences(Optional.of(Objects.requireNonNull(selection)));
+    }
+
+    /** Performs one original preference read or explicit write. / 执行一次原偏好读取或明确写入。
+     * @param requested optional explicit edit / 可选明确编辑
+     * @return original metadata task / 原元数据任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    private TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> preferences(
+            Optional<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection> requested) throws ApiException {
+        return context.tasks().submit(new TaskRequest(SERVER_LIST_TASK, requested.isPresent()
+                ? "Save explicit deployment page preference" : "Deployment page preferences (fills missing defaults)", List.of(), true), task -> {
+            try {
+                var repository = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db());
+                if (requested.isPresent()) repository.save(task, requested.orElseThrow());
+                var selection = requested.isPresent() ? requested.orElseThrow() : repository.read(task);
+                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(selection), Optional.empty());
+            } catch (ApiException failure) {
+                var code = failure.problem().code();
+                return new OperationResult<>(code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN
+                        : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        Optional.empty(), Optional.of(failure.problem()));
+            } catch (java.sql.SQLException | IllegalArgumentException failure) {
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                        failure instanceof IllegalArgumentException ? ProblemCode.INVALID_INPUT : ProblemCode.IO_FAILURE,
+                        "DEPLOYMENT_PREFERENCE_INVALID", "Stored deployment preferences could not be loaded safely", Map.of(), Optional.empty())));
+            }
+        });
+    }
+
     /** Creates one immutable revision before publication admission and transfers its plaintext buffer. / 在发布准入前创建一项不可变修订并转交其明文缓冲区。
      * @param server selected target / 所选目标
      * @param reference reviewed business identifier and revision / 已审阅业务标识与修订
@@ -198,10 +241,25 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
             Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
             boolean assisted) throws ApiException {
+        return submit(server, draft, git, reviewer, assisted, "MANUAL_REVIEW");
+    }
+
+    /** Admits the captured page mode and actual approval preference on one original task. / 在一项原任务接纳已抓取页面模式与实际审批偏好。
+     * @param server selected target / 所选目标
+     * @param draft frozen source / 冻结来源
+     * @param git optional pinned Git / 可选固定Git
+     * @param reviewer current owner reviewer / 当前所属审阅人
+     * @param assisted selected assistant mode / 所选辅助模式
+     * @param approvalMode explicit captured policy / 明确已抓取策略
+     * @return original publication task / 原发布任务
+     * @throws ApiException if admission fails / 准入失败时 */
+    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+            Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
+            boolean assisted, String approvalMode) throws ApiException {
         if (active != null && active.snapshot().state() != TaskState.ENDED)
             throw new ApiException(new Problem(ProblemCode.BUSY, "DEPLOYMENT_STATIC_TASK_ACTIVE",
                     "An original deployment task is already active", Map.of(), Optional.empty()));
-        var handle = workflow.submit(server, draft, git, reviewer, assisted);
+        var handle = workflow.submit(server, draft, git, reviewer, assisted, approvalMode);
         active = handle;
         handle.completion().whenComplete((ignored, failure) -> {
             synchronized (DeploymentStaticPageService.this) {

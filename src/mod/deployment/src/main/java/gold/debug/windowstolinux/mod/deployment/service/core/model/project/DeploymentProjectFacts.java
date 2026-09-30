@@ -8,7 +8,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * Immutable deterministic facts for one user-selected typed deployment project type; no project code was executed.
@@ -29,7 +29,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
  */
 public record DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
         DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
-        List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation,
+        List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missingInformation,
         List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> toolchainRequirements,
         String buildDirectory) {
     /**
@@ -96,7 +96,7 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public DeploymentProjectFacts(Path root, String id, DeploymentProjectKind type, DeploymentBuildToolType tool,
             DeploymentSupportProfile support, ProjectLanguageFacts language, List<AnalysisEvidence> evidence,
-            List<LocalizedMessage> conflicts, List<LocalizedMessage> missing,
+            List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missing,
             List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements) {
         this(root, id, type, tool, support, language, evidence, conflicts, missing, requirements, "");
     }
@@ -130,8 +130,8 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
             DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
-            List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
-            List<LocalizedMessage> missingInformation) {
+            List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
+            List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool, support, languageFacts, evidence, conflicts,
                 missingInformation, List.of());
     }
@@ -163,7 +163,7 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
             DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts, List<AnalysisEvidence> evidence,
-            List<LocalizedMessage> conflicts, List<LocalizedMessage> missingInformation) {
+            List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool,
                 DeploymentSupportCatalog.forArchitecture(projectType, buildTool), languageFacts, evidence, conflicts,
                 missingInformation);
@@ -181,8 +181,8 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence, List<LocalizedMessage> conflicts,
-            List<LocalizedMessage> missingInformation) {
+            DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
+            List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool,
                 DeploymentSupportCatalog.forArchitecture(projectType, buildTool), ProjectLanguageFacts.empty(),
                 evidence, conflicts, missingInformation);

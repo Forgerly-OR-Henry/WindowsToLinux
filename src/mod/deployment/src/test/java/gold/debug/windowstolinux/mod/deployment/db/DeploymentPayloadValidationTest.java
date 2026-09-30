@@ -66,7 +66,7 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
                             VALUES('application','component','unit',?,?,?)
                             """)) {
                 statement.setBytes(1, DeploymentCodecCompatibility.write(definition));
-                statement.setBytes(2, DeploymentCodecCompatibility.write(List.<DeploymentDataPath>of()));
+                statement.setBytes(2, DeploymentCodecCompatibility.write(List.<DeploymentStoragePath>of()));
                 statement.setBytes(3, DeploymentCodecCompatibility
                         .write(new DeploymentResourceBindings(List.of(), Optional.empty())));
                 statement.executeUpdate();

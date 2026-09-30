@@ -75,7 +75,7 @@ class PlatformInteractionTest {
                     return true;
                 }
             });
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION);
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
                     var worker = Executors.newVirtualThreadPerTaskExecutor()) {
                 var prompt = new AtomicReference<Future<?>>();
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
@@ -105,7 +105,7 @@ class PlatformInteractionTest {
             runtime.setInteractionPresenter(new Prompts());
             var db = runtime.persistence().database();
             sql(db, "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_no_release CHECK(released_at IS NULL)");
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var task = binding.submit(request(), context -> capabilities.interaction().approve(intent(), context));
                 state(task, TaskState.UNKNOWN);
@@ -150,7 +150,7 @@ class PlatformInteractionTest {
                     return accepted;
                 }
             });
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                         context -> capabilities.interaction().requestText("Secret", "Test input", true, context));
                 try {
@@ -193,7 +193,7 @@ class PlatformInteractionTest {
             });
             var entered = new CountDownLatch(1);
             var continueWork = new CountDownLatch(1);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
                     entered.countDown();
                     assertTrue(continueWork.await(8, TimeUnit.SECONDS));
@@ -229,7 +229,7 @@ class PlatformInteractionTest {
                 runtime.setInteractionPresenter(new TaskInteractionPresenter(window, messages));
                 return window;
             });
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var first = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                         context -> capabilities.interaction().approve(intent(), context));
                 PlatformWindowTest.await(() -> dialog(frame) != null);

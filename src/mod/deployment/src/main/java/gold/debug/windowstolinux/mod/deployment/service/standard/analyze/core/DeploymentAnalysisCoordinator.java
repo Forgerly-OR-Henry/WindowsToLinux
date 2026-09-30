@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.DeploymentProjectAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.policy.SourceMutationPolicy;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.spi.DeploymentTypeAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.extension.registry.DeploymentTypeInspectorRegistry;
@@ -218,7 +218,7 @@ public final class DeploymentAnalysisCoordinator {
             if (pendingDatabase) {
                 var facts = inspected.facts();
                 var missing = new ArrayList<>(facts.missingInformation());
-                missing.add(LocalizedMessage.of("analysis.db.reviewRequired"));
+                missing.add(DeploymentLocalizedMessage.of("analysis.db.reviewRequired"));
                 return DeploymentProjectAssessment.requiresInput(
                         new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(
                                 facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(),
@@ -308,6 +308,6 @@ public final class DeploymentAnalysisCoordinator {
      * @return the admission rejection associated with the supplied reason / 与所提供原因关联的准入拒绝
      */
     private static RejectionReason rejection(String code, String key) {
-        return new RejectionReason(code, LocalizedMessage.of(key), "deployment");
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(key), "deployment");
     }
 }

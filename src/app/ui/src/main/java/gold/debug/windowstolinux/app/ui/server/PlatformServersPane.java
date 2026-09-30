@@ -14,9 +14,10 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.*;
+import gold.debug.windowstolinux.app.service.contract.profile.ServerSummary;
+import gold.debug.windowstolinux.app.service.server.PlatformServerService;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Permanent configuration and authentication-only SSH page with explicit task recovery. / 带显式任务恢复的常驻配置及仅认证 SSH 页面。 */
@@ -47,6 +48,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Single selected saved server. / 单选已保存服务器。 */
     private final JTable table;
+
+    /** Search and stable selection state belonging to this view. / 属于此视图的搜索与稳定选择状态。 */
+    private final SelectionControls selection;
 
     /** Original unfinished checks, including previous boots. / 原始未结束检查，包括前次启动。 */
     private final JComboBox<TaskSnapshot> checks = new JComboBox<>();
@@ -104,10 +108,11 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         this.components = Objects.requireNonNull(components);
         this.messages = Objects.requireNonNull(messages);
         table = new JTable(rows);
+        selection = new SelectionControls();
         setName("platform.servers");
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         var heading = new JPanel(new BorderLayout(8, 8));
-        heading.add(new JLabel(messages.text("server.platform.help")), BorderLayout.NORTH);
+        heading.add(messages.bind(new JLabel(), "server.platform.help"), BorderLayout.NORTH);
         var actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         add = button("auto.addServer", "servers.add", () -> editor(null));
         edit = button("server.edit", "servers.edit", () -> editor(selected()));
@@ -118,11 +123,19 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         for (var button : List.of(add, edit, delete, refresh, check, rescue))
             actions.add(button);
         heading.add(actions, BorderLayout.SOUTH);
+        var search = new JPanel(new BorderLayout(8, 8));
+        search.add(messages.bind(new JLabel(), "server.search"), BorderLayout.WEST);
+        search.add(selection.search, BorderLayout.CENTER);
+        heading.add(search, BorderLayout.CENTER);
         add(heading, BorderLayout.NORTH);
         table.setName("servers.table");
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setFillsViewportHeight(true);
-        table.getSelectionModel().addListSelectionListener(event -> controls());
+        table.getSelectionModel().addListSelectionListener(event -> {
+            if (!event.getValueIsAdjusting())
+                selection.remember();
+            controls();
+        });
         add(new JScrollPane(table), BorderLayout.CENTER);
         var tasks = new JPanel(new BorderLayout(8, 8));
         var taskActions = new JPanel(new BorderLayout(8, 8));
@@ -198,7 +211,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     public void setLocked(boolean locked) {
         this.locked = locked;
         if (locked) {
-            rows.replace(List.of());
+            selection.replace(List.of());
             checks.removeAllItems();
             output.setText("");
         } else if (!busy) {
@@ -215,7 +228,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @return configured button / 已配置按钮
      */
     private JButton button(String key, String name, Runnable action) {
-        var button = components.secondaryButton(messages.text(key));
+        var button = messages.bind(components.secondaryButton(""), key);
         button.setName(name);
         button.addActionListener(event -> action.run());
         return button;
@@ -225,7 +238,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @return selected profile, possibly null / 所选配置，可为空 */
     private ServerProfile selected() {
         int row = table.getSelectedRow();
-        return row < 0 || row >= rows.values.size() ? null : rows.values.get(row).profile();
+        return row < 0 || row >= table.getRowCount()
+                ? null
+                : rows.values.get(table.convertRowIndexToModel(row)).profile();
     }
 
     /**
@@ -239,13 +254,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Reloads configuration on a worker, preserving the selected stable identity. / 在工作线程重新加载配置，保留所选稳定身份。 */
     private void refresh() {
-        String selected = selected() == null ? null : selected().id();
-        work(service::list, values -> {
-            rows.replace(values);
-            for (int i = 0; i < values.size(); i++)
-                if (values.get(i).profile().id().equals(selected))
-                    table.setRowSelectionInterval(i, i);
-        });
+        work(service::list, selection::replace);
     }
 
     /** Confirms removal and delegates task, reference and credential ownership checks. / 确认删除并委派任务、引用及凭据归属检查。 */
@@ -347,6 +356,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Updates action availability without database or network calls. / 更新动作可用状态，不调用数据库或网络。 */
     private void controls() {
         boolean enabled = !closed && !locked && !busy;
+        selection.search.setEnabled(enabled);
         add.setEnabled(enabled);
         refresh.setEnabled(enabled);
         edit.setEnabled(enabled && selected() != null);
@@ -394,8 +404,116 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         output.setText("");
     }
 
+    /** Owns explicit name/host search and preserves real user selection across refreshes. / 持有明确名称主机搜索，并跨刷新保留真实用户选择。 */
+    private final class SelectionControls {
+        /** Unmodified user search input. / 未修改的用户搜索输入。 */
+        private final JTextField search = new JTextField(20);
+
+        /** Converts visible rows to original model rows. / 将可见行转换为原模型行。 */
+        private final javax.swing.table.TableRowSorter<ServerRows> sorter = new javax.swing.table.TableRowSorter<>(
+                rows);
+
+        /** Last explicitly selected stable identity, possibly cleared by the user. / 最后明确选定的稳定身份，可由用户清空。 */
+        private String selectedId;
+
+        /** Whether initial inventory has already been presented. / 是否已展示首次库存。 */
+        private boolean initialized;
+
+        /** Whether model/filter events must not replace user intent. / 模型过滤事件是否不得替换用户意图。 */
+        private boolean updating;
+
+        /** Binds actual table filtering on the EDT. / 在EDT绑定实际表格过滤。 */
+        private SelectionControls() {
+            search.setName("servers.search");
+            table.setRowSorter(sorter);
+            search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                /** Filters inserted input. / 过滤插入输入。
+                 * @param event original document change / 原文档变化 */
+                public void insertUpdate(javax.swing.event.DocumentEvent event) {
+                    filter();
+                }
+
+                /** Filters removed input. / 过滤删除输入。
+                 * @param event original document change / 原文档变化 */
+                public void removeUpdate(javax.swing.event.DocumentEvent event) {
+                    filter();
+                }
+
+                /** Filters styled input. / 过滤样式输入。
+                 * @param event original document change / 原文档变化 */
+                public void changedUpdate(javax.swing.event.DocumentEvent event) {
+                    filter();
+                }
+            });
+        }
+
+        /** Remembers only an actual visible user selection or explicit clearing. / 仅记录实际可见用户选择或明确清空。 */
+        private void remember() {
+            if (!updating) {
+                var profile = selected();
+                selectedId = profile == null ? null : profile.id();
+            }
+        }
+
+        /** Replaces the inventory without selecting another hidden or formerly cleared server. / 替换库存，不选择其他隐藏或曾清空的服务器。
+         * @param values actual persisted summaries / 实际持久摘要 */
+        private void replace(List<ServerSummary> values) {
+            updating = true;
+            try {
+                rows.replace(values);
+                if (!locked && !initialized && !values.isEmpty()) {
+                    selectedId = values.getFirst().profile().id();
+                    initialized = true;
+                }
+                restore();
+            } finally {
+                updating = false;
+            }
+        }
+
+        /** Applies literal, case-insensitive name or host matching without parsing a regular expression. / 应用字面且不区分大小写的名称主机匹配，不解析正则表达式。 */
+        private void filter() {
+            String query = search.getText().trim().toLowerCase(java.util.Locale.ROOT);
+            updating = true;
+            try {
+                sorter.setRowFilter(new RowFilter<ServerRows, Integer>() {
+                    /** Keeps only literal matching server metadata. / 仅保留字面匹配的服务器元数据。
+                     * @param entry original model row / 原模型行
+                     * @return whether this actual name or host matches / 实际名称或主机是否匹配 */
+                    public boolean include(Entry<? extends ServerRows, ? extends Integer> entry) {
+                        var profile = rows.values.get(entry.getIdentifier()).profile();
+                        return profile.displayName().toLowerCase(java.util.Locale.ROOT).contains(query)
+                                || profile.host().toLowerCase(java.util.Locale.ROOT).contains(query);
+                    }
+                });
+                restore();
+            } finally {
+                updating = false;
+            }
+            controls();
+        }
+
+        /** Restores only the same identity when visible, otherwise leaves the table unselected. / 仅在可见时恢复同一身份，否则保持表格未选择。 */
+        private void restore() {
+            table.clearSelection();
+            if (selectedId == null)
+                return;
+            for (int model = 0; model < rows.values.size(); model++) {
+                if (!rows.values.get(model).profile().id().equals(selectedId))
+                    continue;
+                int view = table.convertRowIndexToView(model);
+                if (view >= 0)
+                    table.setRowSelectionInterval(view, view);
+                return;
+            }
+        }
+    }
+
     /** Immutable configuration snapshots displayed by the table. / 表格展示的不可变配置快照。 */
     private final class ServerRows extends AbstractTableModel {
+        /** Creates the original view's table model. / 创建原视图的表格模型。 */
+        private ServerRows() {
+        }
         /** Current non-secret rows. / 当前非秘密行。 */
         private List<ServerSummary> values = List.of();
         /**

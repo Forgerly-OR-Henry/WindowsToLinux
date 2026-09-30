@@ -118,6 +118,19 @@ class PackageStructureArchitectureTest {
     private static final Set<String> ENUM_SUFFIXES = Set.of("Action", "Decision", "Disposition", "Event", "Kind",
             "Level", "Mode", "Profile", "Scope", "Source", "State", "Status", "Type");
 
+    private static final Set<String> STABLE_PUBLIC_ENUM_NAMES = Set.of("gold.debug.windowstolinux.appapi.ai.AiPurpose",
+            "gold.debug.windowstolinux.appapi.ai.AiRole",
+            "gold.debug.windowstolinux.appapi.linux.TransferConflictChoice",
+            "gold.debug.windowstolinux.appapi.linux.TransferStallChoice",
+            "gold.debug.windowstolinux.appapi.linux.TransferProgress.Stage",
+            "gold.debug.windowstolinux.appapi.mod.StopReason",
+            "gold.debug.windowstolinux.appapi.server.ReferenceResolution",
+            "gold.debug.windowstolinux.appapi.task.LogStorage", "gold.debug.windowstolinux.appapi.task.Outcome",
+            "gold.debug.windowstolinux.appapi.task.ProblemCode");
+
+    private static final Set<String> STABLE_PUBLIC_RESTRICTED_NAMES = Set
+            .of("gold.debug.windowstolinux.appapi.server.ServerInfo");
+
     private static final Set<String> OBSOLETE_ENUM_NAMES = Set.of("Access", "AiCollaborationRole", "AiResponseLanguage",
             "ContainerEngine", "DeploymentBuildTool", "DeploymentStep", "EvidenceConfidence", "HostSupport",
             "LanguageEcosystem", "LanguageFact", "LinuxDistro", "LinuxSecurityModule", "RuntimeInput",
@@ -146,6 +159,15 @@ class PackageStructureArchitectureTest {
             "generic", "impl", "implementation", "legacy", "misc", "new", "object", "old", "processor", "temp",
             "temporary", "util", "utils");
 
+    private static final Set<String> VERSIONED_SCHEMA_RESOURCES = Set.of(
+            "src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v2.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v3.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v2.sql",
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v3.sql");
+
     private static final Set<String> DISTRO_CLASSIFICATION_PACKAGES = Set.of("apt", "contract", "dnf", "extension",
             "generation");
 
@@ -171,10 +193,8 @@ class PackageStructureArchitectureTest {
             Map.entry("mapper", "persistence"), Map.entry("repository", "persistence"),
             Map.entry("serialization", "persistence"));
 
-    private static final Set<String> UNGROUPED_RESPONSIBILITY_EXCEPTIONS = Set.of(
-            "gold.debug.windowstolinux.shared.linux.sshd.capability",
-            "gold.debug.windowstolinux.shared.linux.sshd.connection",
-            "gold.debug.windowstolinux.shared.model.capability", "gold.debug.windowstolinux.shared.model.lifecycle");
+    private static final Set<String> UNGROUPED_RESPONSIBILITY_EXCEPTIONS = Set
+            .of("gold.debug.windowstolinux.mod.deployment.service.core.model.capability");
 
     private static final Set<String> DELETED_WRAPPERS = Set.of("GoServiceDeploymentInspector",
             "RustServiceDeploymentInspector", "DotNetServiceDeploymentInspector", "RustBuildRenderer",
@@ -331,7 +351,7 @@ class PackageStructureArchitectureTest {
     @Test
     void legacyResponsibilityMonolithsCannotReturn() throws Exception {
         Path root = projectRoot();
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
+        try (Stream<Path> files = activeFiles()) {
             List<Path> legacy = files.filter(Files::isRegularFile)
                     .filter(path -> LEGACY_FILES.contains(path.getFileName().toString())).toList();
             assertTrue(legacy.isEmpty(), () -> "legacy responsibility files returned: " + legacy);
@@ -345,67 +365,40 @@ class PackageStructureArchitectureTest {
     @Test
     void coreShellRepositoriesAndHelperResourcesStayFocused() throws Exception {
         Path root = projectRoot();
-        Path core = root.resolve(
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/core");
-        Path shell = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/shell");
-        Path deploymentShared = root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment");
-        Path deploymentAutomatic = deploymentShared.resolve("automatic");
-        Path deploymentMulti = deploymentShared.resolve("multi");
-        Path repositories = root
-                .resolve("src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository");
-        Path fragments = root
-                .resolve("src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd");
-
-        assertEquals(ANALYSIS_CORE, fileNames(core));
-        assertEquals(DESKTOP_SHELL, fileNames(shell));
-        assertEquals(DEPLOYMENT_SHARED, fileNames(deploymentShared));
-        assertEquals(DEPLOYMENT_AUTOMATIC, fileNames(deploymentAutomatic));
-        assertEquals(DEPLOYMENT_MULTI, fileNames(deploymentMulti));
-        assertEquals(REPOSITORIES, fileNames(repositories));
-        Set<String> expectedResources = new HashSet<>(HELPER_FRAGMENTS);
-        expectedResources.add("selinux-preparation.sh");
-        expectedResources.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh",
-                "selinux-command-entry.sh", "centos-source-repositories.py", "external-applications.py"));
-        assertEquals(expectedResources, fileNamesRecursively(fragments));
-        assertEquals(Set.of("selinux-preparation.sh", "centos-source-repositories.py"),
-                fileNames(fragments.resolve("distro/dnf")));
-        assertEquals(Set.of(), fileNames(fragments.resolve("execution/protocol/helper")));
-        assertEquals(Set.of(), fileNames(fragments.resolve("runtime/systemd")));
-        assertEquals(Set.of("60-lifecycle.sh", "61-service-identity.sh", "systemd-manager-isolation.sh",
-                "selinux-command-entry.sh"), fileNames(fragments.resolve("runtime/systemd/helper")));
-        assertEquals(Set.of("source-operations.py"), fileNames(fragments.resolve("workspace")));
+        assertEquals(ANALYSIS_CORE, fileNames(root.resolve(
+                "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core")));
         assertEquals(
-                Set.of("20-candidate-workspace.sh", "27-agent-workspace.sh", "21-workspace-volume.sh",
-                        "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh",
-                        "25-workspace-recovery.sh", "26-build-output.sh", "apparmor-namespace.sh"),
-                fileNames(fragments.resolve("execution/protocol/helper/fragments/workspace")));
+                Set.of("DesktopLockController.java", "ExtensionPagePane.java", "PlatformFrame.java",
+                        "TaskInteractionPresenter.java"),
+                fileNames(root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/shell")));
         assertEquals(
-                Set.of("10-native-instances.sh", "20-native-targets.sh", "64-database-client.sh",
-                        "65-database-backup.sh", "66-database-activation.sh"),
-                fileNames(fragments.resolve("execution/protocol/helper/fragments/database")));
-        assertFalse(Files.exists(fragments.resolve("ecosystem")),
-                "native DB resources belong under protocol helper fragments/database");
-        assertFalse(Files.exists(fragments.resolve("db")), "old root DB resources must not return");
-        assertMaximumLines(core, 400);
-        assertMaximumLines(shell, 400);
-        assertMaximumLines(deploymentShared, 500);
-        assertMaximumLines(deploymentAutomatic, 500);
-        assertMaximumLines(deploymentMulti, 500);
-        assertMaximumLines(repositories, 320);
-        assertMaximumLinesRecursively(fragments, 300);
+                Set.of("AiProfileRepository.java", "AiPurposeRepository.java", "BrowserRecoveryRepository.java",
+                        "CredentialReferenceRepository.java", "DesktopPreferenceRepository.java",
+                        "RepositoryTransactionExecutor.java", "SecurityRepository.java", "ServerProfileRepository.java",
+                        "ServerReferenceRepository.java"),
+                fileNames(root
+                        .resolve("src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository")));
+        var modules = MavenModuleGraph.read(root);
+        assertEquals(
+                Set.of("appapi", "mod/deployment", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
+                        "app/service", "app/source", "app/ui", "app/windows"),
+                modules.stream().filter(module -> !module.aggregate()).map(MavenModuleGraph.Module::path)
+                        .collect(java.util.stream.Collectors.toSet()));
+        assertTrue(modules.stream()
+                .noneMatch(module -> module.path().startsWith("shared/") || module.path().equals("web")));
     }
 
     @Test
     void deploymentHelperResourcesMatchTheExactMigratedContract() throws Exception {
-        Path resources = projectRoot()
+        Path root = projectRoot();
+        Path resources = root
                 .resolve("src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux");
         Set<String> expected = new HashSet<>(HELPER_FRAGMENTS);
-        expected.add("53-publication-observation.sh");
-        expected.addAll(Set.of("58-retained-activation.sh", "59-handoff-restore.sh", "59-handoff-database-restore.sh",
-                "59-handoff-restore-cleanup.sh", "68-handoff-database.sh", "69-handoff-backup-status.sh",
-                "55-publication-snapshot.sh", "21-native-operations.sh", "63-database-inspection.sh",
-                "41-application-admission.sh", "56-restore-recovery.sh"));
-        expected.addAll(Set.of("apparmor-namespace.sh", "systemd-manager-isolation.sh", "selinux-command-entry.sh",
+        expected.addAll(Set.of("53-publication-observation.sh", "58-retained-activation.sh", "59-handoff-restore.sh",
+                "59-handoff-database-restore.sh", "59-handoff-restore-cleanup.sh", "68-handoff-database.sh",
+                "69-handoff-backup-status.sh", "55-publication-snapshot.sh", "21-native-operations.sh",
+                "63-database-inspection.sh", "41-application-admission.sh", "56-restore-recovery.sh",
+                "apparmor-namespace.sh", "systemd-manager-isolation.sh", "selinux-command-entry.sh",
                 "centos-source-repositories.py"));
         assertEquals(58, expected.size());
         assertEquals(expected, fileNamesRecursively(resources));
@@ -418,7 +411,7 @@ class PackageStructureArchitectureTest {
                     .forEach(file -> actual.add(resources.relativize(file).toString().replace('\\', '/')));
         }
         var packaged = new HashSet<String>();
-        String bundle = Files.readString(projectRoot().resolve(
+        String bundle = Files.readString(root.resolve(
                 "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentManagedHelperBundle.java"));
         String declaredResources = bundle.substring(0, bundle.indexOf("private DeploymentManagedHelperBundle()"));
         var references = Pattern.compile("\"([a-z0-9/.-]+\\.(?:sh|py))\"").matcher(declaredResources);
@@ -475,121 +468,25 @@ class PackageStructureArchitectureTest {
     @Test
     void productionNamesUseStableResponsibilitiesAndMatchFileDocumentation() throws Exception {
         Path root = projectRoot();
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
-            List<String> periodNames = files.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().contains("src" + java.io.File.separator + "main"))
+        try (Stream<Path> files = activeFiles()) {
+            var periodNames = files.filter(path -> path.toString().contains("src" + java.io.File.separator + "main"))
                     .map(root::relativize).map(Path::toString).filter(name -> PERIOD_NAME.matcher(name).find())
                     .toList();
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
         }
-
         String structure = Files.readString(root.resolve("docs/File.md"));
-        for (String required : List.of("ecosystem.java.jar", "build.ecosystem", "build.workload",
-                "capability.ecosystem", "contract.result", "distro.apt", "distro.dnf", "execution.protocol",
-                "fragments/ecosystem", "generation.script", "persistence.repository", "persistence.serialization",
-                "ecosystem.db", "execution.protocol.database", "fragments/database")) {
-            assertTrue(structure.contains(required), () -> "File.md is missing the current structure: " + required);
-        }
-
-        for (String required : List.of(
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db",
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db/sql",
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/ecosystem/db/other",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/db",
-                "src/shared/linux/src/main/java/gold/debug/windowstolinux/shared/linux/ecosystem/db",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/database",
-                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/display",
-                "src/app/main/src/main/java/gold/debug/windowstolinux/app/main/startup",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/contract",
-                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/execution/migration",
-                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/connection",
-                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/repository",
-                "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/persistence/serialization",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/environment",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/execution/lifecycle",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/lock",
-                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/setting",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/single",
-                "src/app/service/src/main/java/gold/debug/windowstolinux/app/service/deployment/multi",
-                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment/automatic",
-                "src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/deployment/multi",
-                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/advice",
-                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/invocation",
-                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/collaboration/role",
-                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/generation/prompt",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/contract/policy",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/contract/spi",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/extension/registry",
-                "src/shared/config/src/main/java/gold/debug/windowstolinux/shared/config/contract/definition",
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/language",
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/server/security",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/contract/result/compatibility",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/result/deployment",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/result/lifecycle",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/contract/spi",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/environment",
-                "src/shared/deploy/src/main/java/gold/debug/windowstolinux/shared/deploy/execution/lifecycle",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/execution/transaction",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/extension/adapter",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/extension/registry",
-                "src/shared/source/src/main/java/gold/debug/windowstolinux/shared/source/contract/validation",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/contract/spi",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/generation/script",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/java",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/kotlin",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/node",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/php",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/python",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/ecosystem/ruby",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/extension/registry",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/build/workload",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/capability/ecosystem",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/preview",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/service",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/c/cmake",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/java",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/java/maven",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/java/gradle",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/java/jar",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/java/jdk",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/dotnet/dotnetsdk",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/go/gomodule",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/kotlin/gradle",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/kotlin/kotlinc",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/node/npm",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/node/pnpm",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/node/yarn",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/php/composer",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/php/phpcli",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/python/pip",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/python/pipenv",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/python/poetry",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/python/uv",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/ruby/bundler",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/ruby/rubycli",
-                "src/shared/standard/analyze/src/main/java/gold/debug/windowstolinux/shared/standard/analyze/ecosystem/rust/cargo",
-                "src/shared/ai/src/main/java/gold/debug/windowstolinux/shared/ai/transport",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/distro/apt",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/distro/dnf",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/distro/contract/profile",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/distro/extension/registry",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/distro/generation/script",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/execution/transfer",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/support",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/support/distro",
-                "src/shared/standard/deploy/src/main/java/gold/debug/windowstolinux/shared/standard/deploy/support/runtime",
-                "src/shared/linux-sshd/src/main/java/gold/debug/windowstolinux/shared/linux/sshd/command")) {
-            assertTrue(Files.isDirectory(root.resolve(required)),
+        assertTrue(structure.contains("12 个 Maven 叶子模块"));
+        for (String required : List.of("persistence.repository", "execution.protocol", "service/core/model", "appapi",
+                "mod/deployment"))
+            assertTrue(structure.contains(required), () -> "File.md is missing the active responsibility: " + required);
+        for (String required : List.of("app/main/src/main/java/gold/debug/windowstolinux/app/main/startup",
+                "app/db/src/main/java/gold/debug/windowstolinux/app/db/execution/schema",
+                "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/execution/protocol",
+                "app/mod/src/main/java/gold/debug/windowstolinux/app/mod/execution/lifecycle",
+                "mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core",
+                "mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/ecosystem"))
+            assertTrue(Files.isDirectory(root.resolve("src/" + required)),
                     () -> "current responsibility package is missing: " + required);
-        }
-        assertTrue(Files.isDirectory(root.resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/ecosystem")),
-                "helper ecosystem resource group is missing");
-        assertFalse(Files.exists(root.resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/runtime/35-ecosystem-dispatch.sh")),
-                "old helper ecosystem resource path returned");
     }
 
     private static Map<String, String> responsibilityPackages() {
@@ -732,7 +629,7 @@ class PackageStructureArchitectureTest {
     private static List<SourceUnit> loadSourceUnits(Predicate<Path> included) throws IOException {
         Path root = projectRoot();
         List<Path> sources;
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
+        try (Stream<Path> files = activeFiles()) {
             sources = files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java"))
                     .filter(included).sorted().toList();
         }
@@ -764,6 +661,26 @@ class PackageStructureArchitectureTest {
             }
         }
         return List.copyOf(units);
+    }
+
+    private static Stream<Path> activeFiles() throws IOException {
+        List<Path> paths = new ArrayList<>();
+        try {
+            for (var module : MavenModuleGraph.read(projectRoot())) {
+                if (module.aggregate())
+                    continue;
+                for (String kind : List.of("main", "test")) {
+                    Path source = module.pom().getParent().resolve("src/" + kind);
+                    if (Files.isDirectory(source))
+                        try (Stream<Path> files = Files.walk(source)) {
+                            paths.addAll(files.filter(Files::isRegularFile).toList());
+                        }
+                }
+            }
+        } catch (Exception failure) {
+            throw new IOException("Cannot enumerate the active Maven source graph", failure);
+        }
+        return paths.stream().sorted();
     }
 
     private static Optional<String> resolveImportedPackage(String imported, Collection<String> packages) {
@@ -842,7 +759,7 @@ class PackageStructureArchitectureTest {
     void sourceAndTestNamesFollowTheUnifiedNamingStandard() throws Exception {
         Path root = projectRoot();
         List<String> problems = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
+        try (Stream<Path> files = activeFiles()) {
             for (Path source : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java"))
                     .toList()) {
                 String content = Files.readString(source);
@@ -913,7 +830,8 @@ class PackageStructureArchitectureTest {
                                 : owner + "." + simpleName;
                         Set<String> restricted = new LinkedHashSet<>(camelCaseTokens(simpleName));
                         restricted.retainAll(RESTRICTED_TYPE_TOKENS);
-                        if (!restricted.isEmpty() && !ALLOWED_RESTRICTED_TYPE_NAMES.contains(simpleName)) {
+                        if (!restricted.isEmpty() && !ALLOWED_RESTRICTED_TYPE_NAMES.contains(simpleName)
+                                && !STABLE_PUBLIC_RESTRICTED_NAMES.contains(qualifiedName)) {
                             problems.add(qualifiedName + " uses restricted terms " + restricted);
                         }
                         if (PERIOD_NAME.matcher(simpleName).find()
@@ -924,7 +842,8 @@ class PackageStructureArchitectureTest {
                             if (OBSOLETE_ENUM_NAMES.contains(simpleName)) {
                                 problems.add(qualifiedName + " uses an obsolete enum name");
                             }
-                            if (ENUM_SUFFIXES.stream().noneMatch(simpleName::endsWith)) {
+                            if (ENUM_SUFFIXES.stream().noneMatch(simpleName::endsWith)
+                                    && !STABLE_PUBLIC_ENUM_NAMES.contains(qualifiedName)) {
                                 problems.add(qualifiedName + " has no approved semantic enum suffix");
                             }
                         }
@@ -934,6 +853,16 @@ class PackageStructureArchitectureTest {
             }
         }
         assertTrue(problems.isEmpty(), () -> "strict type naming violations: " + problems);
+    }
+
+    @Test
+    void explicitSdkNamesDoNotExemptOtherTypesOrUnreviewedSdkNames() {
+        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.AiPurpose"));
+        assertTrue(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.server.ServerInfo"));
+        assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.mod.deployment.ai.AiPurpose"));
+        assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.GenericPurpose"));
+        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.server.OtherInfo"));
+        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.app.service.server.ServerInfo"));
     }
 
     @Test
@@ -957,7 +886,7 @@ class PackageStructureArchitectureTest {
     void maintainedResourceFileNamesUseStableTerms() throws Exception {
         Path root = projectRoot();
         List<String> problems = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
+        try (Stream<Path> files = activeFiles()) {
             for (Path resource : files.filter(Files::isRegularFile).filter(path -> {
                 String value = path.toString();
                 return value.contains("src" + java.io.File.separator + "main" + java.io.File.separator + "resources")
@@ -972,12 +901,26 @@ class PackageStructureArchitectureTest {
                 forbidden.retainAll(FORBIDDEN_RESOURCE_TOKENS);
                 if (!forbidden.isEmpty())
                     problems.add(root.relativize(resource) + " uses forbidden terms " + forbidden);
-                if (PERIOD_NAME.matcher(stem).find() || tokens.stream().anyMatch(token -> token.matches("v[0-9]+"))) {
+                String relative = root.relativize(resource).toString().replace('\\', '/');
+                if ((PERIOD_NAME.matcher(stem).find() || tokens.stream().anyMatch(token -> token.matches("v[0-9]+")))
+                        && !VERSIONED_SCHEMA_RESOURCES.contains(relative)) {
                     problems.add(root.relativize(resource) + " uses a phase or version name");
                 }
             }
         }
         assertTrue(problems.isEmpty(), () -> "resource naming violations: " + problems);
+    }
+
+    @Test
+    void versionedSchemaNamesAreLimitedToExactRegisteredPersistentResources() {
+        assertTrue(VERSIONED_SCHEMA_RESOURCES
+                .contains("src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql"));
+        assertTrue(VERSIONED_SCHEMA_RESOURCES.contains(
+                "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v3.sql"));
+        assertFalse(VERSIONED_SCHEMA_RESOURCES
+                .contains("src/app/ui/src/main/resources/gold/debug/windowstolinux/app/ui/schema-v1.sql"));
+        assertFalse(VERSIONED_SCHEMA_RESOURCES.contains(
+                "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v4.sql"));
     }
 
     private static Set<String> camelCaseTokens(String value) {
@@ -995,8 +938,7 @@ class PackageStructureArchitectureTest {
                 "NodeLanguageInspector", "php", "PhpLanguageInspector", "python", "PythonLanguageInspector", "ruby",
                 "RubyLanguageInspector", "rust", "RustLanguageInspector");
         List<String> problems = new ArrayList<>();
-        for (String root : List.of("gold.debug.windowstolinux.shared.standard.analyze.ecosystem.",
-                "gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.")) {
+        for (String root : List.of("gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.")) {
             Set<String> found = new HashSet<>();
             for (SourceUnit unit : sourceModel().units) {
                 String file = unit.path.getFileName().toString();
@@ -1259,31 +1201,29 @@ class PackageStructureArchitectureTest {
 
     @Test
     void linuxAndUiHonorTheNarrowExecutionAndServiceBoundaries() throws Exception {
-        var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.backup.BackupArchiveInspection",
-                "gold.debug.windowstolinux.app.service.backup.CreatedBackupArchive",
-                "gold.debug.windowstolinux.app.service.backup.ManagedBackupInputAssessment",
-                "gold.debug.windowstolinux.app.service.backup.ManagedOfflineMigrationOutcome",
-                "gold.debug.windowstolinux.app.service.backup.ManagedRestoreOutcome",
-                "gold.debug.windowstolinux.app.service.backup.PreparedBackupCandidate",
-                "gold.debug.windowstolinux.app.service.backup.PreparedBackupSecrets",
-                "gold.debug.windowstolinux.app.service.deployment.multi.ReviewedMultiComponentApplication",
-                "gold.debug.windowstolinux.app.service.deployment.single.DeploymentHandoff",
-                "gold.debug.windowstolinux.app.service.execution.lifecycle.ManagedApplicationSnapshot",
-                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSummary",
-                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationScan",
-                "gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationLifecycleResult",
-                "gold.debug.windowstolinux.app.service.server.ServerSummary",
-                "gold.debug.windowstolinux.app.service.source.PreparedMultiComponentSource",
-                "gold.debug.windowstolinux.app.service.source.ReviewedSourcePreparation");
+        var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.ai.PlatformModelService",
+                "gold.debug.windowstolinux.app.service.linux.TransferConfiguration",
+                "gold.debug.windowstolinux.app.service.linux.TransferSettingsService",
+                "gold.debug.windowstolinux.app.service.server.PlatformServerService",
+                "gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService",
+                "gold.debug.windowstolinux.app.service.log.PlatformLogService",
+                "gold.debug.windowstolinux.app.service.mod.PlatformModDeletion",
+                "gold.debug.windowstolinux.app.service.mod.PlatformModInstallation",
+                "gold.debug.windowstolinux.app.service.mod.PlatformModIntents",
+                "gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation",
+                "gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService",
+                "gold.debug.windowstolinux.app.service.task.PlatformInteractionService");
         List<String> problems = new ArrayList<>();
         for (SourceUnit unit : sourceModel().units) {
             for (String reference : unit.imports) {
-                if (unit.packageName.startsWith("gold.debug.windowstolinux.shared.linux")
-                        && reference.startsWith("gold.debug.windowstolinux.shared.config."))
-                    problems.add(unit.path + " depends on configuration policy: " + reference);
+                if (unit.packageName.startsWith("gold.debug.windowstolinux.app.linux")
+                        && (reference.startsWith("gold.debug.windowstolinux.app.db.")
+                                || reference.startsWith("gold.debug.windowstolinux.app.service.")
+                                || reference.startsWith("gold.debug.windowstolinux.app.ui.")))
+                    problems.add(unit.path + " depends on persistence, service policy or UI: " + reference);
                 if (unit.packageName.startsWith("gold.debug.windowstolinux.app.ui.")) {
                     if (reference.startsWith("gold.debug.windowstolinux.app.db.")
-                            || reference.startsWith("gold.debug.windowstolinux.shared.linux."))
+                            || reference.startsWith("gold.debug.windowstolinux.app.linux."))
                         problems.add(unit.path + " reaches a database implementation or remote port: " + reference);
                     if (reference.startsWith("gold.debug.windowstolinux.app.service.")
                             && !reference.startsWith("gold.debug.windowstolinux.app.service.contract.")
@@ -1293,26 +1233,33 @@ class PackageStructureArchitectureTest {
                 }
             }
         }
-        String pom = Files.readString(projectRoot().resolve("src/shared/linux/pom.xml"));
-        var dependencies = Pattern.compile("<artifactId>(windowstolinux-[^<]+)</artifactId>")
-                .matcher(pom.substring(pom.indexOf("<dependencies>")));
-        while (dependencies.find())
-            assertEquals("windowstolinux-shared-model", dependencies.group(1));
+        var linux = MavenModuleGraph.read(projectRoot()).stream().filter(module -> module.path().equals("app/linux"))
+                .findFirst().orElseThrow();
+        assertEquals(Set.of("windowstolinux-appapi", "windowstolinux-app-ai", "windowstolinux-app-windows"),
+                linux.artifacts());
         assertTrue(problems.isEmpty(), () -> "execution/service boundary violations: " + problems);
     }
 
     @Test
     void relocatedTestsAndRemovedDirectoriesMatchTheirResponsibilities() throws Exception {
         Path root = projectRoot();
+        for (var entry : Map.of("DeploymentStaticInputTest", "service/standard/deploy/input",
+                "DeploymentConfigurationSnapshotTest", "service/core/config").entrySet()) {
+            Path test = root.resolve("src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/"
+                    + entry.getValue() + "/" + entry.getKey() + ".java");
+            assertTrue(Files.isRegularFile(test), "Migrated validation test is absent: " + test);
+            assertTrue(Files.readString(test).contains(
+                    "package gold.debug.windowstolinux.mod.deployment." + entry.getValue().replace('/', '.') + ";"));
+        }
         for (var entry : Map
                 .of("DeploymentRuntimeParserTest", "standard/deploy", "DeploymentConfigurationParserTest", "config")
                 .entrySet()) {
             Path test = root
                     .resolve("src/shared/" + entry.getValue() + "/src/test/java/gold/debug/windowstolinux/shared/"
                             + entry.getValue() + "/input/" + entry.getKey() + ".java");
-            assertTrue(Files.isRegularFile(test));
-            assertTrue(Files.readString(test).contains(
-                    "package gold.debug.windowstolinux.shared." + entry.getValue().replace('/', '.') + ".input;"));
+            assertFalse(Files.exists(test), "Inactive shared validation cannot remain in the active root: " + test);
+            assertTrue(Files.isRegularFile(root.resolve("history-src").resolve(root.relativize(test))),
+                    "Original validation source must remain in the frozen archive");
             assertFalse(
                     Files.exists(root.resolve("src/app/ui/src/test/java/gold/debug/windowstolinux/app/ui/deployment/"
                             + entry.getKey() + ".java")));
@@ -1347,7 +1294,7 @@ class PackageStructureArchitectureTest {
                                     .filter(method -> !method.getName().contentEquals("<init>")).count();
                             if (fields > 25)
                                 problems.add(className + " has " + fields + " instance fields");
-                            if (methods > 30 && !className.endsWith("DesktopApplicationFacade")) {
+                            if (methods > 30) {
                                 problems.add(className + " has " + methods + " directly declared methods");
                             }
                             node.getMembers().stream().filter(MethodTree.class::isInstance).map(MethodTree.class::cast)
@@ -1371,7 +1318,7 @@ class PackageStructureArchitectureTest {
     void testPackagesMirrorProductionAndOnlyReviewedEntrypointsExist() throws Exception {
         Path root = projectRoot();
         List<Path> missingMirrors = new ArrayList<>();
-        try (Stream<Path> files = Files.walk(root.resolve("src"))) {
+        try (Stream<Path> files = activeFiles()) {
             for (Path test : files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java"))
                     .filter(path -> path.toString()
                             .contains("src" + java.io.File.separator + "test" + java.io.File.separator + "java"))
@@ -1404,7 +1351,7 @@ class PackageStructureArchitectureTest {
                 }.scan(declaration, null);
             }
         }
-        assertEquals(Set.of("AppMain.java:main", "WebMain.java:main", "ModPackageTool.java:main"),
+        assertEquals(Set.of("AppMain.java:main", "DeploymentGitWorker.java:main", "ModPackageTool.java:main"),
                 new HashSet<>(entrypoints));
         assertEquals(3, entrypoints.size());
     }

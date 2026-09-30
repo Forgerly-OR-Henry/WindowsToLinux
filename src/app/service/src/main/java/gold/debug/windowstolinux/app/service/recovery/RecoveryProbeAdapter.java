@@ -5,11 +5,10 @@ import java.util.*;
 import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult;
 import gold.debug.windowstolinux.app.linux.recovery.RecoveryProbeResult.StatusType;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.model.failure.*;
+import gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
-/** Converts the remaining old SSH boundary to Linux-owned rescue evidence. / 将剩余旧 SSH 边界转换为 Linux 所属救援证据。 */
+/** Classifies original platform exceptions as Linux-owned rescue evidence. / 将原平台异常分类为Linux所属救援证据。 */
 final class RecoveryProbeAdapter {
     /** Prevents construction of the conversion boundary. / 禁止构造转换边界。 */
     private RecoveryProbeAdapter() {
@@ -23,45 +22,33 @@ final class RecoveryProbeAdapter {
      * @return a classified result carrying the original descriptor when available / 携带原始描述（存在时）的分类结果
      */
     static RecoveryProbeResult failed(Exception exception) {
-        FailureDescriptor descriptor = null;
-        SecretStoreException credential = null;
+        Problem descriptor = null;
+        boolean credential = false;
         boolean interrupted = Thread.currentThread().isInterrupted();
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
-            if (descriptor == null && credential == null && cause instanceof SecretStoreException secret)
-                credential = secret;
-            if (descriptor == null && credential == null && cause instanceof FailureCarrier carrier)
-                descriptor = carrier.failure();
+        for (Throwable cause = exception; cause != null && visited.size() < 16
+                && visited.add(cause); cause = cause.getCause()) {
+            if (descriptor == null && cause instanceof SecretStoreException secret) {
+                descriptor = secret.problem();
+                credential = true;
+            }
+            if (descriptor == null && cause instanceof gold.debug.windowstolinux.appapi.task.ApiException api)
+                descriptor = api.problem();
+            if (descriptor == null
+                    && cause instanceof gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException service)
+                descriptor = service.problem();
             interrupted |= cause instanceof InterruptedException || cause instanceof java.io.InterruptedIOException
                     || cause instanceof java.util.concurrent.CancellationException;
         }
-        if (credential != null)
-            return new RecoveryProbeResult(interrupted ? StatusType.INTERRUPTED : StatusType.CREDENTIAL_UNAVAILABLE,
-                    Optional.of(credential.problem()));
         if (descriptor == null)
-            descriptor = FailureDescriptor.create(
-                    interrupted
-                            ? ApplicationServiceFailureType.RECOVERY_INTERRUPTED
-                            : ApplicationServiceFailureType.RECOVERY_PROBE_FAILED,
-                    OperationIdentity.create(),
-                    interrupted ? "SSH recovery probe was interrupted" : "SSH recovery verification failed");
-        var definition = descriptor.definition();
-        StatusType status = interrupted
-                ? StatusType.INTERRUPTED
-                : definition == LinuxOperationFailureType.CONNECTION_FAILED
-                        ? StatusType.RETRYABLE_CONNECTION
-                        : definition == LinuxOperationFailureType.AUTHENTICATION_FAILED
-                                ? StatusType.AUTHENTICATION_REJECTED
-                                : definition == LinuxOperationFailureType.HOST_KEY_REJECTED
-                                        ? StatusType.IDENTITY_CONFLICT
-                                        : StatusType.FAILED;
-        var problem = new gold.debug.windowstolinux.appapi.task.Problem(
-                interrupted
-                        ? gold.debug.windowstolinux.appapi.task.ProblemCode.CANCELLED
-                        : gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE,
-                descriptor.code(), "SSH recovery verification failed", Map.of(),
-                Optional.of(UUID.fromString(descriptor.operationIdentity().toString())));
-        return new RecoveryProbeResult(status, Optional.of(problem));
+            descriptor = (interrupted
+                    ? ApplicationServiceFailureType.RECOVERY_INTERRUPTED
+                    : ApplicationServiceFailureType.RECOVERY_PROBE_FAILED).problem(UUID.randomUUID(), Map.of(),
+                            interrupted ? "SSH recovery probe was interrupted" : "SSH recovery verification failed");
+        if (interrupted || credential)
+            return new RecoveryProbeResult(interrupted ? StatusType.INTERRUPTED : StatusType.CREDENTIAL_UNAVAILABLE,
+                    Optional.of(descriptor));
+        return RecoveryProbeResult.failed(descriptor);
     }
 
 }

@@ -9,13 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentFileBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 
 /**
  * Strict versioned storage codec for reviewed non-secret managed resource bindings. / 经审阅无秘密受管资源绑定的严格版本化存储编解码器。
@@ -158,7 +158,7 @@ public final class DeploymentResourceCodec {
     private static void writeFile(DataOutputStream output, DeploymentFileBinding binding) throws IOException {
         output.writeUTF(binding.bindingId());
         output.writeUTF(binding.dataPath().path());
-        output.writeByte(binding.dataPath().access() == DeploymentDataPath.AccessMode.READ_ONLY ? 1 : 2);
+        output.writeByte(binding.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY ? 1 : 2);
         output.writeUTF(binding.dataPath().schemaId());
         output.writeByte(binding.dataPath().reversible() ? 1 : 0);
         output.writeUTF(binding.location().type().name());
@@ -179,9 +179,9 @@ public final class DeploymentResourceCodec {
     private static DeploymentFileBinding readFile(DataInputStream input) throws IOException {
         String bindingId = input.readUTF();
         String path = input.readUTF();
-        DeploymentDataPath.AccessMode access = switch (input.readUnsignedByte()) {
-            case 1 -> DeploymentDataPath.AccessMode.READ_ONLY;
-            case 2 -> DeploymentDataPath.AccessMode.READ_WRITE;
+        DeploymentStoragePath.AccessMode access = switch (input.readUnsignedByte()) {
+            case 1 -> DeploymentStoragePath.AccessMode.READ_ONLY;
+            case 2 -> DeploymentStoragePath.AccessMode.READ_WRITE;
             default -> throw new IOException("managed file binding access mode is unsupported");
         };
         String schemaId = input.readUTF();
@@ -190,7 +190,7 @@ public final class DeploymentResourceCodec {
                 gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
                         .valueOf(input.readUTF()),
                 input.readUTF());
-        return new DeploymentFileBinding(bindingId, new DeploymentDataPath(path, access, schemaId, reversible),
+        return new DeploymentFileBinding(bindingId, new DeploymentStoragePath(path, access, schemaId, reversible),
                 location,
                 gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageResourceType
                         .valueOf(input.readUTF()),

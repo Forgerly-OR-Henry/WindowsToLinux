@@ -16,10 +16,8 @@
 
   <modules>
     <module>src/appapi</module>
-    <module>src/shared</module>
     <module>src/app</module>
     <module>src/mod</module>
-    <module>src/web</module>
   </modules>
 
   <properties>
@@ -42,7 +40,6 @@
     <zstd-jni.version>1.5.5-11</zstd-jni.version>
     <sshd.version>2.14.0</sshd.version>
     <slf4j.version>2.0.16</slf4j.version>
-    <sqlite.version>3.46.0.0</sqlite.version>
     <h2.version>2.5.250</h2.version>
     <jna.version>5.17.0</jna.version>
     <pf4j.version>3.13.0</pf4j.version>

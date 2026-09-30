@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
 
 /**
@@ -123,6 +123,6 @@ public final class SourceMutationPolicy {
      * @return the admission rejection associated with the supplied reason / 与所提供原因关联的准入拒绝
      */
     private static RejectionReason rejection(String code, String key) {
-        return new RejectionReason(code, LocalizedMessage.of(key), "deployment");
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(key), "deployment");
     }
 }

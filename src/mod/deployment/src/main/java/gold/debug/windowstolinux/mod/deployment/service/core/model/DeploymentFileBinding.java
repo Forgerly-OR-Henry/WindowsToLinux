@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 
 /**
  * Stable managed identity for one reviewed logical persistent file tree. / 一个经审阅逻辑持久化文件树的稳定受管身份。
@@ -15,8 +15,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSto
  * @param seedFile seed file / 初始种子文件
  * @param contentSha256 content sha 256 / 内容SHA256
  */
-public record DeploymentFileBinding(String bindingId, DeploymentDataPath dataPath, DeploymentStorageLocation location,
-        DeploymentStorageLocation.StorageResourceType resourceType, String seedFile, String contentSha256) {
+public record DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath,
+        DeploymentStorageLocation location, DeploymentStorageLocation.StorageResourceType resourceType, String seedFile,
+        String contentSha256) {
     /**
      * Validates the identity and exact reviewed logical path. / 校验身份及精确审阅逻辑路径。
      *
@@ -45,7 +46,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentDataPath dataPat
         if (resourceType == DeploymentStorageLocation.StorageResourceType.DATABASE)
             throw new IllegalArgumentException("databases require an explicit database binding");
         if (resourceType == DeploymentStorageLocation.StorageResourceType.CONFIGURATION
-                && dataPath.access() != DeploymentDataPath.AccessMode.READ_ONLY)
+                && dataPath.access() != DeploymentStoragePath.AccessMode.READ_ONLY)
             throw new IllegalArgumentException("configuration bindings must be read-only");
     }
 
@@ -58,7 +59,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentDataPath dataPat
      * @param location the remote URI / 远端 URI
      * @param resourceType resource type / 资源类型
      */
-    public DeploymentFileBinding(String bindingId, DeploymentDataPath dataPath, DeploymentStorageLocation location,
+    public DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath, DeploymentStorageLocation location,
             DeploymentStorageLocation.StorageResourceType resourceType) {
         this(bindingId, dataPath, location, resourceType, "", "");
     }
@@ -83,7 +84,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentDataPath dataPat
      * @param bindingId binding id / 绑定标识
      * @param dataPath data path / 数据路径
      */
-    public DeploymentFileBinding(String bindingId, DeploymentDataPath dataPath) {
+    public DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath) {
         this(bindingId, dataPath, DeploymentStorageLocation.custom(dataPath.path()));
     }
 
@@ -95,7 +96,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentDataPath dataPat
      * @param dataPath data path / 数据路径
      * @param location the remote URI / 远端 URI
      */
-    public DeploymentFileBinding(String bindingId, DeploymentDataPath dataPath, DeploymentStorageLocation location) {
+    public DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath, DeploymentStorageLocation location) {
         this(bindingId, dataPath, location, DeploymentStorageLocation.StorageResourceType.FILE);
     }
 }

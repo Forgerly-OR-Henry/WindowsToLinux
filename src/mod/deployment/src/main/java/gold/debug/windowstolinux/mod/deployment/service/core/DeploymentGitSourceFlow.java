@@ -104,7 +104,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
         public void close() throws ApiException {
             material.archive().close();
             var phase = journal.refresh().phase();
-            if (phase == DeploymentGitSourceJournal.Phase.WRITE_STARTED) {
+            if (phase == DeploymentGitSourceJournal.PhaseState.WRITE_STARTED) {
                 try {
                     if (owner.business(task, journal).outcome() == Outcome.UNKNOWN)
                         throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_PROJECT_SAVE_UNKNOWN"));
@@ -112,7 +112,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
                     throw new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_PROJECT_SAVE_UNKNOWN"));
                 }
             }
-            if (journal.facts().phase() != DeploymentGitSourceJournal.Phase.REQUESTED)
+            if (journal.facts().phase() != DeploymentGitSourceJournal.PhaseState.REQUESTED)
                 journal.close();
         }
     }
@@ -275,7 +275,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
                 return unknown();
             try {
                 journal.refresh();
-                if (journal.facts().phase() == DeploymentGitSourceJournal.Phase.RECEIPT
+                if (journal.facts().phase() == DeploymentGitSourceJournal.PhaseState.RECEIPT
                         && journal.facts().receipt().orElseThrow().outcome() != Outcome.SUCCEEDED) {
                     var receipt = journal.facts().receipt().orElseThrow();
                     journal.knownFailure(
@@ -315,7 +315,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             preparer.closeTaskResources(task);
         var facts = journal.refresh();
         context.processes().closeTaskResources(task);
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.REQUESTED) {
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.REQUESTED) {
             var bytes = context.source()
                     .readWorkspaceEvidence(task, facts.plan().control(), "git-result.json", 1_048_576).orElse(null);
             if (bytes == null)
@@ -328,7 +328,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             }
             facts = journal.facts();
         }
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.REQUESTED)
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.REQUESTED)
             return unknown();
         var result = business(task, journal);
         if (result.outcome() == Outcome.UNKNOWN)
@@ -349,21 +349,21 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
     private OperationResult<Void> business(TaskContext task, DeploymentGitSourceJournal journal)
             throws SQLException, ApiException {
         var facts = journal.facts();
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.KNOWN_FAILURE)
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.KNOWN_FAILURE)
             return failed(facts.failure().orElseThrow());
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.PLANNED
-                || facts.phase() == DeploymentGitSourceJournal.Phase.PROPOSED)
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.PLANNED
+                || facts.phase() == DeploymentGitSourceJournal.PhaseState.PROPOSED)
             return failed(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GIT_NOT_SAVED"));
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.RECEIPT) {
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.RECEIPT) {
             var receipt = facts.receipt().orElseThrow();
             if (receipt.outcome() == Outcome.SUCCEEDED)
                 return failed(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GIT_NOT_SAVED"));
             return failed(problem(receipt.problemCode().orElseThrow(), receipt.eventCode().orElseThrow()));
         }
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.SAVED)
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.SAVED)
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         var current = projects.find(task, facts.project());
-        if (facts.phase() == DeploymentGitSourceJournal.Phase.WRITE_STARTED && current.equals(facts.next())) {
+        if (facts.phase() == DeploymentGitSourceJournal.PhaseState.WRITE_STARTED && current.equals(facts.next())) {
             journal.saved();
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         }

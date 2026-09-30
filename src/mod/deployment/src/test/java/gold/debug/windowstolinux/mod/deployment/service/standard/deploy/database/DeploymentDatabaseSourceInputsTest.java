@@ -4,16 +4,83 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentDatabaseSourceInputsTest {
     @TempDir
     Path root;
+
+    /** Keeps Redis declaration separate from both SQL initialization and a JDBC datasource. / 将Redis声明与SQL初始化及JDBC数据源分别隔离。
+     * @param initializer whether the rejected input declares SQL files rather than a datasource / 被拒输入是否声明SQL文件而非数据源 */
+    @ParameterizedTest(name = "Redis SQL initializer={0}")
+    @ValueSource(booleans = {false, true})
+    void redisCannotBeMisclassifiedAsASqlDatasourceOrInitializer(boolean initializer) {
+        var valid = new DatabaseRequirement("cache", DeploymentDatabaseEngineType.REDIS, "", "cache", "cache",
+                "CACHE", "CACHE_PASSWORD", List.of(), false, "fixture");
+        assertEquals(DeploymentDatabaseEngineType.REDIS, valid.engine());
+        assertThrows(IllegalArgumentException.class, () -> new DatabaseRequirement("cache",
+                DeploymentDatabaseEngineType.REDIS, "", "cache", "cache", "CACHE", "CACHE_PASSWORD",
+                initializer ? List.of("schema.sql") : List.of(), !initializer, "fixture"));
+    }
+
+    /** Keeps one component database's SQL files separate from the global candidate list and other databases. / 将一个组件数据库的SQL文件与全局候选清单及其它数据库隔离。
+     * @throws Exception if actual source declarations cannot be prepared or read / 无法准备或读取实际源码声明时 */
+    @Test
+    void declaredInitializationForOneDatabaseDoesNotInitializeEveryOtherDatabase() throws Exception {
+        Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
+        Files.writeString(root.resolve("windowstolinux-db.properties"), """
+                db=main,audit
+                db.main.engine=POSTGRESQL
+                db.main.database=main
+                db.main.username=main
+                db.main.environmentPrefix=MAIN
+                db.main.passwordEnvironment=MAIN_PASSWORD
+                db.main.initialize=schema.sql
+                db.audit.engine=POSTGRESQL
+                db.audit.database=audit
+                db.audit.username=audit
+                db.audit.environmentPrefix=AUDIT
+                db.audit.passwordEnvironment=AUDIT_PASSWORD
+                """);
+        var assessment = new DatabaseProjectInspector().inspect(root);
+        assertEquals(List.of("schema.sql"), assessment.sqlCandidates());
+        assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
+        assertTrue(assessment.databases().getLast().initializationFiles().isEmpty());
+        var completed = DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of());
+        assertEquals(List.of("main", "audit"), completed.databases().stream().map(DatabaseRequirement::id).toList());
+        assertEquals(List.of("schema.sql"), completed.databases().getFirst().initializationFiles());
+        assertTrue(completed.databases().getLast().initializationFiles().isEmpty());
+        assertEquals(assessment.sqlCandidates(), completed.sqlCandidates());
+    }
+
+    /** Validates a declared missing SQL source through the actual pure completion API. / 通过实际纯补齐API核验已声明但缺失的SQL源码。
+     * @throws Exception if the local declaration cannot be written or parsed / 无法写入或解析本地声明时 */
+    @Test
+    void initializationFilesAreValidatedBeforeAnyRemoteDependenciesAreNeeded() throws Exception {
+        Files.writeString(root.resolve("windowstolinux-db.properties"), """
+                db=main
+                db.main.engine=POSTGRESQL
+                db.main.database=main
+                db.main.username=main
+                db.main.environmentPrefix=MAIN
+                db.main.passwordEnvironment=MAIN_PASSWORD
+                db.main.initialize=missing.sql
+                """);
+        var assessment = new DatabaseProjectInspector().inspect(root);
+        assertEquals(List.of("missing.sql"), assessment.databases().getFirst().initializationFiles());
+        assertEquals(List.of(), assessment.sqlCandidates()); assertFalse(Files.exists(root.resolve("missing.sql")));
+        assertThrows(IllegalArgumentException.class,
+                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of()));
+    }
 
     @Test
     void explicitSqliteSourceRetainsSeedAndSourceBoundInitialization() throws Exception {

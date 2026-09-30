@@ -33,7 +33,7 @@ public final class DeploymentAgentProjectChannel {
     private final TaskContext task;
 
     /** Frozen and live model-policy revision. / 冻结和实时模型策略修订。 */
-    private final String configurationRevision;
+    private String configurationRevision;
 
     /** Read-only live observer of the task-authorized AI revision. / 任务授权 AI 修订的只读实时观察器。 */
     private final Supplier<String> currentRevision;
@@ -59,6 +59,14 @@ public final class DeploymentAgentProjectChannel {
         this.task = Objects.requireNonNull(task);
         this.configurationRevision = Objects.requireNonNull(configurationRevision);
         this.currentRevision = Objects.requireNonNull(currentRevision);
+    }
+
+    /** Rebinds new action reviews while preserving every original opened backend. / 保留全部原已开启后端，同时重新绑定新动作审核。
+     * @param revision explicitly adopted whole-route revision / 明确采用的整路由修订 */
+    void replaceConfiguration(String revision) {
+        if (!revision.matches("[0-9a-f]{64}") || !revision.equals(currentRevision.get()))
+            throw new SecurityException("Explicit agent configuration differs before dispatch");
+        configurationRevision = revision;
     }
 
     /** Opens one uploaded protected source using its exact archive digest. / 使用精确归档摘要开启一份已上传受保护来源。
@@ -173,7 +181,19 @@ public final class DeploymentAgentProjectChannel {
      * @return confirmed state / 已确认状态
      * @throws Exception on unavailable or malformed evidence / 依据不可用或无效时 */
     public CandidateStatus candidateStatus(DeploymentRemoteWorkspace workspace) throws Exception {
-        var result = send(render("candidate-query-task", workspace), new byte[0], Duration.ofSeconds(20), 4096, false);
+        return candidateStatus(task.id(), workspace);
+    }
+
+    /** Queries an original candidate using this actual query task's authority, never its old context. / 使用此实际查询任务的权限核对原候选，绝不使用旧上下文。
+     * @param originalTask exact persisted original owner UUID / 精确已持久原所有者UUID
+     * @param workspace exact original candidate / 精确原候选
+     * @return actual present and build state / 实际存在及构建状态
+     * @throws Exception if exact identity or transport is unconfirmed / 精确身份或传输不明时 */
+    public CandidateStatus candidateStatus(UUID originalTask, DeploymentRemoteWorkspace workspace) throws Exception {
+        String script = List.of(DeploymentManagedHelperBundle.PATH, "candidate-query-task", workspace.applicationId(),
+                workspace.candidateId(), Objects.requireNonNull(originalTask).toString()).stream()
+                .map(DeploymentAgentProjectChannel::quote).collect(java.util.stream.Collectors.joining(" "));
+        var result = send(script, new byte[0], Duration.ofSeconds(20), 4096, false);
         knownSuccess(result);
         return switch (result.value().orElseThrow().stdout()) {
             case "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n" -> new CandidateStatus(true, false);

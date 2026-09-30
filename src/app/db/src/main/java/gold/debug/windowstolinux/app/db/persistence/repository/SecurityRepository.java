@@ -5,7 +5,6 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.entity.StoredCredential;
 import gold.debug.windowstolinux.app.db.entity.StoredSecurityProfile;
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /** Persists opaque security records and atomic credential/owner changes. / 持久化不透明安全记录及原子凭据归属变更。 */
@@ -16,13 +15,6 @@ public final class SecurityRepository {
 
     /** Query for retained business credential references. / 保留业务凭据引用的查询。 */
     private final String referenceQuery;
-    /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
-     * @param connections connections supplied to this boundary / 传入当前边界的connections值
-     */
-    public SecurityRepository(DesktopConnectionFactory connections) {
-        this.connections = Objects.requireNonNull(connections).scoped();
-        this.referenceQuery = "SELECT 1 FROM secret_revision WHERE credential_id=? LIMIT 1";
-    }
 
     /** Binds H2 platform transactions and generation-aware Mod references. / 绑定 H2 平台事务及带代次的插件引用。
      * @param connections platform transaction scope / 平台事务作用域

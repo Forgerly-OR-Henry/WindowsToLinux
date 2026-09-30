@@ -50,6 +50,9 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
         }
         OperationResult<DeploymentPublicationProposal> proven = null;
         try {
+            if (!DeploymentPublicationAttemptRecovery.child(context, task, record, journal)
+                    || !DeploymentAssistedReviewRecovery.child(context, task, record, journal))
+                return Optional.of(unknown("DEPLOYMENT_ASSISTED_REVIEW_RECOVERY_UNCONFIRMED"));
             var facts = DeploymentPublicationRecoveryFacts.read(journal.facts(), record);
             var proposal = new DeploymentExecutionRepository(context.db()).publicationTemplate(record);
             if (journal.released()) {
@@ -82,8 +85,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
             try (RemoteSession session = context.linux().connect(facts.unit().server(), task)) {
                 var channel = new DeploymentPublicationChannel(session, context.interaction(), facts.unit().server(),
                         task, facts.plan());
-                var observed = channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(),
-                        facts.engine());
+                var observed = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
                 if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
                     return Optional.of(unknown("DEPLOYMENT_ORIGINAL_STATUS_UNCONFIRMED"));
                 var status = observed.value().orElseThrow();
@@ -197,7 +199,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                     return unknown("DEPLOYMENT_PREPUBLISH_CURRENT_CHANGED");
                 if (facts.snapshot().isEmpty()) {
                     var recovered = new DeploymentRemoteReleaseSnapshot(
-                            Optional.of(record.identity().taskId().toString()), status.previousRunning().orElseThrow(),
+                            Optional.of(facts.operation().orElse(record.identity().taskId()).toString()), status.previousRunning().orElseThrow(),
                             status.previousDigest(), status.previousKind());
                     if (!journal.snapshot(recovered))
                         return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_RECORD_UNCONFIRMED");
@@ -206,13 +208,12 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_DISCARD_UNCONFIRMED");
                 if (!journal.mark("SNAPSHOT_DISCARD_MAY_HAVE_RUN"))
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_DISCARD_BOUNDARY_UNCONFIRMED");
-                var discarded = cleanupCall(journal, facts.phase(), () -> channel.discardSnapshot(facts.unit()));
+                var discarded = cleanupCall(journal, facts.phase(), () -> facts.operation().isEmpty() ? channel.discardSnapshot(facts.unit()) : channel.discardSnapshot(facts.unit(), facts.operation().orElseThrow()));
                 if (notDispatched(journal, facts.phase(), discarded))
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_NOT_DISPATCHED");
                 if (discarded.outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_UNCONFIRMED");
-                var after = channel.originalStatus(facts.unit(), facts.candidate(), Optional.empty(), facts.backend(),
-                        facts.engine());
+                var after = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), Optional.empty(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), Optional.empty(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
                 if (after.outcome() != Outcome.SUCCEEDED || after.value().orElseThrow().snapshot())
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_RETAINED");
                 if (!journal.mark("SNAPSHOT_DISCARDED"))
@@ -424,8 +425,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @throws ApiException if host admission fails / 宿主准入失败时 */
     private static DeploymentOriginalPublicationStatus reread(DeploymentPublicationChannel channel,
             DeploymentPublicationRecoveryFacts facts) throws ApiException {
-        var read = channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(),
-                facts.engine());
+        var read = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
         return read.outcome() == Outcome.SUCCEEDED ? read.value().orElse(null) : null;
     }
 

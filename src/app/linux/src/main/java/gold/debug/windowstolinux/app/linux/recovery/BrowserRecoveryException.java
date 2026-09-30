@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.appapi.task.ProblemCode;
 /** Reports a browser-stage failure without copying page, command or terminal contents. / 报告浏览器阶段失败，不复制页面、命令或终端内容。 */
 public final class BrowserRecoveryException extends RuntimeException {
     /** Stable browser stage, independent of deployment failure types. / 稳定浏览器阶段，独立于部署错误类型。 */
-    public enum Reason {
+    public enum ReasonType {
         /** Browser operation could not complete. / 浏览器操作未能完成。 */
         OPERATION_FAILED,
         /** Bound terminal observation could not complete. / 已绑定终端观测未能完成。 */
@@ -22,7 +22,7 @@ public final class BrowserRecoveryException extends RuntimeException {
     }
 
     /** Exact failed stage. / 精确失败阶段。 */
-    private final Reason reason;
+    private final ReasonType reason;
 
     /** Safe platform diagnostic, without raw provider exceptions. / 安全平台诊断，不含原始提供方异常。 */
     private final Problem problem;
@@ -30,7 +30,7 @@ public final class BrowserRecoveryException extends RuntimeException {
     /** Retains the safe stage and original diagnostic identity. / 保留安全阶段及原始诊断身份。
      * @param reason actual failed stage / 实际失败阶段
      * @param cause internal original failure / 内部原始失败 */
-    public BrowserRecoveryException(Reason reason, Throwable cause) {
+    public BrowserRecoveryException(ReasonType reason, Throwable cause) {
         super("Isolated browser operation failed", cause);
         this.reason = java.util.Objects.requireNonNull(reason);
         String event = switch (reason) {
@@ -40,7 +40,7 @@ public final class BrowserRecoveryException extends RuntimeException {
             case INTERRUPTED -> "linux.browser.interrupted";
         };
         problem = new Problem(
-                reason == Reason.CLEANUP_FAILED || reason == Reason.INTERRUPTED
+                reason == ReasonType.CLEANUP_FAILED || reason == ReasonType.INTERRUPTED
                         ? ProblemCode.UNKNOWN
                         : ProblemCode.IO_FAILURE,
                 event, "Isolated browser operation failed", Map.of(), Optional.of(UUID.randomUUID()));
@@ -48,7 +48,7 @@ public final class BrowserRecoveryException extends RuntimeException {
 
     /** Returns the actual failed browser stage. / 返回实际失败浏览器阶段。
      * @return stable stage / 稳定阶段 */
-    public Reason reason() {
+    public ReasonType reason() {
         return reason;
     }
 

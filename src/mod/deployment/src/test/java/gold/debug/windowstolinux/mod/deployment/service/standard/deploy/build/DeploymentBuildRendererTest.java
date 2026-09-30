@@ -20,7 +20,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Anal
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.contract.spi.DeploymentBuildRenderer;
@@ -433,13 +433,13 @@ class DeploymentBuildRendererTest {
             return new DeploymentProjectFacts(temporaryDirectory, "demo", type, tool,
                     new ProjectLanguageFacts(Set.of(), Set.of(SourceLanguageType.C, SourceLanguageType.CPP), Map.of(),
                             List.of()),
-                    List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                            LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)),
+                    List.of(new AnalysisEvidence(DeploymentLocalizedMessage.of("test.evidence"), "fixture",
+                            DeploymentLocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)),
                     List.of(), List.of());
         }
         return new DeploymentProjectFacts(temporaryDirectory, "demo", type, tool,
-                List.of(new AnalysisEvidence(LocalizedMessage.of("test.evidence"), "fixture",
-                        LocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)),
+                List.of(new AnalysisEvidence(DeploymentLocalizedMessage.of("test.evidence"), "fixture",
+                        DeploymentLocalizedMessage.of("test.detected"), EvidenceConfidenceLevel.HIGH)),
                 List.of(), List.of());
     }
 

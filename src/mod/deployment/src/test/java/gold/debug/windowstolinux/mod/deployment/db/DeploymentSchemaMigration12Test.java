@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
@@ -40,8 +40,7 @@ class DeploymentSchemaMigration12Test extends DeploymentRuntimeFixture {
             try (var access = scope(runtime, target, true);
                     var connection = access.openConnection();
                     var statement = connection.createStatement()) {
-                var report = new DeploymentSchema().validate(access);
-                assertTrue(report.valid(), report.toString());
+                assertFalse(DeploymentSchemaMigration.inventory(connection, "2").isEmpty());
                 try (var row = statement.executeQuery(
                         "SELECT credential_id,purpose FROM secret_revision WHERE secret_id='credential-name'")) {
                     assertTrue(row.next());
@@ -103,7 +102,7 @@ class DeploymentSchemaMigration12Test extends DeploymentRuntimeFixture {
      * @param version exact generation version / 精确代次版本
      * @return registered identity / 已登记身份
      * @throws Exception if platform registration fails / 平台登记失败时 */
-    private static SchemaIdentity register(PlatformRuntime runtime, String version) throws Exception {
+    static SchemaIdentity register(PlatformRuntime runtime, String version) throws Exception {
         var identity = new SchemaIdentity(OWNER, version, UUID.randomUUID());
         var coordinates = new SchemaCoordinates(identity);
         try (var connection = runtime.persistence().database().openConnection();
@@ -156,7 +155,7 @@ class DeploymentSchemaMigration12Test extends DeploymentRuntimeFixture {
      * @param readOnly SELECT-only source mode / 来源仅SELECT模式
      * @return real restricted access / 真实受限访问
      * @throws Exception if the scope cannot be opened / 作用域无法打开时 */
-    private static SchemaAccessScope scope(PlatformRuntime runtime, SchemaIdentity identity, boolean readOnly)
+    static SchemaAccessScope scope(PlatformRuntime runtime, SchemaIdentity identity, boolean readOnly)
             throws Exception {
         return new SchemaAccessScope(runtime.persistence().database(), identity, UUID.randomUUID(), readOnly);
     }

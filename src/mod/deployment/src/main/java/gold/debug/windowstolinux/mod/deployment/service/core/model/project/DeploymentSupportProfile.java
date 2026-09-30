@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * The exact language, architecture, framework, support level, validation matrix, evidence, and limitations for one analyzed path.
@@ -21,7 +21,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
  */
 public record DeploymentSupportProfile(DeploymentSupportLevel level, SourceLanguageType language, String architecture,
         String framework, List<ValidatedDeploymentTarget> validatedTargets, List<String> evidenceReferences,
-        List<LocalizedMessage> limitations) {
+        List<DeploymentLocalizedMessage> limitations) {
     /**
      * Validates a truthful support claim. / 验证真实的支持声明。
      *
