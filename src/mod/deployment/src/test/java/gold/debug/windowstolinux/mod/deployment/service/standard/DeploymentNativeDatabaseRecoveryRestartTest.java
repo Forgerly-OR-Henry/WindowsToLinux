@@ -61,7 +61,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--original", root.toString(),
+                    "-Dmanaged.test.python=" + System.getProperty("managed.test.python", "python"), "-cp",
+                    System.getProperty("java.class.path"), getClass().getName(), "--original", root.toString(),
                     Integer.toString(ssh.server().getPort()), Boolean.toString(knownFailure)).redirectErrorStream(true)
                     .start();
             try {
@@ -123,7 +124,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--indexed", root.toString(),
+                    "-Dmanaged.test.python=" + System.getProperty("managed.test.python", "python"), "-cp",
+                    System.getProperty("java.class.path"), getClass().getName(), "--indexed", root.toString(),
                     Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
             try {
                 assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original indexed native DB child timed out");
@@ -175,7 +177,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--bootstrap", root.toString(),
+                    "-Dmanaged.test.python=" + System.getProperty("managed.test.python", "python"), "-cp",
+                    System.getProperty("java.class.path"), getClass().getName(), "--bootstrap", root.toString(),
                     Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
             try {
                 assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original helper child timed out");
@@ -320,8 +323,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                                 Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
                                         "Original helper reply was not observed", Map.of(), Optional.empty())));
                     }
-                    return reply(
-                            "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                    return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
                 });
         var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
                 "Original native DB operation", List.of(server.id()), true), task -> {
@@ -359,8 +362,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                                 Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
                                         "Original helper reply was not observed", Map.of(), Optional.empty())));
                     }
-                    return reply(
-                            "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                    return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
                 });
         var entry = new DeploymentDatabasePlanJournal.Entry("service", "main");
         var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
@@ -495,7 +498,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 return receipt;
             }
             if (script.contains("sha256sum --check --status"))
-                return "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+                return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
             replayCalls.incrementAndGet();
             throw new AssertionError("Recovery must not reinstall the helper: " + script);
         }
@@ -514,7 +518,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         if (script.contains("native-db "))
             replayCalls.incrementAndGet();
         if (script.contains("managed-helper' probe"))
-            return "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+            return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
+                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
         throw new AssertionError("Unexpected native DB recovery command: " + script);
     }
 
@@ -597,7 +602,8 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
 
     private String peer(Path state, String action, byte[] frame) throws Exception {
         var script = workspace().resolve("src/mod/deployment/src/test/python/test_native_database_operation.py");
-        var process = new ProcessBuilder("python", script.toString(), "peer", state.toString(), action).start();
+        var process = new ProcessBuilder(System.getProperty("managed.test.python", "python"), script.toString(), "peer",
+                state.toString(), action).start();
         try {
             try (var input = process.getOutputStream()) {
                 input.write(frame);

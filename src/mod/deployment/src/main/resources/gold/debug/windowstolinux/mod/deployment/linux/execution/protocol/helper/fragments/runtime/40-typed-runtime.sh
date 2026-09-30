@@ -18,54 +18,6 @@ assert_deployment_or_ordinary_current_or_empty() {
         previous_kind=none
     fi
 }
-snapshot_deployment() {
-    [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || reject snapshot-deployment-arguments
-    local app="$1" manifest="$2" task="${3:-}"
-    require_app "$app"
-    require_digest "$manifest"
-    if [ -n "$task" ]; then require_snapshot_token "$task"; fi
-    initialise_controlled_roots
-    assert_application_root_or_absent "$app"
-    assert_deployment_or_ordinary_current_or_empty "$app" "$manifest"
-    if [ "$previous_present" -eq 0 ]; then
-        printf 'PREVIOUS=0\n'
-        return
-    fi
-    local token snapshot unit
-    if [ -n "$task" ]; then token="$task"; else token="$(cat /proc/sys/kernel/random/uuid)"; fi
-    require_snapshot_token "$token"
-    snapshot="$(snapshot_root "$app" "$token")"
-    unit="$(unit_path "$app")"
-    [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || reject snapshot-exists
-    install -d -o root -g root -m 700 -- "$snapshot"
-    printf '%s\n' "$previous_path" >"$snapshot/current-path"
-    printf '%s\n' "$previous_kind" >"$snapshot/kind"
-    install -o root -g root -m 600 -- "$unit" "$snapshot/unit"
-    if [ "$previous_kind" = deployment ]; then
-        install -o root -g root -m 600 -- "$previous_path/.windowstolinux-deployment-parameters" "$snapshot/deployment-parameters"
-    fi
-    systemctl is-enabled "$(unit_name "$app")" >"$snapshot/enabled" 2>/dev/null || true
-    if [ "$previous_running" -eq 1 ]; then printf 'active\n' >"$snapshot/runtime"; else printf 'inactive\n' >"$snapshot/runtime"; fi
-    chown root:root -- "$snapshot/current-path" "$snapshot/kind" "$snapshot/enabled" "$snapshot/runtime"
-    chmod 600 -- "$snapshot/current-path" "$snapshot/kind" "$snapshot/enabled" "$snapshot/runtime"
-    if [ -n "$task" ]; then
-        install -o root -g root -m 600 -- "$previous_path/.windowstolinux-owner" "$snapshot/.deployment-old-owner"
-        printf '%s\n' "$task" >"$snapshot/.deployment-task"
-        chown root:root -- "$snapshot/.deployment-task"
-        chmod 600 -- "$snapshot/.deployment-task"
-    fi
-    if [ "$previous_kind" = deployment ]; then
-        chown root:root -- "$snapshot/deployment-parameters"
-        chmod 600 -- "$snapshot/deployment-parameters"
-    fi
-    printf '%s\n' "$token" >"$(app_root "$app")/.migration-snapshot"
-    chmod 400 -- "$(app_root "$app")/.migration-snapshot"
-    printf 'SNAPSHOT_TOKEN=%s\n' "$token"
-    printf 'PREVIOUS=1\n'
-    printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
-    printf 'PREVIOUS_DIGEST=%s\n' "${previous_path##*/}"
-    printf 'PREVIOUS_KIND=%s\n' "$previous_kind"
-}
 rollback_deployment() {
     [ "$#" -eq 4 ] || reject rollback-deployment-arguments
     local app="$1" candidate_digest="$2" manifest="$3" token="$4"
@@ -167,13 +119,16 @@ rollback_deployment_first() {
     printf 'ROLLED_BACK=1\n'
 }
 lifecycle_deployment() {
-    [ "$#" -eq 3 ] || reject lifecycle-deployment-arguments
-    local app="$1" action="$2" manifest="$3"
+    [ "$#" -eq 4 ] || reject lifecycle-deployment-arguments
+    local app="$1" action="$2" manifest="$3" expected="$4"
     require_app "$app"
     require_digest "$manifest"
+    require_digest "$expected"
+    application_maintenance "$app"
     case "$action" in start | stop | restart | enable | disable) ;; *) reject lifecycle-action ;; esac
     assert_deployment_current_or_empty "$app" "$manifest"
     [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+    [ "$previous_path" = "$(app_root "$app")/releases/$expected" ] || reject lifecycle-current-drift
     [ "$application_mode" = DAEMON ] || reject application-lifecycle-not-applicable
     if [ "$action" = stop ]; then
         stop_requested_application_unit "$app"

@@ -18,6 +18,56 @@ import org.junit.jupiter.api.Test;
 
 /** Exercises fixed publication receipts with a controlled remote peer. / 用受控远端对等端验证固定发布回执。 */
 class DeploymentPublicationChannelTest {
+    /** A distinct attempt preserves real task approval and exact five/eight/four literal arguments. / 独立尝试保留真实任务审批及精确五／八／四个字面参数。 */
+    @Test
+    void distinctAttemptKeepsRootTaskAndOperationInEveryEvidenceCommand() throws Exception {
+        var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        var scripts = new ArrayList<String>();
+        var peer = channel(request -> {
+            if (request.script().contains("snapshot-deployment-attempt"))
+                return reply(0, "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n");
+            if (request.script().contains("publication-original-status-attempt"))
+                return reply(0, "PUBLICATION_STATUS=1\nCURRENT=" + "d".repeat(64)
+                        + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=" + operation + "\nSNAPSHOT_OLD="
+                        + "d".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
+                        + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n");
+            return reply(0, "SNAPSHOT_DISCARDED=1\n");
+        }, scripts);
+        assertEquals(Optional.of(operation.toString()),
+                peer.snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).value().orElseThrow().token());
+        assertEquals(Outcome.SUCCEEDED, peer.originalStatus(unit(), "demo-" + "a".repeat(16),
+                Optional.of("d".repeat(64)), "native", "none", operation).outcome());
+        assertEquals(Outcome.SUCCEEDED, peer.discardSnapshot(unit(), operation).outcome());
+        assertEquals(3, scripts.size());
+        String identity = "'demo' '" + "b".repeat(64) + "' '11111111-1111-4111-8111-111111111111' '" + operation + "'";
+        assertTrue(scripts.get(0).contains("'snapshot-deployment-attempt' " + identity + " '" + "d".repeat(64) + "'"),
+                scripts.get(0));
+        assertTrue(scripts.get(1).contains("'publication-original-status-attempt' " + identity + " 'demo-"
+                + "a".repeat(16) + "' '" + "d".repeat(64) + "' 'native' 'none'"), scripts.get(1));
+        assertTrue(scripts.get(2).contains("'snapshot-discard-attempt' " + identity), scripts.get(2));
+    }
+
+    /** A receipt cannot substitute root token, stale CURRENT or first-deploy evidence for reviewed previous state. / 回执不能以根令牌、漂移当前或首次发布事实替换已审阅旧状态。 */
+    @Test
+    void attemptSnapshotRejectsBorrowedTokenAndChangedPreviousWithoutAnotherSend() throws Exception {
+        var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        for (String body : List.of("PREVIOUS=0\n",
+                "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n",
+                "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST=" + "e".repeat(64)
+                        + "\nPREVIOUS_KIND=deployment\n")) {
+            var scripts = new ArrayList<String>();
+            assertEquals(Outcome.UNKNOWN, channel(request -> reply(0, body), scripts)
+                    .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).outcome());
+            assertEquals(1, scripts.size());
+        }
+        var scripts = new ArrayList<String>();
+        assertEquals(Outcome.SUCCEEDED, channel(request -> reply(0, "PREVIOUS=0\n"), scripts)
+                .snapshot(unit(), runtime(), operation, Optional.empty()).outcome());
+        assertTrue(scripts.getFirst().endsWith(" 'empty'"), scripts.getFirst());
+    }
+
     /** Rejects a missing first-release flag and preserves an exact previous token. / 拒绝缺失首次发布标志并保留精确旧令牌。 */
     @Test
     void snapshotRequiresCompleteExplicitPreviousEvidence() throws Exception {

@@ -1,40 +1,3 @@
-snapshot_container() {
-    [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || reject snapshot-container-arguments
-    local app="$1" manifest="$2" task="${3:-}"
-    current_application="$app"
-    require_app "$app"
-    require_digest "$manifest"
-    if [ -n "$task" ]; then require_snapshot_token "$task"; fi
-    initialise_controlled_roots
-    container_current_release "$app" "$manifest"
-    if [ "$previous_present" -eq 0 ]; then
-        printf 'PREVIOUS=0\n'
-        return
-    fi
-    local token snapshot autostart
-    if [ -n "$task" ]; then token="$task"; else token="$(cat /proc/sys/kernel/random/uuid)"; fi
-    require_snapshot_token "$token"
-    snapshot="$(snapshot_root "$app" "$token")"
-    install -d -o root -g root -m 700 -- "$snapshot"
-    printf '%s\n' "$previous_path" >"$snapshot/current-path"
-    printf '%s\n' "$previous_running" >"$snapshot/runtime"
-    install -o root -g root -m 600 -- "$previous_path/.windowstolinux-container-parameters" "$snapshot/container-parameters"
-    if [ "$container_engine" = docker ]; then
-        autostart="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$(container_name "$app")" 2>/dev/null || true)"
-    else
-        if podman_quadlet_autostart_enabled "$app"; then autostart=enabled; else autostart=no; fi
-    fi
-    printf '%s\n' "$autostart" >"$snapshot/autostart"
-    chown root:root -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
-    chmod 600 -- "$snapshot/current-path" "$snapshot/runtime" "$snapshot/container-parameters" "$snapshot/autostart"
-    if [ -n "$task" ]; then
-        install -o root -g root -m 600 -- "$previous_path/.windowstolinux-owner" "$snapshot/.deployment-old-owner"
-        printf '%s\n' "$task" >"$snapshot/.deployment-task"
-        chown root:root -- "$snapshot/.deployment-task"
-        chmod 600 -- "$snapshot/.deployment-task"
-    fi
-    printf 'SNAPSHOT_TOKEN=%s\nPREVIOUS=1\nPREVIOUS_RUNNING=%s\nPREVIOUS_DIGEST=%s\nPREVIOUS_KIND=container\n' "$token" "$previous_running" "${previous_path##*/}"
-}
 stop_container_runtime() {
     local app="$1" name found
     name="$(container_name "$app")"
@@ -142,12 +105,15 @@ rollback_container_first() {
     printf 'ROLLED_BACK=1\n'
 }
 lifecycle_container() {
-    [ "$#" -eq 3 ] || reject lifecycle-container-arguments
-    local app="$1" action="$2" manifest="$3"
+    [ "$#" -eq 4 ] || reject lifecycle-container-arguments
+    local app="$1" action="$2" manifest="$3" expected="$4"
     require_app "$app"
     require_digest "$manifest"
+    require_digest "$expected"
+    application_maintenance "$app"
     container_current_release "$app" "$manifest"
     [ "$previous_present" -eq 1 ] || reject lifecycle-unmanaged
+    [ "$previous_path" = "$(app_root "$app")/releases/$expected" ] || reject lifecycle-current-drift
     [ "$application_mode" = DAEMON ] || reject application-lifecycle-not-applicable
     application_backend=container
     application_release="$previous_path"

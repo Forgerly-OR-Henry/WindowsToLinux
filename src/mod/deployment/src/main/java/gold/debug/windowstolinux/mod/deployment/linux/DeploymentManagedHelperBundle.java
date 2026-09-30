@@ -20,7 +20,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Protocol version printed by this exact helper bundle. / 此精确 helper 包输出的协议版本。
      */
-    public static final int PROTOCOL_VERSION = 12;
+    public static final int PROTOCOL_VERSION = 14;
 
     /**
      * Platform-owned helper installation directory. / 平台持有的 helper 安装目录。
@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "d60fa1376c6a0262dd357c872d09f5299952ec5b28b92c0b17f173540fe245c4";
+    public static final String EXPECTED_SHA256 = "7ae55e01e280af793c42f000777012c2a5b12f8bd83b706cf85ccd11c004749f";
 
     /**
      * ROOT.
@@ -82,6 +82,7 @@ public final class DeploymentManagedHelperBundle {
             "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
             "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
             "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
+            "execution/protocol/helper/fragments/runtime/41-application-admission.sh",
             "execution/protocol/helper/fragments/runtime/41-application-runtime.sh",
             "execution/protocol/helper/fragments/runtime/42-application-job.sh",
             "execution/protocol/helper/fragments/runtime/43-application-container.sh",
@@ -90,17 +91,27 @@ public final class DeploymentManagedHelperBundle {
             "execution/protocol/helper/fragments/release/50-container-release.sh",
             "execution/protocol/helper/fragments/release/52-container-recovery.sh",
             "execution/protocol/helper/fragments/release/53-publication-observation.sh",
+            "execution/protocol/helper/fragments/release/55-publication-snapshot.sh",
             "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
+            "execution/protocol/helper/fragments/restore/56-restore-recovery.sh",
             "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
             "execution/protocol/helper/fragments/restore/57-application-restore.sh",
+            "execution/protocol/helper/fragments/release/58-retained-activation.sh",
+            "execution/protocol/helper/fragments/restore/59-handoff-restore.sh",
+            "execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh",
+            "execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh",
             "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
             "runtime/systemd/helper/61-service-identity.sh",
             "execution/protocol/helper/fragments/database/64-database-client.sh",
+            "execution/protocol/helper/fragments/database/63-database-inspection.sh",
             "execution/protocol/helper/fragments/database/65-database-backup.sh",
             "execution/protocol/helper/fragments/database/66-database-activation.sh",
             "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
+            "execution/protocol/helper/fragments/database/68-handoff-database.sh",
+            "execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh",
             "execution/protocol/helper/fragments/database/10-native-instances.sh",
             "execution/protocol/helper/fragments/database/20-native-targets.sh",
+            "execution/protocol/helper/fragments/database/21-native-operations.sh",
             "execution/protocol/helper/fragments/70-command-dispatch.sh");
 
     /**
@@ -186,7 +197,8 @@ public final class DeploymentManagedHelperBundle {
                 }
                 // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
                 output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")
-                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("23-container-builder.sh")
+                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh")
+                        || fragment.endsWith("23-container-builder.sh")
                         || fragment.endsWith("12-container-image-input.sh")
                         || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-"))
                                 ? content

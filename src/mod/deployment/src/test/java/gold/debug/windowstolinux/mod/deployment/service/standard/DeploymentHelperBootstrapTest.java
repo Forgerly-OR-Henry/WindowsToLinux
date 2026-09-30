@@ -297,6 +297,6 @@ class DeploymentHelperBootstrapTest extends DeploymentRuntimeFixture {
     /** Expected fixed probe response. / 预期固定探测回包。
      * @return probe output / 探测输出 */
     private static String probeOutput() {
-        return "HELPER=1\nPROTOCOL=12\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+        return "HELPER=1\nPROTOCOL=14\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
     }
 }

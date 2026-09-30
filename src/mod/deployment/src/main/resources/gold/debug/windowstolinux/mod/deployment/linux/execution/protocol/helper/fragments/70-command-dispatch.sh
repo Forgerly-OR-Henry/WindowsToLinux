@@ -69,9 +69,25 @@ case "$verb" in
     database-commit-candidate) database_commit_candidate "$@" ;;
     database-recover-candidate) database_recover_candidate "$@" ;;
     database-discard-candidate) database_discard_candidate "$@" ;;
+    handoff-database-export) handoff_database_export "$@" ;;
+    handoff-database-status) handoff_database_status "$@" ;;
+    handoff-database-discard) handoff_database_discard "$@" ;;
     backup-create) backup_create_artifact "$@" ;;
     backup-read) backup_read_artifact "$@" ;;
     backup-discard) backup_discard_operation "$@" ;;
+    handoff-backup-status) handoff_backup_status "$@" ;;
+    handoff-maintenance-status) handoff_maintenance_status "$@" ;;
+    handoff-operation-close) handoff_operation_close "$@" ;;
+    handoff-operation-close-status) handoff_operation_close_status "$@" ;;
+    handoff-restore-preflight) handoff_restore_preflight "$@" ;;
+    handoff-restore-create) handoff_restore_create "$@" ;;
+    handoff-restore-file) handoff_restore_file "$@" ;;
+    handoff-restore-step) handoff_restore_step "$@" ;;
+    handoff-restore-step-status) handoff_restore_step_status "$@" ;;
+    handoff-restore-discard) handoff_restore_discard "$@" ;;
+    handoff-restore-discard-status) handoff_restore_discard_status "$@" ;;
+    handoff-restore-cleanup) handoff_restore_cleanup "$@" ;;
+    handoff-restore-cleanup-status) handoff_restore_cleanup_status "$@" ;;
     restore-preflight) restore_preflight "$@" ;;
     restore-prepare) restore_prepare_component "$@" ;;
     restore-application-health) restore_application_health "$@" ;;
@@ -82,9 +98,20 @@ case "$verb" in
     restore-snapshot) restore_snapshot_current "$@" ;;
     restore-start-formal) restore_start_formal "$@" ;;
     restore-recover) restore_recover_component "$@" ;;
+    activate-retained) activate_retained "$@" ;;
+    rollback-retained) rollback_retained "$@" ;;
+    finish-retained) finish_retained "$@" ;;
+    retained-status) retained_status "$@" ;;
+    managed-current-status) managed_current_status "$@" ;;
+    managed-target-status) managed_target_status "$@" ;;
+    snapshot-retained) snapshot_retained "$@" ;;
     snapshot-deployment) snapshot_deployment "$@" ;;
+    snapshot-deployment-attempt) snapshot_deployment_attempt "$@" ;;
+    snapshot-container-attempt) snapshot_container_attempt "$@" ;;
     publication-original-status) publication_original_status "$@" ;;
+    publication-original-status-attempt) publication_original_status_attempt "$@" ;;
     snapshot-discard-task) discard_original_snapshot "$@" ;;
+    snapshot-discard-attempt) discard_original_snapshot_attempt "$@" ;;
     publish-deployment) publish_deployment "$@" ;;
     prepare-toolchains)
         case "${1:-}" in prepare | bind | verify) prepare_official_toolchains "$@" ;; *) reject toolchain-verb ;; esac
