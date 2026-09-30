@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapsho
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.recovery.PlatformRecoveryService;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -94,7 +94,7 @@ class PlatformRecoveryServiceTest {
             var archived = summary(runtime, UUID.fromString(session.snapshot().id()));
             assertEquals(PlatformRecoveryService.TASK_TYPE, archived.path("protocol").asText());
             assertEquals("RECOVERED", archived.path("lastObservedState").asText());
-            var remoteCapability = runtime.remoteCapabilities("@platform", runtime.version());
+            var remoteCapability = runtime.capabilities().remoteCapabilities("@platform", runtime.version());
             var linux = (gold.debug.windowstolinux.app.service.linux.PlatformLinuxService) remoteCapability.linux();
             var wrongType = runtime.tasks().bind("@platform", runtime.version(), false).submit(request("server"),
                     context -> {

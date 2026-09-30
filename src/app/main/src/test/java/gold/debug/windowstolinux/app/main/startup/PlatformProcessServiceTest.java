@@ -53,8 +53,8 @@ class PlatformProcessServiceTest {
     void realPublicCapabilityBindsTaskRecordsPidAndClosesBeforeTaskEnd() throws Exception {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var processes = runtime.processes(OWNER, VERSION);
-            var foreign = runtime.processes("example.foreign", VERSION);
+            var processes = runtime.capabilities().processes(OWNER, VERSION);
+            var foreign = runtime.capabilities().processes("example.foreign", VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var handle = binding.submit(request(), task -> {
                 assertThrows(ApiException.class, () -> foreign.start(spec("normal"), task));
@@ -99,7 +99,7 @@ class PlatformProcessServiceTest {
     void returnedCallbackCannotEndWhileActualChildAndClaimRemain() throws Exception {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var processes = runtime.processes(OWNER, VERSION);
+            var processes = runtime.capabilities().processes(OWNER, VERSION);
             var child = new AtomicReference<ManagedProcess>();
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var handle = binding.submit(request(), task -> {
@@ -120,7 +120,7 @@ class PlatformProcessServiceTest {
     void originalTaskCancellationCannotBeOverwrittenByAuthorSuccessOrReplay() throws Exception {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var processes = runtime.processes(OWNER, VERSION);
+            var processes = runtime.capabilities().processes(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var requested = new CountDownLatch(1);
             var context = new AtomicReference<TaskContext>();
@@ -158,7 +158,7 @@ class PlatformProcessServiceTest {
                     PlatformStartupTest.PROTECTION)) {
                 initialize(runtime, false);
                 var db = runtime.persistence().database();
-                var processes = runtime.processes(OWNER, VERSION);
+                var processes = runtime.capabilities().processes(OWNER, VERSION);
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var context = new AtomicReference<TaskContext>();
                 sql(db, checkpointFailure
@@ -220,7 +220,7 @@ class PlatformProcessServiceTest {
             }
             try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
                 runtime.security().unlock(PASSWORD.toCharArray());
-                var processes = runtime.processes(OWNER, VERSION);
+                var processes = runtime.capabilities().processes(OWNER, VERSION);
                 var binding = runtime.tasks().bind(OWNER, VERSION, true);
                 try (var recovery = binding.registerRecovery("fixture", (previous, context) -> {
                     processes.closeTaskResources(context);
@@ -275,7 +275,7 @@ class PlatformProcessServiceTest {
         }
         try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());
-            var processes = runtime.processes(OWNER, VERSION);
+            var processes = runtime.capabilities().processes(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, true);
             try (var recovery = binding.registerRecovery("fixture", (previous, context) -> {
                 processes.closeTaskResources(context);

@@ -464,7 +464,7 @@ class DeploymentReferenceFlowTest extends DeploymentExecutionFixture {
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
                     "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment:v1:application:application'"));
-            try (var access = new gold.debug.windowstolinux.app.db.schema.SchemaAccessScope(
+            try (var access = new gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope(
                     runtime.persistence().database(), schema, UUID.randomUUID(), true)) {
                 assertTrue(new DeploymentSchema().validate(access).valid());
                 try (var connection = access.openConnection();

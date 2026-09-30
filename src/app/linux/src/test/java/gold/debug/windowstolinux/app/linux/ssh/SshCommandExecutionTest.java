@@ -30,7 +30,7 @@ class SshCommandExecutionTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(bash),
                 "Set managed.test.bash to validate the native protocol");
         var wireCommand = new AtomicReference<String>();
-        try (var server = new LoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, command) -> {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, command) -> {
             wireCommand.set(command);
             // Windows ProcessBuilder/MSYS quote conversion is not the remote SSH shell parser.
             Path entry = root.resolve("wire-command.sh");
@@ -179,7 +179,7 @@ class SshCommandExecutionTest {
         return new CommandRequest(script, new byte[0], Duration.ofSeconds(5), limit);
     }
 
-    static SshConnector.Connection connect(SshConnector connector, LoopbackSshServer server) throws Exception {
+    static SshConnector.Connection connect(SshConnector connector, LinuxLoopbackSshServer server) throws Exception {
         return connector.connect(new SshEndpoint("fixture", "127.0.0.1", server.server().getPort(), "fixture"),
                 "fixture".toCharArray(), (endpoint, fingerprint) -> true, Duration.ofSeconds(3), () -> false);
     }
@@ -196,10 +196,10 @@ class SshCommandExecutionTest {
 
         final List<WireCommand> commands = new CopyOnWriteArrayList<>();
 
-        final LoopbackSshServer server;
+        final LinuxLoopbackSshServer server;
 
         WireFixture(Path root, Work work) throws Exception {
-            server = new LoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, request) -> {
+            server = new LinuxLoopbackSshServer(root, ssh -> ssh.setCommandFactory((channel, request) -> {
                 assertEquals(SshCommandFrame.COMMAND, request);
                 calls.incrementAndGet();
                 var command = new WireCommand(work, failures);

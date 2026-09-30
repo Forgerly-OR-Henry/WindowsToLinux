@@ -259,7 +259,8 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if this server was not initially admitted / 此服务器未初始准入时
      */
     private void requireServer(TaskContext task, String id) throws SQLException, ApiException {
-        if (!ledger.queries().holds(task.id(), new TaskResource("SERVER", id, tasks.requireContext(task).ownerId(), true)))
+        if (!ledger.queries().holds(task.id(),
+                new TaskResource("SERVER", id, tasks.requireContext(task).ownerId(), true)))
             throw error(ProblemCode.ACCESS_DENIED, "SERVER_NOT_ADMITTED", "The server was not admitted with this task");
     }
 

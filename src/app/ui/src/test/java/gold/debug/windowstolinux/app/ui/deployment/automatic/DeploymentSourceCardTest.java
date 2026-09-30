@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.app.service.source.SourceSelectionService;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

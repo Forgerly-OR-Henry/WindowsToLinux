@@ -11,7 +11,7 @@ import javax.swing.UIManager;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
-import gold.debug.windowstolinux.app.ui.shell.DesktopFrame;
+import gold.debug.windowstolinux.app.ui.shell.PlatformFrame;
 import org.junit.jupiter.api.Test;
 
 class DesktopThemeServiceTest {
@@ -86,12 +86,12 @@ class DesktopThemeServiceTest {
             for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
                 for (String language : new String[]{"zh-CN", "en-US"}) {
                     DesktopThemeService.install(theme);
-                    var messages = new gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter(
+                    var messages = new gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter(
                             gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag(language));
                     var combo = new javax.swing.JComboBox<>(
-                            gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode.values());
+                            ThemeMode.values());
                     combo.setSelectedIndex(1);
-                    messages.localize(combo, "deployment.approval.");
+                    messages.localize(combo, "theme.");
                     var renderer = combo.getRenderer();
                     var content = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 16, 16));
                     content.add(combo);
@@ -108,7 +108,7 @@ class DesktopThemeServiceTest {
                                 list.getCellBounds(0, 0).height >= list.getFontMetrics(list.getFont()).getHeight() + 8);
                         var label = (javax.swing.JLabel) list.getCellRenderer().getListCellRendererComponent(list,
                                 combo.getItemAt(1), 1, true, false);
-                        assertEquals(messages.text("deployment.approval.automatic"), label.getText());
+                        assertEquals(messages.text("theme.light"), label.getText());
                         assertEquals(combo.getItemAt(1), combo.getSelectedItem());
                         popup.setSize(popup.getPreferredSize());
                         layout(popup);
@@ -185,10 +185,22 @@ class DesktopThemeServiceTest {
     @Test
     void keepsNavigationFullHeightAlongsideTheWorkspace() throws Exception {
         assumeFalse(GraphicsEnvironment.isHeadless());
-        AtomicReference<DesktopFrame> frame = new AtomicReference<>();
+        AtomicReference<PlatformFrame> frame = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
-            DesktopFrame desktopFrame = new DesktopFrame(null);
+            var security = (gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade)
+                    java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                            new Class<?>[]{gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade.class},
+                            (proxy, method, arguments) -> {
+                                if (method.getName().equals("securityState"))
+                                    return new gold.debug.windowstolinux.app.service.contract.security.DesktopSecurityState(
+                                            true, true, false, 0, false);
+                                throw new AssertionError(method);
+                            });
+            PlatformFrame desktopFrame = new PlatformFrame(security,
+                    gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("en"), ThemePalette.light(),
+                    new gold.debug.windowstolinux.appapi.ui.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false),
+                    gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore.disabled());
             frame.set(desktopFrame);
             var root = desktopFrame.getContentPane();
             root.setSize(1060, 680);
@@ -197,7 +209,7 @@ class DesktopThemeServiceTest {
             var sidebar = layout.getLayoutComponent(java.awt.BorderLayout.WEST);
             var workspace = layout.getLayoutComponent(java.awt.BorderLayout.CENTER);
             assertEquals(0, sidebar.getY());
-            assertEquals(root.getHeight(), sidebar.getHeight());
+            assertEquals(workspace.getHeight(), sidebar.getHeight());
             assertEquals(sidebar.getX() + sidebar.getWidth(), workspace.getX());
         });
 

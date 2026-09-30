@@ -10,10 +10,10 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.ComponentIssue;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.ComponentIsolationSpecification;
@@ -31,10 +31,10 @@ class MixedProjectInspectorTest {
 
         var assessment = new MixedProjectInspector().analyze(temporaryDirectory, "shop", List.of(
                 go("backend", 8080, Set.of("database"),
-                        List.of(new DeploymentDataPath("orders", DeploymentDataPath.AccessMode.READ_ONLY, "orders-v1",
-                                true))),
-                go("database", 5432, Set.of(), List.of(new DeploymentDataPath("orders",
-                        DeploymentDataPath.AccessMode.READ_WRITE, "orders-v1", true)))));
+                        List.of(new DeploymentStoragePath("orders", DeploymentStoragePath.AccessMode.READ_ONLY,
+                                "orders-v1", true))),
+                go("database", 5432, Set.of(), List.of(new DeploymentStoragePath("orders",
+                        DeploymentStoragePath.AccessMode.READ_WRITE, "orders-v1", true)))));
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals(List.of("backend", "database"),
@@ -49,11 +49,11 @@ class MixedProjectInspectorTest {
         goProject("left");
         goProject("right");
         ComponentAnalysisRequest left = go("left", 8080, Set.of("right"),
-                List.of(new DeploymentDataPath("shared", DeploymentDataPath.AccessMode.READ_WRITE, "v1", false)));
+                List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v1", false)));
         ComponentAnalysisRequest right = new ComponentAnalysisRequest("right", "right",
                 DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime("right", 8080)), List.of("left/.w2l/bin"),
                 Set.of(8080), List.of("PORT"), List.of(),
-                List.of(new DeploymentDataPath("shared", DeploymentDataPath.AccessMode.READ_WRITE, "v2", false)),
+                List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v2", false)),
                 Set.of("left"), true, new ComponentIsolationSpecification(true, false, false, false));
 
         var assessment = new MixedProjectInspector().analyze(temporaryDirectory, "unsafe", List.of(left, right));
@@ -94,7 +94,7 @@ class MixedProjectInspectorTest {
     }
 
     private ComponentAnalysisRequest go(String id, int port, Set<String> dependencies,
-            List<DeploymentDataPath> dataPaths) {
+            List<DeploymentStoragePath> dataPaths) {
         return new ComponentAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime(id, port)),
                 List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of("service-token"), dataPaths,
                 dependencies, true, ComponentIsolationSpecification.managed());

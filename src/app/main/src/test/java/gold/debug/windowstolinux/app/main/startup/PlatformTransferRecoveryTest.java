@@ -19,7 +19,7 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -54,9 +54,9 @@ class PlatformTransferRecoveryTest {
             runtime.setInteractionPresenter(reviews);
             Files.writeString(remote.files.resolve("file"), "old");
             var source = Files.write(root.resolve("source"), new byte[100000]);
-            try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION);
-                    var otherInstance = runtime.remoteCapabilities(OWNER, VERSION);
-                    var foreign = runtime.remoteCapabilities("other.owner", VERSION)) {
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                    var otherInstance = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                    var foreign = runtime.capabilities().remoteCapabilities("other.owner", VERSION)) {
                 var binding = runtime.tasks().bind(OWNER, VERSION, false);
                 var original = new AtomicReference<TaskContext>();
                 var task = binding.submit(request("server"), context -> {
@@ -153,7 +153,7 @@ class PlatformTransferRecoveryTest {
                                 new SshEndpoint("server", "127.0.0.1", remote.listener.server().getPort(), "alice"),
                                 "fixture-secret".toCharArray(), (endpoint, fingerprint) -> true, Duration.ofSeconds(5),
                                 () -> false)) {
-                    persistence.servers().saveServer(new ServerIdentity("server", "127.0.0.1",
+                    persistence.servers().saveServer(new StoredServerIdentity("server", "127.0.0.1",
                             remote.listener.server().getPort(), connection.fingerprint()));
                     var result = connection.transfer(new TransferRequest(source, "/file", 100000),
                             digest(new byte[100000]), true, Duration.ofSeconds(5), () -> false, progress -> {
@@ -181,7 +181,7 @@ class PlatformTransferRecoveryTest {
             try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
                 runtime.security().unlock(PASSWORD.toCharArray());
                 runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
-                try (var capabilities = runtime.remoteCapabilities(OWNER, VERSION)) {
+                try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                     var binding = runtime.tasks().bind(OWNER, VERSION, true);
                     try (var recovery = binding.registerRecovery("fixture", (previous, context) -> {
                         var checkpoint = capabilities.linux().pendingTransfers(context).getFirst();

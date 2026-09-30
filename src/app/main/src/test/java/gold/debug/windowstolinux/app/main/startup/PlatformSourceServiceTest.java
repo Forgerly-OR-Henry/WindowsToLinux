@@ -39,9 +39,9 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
-            var source = runtime.source(OWNER, VERSION);
-            var foreign = runtime.source("foreign.mod", VERSION);
-            var another = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
+            var foreign = runtime.capabilities().source("foreign.mod", VERSION);
+            var another = runtime.capabilities().source(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var original = new AtomicReference<TaskContext>();
             var selected = completed(binding.submit(request(), task -> {
@@ -92,9 +92,9 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
-            var source = runtime.source(OWNER, VERSION);
-            var foreign = runtime.source("foreign.mod", VERSION);
-            var anotherActivation = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
+            var foreign = runtime.capabilities().source("foreign.mod", VERSION);
+            var anotherActivation = runtime.capabilities().source(OWNER, VERSION);
             var original = new AtomicReference<TaskContext>();
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var read = new SourceReadRequest(".env", 7);
@@ -138,7 +138,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
-            var source = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
             var held = new AtomicReference<SourceSnapshot>();
             var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
                 var selected = source.selectDirectory("Source", context);
@@ -174,7 +174,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> selectionCalls.getAndIncrement() == 0 ? null : files);
-            var source = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 assertEquals(ProblemCode.CANCELLED,
                         assertThrows(ApiException.class, () -> source.selectDirectory("Source", task)).problem()
@@ -215,7 +215,7 @@ class PlatformSourceServiceTest {
                 }
                 return files;
             });
-            var source = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
             var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     context -> success(source.selectDirectory("Source", context)));
             try {
@@ -238,7 +238,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
-            var source = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
             var db = runtime.persistence().database();
             var original = new AtomicReference<TaskContext>();
             var payload = new AtomicReference<Path>();
@@ -300,7 +300,7 @@ class PlatformSourceServiceTest {
             runtime.setSourcePicker((title, current, cancel) -> {
                 throw new AssertionError("Recovery must not select again");
             });
-            var source = runtime.source(OWNER, VERSION);
+            var source = runtime.capabilities().source(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, true);
             try (var registration = binding.registerRecovery("fixture", (previous, context) -> {
                 source.closeTaskResources(context);

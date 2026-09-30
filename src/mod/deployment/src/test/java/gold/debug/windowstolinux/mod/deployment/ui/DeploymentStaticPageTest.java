@@ -140,7 +140,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                     () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
             var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
             SwingUtilities.invokeAndWait(() -> {
                 ((JTextField) secretPanel.getComponent(3)).setText("confirmed-secret");
@@ -188,7 +188,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                     () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
             var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
             SwingUtilities.invokeAndWait(() -> {
                 ((JTextField) secretPanel.getComponent(3)).setText("cancelled-secret");
@@ -281,7 +281,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                     () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
             var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
             SwingUtilities.invokeAndWait(() -> {
                 ((JTextField) secretPanel.getComponent(3)).setText("page-secret");
@@ -387,7 +387,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             pages.openView(key);
             var first = mounted.get();
             assertNotNull(first);
-            var start = findButton(first, "开始静态部署");
+            var start = findButton(first, "开始静态 / 辅助部署");
             assertNotNull(start);
             awaitEnabled(start);
             SwingUtilities.invokeAndWait(() -> render(first, "page"));
@@ -433,7 +433,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             pages.environment(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             pages.openView(key);
             assertNotSame(first, mounted.get());
-            awaitEnabled(findButton(mounted.get(), "开始静态部署"));
+            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
             pages.closeView(key);
             awaitServerTasks(runtime.modContexts().get(OWNER).context());
         }

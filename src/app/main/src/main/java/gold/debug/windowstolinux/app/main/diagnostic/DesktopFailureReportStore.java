@@ -17,9 +17,7 @@ import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportRecord;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
-import gold.debug.windowstolinux.shared.model.failure.FailureCarrier;
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Writes bounded, rotated, secret-free UTF-8 failure reports under the fixed data directory. / 在固定数据目录下写入有界、轮转且无秘密的 UTF-8 失败报告。
@@ -89,7 +87,7 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         if (throwable == null) {
             return Optional.empty();
         }
-        FailureDescriptor descriptor = structured(throwable).orElseGet(() -> unknownDescriptor(throwable));
+        Problem descriptor = structured(throwable).orElseGet(() -> unknownDescriptor(throwable));
         Optional<Path> report = Optional.empty();
         Path temporary = null;
         try {
@@ -98,8 +96,8 @@ public final class DesktopFailureReportStore implements FailureReportStore {
             byte[] content = boundedReport(descriptor, throwable);
             temporary = Files.createTempFile(directory, ".failure-", ".tmp");
             Files.write(temporary, content);
-            Path target = directory
-                    .resolve(FILE_TIME.format(Instant.now()) + "-" + descriptor.operationIdentity() + ".txt");
+            Path target = directory.resolve(FILE_TIME.format(Instant.now()) + "-"
+                    + descriptor.diagnosticId().orElseGet(java.util.UUID::randomUUID) + ".txt");
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException exception) {
@@ -162,29 +160,36 @@ public final class DesktopFailureReportStore implements FailureReportStore {
      * @param throwable throwable / 异常原因
      * @return a size-bounded diagnostic report from classified and redacted failure evidence / 根据分类且脱敏的失败证据构建大小有界的诊断报告
      */
-    private static byte[] boundedReport(FailureDescriptor failure, Throwable throwable) {
+    private static byte[] boundedReport(Problem failure, Throwable throwable) {
         StringBuilder report = new StringBuilder(4096);
         append(report, "timestamp", Instant.now().toString());
-        append(report, "code", failure.code());
-        append(report, "domain", failure.definition().domain());
-        append(report, "phase", failure.definition().phase());
-        append(report, "severity", failure.definition().severity().name());
-        append(report, "operationId", failure.operationIdentity().toString());
-        append(report, "messageKey", failure.userMessage().key());
-        append(report, "diagnostic", redact(failure.diagnostic()));
-        append(report, "recoveryAction", failure.recoveryAction().name());
-        append(report, "recoveryDisposition", failure.recoveryDisposition().name());
-        Throwable current = throwable;
+        appendProblem(report, "", failure);
+        var pending = new java.util.ArrayDeque<Throwable>();
+        var visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        pending.add(throwable);
         int causeIndex = 0;
-        while (current != null && causeIndex < 16) {
+        while (!pending.isEmpty() && causeIndex < 16) {
+            Throwable current = pending.removeFirst();
+            if (!visited.add(current))
+                continue;
             append(report, "exceptionClass[" + causeIndex + "]", current.getClass().getName());
+            int evidenceIndex = causeIndex;
+            directProblem(current)
+                    .ifPresent(problem -> appendProblem(report, "problem[" + evidenceIndex + "].", problem));
             StackTraceElement[] frames = current.getStackTrace();
             for (int index = 0; index < frames.length && index < 256; index++) {
                 StackTraceElement frame = frames[index];
                 append(report, "frame[" + causeIndex + "][" + index + "]", frame.getClassName() + "."
                         + frame.getMethodName() + "(" + frame.getFileName() + ":" + frame.getLineNumber() + ")");
             }
-            current = current.getCause();
+            if (current.getCause() != null)
+                pending.addLast(current.getCause());
+            for (Throwable suppressed : current.getSuppressed()) {
+                if (pending.size() >= 16)
+                    break;
+                append(report, "suppressedBy[" + causeIndex + "]", suppressed.getClass().getName());
+                pending.addLast(suppressed);
+            }
             causeIndex++;
         }
         return truncateUtf8(report.toString());
@@ -242,18 +247,19 @@ public final class DesktopFailureReportStore implements FailureReportStore {
     }
 
     /**
-     * Finds the first FailureCarrier in the causal chain without exposing arbitrary exception messages.
-     * <p>查找原因链中的第一个 FailureCarrier，不暴露任意异常消息。
+     * Finds admitted public evidence in a bounded causal chain without arbitrary exception messages.
+     * <p>在有界原因链查找已准入公开证据，不暴露任意异常消息。
      *
      * @param throwable throwable / 异常原因
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      */
-    private static Optional<FailureDescriptor> structured(Throwable throwable) {
+    private static Optional<Problem> structured(Throwable throwable) {
         Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof FailureCarrier carrier) {
-                return Optional.of(carrier.failure());
-            }
+        var visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        while (current != null && visited.size() < 16 && visited.add(current)) {
+            var admitted = directProblem(current);
+            if (admitted.isPresent())
+                return admitted;
             current = current.getCause();
         }
         return Optional.empty();
@@ -266,7 +272,7 @@ public final class DesktopFailureReportStore implements FailureReportStore {
      * @param throwable throwable / 异常原因
      * @return the structured failure descriptor for unknown descriptor / 为未知描述符构建结构化失败描述
      */
-    private static FailureDescriptor unknownDescriptor(Throwable throwable) {
+    private static Problem unknownDescriptor(Throwable throwable) {
         DesktopSystemFailureType type = throwable instanceof VirtualMachineError
                 ? DesktopSystemFailureType.RESOURCE_EXHAUSTED
                 : throwable instanceof LinkageError
@@ -277,6 +283,40 @@ public final class DesktopFailureReportStore implements FailureReportStore {
                 : type == DesktopSystemFailureType.UI_INITIALIZATION_FAILED
                         ? "A required runtime linkage could not be initialized"
                         : "An unexpected desktop runtime failure was captured without exposing its message";
-        return FailureDescriptor.create(type, OperationIdentity.create(), diagnostic);
+        return type.problem(java.util.UUID.randomUUID(), diagnostic);
+    }
+
+    /** Projects only concrete platform exception contracts. / 仅投影具体平台异常契约。
+     * @param throwable original exception / 原始异常
+     * @return original public evidence when supported / 受支持时返回原公开证据 */
+    private static Optional<Problem> directProblem(Throwable throwable) {
+        if (throwable instanceof DesktopStartupException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.appapi.task.ApiException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.update.DesktopUpdateException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallException failure)
+            return Optional.of(failure.problem());
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException failure)
+            return Optional.of(failure.problem());
+        return Optional.empty();
+    }
+
+    /** Writes redacted classification and context with the original diagnostic UUID. / 写入脱敏分类及上下文并保留原诊断UUID。
+     * @param report bounded report builder / 有界报告构建器
+     * @param prefix evidence location / 证据位置
+     * @param problem original safe diagnostic / 原安全诊断 */
+    private static void appendProblem(StringBuilder report, String prefix, Problem problem) {
+        append(report, prefix + "code", problem.eventCode());
+        append(report, prefix + "category", problem.code().name());
+        append(report, prefix + "operationId", problem.diagnosticId().map(Object::toString).orElse(""));
+        append(report, prefix + "diagnostic", redact(problem.message()));
+        problem.context().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(
+                entry -> append(report, prefix + "context." + redact(entry.getKey()), redact(entry.getValue())));
     }
 }

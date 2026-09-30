@@ -9,9 +9,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.ComponentIssue;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.DeploymentComponent;
 
 /**
@@ -127,9 +127,9 @@ final class ComponentGraphValidator {
      * @param issues issues / 问题集合
      */
     private static void validateData(List<DeploymentComponent> components, List<ComponentIssue> issues) {
-        Map<String, List<Map.Entry<String, DeploymentDataPath>>> byPath = new HashMap<>();
+        Map<String, List<Map.Entry<String, DeploymentStoragePath>>> byPath = new HashMap<>();
         for (DeploymentComponent component : components) {
-            for (DeploymentDataPath data : component.dataPaths()) {
+            for (DeploymentStoragePath data : component.dataPaths()) {
                 byPath.computeIfAbsent(data.path(), ignored -> new ArrayList<>())
                         .add(Map.entry(component.componentId(), data));
             }
@@ -140,8 +140,8 @@ final class ComponentGraphValidator {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_SCHEMA_CONFLICT", ids,
                         "analysis.component.dataSchemaConflict"));
             }
-            List<DeploymentDataPath> writers = values.stream().map(Map.Entry::getValue)
-                    .filter(value -> value.access() == DeploymentDataPath.AccessMode.READ_WRITE).toList();
+            List<DeploymentStoragePath> writers = values.stream().map(Map.Entry::getValue)
+                    .filter(value -> value.access() == DeploymentStoragePath.AccessMode.READ_WRITE).toList();
             if (writers.size() > 1) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_MULTIPLE_WRITERS", ids,
                         "analysis.component.dataWriters"));
@@ -254,7 +254,7 @@ final class ComponentGraphValidator {
      */
     private static ComponentIssue issue(ComponentIssue.SeverityLevel severity, String code, List<String> components,
             String key) {
-        return new ComponentIssue(severity, code, components,
-                LocalizedMessage.of(key, "components", String.join(", ", components.stream().sorted().toList())));
+        return new ComponentIssue(severity, code, components, DeploymentLocalizedMessage.of(key, "components",
+                String.join(", ", components.stream().sorted().toList())));
     }
 }

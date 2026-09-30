@@ -37,9 +37,9 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     /** Open frozen archive retained for the original task. / 为原任务保留的开放冻结归档。 */
     private final DeploymentSourceArchive archive;
     /** Reviewed fixed candidate operations on the same target. / 同一目标上经审阅固定候选操作。 */
-    private final DeploymentCandidateChannel candidates;
+    private DeploymentCandidateChannel candidates;
     /** Exact packaged helper installer and identity verifier. / 精确随附 helper 安装器及身份校验器。 */
-    private final DeploymentManagedHelper helper;
+    private DeploymentManagedHelper helper;
     /** Protected agent source and build channel on the original session. / 原会话上的受保护自主源码及构建频道。 */
     private final DeploymentAgentProjectChannel projects;
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
@@ -47,11 +47,15 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     /** Exact reviewed saved source, absent for a local directory. / 精确经审阅已存来源，本地目录时为空。 */
     private final Optional<DeploymentProjectRecord> project;
     /** Original frozen all-purpose model-routing identity. / 原冻结全用途模型路由身份。 */
-    private final String configurationRevision;
+    private String configurationRevision;
     /** Read-only live observer of the task-authorized AI revision. / 任务授权 AI 修订的只读实时观察器。 */
     private final Supplier<String> currentRevision;
     /** Frozen policy guard checked immediately before dispatch. / 发送紧前检查的冻结策略校验器。 */
     private final DeploymentSendGuard beforeSend;
+    /** Original exact host review capability. / 原精确宿主审核能力。 */
+    private final InteractionService interaction;
+    /** One monotonic budget retained through explicit model replacement. / 明确模型替换中保留的一份单调预算。 */
+    private final DeploymentBuildBudget budget = new DeploymentBuildBudget(7200);
     /** One confirmed helper identity and prepared component IDs. / 一份已确认 helper 身份与已准备组件标识。 */
     private boolean helperReady;
     /** Component IDs whose original preparation has already started. / 原准备已开始的组件标识。 */
@@ -81,13 +85,13 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         this.project = Objects.requireNonNull(project);
         this.configurationRevision = Objects.requireNonNull(configurationRevision);
         this.currentRevision = Objects.requireNonNull(currentRevision);
+        this.interaction = Objects.requireNonNull(interaction);
         this.beforeSend = () -> {
-            if (!configurationRevision.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
+            if (!this.configurationRevision.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
                         "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
                         Map.of(), Optional.empty()));
         };
-        var budget = new DeploymentBuildBudget(7200);
         this.candidates = new DeploymentCandidateChannel(session, interaction, server, task, configurationRevision,
                 budget, beforeSend);
         this.helper = new DeploymentManagedHelper(session, interaction, server, task, configurationRevision,
@@ -296,6 +300,21 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     @Override
     public void close() {
         prepared.clear();
+    }
+
+    /** Rebinds exact send approvals without recreating candidates or resetting execution time. / 重新绑定精确发送审批，不重建候选或重置执行时间。
+     * @param revision explicitly verified replacement route / 明确核实的替换路由
+     * @throws ApiException if actual configuration differs or transfers remain / 实际配置不同或传输仍存在时 */
+    @Override
+    public void replaceConfiguration(String revision) throws ApiException {
+        if (!revision.matches("[0-9a-f]{64}") || !revision.equals(currentRevision.get())
+                || !context.linux().pendingTransfers(task).isEmpty())
+            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_REFRESH_UNSETTLED",
+                    "Original model replacement boundary is unsettled", Map.of(), Optional.empty()));
+        configurationRevision = revision;
+        candidates = new DeploymentCandidateChannel(session, interaction, server, task, revision, budget, beforeSend);
+        helper = new DeploymentManagedHelper(session, interaction, server, task, revision, beforeSend);
+        projects.replaceConfiguration(revision);
     }
 
     /** Requires the same noncopyable platform task object. / 要求同一不可复制的平台任务对象。

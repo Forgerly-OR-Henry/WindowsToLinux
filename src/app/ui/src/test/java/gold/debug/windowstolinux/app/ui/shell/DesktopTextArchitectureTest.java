@@ -35,7 +35,7 @@ class DesktopTextArchitectureTest {
         var english = gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("en");
         var chinese = gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("zh-CN");
         String helper = Files.readString(repositoryRoot().resolve(
-                "src/shared/linux-sshd/src/main/resources/gold/debug/windowstolinux/shared/linux/sshd/execution/protocol/helper/fragments/database/10-native-instances.sh"));
+                "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/10-native-instances.sh"));
         var codes = Pattern.compile("conflicts\\.append\\('([^']+)'").matcher(helper);
         while (codes.find()) {
             String code = codes.group(1).split("\\|", 2)[0];
@@ -43,7 +43,8 @@ class DesktopTextArchitectureTest {
             assertNotNull(english.text("db.conflict." + code, java.util.Map.of("instance", "fixture")));
             assertNotNull(chinese.text("db.conflict." + code, java.util.Map.of("instance", "fixture")));
         }
-        for (var failure : gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType.values()) {
+        for (var failure : gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceFailureType
+                .values()) {
             if (!failure.phase().equals("database"))
                 continue;
             String key = failure.messageKey();
@@ -54,59 +55,38 @@ class DesktopTextArchitectureTest {
 
     @Test
     void inputChoicesTranslateLabelsWithoutChangingSubmittedProtocolValues() {
-        var field = new gold.debug.windowstolinux.shared.model.deployment.DeploymentInputField("app/type",
-                "auto.field.type", "auto.help.type", "", java.util.List.of("NODE_SERVICE"));
-        var presenter = new gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter(
+        var choice = new javax.swing.JComboBox<>(gold.debug.windowstolinux.app.ui.display.ThemeMode.values());
+        var presenter = new gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter(
                 gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("zh-CN"));
-        org.junit.jupiter.api.Assertions.assertEquals(presenter.text("project.type.node_service"),
-                presenter.inputChoice(field, "NODE_SERVICE"));
-        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("NODE_SERVICE"), field.choices());
-    }
-
-    @Test
-    void restoreAndMigrationStatusesAndWarningsAreMappedInBothLanguages() throws Exception {
-        for (String language : java.util.List.of("en", "zh-CN")) {
-            var catalog = gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag(language);
-            for (var status : gold.debug.windowstolinux.shared.backup.restore.BackupRestoreStatus.values())
-                assertFalse(catalog.text("backup.restore.status." + status.name().toLowerCase(java.util.Locale.ROOT))
-                        .equals(status.name()));
-            for (var status : gold.debug.windowstolinux.shared.backup.execution.migration.OfflineMigrationStatus
-                    .values())
-                assertFalse(catalog.text("backup.migration.status." + status.name().toLowerCase(java.util.Locale.ROOT))
-                        .equals(status.name()));
-            for (var status : gold.debug.windowstolinux.app.service.backup.ManagedRestoreControlState.values())
-                assertFalse(catalog.text("backup.restore.control." + status.name().toLowerCase(java.util.Locale.ROOT))
-                        .equals(status.name()));
-            for (String file : java.util.List.of("ManagedRestoreUseCase.java", "ManagedOfflineMigrationUseCase.java")) {
-                String source = Files.readString(repositoryRoot()
-                        .resolve("src/app/service/src/main/java/gold/debug/windowstolinux/app/service/backup/" + file));
-                var warnings = Pattern.compile("warnings\\.add\\(\"([^\"]+)\"\\)").matcher(source);
-                while (warnings.find()) {
-                    assertTrue(warnings.group(1).startsWith("backup.warning."));
-                    assertNotNull(catalog.text(warnings.group(1)));
-                }
-            }
-        }
+        presenter.localize(choice, "theme.");
+        choice.setSelectedItem(gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK);
+        var label = (javax.swing.JLabel) choice.getRenderer().getListCellRendererComponent(new javax.swing.JList<>(),
+                gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK, 2, false, false);
+        org.junit.jupiter.api.Assertions.assertEquals(presenter.text("theme.dark"), label.getText());
+        org.junit.jupiter.api.Assertions.assertEquals(gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK,
+                choice.getSelectedItem());
+        org.junit.jupiter.api.Assertions.assertEquals("DARK", ((Enum<?>) choice.getSelectedItem()).name());
     }
 
     @Test
     void keepsHanTextOutOfProductionValuesWhileAllowingBilingualJavaComments() throws Exception {
         Path repositoryRoot = repositoryRoot();
-        try (Stream<Path> files = Files.walk(repositoryRoot.resolve("src"))) {
-            for (Path file : files.filter(Files::isRegularFile).filter(this::isProductionText).toList()) {
-                String content = Files.readString(file);
-                if (file.endsWith(Path.of("gold/debug/windowstolinux/app/db/log/LogRecordCodec.java")))
-                    // Exact input-recognition tokens are security data, not localized UI copy. / 精确输入识别词属于安全数据，不是本地化界面文案。
-                    content = content.replace("|密码|密钥)", "|password|secret)");
-                boolean containsForbiddenHan = file.toString().endsWith(".java")
-                        ? containsHanOutsideJavaComments(content)
-                        : HAN_TEXT.matcher(content).find();
-                assertFalse(containsForbiddenHan,
-                        () -> repositoryRoot.relativize(file)
-                                + " must keep Han text out of production values; only bilingual Java comments and "
-                                + "Messages_zh_CN.properties may contain it");
+        for (Path module : activeModules(repositoryRoot))
+            try (Stream<Path> files = Files.walk(module.resolve("src/main"))) {
+                for (Path file : files.filter(Files::isRegularFile).filter(this::isProductionText).toList()) {
+                    String content = Files.readString(file);
+                    if (file.endsWith(Path.of("gold/debug/windowstolinux/app/db/log/LogRecordCodec.java")))
+                        // Exact input-recognition tokens are security data, not localized UI copy. / 精确输入识别词属于安全数据，不是本地化界面文案。
+                        content = content.replace("|密码|密钥)", "|password|secret)");
+                    boolean containsForbiddenHan = file.toString().endsWith(".java")
+                            ? containsHanOutsideJavaComments(content)
+                            : HAN_TEXT.matcher(content).find();
+                    assertFalse(containsForbiddenHan,
+                            () -> repositoryRoot.relativize(file)
+                                    + " must keep Han text out of production values; only bilingual Java comments and "
+                                    + "Chinese locale properties may contain it");
+                }
             }
-        }
     }
 
     @Test
@@ -184,12 +164,39 @@ class DesktopTextArchitectureTest {
 
     private boolean isProductionText(Path path) {
         String normalized = path.toAbsolutePath().normalize().toString().replace('\\', '/');
-        return normalized.contains("/src/main/") && !normalized.endsWith("/Messages_zh_CN.properties");
+        return normalized.contains("/src/main/") && !normalized.matches(".*_zh(?:_CN)?\\.properties$");
+    }
+
+    private static java.util.List<Path> activeModules(Path root) throws Exception {
+        var result = new java.util.ArrayList<Path>();
+        visitModules(root, root.resolve("pom.xml"), new java.util.HashSet<>(), result);
+        return java.util.List.copyOf(result);
+    }
+
+    private static void visitModules(Path root, Path pom, java.util.Set<Path> visited, java.util.List<Path> modules)
+            throws Exception {
+        pom = pom.toAbsolutePath().normalize();
+        assertTrue(pom.startsWith(root) && Files.isRegularFile(pom) && visited.add(pom),
+                "Invalid or repeated Maven aggregation: " + pom);
+        var factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        var project = factory.newDocumentBuilder().parse(pom.toFile()).getDocumentElement();
+        boolean aggregate = false;
+        for (var node = project.getFirstChild(); node != null; node = node.getNextSibling())
+            if (node instanceof org.w3c.dom.Element element && element.getTagName().equals("modules")) {
+                aggregate = true;
+                for (var child = element.getFirstChild(); child != null; child = child.getNextSibling())
+                    if (child instanceof org.w3c.dom.Element module && module.getTagName().equals("module"))
+                        visitModules(root, pom.getParent().resolve(module.getTextContent().trim()).resolve("pom.xml"),
+                                visited, modules);
+            }
+        if (!aggregate && Files.isDirectory(pom.getParent().resolve("src/main")))
+            modules.add(pom.getParent());
     }
 
     private static Path repositoryRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
-        while (current != null && !(Files.isDirectory(current.resolve("src/shared"))
+        while (current != null && !(Files.isRegularFile(current.resolve("pom.xml"))
                 && Files.isRegularFile(current.resolve("docs/File.md")))) {
             current = current.getParent();
         }

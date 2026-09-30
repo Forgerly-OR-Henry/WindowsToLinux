@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.app.ai.protocol.ModelMessageCodec;
+import gold.debug.windowstolinux.app.ai.execution.protocol.ModelMessageCodec;
 import gold.debug.windowstolinux.appapi.ai.AiResponse;
 import gold.debug.windowstolinux.appapi.task.*;
 

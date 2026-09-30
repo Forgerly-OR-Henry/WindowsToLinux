@@ -11,7 +11,7 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.app.windows.security.CurrentUserDataProtection;
+import gold.debug.windowstolinux.app.windows.security.CurrentUserProtection;
 import gold.debug.windowstolinux.appapi.task.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -120,7 +120,7 @@ class PlatformStartupTest {
     @Test
     void actualCurrentUserDpapiBootstrapReopensAndRejectsTampering() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"));
-        var nativeProtection = new CurrentUserDataProtection();
+        var nativeProtection = new CurrentUserProtection();
         var protection = new DatabaseProtection() {
             public byte[] protect(byte[] bytes) {
                 return nativeProtection.protect(bytes);

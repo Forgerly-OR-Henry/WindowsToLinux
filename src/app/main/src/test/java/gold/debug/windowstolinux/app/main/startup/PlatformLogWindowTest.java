@@ -36,7 +36,7 @@ class PlatformLogWindowTest {
     void actualDesktopShowsRecordsCleansHistoryAndMakesStorageFailuresVisible() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
-                var logger = runtime.logs(OWNER, VERSION, Optional.empty())) {
+                var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             for (int i = 0; i < 15; i++)
@@ -114,7 +114,7 @@ class PlatformLogWindowTest {
                     return null;
                 });
                 await(() -> !named(frame, "logs.clean").isEnabled());
-                assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+                assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                         runtime.logs()::cleanHistory);
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "logs.clean").isEnabled());

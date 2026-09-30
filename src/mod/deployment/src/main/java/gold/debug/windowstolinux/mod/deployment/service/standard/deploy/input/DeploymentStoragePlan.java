@@ -35,7 +35,7 @@ public final class DeploymentStoragePlan {
         for (var file : bindings.fileBindings())
             result.add(new Resource(file.bindingId(), file.resourceType(), file.location(), file.dataPath().path(),
                     file.physicalPath(applicationId),
-                    file.dataPath().access() == DeploymentDataPath.AccessMode.READ_ONLY));
+                    file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY));
         for (var database : bindings.databaseBindings().orElse(List.of()))
             if (database.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
                 String physical = sqlite.physicalPath(applicationId, database.databaseId());

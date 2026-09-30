@@ -9,13 +9,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentFileBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import org.junit.jupiter.api.Test;
 
 /** Tests strict resource-binding persistence without secret values. / 测试不含秘密值的严格资源绑定持久化。 */
@@ -34,7 +34,7 @@ class DeploymentResourceCodecTest {
     void roundTripsCanonicalFileAndDatabaseBindings() throws Exception {
         DeploymentResourceBindings bindings = new DeploymentResourceBindings(
                 List.of(new DeploymentFileBinding("file-uploads",
-                        new DeploymentDataPath("uploads", DeploymentDataPath.AccessMode.READ_WRITE, "uploads-v1",
+                        new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1",
                                 false))),
                 Optional.of(List.of(
                         new DeploymentDatabaseBinding("orders",

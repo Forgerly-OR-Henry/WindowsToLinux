@@ -52,7 +52,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 1));
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 1));
             var offsets = new CopyOnWriteArrayList<Long>();
             stallWrites(remote, 2, offsets);
             var reviews = new Reviews();
@@ -70,7 +70,7 @@ class PlatformTransferStallTest {
                 assertEquals(Duration.ofSeconds(prompts.get() < 2 ? 1 : 3), stall.idleTimeout());
                 if (prompts.get() == 0)
                     assertDoesNotThrow(() -> runtime.transfers()
-                            .save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 3)));
+                            .save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 3)));
                 assertEquals(remote.authentications.get(), prompts.incrementAndGet());
                 if (identity.get() == null)
                     identity.set(stall.progress().transferId());
@@ -127,7 +127,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
                 var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferSettings(5, 1));
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 1));
             stallWrites(remote, 1, new CopyOnWriteArrayList<>());
             var reviews = new Reviews();
             var prompts = new AtomicInteger();

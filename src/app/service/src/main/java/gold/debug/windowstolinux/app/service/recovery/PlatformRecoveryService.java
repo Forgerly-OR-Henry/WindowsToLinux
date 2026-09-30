@@ -299,7 +299,7 @@ public final class PlatformRecoveryService implements AutoCloseable {
          * @param profile admitted saved profile / 准入已保存配置
          * @param snapshot transient controller state / 临时控制器状态 */
         private void journal(TaskContext task, ServerProfile profile,
-                gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot snapshot) {
+                gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySnapshot snapshot) {
             try {
                 if (snapshot.action().isPresent())
                     digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

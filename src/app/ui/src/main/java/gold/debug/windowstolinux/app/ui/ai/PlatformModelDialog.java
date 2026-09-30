@@ -7,13 +7,13 @@ import java.util.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.ai.*;
+import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
 import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.catalog.AiCapabilityType;
 
 /** Edits a model and observes its centrally owned verification task. / 编辑模型并观察中央持有的验证任务。 */
 final class PlatformModelDialog extends JDialog {
@@ -69,6 +69,8 @@ final class PlatformModelDialog extends JDialog {
             PageMessagePresenter messages, AiProviderSummary existing, OptionalInt outputLimit, Runnable saved) {
         super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"),
                 ModalityType.APPLICATION_MODAL);
+        gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(this,
+                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of(existing == null ? "ai.models.add" : "ai.models.edit"), messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
@@ -82,7 +84,7 @@ final class PlatformModelDialog extends JDialog {
         var names = new String[]{"model.name", "model.endpoint", "model.model", "model.key", "model.limit"};
         for (int i = 0; i < fields.length; i++) {
             fields[i].setName(names[i]);
-            components.addField(form, i, 0, messages.text(labels[i]), fields[i]);
+            components.addField(form, i, 0, messages, labels[i], fields[i]);
         }
         if (existing != null) {
             name.setText(existing.name());
@@ -94,11 +96,11 @@ final class PlatformModelDialog extends JDialog {
             limit.setText(Integer.toString(outputLimit.getAsInt()));
         capability.setName("model.capability");
         messages.localize(capability, "ai.capability.");
-        components.addField(form, 5, 0, messages.text("ai.capability.label"), capability);
-        save = components.primaryButton(messages.text("ai.models.testSave"));
+        components.addField(form, 5, 0, messages, "ai.capability.label", capability);
+        save = messages.bind(components.primaryButton(""), "ai.models.testSave");
         save.setName("model.save");
         save.addActionListener(event -> submit());
-        var cancel = components.secondaryButton(messages.text("button.cancel"));
+        var cancel = messages.bind(components.secondaryButton(""), "button.cancel");
         cancel.setName("model.cancel");
         cancel.addActionListener(event -> closeEditor());
         var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT));

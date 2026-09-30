@@ -16,8 +16,8 @@ import javax.tools.ToolProvider;
 import gold.debug.windowstolinux.app.main.mod.PlatformModContext;
 import gold.debug.windowstolinux.app.mod.development.DevelopmentDescriptor;
 import gold.debug.windowstolinux.app.mod.development.DevelopmentModDiscovery;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModDependencyPlan;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModDependencyPlan;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
@@ -437,7 +437,7 @@ class PlatformModContextTest {
                 assertThrows(SQLException.class, f.runtime::close);
                 try (var duplicate = loader(false)) {
                     assertThrows(IllegalStateException.class,
-                            () -> f.runtime.modContext(duplicate, Optional.empty(), ModLaunchMode.NORMAL, f.pages));
+                            () -> f.runtime.capabilities().modContext(duplicate, Optional.empty(), ModLaunchMode.NORMAL, f.pages));
                     assertThrows(IllegalStateException.class, () -> f.runtime.modSession(duplicate, Optional.empty(),
                             ModLaunchMode.NORMAL, f.pages, SemanticVersion.parse("1.0.0-dev.1")));
                 }
@@ -465,7 +465,7 @@ class PlatformModContextTest {
                 original.register(new PageSpec("prior", "prior", "Prior", false), () -> null);
                 original.commit();
                 assertThrows(ApiException.class,
-                        () -> runtime.modContext(loader, Optional.empty(), ModLaunchMode.NORMAL, pages));
+                        () -> runtime.capabilities().modContext(loader, Optional.empty(), ModLaunchMode.NORMAL, pages));
                 assertEquals(1, pages.contributions().size());
                 assertTrue(runtime.modContexts().isEmpty());
                 assertFalse(loader.isClosed());
@@ -483,7 +483,7 @@ class PlatformModContextTest {
             var pages = new ModPageRegistry(new Host(), new UiEnvironment(Locale.ENGLISH, "LIGHT", false));
             try (var existing = runtime.services().bind(loader, Optional.empty(), ModLaunchMode.NORMAL)) {
                 assertThrows(IllegalStateException.class,
-                        () -> runtime.modContext(loader, Optional.empty(), ModLaunchMode.NORMAL, pages));
+                        () -> runtime.capabilities().modContext(loader, Optional.empty(), ModLaunchMode.NORMAL, pages));
                 assertTrue(runtime.modContexts().isEmpty());
                 assertTrue(pages.contributions().isEmpty());
                 try (var newScope = pages.begin(OWNER, false)) {

@@ -33,6 +33,8 @@ final class DeploymentMultiComponentPublicationRecovery {
     OperationResult<DeploymentPublicationProposal> reconcile(TaskContext task, DeploymentExecutionRecord record,
             DeploymentGraphPublicationJournal root) {
         try {
+            if (!confirmBuildReviews(task, record, root))
+                return unknown("DEPLOYMENT_GRAPH_BUILD_REVIEW_UNCONFIRMED");
             var identity = record.identity();
             var rootFacts = root.facts();
             if (!task.id().equals(identity.taskId())
@@ -78,6 +80,24 @@ final class DeploymentMultiComponentPublicationRecovery {
         } catch (Exception | LinkageError | AssertionError unavailable) {
             return unknown("DEPLOYMENT_GRAPH_RECOVERY_UNCONFIRMED");
         }
+    }
+
+    /** Confirms retained child pointers before the root identity is read, without resuming build work. / 读取根身份前确认留存子指针，不恢复构建工作。
+     * @param task authentic original recovery / 真实原恢复
+     * @param record original formal execution / 原正式执行
+     * @param root original graph checkpoint / 原图检查点
+     * @return whether every exact pointer is confirmed / 每个精确指针是否确认
+     * @throws Exception if original durable evidence is unavailable / 原持久依据不可用时 */
+    private boolean confirmBuildReviews(TaskContext task, DeploymentExecutionRecord record,
+            DeploymentGraphPublicationJournal root) throws Exception {
+        for (var index : root.indexes()) {
+            var child = DeploymentPublicationCleanupJournal.reopen(context, task, index.key());
+            if (child.isEmpty() || !DeploymentPublicationAttemptRecovery.child(context, task, record, child.orElseThrow())
+                    || !DeploymentAssistedReviewRecovery.child(context, task, record, child.orElseThrow()))
+                return false;
+        }
+        return DeploymentPublicationAttemptRecovery.root(context, task, record, root)
+                && DeploymentAssistedReviewRecovery.root(context, task, record, root);
     }
 
     /** One exact indexed checkpoint and its original runtime facts. / 一项精确索引检查点及原运行事实。
@@ -166,8 +186,7 @@ final class DeploymentMultiComponentPublicationRecovery {
         var observed = new LinkedHashMap<String, DeploymentOriginalPublicationStatus>();
         for (var index : components.values()) {
             var facts = index.facts();
-            var read = channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(),
-                    facts.backend(), facts.engine());
+            var read = facts.operation().isEmpty() ? channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel(session, task, index).originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
             if (read.outcome() != Outcome.SUCCEEDED || read.value().isEmpty())
                 return Map.of();
             observed.put(index.index().componentId(), read.value().orElseThrow());
@@ -387,7 +406,7 @@ final class DeploymentMultiComponentPublicationRecovery {
             if (!successful && status.snapshot()) {
                 if (publishAttempted(phase) || phase.equals("SNAPSHOT_DISCARD_MAY_HAVE_RUN")
                         || !DeploymentPublicationCleanupAttempt.run(journal, "SNAPSHOT_DISCARD_MAY_HAVE_RUN",
-                                () -> channel.discardSnapshot(facts.unit())))
+                                () -> facts.operation().isEmpty() ? channel.discardSnapshot(facts.unit()) : channel.discardSnapshot(facts.unit(), facts.operation().orElseThrow())))
                     return false;
                 status = reread(channel, facts);
                 if (status == null || status.snapshot() || !journal.mark("SNAPSHOT_DISCARDED"))
@@ -460,8 +479,7 @@ final class DeploymentMultiComponentPublicationRecovery {
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static DeploymentOriginalPublicationStatus reread(DeploymentPublicationChannel channel,
             DeploymentPublicationRecoveryFacts facts) throws ApiException {
-        var read = channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(),
-                facts.engine());
+        var read = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
         return read.outcome() == Outcome.SUCCEEDED ? read.value().orElse(null) : null;
     }
 

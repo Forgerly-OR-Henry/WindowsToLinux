@@ -11,7 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver;
 
 /**
@@ -98,7 +98,7 @@ public final class MavenBuildInspector {
             return Files.readString(pom, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             rejections.add(new RejectionReason("POM_UNREADABLE",
-                    LocalizedMessage.of("analysis.rejection.pomUnreadable"), "input"));
+                    DeploymentLocalizedMessage.of("analysis.rejection.pomUnreadable"), "input"));
             return null;
         }
     }
@@ -130,6 +130,6 @@ public final class MavenBuildInspector {
      * @return rejection reason from the supplied reason inputs / 根据所提供原因输入构建拒绝原因
      */
     private static RejectionReason reason(String code, String messageKey, String nextAction) {
-        return new RejectionReason(code, LocalizedMessage.of(messageKey), nextAction);
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(messageKey), nextAction);
     }
 }

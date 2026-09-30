@@ -13,6 +13,7 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.service.contract.spi.SourceDirectoryPicker;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.app.source.boundary.SelectedDirectory;
@@ -39,7 +40,7 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
     private final DesktopSecurityService security;
 
     /** Actual directory selection presenter. / 实际目录选择呈现器。 */
-    private final DirectoryPicker picker;
+    private final SourceDirectoryPicker picker;
 
     /** Exact activating owner and release. / 精确启用所有者及发布版本。 */
     private final String owner, version;
@@ -86,7 +87,7 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
      * @param version exact loaded version / 精确加载版本
      * @param picker platform-owned directory selector / 平台持有的目录选择器 */
     public PlatformSourceAccess(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
-            String owner, String version, DirectoryPicker picker) {
+            String owner, String version, SourceDirectoryPicker picker) {
         this.database = Objects.requireNonNull(database);
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
@@ -450,17 +451,6 @@ public final class PlatformSourceAccess implements SourceService, AutoCloseable 
      * @param directory confirmed boundary / 已确认边界
      * @param workspace optional generated-file owner / 可选生成文件所有者 */
     private record Selection(TaskContext task, SelectedDirectory directory, Workspace workspace) {
-    }
-
-    /** Host-owned directory chooser implementation. / 宿主持有的目录选择器实现。 */
-    @FunctionalInterface
-    public interface DirectoryPicker {
-        /** Returns a user-confirmed directory after its owned dialog actually closes. / 所属对话框实际关闭后返回用户确认目录。
-         * @param title supplied title / 提供标题
-         * @param task original task snapshot / 原任务快照
-         * @param cancellation cooperative cancellation / 协作取消
-         * @return chosen directory or null on cancellation / 选定目录或取消时 null */
-        Path select(String title, TaskSnapshot task, CancellationToken cancellation);
     }
 
     /** Writable staging handle with the same original-task lifetime as its file lease. / 与文件租约共用原任务寿命的可写暂存句柄。 */

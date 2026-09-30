@@ -11,8 +11,8 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 
 /** Keeps the original inventory visible while editing a purpose inline. / 内联编辑用途时保持原模型清单可见。 */
 final class AiModelInventoryPane extends JPanel {
@@ -130,7 +130,7 @@ final class AiModelInventoryPane extends JPanel {
      */
     private void toolbar(DesktopComponentFactory c) {
         JPanel toolbar = c.transparent(new BorderLayout(8, 0));
-        toolbar.add(c.sectionHeading(messages.text("ai.models.title"), messages.text("ai.models.description")));
+        toolbar.add(c.sectionHeading(messages, "ai.models.title", "ai.models.description"));
         JPanel roles = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         for (var value : AiPurposeType.values()) {
             JButton button = c.secondaryButton(messages.text("ai.purpose." + value.name()));
@@ -166,8 +166,8 @@ final class AiModelInventoryPane extends JPanel {
         down.addActionListener(event -> move(true, 1));
         controls.add(up);
         controls.add(down);
-        JButton cancel = c.secondaryButton(messages.text("button.cancel")),
-                save = c.primaryButton(messages.text("button.save"));
+        JButton cancel = messages.bind(c.secondaryButton(""), "button.cancel"),
+                save = messages.bind(c.primaryButton(""), "button.save");
         cancel.setName("ai.purpose.cancel");
         save.setName("ai.purpose.save");
         cancel.addActionListener(event -> {
@@ -188,8 +188,8 @@ final class AiModelInventoryPane extends JPanel {
         JPanel footer = c.transparent(new BorderLayout(8, 0));
         footer.add(status);
         JPanel modelActions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        JButton newModel = c.primaryButton(messages.text("ai.models.add")),
-                editModel = c.secondaryButton(messages.text("ai.models.edit"));
+        JButton newModel = messages.bind(c.primaryButton(""), "ai.models.add"),
+                editModel = messages.bind(c.secondaryButton(""), "ai.models.edit");
         newModel.setName("ai.models.add");
         editModel.setName("ai.models.edit");
         newModel.addActionListener(event -> {
@@ -339,14 +339,27 @@ final class AiModelInventoryPane extends JPanel {
         inventory.setSelectedValue(state.selected(), false);
         selected.setSelectedValue(state.selectedPurpose(), false);
         for (var type : AiPurposeType.values())
-            buttons.get(type).setText(messages.text("ai.purpose." + type.name()) + " ("
-                    + memberships.getOrDefault(type, List.of()).size() + ")");
+            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(buttons.get(type),
+                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("ai.purpose.count." + type.name(),
+                            "count", memberships.getOrDefault(type, List.of()).size()), messages.catalog());
         status.setText(messages.text(models.isEmpty() ? "ai.models.empty" : "ai.models.orderHint"));
         updateControls();
         SwingUtilities.invokeLater(() -> {
             inventoryScroll.getVerticalScrollBar().setValue(state.scroll());
             purposeScroll.getVerticalScrollBar().setValue(state.purposeScroll());
         });
+    }
+
+    /** Refreshes display keys and renderers while keeping membership drafts and selection. / 刷新显示键和渲染器，保留成员草稿及选择。 */
+    void localize() {
+        for (var type : AiPurposeType.values())
+            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(buttons.get(type),
+                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("ai.purpose.count." + type.name(),
+                            "count", memberships.getOrDefault(type, List.of()).size()), messages.catalog());
+        if (purpose != null)
+            messages.bind(title, "ai.purpose." + purpose.name());
+        messages.bind(enabled, "ai.models.enabled");
+        repaint();
     }
 
     /** Updates membership availability and current role enablement. / 更新成员操作及当前用途启用状态。 */

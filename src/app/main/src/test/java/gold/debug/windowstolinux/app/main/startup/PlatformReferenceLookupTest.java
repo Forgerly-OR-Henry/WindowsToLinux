@@ -31,8 +31,8 @@ class PlatformReferenceLookupTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var servers = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var servers = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                 var secret = secrets.create("fixture-purpose", new byte[]{42}, task);
                 String key = " exact / key ";
@@ -78,8 +78,8 @@ class PlatformReferenceLookupTest {
     void lookupRequiresAuthenticTaskExactPurposeSchemaAndAdmittedServer() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
-            var servers = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var servers = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var captured = new AtomicReference<TaskContext>();
             var saved = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                 captured.set(task);
@@ -99,14 +99,14 @@ class PlatformReferenceLookupTest {
                     assertCode(ProblemCode.INVALID_INPUT, () -> secrets.findReference(secret, key, task));
                 }
                 var wrong = new SchemaIdentity(OWNER, schema.schemaVersion(), UUID.randomUUID());
-                assertCode(ProblemCode.ACCESS_DENIED, () -> runtime.serverAccess(OWNER, VERSION, Optional.of(wrong))
+                assertCode(ProblemCode.ACCESS_DENIED, () -> runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(wrong))
                         .findReference(SERVER, "key", task));
                 assertCode(ProblemCode.ACCESS_DENIED,
-                        () -> runtime.secrets(OWNER, VERSION, Optional.of(wrong)).findReference(secret, "key", task));
-                assertCode(ProblemCode.UNAVAILABLE, () -> runtime.serverAccess(OWNER, VERSION, Optional.empty())
+                        () -> runtime.capabilities().secrets(OWNER, VERSION, Optional.of(wrong)).findReference(secret, "key", task));
+                assertCode(ProblemCode.UNAVAILABLE, () -> runtime.capabilities().serverAccess(OWNER, VERSION, Optional.empty())
                         .findReference(SERVER, "key", task));
                 assertCode(ProblemCode.UNAVAILABLE,
-                        () -> runtime.secrets(OWNER, VERSION, Optional.empty()).findReference(secret, "key", task));
+                        () -> runtime.capabilities().secrets(OWNER, VERSION, Optional.empty()).findReference(secret, "key", task));
                 javax.swing.SwingUtilities.invokeAndWait(() -> {
                     assertCode(ProblemCode.CONTRACT_VIOLATION, () -> servers.findReference(SERVER, "key", task));
                     assertCode(ProblemCode.CONTRACT_VIOLATION, () -> secrets.findReference(secret, "key", task));
@@ -122,8 +122,8 @@ class PlatformReferenceLookupTest {
     void uncertainOriginalCallbackCanReadButNotRepeatWritesAndRecoveryFindsLostReservationIds() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
-            var servers = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var servers = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var original = new AtomicReference<TaskContext>();
             var secret = new AtomicReference<SecretRef>();
@@ -169,7 +169,7 @@ class PlatformReferenceLookupTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             schema = initialize(runtime, true);
             secret = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> success(
-                    runtime.secrets(OWNER, VERSION, Optional.of(schema)).create("restart", new byte[]{42}, task))));
+                    runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema)).create("restart", new byte[]{42}, task))));
         }
         UUID taskId;
         UUID expectedServer;
@@ -192,8 +192,8 @@ class PlatformReferenceLookupTest {
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().unlock(PASSWORD.toCharArray());
-            var servers = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var servers = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, true);
             try (var registration = binding.registerRecovery("fixture", (previous, task) -> {
                 assertEquals(taskId, task.id());
@@ -221,8 +221,8 @@ class PlatformReferenceLookupTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var servers = runtime.serverAccess(OWNER, VERSION, Optional.of(schema));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var servers = runtime.capabilities().serverAccess(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                 var secret = secrets.create("read-failure", new byte[]{42}, task);
                 sql(db, "ALTER TABLE mod_server_reference RENAME TO fixture_server_reference");

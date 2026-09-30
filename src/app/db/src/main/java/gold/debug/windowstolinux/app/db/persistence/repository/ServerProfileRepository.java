@@ -6,9 +6,8 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.entity.StoredServerObservation;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 
 /** Stores connection metadata and endpoint-bound authenticated trust. / 保存连接元数据和绑定端点的认证信任。 */
 public final class ServerProfileRepository {
@@ -19,24 +18,14 @@ public final class ServerProfileRepository {
     /** Query protecting referenced server identities from rebinding. / 保护被引用服务器身份免于换绑的查询。 */
     private final String referenceQuery;
 
-    /** Whether configuration shares the H2 task-admission lock. / 配置是否共享 H2 任务准入锁。 */
-    private final boolean platform;
 
-    /** Binds the database. / 绑定数据库。
-     * @param connections connection factory / 连接工厂
-     */
-    public ServerProfileRepository(DesktopConnectionFactory connections) {
-        this.connections = connections.scoped();
-        this.platform = false;
-        this.referenceQuery = "SELECT 1 FROM deployment_unit WHERE server_profile_id=? LIMIT 1";
-    }
+
 
     /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
      * @param connections platform transaction scope / 平台事务作用域
      */
     public ServerProfileRepository(RepositoryConnections connections) {
         this.connections = java.util.Objects.requireNonNull(connections);
-        this.platform = true;
         this.referenceQuery = "SELECT 1 FROM mod_server_reference WHERE server_profile_id=? LIMIT 1";
     }
 
@@ -59,11 +48,10 @@ public final class ServerProfileRepository {
      * @param server authenticated server / 已认证服务器
      * @throws SQLException on a missing profile or changed identity / 配置缺失或身份变化
      */
-    public void saveServer(ServerIdentity server) throws SQLException {
+    public void saveServer(StoredServerIdentity server) throws SQLException {
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                if (platform)
-                    RepositoryConnections.lockPlatformState(c);
+                RepositoryConnections.lockPlatformState(c);
                 RepositoryTransactionExecutor.upsertServer(c, server);
             }
         });
@@ -74,14 +62,14 @@ public final class ServerProfileRepository {
      * @return stored trust / 已存信任
      * @throws SQLException on database failure / 数据库失败
      */
-    public Optional<ServerIdentity> findServer(String serverId) throws SQLException {
+    public Optional<StoredServerIdentity> findServer(String serverId) throws SQLException {
         try (var c = connections.open();
                 var s = c.prepareStatement(
                         "SELECT * FROM server_profile WHERE server_profile_id=? AND host_key_sha256 IS NOT NULL")) {
             s.setString(1, serverId);
             try (var rows = s.executeQuery()) {
                 return rows.next()
-                        ? Optional.of(new ServerIdentity(serverId, rows.getString("trusted_host"),
+                        ? Optional.of(new StoredServerIdentity(serverId, rows.getString("trusted_host"),
                                 rows.getInt("trusted_ssh_port"), rows.getString("host_key_sha256")))
                         : Optional.empty();
             }
@@ -93,7 +81,7 @@ public final class ServerProfileRepository {
      * @param expected previous identity / 原身份
      * @throws SQLException when identity changed / 身份发生变化
      */
-    public void saveAuthenticatedServer(ServerIdentity observed, Optional<ServerIdentity> expected)
+    public void saveAuthenticatedServer(StoredServerIdentity observed, Optional<StoredServerIdentity> expected)
             throws SQLException {
         if (expected.isPresent() && !expected.orElseThrow().equals(observed))
             throw new SQLException("authenticated server identity differs from trusted identity");
@@ -107,12 +95,11 @@ public final class ServerProfileRepository {
     public void saveServerProfile(StoredServerProfile profile) throws SQLException {
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                if (platform)
-                    RepositoryConnections.lockPlatformState(c);
+                RepositoryConnections.lockPlatformState(c);
                 var prior = findServerProfile(profile.id());
                 boolean changed = prior.isPresent()
                         && (!prior.get().host().equals(profile.host()) || prior.get().sshPort() != profile.sshPort());
-                if (platform && prior.isPresent() && (changed || !prior.get().username().equals(profile.username())
+                if (prior.isPresent() && (changed || !prior.get().username().equals(profile.username())
                         || !prior.get().credentialKey().equals(profile.credentialKey())))
                     gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(c, profile.id());
                 if (changed) {
@@ -179,10 +166,8 @@ public final class ServerProfileRepository {
         var credential = new java.util.concurrent.atomic.AtomicReference<Optional<String>>(Optional.empty());
         connections.transaction(() -> {
             try (var connection = connections.open()) {
-                if (platform) {
-                    RepositoryConnections.lockPlatformState(connection);
-                    gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(connection, serverId);
-                }
+                RepositoryConnections.lockPlatformState(connection);
+                gold.debug.windowstolinux.app.db.task.TaskLedger.TaskLedgerQueries.requireServerIdle(connection, serverId);
                 var profile = findServerProfile(serverId);
                 if (profile.isEmpty())
                     return;

@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.app.service.contract.definition.RecoverySnapsho
 import gold.debug.windowstolinux.app.service.contract.definition.RecoveryTerminal;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /**
  * Modeless manual login handoff and exact command approval. / 非模态人工登录交接及精确命令批准。
@@ -101,26 +101,6 @@ public final class SshRecoveryDialog {
      */
     private RecoverySnapshot displayed;
 
-    /**
-     * Shows controls on the Swing event thread; login remains in the dedicated browser. / 在 Swing 事件线程显示控件，登录保留在专用浏览器中。
-     *
-     * @param owner component or resource identity owning the operation / 持有操作的组件或资源身份
-     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param session session used for the current scoped operation / 当前限定作用域操作使用的会话
-     * @param ai the supplied ai application facade / 所提供的AI应用门面
-     * @param components reviewed components in the application graph / 应用图中的已审阅组件
-     * @param messages localized message resolver / 本地化消息解析器
-     */
-    public SshRecoveryDialog(Component owner, ServerProfile server, SshRecoverySession session, AiApplicationFacade ai,
-            DesktopComponentFactory components, PageMessagePresenter messages) {
-        this(owner, server, session, () -> {
-            session.pause();
-            var page = new gold.debug.windowstolinux.app.ui.ai.AiPage(ai, Optional::empty, components, messages);
-            JOptionPane.showMessageDialog(owner, page.panel(), messages.text("auto.ai.setup"),
-                    JOptionPane.PLAIN_MESSAGE);
-        }, components, messages);
-    }
-
     /** Opens the original platform rescue with navigation to permanent model settings. / 打开原平台救援并导航到常驻模型设置。
      * @param owner actual platform parent / 实际平台父级
      * @param server admitted server / 准入服务器
@@ -151,6 +131,8 @@ public final class SshRecoveryDialog {
         this.messages = messages;
         dialog = new JDialog(SwingUtilities.getWindowAncestor(owner), messages.text("recovery.title"),
                 Dialog.ModalityType.MODELESS);
+        gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(dialog,
+                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("recovery.title"), messages.catalog());
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.setName("recovery.dialog");
         JPanel panel = new JPanel(new BorderLayout(8, 8));
@@ -163,10 +145,10 @@ public final class SshRecoveryDialog {
         JPanel handoff = new JPanel(new GridLayout(0, 1, 4, 4));
         handoff.add(new JLabel(messages.text("recovery.target",
                 java.util.Map.of("id", server.id(), "host", server.host(), "port", server.sshPort()))));
-        handoff.add(new JLabel(messages.text("recovery.handoff")));
+        handoff.add(messages.bind(new JLabel(), "recovery.handoff"));
         handoff.add(terminals);
         JPanel target = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        target.add(new JLabel(messages.text("recovery.identity")));
+        target.add(messages.bind(new JLabel(), "recovery.identity"));
         target.add(identity);
         handoff.add(target);
         consent = new JCheckBox(messages.text("recovery.consent"));
@@ -175,32 +157,32 @@ public final class SshRecoveryDialog {
         handoff.add(reconciled);
         panel.add(handoff, BorderLayout.NORTH);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        refresh = components.secondaryButton(messages.text("recovery.refresh"));
+        refresh = messages.bind(components.secondaryButton(""), "recovery.refresh");
         buttons.add(refresh);
         refresh.addActionListener(event -> refresh());
-        bind = components.secondaryButton(messages.text("recovery.bind"));
+        bind = messages.bind(components.secondaryButton(""), "recovery.bind");
         buttons.add(bind);
         bind.addActionListener(event -> bindSelection());
-        approve = components.secondaryButton(messages.text("recovery.approve"));
+        approve = messages.bind(components.secondaryButton(""), "recovery.approve");
         buttons.add(approve);
         approve.addActionListener(event -> approve());
-        JButton pause = components.secondaryButton(messages.text("recovery.pause"));
+        JButton pause = messages.bind(components.secondaryButton(""), "recovery.pause");
         buttons.add(pause);
         pause.addActionListener(event -> {
             session.pause();
             consent.setSelected(false);
         });
-        JButton resume = components.secondaryButton(messages.text("recovery.resume"));
+        JButton resume = messages.bind(components.secondaryButton(""), "recovery.resume");
         buttons.add(resume);
         resume.addActionListener(event -> {
             session.resume();
             terminals.removeAllItems();
             consent.setSelected(false);
         });
-        JButton settingsButton = components.secondaryButton(messages.text("auto.ai.setup"));
+        JButton settingsButton = messages.bind(components.secondaryButton(""), "auto.ai.setup");
         buttons.add(settingsButton);
         settingsButton.addActionListener(event -> settings.run());
-        JButton end = components.secondaryButton(messages.text("recovery.end"));
+        JButton end = messages.bind(components.secondaryButton(""), "recovery.end");
         buttons.add(end);
         end.addActionListener(event -> close());
         panel.add(buttons, BorderLayout.SOUTH);

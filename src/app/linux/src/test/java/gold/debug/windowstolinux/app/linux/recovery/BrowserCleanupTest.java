@@ -92,7 +92,7 @@ class BrowserCleanupTest {
             context.setAccessible(true);
             context.set(browser, wrapped);
             var failure = assertThrows(BrowserRecoveryException.class, browser::close);
-            assertEquals(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure.reason());
+            assertEquals(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure.reason());
             assertFalse(browser.resourcesClosed());
             assertFalse(removed.get());
             assertTrue(browser.processes().getFirst().alive());

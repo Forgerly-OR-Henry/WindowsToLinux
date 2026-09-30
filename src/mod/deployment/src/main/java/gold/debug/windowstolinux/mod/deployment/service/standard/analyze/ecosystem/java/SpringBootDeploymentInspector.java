@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -126,7 +126,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
                 build.buildTool(), languageFacts, build.evidence(), List.of(), build.missingInformation());
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), Map.of(),
                 Optional.empty(), Map.of(), List.of(), List.of(),
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -197,9 +197,9 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
             rejections.add(
                     rejection("SPRING_BOOT_PLUGIN_MISSING", "analysis.deployment.rejection.gradleBootPluginMissing"));
         }
-        List<LocalizedMessage> missing = build.usableWrapper()
+        List<DeploymentLocalizedMessage> missing = build.usableWrapper()
                 ? List.of()
-                : List.of(LocalizedMessage.of("analysis.deployment.missing.gradleWrapper"));
+                : List.of(DeploymentLocalizedMessage.of("analysis.deployment.missing.gradleWrapper"));
         return new BuildInspection(build.applicationId(), DeploymentBuildToolType.GRADLE_WRAPPER, build.text(),
                 List.of(evidence("analysis.deployment.evidence.gradleBuild", build.script().getFileName().toString(),
                         "analysis.deployment.evidence.detected")),
@@ -238,7 +238,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @return the admission rejection associated with the supplied reason / 与所提供原因关联的准入拒绝
      */
     private static RejectionReason rejection(String code, String key) {
-        return new RejectionReason(code, LocalizedMessage.of(key), "deployment");
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(key), "deployment");
     }
 
     /**
@@ -252,7 +252,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     private record BuildInspection(String applicationId, DeploymentBuildToolType buildTool, String buildText,
-            List<AnalysisEvidence> evidence, List<LocalizedMessage> missingInformation) {
+            List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> missingInformation) {
         /**
          * Binds the supplied dependencies and state for build inspection.
          * <p>为构建检查绑定传入的依赖及状态。
@@ -280,9 +280,9 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
             String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(subject),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
                 source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
                 gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

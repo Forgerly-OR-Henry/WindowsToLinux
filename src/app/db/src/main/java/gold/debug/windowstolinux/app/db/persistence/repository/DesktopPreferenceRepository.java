@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
 
 /**
@@ -20,15 +19,6 @@ public final class DesktopPreferenceRepository {
      */
     private final RepositoryConnections connections;
 
-    /**
-     * Creates the repository. / 创建仓库。
-     *
-     * @param connections factory for scoped database connections / 限定作用域数据库连接的工厂
-     * @throws NullPointerException if a required input is absent / 必需输入缺失时
-     */
-    public DesktopPreferenceRepository(DesktopConnectionFactory connections) {
-        this(connections.scoped());
-    }
 
     /** Binds owned platform connections and repository transactions. / 绑定所属平台连接和仓库事务。
      * @param connections platform transaction scope / 平台事务作用域
@@ -103,32 +93,6 @@ public final class DesktopPreferenceRepository {
             for (var entry : values.entrySet())
                 save(entry.getKey(), entry.getValue());
         });
-    }
-
-    /** Validates stored deployment preferences and initializes only missing defaults. / 验证已存部署偏好，仅初始化缺失的默认值。
-     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
-     * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
-     */
-    public java.util.Map<String, String> deploymentSelection() throws SQLException {
-        var result = new java.util.HashMap<String, String>();
-        connections.transaction(() -> {
-            var mode = find("deploy_mode");
-            var approval = find("deploy_approval");
-            String selectedMode = mode.orElse("ASSISTED"), selectedApproval = approval.orElse("AUTOMATIC");
-            try {
-                gold.debug.windowstolinux.shared.model.deployment.DeploymentAutomationMode.valueOf(selectedMode);
-                gold.debug.windowstolinux.shared.model.deployment.AgentApprovalMode.valueOf(selectedApproval);
-            } catch (IllegalArgumentException invalid) {
-                throw new SQLException("invalid stored deployment preferences", invalid);
-            }
-            if (mode.isEmpty())
-                save("deploy_mode", selectedMode);
-            if (approval.isEmpty())
-                save("deploy_approval", selectedApproval);
-            result.put("deploy_mode", selectedMode);
-            result.put("deploy_approval", selectedApproval);
-        });
-        return java.util.Map.copyOf(result);
     }
 
     /** Requires nonempty persisted preference text. / 要求持久化偏好文本非空。

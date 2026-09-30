@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.app.service.execution.lifecycle.ApplicationSumm
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.server.ServerContext;
 import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
 import org.junit.jupiter.api.Test;

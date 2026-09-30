@@ -272,7 +272,7 @@ class PlatformModInitializationTest {
             assertThrows(SQLException.class, () -> ledger.beginInitialization(intent, manifest, "0".repeat(64)));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema"));
             var plan = ledger.beginInitialization(intent, manifest, digest);
-            new gold.debug.windowstolinux.app.db.schema.SchemaProvisioner(runtime.persistence().database())
+            new gold.debug.windowstolinux.app.db.execution.schema.SchemaProvisioner(runtime.persistence().database())
                     .create(plan.target());
             ledger.preparationPhase(plan, false);
             ledger.preparationPhase(plan, true);
@@ -326,7 +326,7 @@ class PlatformModInitializationTest {
     void physicalCollisionRetainsUnknownWithoutAdoptingOrDeletingExistingObjects() throws Exception {
         module("valid", false);
         fixture.enable(OWNER);
-        String schema = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
+        String schema = new gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates(
                 new gold.debug.windowstolinux.appapi.db.SchemaIdentity(OWNER, "1", UUID.randomUUID())).physicalName();
         try (var runtime = fixture.open(false)) {
             sql(runtime.persistence().database(), "CREATE SCHEMA \"" + schema + "\"");

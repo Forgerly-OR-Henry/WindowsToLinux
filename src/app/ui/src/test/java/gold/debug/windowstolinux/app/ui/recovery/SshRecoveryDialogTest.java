@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
 import java.awt.event.WindowEvent;
-import java.lang.reflect.Proxy;
 import java.nio.file.*;
 import java.util.*;
 import java.util.List;
@@ -19,6 +18,7 @@ import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import org.junit.jupiter.api.Test;
 
 class SshRecoveryDialogTest {
@@ -67,14 +67,10 @@ class SshRecoveryDialogTest {
         var messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
         var components = new DesktopComponentFactory(ThemePalette.light());
         var session = new Session();
-        var ai = (AiApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiApplicationFacade.class}, (p, m, a) -> {
-                    throw new AssertionError("no model configuration call expected");
-                });
         SwingUtilities.invokeAndWait(() -> {
             com.formdev.flatlaf.FlatLightLaf.setup();
-            new SshRecoveryDialog(new JPanel(), new ServerProfile("fixture", "example.test", 22, "user", "ssh/fixture"),
-                    session, ai, components, messages);
+            SshRecoveryDialog.platform(new JPanel(), new ServerProfile("fixture", "example.test", 22, "user", "ssh/fixture"),
+                    session, () -> { throw new AssertionError("no model configuration call expected"); }, components, messages);
         });
         try {
             SwingUtilities.invokeAndWait(() -> {

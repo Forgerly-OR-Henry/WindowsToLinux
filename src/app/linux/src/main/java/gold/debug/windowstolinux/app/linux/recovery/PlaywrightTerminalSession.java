@@ -239,7 +239,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
         });
         synchronized (admission) {
             if (closed.get())
-                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
+                throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OPERATION_FAILED, null);
             if (eventPump != null)
                 return;
             eventPump = worker.scheduleWithFixedDelay(() -> {
@@ -380,9 +380,9 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                 return new TerminalObservation(text, image, generation);
             });
         } catch (BrowserRecoveryException failure) {
-            if (failure.reason() == BrowserRecoveryException.Reason.INTERRUPTED)
+            if (failure.reason() == BrowserRecoveryException.ReasonType.INTERRUPTED)
                 throw failure;
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OBSERVATION_FAILED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OBSERVATION_FAILED, failure);
         }
     }
 
@@ -544,15 +544,16 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             Future<T> result;
             synchronized (admission) {
                 if (closed.get())
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, null);
+                    throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OPERATION_FAILED, null);
                 result = worker.submit(action);
             }
             return result.get();
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.INTERRUPTED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.INTERRUPTED, failure);
         } catch (ExecutionException failure) {
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.OPERATION_FAILED, failure.getCause());
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OPERATION_FAILED,
+                    failure.getCause());
         }
     }
 
@@ -592,10 +593,10 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                     interrupted = true;
                 } catch (ExecutionException failure) {
                     cleanup = null;
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED,
+                    throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED,
                             failure.getCause());
                 } catch (TimeoutException failure) {
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+                    throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
                 }
             }
             worker.shutdown();
@@ -603,7 +604,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
             while (true) {
                 try {
                     if (!worker.awaitTermination(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
-                        throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+                        throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, null);
                     break;
                 } catch (InterruptedException failure) {
                     interrupted = true;
@@ -615,7 +616,7 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
                     privacyRegistration.close();
                     privacyReleased = true;
                 } catch (Exception failure) {
-                    throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+                    throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
                 }
             }
             resourcesClosed = true;
@@ -652,12 +653,12 @@ public final class PlaywrightTerminalSession implements BrowserTerminalSession {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (processes.stream().anyMatch(BrowserProcess::alive)) {
             if (System.nanoTime() >= deadline)
-                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+                throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, null);
             try {
                 Thread.sleep(10);
             } catch (InterruptedException failure) {
                 Thread.currentThread().interrupt();
-                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+                throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
             }
         }
         bound = null;

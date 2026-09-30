@@ -7,7 +7,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /** Edits global security settings after explicit password verification. / 重新验证密码后修改全局安全设置。 */
 public final class SecuritySettingsPane extends JPanel {
@@ -57,18 +57,18 @@ public final class SecuritySettingsPane extends JPanel {
         this.service = service;
         this.messages = messages;
         setOpaque(false);
-        add(components.sectionHeading(messages.text("security.settings"), messages.text("security.settings.hint")),
+        add(components.sectionHeading(messages, "security.settings", "security.settings.hint"),
                 BorderLayout.NORTH);
         JPanel form = components.transparent(new GridBagLayout());
         currentRow = components.transparent(new GridBagLayout());
-        components.addField(currentRow, 0, 0, messages.text("security.current"), current);
-        components.addField(form, 0, 0, messages.text("security.new"), replacement);
-        components.addField(form, 1, 0, messages.text("security.repeat"), confirmation);
+        components.addField(currentRow, 0, 0, messages, "security.current", current);
+        components.addField(form, 0, 0, messages, "security.new", replacement);
+        components.addField(form, 1, 0, messages, "security.repeat", confirmation);
         JPanel inputs = components.transparent(new BorderLayout());
         inputs.add(currentRow, BorderLayout.NORTH);
         inputs.add(form, BorderLayout.CENTER);
         add(inputs);
-        change = components.secondaryButton(messages.text("security.change"));
+        change = messages.bind(components.secondaryButton(""), "security.change");
         toggle = components.secondaryButton("");
         current.setName("security.settings.current");
         replacement.setName("security.settings.password");
@@ -96,11 +96,11 @@ public final class SecuritySettingsPane extends JPanel {
     private void update() {
         boolean configured = service.securityState().configured();
         currentRow.setVisible(configured);
-        change.setText(messages.text(configured ? "security.change" : "security.setup"));
+        messages.bind(change, configured ? "security.change" : "security.setup");
         toggle.setVisible(configured);
-        toggle.setText(messages.text(service.securityState().encryptionEnabled()
+        messages.bind(toggle, service.securityState().encryptionEnabled()
                 ? "security.disableEncryption"
-                : "security.enableEncryption"));
+                : "security.enableEncryption");
         revalidate();
         repaint();
     }

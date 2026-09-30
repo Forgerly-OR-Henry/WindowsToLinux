@@ -233,6 +233,26 @@ public final class DeploymentStaticWorkflow {
         OperationResult<Map<String, Answers>> review(ServerRef server, String sourceSha256, List<Prompt> prompts,
                 TaskContext task) throws Exception;
 
+        /** Reviews only four typed build fields while retaining the original immutable form scope. / 仅审阅四项类型化构建字段，保留原不可变表单范围。
+         * @param server original exact target / 原精确目标
+         * @param sourceSha256 original frozen manifest / 原冻结清单
+         * @param prompt exact four technical fields / 精确四项技术字段
+         * @param original original complete human answers / 原完整人工答案
+         * @param task authentic original task / 真实原任务
+         * @return explicitly reviewed answers or refusal / 明确审阅答案或拒绝
+         * @throws Exception if original view scope or identity conflicts / 原视图范围或身份冲突时 */
+        default OperationResult<Answers> reviewBuildCorrection(ServerRef server, String sourceSha256, Prompt prompt,
+                Answers original, TaskContext task) throws Exception {
+            var result = review(server, sourceSha256, List.of(prompt), task);
+            if (result.outcome() != Outcome.SUCCEEDED)
+                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+            var values = result.value().orElseThrow();
+            if (!values.keySet().equals(Set.of(prompt.componentId())))
+                throw new SecurityException("Build correction changed component scope");
+            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(values.get(prompt.componentId())),
+                    Optional.empty());
+        }
+
         /** Confirms the final server, source, every actual archive and edited value. / 确认最终服务器、来源、各实际归档及编辑值。
          * @param server exact server / 精确服务器
          * @param sourceSha256 manifest digest / 清单摘要
@@ -293,18 +313,49 @@ public final class DeploymentStaticWorkflow {
      * @throws ApiException on failed admission / 准入失败时 */
     public TaskHandle<Void> submit(ServerRef server, Draft draft, Optional<GitSource> git, Reviewer reviewer,
             boolean assisted) throws ApiException {
+        return submit(server, draft, git, reviewer, assisted, "MANUAL_REVIEW");
+    }
+
+    /** Captures the explicitly selected assisted approval policy in the original task. / 在原任务中捕获明确选择的辅助审批策略。
+     * @param server original target / 原目标
+     * @param draft original limits / 原限额
+     * @param git original Git input / 原Git输入
+     * @param reviewer actual human reviewer / 实际人工审阅者
+     * @param assisted selected assisted route / 所选辅助路线
+     * @param approvalMode explicit original policy / 明确原策略
+     * @return original task / 原任务
+     * @throws ApiException if admission or model configuration rejects / 准入或模型配置拒绝时 */
+    public TaskHandle<Void> submit(ServerRef server, Draft draft, Optional<GitSource> git, Reviewer reviewer,
+            boolean assisted, String approvalMode) throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(draft);
         Objects.requireNonNull(git);
         Objects.requireNonNull(reviewer);
+        if (!Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode))
+            throw new IllegalArgumentException("Invalid assisted approval policy");
         if (git.isPresent() && draft.logicalRootName().isBlank())
             throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_NAME_REQUIRED",
                     "Git source requires an explicit project name", Map.of(), Optional.empty()));
         return references.submitPrepared(server, task -> {
+            try {
+                new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).save(task,
+                        new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(
+                                assisted ? "ASSISTED" : "STATIC", approvalMode));
+            } catch (SQLException unavailable) {
+                return ioFailure("DEPLOYMENT_PREFERENCE_SAVE_FAILED");
+            } catch (ApiException unavailable) {
+                var code = unavailable.problem().code();
+                return new OperationResult<>(
+                        code == ProblemCode.UNKNOWN
+                                ? Outcome.UNKNOWN
+                                : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        Optional.empty(), Optional.of(unavailable.problem()));
+            }
             if (!assisted)
                 return prepare(server, draft, git, reviewer, task, false);
             try {
-                var scoped = new DeploymentStaticWorkflow(DeploymentAssistedScope.freeze(context, task), references);
+                var scoped = new DeploymentStaticWorkflow(DeploymentAssistedScope.freeze(context, task, approvalMode),
+                        references);
                 return scoped.prepare(server, draft, git, reviewer, task, true);
             } catch (ApiException unavailable) {
                 var code = unavailable.problem().code();
@@ -409,52 +460,9 @@ public final class DeploymentStaticWorkflow {
         } finally {
             if (!transferred) {
                 retainMarker |= unresolvedRemotePreparation(task);
-                closePreparation(archives, material, pinned, marker, retainMarker);
+                DeploymentStaticSourcePreparation.close(archives, material, pinned, marker, retainMarker);
             }
         }
-    }
-
-    /** Releases owned preparation resources only after their actual prior cleanup is known. / 仅在先前清理确知后释放所属准备资源。
-     * @param archives child archives still owned here / 此处仍持有的组件归档
-     * @param material original frozen source still owned here / 此处仍持有的原冻结来源
-     * @param pinned optional original Git material and checkpoint / 可选的原 Git 素材及检查点
-     * @param marker original static preparation marker / 原静态准备标记
-     * @param retainMarker unresolved Git or remote work still needs all original preparation resources / 未决 Git 或远端操作仍需全部原准备资源
-     * @throws Exception if any original resource release is unconfirmed / 任一原资源释放未确认时 */
-    private static void closePreparation(List<DeploymentSourceArchive> archives, DeploymentSourceMaterial material,
-            DeploymentGitSourceFlow.PublicationSource pinned, DeploymentStaticPreparationJournal marker,
-            boolean retainMarker) throws Exception {
-        if (retainMarker)
-            return;
-        Exception cleanup = null;
-        for (var archive : archives)
-            try {
-                archive.close();
-            } catch (Exception failure) {
-                if (cleanup == null)
-                    cleanup = failure;
-                else
-                    cleanup.addSuppressed(failure);
-            }
-        try {
-            if (material != null)
-                material.close();
-            if (pinned != null)
-                pinned.close();
-        } catch (Exception failure) {
-            if (cleanup == null)
-                cleanup = failure;
-            else
-                cleanup.addSuppressed(failure);
-        }
-        if (cleanup == null)
-            try {
-                marker.close();
-            } catch (Exception failure) {
-                cleanup = failure;
-            }
-        if (cleanup != null)
-            throw cleanup;
     }
 
     /** Completes one discovered project on its original frozen subtree. / 在原冻结子树完成一个已发现项目。
@@ -545,7 +553,10 @@ public final class DeploymentStaticWorkflow {
             return withoutValue(helper);
         Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
         return single.prepareWithinTask(task, unit, project, credentials,
-                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(publication), Optional.empty()));
+                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(publication), Optional.empty()),
+                advice == null
+                        ? Optional.empty()
+                        : Optional.of(assistance.correction(prompt, supplied.get(id), reviewer, advice)));
     }
 
     /** Completes a discovered graph only after each reviewed runtime has been reanalyzed. / 每份经审阅运行时重分析后才完成发现整图。
@@ -566,14 +577,13 @@ public final class DeploymentStaticWorkflow {
             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
             List<DiscoveredProjectComponent> discovered, Selection selection, List<DeploymentSourceArchive> archives,
             DeploymentGitSourceFlow.PublicationSource pinned, DeploymentAssistedAdvisor advice) throws Exception {
-        var prompts = new ArrayList<Prompt>();
         var facts = new HashMap<String, DeploymentProjectFacts>();
         var databaseLocal = new HashMap<String, DeploymentDatabaseStages.Local>();
         var collected = graphPrompts(server, material, discovered, selection, reviewer, task, facts, databaseLocal,
                 advice);
         if (collected.outcome() != Outcome.SUCCEEDED)
             return withoutValue(collected);
-        prompts.addAll(collected.value().orElseThrow());
+        var prompts = collected.value().orElseThrow();
         var reviewed = assistance.review(server, material.snapshot().sha256(), List.copyOf(prompts), reviewer, advice,
                 task);
         if (reviewed.outcome() != Outcome.SUCCEEDED)
@@ -605,16 +615,10 @@ public final class DeploymentStaticWorkflow {
             return schemaReviewRequired();
         if (assessment.assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
-        var byComponent = new HashMap<String, DeploymentSourceArchive>();
-        var digests = new HashMap<String, String>();
-        for (var component : discovered) {
-            var archive = new DeploymentSourceArchiver(context.source()).prepare(material, relative(component),
-                    draft.archiveBytes(), task);
-            archives.add(archive);
-            byComponent.put(component.id(), archive);
-            digests.put(component.id(), archive.sha256());
-        }
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), Map.copyOf(digests), supplied, databases,
+        var frozen = DeploymentStaticSourcePreparation.archives(material, context.source(), discovered,
+                draft.archiveBytes(), archives, task);
+        var byComponent = frozen.archives();
+        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), frozen.digests(), supplied, databases,
                 gitReview(pinned), task);
         if (confirmed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(confirmed);
@@ -642,9 +646,15 @@ public final class DeploymentStaticWorkflow {
         if (helper.outcome() != Outcome.SUCCEEDED)
             return withoutValue(helper);
         Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
+        var corrections = new LinkedHashMap<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedBuildCorrection>();
+        if (advice != null)
+            for (var prompt : prompts)
+                corrections.put(prompt.componentId(),
+                        assistance.correction(prompt, supplied.get(prompt.componentId()), reviewer, advice));
         return multi.prepareWithinTask(task, server, project, owners, credentials, healthId,
                 runtime.health(completed(healthPrompt, supplied.get(healthId))),
-                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plans), Optional.empty()));
+                original -> new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plans), Optional.empty()),
+                Map.copyOf(corrections));
     }
 
     /** Prepares all locally verified databases under one durable original-task index. / 在一个持久原任务索引下准备全部本机已核数据库。
@@ -745,7 +755,7 @@ public final class DeploymentStaticWorkflow {
      * @throws ApiException if original access or persistence fails / 原访问或持久化失败时 */
     private OperationResult<Void> ensureHelper(ServerRef server, TaskContext task) throws ApiException {
         try (var session = context.linux().connect(server, task)) {
-            var checked = new DeploymentHelperBootstrap(context.tasks(), task, server, session, context.interaction())
+            var checked = new DeploymentProtocolBootstrap(context.tasks(), task, server, session, context.interaction())
                     .ensure();
             return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
         }
@@ -756,7 +766,7 @@ public final class DeploymentStaticWorkflow {
      * @return whether an effect still needs original recovery / 是否仍需原恢复核对效果 */
     private boolean unresolvedRemotePreparation(TaskContext task) {
         try {
-            var helper = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
+            var helper = DeploymentProtocolBootstrapJournal.find(context.tasks(), task);
             var database = DeploymentNativeDatabaseJournal.find(context.tasks(), task);
             var indexed = DeploymentDatabasePlanJournal.find(context.tasks(), task);
             if (indexed.isPresent() && !new DeploymentDatabaseStages(context).releaseKnown(task, indexed.orElseThrow()))
@@ -795,7 +805,7 @@ public final class DeploymentStaticWorkflow {
      * @throws ApiException if original evidence cannot be read / 原依据无法读取时 */
     private OperationResult<DeploymentReferenceFlow.PreparedPublication> priorEffects(
             OperationResult<DeploymentReferenceFlow.PreparedPublication> result, TaskContext task) throws ApiException {
-        var retained = DeploymentHelperBootstrapJournal.find(context.tasks(), task);
+        var retained = DeploymentProtocolBootstrapJournal.find(context.tasks(), task);
         var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task);
         if (retained.isPresent() && "DISPATCHED".equals(retained.orElseThrow().facts().phase())) {
             var facts = retained.orElseThrow().facts();

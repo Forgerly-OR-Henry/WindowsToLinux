@@ -24,22 +24,11 @@ import com.sun.source.tree.Tree;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import gold.debug.windowstolinux.app.main.diagnostic.DesktopSystemFailureType;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
-import gold.debug.windowstolinux.app.service.failure.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallFailureType;
 import gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.ai.AiAnalysisFailureType;
-import gold.debug.windowstolinux.shared.backup.contract.validation.BackupFailureType;
-import gold.debug.windowstolinux.shared.backup.crypto.BackupSecretFailureType;
-import gold.debug.windowstolinux.shared.config.ConfigurationFailureType;
-import gold.debug.windowstolinux.shared.deploy.error.DeploymentExecutionFailureType;
-import gold.debug.windowstolinux.shared.git.GitSnapshotFailureType;
-import gold.debug.windowstolinux.shared.linux.error.LinuxOperationFailureType;
-import gold.debug.windowstolinux.shared.linux.error.NativeDatabaseFailureType;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentApprovalFailureType;
-import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
-import gold.debug.windowstolinux.shared.source.archive.SourceArchiveFailureType;
 import org.junit.jupiter.api.Test;
 
 /** Guards the shared failure vocabulary without centralizing module-specific interpretation. / 在不集中模块特定解释的前提下守护共用失败词汇。 */
@@ -61,30 +50,24 @@ class FailureContractArchitectureTest {
             .compile("catch\\s*\\([^)]*\\b(?:ignored|alsoIgnored)\\b[^)]*\\)");
 
     private static final Map<Class<? extends Enum<?>>, String> FAILURE_TYPES = Map.ofEntries(
-            Map.entry(AiAnalysisFailureType.class, "ai"), Map.entry(BackupFailureType.class, "backup"),
-            Map.entry(BackupSecretFailureType.class, "secret"), Map.entry(DesktopUpdateFailureType.class, "windows"),
+            Map.entry(DesktopUpdateFailureType.class, "windows"),
             Map.entry(DesktopUninstallFailureType.class, "windows"),
-            Map.entry(NativeDatabaseFailureType.class, "linux"),
             Map.entry(ApplicationServiceFailureType.class, "service"),
-            Map.entry(ConfigurationFailureType.class, "configuration"),
-            Map.entry(DeploymentApprovalFailureType.class, "deployment"),
-            Map.entry(DeploymentExecutionFailureType.class, "deployment"),
             Map.entry(DesktopPersistenceFailureType.class, "persistence"),
-            Map.entry(DesktopSystemFailureType.class, "desktop"), Map.entry(GitSnapshotFailureType.class, "git"),
-            Map.entry(LinuxOperationFailureType.class, "linux"), Map.entry(SourceArchiveFailureType.class, "source"),
+            Map.entry(DesktopSystemFailureType.class, "desktop"),
             Map.entry(WindowsWorkspaceFailureType.class, "windows"));
 
     @Test
     void failureDefinitionsHaveStableUniqueCodesAndLocalizedMessages() throws Exception {
-        List<FailureDefinition> definitions = definitions();
+        List<FailureMetadata> definitions = definitions();
         Set<String> codes = new HashSet<>();
         Properties english = messages("Messages.properties");
         Properties chinese = messages("Messages_zh_CN.properties");
 
         assertEquals(english.stringPropertyNames(), chinese.stringPropertyNames(),
                 "English and Simplified Chinese message catalogs must have identical keys");
-        for (FailureDefinition definition : definitions) {
-            Class<?> owner = definition.getClass();
+        for (FailureMetadata definition : definitions) {
+            Class<?> owner = definition.owner();
             String expectedDomain = FAILURE_TYPES.get(owner);
             assertTrue(owner.getSimpleName().endsWith("FailureType"), owner::getName);
             assertTrue(CODE.matcher(definition.code()).matches(), definition::code);
@@ -112,10 +95,9 @@ class FailureContractArchitectureTest {
     void customExceptionsExposeOnlyTheStructuredFailureContract() throws Exception {
         List<String> violations = exceptionViolations(ArchitectureSourceInspector.production());
         assertTrue(violations.isEmpty(), () -> "custom exception violations: " + violations);
-        assertFalse(Files.exists(projectRoot().resolve(
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/message/LocalizedFailure.java")));
-        assertFalse(Files.exists(projectRoot().resolve(
-                "src/shared/model/src/main/java/gold/debug/windowstolinux/shared/model/message/LocalizedOperationException.java")));
+        assertTrue(ArchitectureSourceInspector.productionPaths().stream()
+                .noneMatch(path -> Set.of("LocalizedFailure.java", "LocalizedOperationException.java")
+                        .contains(path.getFileName().toString())));
     }
 
     @Test
@@ -128,9 +110,10 @@ class FailureContractArchitectureTest {
     void missingAndStaleRegistrationsCannotPass() throws Exception {
         var sources = ArchitectureSourceInspector.production();
         var registered = new HashSet<>(FAILURE_TYPES.keySet().stream().map(Class::getCanonicalName).toList());
-        registered.remove(BackupFailureType.class.getCanonicalName());
-        assertEquals(Set.of(BackupFailureType.class.getCanonicalName()), registrationDifferences(sources, registered));
-        registered.add(BackupFailureType.class.getCanonicalName());
+        registered.remove(DesktopUpdateFailureType.class.getCanonicalName());
+        assertEquals(Set.of(DesktopUpdateFailureType.class.getCanonicalName()),
+                registrationDifferences(sources, registered));
+        registered.add(DesktopUpdateFailureType.class.getCanonicalName());
         registered.add("unavailable.StaleFailureType");
         assertEquals(Set.of("unavailable.StaleFailureType"), registrationDifferences(sources, registered));
     }
@@ -139,16 +122,15 @@ class FailureContractArchitectureTest {
     void newlyAddedNestedFailureDefinitionsCannotEscapeRegistration() throws Exception {
         var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.FailureFixtures", """
                 package fixture;
-                import gold.debug.windowstolinux.shared.model.failure.*;
+                import gold.debug.windowstolinux.appapi.task.Problem;
                 class FailureFixtures {
-                    enum AddedFailureType implements FailureDefinition {
+                    enum AddedFailureType {
                         NEW;
                         public String code() { return "fixture.operation.added"; }
                         public String domain() { return "fixture"; }
                         public String phase() { return "operation"; }
                         public String messageKey() { return "fixture.error.added"; }
-                        public FailureSeverityLevel severity() { return FailureSeverityLevel.ERROR; }
-                        public FailureRecoveryAction recoveryAction() { return FailureRecoveryAction.NONE; }
+                        public Problem problem(java.util.UUID operation, String diagnostic) { return null; }
                     }
                 }
                 """));
@@ -157,20 +139,18 @@ class FailureContractArchitectureTest {
 
     @Test
     void nestedAndIndirectExceptionsAreCheckedByType() throws Exception {
-        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.ExceptionFixtures",
-                """
-                        package fixture;
-                        class ExceptionFixtures {
-                            static class MissingContractException extends RuntimeException { }
-                            static class IndirectException extends MissingContractException { }
-                            static class StructuredException extends RuntimeException
-                                    implements gold.debug.windowstolinux.shared.model.failure.FailureCarrier {
-                                public gold.debug.windowstolinux.shared.model.failure.FailureDescriptor failure() { return null; }
-                            }
-                            static class InheritedException extends StructuredException { }
-                            static class WrongName extends StructuredException { }
-                        }
-                        """));
+        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.ExceptionFixtures", """
+                package fixture;
+                class ExceptionFixtures {
+                    static class MissingContractException extends RuntimeException { }
+                    static class IndirectException extends MissingContractException { }
+                    static class StructuredException extends RuntimeException {
+                        public gold.debug.windowstolinux.appapi.task.Problem problem() { return null; }
+                    }
+                    static class InheritedException extends StructuredException { }
+                    static class WrongName extends StructuredException { }
+                }
+                """));
         var violations = exceptionViolations(sources);
         assertTrue(violations.stream().anyMatch(value -> value.contains("MissingContractException")));
         assertTrue(violations.stream().anyMatch(value -> value.contains("IndirectException")));
@@ -182,26 +162,53 @@ class FailureContractArchitectureTest {
     private static Set<String> registrationDifferences(List<ArchitectureSourceInspector.JavaSource> sources,
             Set<String> registered) {
         Set<String> discovered = new HashSet<>();
+        Set<String> invalid = new HashSet<>();
         sources.stream().flatMap(source -> source.types().stream())
-                .filter(type -> type.failureDefinition() && type.kind() != Tree.Kind.INTERFACE).forEach(type -> {
+                .filter(type -> type.kind() != Tree.Kind.INTERFACE
+                        && (type.problemFactory() || type.simpleName().endsWith("FailureType")))
+                .filter(type -> !type.name().equals(SecretStoreFailureType.class.getCanonicalName())).forEach(type -> {
                     assertEquals(Tree.Kind.ENUM, type.kind(), type.name() + " must be an enum");
                     discovered.add(type.name());
+                    if (!type.problemFactory())
+                        invalid.add(type.name());
                 });
         Set<String> differences = new HashSet<>(discovered);
         differences.removeAll(registered);
         Set<String> stale = new HashSet<>(registered);
         stale.removeAll(discovered);
         differences.addAll(stale);
+        differences.addAll(invalid);
         return differences;
+    }
+
+    @Test
+    void registeredFailureNamesCannotReplaceTheActualSdkFactory() throws Exception {
+        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.InvalidFailures", """
+                package fixture;
+                class InvalidFailures {
+                    enum MissingFailureType { BAD }
+                    enum ForeignFailureType {
+                        BAD;
+                        public SameNamed.Problem problem(java.util.UUID id) { return null; }
+                    }
+                    enum WrongIdentityFailureType {
+                        BAD;
+                        public gold.debug.windowstolinux.appapi.task.Problem problem(String id) { return null; }
+                    }
+                }
+                class SameNamed { record Problem(String value) { } }
+                """));
+        var names = Set.of("fixture.InvalidFailures.MissingFailureType", "fixture.InvalidFailures.ForeignFailureType",
+                "fixture.InvalidFailures.WrongIdentityFailureType");
+        assertEquals(names, registrationDifferences(sources, names));
     }
 
     private static List<String> exceptionViolations(List<ArchitectureSourceInspector.JavaSource> sources) {
         List<String> violations = new ArrayList<>();
         sources.stream().flatMap(source -> source.types().stream())
                 .filter(ArchitectureSourceInspector.JavaType::throwable).forEach(type -> {
-                    if (!type.failureCarrier() && !type.publicProblem()
-                            && !(type.sqlException() && SQL_BRIDGE_TYPES.contains(type.name())))
-                        violations.add(type.name() + " does not expose FailureCarrier or public Problem");
+                    if (!type.publicProblem() && !(type.sqlException() && SQL_BRIDGE_TYPES.contains(type.name())))
+                        violations.add(type.name() + " does not expose an actual public SDK Problem contract");
                     if (!type.simpleName().matches("[A-Z][A-Za-z0-9]+Exception"))
                         violations.add(type.name() + " does not name its failure boundary");
                 });
@@ -308,9 +315,38 @@ class FailureContractArchitectureTest {
         assertTrue(violations.isEmpty(), () -> "failure boundary violations: " + violations);
     }
 
-    private static List<FailureDefinition> definitions() {
-        return FAILURE_TYPES.keySet().stream().flatMap(type -> Stream.of(type.getEnumConstants()))
-                .map(FailureDefinition.class::cast).sorted(Comparator.comparing(FailureDefinition::code)).toList();
+    private record FailureMetadata(Class<?> owner, String code, String domain, String phase, String messageKey,
+            String severity, String recoveryAction) {
+    }
+
+    private static List<FailureMetadata> definitions() throws Exception {
+        var definitions = new ArrayList<FailureMetadata>();
+        for (var owner : FAILURE_TYPES.keySet())
+            for (var value : owner.getEnumConstants()) {
+                var identity = java.util.UUID.randomUUID();
+                var factory = java.util.Arrays.stream(owner.getMethods())
+                        .filter(method -> method.getName().equals("problem")
+                                && method.getReturnType() == gold.debug.windowstolinux.appapi.task.Problem.class)
+                        .findFirst().orElseThrow();
+                Object[] arguments = factory.getParameterCount() == 3
+                        ? new Object[]{identity, Map.of(), "fixture"}
+                        : new Object[]{identity, "fixture"};
+                var problem = (gold.debug.windowstolinux.appapi.task.Problem) factory.invoke(value, arguments);
+                var metadata = new FailureMetadata(owner, text(owner, value, "code"), text(owner, value, "domain"),
+                        text(owner, value, "phase"), text(owner, value, "messageKey"), text(owner, value, "severity"),
+                        text(owner, value, "recoveryAction"));
+                assertEquals(metadata.code(), problem.eventCode());
+                assertEquals(identity, problem.diagnosticId().orElseThrow());
+                assertEquals(metadata.messageKey(), problem.context().get("messageKey"));
+                assertEquals(metadata.phase(), problem.context().get("phase"));
+                definitions.add(metadata);
+            }
+        definitions.sort(Comparator.comparing(FailureMetadata::code));
+        return List.copyOf(definitions);
+    }
+
+    private static String text(Class<?> owner, Object value, String accessor) throws Exception {
+        return owner.getMethod(accessor).invoke(value).toString();
     }
 
     private static Properties messages(String fileName) throws IOException {
@@ -324,7 +360,7 @@ class FailureContractArchitectureTest {
         return properties;
     }
 
-    private static void writeCatalog(List<FailureDefinition> definitions) throws IOException {
+    private static void writeCatalog(List<FailureMetadata> definitions) throws IOException {
         Path target = Path.of("target").toAbsolutePath().normalize();
         Files.createDirectories(target);
         List<String> lines = new ArrayList<>(
@@ -332,18 +368,14 @@ class FailureContractArchitectureTest {
                         "| Code | Owner | Phase | Severity | Recovery | Message key |",
                         "| --- | --- | --- | --- | --- | --- |"));
         definitions.forEach(value -> lines
-                .add("| " + value.code() + " | " + value.getClass().getSimpleName() + " | " + value.phase() + " | "
+                .add("| " + value.code() + " | " + value.owner().getSimpleName() + " | " + value.phase() + " | "
                         + value.severity() + " | " + value.recoveryAction() + " | " + value.messageKey() + " |"));
         Files.write(target.resolve("failure-catalog.md"), lines, StandardCharsets.UTF_8);
     }
 
     private static List<Path> productionSources() throws IOException {
-        try (Stream<Path> files = Files.walk(projectRoot().resolve("src"))) {
-            return files.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java"))
-                    .filter(path -> path.toString()
-                            .contains("src" + java.io.File.separator + "main" + java.io.File.separator + "java"))
-                    .toList();
-        }
+        return ArchitectureSourceInspector.production().stream().map(ArchitectureSourceInspector.JavaSource::path)
+                .toList();
     }
 
     private static Path projectRoot() {

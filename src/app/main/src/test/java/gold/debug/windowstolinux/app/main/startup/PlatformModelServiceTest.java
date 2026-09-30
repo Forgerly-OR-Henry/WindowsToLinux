@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -124,6 +124,54 @@ class PlatformModelServiceTest {
                         service.listAiPurpose(AiPurposeType.VISION));
                 assertEquals(2, fixture.calls.get());
             }
+        }
+    }
+
+    @Test
+    void emptyKeyRenamePreservesRevisionAndDisabledRouteWhileNewKeyAdvancesRevision() throws Exception {
+        try (var fixture = new PlatformAiServiceTest.Fixture();
+                var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            var service = setup(runtime);
+            answer(fixture);
+            char[] firstKey = "first-key".toCharArray();
+            assertEquals(Outcome.SUCCEEDED, done(service.verifyAndSave(profile(fixture), "First", firstKey,
+                    AiCapabilityType.TEXT, 128)).outcome());
+            assertArrayEquals(new char[firstKey.length], firstKey);
+            var first = service.listAiConfigurations().getFirst();
+            var assignments = List.of(new AiPurposeAssignment("sample", false));
+            service.saveAiPurpose(AiPurposeType.DEPLOYMENT, assignments);
+            byte[] original;
+            try (var stored = runtime.persistence().security().find(first.profile().credentialKey()).orElseThrow()) {
+                original = stored.payload();
+            }
+            assertEquals(Outcome.SUCCEEDED, done(service.verifyAndSave(first.profile(), "Renamed", new char[0],
+                    AiCapabilityType.TEXT, 128)).outcome());
+            var renamed = service.listAiConfigurations().getFirst();
+            assertEquals(first.revision(), renamed.revision());
+            assertEquals(first.profile().credentialKey(), renamed.profile().credentialKey());
+            assertEquals("Renamed", renamed.name());
+            try (var stored = runtime.persistence().security().find(first.profile().credentialKey()).orElseThrow()) {
+                assertArrayEquals(original, stored.payload());
+            }
+            assertEquals(assignments, service.listAiPurpose(AiPurposeType.DEPLOYMENT));
+            char[] secondKey = "second-key".toCharArray();
+            assertEquals(Outcome.SUCCEEDED, done(service.verifyAndSave(renamed.profile(), "Renamed", secondKey,
+                    AiCapabilityType.TEXT, 128)).outcome());
+            assertArrayEquals(new char[secondKey.length], secondKey);
+            var changed = service.listAiConfigurations().getFirst();
+            assertTrue(changed.revision() > renamed.revision());
+            assertTrue(changed.textVerifiedAt().isPresent());
+            assertEquals(assignments, service.listAiPurpose(AiPurposeType.DEPLOYMENT));
+            try (var operation = runtime.security().enterOperation(); var store = runtime.security().openCredentials()) {
+                char[] actual = store.read(changed.profile().credentialKey()).orElseThrow();
+                try {
+                    assertArrayEquals("second-key".toCharArray(), actual);
+                } finally {
+                    Arrays.fill(actual, '\0');
+                }
+            }
+            assertEquals(3, fixture.calls.get(), "Each selected capability challenge is sent once");
+            assertTrue(fixture.requests.isEmpty(), "The challenge handler consumed every original request");
         }
     }
 

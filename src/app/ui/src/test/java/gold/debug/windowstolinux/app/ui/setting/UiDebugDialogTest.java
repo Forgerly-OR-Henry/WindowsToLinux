@@ -21,7 +21,7 @@ import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import org.junit.jupiter.api.Test;
 
 class UiDebugDialogTest {

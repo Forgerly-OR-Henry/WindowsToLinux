@@ -10,7 +10,7 @@ import java.util.Optional;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * Source-backed, reviewable runtime values inferred without running project content.
@@ -28,7 +28,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
 public record DeploymentRuntimeAssessment(DeploymentProjectKind projectType, Map<RuntimeInputType, String> values,
         Optional<Integer> suggestedHealthPort, Map<Integer, Integer> suggestedContainerPorts,
         List<DeploymentRuntimeDefinition.ManagedVolume> suggestedManagedVolumes, List<AnalysisEvidence> evidence,
-        List<LocalizedMessage> requiredUserInput) {
+        List<DeploymentLocalizedMessage> requiredUserInput) {
     /**
      * Creates a source-backed runtime suggestion. / 创建源码依据的运行时建议。
      *

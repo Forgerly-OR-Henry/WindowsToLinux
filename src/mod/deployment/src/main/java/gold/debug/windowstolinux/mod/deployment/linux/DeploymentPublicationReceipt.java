@@ -2,15 +2,13 @@ package gold.debug.windowstolinux.mod.deployment.linux;
 
 import java.util.Map;
 import java.util.Optional;
-
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** Classifies complete bounded publication receipts without changing original outcomes. / 分类完整有界发布回执，不改变原结果。 */
 final class DeploymentPublicationReceipt {
     /** Prevents construction of the receipt utility. / 禁止构造回执工具。 */
-    private DeploymentPublicationReceipt() {
-    }
+    private DeploymentPublicationReceipt() { }
 
     /** Requires an observed untruncated successful process exit. / 要求已观察且未截断的成功进程退出。
      * @param result original remote result / 原远端结果
@@ -55,7 +53,6 @@ final class DeploymentPublicationReceipt {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
                 Optional.of(new Problem(code, event, "Reviewed publication step failed", Map.of(), Optional.empty())));
     }
-
     /** Decodes unique bounded helper key-value lines without accepting conflicting evidence. / 解码唯一有界helper键值行而不接受冲突证据。
      * @param output complete bounded stdout / 完整有界标准输出
      * @return unique fields or empty on malformed input / 唯一字段；畸形输入为空 */

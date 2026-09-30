@@ -8,7 +8,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModRestartLedger;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.appapi.db.*;
 import gold.debug.windowstolinux.appapi.task.*;

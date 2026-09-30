@@ -5,9 +5,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDataPath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.ComponentIsolationSpecification;
 
 /**
@@ -30,7 +30,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.compo
  */
 public record ComponentAnalysisRequest(String componentId, String relativeSourceRoot, DeploymentProjectKind projectType,
         Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths, Set<Integer> ports,
-        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentDataPath> dataPaths,
+        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentStoragePath> dataPaths,
         Set<String> dependencies, boolean required, ComponentIsolationSpecification isolation) {
     /**
      * Validates a bounded explicit component selection without accessing source. / 在不访问源码的情况下验证有界显式组件选择。

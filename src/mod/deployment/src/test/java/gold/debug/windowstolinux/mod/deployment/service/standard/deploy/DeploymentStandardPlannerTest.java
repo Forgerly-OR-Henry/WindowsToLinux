@@ -310,8 +310,8 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                         container, Optional.empty(), request.limits(), request.review(), true, true);
                                 assertEquals(List.of(sameBinding), reused.resources().fileBindings());
                                 var incompatible = new DeploymentFileBinding(
-                                        "demo-data", new DeploymentDataPath("/other",
-                                                DeploymentDataPath.AccessMode.READ_WRITE, "files", true),
+                                        "demo-data", new DeploymentStoragePath("/other",
+                                                DeploymentStoragePath.AccessMode.READ_WRITE, "files", true),
                                         DeploymentStorageLocation.defaults());
                                 assertThrows(IllegalArgumentException.class,
                                         () -> new ReviewedDeploymentRequest(server, dockerFacts, material, archive,
@@ -320,9 +320,9 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                                         Optional.of(List.of())),
                                                 container, Optional.empty(), request.limits(), request.review(), true,
                                                 true));
-                                var nested = new DeploymentFileBinding(
-                                        "nested", new DeploymentDataPath("/data/nested",
-                                                DeploymentDataPath.AccessMode.READ_WRITE, "files", true),
+                                var nested = new DeploymentFileBinding("nested",
+                                        new DeploymentStoragePath("/data/nested",
+                                                DeploymentStoragePath.AccessMode.READ_WRITE, "files", true),
                                         DeploymentStorageLocation.defaults());
                                 assertThrows(IllegalArgumentException.class, () -> new ReviewedDeploymentRequest(server,
                                         dockerFacts, material, archive, request.configuration(), List.of(),

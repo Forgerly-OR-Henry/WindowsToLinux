@@ -3,7 +3,6 @@ package gold.debug.windowstolinux.app.service.contract.profile;
 import java.util.Objects;
 
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.shared.linux.connection.SshEndpoint;
 
 /**
  * Saved non-secret desktop connection profile.
@@ -51,17 +50,15 @@ public record ServerProfile(String id, String host, int sshPort, String username
             throw new IllegalArgumentException("invalid server display name");
         Objects.requireNonNull(credentialKey, "credentialKey");
 
-        new SshEndpoint(id, host, sshPort, username);
-    }
-
-    /**
-     * Builds ssh endpoint from the supplied endpoint inputs.
-     * <p>根据所提供端点输入构建SSH端点。
-     *
-     * @return the operation result / 操作结果
-     */
-    public SshEndpoint endpoint() {
-        return new SshEndpoint(id, host, sshPort, username);
+        String checkedId = Objects.requireNonNull(id, "id").toLowerCase(java.util.Locale.ROOT);
+        String checkedHost = Objects.requireNonNull(host, "host").trim();
+        String checkedUser = Objects.requireNonNull(username, "username").trim();
+        if (!checkedId.matches("[a-z0-9][a-z0-9-]{0,62}"))
+            throw new IllegalArgumentException("id must use lowercase letters, digits and hyphens");
+        if (checkedHost.isBlank() || checkedHost.contains(" ") || checkedUser.isBlank() || checkedUser.contains("\n"))
+            throw new IllegalArgumentException("host and username must be non-blank plain values");
+        if (sshPort < 1 || sshPort > 65535)
+            throw new IllegalArgumentException("port must be between 1 and 65535");
     }
 
     /**

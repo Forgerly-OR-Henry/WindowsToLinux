@@ -359,7 +359,7 @@ class SftpTransferTest {
     static final class Fixture implements AutoCloseable {
         final Path remote;
 
-        final LoopbackSshServer server;
+        final LinuxLoopbackSshServer server;
 
         final List<CloseableExecutorService> executors = new CopyOnWriteArrayList<>();
 
@@ -406,7 +406,7 @@ class SftpTransferTest {
             });
             subsystem.addSftpEventListener(listener);
             subsystem.setFileSystemAccessor(accessor);
-            server = new LoopbackSshServer(directory, ssh -> {
+            server = new LinuxLoopbackSshServer(directory, ssh -> {
                 ssh.setFileSystemFactory(new VirtualFileSystemFactory(remote));
                 ssh.setSubsystemFactories(List.of(subsystem));
                 SftpModuleProperties.SFTP_VERSION.set(ssh, version);

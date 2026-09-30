@@ -33,7 +33,7 @@ public final class DeploymentGraphRepository {
         Objects.requireNonNull(graph);
         Objects.requireNonNull(updatedAt);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> save(connection, graph, updatedAt));
+        DeploymentStorageTransaction.execute(connection, () -> save(connection, graph, updatedAt));
     }
 
     /** Reads one consistent complete graph; uncommitted or retained drafts are not applications. / 读取一个一致的完整图，未提交或保留草稿不算应用。
@@ -167,7 +167,7 @@ public final class DeploymentGraphRepository {
                 statement.setString(2, component.componentId());
                 statement.setString(3, component.unit().id());
                 statement.setBytes(4, new DeploymentRuntimeCodec().write(component.reviewedRuntime()));
-                statement.setBytes(5, new DeploymentDataPathCodec().write(component.dataPaths()));
+                statement.setBytes(5, new DeploymentStoragePathCodec().write(component.dataPaths()));
                 statement.setBytes(6, new DeploymentResourceCodec().write(component.resources()));
                 statement.addBatch();
             }
@@ -246,7 +246,7 @@ public final class DeploymentGraphRepository {
                             new DeploymentRuntimeCodec().read(
                                     DeploymentPayloadReader.read(rows, "reviewed_runtime_payload"),
                                     runtime.healthCheck()),
-                            new DeploymentDataPathCodec()
+                            new DeploymentStoragePathCodec()
                                     .read(DeploymentPayloadReader.read(rows, "reviewed_data_paths_payload")),
                             new DeploymentResourceCodec()
                                     .read(DeploymentPayloadReader.read(rows, "reviewed_resource_bindings_payload"))));

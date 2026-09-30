@@ -48,7 +48,7 @@ public final class DeploymentConfigurationRepository {
     public void save(TaskContext task, DeploymentConfigurationSnapshot snapshot) throws SQLException, ApiException {
         Objects.requireNonNull(snapshot, "snapshot");
         Connection connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> save(connection, snapshot));
+        DeploymentStorageTransaction.execute(connection, () -> save(connection, snapshot));
     }
 
     /**
@@ -357,7 +357,8 @@ public final class DeploymentConfigurationRepository {
     public void saveAndBindRelease(TaskContext task, DeploymentConfigurationSnapshot snapshot, String releaseIdentity)
             throws SQLException, ApiException {
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> saveAndBindRelease(connection, snapshot, releaseIdentity));
+        DeploymentStorageTransaction.execute(connection,
+                () -> saveAndBindRelease(connection, snapshot, releaseIdentity));
     }
 
     /** Opens only the bound deployment generation through the original task. / 仅经原任务打开绑定的部署代次。

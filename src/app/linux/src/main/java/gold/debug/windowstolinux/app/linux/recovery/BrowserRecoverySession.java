@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.linux.recovery;
 
-import static gold.debug.windowstolinux.app.linux.recovery.RecoverySnapshot.State.*;
+import static gold.debug.windowstolinux.app.linux.recovery.BrowserRecoverySnapshot.State.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -49,7 +49,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * Journal.
      * <p>日志。
      */
-    private final Consumer<RecoverySnapshot> journal;
+    private final Consumer<BrowserRecoverySnapshot> journal;
 
     /**
      * Server identity or selected server configuration.
@@ -85,13 +85,13 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * Completion.
      * <p>完成。
      */
-    private final CompletableFuture<RecoverySnapshot> completion = new CompletableFuture<>();
+    private final CompletableFuture<BrowserRecoverySnapshot> completion = new CompletableFuture<>();
 
     /**
      * Immutable observation or configuration revision used by the operation.
      * <p>操作使用的不可变观测或配置修订。
      */
-    private volatile RecoverySnapshot snapshot;
+    private volatile BrowserRecoverySnapshot snapshot;
 
     /**
      * Stop.
@@ -123,7 +123,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param lock lock / 锁
      */
     public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
             ReentrantLock lock) {
         this(browser, ai, probe, journal, server, lock, System::nanoTime);
     }
@@ -141,7 +141,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param clock clock / 时钟
      */
     public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
             ReentrantLock lock, LongSupplier clock) {
         this(browser, ai, probe, journal, server, lock, clock, UUID.randomUUID(), null);
     }
@@ -154,7 +154,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param server admitted server / 准入服务器
      * @param task original central context / 原中央上下文 */
     public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
             gold.debug.windowstolinux.appapi.task.TaskContext task) {
         this(browser, ai, probe, journal, server, new ReentrantLock(), System::nanoTime, task.id(),
                 task.cancellation());
@@ -171,7 +171,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param id original session identity / 原会话身份
      * @param cancellation optional central cancellation / 可选中央取消 */
     private BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-            Supplier<RecoveryProbeResult> probe, Consumer<RecoverySnapshot> journal, RecoveryTarget server,
+            Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
             ReentrantLock lock, LongSupplier clock, UUID id,
             gold.debug.windowstolinux.appapi.task.CancellationToken cancellation) {
         state = new RecoverySessionState(id);
@@ -193,7 +193,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      *
      * @return immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
      */
-    public RecoverySnapshot snapshot() {
+    public BrowserRecoverySnapshot snapshot() {
         return snapshot;
     }
 
@@ -305,7 +305,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @throws InterruptedException if the waiting or worker thread is interrupted / 等待线程或工作线程被中断时
      * @throws ExecutionException if the awaited worker completed exceptionally / 所等待的工作线程异常结束时
      */
-    public RecoverySnapshot await() throws InterruptedException, ExecutionException {
+    public BrowserRecoverySnapshot await() throws InterruptedException, ExecutionException {
         return completion.get();
     }
 
@@ -614,7 +614,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param phase stage associated with the result or failure / 结果或失败所属阶段
      * @param code stable machine-readable classification code / 稳定的机器可读分类码
      */
-    private void change(RecoverySnapshot.State phase, String code) {
+    private void change(BrowserRecoverySnapshot.State phase, String code) {
         state.phase = phase;
         state.code = code;
         publish(code);

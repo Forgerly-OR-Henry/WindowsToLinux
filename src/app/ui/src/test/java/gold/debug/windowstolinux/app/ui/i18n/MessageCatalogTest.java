@@ -17,16 +17,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import gold.debug.windowstolinux.shared.ai.collaboration.role.AiCollaborationRoleKind;
-import gold.debug.windowstolinux.shared.model.analysis.EvidenceConfidenceLevel;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentStatus;
-import gold.debug.windowstolinux.shared.model.deployment.DeploymentTraceEvent;
-import gold.debug.windowstolinux.shared.model.language.LanguageEcosystemType;
-import gold.debug.windowstolinux.shared.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleAction;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
 import org.junit.jupiter.api.Test;
 
 class MessageCatalogTest {
@@ -86,34 +77,15 @@ class MessageCatalogTest {
     }
 
     @Test
-    void mapsEveryStructuredUiCodeInBothLanguages() {
-        for (AiCollaborationRoleKind value : AiCollaborationRoleKind.values()) {
-            assertCode("ai.role." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (EvidenceConfidenceLevel value : EvidenceConfidenceLevel.values()) {
-            assertCode("analysis.confidence." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (DeploymentStatus value : DeploymentStatus.values()) {
-            assertCode("deployment.status." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (DeploymentTraceEvent value : DeploymentTraceEvent.values()) {
-            assertCode("deployment.step." + value.code());
-        }
-        for (LifecycleAction value : LifecycleAction.values()) {
-            assertCode("lifecycle.action." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (RuntimeState value : RuntimeState.values()) {
-            assertCode("runtime.state." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (AutostartState value : AutostartState.values()) {
-            assertCode("autostart.state." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (LanguageEcosystemType value : LanguageEcosystemType.values()) {
-            assertCode("language.ecosystem." + value.name().toLowerCase(Locale.ROOT));
-        }
-        for (SourceLanguageType value : SourceLanguageType.values()) {
-            assertCode("language.source." + value.name().toLowerCase(Locale.ROOT));
-        }
+    void mapsEveryPlatformUiCodeInBothLanguages() {
+        for (var value : gold.debug.windowstolinux.app.ui.display.ThemeMode.values())
+            assertCode("theme." + value.name().toLowerCase(Locale.ROOT));
+        for (var value : gold.debug.windowstolinux.app.ai.catalog.AiPurposeType.values())
+            assertCode("ai.purpose." + value.name());
+        for (var value : gold.debug.windowstolinux.app.ai.catalog.AiCapabilityType.values())
+            assertCode("ai.capability." + value.name().toLowerCase(Locale.ROOT));
+        for (var value : gold.debug.windowstolinux.appapi.task.TaskState.values())
+            assertCode("platform.task." + value.name());
     }
 
     @Test

@@ -7,12 +7,15 @@ import java.util.Optional;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.task.LogCategory;
 import gold.debug.windowstolinux.appapi.ui.PageSpec;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApi;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPageService;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApiProvider;
+import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticTaskRecovery;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
@@ -20,6 +23,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.Deploym
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentAgentPage;
+import gold.debug.windowstolinux.mod.deployment.ui.DeploymentApplicationsPage;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
 
 /** Owns official deployment initialization and its platform-bound lifecycle. / 持有官方部署初始化及绑定平台的生命周期。 */
@@ -77,6 +81,8 @@ public final class Mod implements ModEntrypoint {
         var pageTasks = new DeploymentStaticPageService(context, workflow);
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
+        var applicationTasks = new DeploymentApplicationsService(context);
+        var deploymentApi = new DeploymentApiProvider(context);
         try {
             registrations.add(context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
                     new DeploymentStaticTaskRecovery(context, flow)));
@@ -89,13 +95,20 @@ public final class Mod implements ModEntrypoint {
             registrations.add(context.tasks().registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, autonomous));
             registrations.add(
                     context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
+            registrations
+                    .add(context.tasks().registerRecovery(DeploymentApplicationsService.QUERY_TASK, applicationTasks));
+            registrations
+                    .add(context.tasks().registerRecovery(DeploymentApplicationsService.ACTION_TASK, applicationTasks));
+            registrations.add(context.services().register(DeploymentApi.class, deploymentApi));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
-                registrations.add(context.ui().register(
-                        new PageSpec("static-deployment", "deployment.page.title", "Static deployment", false),
-                        () -> new DeploymentStaticPage(pageTasks)));
+                registrations.add(context.ui().register(new PageSpec("static-deployment", "deployment.page.title",
+                        "Static / assisted deployment", false), () -> new DeploymentStaticPage(pageTasks)));
                 registrations.add(context.ui().register(
                         new PageSpec("agent-deployment", "deployment.agent.page.title", "Autonomous deployment", false),
                         () -> new DeploymentAgentPage(autonomousPageTasks)));
+                registrations.add(context.ui().register(
+                        new PageSpec("applications", "deployment.applications.page.title", "Applications", false),
+                        () -> new DeploymentApplicationsPage(applicationTasks)));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);

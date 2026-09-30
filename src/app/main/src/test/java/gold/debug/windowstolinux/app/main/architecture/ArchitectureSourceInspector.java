@@ -35,15 +35,35 @@ final class ArchitectureSourceInspector {
 
     static synchronized List<JavaSource> production() throws IOException {
         if (production == null) {
-            try (Stream<Path> files = Files.walk(projectRoot().resolve("src"));
-                    var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, null, null)) {
-                List<Path> paths = files.filter(Files::isRegularFile)
-                        .filter(path -> path.toString().replace('\\', '/').contains("/src/main/java/"))
-                        .filter(path -> path.toString().endsWith(".java")).sorted().toList();
-                production = inspect(manager.getJavaFileObjectsFromPaths(paths));
+            try (var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, null, null)) {
+                production = inspect(manager.getJavaFileObjectsFromPaths(productionPaths()));
             }
         }
         return production;
+    }
+
+    static List<Path> productionPaths() throws IOException {
+        List<Path> paths = new ArrayList<>();
+        for (var module : activeModules()) {
+            Path source = module.pom().getParent().resolve("src/main/java");
+            if (!module.aggregate() && Files.isDirectory(source))
+                try (Stream<Path> files = Files.walk(source)) {
+                    paths.addAll(files.filter(Files::isRegularFile)
+                            .filter(path -> path.toString().endsWith(".java")).toList());
+                }
+        }
+        paths.sort(Path::compareTo);
+        return List.copyOf(paths);
+    }
+
+    private static List<MavenModuleGraph.Module> activeModules() throws IOException {
+        try {
+            return MavenModuleGraph.read(projectRoot());
+        } catch (IOException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new IOException("Cannot resolve the active Maven source graph", failure);
+        }
     }
 
     static List<JavaSource> snippets(Map<String, String> sources) throws IOException {
@@ -100,14 +120,21 @@ final class ArchitectureSourceInspector {
                     problem);
             TypeMirror outcome = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Outcome")
                     .asType();
-            TypeMirror carrier = task.getElements()
-                    .getTypeElement("gold.debug.windowstolinux.shared.model.failure.FailureCarrier").asType();
-            TypeMirror definition = task.getElements()
-                    .getTypeElement("gold.debug.windowstolinux.shared.model.failure.FailureDefinition").asType();
+            TypeMirror uuid = task.getElements().getTypeElement("java.util.UUID").asType();
             List<JavaSource> result = new ArrayList<>();
             for (CompilationUnitTree tree : trees) {
                 List<JavaType> declarations = new ArrayList<>();
+                var calls = new LinkedHashSet<String>();
                 new TreePathScanner<Void, Void>() {
+                    @Override
+                    public Void visitMemberSelect(MemberSelectTree node, Void unused) {
+                        if (syntax.getElement(getCurrentPath()) instanceof javax.lang.model.element.ExecutableElement method
+                                && method.getEnclosingElement() instanceof TypeElement owner
+                                && owner.getQualifiedName().toString().startsWith("gold.debug.windowstolinux."))
+                            calls.add(owner.getQualifiedName() + "#" + method.getSimpleName());
+                        return super.visitMemberSelect(node, unused);
+                    }
+
                     @Override
                     public Void visitClass(ClassTree node, Void unused) {
                         if (!node.getSimpleName().isEmpty()) {
@@ -127,11 +154,17 @@ final class ArchitectureSourceInspector {
                                     .anyMatch(method -> method.getSimpleName().contentEquals("problem")
                                             && (types.isSameType(method.getReturnType(), problem) || classifiedOutcome
                                                     && types.isSameType(method.getReturnType(), optionalProblem)));
+                            boolean problemFactory = javax.lang.model.util.ElementFilter.methodsIn(element.getEnclosedElements())
+                                    .stream().anyMatch(method -> method.getSimpleName().contentEquals("problem")
+                                            && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
+                                            && !method.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)
+                                            && types.isSameType(method.getReturnType(), problem)
+                                            && method.getParameters().stream()
+                                                    .anyMatch(parameter -> types.isSameType(parameter.asType(), uuid)));
                             declarations.add(
                                     new JavaType(element.getQualifiedName().toString(), node.getSimpleName().toString(),
                                             node.getKind(), types.isAssignable(type, throwable),
-                                            types.isAssignable(type, carrier), types.isAssignable(type, definition),
-                                            publicProblem, types.isAssignable(type, sqlException)));
+                                            problemFactory, publicProblem, types.isAssignable(type, sqlException)));
                         }
                         return super.visitClass(node, unused);
                     }
@@ -139,7 +172,7 @@ final class ArchitectureSourceInspector {
                 URI uri = tree.getSourceFile().toUri();
                 Path path = uri.getScheme().equals("file") ? Path.of(uri) : Path.of(uri.getPath());
                 result.add(new JavaSource(path, tree.getPackageName().toString(), sourceReferences.get(tree),
-                        List.copyOf(declarations)));
+                        List.copyOf(declarations), List.copyOf(calls)));
             }
             return List.copyOf(result);
         }
@@ -154,10 +187,11 @@ final class ArchitectureSourceInspector {
         return root;
     }
 
-    record JavaSource(Path path, String packageName, List<String> references, List<JavaType> types) {
+    record JavaSource(Path path, String packageName, List<String> references, List<JavaType> types,
+            List<String> calls) {
     }
 
-    record JavaType(String name, String simpleName, Tree.Kind kind, boolean throwable, boolean failureCarrier,
-            boolean failureDefinition, boolean publicProblem, boolean sqlException) {
+    record JavaType(String name, String simpleName, Tree.Kind kind, boolean throwable,
+            boolean problemFactory, boolean publicProblem, boolean sqlException) {
     }
 }

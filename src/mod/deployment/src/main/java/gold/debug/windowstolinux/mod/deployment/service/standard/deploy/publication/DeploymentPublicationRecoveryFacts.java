@@ -20,13 +20,14 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUni
  * @param phase last durably recorded remote step / 最近已持久远端步骤
  * @param backend original native or container backend / 原原生或容器后端
  * @param engine original engine or none / 原引擎或none
+ * @param operation formally confirmed explicit operation or original absence / 正式已确认明确操作或原空值
  * @param release attempted remote release, if known / 尝试远端发布；可能未形成
  * @param snapshot verified original old snapshot, if acknowledged / 已获确认的原旧快照；可能未确认
  * @param failure actual known failure before rollback, if any / 回滚前实际已知失败；可能不存在
  * @param verifiedOutcome independently persisted verified business result / 独立持久的已核实业务结果
  * @param verifiedProblem bounded original verified failure, if any / 原已核实失败的有界问题 */
 record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String candidate, String plan, String phase,
-        String backend, String engine, Optional<String> release, Optional<DeploymentRemoteReleaseSnapshot> snapshot,
+        String backend, String engine, Optional<UUID> operation, Optional<String> release, Optional<DeploymentRemoteReleaseSnapshot> snapshot,
         Optional<Problem> failure, Optional<Outcome> verifiedOutcome, Optional<Problem> verifiedProblem) {
     /** Fixed recorded phases; later phases cannot invent earlier missing identities. / 固定记录阶段；后续阶段不得补造先前缺失身份。 */
     private static final Set<String> PHASES = Set.of("CANDIDATE_MAY_EXIST", "SNAPSHOT_MAY_HAVE_RUN",
@@ -62,11 +63,14 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
         String phase = text(node, "phase");
         String backend = text(node, "backend");
         String engine = text(node, "engine");
+        DeploymentPublicationAttemptPointers.requireChild(node);
+        var operation = node.has("operation") ? Optional.of(UUID.fromString(text(node, "operation"))) : Optional.<UUID>empty();
         if (!task.equals(record.identity().taskId().toString()) || !app.equals(application)
                 || !server.equals(record.identity().server().id()) || !plan.equals(reviewed)
                 || !archive.matches("[0-9a-f]{64}") || !plan.matches("[0-9a-f]{64}") || !PHASES.contains(phase)
                 || !Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine)
-                || !candidate.equals(new DeploymentRemoteWorkspace(app, archive).candidateId()))
+                || node.has("attemptState") && !text(node, "attemptState").equals("CONFIRMED")
+                || !candidate.equals(new DeploymentRemoteWorkspace(app, archive, operation).candidateId()))
             throw new IllegalArgumentException("Original publication identity conflicts");
         var unit = DeploymentUnitIdentity.forManaged(app, new ServerRef(server), owner);
         if (!unit.releaseRoot().equals(text(node, "releaseRoot")))
@@ -77,7 +81,7 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
         Optional<DeploymentRemoteReleaseSnapshot> snapshot = Optional.empty();
         if (node.has("previousToken")) {
             String token = text(node, "previousToken");
-            if (!token.isEmpty() && !token.equals(task) || !node.path("previousRunning").isBoolean())
+            if (!token.isEmpty() && !token.equals(operation.map(UUID::toString).orElse(task)) || !node.path("previousRunning").isBoolean())
                 throw new IllegalArgumentException("Original rollback token conflicts");
             String digest = text(node, "previousDigest");
             snapshot = Optional
@@ -115,7 +119,7 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
         if (phase.equals("PUBLISH_MAY_HAVE_RUN") && (snapshot.isEmpty() || release.isEmpty())
                 || phase.startsWith("ROLLBACK_") && (release.isEmpty() || snapshot.isEmpty() || failure.isEmpty()))
             throw new IllegalArgumentException("Original publication stage lacks its durable predecessor");
-        return new DeploymentPublicationRecoveryFacts(unit, candidate, plan, phase, backend, engine, release, snapshot,
+        return new DeploymentPublicationRecoveryFacts(unit, candidate, plan, phase, backend, engine, operation, release, snapshot,
                 failure, verifiedOutcome, verifiedProblem);
     }
 

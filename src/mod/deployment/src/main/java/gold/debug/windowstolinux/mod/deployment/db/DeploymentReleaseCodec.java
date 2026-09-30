@@ -40,7 +40,7 @@ final class DeploymentReleaseCodec {
                         .put("ownershipManifestSha256", unit.ownershipManifestSha256())
                         .put("runtime", base64(new DeploymentUnitRuntimeCodec().write(component.runtime())))
                         .put("reviewedRuntime", base64(new DeploymentRuntimeCodec().write(component.reviewedRuntime())))
-                        .put("dataPaths", base64(new DeploymentDataPathCodec().write(component.dataPaths())))
+                        .put("dataPaths", base64(new DeploymentStoragePathCodec().write(component.dataPaths())))
                         .put("resources", base64(new DeploymentResourceCodec().write(component.resources())))
                         .put("releaseSha256", binding.releaseSha256())
                         .put("configurationRevision", binding.configurationRevision())
@@ -155,7 +155,7 @@ final class DeploymentReleaseCodec {
         var runtime = new DeploymentUnitRuntimeCodec().read(binary(entry, "runtime", 1_048_576));
         return new DeploymentApplicationGraph.Component(string(entry, "componentId"), unit, runtime, dependencies,
                 new DeploymentRuntimeCodec().read(binary(entry, "reviewedRuntime", 1_048_576), runtime.healthCheck()),
-                new DeploymentDataPathCodec().read(binary(entry, "dataPaths", 1_048_576)),
+                new DeploymentStoragePathCodec().read(binary(entry, "dataPaths", 1_048_576)),
                 new DeploymentResourceCodec().read(binary(entry, "resources", 1_048_576)));
     }
 

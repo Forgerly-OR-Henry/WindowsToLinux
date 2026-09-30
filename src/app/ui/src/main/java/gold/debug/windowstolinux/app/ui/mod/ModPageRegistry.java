@@ -141,6 +141,7 @@ public final class ModPageRegistry {
                                 failure = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_ENVIRONMENT_FAILED",
                                         "A page environment notification failed");
                         }
+            changed();
             if (failure != null)
                 throw failure;
             return null;

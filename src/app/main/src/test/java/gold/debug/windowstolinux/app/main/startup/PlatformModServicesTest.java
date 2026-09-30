@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
@@ -173,6 +173,10 @@ class PlatformModServicesTest {
 
         final ServiceRegistration registration;
 
+        final PlatformRemoteCapabilitiesTest.Reviews reviews = new PlatformRemoteCapabilitiesTest.Reviews();
+
+        final PlatformRuntime.ModCapabilities.RemoteCapabilities providerRemote;
+
         final AtomicReference<Throwable> recoveryFailure = new AtomicReference<>();
         @SuppressWarnings("unchecked")
         Fixture(Path classes, ModLaunchMode mode, SchemaIdentity original) throws Exception {
@@ -185,6 +189,7 @@ class PlatformModServicesTest {
                 runtime.security().unlock(PASSWORD.toCharArray());
                 schema = original;
             }
+            runtime.setInteractionPresenter(reviews);
             business = new TaskModDatabase(db, runtime.tasks(), schema);
             providerLoader = loader(PROVIDER, classes, false, Map.of());
             callerLoader = loader(OWNER, classes, true, Map.of("example.provider.api", providerLoader));
@@ -197,11 +202,13 @@ class PlatformModServicesTest {
             tasks = runtime.tasks().bind(OWNER, VERSION, mode == ModLaunchMode.RECOVERY);
             implementation = providerLoader.loadClass("example.provider.Mod")
                     .getConstructor(ModDatabase.class, ServerService.class, TaskService.class, Runnable.class)
-                    .newInstance(business, runtime.serverAccess(PROVIDER, VERSION, Optional.of(schema)),
+                    .newInstance(business, runtime.capabilities().serverAccess(PROVIDER, VERSION, Optional.of(schema)),
                             runtime.tasks().bind(PROVIDER, VERSION, mode == ModLaunchMode.RECOVERY),
                             (Runnable) () -> hook.get().run());
             providerBinding = runtime.services().bind(providerLoader, Optional.of(schema), mode);
             callerBinding = runtime.services().bind(callerLoader, Optional.empty(), mode);
+            providerRemote = runtime.capabilities().remoteCapabilities(PROVIDER, VERSION);
+            providerBinding.bindRecoveryCleanup(providerRemote::closeTaskResources);
             registration = providerBinding.register(contract, implementation);
         }
 
@@ -257,6 +264,7 @@ class PlatformModServicesTest {
 
         @Override
         public void close() throws Exception {
+            providerRemote.close();
             runtime.close();
             callerLoader.close();
             providerLoader.close();
@@ -324,7 +332,6 @@ class PlatformModServicesTest {
             f.publish();
             try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
                 assertEquals(1, new TaskLedger(f.db).queries().dependencies(context.id()).size());
-                f.runtime.tasks().closeDependencyResources(context, OWNER, VERSION);
                 return success(null);
             })) {
                 for (String mode : List.of("throw", "future", "unadmitted")) {
@@ -345,7 +352,6 @@ class PlatformModServicesTest {
         try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null)) {
             f.publish();
             try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
-                f.runtime.tasks().closeDependencyResources(context, OWNER, VERSION);
                 return success(null);
             })) {
                 var leaked = new CountDownLatch(1);
@@ -442,12 +448,11 @@ class PlatformModServicesTest {
             f.runtime.persistence().servers()
                     .saveServerProfile(new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("server",
                             "127.0.0.1", remote.listener.server().getPort(), "alice", "credential", "本机回环"));
-            var reviews = new PlatformRemoteCapabilitiesTest.Reviews();
-            f.runtime.setInteractionPresenter(reviews);
+            var reviews = f.reviews;
             f.publish();
             try (var handle = f.handle();
-                    var caller = f.runtime.remoteCapabilities(OWNER, VERSION);
-                    var provider = f.runtime.remoteCapabilities(PROVIDER, VERSION)) {
+                    var caller = f.runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                    var provider = f.runtime.capabilities().remoteCapabilities(PROVIDER, VERSION)) {
                 var original = new AtomicReference<TaskContext>();
                 var failed = new AtomicReference<Throwable>();
                 f.hook.set(() -> {
@@ -589,7 +594,6 @@ class PlatformModServicesTest {
             f.publish();
             try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
                 assertEquals(1, f.call(handle, "read", context));
-                f.runtime.tasks().closeDependencyResources(context, OWNER, VERSION);
                 return success(null);
             })) {
                 sql(f.db,
@@ -636,7 +640,6 @@ class PlatformModServicesTest {
             }
             try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
                 assertEquals(0, f.call(handle, "read", context));
-                f.runtime.tasks().closeDependencyResources(context, OWNER, VERSION);
                 return success(null);
             })) {
                 assertEquals(TaskState.ENDED, f.reconcile(taskId).state());

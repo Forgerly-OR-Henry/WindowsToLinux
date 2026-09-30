@@ -52,7 +52,7 @@ class BrowserRecoveryEvidenceTest {
             throw new IllegalStateException("terminal-password=private", new ApiException(original));
         }, TARGET, new ReentrantLock());
         session.run();
-        assertEquals(RecoverySnapshot.State.FAILED, session.await().state());
+        assertEquals(BrowserRecoverySnapshot.State.FAILED, session.await().state());
         assertEquals("journalUnavailable", session.snapshot().messageCode());
         assertSame(original, session.snapshot().failure().orElseThrow());
         assertTrue(browser.closed);
@@ -60,7 +60,7 @@ class BrowserRecoveryEvidenceTest {
 
     @Test
     void cleanupRetainsOriginalBrowserProblemAndDoesNotReportRecovered() throws Exception {
-        var original = new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED,
+        var original = new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED,
                 new IllegalStateException("private terminal output"));
         var browser = new Browser() {
             @Override
@@ -72,7 +72,7 @@ class BrowserRecoveryEvidenceTest {
         }, TARGET, new ReentrantLock());
         session.run();
         assertSame(original.problem(), session.await().failure().orElseThrow());
-        assertEquals(RecoverySnapshot.State.FAILED, session.snapshot().state());
+        assertEquals(BrowserRecoverySnapshot.State.FAILED, session.snapshot().state());
         assertEquals("cleanupIncomplete", session.snapshot().messageCode());
     }
 
@@ -114,14 +114,14 @@ class BrowserRecoveryEvidenceTest {
         var worker = new Thread(session);
         worker.start();
         try {
-            until(() -> session.snapshot().state() == RecoverySnapshot.State.WAITING_TERMINAL);
+            until(() -> session.snapshot().state() == BrowserRecoverySnapshot.State.WAITING_TERMINAL);
             session.bindTerminal("terminal", "server", true, false);
-            until(() -> session.snapshot().state() == RecoverySnapshot.State.INTERRUPTED);
+            until(() -> session.snapshot().state() == BrowserRecoverySnapshot.State.INTERRUPTED);
             assertSame(original, session.snapshot().failure().orElseThrow());
             cancelled.set(true);
             session.awaitCleanup(5000);
             assertEquals(id.toString(), session.snapshot().id());
-            assertEquals(RecoverySnapshot.State.CANCELLED, session.snapshot().state());
+            assertEquals(BrowserRecoverySnapshot.State.CANCELLED, session.snapshot().state());
             assertSame(original, session.snapshot().failure().orElseThrow());
             assertTrue(browser.closed);
         } finally {

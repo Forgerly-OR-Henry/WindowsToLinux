@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageFactKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.spi.DeploymentTypeAssessment;
@@ -61,17 +61,17 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
         Optional<PythonBuildFacts> inspected = python.inspect(root, source.logicalRootName(root));
         if (inspected.isEmpty()) {
             rejections.add(new RejectionReason("PYTHON_PYPROJECT_MISSING",
-                    LocalizedMessage.of("analysis.deployment.rejection.pythonPyprojectMissing"), "deployment"));
+                    DeploymentLocalizedMessage.of("analysis.deployment.rejection.pythonPyprojectMissing"), "deployment"));
             return null;
         }
         PythonBuildFacts project = inspected.orElseThrow();
-        List<LocalizedMessage> missing = new ArrayList<>();
-        List<LocalizedMessage> conflicts = new ArrayList<>();
+        List<DeploymentLocalizedMessage> missing = new ArrayList<>();
+        List<DeploymentLocalizedMessage> conflicts = new ArrayList<>();
         if (project.lockFiles().isEmpty() && project
                 .buildTool() != gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.PYTHON_STDLIB) {
-            missing.add(LocalizedMessage.of("analysis.deployment.missing.pythonLockfile"));
+            missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.pythonLockfile"));
         } else if (project.lockFiles().size() > 1) {
-            conflicts.add(LocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
+            conflicts.add(DeploymentLocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
                 project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.pythonProject",
@@ -87,13 +87,13 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
         if (entrypoint != null) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT, entrypoint);
         }
-        List<LocalizedMessage> required = new ArrayList<>(
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>(
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (version == null) {
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.pythonVersion"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.pythonVersion"));
         }
         if (entrypoint == null) {
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.pythonEntrypoint"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.pythonEntrypoint"));
         }
         Set<String> runtimeKeys = Set.of("analysis.deployment.runtime.evidence.pythonVersion",
                 "analysis.deployment.runtime.evidence.pythonEntrypoint");
@@ -116,9 +116,9 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
             String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(subject),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
                 source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
                 gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

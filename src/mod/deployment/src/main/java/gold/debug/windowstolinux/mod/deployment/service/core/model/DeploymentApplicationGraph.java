@@ -52,8 +52,8 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
      * @param dataPaths original reviewed paths / 原审阅路径
      * @param resources original reviewed resource bindings / 原审阅资源绑定 */
     public record Component(String componentId, DeploymentUnitIdentity unit, DeploymentUnitRuntimeConfiguration runtime,
-            List<String> dependencies, DeploymentRuntimeDefinition reviewedRuntime, List<DeploymentDataPath> dataPaths,
-            DeploymentResourceBindings resources) {
+            List<String> dependencies, DeploymentRuntimeDefinition reviewedRuntime,
+            List<DeploymentStoragePath> dataPaths, DeploymentResourceBindings resources) {
         /** Validates exact health and path-binding coverage. / 校验精确健康及路径绑定覆盖。
          * @param componentId component identity within its application / 应用内组件身份
          * @param unit exact owned deployment unit / 精确所属部署单元
@@ -70,15 +70,16 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
             Objects.requireNonNull(resources, "resources");
             dependencies = List.copyOf(dependencies).stream().map(DeploymentApplicationGraph::identifier).sorted()
                     .toList();
-            dataPaths = List.copyOf(dataPaths).stream().sorted(Comparator.comparing(DeploymentDataPath::path)).toList();
+            dataPaths = List.copyOf(dataPaths).stream().sorted(Comparator.comparing(DeploymentStoragePath::path))
+                    .toList();
             if (dependencies.size() != new HashSet<>(dependencies).size() || dependencies.contains(componentId))
                 throw new IllegalArgumentException("Dependencies must be unique and non-self");
             if (!reviewedRuntime.healthCheck().equals(runtime.healthCheck()))
                 throw new IllegalArgumentException("Reviewed runtime health differs from its unit contract");
-            if (dataPaths.stream().map(DeploymentDataPath::path).distinct().count() != dataPaths.size())
+            if (dataPaths.stream().map(DeploymentStoragePath::path).distinct().count() != dataPaths.size())
                 throw new IllegalArgumentException("Reviewed paths must be unique");
             var bound = resources.fileBindings().stream().map(DeploymentFileBinding::dataPath)
-                    .sorted(Comparator.comparing(DeploymentDataPath::path)).toList();
+                    .sorted(Comparator.comparing(DeploymentStoragePath::path)).toList();
             if (!bound.equals(dataPaths))
                 throw new IllegalArgumentException("Resource bindings must exactly cover reviewed paths");
         }

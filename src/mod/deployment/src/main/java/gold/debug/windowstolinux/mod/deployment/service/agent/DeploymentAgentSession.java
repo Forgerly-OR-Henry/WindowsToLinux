@@ -30,7 +30,7 @@ public final class DeploymentAgentSession {
     private final DeploymentSourceBrowser source;
 
     /** Strict model, real tools, durable own state. / 严格模型、真实工具与持久专有状态。 */
-    private final DeploymentAgentProtocol model;
+    private final DeploymentAgentModels models;
 
     /** Original task-scoped candidate and publication operations. / 原任务范围内候选及发布操作。 */
     private final DeploymentAgentDeliveryPort tools;
@@ -38,14 +38,8 @@ public final class DeploymentAgentSession {
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
     private final DeploymentAgentJournal journal;
 
-    /** Independent exact action approval. / 独立精确动作审核。 */
-    private final DeploymentAgentReview reviewer;
-
-    /** Frozen model configuration binding and live read-only revision. / 冻结模型配置绑定及实时只读修订。 */
-    private final String configurationRevision;
-
-    /** Task-authorized live routing revision observer. / 任务授权的实时路由修订观察器。 */
-    private final Supplier<String> currentConfigurationRevision;
+    /** Original cooperative safe-boundary control. / 原协作安全边界控制。 */
+    private final DeploymentAgentControl control;
 
     /** Actual recent observations. / 最近真实观察。 */
     private final List<Map<String, String>> history = new ArrayList<>();
@@ -89,21 +83,39 @@ public final class DeploymentAgentSession {
             Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
             DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
             Supplier<String> currentConfigurationRevision) {
+        this(context, task, server, requirements, source, tools, journal, approvalMode, configurationRevision,
+                currentConfigurationRevision, new DeploymentAgentControl());
+    }
+
+    /** Binds explicit user control to the same original task and budgets. / 将显式用户控制绑定到同一原任务及预算。
+     * @param context active Mod / 活动Mod
+     * @param task original task / 原任务
+     * @param server exact target / 精确目标
+     * @param requirements bounded nonsecret requirements / 有界非秘密要求
+     * @param source original frozen source / 原冻结来源
+     * @param tools actual scoped tools / 实际限定工具
+     * @param journal original evidence / 原依据
+     * @param approvalMode immutable policy / 不可变策略
+     * @param configurationRevision initial frozen route / 初始冻结路由
+     * @param currentConfigurationRevision live route observer / 实时路由观察器
+     * @param control original worker control / 原工作线程控制 */
+    public DeploymentAgentSession(ModContext context, TaskContext task, ServerRef server,
+            Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
+            DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
+            Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server);
         this.source = Objects.requireNonNull(source);
         this.tools = Objects.requireNonNull(tools);
         this.journal = Objects.requireNonNull(journal);
-        this.configurationRevision = Objects.requireNonNull(configurationRevision);
-        this.currentConfigurationRevision = Objects.requireNonNull(currentConfigurationRevision);
+        this.control = Objects.requireNonNull(control);
         if (requirements.size() > 64 || requirements.toString().length() > 8000 || requirements.keySet().stream()
                 .anyMatch(k -> k.matches("(?i).*(password|secret|credential|token|key).*")))
             throw new IllegalArgumentException("Agent requirements exceed nonsecret budget");
         this.requirements = Map.copyOf(requirements);
-        this.model = new DeploymentAgentProtocol(context, configurationRevision);
-        this.reviewer = new DeploymentAgentReview(context, server, task, approvalMode, configurationRevision,
-                currentConfigurationRevision, journal);
+        this.models = new DeploymentAgentModels(context, task, server, approvalMode, configurationRevision,
+                currentConfigurationRevision, journal, tools);
     }
 
     /** Runs until actual whole-application health succeeds or a bounded stop occurs. / 运行至真实整应用健康成功或有界停止。
@@ -111,16 +123,18 @@ public final class DeploymentAgentSession {
      * @throws Exception on denied, unknown, cancelled or exhausted work / 工作被拒绝、未知、取消或耗尽时 */
     public OperationResult<DeploymentAgentDeliveryPort.Published> run() throws Exception {
         while (remaining > 0) {
-            checkpoint();
-            requireConfiguration();
-            source.verifyBoundaries();
-            journal.event(task, "DECISION", "", Integer.toString(remaining));
-            DeploymentAgentProposal proposal = model.decide(context(), List.copyOf(history), --remaining, task);
-            checkpoint();
             try {
+                checkpoint();
+                requireConfiguration();
+                source.verifyBoundaries();
+                journal.event(task, "DECISION", "", Integer.toString(remaining));
+                DeploymentAgentProposal proposal = models.model().decide(context(), List.copyOf(history), --remaining, task);
+                checkpoint();
                 var result = perform(proposal);
                 if (result != null)
                     return result;
+            } catch (ProposalInvalidatedException changed) {
+                observe("MODEL_REFRESH", models.revision());
             } catch (IllegalArgumentException rejected) {
                 observe("PROPOSAL_REJECTED", rejected.getMessage());
                 if (++stalled >= 2)
@@ -231,8 +245,10 @@ public final class DeploymentAgentSession {
         artifacts.remove(component.id());
         String binding = digest(component.id() + ":" + revisions.get(component.id()) + ":" + proposal.script());
         requireConfiguration();
-        reviewer.command(component.id(), revisions.get(component.id()), proposal.script());
+        models.reviewer().command(component.id(), revisions.get(component.id()), proposal.script());
+        checkpoint();
         requireConfiguration();
+        source.verify();
         journal.event(task, "COMMAND_EXECUTING", binding, Integer.toString(proposal.seconds()));
         DeploymentAgentDeliveryPort.CommandFeedback result;
         try {
@@ -261,6 +277,7 @@ public final class DeploymentAgentSession {
         if (present != null)
             return present;
         var component = component(id);
+        checkpoint();
         requireConfiguration();
         String binding = digest(task.id() + ":" + id + ":" + source.revision());
         journal.event(task, "PREPARE_EXECUTING", binding, id);
@@ -319,10 +336,21 @@ public final class DeploymentAgentSession {
         task.progress(tool + ": " + safe.substring(0, Math.min(safe.length(), 160)), Optional.empty());
     }
 
-    /** Stops promptly on actual cooperative cancellation. / 在真实协作取消时及时停止。 */
-    private void checkpoint() {
-        if (task.cancellation().requested())
-            throw new CancellationException();
+    /** Waits only at an original settled boundary and discards a proposal after explicit refresh. / 仅在原已结清边界等待，并在明确刷新后丢弃提案。
+     * @throws Exception if the original boundary cannot safely continue / 原边界不能安全继续时 */
+    private void checkpoint() throws Exception {
+        if (control.checkpoint(task, models)) throw new ProposalInvalidatedException(task.id());
+    }
+
+    /** Explicit replacement invalidates a decision without resetting its consumed budget. / 明确替换使决策失效且不重置其已消费预算。 */
+    private static final class ProposalInvalidatedException extends ApiException {
+        /** Creates one original-task-bound invalidation. / 创建一次原任务绑定失效。
+         * @param originalTask authentic original identity / 真实原身份 */
+        private ProposalInvalidatedException(UUID originalTask) {
+            super(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_AGENT_PROPOSAL_INVALIDATED",
+                    "Explicit model replacement invalidated the old proposal", Map.of("task", originalTask.toString()),
+                    Optional.of(originalTask)));
+        }
     }
 
     /** Redacts likely credentials in provider and tool observations. / 脱敏提供方与工具观察中的疑似凭据。
@@ -360,10 +388,10 @@ public final class DeploymentAgentSession {
                     || part.endsWith(".pem") || part.endsWith(".key"))
                 throw new SecurityException("Protected source path");
         String binding = digest(old + ":" + patch);
-        reviewer.patch(patch);
+        models.reviewer().patch(patch);
         requireConfiguration();
         var intent = new ActionIntent("deployment.agent.patch", List.of(server.id()), patch.path(),
-                configurationRevision, "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
+                models.revision(), "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
                 "Apply the exact reviewed diff only to the task-owned source candidate");
         var approval = context.interaction().approve(intent, task);
         if (approval.outcome() != Outcome.SUCCEEDED)
@@ -400,6 +428,7 @@ public final class DeploymentAgentSession {
     private void seal(String id) throws Exception {
         var candidate = prepare(id);
         String revision = revisions.get(id);
+        checkpoint();
         requireConfiguration();
         String binding = digest(id + ":" + revision + ":seal");
         journal.event(task, "SEAL_EXECUTING", binding, revision);
@@ -440,6 +469,7 @@ public final class DeploymentAgentSession {
     private OperationResult<DeploymentAgentDeliveryPort.Published> deliver() throws Exception {
         if (plan == null || artifacts.size() != plan.components().size())
             throw new IllegalArgumentException("Every declared component needs sealed output");
+        checkpoint();
         requireConfiguration();
         source.verify();
         String binding = digest(plan + ":" + new TreeMap<>(artifacts));
@@ -474,7 +504,6 @@ public final class DeploymentAgentSession {
     /** Invalidates approvals when any purpose-specific model binding changed. / 任一专用模型绑定变化时使审批失效。
      * @throws SecurityException when the frozen revision changed / 冻结修订改变时 */
     private void requireConfiguration() {
-        if (!configurationRevision.equals(currentConfigurationRevision.get()))
-            throw new SecurityException("Agent model configuration changed; review is invalid");
+        models.verify();
     }
 }

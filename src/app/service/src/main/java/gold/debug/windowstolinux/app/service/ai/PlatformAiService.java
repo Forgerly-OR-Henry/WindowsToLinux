@@ -10,7 +10,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.ai.protocol.ModelMessageCodec;
+import gold.debug.windowstolinux.app.ai.execution.protocol.ModelMessageCodec;
 import gold.debug.windowstolinux.app.ai.transport.ModelHttpCall;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
@@ -20,7 +20,7 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.catalog.AiPurposeType;
 
 /** Routes generic model calls through frozen purpose selections and original task credentials. / 经冻结用途选择及原任务凭据路由通用模型调用。 */
 public final class PlatformAiService implements AiService, AutoCloseable {

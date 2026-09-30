@@ -5,9 +5,10 @@ import java.util.Objects;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.linux.*;
+import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
+import gold.debug.windowstolinux.app.service.linux.TransferSettingsService;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /** Permanent platform threshold editor with persistence-confirmed values. / 使用持久化已确认值的常驻平台阈值编辑器。 */
 public final class TransferSettingsPane extends JPanel implements AutoCloseable {
@@ -30,7 +31,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
     private final JLabel status = new JLabel();
 
     /** Last successfully loaded or saved pair, never an unconfirmed edit. / 最后成功读取或保存的设置对，不是未确认编辑。 */
-    private TransferSettings confirmed;
+    private TransferConfiguration confirmed;
 
     /** Current privacy, operation and view lifetime state. / 当前隐私、操作及视图寿命状态。 */
     private boolean locked = true, busy, closed;
@@ -50,19 +51,20 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         connect.setName("transfer.settings.connect");
         idle.setName("transfer.settings.idle");
-        var description = new JTextArea(messages.text("transfer.settings.explanation"));
+        var description = new JTextArea();
         description.setEditable(false);
+        messages.bind(description, "transfer.settings.explanation");
         description.setOpaque(false);
         description.setLineWrap(true);
         description.setWrapStyleWord(true);
         description.setRows(3);
         description.setFont(UIManager.getFont("Label.font"));
         var fields = components.transparent(new GridBagLayout());
-        components.addField(fields, 0, 0, messages.text("transfer.settings.connect"), connect);
-        components.addField(fields, 1, 0, messages.text("transfer.settings.idle"), idle);
-        save = components.primaryButton(messages.text("transfer.settings.save"));
+        components.addField(fields, 0, 0, messages, "transfer.settings.connect", connect);
+        components.addField(fields, 1, 0, messages, "transfer.settings.idle", idle);
+        save = messages.bind(components.primaryButton(""), "transfer.settings.save");
         save.setName("transfer.settings.save");
-        reload = components.secondaryButton(messages.text("transfer.settings.reload"));
+        reload = messages.bind(components.secondaryButton(""), "transfer.settings.reload");
         reload.setName("transfer.settings.reload");
         save.addActionListener(event -> save());
         reload.addActionListener(event -> reload());
@@ -105,9 +107,9 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
     private void save() {
         if (locked || busy || closed || confirmed == null)
             return;
-        final TransferSettings requested;
+        final TransferConfiguration requested;
         try {
-            requested = new TransferSettings(Integer.parseInt(connect.getText().trim()),
+            requested = new TransferConfiguration(Integer.parseInt(connect.getText().trim()),
                     Integer.parseInt(idle.getText().trim()));
         } catch (IllegalArgumentException invalid) {
             status.setText(messages.text("transfer.settings.invalid"));
@@ -123,7 +125,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
     /** Publishes only a confirmed read or completed atomic write. / 仅发布已确认读取或已完成原子写入。
      * @param value confirmed stored pair / 已确认存储设置对
      * @param key localized completion message / 本地化完成消息 */
-    private void completed(TransferSettings value, String key) {
+    private void completed(TransferConfiguration value, String key) {
         busy = false;
         if (closed)
             return;

@@ -8,12 +8,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModDependencyPlan;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.manifest.*;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
@@ -77,7 +77,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param identity exact registered generation / 精确登记代次
      * @param state actual preparation state / 实际准备状态
      * @param retryable whether never validated or handed to business / 是否从未验证或交付业务 */
-    public record DataView(SchemaIdentity identity, String state, boolean retryable) {
+    public record SchemaView(SchemaIdentity identity, String state, boolean retryable) {
     }
 
     /** Retained operation identity for explicit cancellation or reconciliation. / 供明确撤销或核对的保留操作身份。
@@ -100,8 +100,8 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param operations unfinished original operations / 未结束原操作
      * @param stopAcknowledged whether the original revision completed restart shutdown / 原修订是否完成重启停用 */
     public record ModView(String owner, Choice choice, String runtime, Optional<String> actual,
-            Optional<Problem> failure, List<ReleaseView> versions, List<DataView> data, List<OperationView> operations,
-            boolean stopAcknowledged) {
+            Optional<Problem> failure, List<ReleaseView> versions, List<SchemaView> data,
+            List<OperationView> operations, boolean stopAcknowledged) {
         /** Copies the management collections without granting mutation authority. / 复制管理集合，不授予修改权限。
          * @param owner stable identity / 稳定身份
          * @param choice saved choice / 已存选择
@@ -167,10 +167,10 @@ public final class PlatformModIntents implements AutoCloseable {
                         }
                     }
                     versions.sort(Comparator.comparing((ReleaseView v) -> v.manifest().version()).reversed());
-                    var data = new ArrayList<DataView>();
+                    var data = new ArrayList<SchemaView>();
                     for (var item : new TreeMap<>(state.schemas().getOrDefault(owner, Map.of())).entrySet()) {
                         var value = item.getValue();
-                        data.add(new DataView(new SchemaIdentity(owner, item.getKey(), value.generation()),
+                        data.add(new SchemaView(new SchemaIdentity(owner, item.getKey(), value.generation()),
                                 value.state(), "FAILED".equals(value.state()) && !value.used()
                                         && value.validatedAt() == null && value.validationDigest() == null));
                     }
@@ -823,7 +823,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param version logical data version / 逻辑数据版本
      * @param data stored data identity / 已存数据身份
      * @throws SQLException if coordinates differ / 坐标不符时 */
-    private static void requireCoordinates(String owner, String version, Data data) throws SQLException {
+    private static void requireCoordinates(String owner, String version, SchemaState data) throws SQLException {
         var coordinates = new SchemaCoordinates(new SchemaIdentity(owner, version, data.generation()));
         if (!coordinates.physicalName().equals(data.physical()) || !coordinates.databaseUser().equals(data.user()))
             throw rejected("MOD_SCHEMA_IDENTITY", "The registered data identity does not match its original owner");
@@ -858,13 +858,13 @@ public final class PlatformModIntents implements AutoCloseable {
                 releases.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2),
                         new Release(r.getString(3), r.getString(4), r.getString(5), r.getString(6)));
         }
-        var schemas = new TreeMap<String, Map<String, Data>>();
+        var schemas = new TreeMap<String, Map<String, SchemaState>>();
         try (var s = c.createStatement();
                 var r = s.executeQuery(
                         "SELECT mod_id,schema_version,generation,state,physical_name,database_user,ever_used,validated_at,validation_digest FROM mod_schema ORDER BY mod_id,schema_version")) {
             while (r.next())
                 schemas.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2),
-                        new Data(r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6),
+                        new SchemaState(r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6),
                                 r.getBoolean(7), r.getObject(8, Long.class), r.getString(9)));
         }
         var pending = new TreeMap<String, Pending>();
@@ -1105,8 +1105,8 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param used whether handed to business / 是否曾交付业务
      * @param validatedAt original accepted validation time / 原接纳验证时间
      * @param validationDigest original accepted validation receipt / 原接纳验证凭据 */
-    private record Data(UUID generation, String state, String physical, String user, boolean used, Long validatedAt,
-            String validationDigest) {
+    private record SchemaState(UUID generation, String state, String physical, String user, boolean used,
+            Long validatedAt, String validationDigest) {
     }
 
     /** Retained original restart request. / 保留的原重启请求。
@@ -1129,6 +1129,6 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param pending unexecuted requests / 未执行请求
      * @param busy owners retaining other operations / 保留其他操作的所有者 */
     private record Snapshot(long revision, Map<String, Owner> owners, Map<String, Map<String, Release>> releases,
-            Map<String, Map<String, Data>> schemas, Map<String, Pending> pending, Set<String> busy) {
+            Map<String, Map<String, SchemaState>> schemas, Map<String, Pending> pending, Set<String> busy) {
     }
 }

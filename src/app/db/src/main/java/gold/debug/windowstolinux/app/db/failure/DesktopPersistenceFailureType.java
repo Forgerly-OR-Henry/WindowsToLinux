@@ -1,67 +1,67 @@
 package gold.debug.windowstolinux.app.db.failure;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDefinition;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureSeverityLevel;
+import java.util.*;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
 
 /**
  * Failures owned by desktop SQLite persistence. / 桌面 SQLite 持久化持有的失败类型。
  */
-public enum DesktopPersistenceFailureType implements FailureDefinition {
+public enum DesktopPersistenceFailureType {
     /**
      * RECOVERY JOURNAL FAILED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的恢复日志失败分类。
      */
     RECOVERY_JOURNAL_FAILED("persistence.recovery.journal-failed", "recovery",
-            "persistence.error.recoveryJournalFailed", FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+            "persistence.error.recoveryJournalFailed", "REQUIRE_MANUAL_RECOVERY"),
     /**
      * RECOVERY PREFERENCE FAILED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的恢复偏好失败分类。
      */
     RECOVERY_PREFERENCE_FAILED("persistence.recovery.preference-failed", "recovery",
-            "persistence.error.recoveryPreferenceFailed", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+            "persistence.error.recoveryPreferenceFailed", "REQUEST_USER_CORRECTION"),
     /**
      * DATA DIRECTORY UNAVAILABLE classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的数据目录不可用分类。
      */
     DATA_DIRECTORY_UNAVAILABLE("persistence.directory.unavailable", "directory",
-            "persistence.error.directoryUnavailable", FailureRecoveryAction.REQUEST_USER_CORRECTION),
+            "persistence.error.directoryUnavailable", "REQUEST_USER_CORRECTION"),
     /**
      * DATABASE OPEN FAILED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的数据库打开失败分类。
      */
     DATABASE_OPEN_FAILED("persistence.database.open-failed", "open", "persistence.error.databaseOpenFailed",
-            FailureRecoveryAction.RESTART_APPLICATION),
+            "RESTART_APPLICATION"),
     /**
      * DATABASE LOCKED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的数据库已锁定分类。
      */
     DATABASE_LOCKED("persistence.database.locked", "open", "persistence.error.databaseLocked",
-            FailureRecoveryAction.RETRY),
+            "RETRY"),
     /**
      * DATABASE CORRUPTED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的数据库已损坏分类。
      */
     DATABASE_CORRUPTED("persistence.integrity.corrupted", "integrity", "persistence.error.databaseCorrupted",
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+            "REQUIRE_MANUAL_RECOVERY"),
     /**
      * SCHEMA INCOMPATIBLE classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的结构不兼容分类。
      */
     SCHEMA_INCOMPATIBLE("persistence.schema.incompatible", "schema", "persistence.error.schemaIncompatible",
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY),
+            "REQUIRE_MANUAL_RECOVERY"),
     /**
      * DISK UNAVAILABLE classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的磁盘不可用分类。
      */
     DISK_UNAVAILABLE("persistence.storage.disk-unavailable", "storage", "persistence.error.diskUnavailable",
-            FailureRecoveryAction.REQUEST_USER_CORRECTION),
+            "REQUEST_USER_CORRECTION"),
     /**
      * ROLLBACK FAILED classification within desktop persistence failure type.
      * <p>Desktop持久化失败类型中的回滚失败分类。
      */
     ROLLBACK_FAILED("persistence.transaction.rollback-failed", "transaction", "persistence.error.rollbackFailed",
-            FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY);
+            "REQUIRE_MANUAL_RECOVERY");
 
     /**
      * Stable machine-readable classification code.
@@ -85,7 +85,7 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      * Action required to recover from the classified failure.
      * <p>从已分类失败中恢复所需的动作。
      */
-    private final FailureRecoveryAction recoveryAction;
+    private final String recoveryAction;
 
     /**
      * Binds the supplied dependencies and state for desktop persistence failure type.
@@ -96,7 +96,7 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      * @param messageKey stable localization key for user-facing text / 用户可见文本的稳定本地化键
      * @param recoveryAction action required to recover from the classified failure / 从已分类失败中恢复所需的动作
      */
-    DesktopPersistenceFailureType(String code, String phase, String messageKey, FailureRecoveryAction recoveryAction) {
+    DesktopPersistenceFailureType(String code, String phase, String messageKey, String recoveryAction) {
         this.code = code;
         this.phase = phase;
         this.messageKey = messageKey;
@@ -109,7 +109,6 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return stable machine-readable classification code / 稳定的机器可读分类码
      */
-    @Override
     public String code() {
         return code;
     }
@@ -120,7 +119,6 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return the module domain that owns this failure definition / 持有当前失败定义的模块领域
      */
-    @Override
     public String domain() {
         return "persistence";
     }
@@ -131,7 +129,6 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return stage associated with the result or failure / 结果或失败所属阶段
      */
-    @Override
     public String phase() {
         return phase;
     }
@@ -142,7 +139,6 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return stable localization key for user-facing text / 用户可见文本的稳定本地化键
      */
-    @Override
     public String messageKey() {
         return messageKey;
     }
@@ -153,9 +149,8 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return the severity assigned to this failure definition / 当前失败定义的严重级别
      */
-    @Override
-    public FailureSeverityLevel severity() {
-        return FailureSeverityLevel.ERROR;
+    public String severity() {
+        return "ERROR";
     }
 
     /**
@@ -164,8 +159,33 @@ public enum DesktopPersistenceFailureType implements FailureDefinition {
      *
      * @return action required to recover from the classified failure / 从已分类失败中恢复所需的动作
      */
-    @Override
-    public FailureRecoveryAction recoveryAction() {
+    public String recoveryAction() {
         return recoveryAction;
+    }
+
+    /** Creates immutable evidence for the original persistence failure. / 创建原持久化失败的不可变依据。
+     * @param occurrence original diagnostic UUID / 原诊断UUID
+     * @param diagnostic nonsecret diagnostic text / 非秘密诊断文本
+     * @return exact event and recovery context / 精确事件及恢复上下文
+     * @throws NullPointerException if a required value is absent / 必需值缺失时
+     * @throws IllegalArgumentException if the diagnostic is blank / 诊断为空时 */
+    public Problem problem(UUID occurrence, String diagnostic) {
+        Objects.requireNonNull(occurrence, "occurrence");
+        String message = Objects.requireNonNull(diagnostic, "diagnostic").trim();
+        if (message.isBlank()) throw new IllegalArgumentException("diagnostic must not be blank");
+        return new Problem(problemCode(), code, message, Map.of("domain", domain(), "phase", phase,
+                "messageKey", messageKey, "severity", severity(), "recoveryAction", recoveryAction,
+                "recoveryDisposition", "NOT_ATTEMPTED"), Optional.of(occurrence));
+    }
+
+    /** Maps an actual persistence failure without changing its event. / 映射实际持久化失败，不更改其事件。
+     * @return stable SDK failure category / 稳定SDK失败分类 */
+    private ProblemCode problemCode() {
+        return switch (this) {
+            case DATA_DIRECTORY_UNAVAILABLE, DISK_UNAVAILABLE -> ProblemCode.UNAVAILABLE;
+            case DATABASE_LOCKED -> ProblemCode.BUSY;
+            case SCHEMA_INCOMPATIBLE -> ProblemCode.INCOMPATIBLE;
+            default -> ProblemCode.IO_FAILURE;
+        };
     }
 }

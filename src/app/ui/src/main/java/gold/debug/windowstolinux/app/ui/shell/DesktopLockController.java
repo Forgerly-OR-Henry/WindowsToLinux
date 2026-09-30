@@ -7,7 +7,7 @@ import java.util.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /** Covers the shell and every owned dialog with the same security boundary. / 统一遮挡桌面外壳和所有从属窗口。 */
 final class DesktopLockController implements AutoCloseable {
@@ -32,7 +32,7 @@ final class DesktopLockController implements AutoCloseable {
         if (!(service instanceof SecurityApplicationFacade security))
             return null;
         var controller = new DesktopLockController(frame, security, new PageMessagePresenter(messages, reports));
-        JButton lock = components.secondaryButton(messages.text("security.lock"));
+        JButton lock = controller.messages.bind(components.secondaryButton(""), "security.lock");
         controller.lockButton = lock;
         lock.setEnabled(security.securityState().configured());
         lock.setName("security.lock");
@@ -321,13 +321,13 @@ final class DesktopLockController implements AutoCloseable {
             panel.setOpaque(true);
             panel.setFocusCycleRoot(true);
             form.setBorder(BorderFactory.createEmptyBorder(28, 28, 28, 28));
-            JLabel title = new JLabel(messages.text("security.locked"));
+            JLabel title = messages.bind(new JLabel(), "security.locked");
             title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
             form.add(title);
             form.add(summary);
-            enter.setText(messages.text("security.unlock"));
+            messages.bind(enter, "security.unlock");
             form.add(enter);
-            JLabel label = new JLabel(messages.text("security.password"));
+            JLabel label = messages.bind(new JLabel(), "security.password");
             form.add(label);
             form.add(password);
             form.add(submit);
@@ -340,7 +340,7 @@ final class DesktopLockController implements AutoCloseable {
                 label.setVisible(true);
                 password.setVisible(true);
                 submit.setVisible(true);
-                submit.setText(messages.text("security.unlock"));
+                messages.bind(submit, "security.unlock");
                 password.requestFocusInWindow();
                 panel.revalidate();
             });
@@ -363,7 +363,9 @@ final class DesktopLockController implements AutoCloseable {
         /** Refreshes visible status from the current security state. / 按当前安全状态刷新可见状态。
          */
         void update() {
-            summary.setText(messages.text("security.tasks", Map.of("count", security.securityState().activeTasks())));
+            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(summary,
+                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("security.tasks", "count",
+                            security.securityState().activeTasks()), messages.catalog());
             if (!panel.isVisible())
                 panel.setVisible(true);
             root.getContentPane().setVisible(false);

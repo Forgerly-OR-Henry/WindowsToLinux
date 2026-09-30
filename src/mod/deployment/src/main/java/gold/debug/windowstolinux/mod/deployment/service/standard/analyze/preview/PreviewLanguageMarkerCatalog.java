@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Evid
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageEcosystemType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
 
 /**
@@ -41,8 +41,8 @@ public final class PreviewLanguageMarkerCatalog {
         }
         List<AnalysisEvidence> evidence = new ArrayList<>();
         firstEvidence.forEach((language, path) -> evidence.add(new AnalysisEvidence(
-                LocalizedMessage.of("analysis.language.sourceMarker", "language", language.name()), path.toString(),
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH)));
+                DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", language.name()), path.toString(),
+                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH)));
         return new ProjectLanguageFacts(ecosystems, languages, java.util.Map.of(), evidence);
     }
 

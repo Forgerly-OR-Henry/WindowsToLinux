@@ -36,21 +36,6 @@
     </dependency>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-standard-deploy</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-agent</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-source</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-app-windows</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -62,46 +47,6 @@
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-app-secret</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-model</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-git</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-standard-analyze</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-ai</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-config</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-linux</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-deploy</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-shared-backup</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

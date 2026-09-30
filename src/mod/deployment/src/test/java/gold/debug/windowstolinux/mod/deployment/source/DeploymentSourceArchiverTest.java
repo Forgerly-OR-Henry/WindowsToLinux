@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.source.*;
 import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.shared.source.archive.SafeSourceArchivePreparer;
 import org.junit.jupiter.api.Test;
 
 class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
@@ -156,8 +155,11 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         file("windowstolinux-application.properties", "source.include=fixtures/sample.log\n".getBytes());
         String longName = "d".repeat(80) + "/" + "n".repeat(40);
         file(longName, new byte[]{0, 1, 2, 3});
-        Path legacy = root.resolve("expected.tar.gz");
-        var expected = new SafeSourceArchivePreparer().archive(root.resolve("input"), legacy);
+        byte[] expected;
+        try (var fixture = getClass().getResourceAsStream("/original-source-original.tar.gz")) {
+            assertNotNull(fixture, "The independently frozen original archive must be packaged");
+            expected = fixture.readAllBytes();
+        }
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -168,10 +170,11 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
                     byte[] first;
                     try (var archive = archiver.prepare(material, 100000, task)) {
                         first = Files.readAllBytes(archive.path());
-                        assertArrayEquals(Files.readAllBytes(legacy), first);
-                        assertEquals(expected.contentSha256(), archive.sha256());
-                        assertEquals(expected.byteCount(), archive.byteCount());
-                        assertEquals(expected.uncompressedByteCount(), archive.uncompressedByteCount());
+                        assertArrayEquals(expected, first);
+                        assertEquals("c4506d54e1c4832d72d761ca8723e2bff0572715b6396698fcf9d3473874e50d",
+                                archive.sha256());
+                        assertEquals(333, archive.byteCount());
+                        assertEquals(71, archive.uncompressedByteCount());
                         assertEquals(material.snapshot().id(), archive.originSnapshotId());
                         assertEquals(material.snapshot().sha256(), archive.sourceManifestSha256());
                         assertNotEquals(archive.snapshot().sha256(), archive.sha256());

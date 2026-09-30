@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRun
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -111,11 +111,11 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
             evidence.add(evidence("analysis.deployment.runtime.evidence.containerVolumes", "Dockerfile#VOLUME",
                     "analysis.deployment.evidence.detected"));
         }
-        List<LocalizedMessage> required = new ArrayList<>(
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.containerEngine"),
-                        LocalizedMessage.of("analysis.deployment.runtime.health")));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>(
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.containerEngine"),
+                        DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (ports.isEmpty()) {
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.containerPorts"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.containerPorts"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), Map.of(),
                 Optional.empty(), ports, volumes, evidence, required);
@@ -227,7 +227,7 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
      * @return the admission rejection associated with the supplied reason / 与所提供原因关联的准入拒绝
      */
     private static RejectionReason rejection(String code, String key) {
-        return new RejectionReason(code, LocalizedMessage.of(key), "deployment");
+        return new RejectionReason(code, DeploymentLocalizedMessage.of(key), "deployment");
     }
 
     /**
@@ -242,9 +242,9 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
             String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(subject),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
                 source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage.of(conclusion),
+                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
                 gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

@@ -29,7 +29,7 @@ public final class DesktopComponentFactory {
      * Palette.
      * <p>配色。
      */
-    private final ThemePalette palette;
+    private ThemePalette palette;
 
     /**
      * Validates and binds the inputs required by desktop component factory.
@@ -42,6 +42,46 @@ public final class DesktopComponentFactory {
         this.palette = Objects.requireNonNull(palette, "palette");
     }
 
+    /** Updates colors used for subsequently created controls. / 更新后续创建控件所用颜色。
+     * @param palette effective theme colors / 生效主题颜色 */
+    public void palette(ThemePalette palette) {
+        this.palette = Objects.requireNonNull(palette);
+    }
+
+    /** Applies declared palette roles to an existing component tree. / 向已有组件树应用声明的配色角色。
+     * @param root original component tree / 原组件树 */
+    public void refreshTheme(Component root) {
+        DesktopThemeBindings.refresh(root, palette);
+    }
+
+    /** Builds a heading whose visible labels retain declared locale keys. / 创建可见标签保留声明语言键的标题。
+     * @param messages current message presenter / 当前消息展示器
+     * @param title title key / 标题键
+     * @param description explanation key / 说明键
+     * @return original heading component / 原标题组件 */
+    public JComponent sectionHeading(gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter messages,
+            String title, String description) {
+        var heading = sectionHeading(messages.text(title), messages.text(description));
+        var labels = heading.getComponents();
+        messages.bind((JLabel) labels[0], title);
+        messages.bind((JLabel) labels[1], description);
+        return heading;
+    }
+
+    /** Adds a form label with explicit locale identity. / 添加具备明确语言身份的表单标签。
+     * @param panel original form / 原表单
+     * @param row grid row / 网格行
+     * @param column grid column / 网格列
+     * @param messages current presenter / 当前展示器
+     * @param key label key / 标签键
+     * @param component original input, kept unbound / 保持未绑定的原输入 */
+    public void addField(JPanel panel, int row, int column,
+            gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter messages, String key, Component component) {
+        int previous = panel.getComponentCount();
+        addField(panel, row, column, messages.text(key), component);
+        messages.bind((JLabel) panel.getComponent(previous), key);
+    }
+
     /**
      * Returns page panel.
      * <p>返回页面面板。
@@ -51,7 +91,7 @@ public final class DesktopComponentFactory {
     public JPanel pagePanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 16));
         panel.setBackground(palette.pageBackground());
-        return panel;
+        return DesktopThemeBindings.role(panel, "page");
     }
 
     /**
@@ -100,7 +140,7 @@ public final class DesktopComponentFactory {
         badge.setForeground(palette.accentDark());
         badge.setFont(badge.getFont().deriveFont(Font.BOLD, 11f));
         badge.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
-        return badge;
+        return DesktopThemeBindings.role(badge, "badge");
     }
 
     /**
@@ -113,7 +153,7 @@ public final class DesktopComponentFactory {
     public JPanel card(LayoutManager layout) {
         JPanel card = new RoundedCard(layout, palette.cardBackground(), palette.cardBorder());
         card.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
-        return card;
+        return DesktopThemeBindings.role(card, "card");
     }
 
     /**
@@ -129,8 +169,10 @@ public final class DesktopComponentFactory {
         JLabel label = new JLabel(title);
         label.setFont(label.getFont().deriveFont(Font.BOLD, 15f));
         label.setForeground(palette.sidebarForeground());
-        JLabel detail = new JLabel(description);
+        DesktopThemeBindings.role(label, "title");
+        JLabel detail = new WrappingLabel(description, 420);
         detail.setForeground(palette.subduedText());
+        DesktopThemeBindings.role(detail, "detail");
         detail.setFont(detail.getFont().deriveFont(12f));
         heading.add(label, BorderLayout.NORTH);
         heading.add(detail, BorderLayout.SOUTH);
@@ -152,11 +194,14 @@ public final class DesktopComponentFactory {
         JPanel copy = transparent(new BorderLayout(0, 4));
         JLabel number = new JLabel(index);
         number.setForeground(palette.accent());
+        DesktopThemeBindings.role(number, "number");
         number.setFont(number.getFont().deriveFont(Font.BOLD, 12f));
         JLabel heading = new JLabel(title);
         heading.setFont(heading.getFont().deriveFont(Font.BOLD, 15f));
+        DesktopThemeBindings.role(heading, "title");
         JLabel detail = new JLabel("<html><body style='width: 170px'>" + description + "</body></html>");
         detail.setForeground(palette.subduedText());
+        DesktopThemeBindings.role(detail, "detail");
         detail.setFont(detail.getFont().deriveFont(12f));
         copy.add(number, BorderLayout.NORTH);
         copy.add(heading, BorderLayout.CENTER);
@@ -178,7 +223,7 @@ public final class DesktopComponentFactory {
         button.setBackground(palette.accent());
         button.setForeground(Color.WHITE);
         decorate(button);
-        return button;
+        return DesktopThemeBindings.role(button, "primary");
     }
 
     /**
@@ -193,7 +238,7 @@ public final class DesktopComponentFactory {
         button.setBackground(palette.secondaryButtonBackground());
         button.setForeground(palette.secondaryButtonForeground());
         decorate(button);
-        return button;
+        return DesktopThemeBindings.role(button, "secondary");
     }
 
     /**
@@ -213,8 +258,10 @@ public final class DesktopComponentFactory {
         labelConstraints.gridy = row;
         labelConstraints.anchor = GridBagConstraints.WEST;
         labelConstraints.insets = new Insets(0, 0, 10, 8);
-        JLabel labelComponent = new JLabel(label);
+        JLabel labelComponent = new WrappingLabel(label, 130);
         labelComponent.setForeground(palette.subduedText());
+        labelComponent.setLabelFor(component);
+        DesktopThemeBindings.role(labelComponent, "detail");
         panel.add(labelComponent, labelConstraints);
         GridBagConstraints inputConstraints = new GridBagConstraints();
         inputConstraints.gridx = leftColumn + 1;
@@ -240,8 +287,10 @@ public final class DesktopComponentFactory {
         JScrollPane scrollPane = new JScrollPane(output);
         output.setBackground(palette.cardBackground());
         output.setForeground(palette.sidebarForeground());
+        DesktopThemeBindings.role(output, "output");
         scrollPane.getViewport().setBackground(palette.cardBackground());
         scrollPane.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, palette.cardBorder()));
+        DesktopThemeBindings.role(scrollPane, "scroll");
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         card.add(scrollPane, BorderLayout.CENTER);
         return card;
@@ -258,6 +307,7 @@ public final class DesktopComponentFactory {
     public JPanel informationCard(String title, String message) {
         JPanel card = card(new BorderLayout(0, 10));
         JLabel heading = new JLabel(title);
+        DesktopThemeBindings.role(heading, "title");
         heading.setFont(heading.getFont().deriveFont(Font.BOLD, 15f));
         JTextArea detail = new JTextArea(message.replaceAll("(?i)<br\\s*/?>", "\n").replaceAll("<[^>]+>", ""));
         detail.setEditable(false);
@@ -267,6 +317,7 @@ public final class DesktopComponentFactory {
         detail.setRows(5);
         detail.setColumns(16);
         detail.setForeground(palette.subduedText());
+        DesktopThemeBindings.role(detail, "detail");
         detail.setFont(detail.getFont().deriveFont(13f));
         card.add(heading, BorderLayout.NORTH);
         card.add(detail, BorderLayout.CENTER);
@@ -300,5 +351,43 @@ public final class DesktopComponentFactory {
         button.setOpaque(false);
         button.putClientProperty(FlatClientProperties.STYLE,
                 java.util.Map.of("arc", 12, "borderWidth", 0, "focusWidth", 1));
+    }
+
+    /** Wraps owned nonsecret labels while retaining their plain accessible name and explicit locale binding. / 对所属非秘密标签换行，同时保留纯文本无障碍名称及明确语言绑定。 */
+    private static final class WrappingLabel extends JLabel {
+        /** Logical column width before the current Swing scale. / 当前Swing缩放前的逻辑列宽。 */
+        private final int wrapUnits;
+        /** Original localized plain text, never input contents. / 原本地化纯文本，绝不为输入内容。 */
+        private String plainText;
+
+        /** Creates the actual label at a bounded scaled width. / 在有界缩放宽度创建实际标签。
+         * @param text original plain caption / 原纯文本说明
+         * @param wrapUnits logical wrapping width / 逻辑换行宽度 */
+        private WrappingLabel(String text, int wrapUnits) {
+            this.wrapUnits = wrapUnits;
+            setText(text);
+        }
+
+        /** Rebuilds only display markup for an explicit localized caption. / 仅为明确本地化说明重建显示标记。
+         * @param text original plain caption / 原纯文本说明 */
+        @Override
+        public void setText(String text) {
+            plainText = text;
+            if (wrapUnits == 0 || text == null) {
+                super.setText(text);
+                return;
+            }
+            String escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+            super.setText("<html><body style='width: " + com.formdev.flatlaf.util.UIScale.scale(wrapUnits)
+                    + "px'>" + escaped + "</body></html>");
+            getAccessibleContext().setAccessibleName(text);
+        }
+
+        /** Reapplies the original plain caption after a theme or scale change. / 主题或缩放变化后重新应用原纯文本说明。 */
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            if (wrapUnits > 0) setText(plainText);
+        }
     }
 }

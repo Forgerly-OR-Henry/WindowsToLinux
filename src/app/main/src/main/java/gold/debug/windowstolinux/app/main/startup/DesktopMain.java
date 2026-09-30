@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.shell.PlatformFrame;
-import gold.debug.windowstolinux.app.windows.security.CurrentUserDataProtection;
+import gold.debug.windowstolinux.app.windows.security.CurrentUserProtection;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 
 /** Production platform bootstrap using fixed paths, current-user protection and H2. / 使用固定路径、当前用户保护及 H2 的生产平台引导。 */
@@ -64,7 +64,7 @@ public final class DesktopMain {
         }
         PlatformRuntime runtime;
         try {
-            var protection = new CurrentUserDataProtection();
+            var protection = new CurrentUserProtection();
             runtime = PlatformRuntime.open(layout.dataDirectory(), new DatabaseProtection() {
                 /** Protects bootstrap bytes for the current Windows user. / 为当前 Windows 用户保护引导字节。
                  * @param clear temporary plaintext / 临时明文
@@ -105,29 +105,7 @@ public final class DesktopMain {
             var theme = SystemThemeResolver.effectiveTheme(appearance.themeMode());
             new DesktopUncaughtFailureBoundary(reports, messages).install();
             var models = runtime.models();
-            frame = onEdt(() -> {
-                DesktopThemeService.install(theme);
-                var window = new PlatformFrame(runtime.security(), messages,
-                        theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light(),
-                        new UiEnvironment(Locale.forLanguageTag(appearance.localeTag()), theme.name(),
-                                runtime.security().securityState().configured()),
-                        reports);
-                window.onExit(runtime);
-                var presenter = new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages);
-                runtime.setInteractionPresenter(presenter);
-                runtime.setSourcePicker(presenter);
-                window.installServers(runtime.servers());
-                var recovery = runtime.recovery();
-                window.installRecovery(recovery);
-                window.installModels(models);
-                window.installTransfers(runtime.transfers());
-                window.installAuthorization(runtime.authorization());
-                window.installLogs(runtime.logs());
-                window.installTasks(
-                        new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
-                                runtime.security(), id -> recovery.reconcile(id, true), runtime::releaseModRecovery));
-                return window;
-            });
+            frame = onEdt(() -> createWindow(runtime, messages, appearance, theme, reports, models));
             runtime.started();
             PlatformFrame created = frame;
             onEdt(() -> {
@@ -162,6 +140,50 @@ public final class DesktopMain {
                     DesktopStartupException.create(DesktopSystemFailureType.UI_INITIALIZATION_FAILED,
                             "The platform desktop could not be initialized", failure));
         }
+    }
+
+    /** Assembles the original desktop services on the existing EDT before marking the host started. / 标记宿主已启动前，在既有EDT装配原桌面服务。
+     * @param runtime original platform runtime / 原平台运行时
+     * @param messages current host messages / 当前宿主消息
+     * @param appearance stored display selection / 存储外观选择
+     * @param theme resolved initial palette / 已解析初始配色
+     * @param reports original bounded diagnostic writer / 原有界诊断写入器
+     * @param models original already-resolved model settings / 原已解析模型设置
+     * @return original window with its actual services / 带实际服务的原窗口
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if original host capability assembly is rejected / 原宿主能力装配被拒绝时 */
+    private static PlatformFrame createWindow(PlatformRuntime runtime, MessageCatalog messages,
+            DesktopDisplayConfiguration appearance, ThemeMode theme, FailureReportStore reports,
+            gold.debug.windowstolinux.app.service.ai.PlatformModelService models)
+            throws gold.debug.windowstolinux.appapi.task.ApiException {
+        DesktopThemeService.install(theme);
+        var window = new PlatformFrame(runtime.security(), messages,
+                theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light(),
+                new UiEnvironment(Locale.forLanguageTag(appearance.localeTag()), theme.name(),
+                        runtime.security().securityState().configured()),
+                reports);
+        window.onExit(runtime);
+        var presenter = new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages);
+        runtime.setInteractionPresenter(presenter);
+        runtime.setSourcePicker(presenter);
+        window.installServers(runtime.servers());
+        var recovery = runtime.recovery();
+        window.installRecovery(recovery);
+        window.installModels(models);
+        window.installTransfers(runtime.transfers());
+        window.installAuthorization(runtime.authorization());
+        window.installAppearance(appearance, requested -> {
+            try (var authorized = runtime.security().beginTask()) {
+                authorized.execute(() -> {
+                    runtime.persistence().preferences().saveAll(java.util.Map.of("ui_locale", requested.localeTag(),
+                            "ui_theme", requested.themeMode().name()));
+                    return null;
+                });
+            }
+        });
+        window.installLogs(runtime.logs());
+        window.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
+                runtime.security(), id -> recovery.reconcile(id, true), runtime::releaseModRecovery));
+        return window;
     }
 
     /** Connects the default management page to original runtime operations outside the EDT. / 在 EDT 外将默认管理页面接入原运行时操作。
@@ -293,7 +315,7 @@ public final class DesktopMain {
      */
     private static void showStartupFailure(FailureReportStore reports, MessageCatalog messages,
             DesktopStartupException failure) {
-        String text = new DesktopFailurePresenter(messages::text, reports).present(failure);
+        String text = new DesktopFailurePresenter(messages::text, reports).present(failure, failure.problem());
         if (GraphicsEnvironment.isHeadless())
             System.err.println(text);
         else

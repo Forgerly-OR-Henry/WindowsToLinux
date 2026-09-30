@@ -108,7 +108,7 @@ public final class PlatformTaskManagement implements TaskManagement {
             throw new IllegalStateException("Task management requires a worker");
         try {
             security.requireUnlocked();
-        } catch (gold.debug.windowstolinux.app.service.failure.ApplicationServiceException denied) {
+        } catch (gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException denied) {
             throw failure(ProblemCode.ACCESS_DENIED, "TASK_SECURITY_LOCKED", "Unlock the desktop to manage tasks");
         }
     }

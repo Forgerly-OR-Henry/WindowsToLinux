@@ -22,18 +22,10 @@ import org.w3c.dom.Element;
 class ModuleDependencyArchitectureTest {
     private static final String ROOT = "gold.debug.windowstolinux.";
 
-    private static final Set<String> UI_DATA_TYPES = Set.of(
-            ROOT + "shared.ai.collaboration.role.AiCollaborationRoleKind",
-            ROOT + "shared.ai.collaboration.invocation.AiRoleInvocationResult",
-            ROOT + "shared.ai.collaboration.role.ProjectAnalysisRoleContext",
-            ROOT + "shared.ai.collaboration.role.DeploymentInputRoleContext",
-            ROOT + "shared.standard.analyze.component.ComponentAnalysisRequest",
-            ROOT + "shared.deploy.contract.ApplicationHealthGate",
-            ROOT + "shared.deploy.contract.AutomaticDeploymentInteraction",
-            ROOT + "shared.config.resource.ManagedDatabaseBinding",
-            ROOT + "shared.config.resource.ManagedDatabaseConnection",
-            ROOT + "shared.deploy.contract.result.deployment.MultiComponentDeploymentResult",
-            ROOT + "shared.deploy.contract.result.lifecycle.MultiComponentLifecycleResult");
+    private static final Set<String> UI_EXECUTION_TYPES = Set.of(ROOT + "appapi.linux.LinuxService",
+            ROOT + "appapi.linux.RemoteSession", ROOT + "appapi.process.ProcessService",
+            ROOT + "appapi.process.ProcessChannel", ROOT + "appapi.source.SourceService",
+            ROOT + "appapi.secret.SecretService", ROOT + "appapi.db.ModDatabase");
 
     @Test
     void productionDependenciesMatchDocumentationAndDirectPomDeclarations() throws Exception {
@@ -45,10 +37,11 @@ class ModuleDependencyArchitectureTest {
             String owner = moduleFor(source.packageName(), declared.keySet());
             assertNotNull(owner, source.path().toString());
             violations.addAll(referenceViolations(owner, source.references(), allowed, declared));
+            if (owner.equals("app/ui"))
+                violations.addAll(executionCalls(source));
         }
         assertTrue(violations.isEmpty(), () -> "module dependency violations: " + violations);
-        for (String type : UI_DATA_TYPES)
-            assertTrue(document.contains(type.substring(type.lastIndexOf('.') + 1)), type);
+
     }
 
     @Test
@@ -56,14 +49,14 @@ class ModuleDependencyArchitectureTest {
         var allowed = documentedDependencies(
                 Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
         var declared = new HashMap<>(declaredDependencies());
-        declared.put("app/ui", Set.of("shared/linux"));
+        declared.put("app/ui", Set.of("app/linux"));
         assertFalse(pomViolations(allowed, declared).isEmpty());
         declared = new HashMap<>(declaredDependencies());
         var service = new HashSet<>(declared.get("app/service"));
-        service.remove("shared/source");
+        service.remove("app/source");
         declared.put("app/service", service);
-        assertFalse(referenceViolations("app/service", List.of(ROOT + "shared.source.SourceDirectorySnapshot"), allowed,
-                declared).isEmpty());
+        assertFalse(referenceViolations("app/service", List.of(ROOT + "app.source.snapshot.SourceWorkDirectory"),
+                allowed, declared).isEmpty());
     }
 
     @Test
@@ -74,56 +67,74 @@ class ModuleDependencyArchitectureTest {
         var source = ArchitectureSourceInspector.snippets(Map.of("fixture.References", """
                 package fixture;
                 class References {
-                    gold.debug.windowstolinux.shared.linux.error.LinuxOperationException failure;
+                    gold.debug.windowstolinux.app.linux.ssh.SshConnector transfer;
                 }
                 """)).getFirst();
         assertFalse(referenceViolations("app/ui", source.references(), allowed, declared).isEmpty());
-        assertEquals(List.of(), referenceViolations("app/ui",
-                List.of(ROOT + "shared.config.resource.ManagedDatabaseConnection.Server"), allowed, declared));
-        assertFalse(
-                referenceViolations("app/ui", List.of(ROOT + "shared.config.ConfigurationSnapshot"), allowed, declared)
-                        .isEmpty());
+        assertEquals(List.of(),
+                referenceViolations("app/ui", List.of(ROOT + "appapi.task.Problem"), allowed, declared));
+        assertFalse(referenceViolations("app/ui", List.of(ROOT + "appapi.linux.RemoteSession"), allowed, declared)
+                .isEmpty());
+        var indirect = ArchitectureSourceInspector.snippets(Map.of("fixture.Indirect", """
+                package fixture;
+                class Indirect {
+                    gold.debug.windowstolinux.appapi.mod.ModContext context;
+                    void run() throws gold.debug.windowstolinux.appapi.task.ApiException { var linux = context.linux(); linux.connect(null, null); }
+                }
+                """)).getFirst();
+        assertFalse(executionCalls(indirect).isEmpty());
     }
 
     @Test
-    void enginesAreIndependentAndCommonModulesCannotDependOnThem() throws Exception {
+    void platformApiAndExtensionsHaveIndependentDependencyBoundaries() throws Exception {
         var modules = declaredDependencies();
+        assertEquals(Set.of(), modules.get("appapi"));
+        assertEquals(Set.of("appapi"), modules.get("mod/deployment"));
         for (var entry : modules.entrySet()) {
-            String owner = entry.getKey();
-            var dependencies = entry.getValue();
-            if (owner.startsWith("shared/standard/"))
-                assertFalse(dependencies.contains("shared/agent"), owner);
-            else if (owner.equals("shared/agent"))
-                assertTrue(dependencies.stream().noneMatch(d -> d.startsWith("shared/standard/")), owner);
-            else if (owner.startsWith("shared/"))
-                assertTrue(dependencies.stream()
-                        .noneMatch(d -> d.equals("shared/agent") || d.startsWith("shared/standard/")), owner);
-            assertAcyclic(owner, modules, new HashSet<>(), new HashSet<>());
+            if (entry.getKey().startsWith("app/"))
+                assertTrue(entry.getValue().stream().noneMatch(target -> target.startsWith("mod/")), entry.getKey());
+            assertAcyclic(entry.getKey(), modules, new HashSet<>(), new HashSet<>());
         }
-        var graph = MavenModuleGraph.read(ArchitectureSourceInspector.projectRoot());
-        assertTrue(graph.stream().anyMatch(m -> m.path().equals("shared/standard") && m.aggregate()));
-        assertTrue(modules.containsKey("shared/standard/analyze"));
-        assertTrue(modules.containsKey("shared/standard/deploy"));
+        assertTrue(modules.containsKey("app/main"));
+        assertFalse(modules.keySet().stream().anyMatch(path -> path.startsWith("shared/") || path.startsWith("web/")));
     }
 
     @Test
     void assistedAnalysisCannotReachExecutionOrWritableSourceCapabilities() throws Exception {
-        int checked = 0;
-        for (var source : ArchitectureSourceInspector.production()) {
-            if (!source.packageName().equals(ROOT + "shared.standard.deploy.assistance")
-                    || !source.path().getFileName().toString().startsWith("AssistedAnalysis"))
-                continue;
-            checked++;
-            for (String reference : source.references())
-                assertTrue(List
-                        .of(ROOT + "shared.agent.", ROOT + "shared.linux.", ROOT + "shared.deploy.", ROOT + "app.",
-                                "java.nio.file.", "java.io.", "java.lang.Process")
-                        .stream().noneMatch(reference::startsWith), source.path() + ": " + reference);
-        }
-        assertEquals(3, checked);
-        assertEquals(Set.of("revision", "verify", "list", "read", "search"), java.util.Arrays
-                .stream(gold.debug.windowstolinux.shared.source.browse.SourceReadPort.class.getDeclaredMethods())
-                .map(java.lang.reflect.Method::getName).collect(java.util.stream.Collectors.toSet()));
+        var analysis = ArchitectureSourceInspector.production().stream()
+                .filter(source -> source.path().getFileName().toString().equals("DeploymentAssistedAnalysis.java"))
+                .toList();
+        assertEquals(1, analysis.size());
+        assertTrue(assistedViolations(analysis.getFirst()).isEmpty());
+        var bypass = ArchitectureSourceInspector.snippets(Map.of("fixture.Analysis", """
+                package fixture;
+                class Analysis {
+                    gold.debug.windowstolinux.appapi.mod.ModContext context;
+                    void run() { context.linux(); context.source(); context.secrets(); }
+                }
+                """)).getFirst();
+        assertEquals(3, assistedViolations(bypass).size());
+        var browser = ArchitectureSourceInspector.production().stream()
+                .filter(source -> source.path().getFileName().toString().equals("DeploymentSourceBrowser.java"))
+                .findFirst().orElseThrow();
+        String source = Files.readString(browser.path());
+        assertFalse(source.matches("(?s).*\\b(?:write|delete|move|copy|createFile|createDirectory)\\s*\\(.*"));
+        assertTrue(source.contains("public List<String> list(") && source.contains("public List<String> read(")
+                && source.contains("public List<String> search("));
+    }
+
+    private static List<String> assistedViolations(ArchitectureSourceInspector.JavaSource source) {
+        return source.calls().stream()
+                .filter(call -> call.startsWith(ROOT + "appapi.mod.ModContext#")
+                        && !Set.of("ai", "owner").contains(call.substring(call.indexOf('#') + 1))
+                        || UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
+                .toList();
+    }
+
+    private static List<String> executionCalls(ArchitectureSourceInspector.JavaSource source) {
+        return source.calls().stream()
+                .filter(call -> UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
+                .map(call -> source.path() + " invokes an execution capability " + call).toList();
     }
 
     private static void assertAcyclic(String node, Map<String, Set<String>> graph, Set<String> stack,
@@ -159,9 +170,11 @@ class ModuleDependencyArchitectureTest {
             String dependency = moduleFor(reference, declared.keySet());
             if (owner.equals(dependency))
                 continue;
-            if (owner.equals("app/ui") && UI_DATA_TYPES.stream()
-                    .anyMatch(type -> reference.equals(type) || reference.startsWith(type + ".")))
+            if (owner.equals("app/ui") && UI_EXECUTION_TYPES.stream()
+                    .anyMatch(type -> reference.equals(type) || reference.startsWith(type + "."))) {
+                violations.add(owner + " directly references an execution capability " + reference);
                 continue;
+            }
             if (dependency == null || !allowed.getOrDefault(owner, Set.of()).contains(dependency)
                     || !declared.getOrDefault(owner, Set.of()).contains(dependency))
                 violations.add(owner + " references " + reference + " without an allowed direct dependency");
@@ -206,7 +219,7 @@ class ModuleDependencyArchitectureTest {
         Map<String, Set<String>> result = new HashMap<>();
         while (blocks.find())
             for (String line : blocks.group(1).lines().toList()) {
-                var arrow = Pattern.compile("^((?:shared|app|web)/[a-z/-]+)\\s+──→\\s+(.+)$").matcher(line);
+                var arrow = Pattern.compile("^((?:appapi|(?:app|mod)/[a-z/-]+))\\s+──→\\s+(.+)$").matcher(line);
                 if (!arrow.matches())
                     continue;
                 var dependencies = result.computeIfAbsent(arrow.group(1), unused -> new HashSet<>());
@@ -214,7 +227,7 @@ class ModuleDependencyArchitectureTest {
                 if (target.equals("none"))
                     continue;
                 for (String path : target.split(",\\s*")) {
-                    if (!path.matches("(?:shared|app|web)/[a-z/-]+"))
+                    if (!path.matches("(?:appapi|(?:app|mod)/[a-z/-]+)"))
                         throw new IllegalArgumentException("invalid documented module path: " + path);
                     dependencies.add(path);
                 }

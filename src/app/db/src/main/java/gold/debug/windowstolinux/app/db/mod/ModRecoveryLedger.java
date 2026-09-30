@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.persistence.connection.*;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;

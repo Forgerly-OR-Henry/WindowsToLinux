@@ -23,11 +23,20 @@ final class DeploymentExecutionCodec {
     /** Whole-graph publication request with one immutable non-secret graph proposal. / 含一份不可变非秘密整图提案的整图发布请求。 */
     static final int GRAPH_PUBLICATION_VERSION = 6;
 
+    /** Assisted single-unit request with at most two complete build reviews. / 最多含两次完整构建审阅的辅助单元请求。 */
+    static final int ASSISTED_PUBLICATION_VERSION = 7;
+
+    /** Assisted graph request with the same bounded original review chain. / 含同一有界原审阅链的辅助整图请求。 */
+    static final int ASSISTED_GRAPH_VERSION = 8;
+
     /** Original single-unit request limit retained for stored version five. / 为已存第五版保留原单单元请求上限。 */
     static final int SINGLE_REQUEST_LIMIT = 40 * 1_048_576;
 
     /** Complete bounded graph template plus original references and request framing. / 完整有界整图模板加原引用与请求信封。 */
     static final int REQUEST_LIMIT = 144 * 1_048_576;
+
+    /** Reads explicitly bounded later formats while retaining each older version's own admission limit. / 读取明确有界后续格式，保留各旧版本自身准入上限。 */
+    static final int READ_LIMIT = DeploymentPublicationAttemptCodec.LIMIT;
 
     /** Prevents construction of the fixed codec. / 防止构造固定编解码器。 */
     private DeploymentExecutionCodec() {
@@ -187,9 +196,8 @@ final class DeploymentExecutionCodec {
      * @return whether semantic reconciliation is supported / 是否支持语义核对
      * @throws SQLException if a document is malformed / 文档无效时 */
     static boolean supported(DeploymentExecutionRecord record) throws SQLException {
-        int version = parse(record.requestJson(), REQUEST_LIMIT).path("formatVersion").intValue();
-        boolean supported = version == VERSION || version == PUBLICATION_VERSION
-                || version == GRAPH_PUBLICATION_VERSION;
+        int version = parse(record.requestJson(), READ_LIMIT).path("formatVersion").intValue();
+        boolean supported = version == VERSION || publicationVersion(version);
         supported &= parse(record.recoveryJson()).path("formatVersion").intValue() == version;
         if (record.resultJson().isPresent())
             supported &= parse(record.resultJson().get()).path("formatVersion").intValue() == version;
@@ -203,28 +211,44 @@ final class DeploymentExecutionCodec {
     static Checkpoint known(DeploymentExecutionRecord record) throws SQLException {
         if (!supported(record))
             throw new SQLException("Execution format requires a matching reader", "0A000");
-        var request = parse(record.requestJson(), REQUEST_LIMIT);
+        var request = parse(record.requestJson(), READ_LIMIT);
         int version = request.path("formatVersion").intValue();
+        int limit = version == VERSION ? 1_048_576 : version == PUBLICATION_VERSION ? SINGLE_REQUEST_LIMIT
+                : DeploymentPublicationAttemptCodec.version(version) ? READ_LIMIT : REQUEST_LIMIT;
+        if (record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > limit)
+            throw new SQLException("Execution request exceeds its original version's admitted bound");
         if (version == VERSION
                 && record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1_048_576)
             throw new SQLException("Legacy execution request exceeds its original bound");
         if (version == PUBLICATION_VERSION
                 && record.requestJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > SINGLE_REQUEST_LIMIT)
             throw new SQLException("Single-unit execution request exceeds its original bound");
-        if (version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
+        if (DeploymentPublicationAttemptCodec.version(version))
+            identity(request, record.identity(), "operationType", "references", "projectSource", "publicationTemplate", "buildReviews", "buildIntent",
+                    "attemptProofs", "attemptReviews", "attemptBuildReviews", "attemptTemplates", "attemptOperation", "attemptTemplate", "attemptIntent", "attemptPendingProof", "attemptFallbacks");
+        else if (assistedVersion(version))
+            identity(request, record.identity(), "operationType", "references", "projectSource", "publicationTemplate", "buildReviews", "buildIntent");
+        else if (publicationVersion(version))
             identity(request, record.identity(), "operationType", "references", "projectSource", "publicationTemplate");
         else
             identity(request, record.identity(), "operationType", "references", "projectSource");
-        if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
+        if (publicationVersion(version)
                 && !publicationOperation(string(request, "operationType")))
             throw new SQLException("Publication template format belongs to another operation");
-        if ((version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION)
+        if (publicationVersion(version)
                 && !request.path("publicationTemplate").isNull()) {
-            var proposal = DeploymentPublicationTemplateCodec
-                    .decodeTemplate(request.path("publicationTemplate").toString(), record.identity().executionId());
-            if ((version == PUBLICATION_VERSION) != (proposal.units().size() == 1))
-                throw new SQLException("Publication template graph differs from original format");
+            var proposal = DeploymentPublicationAttemptCodec.version(version)
+                    ? DeploymentPublicationAttemptCodec.template(request, record.identity().executionId())
+                    : Optional.of(DeploymentPublicationTemplateCodec.decodeTemplate(request.path("publicationTemplate").toString(), record.identity().executionId()));
+            if (proposal.isPresent()) {
+                if (singleVersion(version) != (proposal.orElseThrow().units().size() == 1))
+                    throw new SQLException("Publication template graph differs from original format");
+                if (assistedVersion(version)) requireReviewedTemplate(record, request, proposal.orElseThrow());
+            }
         }
+        if (DeploymentPublicationAttemptCodec.version(version)) DeploymentPublicationAttemptCodec.known(record, request);
+        if (assistedVersion(version))
+            buildReviews(request, record.identity());
         project(request, record.identity());
         if (!string(request, "operationType").matches("[a-z][a-z0-9_-]{0,63}"))
             throw new SQLException("Invalid original operation type");
@@ -264,7 +288,7 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if unsupported or malformed / 不支持或畸形时 */
     static int version(DeploymentExecutionRecord record) throws SQLException {
         known(record);
-        return parse(record.requestJson(), REQUEST_LIMIT).path("formatVersion").intValue();
+        return parse(record.requestJson(), READ_LIMIT).path("formatVersion").intValue();
     }
 
     /** Reads the just-encoded original request version before constructing its first recovery document. / 构造首份恢复文档前读取刚编码的原请求版本。
@@ -272,7 +296,7 @@ final class DeploymentExecutionCodec {
      * @return supported version / 受支持版本
      * @throws SQLException if the request is malformed / 请求畸形时 */
     static int requestVersion(String request) throws SQLException {
-        return parse(request, REQUEST_LIMIT).path("formatVersion").intValue();
+        return parse(request, READ_LIMIT).path("formatVersion").intValue();
     }
 
     /** Reads the complete original proposal only when it was durably saved before publish. / 仅在发布前已持久化时读取完整原提案。
@@ -282,9 +306,10 @@ final class DeploymentExecutionCodec {
     static Optional<DeploymentPublicationProposal> publicationTemplate(DeploymentExecutionRecord record)
             throws SQLException {
         known(record);
-        var request = parse(record.requestJson(), REQUEST_LIMIT);
-        if (request.path("formatVersion").intValue() != PUBLICATION_VERSION
-                && request.path("formatVersion").intValue() != GRAPH_PUBLICATION_VERSION
+        var request = parse(record.requestJson(), READ_LIMIT);
+        if (DeploymentPublicationAttemptCodec.version(request.path("formatVersion").intValue()))
+            return DeploymentPublicationAttemptCodec.template(request, record.identity().executionId());
+        if (!publicationVersion(request.path("formatVersion").intValue())
                 || request.path("publicationTemplate").isNull())
             return Optional.empty();
         return Optional.of(DeploymentPublicationTemplateCodec
@@ -299,11 +324,12 @@ final class DeploymentExecutionCodec {
     static String withPublicationTemplate(DeploymentExecutionRecord record, DeploymentPublicationProposal publication)
             throws SQLException {
         known(record);
-        var request = parse(record.requestJson(), REQUEST_LIMIT);
+        var request = parse(record.requestJson(), READ_LIMIT);
         int version = request.path("formatVersion").intValue();
-        if (version != PUBLICATION_VERSION && version != GRAPH_PUBLICATION_VERSION
-                || (version == PUBLICATION_VERSION) != (publication.units().size() == 1))
+        if (!publicationVersion(version) || singleVersion(version) != (publication.units().size() == 1))
             throw new SQLException("Original execution cannot store a publication template");
+        if (assistedVersion(version)) requireReviewedTemplate(record, request, publication);
+        if (DeploymentPublicationAttemptCodec.version(version)) return DeploymentPublicationAttemptCodec.withTemplate(record, publication);
         String template = DeploymentPublicationTemplateCodec.encodeTemplate(publication);
         if (!request.path("publicationTemplate").isNull()) {
             if (!template.equals(request.path("publicationTemplate").toString()))
@@ -312,6 +338,161 @@ final class DeploymentExecutionCodec {
         }
         request.set("publicationTemplate", parse(template, DeploymentPublicationTemplateCodec.LIMIT));
         return encode(request, version == PUBLICATION_VERSION ? SINGLE_REQUEST_LIMIT : REQUEST_LIMIT);
+    }
+
+    /** Checks the actual final template against every latest corrected unit and the formally confirmed root. / 按每个最近纠正单元及正式确认根核对实际最终模板。
+     * @param record original formal row / 原正式行
+     * @param request complete retained request / 完整留存请求
+     * @param publication actual verified final template / 实际已核实最终模板
+     * @throws SQLException if any original or corrected binding conflicts / 任一原绑定或纠正绑定冲突时 */
+    private static void requireReviewedTemplate(DeploymentExecutionRecord record, JsonNode request,
+            DeploymentPublicationProposal publication) throws SQLException {
+        if (!request.path("buildIntent").isNull()) throw new SQLException("Environment recovery has not confirmed its final review");
+        var latest = new LinkedHashMap<String, DeploymentAssistedBuildReview>();
+        for (var review : buildReviews(request, record.identity())) latest.put(review.unitId(), review);
+        for (var review : latest.values()) {
+            var description = DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan());
+            var component = publication.graph().components().stream().filter(value -> value.unit().id().equals(review.unitId())).findFirst();
+            var unit = publication.units().stream().filter(value -> value.unit().id().equals(review.unitId())).findFirst();
+            if (component.isEmpty() || unit.isEmpty()) throw new SQLException("Corrected unit is absent from the final template");
+            var actual = component.orElseThrow(); var commit = unit.orElseThrow();
+            var expectedConfig = object(); var actualConfig = object();
+            DeploymentPublicationTemplateCodec.configuration(expectedConfig, description.configuration());
+            DeploymentPublicationTemplateCodec.configuration(actualConfig, commit.configuration());
+            if (!actual.unit().server().id().equals(description.serverId()) || !actual.reviewedRuntime().equals(description.runtime())
+                    || !actual.resources().equals(description.resources()) || !commit.secrets().equals(description.secrets()) || !expectedConfig.equals(actualConfig))
+                throw new SQLException("Final template differs from the complete confirmed build review");
+        }
+    }
+
+    /** Identifies supported publication formats without altering older encoded bytes. / 识别受支持发布格式，不改变旧编码字节。
+     * @param version exact original version / 精确原版本
+     * @return whether a template is supported / 是否支持模板 */
+    private static boolean publicationVersion(int version) {
+        return version == PUBLICATION_VERSION || version == GRAPH_PUBLICATION_VERSION || assistedVersion(version);
+    }
+
+    /** Identifies the two explicitly versioned assisted review formats. / 识别两个明确版本化辅助审阅格式。
+     * @param version exact version / 精确版本
+     * @return whether the bounded review chain exists / 是否存在有界审阅链 */
+    private static boolean assistedVersion(int version) {
+        return version == ASSISTED_PUBLICATION_VERSION || version == ASSISTED_GRAPH_VERSION || DeploymentPublicationAttemptCodec.version(version);
+    }
+
+    /** Identifies exact single-unit framing. / 识别精确单单元信封。
+     * @param version original version / 原版本
+     * @return single-unit format / 单单元格式 */
+    private static boolean singleVersion(int version) {
+        return version == PUBLICATION_VERSION || version == ASSISTED_PUBLICATION_VERSION || version == DeploymentPublicationAttemptCodec.SINGLE_VERSION;
+    }
+
+    /** Reads actual complete build reviews from the existing formal request. / 从既有正式请求读取实际完整构建审阅。
+     * @param record original execution / 原执行
+     * @return original ordered review chain / 原有序审阅链
+     * @throws SQLException if a bound or identity differs / 边界或身份不符时 */
+    static List<DeploymentAssistedBuildReview> buildReviews(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), READ_LIMIT);
+        return assistedVersion(request.path("formatVersion").intValue()) ? buildReviews(request, record.identity()) : List.of();
+    }
+
+    /** Requires one monotonic original failure/review chain and its exact confirmed root. / 要求一条单调原失败审阅链及其精确已确认根。
+     * @param request complete original request / 完整原请求
+     * @param identity current original row / 当前原行
+     * @return strict complete reviews / 严格完整审阅
+     * @throws SQLException if the chain conflicts / 审阅链冲突时 */
+    private static List<DeploymentAssistedBuildReview> buildReviews(JsonNode request, DeploymentExecutionIdentity identity) throws SQLException {
+        if (identity.mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
+                || !string(request, "operationType").equals("deployment-publication"))
+            throw new SQLException("Build reviews belong only to original assisted publication");
+        var values = new ArrayList<DeploymentAssistedBuildReview>();
+        var failures = new HashSet<String>(); String root = null;
+        for (var entry : array(request, "buildReviews", 2)) {
+            var value = DeploymentAssistedBuildReview.decode(entry);
+            var description = DeploymentAssistedBuildReviewCodec.decodeDescription(value.nextPlan());
+            DeploymentAssistedBuildReview.requireContinuation(values, value.unitId(), value.previousPlan(), value.previousScript(), value.previousTools());
+            if (value.attempt() != values.size() + 1 || root != null && !value.previousRoot().equals(root)
+                    || !failures.add(value.failureBinding()) || !description.serverId().equals(identity.server().id()))
+                throw new SQLException("Original assisted build review chain changed");
+            root = value.nextRoot(); values.add(value);
+        }
+        if (!values.isEmpty() && !identity.reviewedRevision().equals(root))
+            throw new SQLException("Build review lacks its exact confirmed formal root");
+        var pending = request.path("buildIntent");
+        if (!pending.isNull()) {
+            var intent = DeploymentAssistedBuildIntent.decode(pending);
+            DeploymentAssistedBuildReview.requireContinuation(values, intent.unitId(), intent.previousPlan(), intent.previousScript(), intent.previousTools());
+            if (intent.attempt() != values.size() + 1 || !intent.previousRoot().equals(identity.reviewedRevision())
+                    || !DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan()).serverId().equals(identity.server().id())
+                    || singleVersion(request.path("formatVersion").intValue()) != intent.originalGraph().isEmpty()
+                    || failures.contains(DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence())))
+                throw new SQLException("Pending recovery intent differs from the original formal root");
+        } else if (values.isEmpty() && !DeploymentPublicationAttemptCodec.version(request.path("formatVersion").intValue()))
+            throw new SQLException("Assisted format lacks its full original review or intent");
+        return List.copyOf(values);
+    }
+
+    /** Stores a complete typed recovery consent without advancing the formal plan. / 存储完整类型化恢复同意，不推进正式计划。
+     * @param record original executing record / 原执行记录
+     * @param intent explicitly reviewed bounded recovery / 明确审阅有界恢复
+     * @return full explicitly versioned request / 完整明确版本化请求
+     * @throws SQLException if original source, phase or chain is no longer available / 原来源、阶段或链不再可用时 */
+    static String withBuildIntent(DeploymentExecutionRecord record, DeploymentAssistedBuildIntent intent) throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), READ_LIMIT); int version = request.path("formatVersion").intValue();
+        var prior = buildReviews(record);
+        DeploymentAssistedBuildReview.requireContinuation(prior, intent.unitId(), intent.previousPlan(), intent.previousScript(), intent.previousTools());
+        if (!publicationVersion(version) || (DeploymentPublicationAttemptCodec.version(version)
+                        ? !DeploymentPublicationAttemptCodec.buildBoundary(request) : !request.path("publicationTemplate").isNull())
+                || record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
+                || !string(request, "operationType").equals("deployment-publication") || !intent.previousRoot().equals(record.identity().reviewedRevision())
+                || intent.attempt() != prior.size() + 1 || singleVersion(version) != intent.originalGraph().isEmpty()
+                || assistedVersion(version) && !request.path("buildIntent").isNull())
+            throw new SQLException("Original build cannot start another recovery intent");
+        request.put("formatVersion", DeploymentPublicationAttemptCodec.version(version) ? version
+                : singleVersion(version) ? ASSISTED_PUBLICATION_VERSION : ASSISTED_GRAPH_VERSION);
+        var reviews = request.putArray("buildReviews"); for (var review : prior) reviews.add(parse(review.encode(), REQUEST_LIMIT));
+        request.set("buildIntent", parse(intent.encode(), REQUEST_LIMIT));
+        return DeploymentPublicationAttemptCodec.version(version) ? DeploymentPublicationAttemptCodec.encodeBounded(request) : encode(request, REQUEST_LIMIT);
+    }
+
+    /** Returns retained full consent for observation or exact consumption, never automatic recovery execution. / 返回留存完整同意供观察或精确消费，绝不自动执行恢复。
+     * @param record original authenticated record / 原已认证记录
+     * @return existing bounded intent / 已有有界意图
+     * @throws SQLException if the retained request conflicts / 留存请求冲突时 */
+    static Optional<DeploymentAssistedBuildIntent> buildIntent(DeploymentExecutionRecord record) throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), READ_LIMIT);
+        return assistedVersion(request.path("formatVersion").intValue()) && !request.path("buildIntent").isNull()
+                ? Optional.of(DeploymentAssistedBuildIntent.decode(request.path("buildIntent"))) : Optional.empty();
+    }
+
+    /** Appends one fully reviewed build-only correction before any publication template. / 在任一发布模板前追加一份完整审阅的仅构建纠正。
+     * @param record original executing row / 原执行行
+     * @param review actual bounded new review / 实际有界新审阅
+     * @return explicitly versioned complete request / 明确版本化完整请求
+     * @throws SQLException if a previous binding or immutable stage differs / 原绑定或不可变阶段不符时 */
+    static String withBuildReview(DeploymentExecutionRecord record, DeploymentAssistedBuildReview review) throws SQLException {
+        known(record);
+        var request = parse(record.requestJson(), READ_LIMIT);
+        int version = request.path("formatVersion").intValue();
+        var prior = buildReviews(record);
+        if (!publicationVersion(version) || (DeploymentPublicationAttemptCodec.version(version)
+                        ? !DeploymentPublicationAttemptCodec.buildBoundary(request) : !request.path("publicationTemplate").isNull())
+                || record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
+                || !string(request, "operationType").equals("deployment-publication")
+                || !review.previousRoot().equals(record.identity().reviewedRevision())
+                || review.attempt() != prior.size() + 1 || prior.stream().anyMatch(value -> value.failureBinding().equals(review.failureBinding()))
+                || !assistedVersion(version) || request.path("buildIntent").isNull() || !DeploymentAssistedBuildIntent.decode(request.path("buildIntent")).matches(review))
+            throw new SQLException("Original assisted build cannot adopt another review");
+        request.put("formatVersion", DeploymentPublicationAttemptCodec.version(version) ? version
+                : singleVersion(version) ? ASSISTED_PUBLICATION_VERSION : ASSISTED_GRAPH_VERSION);
+        request.put("reviewedRevision", review.nextRoot());
+        var reviews = request.putArray("buildReviews");
+        for (var value : prior) reviews.add(parse(value.encode(), REQUEST_LIMIT));
+        reviews.add(parse(review.encode(), REQUEST_LIMIT));
+        request.putNull("buildIntent");
+        return DeploymentPublicationAttemptCodec.version(version) ? DeploymentPublicationAttemptCodec.encodeBounded(request) : encode(request, REQUEST_LIMIT);
     }
 
     /** Checks the immutable identity envelope and exact current-version fields. / 检查不可变身份信封及当前版本精确字段。
@@ -341,7 +522,7 @@ final class DeploymentExecutionCodec {
      * @throws SQLException if format or stored facts are invalid / 格式或已存事实无效时 */
     static Optional<DeploymentProjectRecord> project(DeploymentExecutionRecord record) throws SQLException {
         known(record);
-        return project(parse(record.requestJson(), REQUEST_LIMIT), record.identity());
+        return project(parse(record.requestJson(), READ_LIMIT), record.identity());
     }
 
     /** Decodes and checks the exact original project snapshot. / 解码并核验精确原项目快照。

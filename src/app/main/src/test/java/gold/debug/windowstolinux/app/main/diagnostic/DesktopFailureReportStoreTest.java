@@ -8,8 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.appapi.task.Problem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,8 +19,8 @@ class DesktopFailureReportStoreTest {
     @Test
     void truncatesRotatesAndRedactsReportsWithoutRecordingUnknownMessages() throws Exception {
         DesktopFailureReportStore reports = new DesktopFailureReportStore(temporaryDirectory.resolve("data"));
-        FailureDescriptor oversized = FailureDescriptor.create(DesktopSystemFailureType.UNKNOWN_RUNTIME_FAILURE,
-                OperationIdentity.create(), "password=hunter2 api-key=top-secret " + "x".repeat(400_000));
+        Problem oversized = DesktopSystemFailureType.UNKNOWN_RUNTIME_FAILURE.problem(java.util.UUID.randomUUID(),
+                "password=hunter2 api-key=top-secret " + "x".repeat(400_000));
         DesktopStartupException structured = new DesktopStartupException(oversized,
                 new IllegalStateException("Bearer should-never-be-recorded"));
 
@@ -48,6 +47,34 @@ class DesktopFailureReportStoreTest {
             assertTrue(files.filter(path -> path.getFileName().toString().endsWith(".txt"))
                     .count() <= DesktopFailureReportStore.MAX_REPORTS);
         }
+    }
+
+    @Test
+    void originalSdkIdentityContextCauseAndSuppressedEvidenceAreRetainedWithoutUnknownMessages() throws Exception {
+        var identity = java.util.UUID.randomUUID();
+        var suppressedIdentity = java.util.UUID.randomUUID();
+        var problem = new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE,
+                "fixture.original-sdk", "password=do-not-record", java.util.Map.of("review", "approved",
+                        "evidence", "api-key=do-not-record-context"), java.util.Optional.of(identity));
+        var original = new gold.debug.windowstolinux.appapi.task.ApiException(problem);
+        original.initCause(new IllegalStateException("Bearer unknown-cause-secret"));
+        original.addSuppressed(new gold.debug.windowstolinux.appapi.task.ApiException(new Problem(problem.code(),
+                "fixture.suppressed-sdk", "safe suppressed evidence", java.util.Map.of("phase", "cleanup"),
+                java.util.Optional.of(suppressedIdentity))));
+        var reports = new DesktopFailureReportStore(temporaryDirectory.resolve("sdk"));
+        var record = reports.record(original).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertSame(problem, record.failure());
+        var path = record.reportPath().orElseThrow();
+        assertTrue(path.getFileName().toString().contains(identity.toString()));
+        String content = Files.readString(path);
+        assertTrue(content.contains("code=fixture.original-sdk"));
+        assertTrue(content.contains("context.review=approved"));
+        assertTrue(content.contains("java.lang.IllegalStateException"));
+        assertTrue(content.contains("suppressedBy[0]="));
+        assertTrue(content.contains("fixture.suppressed-sdk"));
+        assertTrue(content.contains(suppressedIdentity.toString()));
+        assertFalse(content.contains("do-not-record"));
+        assertFalse(content.contains("unknown-cause-secret"));
     }
 
     @Test

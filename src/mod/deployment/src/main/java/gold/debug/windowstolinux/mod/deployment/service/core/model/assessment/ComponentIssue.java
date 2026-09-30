@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model.assessment;
 import java.util.List;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * One component-scoped input requirement or hard safety rejection.
@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
  * @param componentIds affected component identifiers / 受影响的组件标识符
  * @param message localized explanation / 本地化说明
  */
-public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds, LocalizedMessage message) {
+public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds, DeploymentLocalizedMessage message) {
     /**
      * Validates one component-scoped issue. / 验证一个组件范围问题。
      *

@@ -43,7 +43,7 @@ public final class DeploymentExecutionRepository {
                 Optional.empty(), false, false, millis(createdAt), millis(createdAt));
         DeploymentExecutionCodec.known(initial);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> {
+        DeploymentStorageTransaction.execute(connection, () -> {
             var existing = read(connection, identity.executionId(), true);
             if (existing.isPresent()) {
                 var original = existing.get();
@@ -156,6 +156,103 @@ public final class DeploymentExecutionRepository {
                     throw new SQLException("Original publication proposal was not confirmed");
             }
         });
+    }
+
+    /** Persists full typed recovery consent before any environment recovery command. / 任一环境恢复命令前持久化完整类型化恢复同意。
+     * @param task authentic original task / 真实原任务
+     * @param executionId original execution / 原执行
+     * @param intent complete explicitly reviewed recovery / 完整明确审阅恢复
+     * @param observedAt nondecreasing evidence time / 非递减依据时刻
+     * @throws SQLException if original phase or full consent conflicts / 原阶段或完整同意冲突时
+     * @throws ApiException if original persistence is uncertain / 原持久确认不明时 */
+    public void recordBuildIntent(TaskContext task, UUID executionId, DeploymentAssistedBuildIntent intent,
+            Instant observedAt) throws SQLException, ApiException {
+        Objects.requireNonNull(intent);
+        mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
+            if (!record.phase().equals("EXECUTING") || record.outcome().isPresent() || record.businessCommitted()
+                    || record.cleanupComplete()
+                    || checkpoint.intents().stream()
+                            .noneMatch(value -> value.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
+                                    && value.businessKey().equals(DeploymentReferenceKey
+                                            .unit(record.identity().server(), intent.unitId()).businessKey())))
+                throw new SQLException("Original environment recovery boundary is unavailable");
+            String request = DeploymentExecutionCodec.withBuildIntent(record, intent);
+            String recovery = DeploymentExecutionCodec.recovery(record.identity(),
+                    DeploymentExecutionCodec.requestVersion(request), record.phase(), checkpoint.ids());
+            var next = new DeploymentExecutionRecord(record.identity(), record.phase(), record.outcome(), request,
+                    recovery, record.resultJson(), false, false, record.createdAt(), millis(observedAt));
+            if (!DeploymentExecutionCodec.known(next).equals(checkpoint))
+                throw new SQLException("Recovery intent changed original reservations");
+            try (var update = connection.prepareStatement(
+                    "UPDATE deployment_execution SET request_payload=?,recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
+                update.setBytes(1, bytes(request));
+                update.setBytes(2, bytes(recovery));
+                update.setLong(3, next.updatedAt().toEpochMilli());
+                update.setObject(4, executionId);
+                update.setString(5, record.identity().reviewedRevision());
+                if (update.executeUpdate() != 1)
+                    throw new SQLException("Original recovery intent CAS was not confirmed");
+            }
+        });
+    }
+
+    /** Reads the existing full intent without granting automatic replay. / 读取已有完整意图，不授予自动重放。
+     * @param record authenticated original record / 已认证原记录
+     * @return retained original intent / 留存原意图
+     * @throws SQLException if complete framing conflicts / 完整信封冲突时 */
+    public Optional<DeploymentAssistedBuildIntent> buildIntent(DeploymentExecutionRecord record) throws SQLException {
+        return DeploymentExecutionCodec.buildIntent(record);
+    }
+
+    /** Atomically adopts one explicitly approved build-only review under the original reserved execution. / 在原已预留执行下原子采纳一份明确审批的仅构建审阅。
+     * @param task authentic original task / 真实原任务
+     * @param executionId original execution / 原执行
+     * @param review complete old/new review and physical failure proof / 完整旧新审阅及物理失败证明
+     * @param observedAt nondecreasing evidence time / 非递减依据时间
+     * @throws SQLException if original identity, immutable stage or CAS conflicts / 原身份、不可变阶段或CAS冲突时
+     * @throws ApiException if original persistence is unavailable / 原持久性不可用时 */
+    public void adoptBuildReview(TaskContext task, UUID executionId, DeploymentAssistedBuildReview review,
+            Instant observedAt) throws SQLException, ApiException {
+        Objects.requireNonNull(review);
+        mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
+            if (!record.phase().equals("EXECUTING") || record.outcome().isPresent() || record.businessCommitted()
+                    || record.cleanupComplete() || !record.identity().reviewedRevision().equals(review.previousRoot())
+                    || checkpoint.intents().stream().noneMatch(
+                            intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
+                                    && intent.businessKey().equals(DeploymentReferenceKey
+                                            .unit(record.identity().server(), review.unitId()).businessKey())))
+                throw new SQLException("Original build review boundary is no longer available");
+            String request = DeploymentExecutionCodec.withBuildReview(record, review);
+            var old = record.identity();
+            var identity = new DeploymentExecutionIdentity(old.executionId(), old.taskId(), old.projectId(),
+                    old.applicationId(), old.server(), old.mode(), review.nextRoot());
+            var recovery = DeploymentExecutionCodec.recovery(identity, DeploymentExecutionCodec.requestVersion(request),
+                    record.phase(), checkpoint.ids());
+            var next = new DeploymentExecutionRecord(identity, record.phase(), record.outcome(), request, recovery,
+                    record.resultJson(), false, false, record.createdAt(), millis(observedAt));
+            if (!DeploymentExecutionCodec.known(next).equals(checkpoint))
+                throw new SQLException("Build review changed original reserved resources");
+            try (var update = connection
+                    .prepareStatement("UPDATE deployment_execution SET reviewed_revision=?,request_payload=?,"
+                            + "recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
+                update.setString(1, review.nextRoot());
+                update.setBytes(2, bytes(request));
+                update.setBytes(3, bytes(recovery));
+                update.setLong(4, next.updatedAt().toEpochMilli());
+                update.setObject(5, executionId);
+                update.setString(6, review.previousRoot());
+                if (update.executeUpdate() != 1)
+                    throw new SQLException("Original build review CAS was not confirmed");
+            }
+        });
+    }
+
+    /** Reads complete persisted build reviews for readonly original recovery. / 为只读原恢复读取完整持久构建审阅。
+     * @param record authenticated original record / 已认证原记录
+     * @return bounded immutable reviews / 有界不可变审阅
+     * @throws SQLException if original evidence is malformed / 原依据无效时 */
+    public List<DeploymentAssistedBuildReview> buildReviews(DeploymentExecutionRecord record) throws SQLException {
+        return DeploymentExecutionCodec.buildReviews(record);
     }
 
     /** Returns supported exact associations with any already observed reservation UUID. / 返回受支持的精确关联及已观察预留UUID。
@@ -327,12 +424,11 @@ public final class DeploymentExecutionRepository {
      * @param change original bounded change / 原有界变更
      * @throws SQLException if identity, time or SQL fails / 身份、时间或SQL失败时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
-    private void mutate(TaskContext task, UUID executionId, Instant time, Change change)
-            throws SQLException, ApiException {
+    void mutate(TaskContext task, UUID executionId, Instant time, Change change) throws SQLException, ApiException {
         Objects.requireNonNull(executionId);
         Objects.requireNonNull(time);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> {
+        DeploymentStorageTransaction.execute(connection, () -> {
             var record = read(connection, executionId, true)
                     .orElseThrow(() -> new SQLException("Original execution is absent"));
             requireTask(task, record.identity());
@@ -411,8 +507,9 @@ public final class DeploymentExecutionRepository {
             byte[] result = DeploymentPayloadReader.read(row, "result_payload");
             var record = new DeploymentExecutionRecord(identity, row.getString("phase"),
                     Optional.ofNullable(row.getString("outcome")).map(Outcome::valueOf),
-                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "request_payload",
-                            DeploymentExecutionCodec.REQUEST_LIMIT), DeploymentExecutionCodec.REQUEST_LIMIT),
+                    DeploymentJsonDocument.text(
+                            DeploymentPayloadReader.read(row, "request_payload", DeploymentExecutionCodec.READ_LIMIT),
+                            DeploymentExecutionCodec.READ_LIMIT),
                     DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "recovery_payload")),
                     result == null ? Optional.empty() : Optional.of(DeploymentJsonDocument.text(result)),
                     row.getBoolean("business_committed"), row.getBoolean("cleanup_complete"),
@@ -471,7 +568,7 @@ public final class DeploymentExecutionRepository {
 
     /** One original mutation inside the already owned transaction. / 已持有事务内的一次原变更。 */
     @FunctionalInterface
-    private interface Change {
+    interface Change {
         /** Applies a checked transition. / 应用已校验转换。
          * @param connection original transaction / 原事务
          * @param record original row / 原行

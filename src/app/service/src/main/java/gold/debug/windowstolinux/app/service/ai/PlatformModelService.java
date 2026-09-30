@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.ai.protocol.ModelCapabilityProbe;
+import gold.debug.windowstolinux.app.ai.execution.protocol.ModelCapabilityProbe;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
 import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 
 /** Owns verified model configuration and explicit purpose selection. / 持有已验证模型配置及明确用途选择。 */
 public final class PlatformModelService implements AiInventoryAccess, AutoCloseable {

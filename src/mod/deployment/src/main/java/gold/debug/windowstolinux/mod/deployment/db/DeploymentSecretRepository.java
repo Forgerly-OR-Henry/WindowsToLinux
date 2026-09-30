@@ -30,7 +30,7 @@ public final class DeploymentSecretRepository {
         if (revision.purpose().isEmpty())
             throw new IllegalArgumentException("New secret revisions require their original purpose");
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> saveRevision(connection, revision));
+        DeploymentStorageTransaction.execute(connection, () -> saveRevision(connection, revision));
     }
 
     /** Reads only the exact requested metadata revision. / 仅读取精确请求的元数据修订。
@@ -115,7 +115,7 @@ public final class DeploymentSecretRepository {
         String digest = DeploymentConfigurationRepository.boundedIdentity(release, "release");
         var expected = references(references);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> bindRelease(connection, unit, digest, expected));
+        DeploymentStorageTransaction.execute(connection, () -> bindRelease(connection, unit, digest, expected));
     }
 
     /** Distinguishes missing bindings from the successfully bound empty set in one query. / 通过一个查询区分缺失绑定和成功绑定的空集合。

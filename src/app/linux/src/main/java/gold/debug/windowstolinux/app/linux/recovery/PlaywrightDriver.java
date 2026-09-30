@@ -56,13 +56,13 @@ final class PlaywrightDriver {
             closeRequested = true;
         }
         if (process == null)
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, null);
         try {
             if (!process.waitFor(5, TimeUnit.SECONDS))
-                throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, null);
+                throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, null);
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
-            throw new BrowserRecoveryException(BrowserRecoveryException.Reason.CLEANUP_FAILED, failure);
+            throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED, failure);
         }
         connection = null;
     }

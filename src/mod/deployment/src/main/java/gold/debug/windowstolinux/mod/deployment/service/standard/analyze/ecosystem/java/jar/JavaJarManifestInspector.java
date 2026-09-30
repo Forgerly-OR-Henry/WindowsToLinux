@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Anal
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.LanguageFactKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * Reads bounded JAR runtime metadata without loading classes. / 读取有界 JAR 运行元数据，不加载类。
@@ -102,7 +102,7 @@ public final class JavaJarManifestInspector {
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static AnalysisEvidence evidence(String key, Path relativeJar) {
-        return new AnalysisEvidence(LocalizedMessage.of(key), relativeJar + "!META-INF/MANIFEST.MF",
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+        return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), relativeJar + "!META-INF/MANIFEST.MF",
+                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

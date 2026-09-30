@@ -5,8 +5,8 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.ContextLease;
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
@@ -94,6 +94,7 @@ public final class PlatformModContext implements ContextLease {
         contributions.add(services);
         var logs = own(runtime.logs(identity.id(), identity.version(), schema));
         var remote = own(runtime.remoteCapabilities(identity.id(), identity.version()));
+        services.bindRecoveryCleanup(remote::closeTaskResources);
         var servers = own(runtime.serverAccess(identity.id(), identity.version(), schema));
         var ai = own(runtime.ai(identity.id(), identity.version()));
         var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
@@ -138,18 +139,18 @@ public final class PlatformModContext implements ContextLease {
     /** Binds normal activation persistence; recovery contexts never replace ordinary runtime state. / 绑定普通启用持久化；恢复上下文不替换普通运行状态。
      * @param finalized removes the original session only after durable final acknowledgement / 仅在最终持久确认后移除原会话
      * @return original host lifecycle journal / 原宿主生命周期记录器 */
-    public gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.Journal journal(Runnable finalized) {
+    public gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.Journal journal(Runnable finalized) {
         var ledger = new gold.debug.windowstolinux.app.db.mod.ModActivationLedger(runtime.persistence().database(),
                 identity.id(), identity.version(), schema);
         return (state, failure, resourcesClosed) -> {
             if (mode == ModLaunchMode.NORMAL) {
                 if (resourcesClosed)
                     ledger.closed(failure);
-                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.STARTING)
+                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.STARTING)
                     ledger.starting();
-                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.RUNNING)
+                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.RUNNING)
                     ledger.running();
-                else if (state == gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession.SessionState.STOPPING) {
+                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.STOPPING) {
                     ledger.stopping();
                     if (failure.isPresent())
                         ledger.retained(failure.get(), true);

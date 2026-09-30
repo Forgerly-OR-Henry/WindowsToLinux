@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.schema.*;
+import gold.debug.windowstolinux.app.db.execution.schema.*;
 import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;
@@ -31,7 +31,7 @@ class PlatformSecretServiceTest {
     void arbitraryBinaryAndEmptyValuesUseProtectedStorageAndAllCallbackPathsClearTheirBuffers() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.empty());
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
             var observed = new AtomicReference<byte[]>();
             byte[] input = new byte[512];
             for (int i = 0; i < input.length; i++)
@@ -77,7 +77,7 @@ class PlatformSecretServiceTest {
         SecretRef saved;
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.empty());
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
             saved = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     task -> success(secrets.create("restart", new byte[]{0, -1, 42}, task))));
         }
@@ -85,7 +85,7 @@ class PlatformSecretServiceTest {
             runtime.security().unlock(PASSWORD.toCharArray());
             sql(runtime.persistence().database(), "UPDATE mod_registry SET last_boot_id=? WHERE mod_id=?",
                     runtime.persistence().database().bootId(), OWNER);
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.empty());
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 assertEquals(42, secrets.<Integer>use(saved, "restart", task, bytes -> {
                     assertArrayEquals(new byte[]{0, -1, 42}, bytes);
@@ -107,10 +107,10 @@ class PlatformSecretServiceTest {
                     PlatformModIntentsTest.manifest("other.mod", VERSION, Map.of(), null, List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version=?,selection_initialized=TRUE,actual_version=?,last_runtime_state='RUNNING',last_boot_id=? WHERE mod_id='other.mod'",
                     VERSION, VERSION, db.bootId());
-            var otherSecrets = runtime.secrets("other.mod", VERSION, Optional.empty());
+            var otherSecrets = runtime.capabilities().secrets("other.mod", VERSION, Optional.empty());
             var foreign = completed(runtime.tasks().bind("other.mod", VERSION, false).submit(request(),
                     task -> success(otherSecrets.create("purpose", new byte[]{99}, task))));
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.empty());
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var captured = new AtomicReference<TaskContext>();
             var saved = completed(binding.submit(request(), task -> {
@@ -161,7 +161,7 @@ class PlatformSecretServiceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var business = new TaskModDatabase(db, runtime.tasks(), schema);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var reference = completed(binding.submit(request(), task -> {
@@ -188,7 +188,7 @@ class PlatformSecretServiceTest {
                     OWNER, "0".repeat(64), PlatformModIntentsTest.manifest(OWNER, "1.0.1", Map.of(), "1", List.of()));
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version='1.0.1',actual_version='1.0.1' WHERE mod_id=?",
                     OWNER);
-            var next = runtime.secrets(OWNER, "1.0.1", Optional.of(schema));
+            var next = runtime.capabilities().secrets(OWNER, "1.0.1", Optional.of(schema));
             completed(runtime.tasks().bind(OWNER, "1.0.1", false).submit(request(), task -> {
                 assertEquals(reference.id(), next.reserve(reference.secret(), "application/42", task).id());
                 next.resolve(reference.id(), ReferenceResolution.UNKNOWN, task);
@@ -213,7 +213,7 @@ class PlatformSecretServiceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var otherSchema = new SchemaIdentity(OWNER, "2", UUID.randomUUID());
             var coordinates = new SchemaCoordinates(otherSchema);
             sql(db, "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,'2',?,?,?,'PREPARING',1)",
@@ -231,7 +231,7 @@ class PlatformSecretServiceTest {
                 var owned = secrets.reserve(secret, "other-schema", task);
                 assertEquals(owned, secrets.findReference(secret, "other-schema", task).orElseThrow());
                 secrets.resolve(owned.id(), ReferenceResolution.NOT_REFERENCED, task);
-                var wrong = runtime.secrets(OWNER, VERSION, Optional.of(otherSchema));
+                var wrong = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(otherSchema));
                 assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class, () -> wrong.reserve(secret, "wrong-claim", task)).problem()
                                 .code());
@@ -248,7 +248,7 @@ class PlatformSecretServiceTest {
     void cancellationAllowsExistingAssociationCleanupButBlocksNewSecretWork() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var ready = new CountDownLatch(1);
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 var secret = secrets.create("cancelled", new byte[]{1}, task);
@@ -284,7 +284,7 @@ class PlatformSecretServiceTest {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var schema = initialize(runtime, true);
             var db = runtime.persistence().database();
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.of(schema));
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
             var reference = new AtomicReference<SecretReference>();
             var original = new AtomicReference<TaskContext>();
@@ -341,7 +341,7 @@ class PlatformSecretServiceTest {
     void acceptedTaskKeepsItsKeyAcrossLockAndCannotBeClosedWhileAConsumerIsActive() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            var secrets = runtime.secrets(OWNER, VERSION, Optional.empty());
+            var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
             var ready = new CountDownLatch(1);
             var proceed = new CountDownLatch(1);
             var consumerReady = new CountDownLatch(1);

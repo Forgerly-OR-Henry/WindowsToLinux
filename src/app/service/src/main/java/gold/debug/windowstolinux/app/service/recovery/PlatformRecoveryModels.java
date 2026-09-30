@@ -62,7 +62,15 @@ public final class PlatformRecoveryModels implements RecoveryModels {
     private Result call(AiPurpose purpose, String instruction, AiMessage evidence) throws ApiException {
         var request = new AiRequest(purpose, List.of(new AiMessage(AiRole.SYSTEM, instruction, List.of()), evidence),
                 2048, Duration.ofSeconds(60), true);
-        var result = ai.callWithinModelLimit(request, task);
+        OperationResult<AiResponse> result;
+        try {
+            result = ai.callWithinModelLimit(request, task);
+        } catch (ApiException failure) {
+            var problem = failure.problem();
+            if (problem.code() != ProblemCode.UNAVAILABLE || !problem.eventCode().equals("AI_PURPOSE_UNAVAILABLE"))
+                throw failure;
+            return new Result("modelUnavailable", "", Map.of("platform", problem.eventCode()));
+        }
         if (result.outcome() == Outcome.UNKNOWN || result.outcome() == Outcome.CANCELLED)
             throw new ApiException(result.problem()
                     .orElseGet(() -> new Problem(

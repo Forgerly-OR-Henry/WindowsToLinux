@@ -10,10 +10,10 @@ import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentCandidateChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostSupportStatus;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostCapabilityStatus;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.support.DeploymentHostSupportEvaluator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.support.DeploymentHostCompatibilityEvaluator;
 
 /** Joins one original frozen archive, pre-upload tool selection, task-owned transfer and restricted build. / 串接一份原冻结归档、上传前工具选择、任务所属传输及受限构建。 */
 public final class DeploymentStandardCandidateExecutor {
@@ -59,6 +59,49 @@ public final class DeploymentStandardCandidateExecutor {
             return availableBytes;
         }
 
+        /** Returns the actual plan of this exact selection. / 返回此精确选择的实际计划。
+         * @return original source-bound plan / 原来源绑定计划 */
+        public ReviewedDeploymentPlan plan() {
+            return selection.plan;
+        }
+
+        /** Returns complete tools actually used by the last build. / 返回最近构建实际使用的完整工具。
+         * @return actual installed binding / 实际安装绑定 */
+        public gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools() {
+            return selection.executedTools;
+        }
+
+        /** Returns the exact fixed build input for this selection. / 返回此选择的精确固定构建输入。
+         * @return complete immutable script / 完整不可变脚本 */
+        public String script() {
+            return DeploymentStandardBuildExecutor.script(selection.rendered.buildScript(), selection.plan.request(),
+                    selection.environment, selection.executedTools);
+        }
+
+        /** Returns remaining original cumulative remote execution time. / 返回原累计远端执行剩余时间。
+         * @return remaining whole seconds / 剩余整秒 */
+        public long remainingSeconds() {
+            return selection.budget.remainingSeconds();
+        }
+
+        /** Carries the same monotonic budget into a later explicitly approved operation. / 将同一单调预算带入后续明确审批操作。
+         * @return authentic original cumulative budget / 真实原累计预算 */
+        public DeploymentBuildBudget budget() {
+            return selection.budget;
+        }
+
+        /** Returns the exact source and operation bound candidate. / 返回精确来源及操作绑定候选。
+         * @return actual prepared candidate identity / 实际准备候选身份 */
+        public DeploymentRemoteWorkspace workspace() {
+            return selection.workspace;
+        }
+
+        /** Reports whether the original catalog minimum already consumed another branch. / 报告原目录最低版本是否已消费另一分支。
+         * @return zero or one original branch / 零或一原分支 */
+        public int branch() {
+            return selection.attempt;
+        }
+
         /** Allows the original task and session to consume this preparation once. / 仅允许原任务及会话消费一次。
          * @param session actual borrowed session / 实际借用会话
          * @param task actual original task / 实际原任务 */
@@ -102,6 +145,38 @@ public final class DeploymentStandardCandidateExecutor {
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
             InteractionService interaction, TaskContext task) throws ApiException {
+        return prepare(plan, session, interaction, task, true);
+    }
+
+    /** Admits the original minimum-version fallback only when the publication's shared retry allowance permits it. / 仅在发布共用重试额度允许时准入原最低版本回退。
+     * @param plan original reviewed component / 原审阅组件
+     * @param session authentic original connection / 真实原连接
+     * @param interaction exact original approval / 精确原审批
+     * @param task authentic original task / 真实原任务
+     * @param fallback whether a remaining shared retry permits the fixed fallback / 剩余共用重试是否允许固定回退
+     * @return actual prepared selection / 实际准备选择
+     * @throws ApiException if original authority rejects / 原权限拒绝时 */
+    public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task, boolean fallback) throws ApiException {
+        return prepare(plan, session, interaction, task, fallback, 0,
+                new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()), new DeploymentRemoteWorkspace(
+                        plan.request().facts().applicationId(), plan.request().archive().sha256()));
+    }
+
+    /** Prepares a later explicit operation without resetting source identity, branch or time. / 准备后续明确操作，不重置来源身份、分支或时间。
+     * @param plan full newly approved plan / 完整新审批计划
+     * @param session authentic current borrowed session / 真实当前借用会话
+     * @param interaction original exact approval / 原精确审批
+     * @param task authentic unchanged task / 真实不变任务
+     * @param fallback whether the shared retry permits fixed fallback / 共用重试是否允许固定回退
+     * @param branch explicitly reviewed original catalog branch / 明确审阅原目录分支
+     * @param budget unchanged original cumulative time / 不变原累计时间
+     * @param workspace exact new operation and original archive / 精确新操作及原归档
+     * @return confirmed actual preparation / 已确认实际准备
+     * @throws ApiException if original host authority rejects / 原宿主权限拒绝时 */
+    public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
+            InteractionService interaction, TaskContext task, boolean fallback, int branch,
+            DeploymentBuildBudget budget, DeploymentRemoteWorkspace workspace) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
@@ -122,7 +197,10 @@ public final class DeploymentStandardCandidateExecutor {
         }
         if (footprint > request.limits().maxWorkspaceBytes())
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_SOURCE_WORKSPACE_LIMIT");
-        var budget = new DeploymentBuildBudget(request.limits().timeoutSeconds());
+        Objects.requireNonNull(budget);
+        if (!Objects.requireNonNull(workspace).applicationId().equals(request.facts().applicationId())
+                || !workspace.archiveSha256().equals(request.archive().sha256()))
+            throw new IllegalArgumentException("Candidate operation differs from original reviewed source");
         var channel = new DeploymentCandidateChannel(session, interaction, request.server(), task,
                 rendered.value().orElseThrow().reviewedPlanSha256(), budget);
         var helper = new DeploymentManagedHelper(session, interaction, request.server(), task,
@@ -132,15 +210,15 @@ public final class DeploymentStandardCandidateExecutor {
         var facts = channel.hostFacts();
         if (facts.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(facts);
-        if (DeploymentHostSupportEvaluator.evaluatePlatform(facts.value().orElseThrow())
-                .support() != DeploymentHostSupportStatus.READY_FOR_RUNTIME_VALIDATION)
+        if (DeploymentHostCompatibilityEvaluator.evaluatePlatform(facts.value().orElseThrow())
+                .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HOST_UNSUPPORTED");
         var capacity = channel.availableBytes();
         if (capacity.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(capacity);
         if (capacity.value().orElseThrow() < requiredSpace)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TARGET_SPACE");
-        var prepared = builds.prepareForUpload(plan, session, interaction, task, budget);
+        var prepared = builds.prepareForUpload(plan, session, interaction, task, budget, branch, fallback, workspace);
         if (prepared.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(prepared);
         var selection = prepared.value().orElseThrow();
@@ -149,9 +227,9 @@ public final class DeploymentStandardCandidateExecutor {
         var preparedFacts = channel.hostFacts();
         if (preparedFacts.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(preparedFacts);
-        if (DeploymentHostSupportEvaluator
+        if (DeploymentHostCompatibilityEvaluator
                 .evaluate(preparedFacts.value().orElseThrow(), request.facts(), request.runtime(), selection.tools)
-                .support() != DeploymentHostSupportStatus.READY_FOR_RUNTIME_VALIDATION)
+                .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_RUNTIME_UNSUPPORTED");
         if (cancelled(task))
             return cancelledPreparation();
@@ -168,13 +246,25 @@ public final class DeploymentStandardCandidateExecutor {
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentVerifiedBuildResult> build(Prepared prepared, RemoteSession session,
             TaskContext task) throws ApiException {
+        return build(prepared, session, task, true);
+    }
+
+    /** Uploads once and leaves assisted fallback to the original bounded review loop. / 仅上传一次，将辅助回退交给原有界审阅循环。
+     * @param prepared original selection / 原选择
+     * @param session original session / 原会话
+     * @param task original task / 原任务
+     * @param fallback whether the original static compiler fallback is allowed / 是否允许原静态编译器回退
+     * @return actual original build outcome / 实际原构建结果
+     * @throws ApiException if exact host authority rejects / 精确宿主权限拒绝时 */
+    public OperationResult<DeploymentVerifiedBuildResult> build(Prepared prepared, RemoteSession session,
+            TaskContext task, boolean fallback) throws ApiException {
         Objects.requireNonNull(prepared).consume(session, task);
         var selection = prepared.selection;
         var channel = prepared.channel;
         var request = selection.plan.request();
         if (cancelled(task))
             return cancelledResult();
-        var workspace = new DeploymentRemoteWorkspace(request.facts().applicationId(), request.archive().sha256());
+        var workspace = selection.workspace;
         var created = channel.create(workspace, request.limits().maxWorkspaceBytes());
         if (created.outcome() != Outcome.SUCCEEDED)
             return withoutValue(created);
@@ -188,7 +278,63 @@ public final class DeploymentStandardCandidateExecutor {
             return withoutValue(verified);
         if (cancelled(task))
             return unknown("DEPLOYMENT_CANDIDATE_RETAINED_AFTER_CANCEL");
-        return builds.buildPrepared(selection, verified.value().orElseThrow(), session, task);
+        return builds.buildPrepared(selection, verified.value().orElseThrow(), session, task, fallback);
+    }
+
+    /** Proves the exact original candidate is owned and its build has actually exited. / 证明精确原候选仍属本任务且构建已实际退出。
+     * @param prepared actually executed preparation / 实际执行准备
+     * @param session original session / 原会话
+     * @param task original task / 原任务
+     * @return exact owned inactive candidate / 精确所属非活动候选
+     * @throws ApiException if original observation is unavailable / 原观察不可用时 */
+    public OperationResult<DeploymentRemoteWorkspace> verifyRetained(Prepared prepared, RemoteSession session,
+            TaskContext task) throws ApiException {
+        if (!prepared.consumed || prepared.selection.session != session || prepared.selection.task != task)
+            throw new IllegalArgumentException("Retry observation does not belong to the executed original candidate");
+        return prepared.channel.verify(prepared.selection.workspace, prepared.selection.plan.request().archive());
+    }
+
+    /** Recovers only a reviewed fixed tool branch under the same candidate and time budget, without uploading or building. / 在同候选及时间预算内仅恢复已审固定工具分支，不上传或构建。
+     * @param previous actual failed selection / 实际失败选择
+     * @param plan full typed newly reviewed plan / 完整类型化新审阅计划
+     * @param branch explicitly reviewed fixed catalog branch / 明确审阅固定目录分支
+     * @param session original session / 原会话
+     * @param interaction original exact approval / 原精确审批
+     * @param task original task / 原任务
+     * @return installed actual new selection / 实际新安装选择
+     * @throws ApiException if original authority refuses / 原权限拒绝时 */
+    public OperationResult<Prepared> recoverSelection(Prepared previous, ReviewedDeploymentPlan plan, int branch,
+            RemoteSession session, InteractionService interaction, TaskContext task) throws ApiException {
+        if (!previous.consumed || previous.selection.session != session || previous.selection.task != task)
+            throw new IllegalArgumentException("Recovery selection differs from original task or session");
+        var selected = builds.prepareForUpload(plan, session, interaction, task, previous.selection.budget, branch,
+                false, previous.selection.workspace);
+        if (selected.outcome() != Outcome.SUCCEEDED)
+            return withoutPreparedValue(selected);
+        var actual = selected.value().orElseThrow();
+        if (!actual.workspace.equals(previous.selection.workspace))
+            throw new IllegalArgumentException("Recovery changed original candidate identity");
+        var channel = new DeploymentCandidateChannel(session, interaction, plan.request().server(), task,
+                actual.rendered.reviewedPlanSha256(), actual.budget);
+        return new OperationResult<>(Outcome.SUCCEEDED,
+                Optional.of(new Prepared(actual, channel, previous.requiredSpace, previous.availableBytes)),
+                Optional.empty());
+    }
+
+    /** Builds an existing verified candidate after formal review confirmation; never recreates or uploads it. / 正式审阅确认后构建已有已核候选，绝不重建或上传候选。
+     * @param prepared newly confirmed installed selection / 新确认安装选择
+     * @param session original session / 原会话
+     * @param task original task / 原任务
+     * @return actual bounded build outcome / 实际有界构建结果
+     * @throws ApiException if host authority rejects / 宿主权限拒绝时 */
+    public OperationResult<DeploymentVerifiedBuildResult> rebuild(Prepared prepared, RemoteSession session,
+            TaskContext task) throws ApiException {
+        prepared.consume(session, task);
+        var verified = prepared.channel.verify(prepared.selection.workspace,
+                prepared.selection.plan.request().archive());
+        if (verified.outcome() != Outcome.SUCCEEDED)
+            return withoutValue(verified);
+        return builds.buildPrepared(prepared.selection, verified.value().orElseThrow(), session, task, false);
     }
 
     /** Converts a result to an empty prepared value. / 转换为无准备值结果。

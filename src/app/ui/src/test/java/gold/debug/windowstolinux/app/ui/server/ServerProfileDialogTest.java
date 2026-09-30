@@ -15,6 +15,7 @@ import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import org.junit.jupiter.api.Test;
 
 class ServerProfileDialogTest {

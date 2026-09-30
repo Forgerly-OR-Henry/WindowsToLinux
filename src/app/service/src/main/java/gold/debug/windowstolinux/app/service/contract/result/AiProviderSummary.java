@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
-import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.catalog.AiPurposeType;
 
 /** Credential-free inventory row with separate capability evidence. / 不含凭据明文且能力证据独立的清单行。
  * @param profile connection settings / 连接设置

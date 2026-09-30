@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Anal
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
@@ -170,10 +170,10 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         }
         JavaJdkFacts architecture = new JavaJdkFacts(value(sourceRoot), value(mainClass), value(javaVersion), javaFiles,
                 missing, conflicts);
-        List<LocalizedMessage> localizedMissing = architecture.missingItems().stream()
-                .map(item -> LocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
-        List<LocalizedMessage> localizedConflicts = architecture.conflicts().stream()
-                .map(item -> LocalizedMessage.of("analysis.java.jdk.conflict", "detail", item)).toList();
+        List<DeploymentLocalizedMessage> localizedMissing = architecture.missingItems().stream()
+                .map(item -> DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
+        List<DeploymentLocalizedMessage> localizedConflicts = architecture.conflicts().stream()
+                .map(item -> DeploymentLocalizedMessage.of("analysis.java.jdk.conflict", "detail", item)).toList();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
                 ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
                 DeploymentBuildToolType.JDK, languageFacts, List.of(evidence(METADATA)), localizedConflicts,
@@ -186,12 +186,12 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             runtimeValues.put(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS, mainClass);
         if (javaVersion != null)
             runtimeValues.put(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION, javaVersion);
-        List<LocalizedMessage> required = new ArrayList<>(
-                List.of(LocalizedMessage.of("analysis.deployment.runtime.health")));
+        List<DeploymentLocalizedMessage> required = new ArrayList<>(
+                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (sourceRoot == null)
-            required.add(LocalizedMessage.of("analysis.java.jdk.sourceRoot"));
+            required.add(DeploymentLocalizedMessage.of("analysis.java.jdk.sourceRoot"));
         if (mainClass == null)
-            required.add(LocalizedMessage.of("analysis.deployment.runtime.javaMainClass"));
+            required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.javaMainClass"));
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), runtimeValues,
                 Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
     }
@@ -261,7 +261,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static AnalysisEvidence evidence(String source) {
-        return new AnalysisEvidence(LocalizedMessage.of("analysis.java.jdk.metadata"), source,
-                LocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+        return new AnalysisEvidence(DeploymentLocalizedMessage.of("analysis.java.jdk.metadata"), source,
+                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

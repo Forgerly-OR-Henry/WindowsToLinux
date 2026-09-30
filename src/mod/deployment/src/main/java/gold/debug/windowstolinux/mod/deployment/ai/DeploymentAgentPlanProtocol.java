@@ -4,7 +4,6 @@ import java.net.URI;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-
 import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
@@ -31,8 +30,8 @@ public final class DeploymentAgentPlanProtocol {
      * @param node component object / 组件对象
      * @return typed component / 类型化组件 */
     private static DeploymentAgentPlan.Component component(JsonNode node) {
-        DeploymentAgentProtocol.exact(node, Set.of("id", "dependencies", "evidence", "backend", "mode",
-                "entrypoint", "arguments", "workingDirectory", "health", "ports", "resources", "configuration"));
+        DeploymentAgentProtocol.exact(node, Set.of("id", "dependencies", "evidence", "backend", "mode", "entrypoint",
+                "arguments", "workingDirectory", "health", "ports", "resources", "configuration"));
         String id = DeploymentAiJson.text(node, "id", 63);
         var dependencies = strings(node.get("dependencies"), 15, 63);
         var evidence = strings(node.get("evidence"), 32, 500);
@@ -47,26 +46,28 @@ public final class DeploymentAgentPlanProtocol {
             var exposure = DeploymentEndpoint.ExposureType.valueOf(DeploymentAiJson.text(port, "exposure", 16));
             int host = DeploymentAgentProtocol.number(port, "host", 1, 65535);
             int target = DeploymentAgentProtocol.number(port, "target", 1, 65535);
-            endpoints.add(new DeploymentEndpoint(DeploymentAiJson.text(port, "id", 63),
-                    DeploymentEndpoint.ProtocolType.TCP,
-                    exposure == DeploymentEndpoint.ExposureType.EXTERNAL ? "0.0.0.0" : "127.0.0.1", host, target,
-                    exposure, ""));
+            endpoints.add(
+                    new DeploymentEndpoint(DeploymentAiJson.text(port, "id", 63), DeploymentEndpoint.ProtocolType.TCP,
+                            exposure == DeploymentEndpoint.ExposureType.EXTERNAL ? "0.0.0.0" : "127.0.0.1", host,
+                            target, exposure, ""));
             if (published.put(host, target) != null)
                 throw new IllegalArgumentException("Duplicate agent host port");
         }
         Optional<DeploymentCommand> verification = health instanceof DeploymentHealthCheck.Command probe
-                ? Optional.of(probe.command()) : Optional.empty();
+                ? Optional.of(probe.command())
+                : Optional.empty();
         String expected = health instanceof DeploymentHealthCheck.Command probe ? probe.expectedOutput() : "";
-        var workload = new DeploymentWorkload(mode, true, command,
-                boundedText(node, "workingDirectory", 512), endpoints, verification, expected,
-                Optional.empty(), List.of(), List.of());
+        var workload = new DeploymentWorkload(mode, true, command, boundedText(node, "workingDirectory", 512),
+                endpoints, verification, expected, Optional.empty(), List.of(), List.of());
         DeploymentRuntimeDefinition runtime = switch (DeploymentAiJson.text(node, "backend", 16)) {
-            case "PROCESS" -> new DeploymentRuntimeDefinition.ManagedProcess(health,
-                    DeploymentIdentityMode.SYSTEMD_STATIC, workload);
-            case "DOCKER", "PODMAN" -> new DeploymentRuntimeDefinition.Container(
-                    DeploymentRuntimeDefinition.ContainerEngineType
-                            .valueOf(DeploymentAiJson.text(node, "backend", 16)),
-                    published, List.of(), health, DeploymentIdentityMode.CONTAINER_NON_ROOT, workload);
+            case "PROCESS" ->
+                new DeploymentRuntimeDefinition.ManagedProcess(health, DeploymentIdentityMode.SYSTEMD_STATIC, workload);
+            case "DOCKER",
+                    "PODMAN" ->
+                new DeploymentRuntimeDefinition.Container(
+                        DeploymentRuntimeDefinition.ContainerEngineType
+                                .valueOf(DeploymentAiJson.text(node, "backend", 16)),
+                        published, List.of(), health, DeploymentIdentityMode.CONTAINER_NON_ROOT, workload);
             default -> throw new IllegalArgumentException("Unsupported agent backend");
         };
         return new DeploymentAgentPlan.Component(id, dependencies, evidence, runtime, resources(node.get("resources")),
@@ -81,8 +82,7 @@ public final class DeploymentAgentPlanProtocol {
         return switch (type) {
             case "PROCESS" -> {
                 DeploymentAgentProtocol.exact(node, Set.of("type", "timeout", "stability"));
-                yield new DeploymentHealthCheck.Process(
-                        DeploymentAgentProtocol.number(node, "timeout", 1, 3600),
+                yield new DeploymentHealthCheck.Process(DeploymentAgentProtocol.number(node, "timeout", 1, 3600),
                         DeploymentAgentProtocol.number(node, "stability", 1, 3600));
             }
             case "TCP" -> {
@@ -120,8 +120,8 @@ public final class DeploymentAgentPlanProtocol {
             JsonNode reversible = item.get("reversible");
             if (!reversible.isBoolean())
                 throw new IllegalArgumentException("Agent resource reversibility must be boolean");
-            var path = new DeploymentDataPath(DeploymentAiJson.text(item, "path", 500),
-                    DeploymentDataPath.AccessMode.valueOf(DeploymentAiJson.text(item, "access", 16)),
+            var path = new DeploymentStoragePath(DeploymentAiJson.text(item, "path", 500),
+                    DeploymentStoragePath.AccessMode.valueOf(DeploymentAiJson.text(item, "access", 16)),
                     DeploymentAiJson.text(item, "schema", 64), reversible.booleanValue());
             files.add(new DeploymentFileBinding(DeploymentAiJson.text(item, "id", 63), path,
                     DeploymentStorageLocation.defaults(),

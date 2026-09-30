@@ -62,10 +62,10 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
             for (var volume : container.volumes())
                 if (files.stream().noneMatch(file -> file.bindingId().equals(volume.bindingId())))
                     files.add(new DeploymentFileBinding(volume.bindingId(),
-                            new DeploymentDataPath(volume.containerPath(),
+                            new DeploymentStoragePath(volume.containerPath(),
                                     volume.readOnly()
-                                            ? DeploymentDataPath.AccessMode.READ_ONLY
-                                            : DeploymentDataPath.AccessMode.READ_WRITE,
+                                            ? DeploymentStoragePath.AccessMode.READ_ONLY
+                                            : DeploymentStoragePath.AccessMode.READ_WRITE,
                                     "files", true),
                             DeploymentStorageLocation.defaults()));
             resources = new DeploymentResourceBindings(files, resources.databaseBindings());
@@ -74,7 +74,7 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
                         .filter(file -> file.bindingId().equals(volume.bindingId())).findFirst().orElseThrow();
                 if (!binding.dataPath().path().equals(volume.containerPath())
                         || binding.resourceType() != DeploymentStorageLocation.StorageResourceType.FILE
-                        || (binding.dataPath().access() == DeploymentDataPath.AccessMode.READ_ONLY) != volume
+                        || (binding.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY) != volume
                                 .readOnly())
                     throw new IllegalArgumentException("Container volume and storage binding differ");
             }

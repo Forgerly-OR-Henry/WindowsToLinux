@@ -154,7 +154,7 @@ public final class DeploymentAgentRecovery {
     /** Reconstructs only task-bound candidate identities from original archived bytes and plan evidence. / 仅从原归档字节与计划依据重建任务绑定候选身份。
      * @param events original ordered evidence / 原有序依据
      * @return all possibly prepared original candidates or missing identity / 所有可能准备的原候选或身份缺失 */
-    private static Optional<List<DeploymentRemoteWorkspace>> originalWorkspaces(
+    static Optional<List<DeploymentRemoteWorkspace>> originalWorkspaces(
             List<DeploymentAgentJournal.Event> events) {
         String archive = null;
         String application = null;

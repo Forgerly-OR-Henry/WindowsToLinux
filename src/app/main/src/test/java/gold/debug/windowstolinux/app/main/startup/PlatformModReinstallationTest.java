@@ -149,7 +149,7 @@ class PlatformModReinstallationTest {
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             var fresh = review(installer, original);
             runtime.security().lock();
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> installer.reinstallation().reinstall(fresh));
             assertFalse(Files.exists(stage(fresh.id())));
         }

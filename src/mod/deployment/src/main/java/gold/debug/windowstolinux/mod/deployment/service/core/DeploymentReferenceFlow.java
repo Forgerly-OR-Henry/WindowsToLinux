@@ -192,7 +192,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
             }
             if (result.outcome() == Outcome.SUCCEEDED) {
                 var publication = result.value().orElseThrow();
-                requirePublication(plan, publication);
+                requirePublication(plan, publication, task);
                 executions.commitApplication(task, identity.executionId(), publication.graph(), publication.units(),
                         Instant.now());
             } else {
@@ -264,8 +264,12 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
 
     /** Checks that the author supplied only originally reserved publication associations. / 核实作者仅返回原已预留发布关联。
      * @param plan original plan / 原计划
-     * @param publication verified publication / 已核实发布 */
-    private void requirePublication(DeploymentPublicationPlan plan, DeploymentPublication publication) {
+     * @param publication verified publication / 已核实发布
+     * @param task authentic original task / 真实原任务
+     * @throws SQLException if exact durable template conflicts / 精确持久模板冲突时
+     * @throws ApiException if original task access is denied / 原任务访问被拒时 */
+    private void requirePublication(DeploymentPublicationPlan plan, DeploymentPublication publication, TaskContext task)
+            throws SQLException, ApiException {
         if (!publication.graph().applicationId().equals(plan.applicationId()))
             throw new IllegalArgumentException("Publication application changed");
         var published = new HashSet<DeploymentReferenceIntent>();
@@ -292,6 +296,10 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         }
         if (!plan.references().containsAll(published))
             throw new IllegalArgumentException("Publication unit was not originally reserved");
+        var formal = executions.find(task, plan.executionId()).orElseThrow();
+        if (executions.publicationTemplate(formal).isPresent())
+            executions.recordPublicationTemplate(task, plan.executionId(),
+                    new DeploymentPublicationProposal(publication.graph(), publication.units()), Instant.now());
     }
 
     /** Reconciles exact platform UUIDs and business rows, then confirms actual resource release. / 核对精确平台UUID与业务行，再确认真实资源释放。

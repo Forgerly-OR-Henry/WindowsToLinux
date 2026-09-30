@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model.analysis;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * A deterministic reason why a project cannot enter the managed-deployment pipeline.
@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
  * @param message localized explanation / 本地化说明
  * @param nextAction next action / 下一动作
  */
-public record RejectionReason(String code, LocalizedMessage message, String nextAction) {
+public record RejectionReason(String code, DeploymentLocalizedMessage message, String nextAction) {
     /**
      * Validates and binds the inputs required by rejection reason.
      * <p>校验并绑定拒绝原因所需输入。

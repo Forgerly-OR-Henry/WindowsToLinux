@@ -30,7 +30,7 @@ class PlatformSourceWorkspaceTest {
         runtime.setSourcePicker((title, task, cancel) -> {
             throw new AssertionError("No directory selection expected");
         });
-        return runtime.source(OWNER, VERSION);
+        return runtime.capabilities().source(OWNER, VERSION);
     }
 
     @Test
@@ -38,8 +38,8 @@ class PlatformSourceWorkspaceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             var source = source(runtime);
-            var foreign = runtime.source("foreign.mod", VERSION);
-            var another = runtime.source(OWNER, VERSION);
+            var foreign = runtime.capabilities().source("foreign.mod", VERSION);
+            var another = runtime.capabilities().source(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 try (var workspace = source.workspace(task)) {
                     Path directory = workspace.directory();

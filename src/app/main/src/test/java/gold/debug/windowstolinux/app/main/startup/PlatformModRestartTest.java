@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.db.mod.*;
 import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.app.mod.lifecycle.ModRuntimeSession;
+import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;

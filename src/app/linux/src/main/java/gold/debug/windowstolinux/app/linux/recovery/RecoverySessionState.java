@@ -24,7 +24,7 @@ final class RecoverySessionState {
      * Stage associated with the result or failure.
      * <p>结果或失败所属阶段。
      */
-    RecoverySnapshot.State phase = RecoverySnapshot.State.STARTING;
+    BrowserRecoverySnapshot.State phase = BrowserRecoverySnapshot.State.STARTING;
 
     /**
      * Stable machine-readable classification code.
@@ -115,10 +115,10 @@ final class RecoverySessionState {
      *
      * @return recovery snapshot from the supplied snapshot inputs / 根据所提供快照输入构建恢复快照
      */
-    RecoverySnapshot snapshot() {
-        return new RecoverySnapshot(id, phase, code,
+    BrowserRecoverySnapshot snapshot() {
+        return new BrowserRecoverySnapshot(id, phase, code,
                 Optional.ofNullable(action)
-                        .map(value -> new RecoverySnapshot.Action(value.command(), value.reason(), value.expected(),
+                        .map(value -> new BrowserRecoverySnapshot.Action(value.command(), value.reason(), value.expected(),
                                 value.highImpact())),
                 token, unknown, decisions, attempts, Optional.ofNullable(failure));
     }
@@ -139,6 +139,6 @@ final class RecoverySessionState {
      * @return true when active predicate against the supplied evidence, false otherwise / 根据所提供证据检查活跃条件时为 true，否则为 false
      */
     boolean active() {
-        return phase == RecoverySnapshot.State.OBSERVING || phase == RecoverySnapshot.State.EXECUTING;
+        return phase == BrowserRecoverySnapshot.State.OBSERVING || phase == BrowserRecoverySnapshot.State.EXECUTING;
     }
 }

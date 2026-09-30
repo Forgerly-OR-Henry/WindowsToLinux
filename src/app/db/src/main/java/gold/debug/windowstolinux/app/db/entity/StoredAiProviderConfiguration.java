@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.shared.model.ai.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.catalog.AiPurposeType;
 
 /** Inventory metadata and capability evidence for an exact profile revision. / 精确模型修订的清单元数据及能力证据。
  * @param profile credential-free connection settings / 不含凭据明文的连接设置

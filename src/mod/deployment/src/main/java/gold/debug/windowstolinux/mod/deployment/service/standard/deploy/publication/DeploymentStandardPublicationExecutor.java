@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitIdentity;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.DeploymentStandardCandidateExecutor;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedBuildCorrection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedPlanIdentity;
 
@@ -69,6 +70,22 @@ public final class DeploymentStandardPublicationExecutor {
             DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
             Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
             throws Exception {
+        return prepareWithinTask(task, unit, project, credentials, prepareSource, Optional.empty());
+    }
+
+    /** Adds only a task-bound typed build correction to the original one-shot publication. / 仅给原一次性发布增加任务绑定类型化构建纠正。
+     * @param task authentic original task / 真实原任务
+     * @param unit original owned unit / 原所属单元
+     * @param project exact saved source / 精确已存来源
+     * @param credentials exact saved revisions / 精确已存修订
+     * @param prepareSource original source preparation / 原来源准备
+     * @param correction optional bounded original build review / 可选有界原构建审阅
+     * @return original one-shot publication / 原一次性发布
+     * @throws Exception if original preparation is unavailable / 原准备不可用时 */
+    public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
+            DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
+            Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource,
+            Optional<DeploymentAssistedBuildCorrection> correction) throws Exception {
         Objects.requireNonNull(task);
         Objects.requireNonNull(unit);
         Objects.requireNonNull(project);
@@ -106,7 +123,7 @@ public final class DeploymentStandardPublicationExecutor {
                     List.copyOf(intents), Instant.now().truncatedTo(ChronoUnit.MILLIS));
             var cleanupFacts = new java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal>();
             var ready = new DeploymentReferenceFlow.PreparedPublication(publicationPlan,
-                    original -> author(plan, unit, originals, original, cleanupFacts), () -> {
+                    original -> author(plan, unit, originals, original, cleanupFacts, correction), () -> {
                         boolean closed = false;
                         try {
                             request.archive().close();
@@ -140,10 +157,12 @@ public final class DeploymentStandardPublicationExecutor {
      * @param credentials exact saved credential map / 精确已保存凭据映射
      * @param task original task / 原任务
      * @param cleanupFacts original task's durable remote cleanup / 原任务持久远端清理依据
+     * @param correction optional bounded typed build correction / 可选有界类型化构建纠正
      * @return verified publication or retained unknown / 已核实发布或保留未知 */
     private OperationResult<DeploymentPublication> author(ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
             Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task,
-            java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal> cleanupFacts) {
+            java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal> cleanupFacts,
+            Optional<DeploymentAssistedBuildCorrection> correction) {
         if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
             return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANCELLED_BEFORE_REMOTE",
@@ -164,11 +183,13 @@ public final class DeploymentStandardPublicationExecutor {
             var journal = DeploymentPublicationCleanupJournal.begin(context, task, unit, request.archive().sha256(),
                     ReviewedPlanIdentity.from(request), request.runtime());
             cleanupFacts.set(journal);
-            var build = new DeploymentStandardCandidateExecutor().execute(plan, session, context.interaction(), task);
-            result = build.outcome() == Outcome.SUCCEEDED
-                    ? new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
-                            build.value().orElseThrow(), credentials, session, task, journal)
-                    : unknown("DEPLOYMENT_CANDIDATE_NOT_CONFIRMED");
+            if (correction.isEmpty()) {
+                var build = new DeploymentStandardCandidateExecutor().execute(plan, session, context.interaction(), task);
+                result = build.outcome() == Outcome.SUCCEEDED
+                        ? new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
+                                build.value().orElseThrow(), credentials, session, task, journal)
+                        : unknown("DEPLOYMENT_CANDIDATE_NOT_CONFIRMED");
+            } else return assisted(plan, unit, credentials, task, session, journal, correction.orElseThrow());
         } catch (Exception | LinkageError | AssertionError uncertain) {
             result = unknown("DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED");
         }
@@ -184,6 +205,71 @@ public final class DeploymentStandardPublicationExecutor {
         return result;
     }
 
+    /** Uses one original candidate for bounded build-only corrections and exact final publication. / 有界仅构建纠正及精确最终发布共用一个原候选。
+     * @param plan original real plan / 原真实计划
+     * @param unit original exact owner / 原精确归属
+     * @param credentials original exact credentials / 原精确凭据
+     * @param task original task / 原任务
+     * @param session original session / 原会话
+     * @param journal original physical occupancy / 原物理占用
+     * @param correction actual typed reviewer / 实际类型化审阅器
+     * @return verified publication or retained original failure / 已核发布或保留原失败
+     * @throws Exception if review or original persistence is uncertain / 审阅或原持久确认不明时 */
+    private OperationResult<DeploymentPublication> assisted(ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
+            Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task, gold.debug.windowstolinux.appapi.linux.RemoteSession session,
+            DeploymentPublicationCleanupJournal journal, DeploymentAssistedBuildCorrection correction) throws Exception {
+        var candidates = new DeploymentStandardCandidateExecutor();
+        var loop = new DeploymentAssistedPublicationBuild(context, candidates);
+        var attempts = new DeploymentAssistedPublicationAttempts(context, loop, candidates);
+        var journals = Map.of(unit.id(), journal);
+        try (var owned = new DeploymentPublicationAuthorSession(session, journals, null)) {
+            var prepared = candidates.prepare(plan, owned.current(), context.interaction(), task, loop.fallbackAvailable());
+            if (prepared.outcome() != Outcome.SUCCEEDED) {
+                if (prepared.outcome() == Outcome.UNKNOWN || prepared.outcome() == Outcome.CANCELLED) return unknown("DEPLOYMENT_ASSISTED_PREPARE_UNCONFIRMED");
+                if (!journal.verifiedBusiness(Outcome.FAILED, prepared.problem()) || !journal.remoteClean() || !owned.retire()) return unknown("DEPLOYMENT_ASSISTED_PREPARE_RESULT_UNCONFIRMED");
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(), prepared.problem());
+            }
+            if (!loop.prepared(prepared.value().orElseThrow())) return unknown("DEPLOYMENT_ASSISTED_RETRY_BUDGET_UNCONFIRMED");
+            var selected = prepared.value().orElseThrow();
+            while (true) {
+                var completed = loop.build(selected, correction, unit, journal, null, () -> "", owned.current(), task);
+                if (completed.result().outcome() != Outcome.SUCCEEDED)
+                    return assistedBuildFailure(completed, unit, task, journal, owned);
+                plan = completed.plan();
+                var result = new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
+                        completed.result().value().orElseThrow(), credentials, owned.current(), task, journal);
+                if (result.outcome() == Outcome.UNKNOWN || result.outcome() == Outcome.CANCELLED) return result;
+                boolean retired = owned.retire();
+                if (result.outcome() != Outcome.FAILED || !retired || result.problem().isEmpty()
+                        || !unit.id().equals(result.problem().orElseThrow().context().get("publicationHealthFailure"))) return result;
+                var next = attempts.advance(Map.of(unit.id(), plan), Map.of(unit.id(), unit), Map.of(unit.id(), correction),
+                        unit.id(), "", null, journals, result.problem().orElseThrow(), task);
+                if (next.outcome() != Outcome.SUCCEEDED)
+                    return new OperationResult<>(next.outcome(), Optional.empty(), next.problem());
+                var continuation = next.value().orElseThrow();
+                owned.next(continuation.session()); plan = continuation.plans().get(unit.id()); selected = continuation.prepared().get(unit.id());
+            }
+        }
+    }
+
+    /** Cleans only an actually known pre-publication build failure. / 仅清理实际已知发布前构建失败。
+     * @param completed actual build result / 实际构建结果
+     * @param unit exact original owner / 精确原归属
+     * @param task authentic original task / 真实原任务
+     * @param journal original cleanup occupancy / 原清理占用
+     * @param owned actual physical session owner / 实际物理会话所有者
+     * @return known cleaned failure or retained unknown / 已知已清理失败或保留未知
+     * @throws Exception if original physical close is unconfirmed / 原物理关闭未确认时 */
+    private OperationResult<DeploymentPublication> assistedBuildFailure(DeploymentAssistedPublicationBuild.Completed completed,
+            DeploymentUnitIdentity unit, TaskContext task, DeploymentPublicationCleanupJournal journal,
+            DeploymentPublicationAuthorSession owned) throws Exception {
+        if (completed.result().outcome() != Outcome.FAILED) return unknown("DEPLOYMENT_ASSISTED_CANDIDATE_UNCONFIRMED");
+        var channel = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel(owned.current(), context.interaction(), unit.server(), task, journal.facts().path("planSha256").asText());
+        if (!journal.verifiedBusiness(Outcome.FAILED, completed.result().problem())
+                || !DeploymentPublicationCleanupAttempt.run(journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN", () -> channel.cleanupCandidate(unit, journal.facts().path("candidate").asText()))
+                || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean() || !owned.retire()) return unknown("DEPLOYMENT_ASSISTED_CANDIDATE_CLEANUP_UNCONFIRMED");
+        return new OperationResult<>(Outcome.FAILED, Optional.empty(), completed.result().problem());
+    }
     /** Reports a known pre-publication metadata rejection. / 报告已知发布前元数据拒绝。
      * @param event stable event / 稳定事件
      * @return known failure / 已知失败 */

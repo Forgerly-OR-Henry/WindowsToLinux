@@ -4,9 +4,9 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
 import gold.debug.windowstolinux.app.secret.*;
+import gold.debug.windowstolinux.app.service.contract.result.*;
 import gold.debug.windowstolinux.app.service.contract.security.DesktopSecurityState;
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
-import gold.debug.windowstolinux.app.service.failure.*;
 
 /** Owns session authorization, accepted task leases and exclusive security changes. / 持有会话授权、已接纳任务句柄及独占安全变更。 */
 public final class DesktopSecurityService implements SecurityApplicationFacade, AutoCloseable {

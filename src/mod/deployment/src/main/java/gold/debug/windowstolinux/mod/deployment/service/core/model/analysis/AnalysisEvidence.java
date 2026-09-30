@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model.analysis;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.message.LocalizedMessage;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
 /**
  * A compact, non-secret source of one deterministic project fact.
@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Local
  * @param conclusion conclusion / 结论
  * @param confidence confidence / 置信度
  */
-public record AnalysisEvidence(LocalizedMessage subject, String source, LocalizedMessage conclusion,
+public record AnalysisEvidence(DeploymentLocalizedMessage subject, String source, DeploymentLocalizedMessage conclusion,
         EvidenceConfidenceLevel confidence) {
     /**
      * Validates and binds the inputs required by analysis evidence.

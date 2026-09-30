@@ -4,6 +4,7 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -13,7 +14,7 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
 import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
 import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 
 /**
  * Independent server configuration editor; connection checks are separate actions. / 独立服务器配置编辑窗口，连接检查是单独动作。
@@ -97,6 +98,9 @@ public final class ServerProfileDialog extends JDialog {
      */
     private boolean busy, existing;
 
+    /** Original input states captured only while the actual save is active. / 仅实际保存活动期间抓取的原输入状态。 */
+    private final Map<Component, Boolean> inputStates = new IdentityHashMap<>();
+
     /**
      * Creates an add or edit dialog; null profile starts an independent new identity. / 创建添加或编辑窗口，空配置生成独立新身份。
      *
@@ -110,6 +114,8 @@ public final class ServerProfileDialog extends JDialog {
     public ServerProfileDialog(Window owner, ServerProfileEditor service, DesktopComponentFactory c,
             PageMessagePresenter messages, ServerProfile profile, Consumer<ServerProfile> saved) {
         super(owner, messages.text(profile == null ? "auto.addServer" : "server.edit"), ModalityType.APPLICATION_MODAL);
+        gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(this,
+                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of(profile == null ? "auto.addServer" : "server.edit"), messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
@@ -127,18 +133,19 @@ public final class ServerProfileDialog extends JDialog {
             host.setText(profile.host());
             username.setText(profile.username());
             port.setText(Integer.toString(profile.sshPort()));
-            password.setToolTipText(messages.text("server.password.keep"));
+            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.tooltip(password,
+                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("server.password.keep"), messages.catalog());
         }
         form = c.card(new GridBagLayout());
-        c.addField(form, 0, 0, messages.text("server.name"), name);
-        c.addField(form, 1, 0, messages.text("field.host"), host);
-        c.addField(form, 2, 0, messages.text("field.sshPort"), port);
-        c.addField(form, 3, 0, messages.text("field.sshUser"), username);
-        c.addField(form, 4, 0, messages.text("field.sshPassword"), password);
-        save = c.primaryButton(messages.text("button.saveServer"));
+        c.addField(form, 0, 0, messages, "server.name", name);
+        c.addField(form, 1, 0, messages, "field.host", host);
+        c.addField(form, 2, 0, messages, "field.sshPort", port);
+        c.addField(form, 3, 0, messages, "field.sshUser", username);
+        c.addField(form, 4, 0, messages, "field.sshPassword", password);
+        save = messages.bind(c.primaryButton(""), "button.saveServer");
         save.setName("server.save");
         save.addActionListener(event -> save());
-        JButton cancel = c.secondaryButton(messages.text("button.cancel"));
+        JButton cancel = messages.bind(c.secondaryButton(""), "button.cancel");
         cancel.addActionListener(event -> {
             if (!busy)
                 dispose();
@@ -237,7 +244,21 @@ public final class ServerProfileDialog extends JDialog {
      * @param enabled whether this configured capability participates in execution / 当前配置能力是否参与执行
      */
     private void setInputs(boolean enabled) {
-        for (Component child : form.getComponents())
-            child.setEnabled(enabled);
+        if (!enabled) {
+            if (inputStates.isEmpty()) captureInputs(form);
+        } else {
+            inputStates.forEach(Component::setEnabled);
+            inputStates.clear();
+        }
+    }
+
+    /** Freezes the original component tree without overwriting an already-disabled descendant. / 冻结原组件树，不覆盖已禁用后代的原状态。
+     * @param parent original form subtree / 原表单子树 */
+    private void captureInputs(Container parent) {
+        for (Component child : parent.getComponents()) {
+            inputStates.put(child, child.isEnabled());
+            child.setEnabled(false);
+            if (child instanceof Container nested) captureInputs(nested);
+        }
     }
 }

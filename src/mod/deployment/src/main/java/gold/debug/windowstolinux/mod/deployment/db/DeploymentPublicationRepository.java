@@ -32,7 +32,7 @@ public final class DeploymentPublicationRepository {
         var records = validateInputs(graph, publications);
         Objects.requireNonNull(observedAt);
         var connection = connection(task);
-        DeploymentDataTransaction.execute(connection, () -> save(connection, graph, records, observedAt));
+        DeploymentStorageTransaction.execute(connection, () -> save(connection, graph, records, observedAt));
     }
 
     /** Writes publication facts inside the journal's original transaction. / 在账本原事务内写入发布事实。
