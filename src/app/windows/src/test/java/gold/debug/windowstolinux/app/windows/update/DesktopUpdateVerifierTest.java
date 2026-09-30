@@ -48,7 +48,7 @@ class DesktopUpdateVerifierTest {
         DesktopUpdateException failure = assertThrows(DesktopUpdateException.class,
                 () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
 
-        assertEquals("windows.update.package-invalid", failure.failure().code());
+        assertEquals("windows.update.package-invalid", failure.problem().eventCode());
     }
 
     @Test
@@ -62,13 +62,13 @@ class DesktopUpdateVerifierTest {
         DesktopUpdateException signatureFailure = assertThrows(DesktopUpdateException.class,
                 () -> new DesktopUpdateVerifier().verify(update, unknownSignature,
                         policy(trusted, "1.0.0", Set.of(), false)));
-        assertEquals("windows.update.signature-invalid", signatureFailure.failure().code());
+        assertEquals("windows.update.signature-invalid", signatureFailure.problem().eventCode());
 
         DesktopUpdateManifest trustedManifest = signedManifest(trusted, update, "release-2", "2.0.0",
                 DesktopArchitectureType.X86_64, false);
         DesktopUpdateException revoked = assertThrows(DesktopUpdateException.class, () -> new DesktopUpdateVerifier()
                 .verify(update, trustedManifest, policy(trusted, "1.0.0", Set.of("release-2"), false)));
-        assertEquals("windows.update.version-rejected", revoked.failure().code());
+        assertEquals("windows.update.version-rejected", revoked.problem().eventCode());
     }
 
     @Test
@@ -95,7 +95,7 @@ class DesktopUpdateVerifierTest {
 
         DesktopUpdateException failure = assertThrows(DesktopUpdateException.class,
                 () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
-        assertEquals("windows.update.architecture-rejected", failure.failure().code());
+        assertEquals("windows.update.architecture-rejected", failure.problem().eventCode());
     }
 
     private Path packageFile(String content) throws Exception {

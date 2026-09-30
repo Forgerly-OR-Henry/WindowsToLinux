@@ -11,18 +11,22 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
 import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Strict authenticated transport codec for an update handoff crossing the process boundary. / 更新交接跨进程边界使用的严格认证传输编解码器。
  */
 public final class DesktopUpdateHandoffCodec {
+    /** Creates the authenticated update transport codec. / 创建认证更新传输编解码器。 */
+    public DesktopUpdateHandoffCodec() {
+    }
+
     /**
      * PAYLOAD VERSION.
      * <p>载荷版本。
@@ -88,7 +92,7 @@ public final class DesktopUpdateHandoffCodec {
             if (input.readInt() != PAYLOAD_VERSION) {
                 throw invalid("update handoff payload version is unsupported", null);
             }
-            OperationIdentity operation = OperationIdentity.from(input.readUTF());
+            UUID operation = UUID.fromString(input.readUTF());
             DesktopUpdateVerification update = readVerification(input);
             DesktopUpdatePort.BackupEvidence backup = readBackup(input);
             List<DesktopUpdateEvent> events = readEvents(input);

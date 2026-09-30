@@ -49,7 +49,7 @@ class DesktopHandoffEnvelopeCodecTest {
 
     private static void assertFailure(ThrowingOperation operation) {
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class, operation::run);
-        assertEquals("windows.workspace.handoff-invalid", failure.failure().code());
+        assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @FunctionalInterface

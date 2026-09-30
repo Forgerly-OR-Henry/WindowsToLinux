@@ -24,7 +24,12 @@ class DesktopUninstallCoordinatorTest {
                 .prepare(request(Optional.empty()));
 
         assertEquals(DesktopUninstallPreparationStatus.DECISION_REQUIRED, result.status());
-        assertEquals("windows.uninstall.decision-required", result.failure().orElseThrow().code());
+        assertEquals("windows.uninstall.decision-required", result.problem().orElseThrow().eventCode());
+        assertEquals(gold.debug.windowstolinux.appapi.task.ProblemCode.INVALID_INPUT,
+                result.problem().orElseThrow().code());
+        assertEquals("windows.error.uninstallDecisionRequired",
+                result.problem().orElseThrow().context().get("messageKey"));
+        assertEquals(result.operationIdentity(), result.problem().orElseThrow().diagnosticId().orElseThrow());
         assertTrue(port.calls.isEmpty());
     }
 
@@ -96,7 +101,7 @@ class DesktopUninstallCoordinatorTest {
 
         assertEquals(DesktopUninstallStatus.COMPLETED_WITH_RESIDUALS, result.status());
         assertEquals(List.of(request.dataRoot().resolve("locked.db").toString()), result.residualItems());
-        assertEquals("windows.uninstall.removal-incomplete", result.failure().orElseThrow().code());
+        assertEquals("windows.uninstall.removal-incomplete", result.problem().orElseThrow().eventCode());
     }
 
     @Test
@@ -106,6 +111,35 @@ class DesktopUninstallCoordinatorTest {
                 () -> new DesktopUninstallRequest(Optional.empty(), install, install.resolve("other")));
         assertEquals(install.resolve("data").toAbsolutePath().normalize(),
                 new DesktopUninstallRequest(Optional.empty(), install, install.resolve("data")).dataRoot());
+    }
+
+    @Test
+    void checkedWindowsFailuresRetainCauseSuppressedEvidenceAndPublicDiagnostic() {
+        var cause = new java.io.IOException("Original safe evidence");
+        var suppressed = new java.io.IOException("Safe cleanup evidence");
+        java.io.IOException[] failures = {
+                DesktopUninstallException.create(DesktopUninstallFailureType.BOUNDARY_INVALID, "Rejected boundary",
+                        cause),
+                gold.debug.windowstolinux.app.windows.update.DesktopUpdateException.create(
+                        gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType.PACKAGE_INVALID,
+                        "Rejected package", cause),
+                gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException.create(
+                        gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType.HANDOFF_INVALID,
+                        "Rejected handoff", cause)};
+        for (var failure : failures) {
+            org.junit.jupiter.api.Assertions.assertSame(cause, failure.getCause());
+            failure.addSuppressed(suppressed);
+            org.junit.jupiter.api.Assertions.assertSame(suppressed, failure.getSuppressed()[0]);
+        }
+        var problem = ((DesktopUninstallException) failures[0]).problem();
+        assertEquals("windows.uninstall.boundary-invalid", problem.eventCode());
+        assertEquals("windows", problem.context().get("domain"));
+        assertEquals("validation", problem.context().get("phase"));
+        assertEquals("ERROR", problem.context().get("severity"));
+        assertEquals("REQUEST_USER_CORRECTION", problem.context().get("recoveryAction"));
+        assertEquals("NOT_ATTEMPTED", problem.context().get("recoveryDisposition"));
+        assertTrue(problem.diagnosticId().isPresent());
+        assertThrows(UnsupportedOperationException.class, () -> problem.context().put("phase", "changed"));
     }
 
     private DesktopUninstallRequest request(Optional<DesktopUninstallDecisionType> decision) {

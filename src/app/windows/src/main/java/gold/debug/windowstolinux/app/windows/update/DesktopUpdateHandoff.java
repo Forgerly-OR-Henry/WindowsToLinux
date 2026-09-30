@@ -2,8 +2,7 @@ package gold.debug.windowstolinux.app.windows.update;
 
 import java.util.List;
 import java.util.Objects;
-
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import java.util.UUID;
 
 /**
  * Immutable main-process evidence handed to an independently launched updater. / 交给独立更新器的不可变主进程证据。
@@ -13,7 +12,7 @@ import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
  * @param backup the local backup page state / 本地备份页面状态
  * @param preparationEvents preparation events / 准备事件集合
  */
-public record DesktopUpdateHandoff(OperationIdentity operationIdentity, DesktopUpdateVerification update,
+public record DesktopUpdateHandoff(UUID operationIdentity, DesktopUpdateVerification update,
         DesktopUpdatePort.BackupEvidence backup, List<DesktopUpdateEvent> preparationEvents) {
     /**
      * Validates that replacement has not begun before the independent handoff. / 校验独立交接前尚未开始替换。

@@ -11,18 +11,22 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
 import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 
 /**
  * Strict authenticated transport codec for an uninstall handoff crossing the process boundary. / 卸载交接跨进程边界使用的严格认证传输编解码器。
  */
 public final class DesktopUninstallHandoffCodec {
+    /** Creates the authenticated uninstall transport codec. / 创建认证卸载传输编解码器。 */
+    public DesktopUninstallHandoffCodec() {
+    }
+
     /**
      * PAYLOAD VERSION.
      * <p>载荷版本。
@@ -90,7 +94,7 @@ public final class DesktopUninstallHandoffCodec {
             if (input.readInt() != PAYLOAD_VERSION) {
                 throw invalid("uninstall handoff payload version is unsupported", null);
             }
-            OperationIdentity operation = OperationIdentity.from(input.readUTF());
+            UUID operation = UUID.fromString(input.readUTF());
             DesktopUninstallRequest request = new DesktopUninstallRequest(
                     Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())), Path.of(input.readUTF()),
                     Path.of(input.readUTF()));

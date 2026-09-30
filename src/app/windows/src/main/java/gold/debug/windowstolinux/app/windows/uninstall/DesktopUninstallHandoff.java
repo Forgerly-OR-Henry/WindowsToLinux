@@ -2,8 +2,7 @@ package gold.debug.windowstolinux.app.windows.uninstall;
 
 import java.util.List;
 import java.util.Objects;
-
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import java.util.UUID;
 
 /**
  * Explicit uninstall decision and quiesce evidence handed to an external worker. / 交给外部执行器的显式卸载决定与停收证据。
@@ -12,7 +11,7 @@ import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
  * @param request reviewed inputs for the requested operation / 所请求操作的已审阅输入
  * @param preparationEvents preparation events / 准备事件集合
  */
-public record DesktopUninstallHandoff(OperationIdentity operationIdentity, DesktopUninstallRequest request,
+public record DesktopUninstallHandoff(UUID operationIdentity, DesktopUninstallRequest request,
         List<DesktopUninstallEvent> preparationEvents) {
     /**
      * Requires a decision and successful task quiesce before process exit. / 要求进程退出前已有决定且任务停收成功。
