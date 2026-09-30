@@ -10,6 +10,11 @@
   <artifactId>windowstolinux-app-windows</artifactId>
   <dependencies>
     <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-appapi</artifactId>
+      <version>1.0.0-dev.1</version>
+    </dependency>
+    <dependency>
       <groupId>net.java.dev.jna</groupId>
       <artifactId>jna-platform</artifactId>
       <version>${jna.version}</version>

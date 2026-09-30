@@ -17,6 +17,10 @@ import java.util.Objects;
  * Verifies a staged package against one pinned Ed25519 release trust root. / 使用单个固定 Ed25519 发布信任根验证已暂存软件包。
  */
 public final class DesktopUpdateVerifier {
+    /** Creates the verifier for an explicitly supplied release trust policy. / 创建使用显式发布信任策略的验证器。 */
+    public DesktopUpdateVerifier() {
+    }
+
     /**
      * BUFFER SIZE.
      * <p>缓冲区大小。

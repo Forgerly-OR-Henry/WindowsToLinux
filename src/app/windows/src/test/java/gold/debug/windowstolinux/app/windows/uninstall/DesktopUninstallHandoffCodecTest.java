@@ -7,13 +7,13 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,7 +31,7 @@ class DesktopUninstallHandoffCodecTest {
         assertEquals(handoff, codec.read(document, key(4)));
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
                 () -> codec.read(document, key(5)));
-        assertEquals("windows.workspace.handoff-invalid", failure.failure().code());
+        assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @Test
@@ -42,7 +42,7 @@ class DesktopUninstallHandoffCodecTest {
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
                 () -> new DesktopUninstallHandoffCodec().read(document, key(4)));
 
-        assertEquals("windows.workspace.handoff-invalid", failure.failure().code());
+        assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @Test
@@ -59,7 +59,7 @@ class DesktopUninstallHandoffCodecTest {
         DesktopUninstallRequest request = new DesktopUninstallRequest(
                 Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS), install,
                 install.resolve("data"));
-        return new DesktopUninstallHandoff(OperationIdentity.from("22222222-2222-2222-2222-222222222222"), request,
+        return new DesktopUninstallHandoff(UUID.fromString("22222222-2222-2222-2222-222222222222"), request,
                 List.of(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, true,
                         "delete explicitly selected"),
                         new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, true, "owned tasks stopped")));

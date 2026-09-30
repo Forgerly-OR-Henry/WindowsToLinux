@@ -4,11 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Coordinates an independently handed-off program and SQLite update transaction. / 编排已独立交接的程序及 SQLite 更新事务。
@@ -39,7 +38,7 @@ public final class DesktopUpdateCoordinator {
      */
     public DesktopUpdatePreparationResult prepare(DesktopUpdateVerification update) {
         Objects.requireNonNull(update, "update");
-        OperationIdentity operation = OperationIdentity.create();
+        UUID operation = UUID.randomUUID();
         List<DesktopUpdateEvent> events = new ArrayList<>();
         DesktopUpdateState state = DesktopUpdateState.TASKS_QUIESCED;
         try {
@@ -59,11 +58,10 @@ public final class DesktopUpdateCoordinator {
             return new DesktopUpdatePreparationResult(operation, DesktopUpdatePreparationStatus.READY_FOR_HANDOFF,
                     update.version(), events, Optional.of(handoff), Optional.empty());
         } catch (Exception exception) {
-            FailureDescriptor failure = failure(exception).withOperationIdentity(operation)
-                    .withRecovery(FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_REQUIRED);
+            Problem failure = recovery(bind(failure(exception), operation), "NONE", "NOT_REQUIRED");
             if (events.isEmpty() || events.get(events.size() - 1).state() != state
                     || events.get(events.size() - 1).succeeded()) {
-                events.add(new DesktopUpdateEvent(state, false, failure.diagnostic()));
+                events.add(new DesktopUpdateEvent(state, false, failure.message()));
             }
             return new DesktopUpdatePreparationResult(operation, DesktopUpdatePreparationStatus.PRECONDITION_REJECTED,
                     update.version(), events, Optional.empty(), Optional.of(failure));
@@ -79,7 +77,7 @@ public final class DesktopUpdateCoordinator {
      */
     public DesktopUpdateResult apply(DesktopUpdateHandoff handoff) {
         Objects.requireNonNull(handoff, "handoff");
-        OperationIdentity operation = handoff.operationIdentity();
+        UUID operation = handoff.operationIdentity();
         DesktopUpdateVerification update = handoff.update();
         DesktopUpdatePort.BackupEvidence backup = handoff.backup();
         List<DesktopUpdateEvent> events = new ArrayList<>(handoff.preparationEvents());
@@ -114,14 +112,13 @@ public final class DesktopUpdateCoordinator {
             return new DesktopUpdateResult(operation, DesktopUpdateStatus.SUCCEEDED, update.version(), events,
                     Optional.of(backup.backupToken()), Optional.empty());
         } catch (Exception exception) {
-            FailureDescriptor original = failure(exception).withOperationIdentity(operation);
+            Problem original = bind(failure(exception), operation);
             if (events.isEmpty() || events.get(events.size() - 1).state() != state
                     || events.get(events.size() - 1).succeeded()) {
-                events.add(new DesktopUpdateEvent(state, false, original.diagnostic()));
+                events.add(new DesktopUpdateEvent(state, false, original.message()));
             }
             if (!replacementAttempted) {
-                FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.NONE,
-                        FailureRecoveryDisposition.NOT_REQUIRED);
+                Problem safe = recovery(original, "NONE", "NOT_REQUIRED");
                 return new DesktopUpdateResult(operation, DesktopUpdateStatus.PRECONDITION_REJECTED, update.version(),
                         events, Optional.of(backup.backupToken()), Optional.of(safe));
             }
@@ -140,8 +137,8 @@ public final class DesktopUpdateCoordinator {
      * @param original original / 原始
      * @return desktop update result from the supplied rollback inputs / 根据所提供回滚输入构建Desktop更新结果
      */
-    private DesktopUpdateResult rollback(DesktopUpdateVerification update, OperationIdentity operation,
-            List<DesktopUpdateEvent> events, DesktopUpdatePort.BackupEvidence backup, FailureDescriptor original) {
+    private DesktopUpdateResult rollback(DesktopUpdateVerification update, UUID operation,
+            List<DesktopUpdateEvent> events, DesktopUpdatePort.BackupEvidence backup, Problem original) {
         try {
             DesktopUpdatePort.RollbackEvidence rollback = port.rollbackProgramAndDatabase(backup);
             if (!rollback.programRestored() || !rollback.databaseRestored() || !rollback.previousVersionHealthy()) {
@@ -149,15 +146,20 @@ public final class DesktopUpdateCoordinator {
                         "program and pre-update SQLite backup were not both restored and verified");
             }
             events.add(success(DesktopUpdateState.ROLLBACK_VERIFIED, rollback.evidence()));
-            FailureDescriptor safe = original.withRecovery(FailureRecoveryAction.ROLLBACK,
-                    FailureRecoveryDisposition.SUCCEEDED);
+            Problem safe = recovery(original, "ROLLBACK", "SUCCEEDED");
             return new DesktopUpdateResult(operation, DesktopUpdateStatus.FAILED_ROLLED_BACK, update.version(), events,
                     Optional.of(backup.backupToken()), Optional.of(safe));
         } catch (Exception exception) {
-            FailureDescriptor failed = failure(DesktopUpdateException.create(DesktopUpdateFailureType.ROLLBACK_FAILED,
-                    "program and SQLite rollback could not be verified", exception)).withOperationIdentity(operation)
-                    .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
-            events.add(new DesktopUpdateEvent(DesktopUpdateState.ROLLBACK_VERIFIED, false, failed.diagnostic()));
+            var checked = DesktopUpdateException.create(DesktopUpdateFailureType.ROLLBACK_FAILED,
+                    "program and SQLite rollback could not be verified", exception);
+            var evidence = checked.problem();
+            if (exception instanceof ApiException || exception.getCause() instanceof ApiException) {
+                var cause = failure(exception);
+                evidence = new Problem(evidence.code(), evidence.eventCode(), evidence.message(), evidence.context(),
+                        cause.diagnosticId());
+            }
+            Problem failed = recovery(bind(evidence, operation), "REQUIRE_MANUAL_RECOVERY", "FAILED");
+            events.add(new DesktopUpdateEvent(DesktopUpdateState.ROLLBACK_VERIFIED, false, failed.message()));
             return new DesktopUpdateResult(operation, DesktopUpdateStatus.MANUAL_RECOVERY_REQUIRED, update.version(),
                     events, Optional.of(backup.backupToken()), Optional.of(failed));
         }
@@ -186,11 +188,15 @@ public final class DesktopUpdateCoordinator {
      * @param exception original exception being classified or translated / 正在分类或转换的原始异常
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
-    private static FailureDescriptor failure(Exception exception) {
+    private static Problem failure(Exception exception) {
+        if (exception instanceof ApiException api)
+            return api.problem();
+        if (exception.getCause() instanceof ApiException api)
+            return api.problem();
         if (exception instanceof DesktopUpdateException update)
-            return update.failure();
+            return update.problem();
         return DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
-                "unexpected desktop update transaction failure", exception).failure();
+                "unexpected desktop update transaction failure", exception).problem();
     }
 
     /**
@@ -218,5 +224,34 @@ public final class DesktopUpdateCoordinator {
      */
     private static DesktopUpdateEvent success(DesktopUpdateState state, String evidence) {
         return new DesktopUpdateEvent(state, true, evidence);
+    }
+
+    /** Binds diagnostic evidence to the enclosing original operation. / 将诊断依据绑定外层原操作。
+     * @param problem original immutable problem / 原不可变问题
+     * @param operation original operation UUID / 原操作UUID
+     * @return evidence retaining its category, event and context / 保留类别、事件及上下文的依据 */
+    private static Problem bind(Problem problem, UUID operation) {
+        var context = new java.util.HashMap<>(problem.context());
+        if (problem.diagnosticId().isPresent() && !problem.diagnosticId().orElseThrow().equals(operation)) {
+            String cause = problem.diagnosticId().orElseThrow().toString();
+            String key = "causeDiagnosticId";
+            int suffix = 0;
+            while (context.containsKey(key) && !context.get(key).equals(cause))
+                key = "causeDiagnosticId." + cause + "." + suffix++;
+            context.putIfAbsent(key, cause);
+        }
+        return new Problem(problem.code(), problem.eventCode(), problem.message(), context, Optional.of(operation));
+    }
+
+    /** Records only the recovery result actually verified by this transaction. / 仅记录本事务实际核实的恢复结果。
+     * @param problem original immutable diagnostic evidence / 原不可变诊断依据
+     * @param action exact recovery action / 精确恢复动作
+     * @param disposition verified recovery disposition / 已核实恢复处置
+     * @return original problem with current recovery facts / 带当前恢复事实的原问题 */
+    private static Problem recovery(Problem problem, String action, String disposition) {
+        var context = new java.util.HashMap<>(problem.context());
+        context.put("recoveryAction", action);
+        context.put("recoveryDisposition", disposition);
+        return new Problem(problem.code(), problem.eventCode(), problem.message(), context, problem.diagnosticId());
     }
 }

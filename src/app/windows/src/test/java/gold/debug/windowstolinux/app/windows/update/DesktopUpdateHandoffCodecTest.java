@@ -8,13 +8,13 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
 import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,7 +32,7 @@ class DesktopUpdateHandoffCodecTest {
         assertEquals(handoff, codec.read(document, key(1)));
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
                 () -> codec.read(document, key(2)));
-        assertEquals("windows.workspace.handoff-invalid", failure.failure().code());
+        assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @Test
@@ -43,7 +43,7 @@ class DesktopUpdateHandoffCodecTest {
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
                 () -> new DesktopUpdateHandoffCodec().read(document, key(1)));
 
-        assertEquals("windows.workspace.handoff-invalid", failure.failure().code());
+        assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @Test
@@ -63,8 +63,8 @@ class DesktopUpdateHandoffCodecTest {
                 Instant.parse("2026-08-22T00:00:00.123456789Z"), List.of("signature and digest verified"));
         DesktopUpdatePort.BackupEvidence backup = new DesktopUpdatePort.BackupEvidence("backup-1", true, true, true,
                 true, List.of("program and SQLite backed up"));
-        return new DesktopUpdateHandoff(OperationIdentity.from("11111111-1111-1111-1111-111111111111"), verification,
-                backup, List.of(new DesktopUpdateEvent(DesktopUpdateState.TASKS_QUIESCED, true, "tasks quiesced"),
+        return new DesktopUpdateHandoff(UUID.fromString("11111111-1111-1111-1111-111111111111"), verification, backup,
+                List.of(new DesktopUpdateEvent(DesktopUpdateState.TASKS_QUIESCED, true, "tasks quiesced"),
                         new DesktopUpdateEvent(DesktopUpdateState.BACKUP_CREATED, true, "paired backup created")));
     }
 

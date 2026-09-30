@@ -4,11 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
-import gold.debug.windowstolinux.shared.model.failure.FailureDescriptor;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryAction;
-import gold.debug.windowstolinux.shared.model.failure.FailureRecoveryDisposition;
-import gold.debug.windowstolinux.shared.model.failure.OperationIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
 
 /**
  * Executes an explicit-choice uninstall within verified local application boundaries. / 在已验证本地应用边界内执行显式选择的卸载。
@@ -39,13 +38,12 @@ public final class DesktopUninstallCoordinator {
      */
     public DesktopUninstallPreparationResult prepare(DesktopUninstallRequest request) {
         Objects.requireNonNull(request, "request");
-        OperationIdentity operation = OperationIdentity.create();
+        UUID operation = UUID.randomUUID();
         List<DesktopUninstallEvent> events = new ArrayList<>();
         if (request.decision().isEmpty()) {
-            FailureDescriptor required = FailureDescriptor.create(DesktopUninstallFailureType.DECISION_REQUIRED,
-                    operation, "uninstall requires an explicit data and credential decision");
-            events.add(
-                    new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, false, required.diagnostic()));
+            Problem required = DesktopUninstallFailureType.DECISION_REQUIRED.problem(operation,
+                    "uninstall requires an explicit data and credential decision");
+            events.add(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, false, required.message()));
             return new DesktopUninstallPreparationResult(operation, DesktopUninstallPreparationStatus.DECISION_REQUIRED,
                     events, Optional.empty(), Optional.of(required));
         }
@@ -63,9 +61,8 @@ public final class DesktopUninstallCoordinator {
             return new DesktopUninstallPreparationResult(operation, DesktopUninstallPreparationStatus.READY_FOR_HANDOFF,
                     events, Optional.of(handoff), Optional.empty());
         } catch (Exception exception) {
-            FailureDescriptor failure = failure(exception).withOperationIdentity(operation)
-                    .withRecovery(FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_ATTEMPTED);
-            events.add(new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, false, failure.diagnostic()));
+            Problem failure = recovery(bind(failure(exception), operation), "NONE", "NOT_ATTEMPTED");
+            events.add(new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, false, failure.message()));
             return new DesktopUninstallPreparationResult(operation,
                     DesktopUninstallPreparationStatus.PRECONDITION_REJECTED, events, Optional.empty(),
                     Optional.of(failure));
@@ -81,7 +78,7 @@ public final class DesktopUninstallCoordinator {
      */
     public DesktopUninstallResult apply(DesktopUninstallHandoff handoff) {
         Objects.requireNonNull(handoff, "handoff");
-        OperationIdentity operation = handoff.operationIdentity();
+        UUID operation = handoff.operationIdentity();
         DesktopUninstallRequest request = handoff.request();
         DesktopUninstallDecisionType decision = request.decision().orElseThrow();
         List<DesktopUninstallEvent> events = new ArrayList<>(handoff.preparationEvents());
@@ -115,10 +112,10 @@ public final class DesktopUninstallCoordinator {
                 retained.add(request.dataRoot().toString());
             }
             if (!residuals.isEmpty()) {
-                FailureDescriptor incomplete = FailureDescriptor
-                        .create(DesktopUninstallFailureType.REMOVAL_INCOMPLETE, operation,
-                                "one or more exact managed uninstall targets remain")
-                        .withRecovery(FailureRecoveryAction.REQUIRE_MANUAL_RECOVERY, FailureRecoveryDisposition.FAILED);
+                Problem incomplete = recovery(
+                        DesktopUninstallFailureType.REMOVAL_INCOMPLETE.problem(operation,
+                                "one or more exact managed uninstall targets remain"),
+                        "REQUIRE_MANUAL_RECOVERY", "FAILED");
                 return result(operation, DesktopUninstallStatus.COMPLETED_WITH_RESIDUALS, events, residuals, retained,
                         Optional.of(incomplete));
             }
@@ -127,9 +124,8 @@ public final class DesktopUninstallCoordinator {
                     : DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED;
             return result(operation, status, events, List.of(), retained, Optional.empty());
         } catch (Exception exception) {
-            FailureDescriptor failure = failure(exception).withOperationIdentity(operation)
-                    .withRecovery(FailureRecoveryAction.NONE, FailureRecoveryDisposition.NOT_ATTEMPTED);
-            events.add(new DesktopUninstallEvent(state, false, failure.diagnostic()));
+            Problem failure = recovery(bind(failure(exception), operation), "NONE", "NOT_ATTEMPTED");
+            events.add(new DesktopUninstallEvent(state, false, failure.message()));
             return result(operation, DesktopUninstallStatus.PRECONDITION_REJECTED, events, List.of(), List.of(),
                     Optional.of(failure));
         }
@@ -163,9 +159,9 @@ public final class DesktopUninstallCoordinator {
      * @param failure structured failure occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
      * @return desktop uninstall result from the supplied result inputs / 根据所提供结果输入构建Desktop卸载结果
      */
-    private static DesktopUninstallResult result(OperationIdentity operation, DesktopUninstallStatus status,
+    private static DesktopUninstallResult result(UUID operation, DesktopUninstallStatus status,
             List<DesktopUninstallEvent> events, List<String> residuals, List<String> retained,
-            Optional<FailureDescriptor> failure) {
+            Optional<Problem> failure) {
         return new DesktopUninstallResult(operation, status, events, residuals, retained, failure);
     }
 
@@ -191,12 +187,15 @@ public final class DesktopUninstallCoordinator {
      * @param exception original exception being classified or translated / 正在分类或转换的原始异常
      * @return or preserves the module-owned failure for the supplied cause and diagnostic evidence / 为所提供原因及诊断证据创建或保留模块自有失败
      */
-    private static FailureDescriptor failure(Exception exception) {
+    private static Problem failure(Exception exception) {
+        if (exception instanceof ApiException api)
+            return api.problem();
+        if (exception.getCause() instanceof ApiException api)
+            return api.problem();
         if (exception instanceof DesktopUninstallException uninstall)
-            return uninstall.failure();
-        return DesktopUninstallException
-                .create(DesktopUninstallFailureType.BOUNDARY_INVALID, "unexpected desktop uninstall boundary failure")
-                .failure();
+            return uninstall.problem();
+        return DesktopUninstallException.create(DesktopUninstallFailureType.BOUNDARY_INVALID,
+                "unexpected desktop uninstall boundary failure", exception).problem();
     }
 
     /**
@@ -221,5 +220,34 @@ public final class DesktopUninstallCoordinator {
     private static String joined(List<String> evidence) {
         String joined = String.join("; ", evidence);
         return joined.length() <= 1024 ? joined : joined.substring(0, 1024);
+    }
+
+    /** Binds diagnostic evidence to the enclosing original operation. / 将诊断依据绑定外层原操作。
+     * @param problem original immutable problem / 原不可变问题
+     * @param operation original operation UUID / 原操作UUID
+     * @return evidence retaining its category, event and context / 保留类别、事件及上下文的依据 */
+    private static Problem bind(Problem problem, UUID operation) {
+        var context = new java.util.HashMap<>(problem.context());
+        if (problem.diagnosticId().isPresent() && !problem.diagnosticId().orElseThrow().equals(operation)) {
+            String cause = problem.diagnosticId().orElseThrow().toString();
+            String key = "causeDiagnosticId";
+            int suffix = 0;
+            while (context.containsKey(key) && !context.get(key).equals(cause))
+                key = "causeDiagnosticId." + cause + "." + suffix++;
+            context.putIfAbsent(key, cause);
+        }
+        return new Problem(problem.code(), problem.eventCode(), problem.message(), context, Optional.of(operation));
+    }
+
+    /** Records only the recovery result actually verified by this transaction. / 仅记录本事务实际核实的恢复结果。
+     * @param problem original immutable diagnostic evidence / 原不可变诊断依据
+     * @param action exact recovery action / 精确恢复动作
+     * @param disposition verified recovery disposition / 已核实恢复处置
+     * @return original problem with current recovery facts / 带当前恢复事实的原问题 */
+    private static Problem recovery(Problem problem, String action, String disposition) {
+        var context = new java.util.HashMap<>(problem.context());
+        context.put("recoveryAction", action);
+        context.put("recoveryDisposition", disposition);
+        return new Problem(problem.code(), problem.eventCode(), problem.message(), context, problem.diagnosticId());
     }
 }
