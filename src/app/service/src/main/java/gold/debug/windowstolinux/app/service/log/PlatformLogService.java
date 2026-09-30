@@ -150,7 +150,72 @@ public final class PlatformLogService implements AutoCloseable {
      * @return actual per-category results / 实际逐类别结果
      * @throws Exception if registry enumeration or lifecycle admission fails / 枚举登记或生命周期准入失败时 */
     public List<Maintenance> replayAll() throws Exception {
+        replayStartup(false);
         return maintain(false);
+    }
+
+    /** Imports original host startup records only after confirmed database storage. / 仅在数据库存储确认后导入原宿主启动记录。
+     * @param clean explicit ten-record cleanup / 明确保留十条的清理
+     * @throws Exception if the service lifecycle cannot admit maintenance / 服务生命周期不能接纳维护时 */
+    private void replayStartup(boolean clean) throws Exception {
+        begin();
+        CategoryAccess access = null;
+        try {
+            var source = LogRepository.startupTarget();
+            synchronized (LogRepository.class) {
+                if (emergency.read(source).isEmpty())
+                    return;
+            }
+            var target = repository.targets().stream()
+                    .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
+                    .orElseThrow();
+            access = lock(target);
+            synchronized (LogRepository.class) {
+                var pending = emergency.read(source);
+                if (pending.isEmpty())
+                    return;
+                try {
+                    repository.store(target, pending, clean ? 10 : 100);
+                } catch (SQLException unavailable) {
+                    if (clean)
+                        emergency.replace(source, EmergencyLogs.merge(pending, 10));
+                    throw unavailable;
+                }
+                emergency.replace(source, List.of());
+            }
+        } catch (Exception failure) {
+            reported(new LogWriteResult(UUID.randomUUID(), LogStorage.NOT_SAVED, false,
+                    Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_REPLAY_PENDING",
+                            "Original startup diagnostics remain pending"))));
+        } finally {
+            if (access != null)
+                access.close();
+            end();
+        }
+    }
+
+    /** Writes one already bounded host failure without changing its original identity. / 写入一条已有界宿主失败，不改变原身份。
+     * @param record original startup or uncaught failure / 原启动或未捕获失败
+     * @return actual confirmed storage result / 实际确认的存储结果 */
+    public LogWriteResult writeStartup(LogRecordCodec.Record record) {
+        Objects.requireNonNull(record);
+        if (!record.owner().equals("app") || !record.category().equals("runtime"))
+            throw new IllegalArgumentException("Startup diagnostics must belong to the host runtime");
+        try {
+            begin();
+            try {
+                var target = repository.targets().stream()
+                        .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
+                        .orElseThrow();
+                return reported(write(target, record));
+            } finally {
+                end();
+            }
+        } catch (Exception failure) {
+            return reported(new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(),
+                    Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_WRITE_FAILED",
+                            "Host diagnostic storage could not be confirmed"))));
+        }
     }
 
     /** Keeps ten records per registered category, including inactive business generations. / 每个登记类别保留十条记录，包含未启用业务代次。
@@ -158,6 +223,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @throws Exception if registry enumeration or lifecycle admission fails / 枚举登记或生命周期准入失败时 */
     public List<Maintenance> cleanHistory() throws Exception {
         try (var operation = security.enterOperation()) {
+            replayStartup(true);
             return maintain(true);
         }
     }
@@ -173,6 +239,7 @@ public final class PlatformLogService implements AutoCloseable {
                 var results = clean ? cleanHistory() : replayAll();
                 var keys = repository.targets().stream().map(LogRepository.Target::key)
                         .collect(java.util.stream.Collectors.toSet());
+                keys.add(LogRepository.startupTarget().key());
                 return new Inventory(results, emergency.unregistered(keys));
             } finally {
                 end();
@@ -202,6 +269,10 @@ public final class PlatformLogService implements AutoCloseable {
                 try {
                     var merged = new ArrayList<>(records);
                     merged.addAll(emergency.read(target));
+                    if (target.owner().equals("app") && target.category().equals("runtime"))
+                        synchronized (LogRepository.class) {
+                            merged.addAll(emergency.read(LogRepository.startupTarget()));
+                        }
                     records = new ArrayList<>(EmergencyLogs.merge(merged, 100));
                 } catch (Exception unavailable) {
                     problem = problem(ProblemCode.IO_FAILURE, "LOG_VIEW_EMERGENCY",

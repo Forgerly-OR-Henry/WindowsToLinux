@@ -51,7 +51,13 @@ public final class DesktopMain {
                             "The application runtime layout could not be resolved safely", failure));
             return;
         }
-        var reports = new DesktopFailureReportStore(layout.dataDirectory());
+        String diagnosticVersion;
+        try {
+            diagnosticVersion = PlatformBuildIdentity.readVersion();
+        } catch (java.io.IOException unavailable) {
+            diagnosticVersion = "unavailable";
+        }
+        var reports = new DesktopFailureReportStore(layout.dataDirectory(), diagnosticVersion);
         try {
             verifyDataDirectory(layout.dataDirectory());
             if (GraphicsEnvironment.isHeadless())
@@ -88,6 +94,7 @@ public final class DesktopMain {
                             "Platform persistence failed its bootstrap or schema checks", failure));
             return;
         }
+        reports.attach(runtime.logs(), runtime.version());
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 runtime.close();
