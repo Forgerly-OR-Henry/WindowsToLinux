@@ -7,9 +7,8 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.DesktopPersistence;
 import gold.debug.windowstolinux.app.db.entity.*;
-import gold.debug.windowstolinux.shared.model.ai.*;
+import gold.debug.windowstolinux.app.ai.catalog.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,10 +21,10 @@ class AiPriorityRepositoryTest {
 
     @Test
     void displayAndPurposeOrderRemainIndependentAcrossRestart() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = PlatformRepositoryTestFixture.open(directory)) {
             for (String id : List.of("a", "b", "c", "d"))
-                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
-            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
+                PlatformRepositoryTestFixture.credential(db, "ai/" + id);
+            PlatformRepositoryTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             for (var id : List.of("a", "b", "c"))
                 repo.saveVerified(profile(id), id, Instant.now());
@@ -38,10 +37,10 @@ class AiPriorityRepositoryTest {
             assertThrows(SQLException.class, () -> repo.reorder(List.of("a", "c")));
             repo.saveVerified(profile("a"), "Renamed", Instant.now());
         }
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = PlatformRepositoryTestFixture.open(directory)) {
             for (String id : List.of("a", "b", "c", "d"))
-                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
-            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
+                PlatformRepositoryTestFixture.credential(db, "ai/" + id);
+            PlatformRepositoryTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             assertEquals(List.of("c", "a", "b"), repo.listConfigured().stream().map(v -> v.profile().id()).toList());
             assertEquals(List.of("a", "c"), repo.purposes().list(AiPurposeType.DEPLOYMENT).stream()
@@ -58,10 +57,10 @@ class AiPriorityRepositoryTest {
 
     @Test
     void capabilityChangesInvalidateOldEvidenceAndFailedMembershipSaveIsAtomic() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = PlatformRepositoryTestFixture.open(directory)) {
             for (String id : List.of("a", "b", "c", "d"))
-                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
-            gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "new/exact/key");
+                PlatformRepositoryTestFixture.credential(db, "ai/" + id);
+            PlatformRepositoryTestFixture.credential(db, "new/exact/key");
             var repo = db.aiProfiles();
             repo.saveVerified(profile("a"), "A", Instant.now());
             repo.recordVerification(profile("a"), 1, AiCapabilityType.VISION, Instant.now());
@@ -88,10 +87,10 @@ class AiPriorityRepositoryTest {
 
     @Test
     void fourOrdersCanChangeIndependentlyAndDisabledVisionRetainsItsPlace() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
+        try (var db = PlatformRepositoryTestFixture.open(directory)) {
             var repo = db.aiProfiles();
             for (String id : List.of("a", "b", "c")) {
-                gold.debug.windowstolinux.app.db.DatabaseTestFixture.credential(db, "ai/" + id);
+                PlatformRepositoryTestFixture.credential(db, "ai/" + id);
                 repo.saveVerified(profile(id), id, Instant.now());
                 repo.recordVerification(profile(id), 1, AiCapabilityType.VISION, Instant.now());
             }

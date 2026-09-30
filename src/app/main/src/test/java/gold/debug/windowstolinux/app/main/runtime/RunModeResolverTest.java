@@ -175,7 +175,7 @@ class RunModeResolverTest {
 
     @Test
     void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() throws Exception {
-        Path dbSource = Path.of(gold.debug.windowstolinux.app.db.DesktopPersistence.class.getProtectionDomain()
+        Path dbSource = Path.of(gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
         // Maven test uses classes; verify packages upstream modules before loading this test.
         boolean packaged = Files.isRegularFile(dbSource);

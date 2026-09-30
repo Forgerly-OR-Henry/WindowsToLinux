@@ -1,397 +1,95 @@
 package gold.debug.windowstolinux.app.db;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.Statement;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
+import java.util.Arrays;
 
-import gold.debug.windowstolinux.app.db.entity.CurrentRelease;
-import gold.debug.windowstolinux.app.db.entity.ManagedApplicationGraph;
-import gold.debug.windowstolinux.app.db.entity.StoredAiProviderProfile;
-import gold.debug.windowstolinux.app.db.entity.StoredApplicationSecretRevision;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.db.entity.SuccessfulManagedDeployment;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
 import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationScope;
-import gold.debug.windowstolinux.shared.config.contract.definition.ConfigurationValue;
-import gold.debug.windowstolinux.shared.config.resource.ManagedComponentResourceBindings;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseBinding;
-import gold.debug.windowstolinux.shared.config.resource.ManagedDatabaseConnection;
-import gold.debug.windowstolinux.shared.config.resource.ManagedFileBinding;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationEntry;
-import gold.debug.windowstolinux.shared.config.revision.ConfigurationSnapshot;
-import gold.debug.windowstolinux.shared.config.secretref.SecretReference;
-import gold.debug.windowstolinux.shared.model.health.HealthCheck;
-import gold.debug.windowstolinux.shared.model.health.UserAccessUrl;
-import gold.debug.windowstolinux.shared.model.lifecycle.AutostartState;
-import gold.debug.windowstolinux.shared.model.lifecycle.LifecycleObservation;
-import gold.debug.windowstolinux.shared.model.lifecycle.RuntimeState;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplication;
-import gold.debug.windowstolinux.shared.model.managed.ManagedApplicationRuntimeConfiguration;
-import gold.debug.windowstolinux.shared.model.project.DeploymentRuntimeSpecification;
-import gold.debug.windowstolinux.shared.model.project.component.ComponentDataPath;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DesktopPersistenceIntegrationTest {
-    @TempDir
-    Path temporaryDirectory;
+    @TempDir Path temporaryDirectory;
 
     @Test
     void storesOnlyTheLastRemoteObservationAsHistory() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "example.test", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
-        LifecycleObservation observation = new LifecycleObservation(application, RuntimeState.RUNNING,
-                AutostartState.ENABLED, true, Instant.now(), "remote observation");
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
+        var server = new StoredServerIdentity("server-one", "example.test", 22, "SHA256:exampleFingerprint");
+        var profile = new StoredServerProfile("server-one", "example.test", 22, "tester", "ssh/server-one/password");
+        try (var database = DatabaseTestFixture.open(temporaryDirectory)) {
             DatabaseTestFixture.server(database, server);
-            database.managedApplications().save(application);
-            database.managedApplications().saveRelease(new CurrentRelease("demo", "b".repeat(64), Instant.now()));
-            database.managedApplications().saveObservation(observation);
-            database.servers().saveServerProfile(
-                    new StoredServerProfile("server-one", "example.test", 22, "deployer", "ssh/server-one/password"));
-
+            database.servers().recordObservation(profile, true, "first-system");
+            database.servers().recordObservation(profile, false, "latest-system");
+            database.servers().saveServerProfile(profile);
             assertEquals(server, database.servers().findServer("server-one").orElseThrow());
-            assertEquals(RuntimeState.RUNNING,
-                    database.managedApplications().findObservation(application).orElseThrow().runtimeState());
-            assertEquals("deployer", database.servers().findServerProfile("server-one").orElseThrow().username());
-            assertEquals(application, database.managedApplications().find("demo").orElseThrow());
-            assertEquals("b".repeat(64),
-                    database.managedApplications().findRelease("demo").orElseThrow().releaseSha256());
-            assertEquals(1, database.managedApplications().list().size());
+            assertEquals(profile, database.servers().findServerProfile("server-one").orElseThrow());
+            var latest = database.servers().observation("server-one");
+            assertFalse(latest.connected());
+            assertEquals("latest-system", latest.operatingSystem());
+            assertTrue(latest.checkedAt().isPresent());
+        }
+        try (var database = DatabaseTestFixture.open(temporaryDirectory)) {
+            assertEquals(server, database.servers().findServer("server-one").orElseThrow());
+            assertEquals("latest-system", database.servers().observation("server-one").operatingSystem());
+            assertFalse(database.servers().observation("server-one").connected());
         }
     }
 
     @Test
     void storesNonSecretDesktopPreferences() throws Exception {
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            assertTrue(database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).isEmpty());
-            assertTrue(database.preferences().find(DesktopPersistence.UI_THEME_SETTING).isEmpty());
-
-            database.preferences().save(DesktopPersistence.UI_LOCALE_SETTING, "zh-CN");
-            database.preferences().save(DesktopPersistence.UI_THEME_SETTING, "SYSTEM");
-
-            assertEquals("zh-CN", database.preferences().find(DesktopPersistence.UI_LOCALE_SETTING).orElseThrow());
-            assertEquals("SYSTEM", database.preferences().find(DesktopPersistence.UI_THEME_SETTING).orElseThrow());
+        try (var database = DatabaseTestFixture.open(temporaryDirectory)) {
+            assertTrue(database.preferences().find("ui_locale").isEmpty());
+            assertTrue(database.preferences().find("ui_theme").isEmpty());
+            database.preferences().save("ui_locale", "zh-CN");
+            database.preferences().save("ui_theme", "SYSTEM");
+            assertEquals("zh-CN", database.preferences().find("ui_locale").orElseThrow());
+            assertEquals("SYSTEM", database.preferences().find("ui_theme").orElseThrow());
         }
     }
 
     @Test
     void classifiesUnavailableDirectoryCorruptionLockAndRollbackFailure() throws Exception {
-        Path fileInsteadOfDirectory = Files.writeString(temporaryDirectory.resolve("not-a-directory"), "fixture");
-        assertEquals(DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
-                assertThrows(DesktopPersistenceException.class, () -> DesktopPersistence.open(fileInsteadOfDirectory))
-                        .failure().definition());
-
-        Path corruptDirectory = Files.createDirectories(temporaryDirectory.resolve("corrupt"));
-        Files.writeString(corruptDirectory.resolve("windowstolinux.db"), "not a sqlite database");
-        assertEquals(DesktopPersistenceFailureType.DATABASE_CORRUPTED,
-                assertThrows(DesktopPersistenceException.class, () -> DesktopPersistence.open(corruptDirectory))
-                        .failure().definition());
-
-        Path lockedDirectory = Files.createDirectories(temporaryDirectory.resolve("locked"));
-        Path lockedDatabase = lockedDirectory.resolve("windowstolinux.db");
-        try (Connection lock = DriverManager.getConnection("jdbc:sqlite:" + lockedDatabase);
-                Statement statement = lock.createStatement()) {
-            statement.execute("PRAGMA locking_mode = EXCLUSIVE");
-            statement.execute("BEGIN EXCLUSIVE");
-            statement.execute("CREATE TABLE lock_probe (value INTEGER)");
-            assertEquals(DesktopPersistenceFailureType.DATABASE_LOCKED,
-                    assertThrows(DesktopPersistenceException.class, () -> DesktopPersistence.open(lockedDirectory))
-                            .failure().definition());
-            statement.execute("ROLLBACK");
+        var unavailable = Files.writeString(temporaryDirectory.resolve("not-a-directory"), "fixture");
+        assertEvent(DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
+                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(unavailable)));
+        var corrupt = temporaryDirectory.resolve("corrupt");
+        try (var ignored = DatabaseTestFixture.open(corrupt)) { }
+        var bytes = Files.readAllBytes(corrupt.resolve("platform.mv.db"));
+        Files.write(corrupt.resolve("platform.mv.db"), new byte[4096]);
+        assertEvent(DesktopPersistenceFailureType.DATABASE_CORRUPTED,
+                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(corrupt)));
+        assertArrayEquals(new byte[4096], Files.readAllBytes(corrupt.resolve("platform.mv.db")));
+        assertFalse(Arrays.equals(bytes, Files.readAllBytes(corrupt.resolve("platform.mv.db"))));
+        var locked = temporaryDirectory.resolve("locked");
+        try (var original = DatabaseTestFixture.open(locked)) {
+            assertEvent(DesktopPersistenceFailureType.DATABASE_LOCKED,
+                    assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(locked)));
+            assertEquals(0, original.database().openConnections());
         }
-
-        java.sql.SQLException primary = new java.sql.SQLException("fixture transaction failure");
-        primary.addSuppressed(new java.sql.SQLException("fixture rollback failure"));
-        assertEquals(DesktopPersistenceFailureType.ROLLBACK_FAILED,
-                DesktopPersistence.map(primary).failure().definition());
+        var primary = new java.sql.SQLException("fixture transaction failure");
+        var rollback = new java.sql.SQLException("fixture rollback failure");
+        primary.addSuppressed(rollback);
+        var failure = DesktopPersistenceException.create(DesktopPersistenceFailureType.ROLLBACK_FAILED,
+                "The actual rollback cannot be confirmed", primary);
+        assertEvent(DesktopPersistenceFailureType.ROLLBACK_FAILED, failure);
+        assertSame(primary, failure.getCause());
+        assertSame(rollback, failure.getCause().getSuppressed()[0]);
     }
 
-    @Test
-    void recordsTheSuccessfulRuntimeContractAndReleaseAtomically() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("demo", server, "a".repeat(64));
-        ManagedApplicationRuntimeConfiguration http = new ManagedApplicationRuntimeConfiguration(
-                new HealthCheck.Http(URI.create("http://127.0.0.1:18080/actuator/health"), 200, 20),
-                Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18080/"))));
-        Instant initialTime = Instant.parse("2026-08-10T00:00:00Z");
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            DatabaseTestFixture.server(database, server);
-            database.managedApplications().recordSuccessfulDeployment(application, http,
-                    new CurrentRelease(application.id(), "b".repeat(64), initialTime));
-
-            assertEquals(http, database.managedApplications().findRuntime(application.id()).orElseThrow());
-            assertEquals("b".repeat(64),
-                    database.managedApplications().findRelease(application.id()).orElseThrow().releaseSha256());
-
-            ManagedApplicationRuntimeConfiguration tcp = new ManagedApplicationRuntimeConfiguration(
-                    new HealthCheck.Tcp(19092, 15, 2), Optional.empty());
-            database.managedApplications().recordSuccessfulDeployment(application, tcp,
-                    new CurrentRelease(application.id(), "c".repeat(64), initialTime.plusSeconds(1)));
-
-            assertEquals(tcp, database.managedApplications().findRuntime(application.id()).orElseThrow());
-            assertEquals("c".repeat(64),
-                    database.managedApplications().findRelease(application.id()).orElseThrow().releaseSha256());
-        }
+    private static void assertEvent(DesktopPersistenceFailureType expected, DesktopPersistenceException failure) {
+        assertEquals(expected.code(), failure.problem().eventCode(), () -> {
+            var diagnostic = new StringBuilder();
+            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                diagnostic.append(cause).append('\n');
+                if (cause instanceof org.h2.mvstore.MVStoreException store)
+                    diagnostic.append("MVSTORE_CODE=").append(store.getErrorCode()).append('\n');
+            }
+            return diagnostic.toString();
+        });
+        assertTrue(failure.problem().diagnosticId().isPresent());
     }
-
-    @Test
-    void rollsBackEveryComponentWhenWholeApplicationPersistenceFails() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication api = ManagedApplication.forManaged("shop-api", server, "a".repeat(64));
-        ManagedApplication web = ManagedApplication.forManaged("shop-web", server, "b".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
-        SecretReference missing = new SecretReference("missing", 1);
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-components"))) {
-            DatabaseTestFixture.server(database, server);
-            ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web",
-                    Optional.of(runtime.healthCheck()), List.of(
-                            new ManagedApplicationGraph.Component("api", api, runtime, List.of(),
-                                    Optional.of(
-                                            new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                                    Optional.of(List.of()), Optional.of(resources(List.of()))),
-                            new ManagedApplicationGraph.Component("web", web, runtime, List.of("api"),
-                                    Optional.of(
-                                            new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())),
-                                    Optional.of(List.of()), Optional.of(resources(List.of())))));
-            assertThrows(java.sql.SQLException.class,
-                    () -> database.managedApplicationGraphs().recordSuccessfulApplication(graph,
-                            List.of(new SuccessfulManagedDeployment(api, runtime,
-                                    new CurrentRelease(api.id(), "c".repeat(64), publishedAt), configuration(api.id()),
-                                    List.of()),
-                                    new SuccessfulManagedDeployment(web, runtime,
-                                            new CurrentRelease(web.id(), "d".repeat(64), publishedAt),
-                                            configuration(web.id()), List.of(missing)))));
-
-            assertTrue(database.managedApplications().find(api.id()).isEmpty());
-            assertTrue(database.managedApplications().find(web.id()).isEmpty());
-            assertTrue(database.managedApplications().findRelease(api.id()).isEmpty());
-            assertTrue(database.managedApplicationGraphs().find("shop").isEmpty());
-        }
-    }
-
-    @Test
-    void restoresDurableWholeApplicationGraphWithoutBuildOrSecretValues() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication api = ManagedApplication.forManaged("shop-api", server, "a".repeat(64));
-        ManagedApplication web = ManagedApplication.forManaged("shop-web", server, "b".repeat(64));
-        var apiRuntime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1),
-                Optional.empty());
-        var webRuntime = new ManagedApplicationRuntimeConfiguration(
-                new HealthCheck.Http(URI.create("http://127.0.0.1:18082/health"), 200, 15),
-                Optional.of(new UserAccessUrl(URI.create("http://198.51.100.24:18082/"))));
-        Instant publishedAt = Instant.parse("2026-08-13T00:00:00Z");
-        List<ComponentDataPath> apiDataPaths = List
-                .of(new ComponentDataPath("uploads", ComponentDataPath.AccessMode.READ_WRITE, "uploads-v1", false));
-        ManagedComponentResourceBindings apiResources = new ManagedComponentResourceBindings(
-                List.of(new ManagedFileBinding("file-uploads", apiDataPaths.getFirst())), Optional.of(List.of(
-                        new ManagedDatabaseBinding("cache", new ManagedDatabaseConnection.Sqlite("application.db")))));
-        ManagedApplicationGraph graph = new ManagedApplicationGraph("shop", "web",
-                Optional.of(new HealthCheck.Tcp(19090, 20, 2)), List.of(
-                        new ManagedApplicationGraph.Component("api", api, apiRuntime, List.of(),
-                                Optional.of(
-                                        new DeploymentRuntimeSpecification.NodeService(22, apiRuntime.healthCheck())),
-                                Optional.of(apiDataPaths), Optional.of(apiResources)),
-                        new ManagedApplicationGraph.Component("web", web, webRuntime, List.of("api"),
-                                Optional.of(new DeploymentRuntimeSpecification.StaticSite("dist",
-                                        (HealthCheck.Http) webRuntime.healthCheck())),
-                                Optional.of(List.of()), Optional.of(resources(List.of())))));
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("durable-graph"))) {
-            DatabaseTestFixture.server(database, server);
-            database.managedApplicationGraphs().recordSuccessfulApplication(graph,
-                    List.of(new SuccessfulManagedDeployment(api, apiRuntime,
-                            new CurrentRelease(api.id(), "c".repeat(64), publishedAt), configuration(api.id()),
-                            List.of()),
-                            new SuccessfulManagedDeployment(web, webRuntime,
-                                    new CurrentRelease(web.id(), "d".repeat(64), publishedAt), configuration(web.id()),
-                                    List.of())));
-
-            assertEquals(graph, database.managedApplicationGraphs().find("shop").orElseThrow());
-            assertEquals(configuration(api.id()),
-                    database.configurations().findRelease(api.id(), "c".repeat(64)).orElseThrow());
-            assertEquals(configuration(web.id()),
-                    database.configurations().findRelease(web.id(), "d".repeat(64)).orElseThrow());
-        }
-    }
-
-    @Test
-    void rejectsNewSuccessfulGraphsWithoutReviewedRuntimeDefinitions() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("missing-runtime", server, "a".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        var graph = new ManagedApplicationGraph("missing", "app",
-                List.of(new ManagedApplicationGraph.Component("app", application, runtime, List.of())));
-        var deployment = new SuccessfulManagedDeployment(application, runtime,
-                new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), configuration(application.id()),
-                List.of());
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("missing-runtime"))) {
-            DatabaseTestFixture.server(database, server);
-            assertThrows(IllegalArgumentException.class,
-                    () -> database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(deployment)));
-            assertTrue(database.managedApplications().find(application.id()).isEmpty());
-        }
-    }
-
-    @Test
-    void rejectsNewSuccessfulGraphsWithoutReviewedDataPathDefinitions() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("missing-data-paths", server, "a".repeat(64));
-        var runtime = new ManagedApplicationRuntimeConfiguration(new HealthCheck.Tcp(18081, 15, 1), Optional.empty());
-        var graph = new ManagedApplicationGraph("missing", "app",
-                List.of(new ManagedApplicationGraph.Component("app", application, runtime, List.of(),
-                        Optional.of(new DeploymentRuntimeSpecification.NodeService(22, runtime.healthCheck())))));
-        var deployment = new SuccessfulManagedDeployment(application, runtime,
-                new CurrentRelease(application.id(), "b".repeat(64), Instant.now()), configuration(application.id()),
-                List.of());
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("missing-data-paths"))) {
-            DatabaseTestFixture.server(database, server);
-            assertThrows(IllegalArgumentException.class,
-                    () -> database.managedApplicationGraphs().recordSuccessfulApplication(graph, List.of(deployment)));
-            assertTrue(database.managedApplications().find(application.id()).isEmpty());
-        }
-    }
-
-    @Test
-    void repeatedSecretMetadataUsesPersistedTimePrecisionAndStillRejectsChanges() throws Exception {
-        var reference = new SecretReference("precision-test", 1);
-        var revision = new StoredApplicationSecretRevision(reference, "application-secret/precision-test/1",
-                Instant.parse("2026-09-08T07:00:00.123456789Z"));
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("secret-precision"))) {
-            DatabaseTestFixture.credential(database, revision.credentialKey());
-            database.applicationSecrets().saveRevision(revision);
-            database.applicationSecrets().saveRevision(revision);
-            assertEquals(Instant.parse("2026-09-08T07:00:00.123Z"),
-                    database.applicationSecrets().findRevision(reference).orElseThrow().createdAt());
-            assertThrows(java.sql.SQLException.class,
-                    () -> database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(reference,
-                            "application-secret/different/1", revision.createdAt())));
-            assertThrows(java.sql.SQLException.class,
-                    () -> database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(reference,
-                            revision.credentialKey(), revision.createdAt().plusMillis(1))));
-        }
-    }
-
-    @Test
-    void persistsImmutableConfigurationAndSecretRevisionBindingsWithoutSecretValues() throws Exception {
-        ConfigurationSnapshot first = ConfigurationSnapshot.create("demo", 1, "v1",
-                Instant.parse("2026-08-12T00:00:00Z"), java.util.List.of(new ConfigurationEntry("PORT",
-                        ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));
-        SecretReference databasePassword = new SecretReference("database-password", 1);
-        SecretReference rotatedPassword = new SecretReference("database-password", 2);
-        StoredApplicationSecretRevision firstSecret = new StoredApplicationSecretRevision(databasePassword,
-                "application-secret/database-password/1", Instant.parse("2026-08-12T00:00:00Z"));
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory)) {
-            DatabaseTestFixture.credential(database, firstSecret.credentialKey());
-            DatabaseTestFixture.credential(database, "application-secret/database-password/2");
-            database.configurations().save(first);
-            database.configurations().save(first);
-            assertEquals(first, database.configurations().find("demo", 1).orElseThrow());
-
-            ConfigurationSnapshot replacement = ConfigurationSnapshot.create("demo", 1, "v1",
-                    Instant.parse("2026-08-12T00:00:01Z"), java.util.List.of(new ConfigurationEntry("PORT",
-                            ConfigurationScope.RUNTIME, new ConfigurationValue.Number(19090))));
-            assertThrows(java.sql.SQLException.class, () -> database.configurations().save(replacement));
-
-            database.applicationSecrets().saveRevision(firstSecret);
-            database.applicationSecrets().saveRevision(firstSecret);
-            database.applicationSecrets().saveRevision(new StoredApplicationSecretRevision(rotatedPassword,
-                    "application-secret/database-password/2", Instant.parse("2026-08-12T00:00:01Z")));
-            assertTrue(database.applicationSecrets().findRelease("demo", "release-a").isEmpty());
-            database.applicationSecrets().bindRelease("demo", "release-a", java.util.List.of(databasePassword));
-            database.applicationSecrets().bindRelease("demo", "release-empty", List.of());
-
-            assertEquals(firstSecret, database.applicationSecrets().findRevision(databasePassword).orElseThrow());
-            assertEquals(List.of(databasePassword),
-                    database.applicationSecrets().findRelease("demo", "release-a").orElseThrow());
-            assertEquals(List.of(), database.applicationSecrets().findRelease("demo", "release-empty").orElseThrow());
-            assertTrue(database.applicationSecrets().isReferenced(databasePassword));
-            assertThrows(java.sql.SQLException.class, () -> database.applicationSecrets().bindRelease("demo",
-                    "release-a", java.util.List.of(rotatedPassword)));
-            assertEquals(List.of(databasePassword),
-                    database.applicationSecrets().findRelease("demo", "release-a").orElseThrow());
-        }
-    }
-
-    @Test
-    void rollsBackAllSuccessfulReleaseStateWhenASecretBindingCannotBeRecorded() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("atomic-demo", server, "a".repeat(64));
-        ManagedApplicationRuntimeConfiguration runtime = new ManagedApplicationRuntimeConfiguration(
-                new HealthCheck.Tcp(19080, 15, 2), Optional.empty());
-        CurrentRelease release = new CurrentRelease(application.id(), "b".repeat(64), Instant.now());
-        SecretReference missing = new SecretReference("unregistered-secret", 1);
-
-        try (DesktopPersistence database = DesktopPersistence.open(temporaryDirectory.resolve("atomic-failure"))) {
-            DatabaseTestFixture.server(database, server);
-            assertThrows(java.sql.SQLException.class,
-                    () -> database.managedApplications().recordSuccessfulDeployment(application, runtime, release,
-                            configuration(application.id()), java.util.List.of(missing)));
-
-            assertTrue(database.managedApplications().find(application.id()).isEmpty());
-            assertTrue(database.managedApplications().findRuntime(application.id()).isEmpty());
-            assertTrue(database.managedApplications().findRelease(application.id()).isEmpty());
-            assertTrue(database.configurations().find(application.id(), 1).isEmpty());
-            assertTrue(database.configurations().findRelease(application.id(), release.releaseSha256()).isEmpty());
-            assertTrue(database.applicationSecrets().findRelease(application.id(), release.releaseSha256()).isEmpty());
-            assertTrue(!database.applicationSecrets().isReferenced(missing));
-        }
-    }
-
-    @Test
-    void keepsSuccessfulReleaseConfigurationBindingImmutable() throws Exception {
-        ServerIdentity server = new ServerIdentity("server-one", "198.51.100.24", 22, "SHA256:exampleFingerprint");
-        ManagedApplication application = ManagedApplication.forManaged("configured-demo", server, "a".repeat(64));
-        ManagedApplicationRuntimeConfiguration runtime = new ManagedApplicationRuntimeConfiguration(
-                new HealthCheck.Tcp(19080, 15, 2), Optional.empty());
-        CurrentRelease release = new CurrentRelease(application.id(), "b".repeat(64), Instant.now());
-        ConfigurationSnapshot first = configuration(application.id());
-        ConfigurationSnapshot replacement = ConfigurationSnapshot.create(application.id(), 2, "v1",
-                Instant.parse("2026-08-22T00:00:01Z"), List.of(new ConfigurationEntry("PORT",
-                        ConfigurationScope.RUNTIME, new ConfigurationValue.Number(19090))));
-
-        try (DesktopPersistence database = DesktopPersistence
-                .open(temporaryDirectory.resolve("configuration-binding"))) {
-            DatabaseTestFixture.server(database, server);
-            database.managedApplications().recordSuccessfulDeployment(application, runtime, release, first, List.of());
-            assertEquals(first,
-                    database.configurations().findRelease(application.id(), release.releaseSha256()).orElseThrow());
-
-            assertThrows(java.sql.SQLException.class, () -> database.managedApplications()
-                    .recordSuccessfulDeployment(application, runtime, release, replacement, List.of()));
-            assertEquals(first,
-                    database.configurations().findRelease(application.id(), release.releaseSha256()).orElseThrow());
-            assertTrue(database.configurations().find(application.id(), 2).isEmpty());
-        }
-    }
-
-    private static ConfigurationSnapshot configuration(String applicationId) {
-        return ConfigurationSnapshot.create(applicationId, 1, "v1", Instant.parse("2026-08-22T00:00:00Z"), List
-                .of(new ConfigurationEntry("PORT", ConfigurationScope.RUNTIME, new ConfigurationValue.Number(18080))));
-    }
-
-    private static ManagedComponentResourceBindings resources(List<ComponentDataPath> paths) {
-        List<ManagedFileBinding> files = java.util.stream.IntStream.range(0, paths.size())
-                .mapToObj(index -> new ManagedFileBinding("file-" + (index + 1), paths.get(index))).toList();
-        return new ManagedComponentResourceBindings(files, Optional.of(List.of()));
-    }
-
 }

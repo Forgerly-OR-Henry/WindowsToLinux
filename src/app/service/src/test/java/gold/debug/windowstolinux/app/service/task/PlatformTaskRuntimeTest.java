@@ -279,7 +279,7 @@ class PlatformTaskRuntimeTest {
                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             assertEquals(TaskState.UNKNOWN, runtime.snapshots().getFirst().state());
             assertEquals(1, security.securityState().activeTasks());
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> security.setCredentialEncryption("fixture-password".toCharArray(), false));
             var recoveryService = runtime.bind("example.owner", "1.0.0", true);
             assertThrows(ApiException.class, () -> recoveryService.submit(request(), task -> success(null)));
@@ -340,7 +340,7 @@ class PlatformTaskRuntimeTest {
             });
             state(task, TaskState.UNKNOWN);
             assertEquals(1, security.securityState().activeTasks());
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     () -> security.changeMasterPassword("fixture-password".toCharArray(),
                             "replacement-password".toCharArray(), "replacement-password".toCharArray()));
             var waiting = runtime.bind("example.other", "1.0.0", false).submit(request("A"),
@@ -473,7 +473,7 @@ class PlatformTaskRuntimeTest {
             assertEquals(Outcome.SUCCEEDED, result(task).outcome());
             assertEquals(1, calls.get());
             assertEquals(0, security.securityState().activeTasks());
-            assertThrows(gold.debug.windowstolinux.app.service.failure.ApplicationServiceException.class,
+            assertThrows(gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException.class,
                     security::openCredentials);
         }
     }

@@ -3,152 +3,94 @@ package gold.debug.windowstolinux.app.db;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
-import java.sql.*;
+import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.DesktopConnectionFactory;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DesktopSchemaTest {
-    @TempDir
-    Path directory;
-
-    private Connection connection() throws Exception {
-        var connection = DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("windowstolinux.db"));
-        connection.createStatement().execute("PRAGMA foreign_keys=ON");
-        return connection;
-    }
+    @TempDir Path directory;
 
     @Test
-    void createsExactlyNineteenTablesAndPreservesPreferencesOnReopen() throws Exception {
-        Set<String> expected = Set.of("security_profile", "credential", "server_profile", "deployment_unit",
-                "managed_application", "managed_application_component", "managed_application_dependency",
-                "external_application", "deployment_unit_configuration_snapshot", "deployment_unit_configuration_entry",
-                "deployment_unit_release_binding", "secret_revision", "deployment_unit_release_secret_reference",
-                "ai_model", "browser_recovery_task", "browser_recovery_event", "deployment_agent_task",
-                "deployment_agent_event", "desktop_preference");
-        try (var db = DesktopPersistence.open(directory); var c = connection(); var s = c.createStatement()) {
-            Set<String> actual = new HashSet<>();
-            try (var r = s
-                    .executeQuery("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")) {
-                while (r.next())
-                    actual.add(r.getString(1));
+    void createsExactlyTwentyPlatformTablesAndPreservesPreferencesOnReopen() throws Exception {
+        var expected=Set.of("security_profile","credential","server_profile","ai_model",
+                "browser_recovery_task","browser_recovery_event","desktop_preference","app_state",
+                "mod_registry","mod_version","mod_schema","mod_operation","mod_migration_step",
+                "platform_task","platform_task_resource","mod_credential_reference","mod_server_reference",
+                "app_schema_history","log_category","runtime_log");
+        try (var db=DatabaseTestFixture.open(directory);var c=db.database().openConnection();var s=c.createStatement()) {
+            var actual=new HashSet<String>();
+            try(var r=s.executeQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'")) {
+                while(r.next()) actual.add(r.getString(1));
             }
-            assertEquals(expected, actual);
-            try (var r = s.executeQuery("PRAGMA user_version")) {
-                assertTrue(r.next());
-                assertEquals(21, r.getInt(1));
+            assertEquals(expected,actual);
+            try(var r=s.executeQuery("SELECT schema_version,state FROM app_schema_history")) {
+                assertTrue(r.next()); assertEquals(1,r.getInt(1)); assertEquals("READY",r.getString(2)); assertFalse(r.next());
             }
-            db.preferences().save("ui_locale", "zh-CN");
+            db.preferences().save("ui_locale","zh-CN");
         }
-        try (var db = DesktopPersistence.open(directory)) {
-            assertEquals("zh-CN", db.preferences().find("ui_locale").orElseThrow());
+        try(var db=DatabaseTestFixture.open(directory)) {
+            assertEquals("zh-CN",db.preferences().find("ui_locale").orElseThrow());
         }
     }
 
     @Test
     void rejectsOldFutureAndAlteredDatabasesWithoutDeletingData() throws Exception {
-        for (int version : List.of(0, 20, 22)) {
-            Path path = directory.resolve("v" + version);
-            java.nio.file.Files.createDirectories(path);
-            try (var c = DriverManager.getConnection("jdbc:sqlite:" + path.resolve("windowstolinux.db"));
-                    var s = c.createStatement()) {
-                s.execute("CREATE TABLE sentinel(value TEXT)");
-                s.execute("INSERT INTO sentinel VALUES('retained')");
-                s.execute("PRAGMA user_version=" + version);
+        for(int version:List.of(0,2)) {
+            var path=directory.resolve("v"+version);
+            try(var db=DatabaseTestFixture.open(path);var c=db.database().openConnection();var s=c.createStatement()) {
+                s.execute("INSERT INTO desktop_preference VALUES('sentinel','retained')");
+                if (version == 0) s.execute("DELETE FROM app_schema_history");
+                else s.execute("UPDATE app_schema_history SET schema_version="+version);
             }
-            assertThrows(SQLException.class, () -> DesktopPersistence.open(path));
-            try (var c = DriverManager.getConnection("jdbc:sqlite:" + path.resolve("windowstolinux.db"));
-                    var s = c.createStatement();
-                    var r = s.executeQuery("SELECT value FROM sentinel")) {
-                assertTrue(r.next());
-                assertEquals("retained", r.getString(1));
+            assertEquals(DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE.code(),
+                    assertThrows(DesktopPersistenceException.class,()->DatabaseTestFixture.open(path)).problem().eventCode());
+            try(var material=gold.debug.windowstolinux.app.db.bootstrap.DatabaseBootstrap.load(path,PlatformDatabaseTest.TEST_PROTECTION);
+                var c=java.sql.DriverManager.getConnection("jdbc:h2:"+path.resolve("platform")+";DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE", "app_internal",material.password());
+                var s=c.createStatement();var r=s.executeQuery("SELECT preference_value FROM app.desktop_preference WHERE preference_key='sentinel'")) {
+                assertTrue(r.next());assertEquals("retained",r.getString(1));
             }
         }
-        try (var ignored = DesktopPersistence.open(directory); var c = connection(); var s = c.createStatement()) {
-            s.execute("ALTER TABLE ai_model ADD COLUMN unexpected TEXT");
+        try(var db=DatabaseTestFixture.open(directory);var c=db.database().openConnection();var s=c.createStatement()) {
+            s.execute("ALTER TABLE ai_model ADD COLUMN unexpected VARCHAR");
         }
-        assertThrows(SQLException.class, () -> DesktopPersistence.open(directory));
+        assertEquals(DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE.code(),
+                assertThrows(DesktopPersistenceException.class,()->DatabaseTestFixture.open(directory)).problem().eventCode());
     }
 
     @Test
     void enforcesCredentialReferencesNonceUniquenessAndNullGroups() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var c = connection(); var s = c.createStatement()) {
+        try(var db=DatabaseTestFixture.open(directory);var c=db.database().openConnection();var s=c.createStatement()) {
             DatabaseTestFixture.server(db);
-            assertThrows(SQLException.class, () -> s.execute("DELETE FROM credential"));
-            assertThrows(SQLException.class, () -> s.execute("DELETE FROM security_profile"));
-            assertThrows(SQLException.class, () -> s.execute("UPDATE server_profile SET host_key_format=NULL"));
-            assertThrows(SQLException.class, () -> s.execute("UPDATE security_profile SET is_encryption_enabled=2"));
-            s.execute("INSERT INTO credential VALUES('encrypted-a',1,'AES256_GCM_V1',zeroblob(24),zeroblob(12))");
-            assertThrows(SQLException.class, () -> s.execute(
-                    "INSERT INTO credential VALUES('encrypted-b',1,'AES256_GCM_V1',zeroblob(24),zeroblob(12))"));
-            assertThrows(SQLException.class, () -> s
-                    .execute("INSERT INTO credential VALUES('unknown',1,'AES_FUTURE',zeroblob(24),randomblob(12))"));
-            assertThrows(SQLException.class, () -> s.execute(
-                    "INSERT INTO browser_recovery_event(task_id,task_state,event_code,created_at) VALUES('missing','PAUSED','paused',1)"));
-        }
-    }
-
-    @Test
-    void initializesOnlyMissingDeploymentPreferencesAndRejectsInvalidValues() throws Exception {
-        try (var db = DesktopPersistence.open(directory)) {
-            assertEquals(Map.of("deploy_mode", "ASSISTED", "deploy_approval", "AUTOMATIC"),
-                    db.preferences().deploymentSelection());
-            db.preferences().saveAll(Map.of("deploy_mode", "STATIC", "deploy_approval", "FULL_CONTROL"));
-            assertEquals("STATIC", db.preferences().deploymentSelection().get("deploy_mode"));
-            db.preferences().save("deploy_mode", "INVALID");
-            assertThrows(SQLException.class, () -> db.preferences().deploymentSelection());
-            assertEquals("INVALID", db.preferences().find("deploy_mode").orElseThrow());
+            assertThrows(SQLException.class,()->s.execute("DELETE FROM credential"));
+            assertThrows(SQLException.class,()->s.execute("DELETE FROM security_profile"));
+            assertThrows(SQLException.class,()->s.execute("UPDATE server_profile SET host_key_format=NULL"));
+            assertThrows(SQLException.class,()->s.execute("UPDATE security_profile SET is_encryption_enabled=2"));
+            try(var p=c.prepareStatement("INSERT INTO credential VALUES(?,1,?,?,?)")) {
+                p.setString(1,"encrypted-a");p.setString(2,"AES256_GCM_V1");p.setBytes(3,new byte[24]);p.setBytes(4,new byte[12]);
+                assertEquals(1,p.executeUpdate());
+                p.setString(1,"encrypted-b");assertThrows(SQLException.class,p::executeUpdate);
+                p.setString(1,"unknown");p.setString(2,"AES_FUTURE");p.setBytes(4,new byte[]{1,2,3,4,5,6,7,8,9,10,11,12});
+                assertThrows(SQLException.class,p::executeUpdate);
+            }
+            assertThrows(SQLException.class,()->s.execute("INSERT INTO browser_recovery_event(task_id,task_state,event_code,created_at) VALUES('missing','PAUSED','paused',1)"));
         }
     }
 
     @Test
     void wholePreferenceUpdateRollsBackOnFailure() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var c = connection(); var s = c.createStatement()) {
-            var original = db.preferences().deploymentSelection();
-            s.execute(
-                    "CREATE TRIGGER reject_approval BEFORE UPDATE ON desktop_preference WHEN NEW.preference_key='deploy_approval' BEGIN SELECT RAISE(ABORT,'fixture'); END");
-            var changed = new LinkedHashMap<String, String>();
-            changed.put("deploy_mode", "STATIC");
-            changed.put("deploy_approval", "FULL_CONTROL");
-            assertThrows(SQLException.class, () -> db.preferences().saveAll(changed));
-            assertEquals(original, db.preferences().deploymentSelection());
-            s.execute("DROP TRIGGER reject_approval");
+        try(var db=DatabaseTestFixture.open(directory);var c=db.database().openConnection();var s=c.createStatement()) {
+            db.preferences().saveAll(Map.of("ui_locale","zh-CN","ui_theme","SYSTEM"));
+            s.execute("ALTER TABLE desktop_preference ADD CONSTRAINT fixture_reject_theme CHECK(preference_key<>'ui_theme' OR preference_value<>'DARK')");
+            var changed=new LinkedHashMap<String,String>();changed.put("ui_locale","en");changed.put("ui_theme","DARK");
+            assertThrows(SQLException.class,()->db.preferences().saveAll(changed));
+            assertEquals("zh-CN",db.preferences().find("ui_locale").orElseThrow());
+            assertEquals("SYSTEM",db.preferences().find("ui_theme").orElseThrow());
+            s.execute("ALTER TABLE desktop_preference DROP CONSTRAINT fixture_reject_theme");
         }
     }
 
-    @Test
-    void deferredHealthReferenceAllowsTopologyReplacementAndProtectsHistory() throws Exception {
-        try (var db = DesktopPersistence.open(directory); var c = connection(); var sql = c.createStatement()) {
-            DatabaseTestFixture.server(db);
-            for (String id : List.of("first", "second"))
-                sql.execute(
-                        "INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256) VALUES('"
-                                + id + "','server','" + id + ".service','/srv/" + id + "','digest')");
-            c.setAutoCommit(false);
-            sql.execute("INSERT INTO managed_application VALUES('app','server','old',NULL,1)");
-            sql.execute(
-                    "INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id) VALUES('app','old','first')");
-            c.commit();
-            sql.execute("DELETE FROM managed_application_component WHERE application_id='app'");
-            sql.execute("UPDATE managed_application SET health_component_id='replacement' WHERE application_id='app'");
-            sql.execute(
-                    "INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id) VALUES('app','replacement','second')");
-            c.commit();
-            sql.execute("UPDATE managed_application SET health_component_id='missing' WHERE application_id='app'");
-            assertThrows(SQLException.class, c::commit);
-            c.rollback();
-            try (var rows = sql.executeQuery("SELECT health_component_id FROM managed_application")) {
-                assertTrue(rows.next());
-                assertEquals("replacement", rows.getString(1));
-            }
-            assertThrows(SQLException.class,
-                    () -> sql.execute("DELETE FROM server_profile WHERE server_profile_id='server'"));
-            c.rollback();
-            assertThrows(SQLException.class,
-                    () -> sql.execute("DELETE FROM deployment_unit WHERE deployment_unit_id='second'"));
-            c.rollback();
-        }
-    }
 }

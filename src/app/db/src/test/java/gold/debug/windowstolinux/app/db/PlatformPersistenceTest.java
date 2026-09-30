@@ -9,8 +9,8 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.entity.*;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.shared.model.ai.*;
-import gold.debug.windowstolinux.shared.model.server.ServerIdentity;
+import gold.debug.windowstolinux.app.ai.catalog.*;
+import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,7 +36,7 @@ class PlatformPersistenceTest {
             var server = new StoredServerProfile("server", "host.example", 22, "alice", "credential", "Server");
             p.servers().saveServerProfile(server);
             p.servers().recordObservation(server, true, "Linux");
-            p.servers().saveServer(new ServerIdentity("server", "host.example", 22, "SHA256:fixture"));
+            p.servers().saveServer(new StoredServerIdentity("server", "host.example", 22, "SHA256:fixture"));
             assertTrue(p.servers().observation("server").checkedAt().isPresent());
             p.servers().saveServerProfile(
                     new StoredServerProfile("server", "new.example", 2222, "alice", "credential", "Renamed"));
