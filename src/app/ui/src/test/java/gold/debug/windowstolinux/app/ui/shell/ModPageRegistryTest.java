@@ -345,6 +345,95 @@ class ModPageRegistryTest {
         }
     }
 
+    @Test
+    void previewsRequireClassHostCommittedOwnerAndUnlockAndStayOutOfNormalNavigation() throws Exception {
+        var workspace = new Host();
+        var previews = new Host();
+        var registry = new ModPageRegistry(workspace, INITIAL);
+        var preview = new Page();
+        var business = new Page();
+        var key = new PageKey("example.owner", "preview");
+        try (var owner = registry.begin("example.owner", false)) {
+            owner.register(spec("business", false), () -> business);
+            owner.registerPreview(spec("preview", true), () -> preview);
+            assertTrue(registry.previews().isEmpty());
+            var noClass = assertThrows(ApiException.class, () -> registry.openPreview(key));
+            assertEquals("PREVIEW_CLASS_REQUIRED", noClass.problem().eventCode());
+            registry.installPreviews(previews);
+            assertTrue(registry.previews().isEmpty());
+            assertThrows(ApiException.class, () -> registry.openPreview(key));
+            owner.commit();
+            assertEquals(List.of(new PageKey("example.owner", "business")),
+                    registry.contributions().stream().map(PageContribution::key).toList());
+            assertEquals(List.of(key), registry.previews().stream().map(PageContribution::key).toList());
+            assertEquals(0, preview.creates);
+            assertEquals(0, business.creates);
+            assertThrows(ApiException.class, () -> owner.open("preview"));
+            assertThrows(ApiException.class, () -> registry.openPreview(new PageKey("example.owner", "business")));
+            owner.open("business");
+            registry.openPreview(key);
+            registry.openPreview(key);
+            assertEquals(1, preview.creates);
+            assertEquals(1, previews.focuses);
+            assertEquals(Set.of(key), previews.views.keySet());
+            assertEquals(Set.of(new PageKey("example.owner", "business")), workspace.views.keySet());
+            var changed = new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "dark", false);
+            registry.environment(changed);
+            assertEquals(List.of(changed), preview.environments);
+            registry.environment(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "dark", true));
+            assertEquals(1, preview.closes);
+            assertTrue(previews.views.isEmpty());
+            assertEquals(0, business.closes);
+            assertEquals("PAGE_LOCKED",
+                    assertThrows(ApiException.class, () -> registry.openPreview(key)).problem().eventCode());
+            registry.environment(INITIAL);
+        }
+        assertEquals(1, business.closes);
+        assertTrue(registry.contributions().isEmpty());
+        assertTrue(registry.previews().isEmpty());
+        assertTrue(workspace.views.isEmpty());
+    }
+
+    @Test
+    void failedPreviewCleanupRetainsExactOwnerUntilExplicitRetryAndNeverRecreatesIt() throws Exception {
+        var workspace = new Host();
+        var previews = new Host();
+        var registry = new ModPageRegistry(workspace, INITIAL);
+        registry.installPreviews(previews);
+        var page = new Page();
+        page.closeFailures = 1;
+        var factoryCalls = new AtomicInteger();
+        var key = new PageKey("example.owner", "preview");
+        var owner = registry.begin("example.owner", false);
+        try {
+            owner.registerPreview(spec("preview", true), () -> {
+                factoryCalls.incrementAndGet();
+                return page;
+            });
+            owner.commit();
+            registry.openPreview(key);
+            assertThrows(ApiException.class, owner::close);
+            assertEquals(1, page.closes);
+            assertEquals(1, factoryCalls.get());
+            assertEquals(Set.of(key), previews.views.keySet());
+            assertTrue(workspace.views.isEmpty());
+            assertThrows(ApiException.class, () -> registry.begin("example.owner", false));
+            assertThrows(ApiException.class, () -> registry.openPreview(key));
+            assertEquals(1, factoryCalls.get());
+            owner.close();
+            owner.close();
+            assertEquals(2, page.closes);
+            assertTrue(previews.views.isEmpty());
+            assertTrue(registry.previews().isEmpty());
+            try (var replacement = registry.begin("example.owner", false)) {
+                replacement.commit();
+            }
+        } finally {
+            page.closeFailures = 0;
+            owner.close();
+        }
+    }
+
     static <T extends Component> List<T> components(Component root, Class<T> type) {
         var found = new ArrayList<T>();
         if (type.isInstance(root))

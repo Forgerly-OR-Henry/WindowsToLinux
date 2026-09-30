@@ -161,6 +161,7 @@ public final class DesktopMain {
                 new UiEnvironment(Locale.forLanguageTag(appearance.localeTag()), theme.name(),
                         runtime.security().securityState().configured()),
                 reports);
+        window.installUiDebug(RunModeResolver.resolve().mode() == RunModeResolver.RunMode.RUN_CLASS);
         window.onExit(runtime);
         var presenter = new gold.debug.windowstolinux.app.ui.shell.TaskInteractionPresenter(window, messages);
         runtime.setInteractionPresenter(presenter);

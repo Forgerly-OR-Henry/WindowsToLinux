@@ -660,7 +660,7 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 
 H2 引擎及实际连接所有权由 `app/db/persistence/connection/PlatformDatabase` 承担；模块根包的 `PlatformPersistence`、`DesktopPersistence` 只组合仓库。任务、日志和 Schema 实现依赖连接层，连接层不反向引用仓库、任务或 Schema 类型；口令派生只接收 Schema 层提供的精确已编码数据库用户名，沿用原命名空间和算法。
 
-宿主启动通过 `app/main/mod/PlatformModHost` 向 Mod 上下文与启动图注入已有能力和原会话访问，不由 `main/mod` 反向引用 `main/startup/PlatformRuntime`。`RunModeResolver` 用自身代码源定位所在的 main 模块，数据根仍用 DB 模块锚点。`app/ui/mod/ModPageRegistry` 只管理 Mod 页面及其生命周期，由 shell 注入挂载界面；Mod 管理页面不反向引用 shell。
+宿主启动通过 `app/main/mod/PlatformModHost` 向 Mod 上下文与启动图注入已有能力和原会话访问，不由 `main/mod` 反向引用 `main/startup/PlatformRuntime`。`RunModeResolver` 用自身代码源定位所在的 main 模块，数据根仍用 DB 模块锚点。`app/ui/mod/ModPageRegistry` 只管理 Mod 页面及其生命周期，由 shell 注入挂载界面；Mod 管理页面不反向引用 shell。 CLASS 调试预览通过 `appapi.ui.UiService.registerPreview` 独立登记，仍受同一作者提交、锁定和关闭约束；普通页面导航不包含预览，JAR/App 未安装预览宿主。平台固定预览只持有显示控件，Mod 预览只捕获不可变示例值，不捕获原任务、数据库、SSH 或模型能力。
 
 `app/service/contract/profile` 保存服务器和模型的非秘密配置值，`contract/result` 保存模型清单摘要，`contract/spi` 保存平台配置所需的窄访问接口；这些契约不反向引用 service 的服务器或模型实现。`service/security` 管理安全会话，`service/task` 管理任务与授权；任务绑定的秘密适配归 `service/secret`，实际辅助进程适配归 `service/process`，二者依赖任务基础，任务基础不反向引用能力实现或日志服务。
 

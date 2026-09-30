@@ -101,6 +101,14 @@ public final class Mod implements ModEntrypoint {
                     .add(context.tasks().registerRecovery(DeploymentApplicationsService.ACTION_TASK, applicationTasks));
             registrations.add(context.services().register(DeploymentApi.class, deploymentApi));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
+                for (var kind : java.util.List.of(
+                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.GO_SERVICE,
+                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.NODE_SERVICE))
+                    registrations.add(context.ui().registerPreview(
+                            new PageSpec("runtime-preview-" + kind.name().toLowerCase(java.util.Locale.ROOT),
+                                    "deployment.preview.runtime", "Runtime review / 运行审阅: " + kind.name(), true),
+                            () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentRuntimePreview(kind)));
+
                 registrations.add(context.ui().register(new PageSpec("static-deployment", "deployment.page.title",
                         "Static / assisted deployment", false), () -> new DeploymentStaticPage(pageTasks)));
                 registrations.add(context.ui().register(

@@ -13,6 +13,16 @@ import gold.debug.windowstolinux.appapi.task.*;
 
 /** Permanent model inventory and explicit interrupted-probe recovery. / 常驻模型清单及明确的中断探测恢复。 */
 public final class PlatformModelsPane extends JPanel implements AutoCloseable {
+    /** Opens the actual model editor with fixed isolated values and no service capability. / 以固定隔离值及空服务能力打开真实模型编辑器。
+     * @param owner isolated gallery / 隔离目录
+     * @param components current theme controls / 当前主题控件
+     * @param messages current localized display / 当前本地化显示
+     * @return capability-free actual editor / 不持有能力的真实编辑器 */
+    public static javax.swing.JDialog preview(java.awt.Window owner, DesktopComponentFactory components,
+            PageMessagePresenter messages) {
+        return PlatformModelDialog.preview(owner, components, messages);
+    }
+
     /** Actual settings and task owner. / 实际设置及任务所有者。 */
     private final PlatformModelService service;
 

@@ -88,6 +88,10 @@ class ModRuntimeSessionTest {
                 };
             }
 
+            public PageRegistration registerPreview(PageSpec spec, PageFactory factory) {
+                return register(spec, factory);
+            }
+
             public void open(String id) {
                 throw new AssertionError("Lifecycle must not open business pages");
             }

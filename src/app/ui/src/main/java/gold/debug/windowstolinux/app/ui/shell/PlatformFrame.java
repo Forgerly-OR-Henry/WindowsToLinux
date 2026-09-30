@@ -8,9 +8,9 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
 import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.setting.SecuritySettingsPane;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
@@ -115,12 +115,14 @@ public final class PlatformFrame extends JFrame {
         var settingsSurface = new JPanel(new BorderLayout());
         settingsSurface.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         settingsSurface.add(settings, BorderLayout.NORTH);
+        appearance.debug = new Debug(settingsSurface);
         var settingsScroll = new JScrollPane(settingsSurface);
         settingsScroll.setBorder(BorderFactory.createEmptyBorder());
         content.setName("platform.pages");
         content.addTab(catalog.text("platform.pages"), messages.bind(extensions, "platform.pages"));
         content.addTab(catalog.text("security.settings"), messages.bind(settingsScroll, "security.settings"));
-        content.addTab(catalog.text("platform.modSettings"), messages.bind(extensions.settingsComponent(), "platform.modSettings"));
+        content.addTab(catalog.text("platform.modSettings"),
+                messages.bind(extensions.settingsComponent(), "platform.modSettings"));
         if (!security.securityState().configured())
             content.setSelectedComponent(settingsScroll);
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
@@ -143,6 +145,7 @@ public final class PlatformFrame extends JFrame {
                 () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
             modIssues.setEnabled(!locked);
+            appearance.debug.locked(locked);
             if (servers != null)
                 servers.setLocked(locked);
             if (models != null)
@@ -190,12 +193,14 @@ public final class PlatformFrame extends JFrame {
             throws gold.debug.windowstolinux.appapi.task.ApiException {
         if (!SwingUtilities.isEventDispatchThread() || mods != null)
             throw new IllegalStateException("Mod management must be installed once on the EDT");
-        navigation = new gold.debug.windowstolinux.app.ui.mod.ModNavigationPane(service, pages, appearance.components, messages);
+        navigation = new gold.debug.windowstolinux.app.ui.mod.ModNavigationPane(service, pages, appearance.components,
+                messages);
         sidebar.add(navigation);
-        mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, appearance.components, messages, () -> {
-            if (logs != null)
-                content.setSelectedComponent(logs);
-        }, navigation);
+        mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, appearance.components,
+                messages, () -> {
+                    if (logs != null)
+                        content.setSelectedComponent(logs);
+                }, navigation);
         modManagement.setName("mods.management");
         modManagement.addTab(messages.text("mods.installed"), messages.bind(mods, "mods.installed"));
         content.addTab("Mod", modManagement);
@@ -220,8 +225,8 @@ public final class PlatformFrame extends JFrame {
             modManagement.addTab(messages.text("originals.title"), messages.bind(notice, "originals.title"));
             return;
         }
-        originals = new gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane(service.orElseThrow(), appearance.components,
-                messages, mods::refresh, () -> {
+        originals = new gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane(service.orElseThrow(),
+                appearance.components, messages, mods::refresh, () -> {
                     if (logs != null)
                         content.setSelectedComponent(logs);
                 });
@@ -251,7 +256,8 @@ public final class PlatformFrame extends JFrame {
         modProblems = java.util.List.copyOf(problems);
         gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(modStatus,
                 gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("platform.modSummary",
-                        java.util.Map.of("running", running, "issues", problems.size())), messages.catalog());
+                        java.util.Map.of("running", running, "issues", problems.size())),
+                messages.catalog());
         modIssues.setVisible(!problems.isEmpty());
         modIssues.setEnabled(security.securityState().unlocked());
     }
@@ -285,7 +291,8 @@ public final class PlatformFrame extends JFrame {
     public void installServers(gold.debug.windowstolinux.app.service.server.PlatformServerService service) {
         if (!SwingUtilities.isEventDispatchThread() || servers != null)
             throw new IllegalStateException("Server page must be installed once on the EDT");
-        servers = new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(this, service, appearance.components, messages);
+        servers = new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(this, service, appearance.components,
+                messages);
         content.insertTab(messages.text("platform.servers"), null, messages.bind(servers, "platform.servers"), null, 0);
         servers.setLocked(!security.securityState().unlocked());
     }
@@ -306,8 +313,10 @@ public final class PlatformFrame extends JFrame {
     public void installModels(gold.debug.windowstolinux.app.service.ai.PlatformModelService service) {
         if (!SwingUtilities.isEventDispatchThread() || models != null)
             throw new IllegalStateException("Model page must be installed once on the EDT");
-        models = new gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane(this, service, appearance.components, messages);
-        content.insertTab(messages.text("platform.models"), null, messages.bind(models, "platform.models"), null, servers == null ? 0 : 1);
+        models = new gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane(this, service, appearance.components,
+                messages);
+        content.insertTab(messages.text("platform.models"), null, messages.bind(models, "platform.models"), null,
+                servers == null ? 0 : 1);
         models.setLocked(!security.securityState().unlocked());
     }
 
@@ -316,7 +325,8 @@ public final class PlatformFrame extends JFrame {
     public void installTransfers(gold.debug.windowstolinux.app.service.linux.TransferSettingsService service) {
         if (!SwingUtilities.isEventDispatchThread() || transfers != null)
             throw new IllegalStateException("Transfer settings must be installed once on the EDT");
-        transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, appearance.components, messages);
+        transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, appearance.components,
+                messages);
         content.addTab(messages.text("transfer.settings.title"), messages.bind(transfers, "transfer.settings.title"));
         transfers.setLocked(!security.securityState().unlocked());
     }
@@ -326,8 +336,8 @@ public final class PlatformFrame extends JFrame {
     public void installAuthorization(gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService service) {
         if (!SwingUtilities.isEventDispatchThread() || authorization != null)
             throw new IllegalStateException("Authorization settings must be installed once on the EDT");
-        authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service, appearance.components,
-                messages);
+        authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service,
+                appearance.components, messages);
         content.addTab(messages.text("authorization.title"), messages.bind(authorization, "authorization.title"));
         authorization.setLocked(!security.securityState().unlocked());
     }
@@ -421,6 +431,7 @@ public final class PlatformFrame extends JFrame {
     /** Releases privacy listeners and disposes the window after lifecycle cleanup. / 生命周期清理后释放隐私监听器并销毁窗口。 */
     @Override
     public void dispose() {
+        appearance.debug.close();
         if (appearance.pane != null)
             appearance.pane.close();
         if (servers != null)
@@ -459,12 +470,148 @@ public final class PlatformFrame extends JFrame {
         appearance.install(initial, preferences);
     }
 
+    /** Installs the advanced preview entry only for a resolved CLASS layout. / 仅为已解析CLASS布局安装高级预览入口。
+     * @param classMode actual resolved executable mode / 实际已解析可执行模式
+     * @throws gold.debug.windowstolinux.appapi.task.ApiException if host installation is duplicated / 宿主重复安装时 */
+    public void installUiDebug(boolean classMode) throws gold.debug.windowstolinux.appapi.task.ApiException {
+        appearance.debug.install(classMode);
+    }
+
+    /** Owns the isolated advanced entry and one gallery without retaining runtime services. / 不保留运行时服务地持有隔离高级入口及单个目录。 */
+    private final class Debug {
+        /** Original settings placement. / 原设置挂载位置。 */
+        private final JPanel settings;
+
+        /** Explicit advanced entry, absent outside CLASS. / 明确高级入口；CLASS外不存在。 */
+        private JButton button;
+
+        /** Original single gallery and its owned dialogs. / 原单个目录及从属对话框。 */
+        private gold.debug.windowstolinux.app.ui.setting.UiDebugDialog gallery;
+
+        /** Prevents mode replacement after composition. / 装配后阻止替换模式。 */
+        private boolean installed;
+
+        /** Retains only the local settings surface. / 仅保留本地设置界面。
+         * @param settings original local surface / 原本地界面 */
+        private Debug(JPanel settings) {
+            this.settings = settings;
+        }
+
+        /** Installs one CLASS-only collapsed advanced section. / 安装一个仅CLASS的折叠高级分区。
+         * @param classMode resolved actual mode / 已解析实际模式
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if duplicate / 重复时 */
+        private void install(boolean classMode) throws gold.debug.windowstolinux.appapi.task.ApiException {
+            if (!SwingUtilities.isEventDispatchThread() || installed)
+                throw new IllegalStateException("Debug composition must happen once on the EDT");
+            installed = true;
+            if (!classMode)
+                return;
+            pages.installPreviews(
+                    new gold.debug.windowstolinux.app.ui.setting.UiDebugPreviewHost(pages, () -> gallery));
+            button = messages.bind(appearance.components.secondaryButton(""), "settings.debug.open");
+            button.setName("settings.uiDebug");
+            button.addActionListener(event -> open());
+            var details = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT));
+            details.add(button);
+            details.add(messages.bind(new JLabel(), "settings.debug.hint"));
+            details.setVisible(false);
+            var toggle = messages.bind(new JToggleButton(), "advanced.show");
+            toggle.setName("settings.advanced");
+            toggle.addActionListener(event -> {
+                details.setVisible(toggle.isSelected());
+                messages.bind(toggle, toggle.isSelected() ? "advanced.hide" : "advanced.show");
+                settings.revalidate();
+            });
+            var advanced = new JPanel(new BorderLayout(8, 8));
+            advanced.add(toggle, BorderLayout.NORTH);
+            advanced.add(details, BorderLayout.CENTER);
+            settings.add(advanced, BorderLayout.SOUTH);
+            locked(!security.securityState().unlocked());
+        }
+
+        /** Opens or focuses the same unlocked gallery. / 打开或聚焦同一已解锁目录。 */
+        private void open() {
+            if (closing || button == null || !button.isEnabled() || !security.securityState().unlocked())
+                return;
+            try {
+                if (gallery == null || !gallery.isDisplayable())
+                    gallery = new gold.debug.windowstolinux.app.ui.setting.UiDebugDialog(PlatformFrame.this, pages,
+                            appearance.components, messages);
+                if (gallery.getRootPane().getClientProperty("debug.cleanupProblem") != null)
+                    return;
+                gallery.navigation(links());
+                gallery.setVisible(true);
+                gallery.toFront();
+            } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+                getRootPane().putClientProperty("debug.problem", failure.problem());
+            }
+        }
+
+        /** Lists actual platform tabs and already committed author pages without opening them. / 不打开页面地列出真实平台标签及已提交作者页面。
+         * @return current workspace selections / 当前工作区选择
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if metadata is unavailable / 元数据不可用时 */
+        private java.util.List<gold.debug.windowstolinux.app.ui.setting.UiDebugDialog.PageLink> links()
+                throws gold.debug.windowstolinux.appapi.task.ApiException {
+            var result = new java.util.ArrayList<gold.debug.windowstolinux.app.ui.setting.UiDebugDialog.PageLink>();
+            for (int index = 0; index < content.getTabCount(); index++) {
+                int selected = index;
+                result.add(new gold.debug.windowstolinux.app.ui.setting.UiDebugDialog.PageLink("platform-" + index,
+                        content.getTitleAt(index), () -> content.setSelectedIndex(selected)));
+            }
+            for (var contribution : pages.contributions())
+                result.add(new gold.debug.windowstolinux.app.ui.setting.UiDebugDialog.PageLink(
+                        contribution.key().ownerId() + "." + contribution.key().pageId(),
+                        contribution.spec().defaultTitle(), () -> {
+                            try {
+                                pages.openView(contribution.key());
+                            } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+                                getRootPane().putClientProperty("debug.problem", failure.problem());
+                            }
+                        }));
+            return java.util.List.copyOf(result);
+        }
+
+        /** Hides and closes previews before allowing locked display. / 允许锁定显示前隐藏并关闭预览。
+         * @param locked current privacy state / 当前隐私状态 */
+        private void locked(boolean locked) {
+            if (button != null)
+                button.setEnabled(!locked && !closing);
+            if (locked && gallery != null) {
+                gallery.setVisible(false);
+                gallery.dispose();
+            }
+        }
+
+        /** Releases the original gallery during actual window teardown. / 实际窗口销毁时释放原目录。 */
+        private void close() {
+            if (gallery != null)
+                gallery.dispose();
+        }
+
+        /** Refreshes one existing catalog and its nested previews. / 刷新一个既有目录及嵌套预览。 */
+        private void localize() {
+            if (gallery != null && gallery.isDisplayable()) {
+                gallery.localize();
+                try {
+                    gallery.navigation(links());
+                } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+                    getRootPane().putClientProperty("debug.problem", failure.problem());
+                }
+            }
+        }
+    }
+
     /** Owns display composition independently of platform task and lifecycle state. / 独立于平台任务和生命周期状态持有显示装配。 */
     private final class Appearance {
+        /** Display-only gallery sharing this appearance lifetime. / 共用此外观寿命的仅显示目录。 */
+        private Debug debug;
+
         /** Current control factory shared with existing pages. / 与已有页面共享的当前控件工厂。 */
         private final DesktopComponentFactory components;
+
         /** Current author-page locale, effective theme and lock state. / 当前作者页面区域、生效主题及锁定状态。 */
         private UiEnvironment environment;
+
         /** Explicit preference editor, installed once. / 安装一次的明确偏好编辑器。 */
         private gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane pane;
 
@@ -485,7 +632,8 @@ public final class PlatformFrame extends JFrame {
                 throw new IllegalStateException("Appearance must be installed once on the EDT");
             pane = new gold.debug.windowstolinux.app.ui.setting.PlatformAppearancePane(initial, preferences,
                     this::apply, components, messages);
-            content.addTab(messages.text("settings.appearance.title"), messages.bind(pane, "settings.appearance.title"));
+            content.addTab(messages.text("settings.appearance.title"),
+                    messages.bind(pane, "settings.appearance.title"));
             pane.setLocked(!security.securityState().unlocked());
         }
 
@@ -493,12 +641,15 @@ public final class PlatformFrame extends JFrame {
          * @param requested successfully persisted display choice / 成功持久化的显示选择 */
         private void apply(gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration requested) {
             messages.catalog().language(requested.localeTag());
-            var effective = gold.debug.windowstolinux.app.ui.display.SystemThemeResolver.effectiveTheme(requested.themeMode());
+            var effective = gold.debug.windowstolinux.app.ui.display.SystemThemeResolver
+                    .effectiveTheme(requested.themeMode());
             components.palette(effective == gold.debug.windowstolinux.app.ui.display.ThemeMode.DARK
-                    ? ThemePalette.dark() : ThemePalette.light());
+                    ? ThemePalette.dark()
+                    : ThemePalette.light());
             gold.debug.windowstolinux.app.ui.display.DesktopThemeService.apply(effective);
             components.refreshTheme(PlatformFrame.this);
             gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.refresh(PlatformFrame.this, messages.catalog());
+            debug.localize();
             if (models != null)
                 models.localize();
             if (tasks != null)
@@ -507,11 +658,13 @@ public final class PlatformFrame extends JFrame {
                 components.refreshTheme(owned);
                 gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.refresh(owned, messages.catalog());
             }
-            environment = new UiEnvironment(messages.catalog().locale(), effective.name(), !security.securityState().unlocked());
+            environment = new UiEnvironment(messages.catalog().locale(), effective.name(),
+                    !security.securityState().unlocked());
             try {
                 pages.environment(environment);
             } catch (Exception failure) {
-                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(failure), "WindowsToLinux", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(PlatformFrame.this, messages.safe(failure), "WindowsToLinux",
+                        JOptionPane.ERROR_MESSAGE);
             }
             revalidate();
             repaint();
