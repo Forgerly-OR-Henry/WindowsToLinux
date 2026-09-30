@@ -1,6 +1,6 @@
 # WindowsToLinux 发布与安装布局
 
-- 状态：本文描述 **1.1 已确认发布目标**；平台源码正在改造。按 2026-09-26 用户决定，本次完成源码迁移和 CLASS 本机验收，S7 暂缓，JAR/APP/SDK 发行打包待源码稳定后进行。
+- 状态：本文描述 **1.1 已确认发布目标**；S1～S5 活动源码及 CLASS 本机适用合同已验证，完整根测试编译通过。按本次最终范围，S6 备份与迁移、S7 JAR/APP/SDK 正式发行及真实远端暂缓；本文发布布局仍是发行目标，不是已生成交付物。
 - 职责：维护 APP/JAR 交付物、发布目录、启动配置、更新边界和官网服务范围；源码模块、包和命名由 [File.md](File.md) 维护，三种模式的 Mod 加载规则见 [Mod 文档](Mod.md#loading-modes)。
 - 产品方向：WindowsToLinux 是在 Windows 上操作 Linux 的开放 APP 平台，主体提供界面、连接、AI、任务、安全和 Mod 管理；部署与备份由官方 Mod 提供。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [Mod 包格式](Mod.md)
