@@ -4,9 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
+import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.*;
 
@@ -114,6 +114,13 @@ public final class LogRepository {
         if (!PLATFORM_CATEGORIES.contains(category))
             throw new IllegalArgumentException("Unknown platform category");
         return UUID.nameUUIDFromBytes(("WTL-LOG-1\0" + generation + "\0" + category).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Identifies host startup diagnostics before a database generation is available. / 标识数据库代次尚不可用时的宿主启动诊断。
+     * @return fixed startup queue, never a registered business target / 固定启动队列，不是已登记业务目标 */
+    public static Target startupTarget() {
+        var identity = UUID.nameUUIDFromBytes("WTL-STARTUP-LOG-1".getBytes(StandardCharsets.UTF_8));
+        return new Target(identity, "app", "app", new UUID(0, 0), "app", "runtime", "runtime_log", "runtime");
     }
 
     /** Loads persisted registrations without starting any Mod. / 不启动任何 Mod 地加载持久登记。

@@ -91,14 +91,14 @@ public final class LogRecordCodec {
         String value = text.substring(0, Math.min(text.length(), 65536));
         if (!value.isEmpty() && Character.isHighSurrogate(value.charAt(value.length() - 1)))
             value = value.substring(0, value.length() - 1);
-        return value
+        value = value
                 .replaceAll("(?is)-----BEGIN[^-]*PRIVATE KEY-----.*?(?:-----END[^-]*PRIVATE KEY-----|$)", "[redacted]")
-                .replaceAll("(?i)Bearer\\s+[^\\s,;]+", "Bearer [redacted]")
-                .replaceAll(
+                .replaceAll("(?i)Bearer\\s+[^\\s,;]+", "Bearer [redacted]").replaceAll(
                         "(?i)([\"']?(?:password|passwd|secret|token|api[-_ ]?key|authorization|密码|密钥)[\"']?\\s*[:=：]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)",
-                        "$1[redacted]")
-                .replaceAll("[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s]+", "[redacted-uri]")
-                .replaceAll("\\x1B\\[[0-?]*[ -/]*[@-~]", "").replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", "");
+                        "$1[redacted]");
+        if (value.contains("://"))
+            value = value.replaceAll("[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s]+", "[redacted-uri]");
+        return value.replaceAll("\\x1B\\[[0-?]*[ -/]*[@-~]", "").replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", "");
     }
 
     /** Finds a complete Unicode prefix fitting the UTF-8 byte limit. / 找到满足 UTF-8 字节上限的完整 Unicode 前缀。

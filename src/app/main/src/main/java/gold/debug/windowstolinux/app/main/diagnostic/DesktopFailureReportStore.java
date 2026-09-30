@@ -2,45 +2,33 @@ package gold.debug.windowstolinux.app.main.diagnostic;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportRecord;
 import gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.*;
 
 /**
- * Writes bounded, rotated, secret-free UTF-8 failure reports under the fixed data directory. / 在固定数据目录下写入有界、轮转且无秘密的 UTF-8 失败报告。
+ * Routes bounded host failures through the existing database or startup emergency queue. / 将有界宿主失败送入既有数据库或启动应急队列。
  */
 public final class DesktopFailureReportStore implements FailureReportStore {
     /**
      * MAX REPORT BYTES.
      * <p>最大报告字节。
      */
-    static final int MAX_REPORT_BYTES = 256 * 1024;
+    static final int MAX_REPORT_BYTES = LogRecordCodec.MAX_BYTES;
 
     /**
      * MAX REPORTS.
      * <p>最大报告集合。
      */
-    static final int MAX_REPORTS = 50;
-
-    /**
-     * FILE TIME.
-     * <p>文件时间。
-     */
-    private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.ROOT)
-            .withZone(ZoneOffset.UTC);
+    static final int MAX_REPORTS = 100;
 
     /**
      * Pattern recognizing pattern matching secret-like assignments for redaction.
@@ -61,61 +49,62 @@ public final class DesktopFailureReportStore implements FailureReportStore {
      */
     private final Path directory;
 
-    /**
-     * Creates the report store and performs startup rotation best-effort. / 创建报告存储并在启动时尽力轮转。
-     *
-     * @param dataDirectory data directory / 数据目录
-     */
+    /** Shared fixed-root startup emergency store. / 共用固定根启动应急存储。 */
+    private final EmergencyLogs emergency;
+
+    /** Exact producer version, unavailable before identity can be read. / 精确生产方版本，身份不能读取时明确不可用。 */
+    private String version;
+
+    /** Live host log service after database initialization. / 数据库初始化后的宿主日志服务。 */
+    private PlatformLogService logs;
+
+    /** Binds an already confirmed data root without creating a fallback directory. / 绑定已确认数据根，不创建备用目录。
+     * @param dataDirectory fixed data root / 固定数据根 */
     public DesktopFailureReportStore(Path dataDirectory) {
-        directory = dataDirectory.toAbsolutePath().normalize().resolve("error-logs");
-        try {
-            Files.createDirectories(directory);
-            rotate();
-        } catch (IOException ignored) {
-            // Reporting must never recursively report its own write failure. / 报告功能绝不能递归报告自身写入失败。
-        }
+        this(dataDirectory, "unavailable");
     }
 
-    /**
-     * Records one report best-effort and never throws. / 尽力记录一份报告且绝不抛出异常。
-     *
-     * @param throwable throwable / 异常原因
-     * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
-     */
+    /** Binds startup diagnostics to the original data root and build identity. / 将启动诊断绑定原数据根和构建身份。
+     * @param dataDirectory fixed data root / 固定数据根
+     * @param version actual version or explicit unavailable identity / 实际版本或明确不可用身份 */
+    public DesktopFailureReportStore(Path dataDirectory, String version) {
+        directory = dataDirectory.toAbsolutePath().normalize().resolve("log").resolve("emergency");
+        emergency = new EmergencyLogs(dataDirectory);
+        this.version = java.util.Objects.requireNonNull(version);
+    }
+
+    /** Switches subsequent failures to the initialized host logger without copying old reports. / 将随后失败切换到已初始化宿主日志器，不复制旧报告。
+     * @param logs existing host log service / 既有宿主日志服务
+     * @param version confirmed producer version / 已确认生产方版本 */
+    public synchronized void attach(PlatformLogService logs, String version) {
+        this.logs = java.util.Objects.requireNonNull(logs);
+        this.version = java.util.Objects.requireNonNull(version);
+    }
+
+    /** Preserves original structured evidence and returns only confirmed file references. / 保留原结构化证据，仅返回已确认文件引用。
+     * @param throwable original failure / 原失败
+     * @return original classification and observed report reference / 原分类及已观察报告引用 */
     @Override
     public synchronized Optional<FailureReportRecord> record(Throwable throwable) {
-        if (throwable == null) {
+        if (throwable == null)
             return Optional.empty();
-        }
         Problem descriptor = structured(throwable).orElseGet(() -> unknownDescriptor(throwable));
         Optional<Path> report = Optional.empty();
-        Path temporary = null;
         try {
-            Files.createDirectories(directory);
-            rotate();
-            byte[] content = boundedReport(descriptor, throwable);
-            temporary = Files.createTempFile(directory, ".failure-", ".tmp");
-            Files.write(temporary, content);
-            Path target = directory.resolve(FILE_TIME.format(Instant.now()) + "-"
-                    + descriptor.diagnosticId().orElseGet(java.util.UUID::randomUUID) + ".txt");
-            try {
-                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException exception) {
-                Files.deleteIfExists(temporary);
-                temporary = null;
-                throw exception;
+            var target = LogRepository.startupTarget();
+            var id = descriptor.diagnosticId().orElseGet(java.util.UUID::randomUUID);
+            var event = new LogEvent(LogLevel.ERROR, descriptor.eventCode(), descriptor.message(),
+                    Optional.of(new String(boundedReport(descriptor, throwable), StandardCharsets.UTF_8)),
+                    Optional.empty(), Optional.of(id), Optional.empty());
+            var record = LogRecordCodec.createSummary(target, version, event, id, System.currentTimeMillis(), null);
+            if (logs != null && logs.writeStartup(record).storage() != LogStorage.NOT_SAVED)
+                return Optional.of(new FailureReportRecord(descriptor, directory, report));
+            synchronized (LogRepository.class) {
+                emergency.append(target, record);
             }
-            temporary = null;
-            rotate();
-            report = Optional.of(target);
+            report = Optional.of(directory.resolve(target.key() + ".log"));
         } catch (IOException | RuntimeException ignored) {
-            if (temporary != null) {
-                try {
-                    Files.deleteIfExists(temporary);
-                } catch (IOException alsoIgnored) {
-                    // No recursive report attempt. / 不递归尝试报告。
-                }
-            }
+            System.err.println("LOG_STARTUP_WRITE_FAILED: original diagnostic could not be saved");
         }
         return Optional.of(new FailureReportRecord(descriptor, directory, report));
     }
@@ -132,27 +121,6 @@ public final class DesktopFailureReportStore implements FailureReportStore {
     }
 
     /**
-     * Removes the oldest diagnostic text reports beyond the retention limit.
-     * <p>删除超出保留上限的最旧诊断文本报告。
-     *
-     * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
-     */
-    private void rotate() throws IOException {
-        if (!Files.isDirectory(directory)) {
-            return;
-        }
-        List<Path> reports;
-        try (var files = Files.list(directory)) {
-            reports = files.filter(path -> path.getFileName().toString().endsWith(".txt"))
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString())).toList();
-        }
-        int excess = reports.size() - MAX_REPORTS;
-        for (int index = 0; index < excess; index++) {
-            Files.deleteIfExists(reports.get(index));
-        }
-    }
-
-    /**
      * Builds a size-bounded diagnostic report from classified and redacted failure evidence.
      * <p>根据分类且脱敏的失败证据构建大小有界的诊断报告。
      *
@@ -166,22 +134,18 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         appendProblem(report, "", failure);
         var pending = new java.util.ArrayDeque<Throwable>();
         var visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        var evidence = new java.util.ArrayList<Throwable>();
         pending.add(throwable);
         int causeIndex = 0;
         while (!pending.isEmpty() && causeIndex < 16) {
             Throwable current = pending.removeFirst();
             if (!visited.add(current))
                 continue;
+            evidence.add(current);
             append(report, "exceptionClass[" + causeIndex + "]", current.getClass().getName());
             int evidenceIndex = causeIndex;
             directProblem(current)
                     .ifPresent(problem -> appendProblem(report, "problem[" + evidenceIndex + "].", problem));
-            StackTraceElement[] frames = current.getStackTrace();
-            for (int index = 0; index < frames.length && index < 256; index++) {
-                StackTraceElement frame = frames[index];
-                append(report, "frame[" + causeIndex + "][" + index + "]", frame.getClassName() + "."
-                        + frame.getMethodName() + "(" + frame.getFileName() + ":" + frame.getLineNumber() + ")");
-            }
             if (current.getCause() != null)
                 pending.addLast(current.getCause());
             for (Throwable suppressed : current.getSuppressed()) {
@@ -191,6 +155,14 @@ public final class DesktopFailureReportStore implements FailureReportStore {
                 pending.addLast(suppressed);
             }
             causeIndex++;
+        }
+        for (int evidenceIndex = 0; evidenceIndex < evidence.size(); evidenceIndex++) {
+            StackTraceElement[] frames = evidence.get(evidenceIndex).getStackTrace();
+            for (int index = 0; index < frames.length && index < 256; index++) {
+                StackTraceElement frame = frames[index];
+                append(report, "frame[" + evidenceIndex + "][" + index + "]", frame.getClassName() + "."
+                        + frame.getMethodName() + "(" + frame.getFileName() + ":" + frame.getLineNumber() + ")");
+            }
         }
         return truncateUtf8(report.toString());
     }
