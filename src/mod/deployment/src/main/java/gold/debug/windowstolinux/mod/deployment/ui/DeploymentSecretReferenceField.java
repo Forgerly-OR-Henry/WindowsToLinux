@@ -13,10 +13,11 @@ final class DeploymentSecretReferenceField extends JPanel {
     private final JTextField value;
 
     /** Builds one component-scoped selector from the pre-publication snapshot. / 从发布前快照构建一个组件作用域选择器。
-     * @param page current owner view / 当前所属视图
+     * @param texts pure localized labels / 纯本地化标签
      * @param initial source-backed default / 来源依据默认值
      * @param choices existing revisions with original purposes / 带原用途的既有修订 */
-    DeploymentSecretReferenceField(DeploymentStaticPage page, String initial, List<DeploymentSecretSelection> choices) {
+    DeploymentSecretReferenceField(java.util.function.Function<String, String> texts, String initial,
+            List<DeploymentSecretSelection> choices) {
         super(new BorderLayout(4, 4));
         value = new JTextField(initial);
         add(value, BorderLayout.CENTER);
@@ -31,7 +32,7 @@ final class DeploymentSecretReferenceField extends JPanel {
             label.setForeground(highlighted ? list.getSelectionForeground() : list.getForeground());
             return label;
         });
-        var add = new JButton(page.text("secretUse"));
+        var add = new JButton(texts.apply("secretUse"));
         add.setEnabled(!choices.isEmpty());
         add.addActionListener(ignored -> {
             var selected = (DeploymentSecretSelection) selector.getSelectedItem();

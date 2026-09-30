@@ -7,18 +7,18 @@ import java.util.*;
 
 import javax.swing.*;
 
+import gold.debug.windowstolinux.app.ai.catalog.AiCapabilityType;
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
 import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
 import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
 import gold.debug.windowstolinux.app.ui.component.*;
 import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.app.ai.catalog.AiCapabilityType;
 
 /** Edits a model and observes its centrally owned verification task. / 编辑模型并观察中央持有的验证任务。 */
 final class PlatformModelDialog extends JDialog {
     /** Exact host settings owner. / 精确宿主设置所有者。 */
-    private final PlatformModelService service;
+    private final Optional<PlatformModelService> service;
 
     /** Safe localized messages. / 安全本地化消息。 */
     private final PageMessagePresenter messages;
@@ -67,10 +67,27 @@ final class PlatformModelDialog extends JDialog {
      * @param saved successful refresh callback / 成功刷新回调 */
     PlatformModelDialog(Window owner, PlatformModelService service, DesktopComponentFactory components,
             PageMessagePresenter messages, AiProviderSummary existing, OptionalInt outputLimit, Runnable saved) {
+        this(owner, Optional.of(java.util.Objects.requireNonNull(service)), components, messages, existing, outputLimit,
+                saved);
+    }
+
+    /** Creates the same editor with an explicit absent capability only for isolated preview. / 仅为隔离预览以明确空能力创建同一编辑器。
+     * @param owner original UI owner / 原UI所有者
+     * @param service actual capability or explicit preview absence / 实际能力或明确预览空值
+     * @param components theme controls / 主题控件
+     * @param messages localized display / 本地化显示
+     * @param existing original row / 原行
+     * @param outputLimit explicit budget / 明确预算
+     * @param saved actual success callback / 实际成功回调 */
+    private PlatformModelDialog(Window owner, Optional<PlatformModelService> service,
+            DesktopComponentFactory components, PageMessagePresenter messages, AiProviderSummary existing,
+            OptionalInt outputLimit, Runnable saved) {
         super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"),
                 ModalityType.APPLICATION_MODAL);
         gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(this,
-                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of(existing == null ? "ai.models.add" : "ai.models.edit"), messages.catalog());
+                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage
+                        .of(existing == null ? "ai.models.add" : "ai.models.edit"),
+                messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
@@ -140,9 +157,26 @@ final class PlatformModelDialog extends JDialog {
         timer.start();
     }
 
+    /** Creates fixed model fields without holding a real provider, task or model service. / 不持有真实提供方、任务或模型服务地创建固定模型字段。
+     * @param owner isolated gallery owner / 隔离目录所有者
+     * @param components original theme controls / 原主题控件
+     * @param messages original localized display / 原本地化显示
+     * @return same editor with all real effects unavailable / 全部真实副作用不可用的同一编辑器 */
+    static JDialog preview(Window owner, DesktopComponentFactory components, PageMessagePresenter messages) {
+        var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096),
+                () -> {
+                });
+        dialog.name.setText(messages.text("debug.sample.model"));
+        dialog.endpoint.setText("https://example.invalid/v1/chat/completions");
+        dialog.model.setText("preview-model");
+        dialog.status.setText(messages.text("debug.blocked"));
+        dialog.save.setEnabled(false);
+        return dialog;
+    }
+
     /** Captures fields and sends only explicit user-approved probe data. / 捕获字段并仅发送用户明确启动的探测数据。 */
     private void submit() {
-        if (busy)
+        if (busy || service.isEmpty())
             return;
         char[] supplied = null;
         try {
@@ -160,7 +194,7 @@ final class PlatformModelDialog extends JDialog {
             status.setText(messages.text("ai.models.testing"));
             DesktopTaskExecutor.run(() -> {
                 try {
-                    return service.verifyAndSave(profile, label, input, selected, ceiling);
+                    return service.orElseThrow().verifyAndSave(profile, label, input, selected, ceiling);
                 } finally {
                     Arrays.fill(input, '\0');
                 }

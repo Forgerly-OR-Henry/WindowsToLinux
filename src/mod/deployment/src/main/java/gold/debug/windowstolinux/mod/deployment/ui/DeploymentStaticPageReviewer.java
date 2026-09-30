@@ -698,13 +698,24 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                         "Review fields need correction", Map.of(), Optional.empty())));
     }
 
+    /** Creates the actual runtime controls for a capability-free fixed-data preview. / 为不持有能力的固定数据预览创建真实运行控件。
+     * @param prompt explicit sample fields / 明确示例字段
+     * @param environment current display only / 仅当前显示
+     * @return same ordinary runtime form controls / 同一普通运行表单控件 */
+    static JPanel runtimePreview(DeploymentStaticWorkflow.Prompt prompt,
+            gold.debug.windowstolinux.appapi.ui.UiEnvironment environment) {
+        var messages = java.util.ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
+                environment.locale());
+        return new ComponentForm(messages::getString, List.of(), prompt).panel();
+    }
+
     /** One typed component form with bounded resource rows. / 一份带有界资源行的类型化组件表单。 */
     private static final class ComponentForm {
         /** Source-bound prompt. / 来源绑定问题。 */
         private final DeploymentStaticWorkflow.Prompt prompt;
 
-        /** Mod messages. / Mod 消息。 */
-        private final DeploymentStaticPage page;
+        /** Pure localized labels without task or service capture. / 不捕获任务或服务的纯本地化标签。 */
+        private final java.util.function.Function<String, String> texts;
 
         /** Visible controls. / 可见控件。 */
         private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
@@ -727,23 +738,32 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param page owner page / 所属页
          * @param prompt original prompt / 原问题 */
         private ComponentForm(DeploymentStaticPage page, DeploymentStaticWorkflow.Prompt prompt) {
-            this.page = page;
+            this(page::text, page.secretChoices(), prompt);
+        }
+
+        /** Builds the same controls from pure fixed or reviewed values. / 从纯固定或审阅值构建同一控件。
+         * @param texts localized labels / 本地化标签
+         * @param choices exact non-secret revisions / 精确非秘密修订
+         * @param prompt bounded original values / 有界原值 */
+        private ComponentForm(java.util.function.Function<String, String> texts,
+                List<DeploymentSecretSelection> choices, DeploymentStaticWorkflow.Prompt prompt) {
+            this.texts = texts;
             this.prompt = prompt;
-            panel.add(new JLabel(page.text("application") + ": " + prompt.applicationId()));
+            panel.add(new JLabel(texts.apply("application") + ": " + prompt.applicationId()));
             panel.add(new JLabel());
             for (DeploymentReviewField field : prompt.fields()) {
                 String key = field.id().substring(field.id().indexOf('/') + 1);
                 if (fields.containsKey(key))
                     continue;
                 JComponent input = key.equals("secrets")
-                        ? new DeploymentSecretReferenceField(page, field.value(), page.secretChoices())
+                        ? new DeploymentSecretReferenceField(texts, field.value(), choices)
                         : field.choices().isEmpty()
                                 ? new JTextField(field.value())
                                 : new JComboBox<>(field.choices().toArray(String[]::new));
                 if (input instanceof JComboBox<?> box && !field.value().isBlank())
                     box.setSelectedItem(field.value());
                 fields.put(key, input);
-                panel.add(new JLabel(label(page, key)));
+                panel.add(new JLabel(texts.apply(key)));
                 panel.add(input);
             }
             add("timeoutSeconds", timeout);
@@ -751,27 +771,27 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             add("memoryMiB", memory);
             add("maxOutputBytes", output);
             add("maxWorkspaceBytes", workspace);
-            panel.add(new JLabel(page.text("containerRisk")));
+            panel.add(new JLabel(texts.apply("containerRisk")));
             panel.add(containerRisk);
-            panel.add(new JLabel(page.text("adapterRisk")));
+            panel.add(new JLabel(texts.apply("adapterRisk")));
             panel.add(adapterRisk);
-            var addFile = new JButton(page.text("addFile"));
+            var addFile = new JButton(texts.apply("addFile"));
             addFile.addActionListener(ignored -> {
                 if (files.size() < 32) {
-                    var row = new FileRow(panel, page);
+                    var row = new FileRow(panel, texts);
                     files.add(row);
                     panel.revalidate();
                 }
             });
             panel.add(addFile);
-            panel.add(new JLabel(page.text("files")));
+            panel.add(new JLabel(texts.apply("files")));
         }
 
         /** Adds one field label and control. / 添加一项字段标签和控件。
          * @param key label / 标签
          * @param control text input / 文本输入 */
         private void add(String key, JTextField control) {
-            panel.add(new JLabel(label(page, key)));
+            panel.add(new JLabel(texts.apply(key)));
             panel.add(control);
         }
 
@@ -820,11 +840,11 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
 
         /** Adds one typed row to the form. / 向表单添加一项类型化行。
          * @param panel original component panel / 原组件面板
-         * @param page owning localized page / 所属本地化页 */
-        private FileRow(JPanel panel, DeploymentStaticPage page) {
-            for (var entry : List.<Map.Entry<String, JComponent>>of(Map.entry(page.text("fileId"), id),
-                    Map.entry(page.text("filePath"), path), Map.entry(page.text("fileSchema"), schema),
-                    Map.entry(page.text("fileLocation"), location), Map.entry(page.text("fileAccess"), access))) {
+         * @param texts pure localized labels / 纯本地化标签 */
+        private FileRow(JPanel panel, java.util.function.Function<String, String> texts) {
+            for (var entry : List.<Map.Entry<String, JComponent>>of(Map.entry(texts.apply("fileId"), id),
+                    Map.entry(texts.apply("filePath"), path), Map.entry(texts.apply("fileSchema"), schema),
+                    Map.entry(texts.apply("fileLocation"), location), Map.entry(texts.apply("fileAccess"), access))) {
                 panel.add(new JLabel(entry.getKey()));
                 panel.add(entry.getValue());
             }

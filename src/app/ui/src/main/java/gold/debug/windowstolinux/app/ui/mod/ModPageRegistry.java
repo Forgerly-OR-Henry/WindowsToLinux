@@ -25,6 +25,69 @@ public final class ModPageRegistry {
     /** Coalesces publication notifications without running host callbacks inside author registration. / 合并发布通知，不在作者登记中执行宿主回调。 */
     private boolean notificationQueued;
 
+    /** CLASS-only isolated preview surface, absent in packaged modes. / 仅CLASS的隔离预览界面；打包模式不存在。 */
+    private PageHost previewHost;
+
+    /** Installs the host-selected CLASS preview surface exactly once. / 精确安装一次宿主选择的CLASS预览界面。
+     * @param surface owned preview dialogs / 所属预览对话框
+     * @throws ApiException if installation is duplicated / 重复安装时 */
+    public void installPreviews(PageHost surface) throws ApiException {
+        onEdt(() -> {
+            if (previewHost != null)
+                throw failure(ProblemCode.BUSY, "PREVIEW_HOST_EXISTS", "Preview host is already installed");
+            previewHost = Objects.requireNonNull(surface);
+            return null;
+        });
+    }
+
+    /** Lists committed preview metadata without creating author views. / 不创建作者视图地列出已提交预览元数据。
+     * @return CLASS-only visible previews / 仅CLASS可见预览
+     * @throws ApiException if EDT dispatch fails / EDT调度失败时 */
+    public List<PageContribution> previews() throws ApiException {
+        return onEdt(() -> previewHost == null
+                ? List.of()
+                : scopes.values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
+                        .filter(entry -> entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
+                        .toList());
+    }
+
+    /** Opens only a committed preview through the CLASS host. / 仅经CLASS宿主打开已提交预览。
+     * @param key exact author identity / 精确作者身份
+     * @throws ApiException if CLASS, owner or unlock is unavailable / CLASS、所有者或解锁不可用时 */
+    public void openPreview(PageKey key) throws ApiException {
+        onEdt(() -> {
+            if (previewHost == null)
+                throw failure(ProblemCode.ACCESS_DENIED, "PREVIEW_CLASS_REQUIRED", "Previews require CLASS mode");
+            var scope = scopes.get(key.ownerId());
+            if (scope == null)
+                throw failure(ProblemCode.NOT_FOUND, "PAGE_NOT_FOUND", "Preview owner is unavailable");
+            scope.open(key.pageId(), true);
+            return null;
+        });
+    }
+
+    /** Releases every opened preview while retaining the original registrations. / 释放全部已打开预览并保留原登记。
+     * @throws ApiException if author cleanup fails / 作者清理失败时 */
+    public void closePreviews() throws ApiException {
+        onEdt(() -> {
+            ApiException first = null;
+            for (var scope : List.copyOf(scopes.values()))
+                for (var entry : List.copyOf(scope.entries.values()))
+                    if (entry.preview)
+                        try {
+                            entry.closeView();
+                        } catch (ApiException problem) {
+                            if (first == null)
+                                first = problem;
+                            else
+                                first.addSuppressed(problem);
+                        }
+            if (first != null)
+                throw first;
+            return null;
+        });
+    }
+
     /**
      * Binds the host surface and initial environment. / 绑定宿主界面及初始环境。
      * @param host actual mounting surface / 实际挂载界面
@@ -59,8 +122,9 @@ public final class ModPageRegistry {
      * @throws ApiException if EDT dispatch fails / EDT 调度失败时
      */
     public List<PageContribution> contributions() throws ApiException {
-        return onEdt(() -> scopes.values().stream().filter(PageScope::visible).flatMap(
-                scope -> scope.entries.values().stream().map(entry -> new PageContribution(entry.key, entry.spec)))
+        return onEdt(() -> scopes
+                .values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
+                        .filter(entry -> !entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
                 .toList());
     }
 
@@ -130,7 +194,15 @@ public final class ModPageRegistry {
         onEdt(() -> {
             environment = next;
             host.environment(next);
+            if (previewHost != null)
+                previewHost.environment(next);
             ApiException failure = null;
+            if (next.locked())
+                try {
+                    closePreviews();
+                } catch (ApiException problem) {
+                    failure = problem;
+                }
             for (var scope : List.copyOf(scopes.values()))
                 for (var entry : List.copyOf(scope.entries.values()))
                     if (entry.page != null && !entry.pageClosed)
@@ -303,6 +375,26 @@ public final class ModPageRegistry {
          */
         @Override
         public PageRegistration register(PageSpec spec, PageFactory factory) throws ApiException {
+            return register(spec, factory, false);
+        }
+
+        /** Stages a pure preview without publishing it to normal navigation. / 暂存纯预览，不发布到普通导航。
+         * @param spec exact author metadata / 精确作者元数据
+         * @param factory isolated pure view / 隔离纯视图
+         * @return original registration / 原登记
+         * @throws ApiException if unavailable / 不可用时 */
+        @Override
+        public PageRegistration registerPreview(PageSpec spec, PageFactory factory) throws ApiException {
+            return register(spec, factory, true);
+        }
+
+        /** Stages one distinct local identity in its original category. / 在原分类暂存一个独立本地身份。
+         * @param spec metadata / 元数据
+         * @param factory fresh factory / 新工厂
+         * @param preview whether the contribution is isolated / 扩展是否隔离
+         * @return owned registration / 所属登记
+         * @throws ApiException if unavailable / 不可用时 */
+        private PageRegistration register(PageSpec spec, PageFactory factory, boolean preview) throws ApiException {
             Objects.requireNonNull(spec);
             Objects.requireNonNull(factory);
             return onEdt(() -> {
@@ -311,7 +403,7 @@ public final class ModPageRegistry {
                 if (spec.id().isBlank() || spec.id().indexOf('\0') >= 0 || entries.containsKey(spec.id()))
                     throw failure(ProblemCode.INVALID_INPUT, "PAGE_ID_INVALID",
                             "Page identity is empty, invalid or already registered");
-                var entry = new PageEntry(this, spec, factory);
+                var entry = new PageEntry(this, spec, factory, preview);
                 entries.put(spec.id(), entry);
                 if (visible())
                     changed();
@@ -326,6 +418,14 @@ public final class ModPageRegistry {
          */
         @Override
         public void open(String localPageId) throws ApiException {
+            open(localPageId, false);
+        }
+
+        /** Checks the exact category before creating an owned view. / 创建所属视图前核对精确分类。
+         * @param localPageId original local identity / 原本地身份
+         * @param preview requested category / 请求分类
+         * @throws ApiException if admission fails / 准入失败时 */
+        private void open(String localPageId, boolean preview) throws ApiException {
             onEdt(() -> {
                 if (!visible())
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_NOT_PUBLISHED",
@@ -334,7 +434,7 @@ public final class ModPageRegistry {
                     throw failure(ProblemCode.ACCESS_DENIED, "PAGE_LOCKED",
                             "Unlock the application before opening this page");
                 var entry = entries.get(localPageId);
-                if (entry == null)
+                if (entry == null || entry.preview != preview)
                     throw failure(ProblemCode.NOT_FOUND, "PAGE_NOT_FOUND", "The owner has no such page");
                 entry.open();
                 return null;
@@ -398,6 +498,9 @@ public final class ModPageRegistry {
         /** Lazy fresh-instance factory. / 惰性的新实例工厂。 */
         private final PageFactory factory;
 
+        /** Distinct isolated preview category. / 独立隔离预览分类。 */
+        private final boolean preview;
+
         /** Retained author instance, including failed creation cleanup. / 保留的作者实例，包含创建失败后的清理状态。 */
         private ModPage page;
 
@@ -417,11 +520,13 @@ public final class ModPageRegistry {
          * @param scope owning startup scope / 所属启动作用域
          * @param spec page metadata / 页面元数据
          * @param factory fresh view factory / 新视图工厂
+         * @param preview isolated preview category / 隔离预览分类
          */
-        private PageEntry(PageScope scope, PageSpec spec, PageFactory factory) {
+        private PageEntry(PageScope scope, PageSpec spec, PageFactory factory, boolean preview) {
             this.scope = scope;
             this.spec = spec;
             this.factory = factory;
+            this.preview = preview;
             key = new PageKey(scope.owner, spec.id());
         }
 
@@ -441,7 +546,7 @@ public final class ModPageRegistry {
                 if (cleanupPending || pageClosed || !mounted)
                     throw failure(ProblemCode.BUSY, "PAGE_CLEANUP_PENDING",
                             "A previous page instance still requires cleanup");
-                host.focus(key);
+                (preview ? previewHost : host).focus(key);
                 return;
             }
             try {
@@ -452,7 +557,7 @@ public final class ModPageRegistry {
                 if (component.getParent() != null)
                     throw new IllegalStateException("Page component is already attached");
                 mounted = true;
-                host.show(key, spec, component);
+                (preview ? previewHost : host).show(key, spec, component);
             } catch (Exception | LinkageError | AssertionError creation) {
                 var problem = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_CREATION_FAILED",
                         "Page creation or mounting failed");
@@ -480,7 +585,7 @@ public final class ModPageRegistry {
                     pageClosed = true;
                 }
                 if (mounted) {
-                    host.remove(key);
+                    (preview ? previewHost : host).remove(key);
                     mounted = false;
                 }
                 page = null;

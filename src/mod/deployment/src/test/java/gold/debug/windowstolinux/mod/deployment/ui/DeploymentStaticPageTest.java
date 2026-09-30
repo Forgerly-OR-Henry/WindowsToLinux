@@ -282,12 +282,17 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             SwingUtilities.invokeAndWait(
                     () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
             awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
-            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
             SwingUtilities.invokeAndWait(() -> {
-                ((JTextField) secretPanel.getComponent(3)).setText("page-secret");
-                ((JTextField) secretPanel.getComponent(5)).setText("1");
+                var identifier = inputAfterLabel(mounted.get(), page.text("secretIdentifier"));
+                var revision = inputAfterLabel(mounted.get(), page.text("secretRevision"));
+                var create = findButton(mounted.get(), page.text("secretCreate"));
+                assertNotNull(create);
+                assertSame(identifier.getParent(), revision.getParent());
+                assertSame(identifier.getParent(), create.getParent());
+                identifier.setText("page-secret");
+                revision.setText("1");
                 render(mounted.get(), "secret-page");
-                findButton(secretPanel, "创建受保护修订").doClick();
+                create.doClick();
             });
             var dialog = awaitDialog("创建受保护的应用秘密");
             var password = findPassword(dialog);
@@ -322,7 +327,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             assertEquals(Outcome.SUCCEEDED,
                     read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             SwingUtilities.invokeAndWait(() -> {
-                var choice = new DeploymentSecretReferenceField(page, "", page.secretChoices());
+                var choice = new DeploymentSecretReferenceField(page::text, "", page.secretChoices());
                 findButton(choice, "使用所选修订").doClick();
                 assertEquals("page-secret:1", choice.value());
                 var reviewRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING));
@@ -837,6 +842,18 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             Thread.sleep(20);
         }
         fail("Original server-list tasks did not release their Mod occupancy");
+    }
+
+    private static JTextField inputAfterLabel(java.awt.Container root, String text) {
+        var label = findLabel(root, text);
+        assertNotNull(label, "Actual secret input label is missing: " + text);
+        var siblings = label.getParent().getComponents();
+        for (int index = 0; index + 1 < siblings.length; index++)
+            if (siblings[index] == label) {
+                assertInstanceOf(JTextField.class, siblings[index + 1], "Label must identify the actual secret input");
+                return (JTextField) siblings[index + 1];
+            }
+        throw new AssertionError("Actual labelled secret input is missing: " + text);
     }
 
     private static JLabel findLabel(java.awt.Container root, String text) {

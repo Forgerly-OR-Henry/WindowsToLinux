@@ -3,19 +3,18 @@ package gold.debug.windowstolinux.app.ui.server;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
-import java.lang.reflect.Proxy;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.stream.Stream;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.ServerApplicationFacade;
 import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
 import gold.debug.windowstolinux.app.ui.component.*;
+import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
 import org.junit.jupiter.api.Test;
 
 class ServerProfileDialogTest {
@@ -24,25 +23,21 @@ class ServerProfileDialogTest {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1);
         AtomicInteger saves = new AtomicInteger(), checks = new AtomicInteger(), notifications = new AtomicInteger();
-        var service = (ServerApplicationFacade) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{ServerApplicationFacade.class}, (proxy, method, args) -> switch (method.getName()) {
-                    case "saveServerProfile" -> {
-                        assertFalse(SwingUtilities.isEventDispatchThread());
-                        saves.incrementAndGet();
-                        assertEquals(0, ((char[]) args[1]).length, "editing can retain the saved credential");
-                        started.countDown();
-                        assertTrue(release.await(8, TimeUnit.SECONDS));
-                        if (saves.get() == 1)
-                            throw new java.sql.SQLException("save fixture failure");
-                        yield null;
-                    }
-                    case "verifyServer" -> {
-                        assertFalse(SwingUtilities.isEventDispatchThread());
-                        checks.incrementAndGet();
-                        throw new IllegalStateException("connection fixture failure");
-                    }
-                    default -> throw new AssertionError(method.getName());
-                });
+        ServerProfileEditor service = (profile, password) -> {
+            assertFalse(SwingUtilities.isEventDispatchThread());
+            saves.incrementAndGet();
+            assertEquals("custom/credential", profile.credentialKey());
+            assertEquals(0, password.length, "editing can retain the saved credential");
+            started.countDown();
+            try {
+                assertTrue(release.await(8, TimeUnit.SECONDS));
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(failure);
+            }
+            if (saves.get() == 1)
+                throw new java.sql.SQLException("save fixture failure");
+        };
         var messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
         AtomicReference<ServerProfileDialog> dialog = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {

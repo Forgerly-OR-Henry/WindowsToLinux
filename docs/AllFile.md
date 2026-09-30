@@ -316,7 +316,9 @@ WindowsToLinux/
    │  │  │  ├─ LogSettingsPane.java  # 仅宿主的诊断清单、有界记录视图及明确历史清理
    │  │  │  ├─ PlatformAppearancePane.java  # 持久化明确的外观选择，不重建运行器或业务页面
    │  │  │  ├─ SecuritySettingsPane.java  # 重新验证密码后修改全局安全设置
-   │  │  │  └─ TransferSettingsPane.java  # 使用持久化已确认值的常驻平台阈值编辑器
+   │  │  │  ├─ TransferSettingsPane.java  # 使用持久化已确认值的常驻平台阈值编辑器
+   │  │  │  ├─ UiDebugDialog.java  # 不持有生产写入、SSH或模型能力的仅CLASS固定数据目录
+   │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ shell/  # Shell执行
    │  │  │  ├─ DesktopLockController.java  # 统一遮挡桌面外壳和所有从属窗口
    │  │  │  ├─ ExtensionPagePane.java  # 挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项
@@ -1073,6 +1075,7 @@ WindowsToLinux/
          │  ├─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
          │  ├─ DeploymentGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
          │  ├─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
+         │  ├─ DeploymentRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
          │  ├─ DeploymentSecretReferenceField.java  # 将既有精确业务修订添加到高级无秘密引用字段
          │  ├─ DeploymentStaticPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
          │  ├─ DeploymentStaticPageReviewer.java  # 将当前所属视图的一次决定转换为类型化静态审阅值
