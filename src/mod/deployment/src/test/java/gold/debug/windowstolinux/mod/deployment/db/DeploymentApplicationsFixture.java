@@ -179,6 +179,8 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         volatile String expectedArgumentFingerprint = "a".repeat(64);
 
         volatile boolean managed;
+
+        volatile List<String> scanIssues = List.of();
         String response(List<String> args) {
             if (args.equals(List.of("SCAN")))
                 reads.incrementAndGet();
@@ -198,7 +200,12 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             String identity = Base64.getEncoder().encodeToString("example.service".getBytes(StandardCharsets.UTF_8));
             String name = Base64.getEncoder().encodeToString("External service".getBytes(StandardCharsets.UTF_8));
             return "APP\tSYSTEMD\t" + identity + "\t" + fingerprint + "\t" + name + "\t" + state
-                    + (managed ? "\t0\t0\t1\nEND\t1\n" : "\t1\t1\t0\nEND\t1\n");
+                    + (managed ? "\t0\t0\t1\n" : "\t1\t1\t0\n")
+                    + (args.equals(List.of("SCAN"))
+                            ? scanIssues.stream().map(issue -> "ISSUE\t" + issue + "\n")
+                                    .collect(java.util.stream.Collectors.joining())
+                            : "")
+                    + "END\t1\n";
         }
     }
 

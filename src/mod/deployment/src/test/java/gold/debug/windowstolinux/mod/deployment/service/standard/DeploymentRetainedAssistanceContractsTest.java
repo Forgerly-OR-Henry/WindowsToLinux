@@ -148,6 +148,73 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
     }
 
     @Test
+    void invalidModelChoiceCannotReplaceDeterministicOrHumanInputs() throws Exception {
+        verifyReadBoundary(true);
+    }
+
+    @Test
+    void actualReadPayloadExcludesPasswordTokenBearerAndApiKeyValues() throws Exception {
+        verifyReadBoundary(false);
+    }
+
+    private void verifyReadBoundary(boolean invalidChoice) throws Exception {
+        source();
+        Files.writeString(selectedSourceDirectory().resolve("README.md"),
+                "Node service requires version 21.\npassword=READ_PASSWORD_VALUE\ntoken=READ_TOKEN_VALUE\n"
+                        + "Authorization: Bearer READ_BEARER_VALUE\napi_key=READ_API_VALUE\n");
+        enable();
+        try (var http = new ModelPeer(false, invalidChoice ? "99" : "21"); var runtime = open()) {
+            start(runtime, true);
+            configure(runtime, http);
+            var context = runtime.modContexts().get(OWNER).context();
+            var originalFields = fields();
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(
+                    new TaskRequest("source-read-boundary", "Review original bounded source", List.of("server"), true),
+                    task -> {
+                        try {
+                            var selected = context.source().selectDirectory("Original source", task);
+                            try (var material = new DeploymentSourcePreparer(context.source()).prepare(selected, 65536,
+                                    100, task)) {
+                                var advisor = new DeploymentAssistedAdvisor(context);
+                                advisor.humanAnswers(Map.of("app/port", "9090"));
+                                var browser = new DeploymentSourceBrowser(material.snapshot().directory(),
+                                        material.snapshot().sha256());
+                                if (invalidChoice)
+                                    assertThrows(SecurityException.class, () -> advisor.analyze(browser, originalFields,
+                                            Map.of("component", "app", "projectType", "NODE_SERVICE"), task));
+                                else
+                                    assertEquals(Map.of("app/version", "21"),
+                                            advisor.analyze(browser, originalFields,
+                                                    Map.of("component", "app", "projectType", "NODE_SERVICE"), task)
+                                                    .values());
+                                assertEquals(fields(), originalFields);
+                                assertTrue(advisor.humanSupplied("app/port"));
+                            }
+                            return known(Outcome.SUCCEEDED);
+                        } catch (Exception | AssertionError caught) {
+                            failure.set(caught);
+                            throw caught;
+                        }
+                    });
+            assertEquals(Outcome.SUCCEEDED,
+                    handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome(),
+                    () -> String.valueOf(failure.get()));
+            if (failure.get() != null)
+                throw new AssertionError("Original READ boundary failed", failure.get());
+            http.assertHealthy();
+            assertEquals(2, http.requests.size());
+            if (!invalidChoice)
+                for (var sent : http.requests)
+                    for (var sensitive : List.of("READ_PASSWORD_VALUE", "READ_TOKEN_VALUE", "READ_BEARER_VALUE",
+                            "READ_API_VALUE", "NEVER_SEND_SECRET", "9090"))
+                        assertFalse(sent.toString().contains(sensitive), "Actual HTTP payload leaked " + sensitive);
+            assertTrue(approvals.isEmpty());
+            assertNoPublicationOrResources(runtime);
+        }
+    }
+
+    @Test
     void knownHttpFailureCanContinueOnlyAfterExactHumanAcceptanceWithoutAnotherModelCall() throws Exception {
         verifyManualContinuation(true);
     }
@@ -320,6 +387,10 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
         private ModelPeer(boolean reject) throws Exception {
+            this(reject, "21");
+        }
+
+        private ModelPeer(boolean reject, String candidate) throws Exception {
             http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             http.setExecutor(executor);
             http.createContext("/chat", exchange -> {
@@ -343,8 +414,8 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                         var arguments = response.putObject("arguments").put("summary",
                                 "Observed version in original README");
                         arguments.putArray("unresolved");
-                        arguments.putArray("suggestions").addObject().put("field", "app/version").put("candidate", "21")
-                                .putArray("evidence").add("source/0");
+                        arguments.putArray("suggestions").addObject().put("field", "app/version")
+                                .put("candidate", candidate).putArray("evidence").add("source/0");
                     }
                     var body = JSON.createObjectNode();
                     var choice = body.putArray("choices").addObject().put("finish_reason", "stop");

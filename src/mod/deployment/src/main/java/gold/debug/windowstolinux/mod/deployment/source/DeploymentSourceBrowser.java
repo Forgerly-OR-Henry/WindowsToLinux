@@ -256,8 +256,9 @@ public final class DeploymentSourceBrowser {
      * @param line one source line / 一行源码
      * @return bounded redacted line / 有界脱敏行 */
     private static String safe(String line) {
-        if (line.matches("(?i).*(password|passwd|secret|token|api[_-]?key|private[_-]?key).*[:=].*")
-                || line.contains("PRIVATE KEY") || line.matches(".*https?://[^ /]+:[^ /]+@.*"))
+        if (line.matches("(?i).*(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key).*[:=].*")
+                || line.matches("(?i).*\\bbearer\\s+\\S+.*") || line.contains("PRIVATE KEY")
+                || line.matches(".*https?://[^ /]+:[^ /]+@.*"))
             return "[credential content excluded]";
         return line.length() <= 4000 ? line : line.substring(0, 4000) + " [line truncated]";
     }
