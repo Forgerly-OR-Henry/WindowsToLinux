@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
 
-
 /** Persists atomic admission and actual resource release independently of business SQL. / 独立于业务 SQL 持久化原子准入及实际资源释放。 */
 public final class TaskLedger {
     /** Read-only task and occupancy facts on the same original transactions. / 同一原事务上的只读任务及占用依据。 */

@@ -58,7 +58,7 @@ class PlatformPersistenceTest {
                  var r = s.executeQuery(
                      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'")) {
                 assertTrue(r.next());
-                assertEquals(20, r.getInt(1));
+                assertEquals(23, r.getInt(1));
             }
         }
         try (var p = new PlatformPersistence(PlatformDatabase.open(directory, PlatformDatabaseTest.TEST_PROTECTION))) {

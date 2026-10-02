@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.file.FileSnapshot;
 import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
 
-
 /** Selects deployment files through public capabilities and freezes them before analysis. / 通过公开能力筛选部署文件，并在分析前冻结。
  */
 public final class DeploymentSourcePreparer {
@@ -86,7 +85,7 @@ public final class DeploymentSourcePreparer {
      * @throws ApiException if access fails / 访问失败时
      * @throws IOException if the declaration is not a regular file / 声明不是普通文件时 */
     private Optional<FileContent> declaration(FileSelection selection, List<FileEntry> root,
-                                             TaskContext task) throws ApiException, IOException {
+                                              TaskContext task) throws ApiException, IOException {
         for (var entry : root)
             if (entry.relativePath().equals(DECLARATION)) {
                 if (entry.type() != FileEntry.EntryType.FILE)

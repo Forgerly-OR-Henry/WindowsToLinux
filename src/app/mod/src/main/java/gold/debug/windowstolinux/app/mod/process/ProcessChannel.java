@@ -16,8 +16,6 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-
-
 /** Owns one real child's bounded protocol transport; the host owns admission and durable leases. / 持有一个真实子进程的有界协议传输；宿主负责准入和持久占用。 */
 public final class ProcessChannel implements ManagedProcess {
     /** Maximum pending requests and queued frames. / 待完成请求及排队帧上限。 */

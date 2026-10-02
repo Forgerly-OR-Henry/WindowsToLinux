@@ -186,7 +186,7 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                     assertFalse(commands.stream().anyMatch(value -> value.contains("'retain'")), commands.toString());
                 assertFalse(maintenance.get());
                 assertFalse(candidatePresent.get());
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }

@@ -53,6 +53,8 @@ class PlatformModInitializationTest {
                 import java.sql.*;
                 import java.util.*;
                 import gold.debug.windowstolinux.appapi.db.CheckResult;
+                import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
+                import gold.debug.windowstolinux.appapi.db.SchemaAccess;
                 public final class ProviderSchema implements ModSchemaLifecycle {
                     public static int calls;
                     static final String MODE="%s";

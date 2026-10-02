@@ -115,12 +115,14 @@ app.mainclass=example.Main
 
 ### 8.1 构建身份与依赖
 
-根构建沿用 `gold.debug.windowstolinux` groupId，工程开发版本为 `1.1.0-SNAPSHOT`，不是公开版本承诺。平台 API 开发契约版本为 `1.0.0-dev.1`，独立于 Maven 工程版本；两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。后续受控修改同步更新这些声明和测试，不能由字符串相似推断兼容。
+本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.1`；工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
+
+发行规格沿用 `gold.debug.windowstolinux` groupId，原规划工程开发版本为 `1.1.0-SNAPSHOT`，不是当前 POM 或公开版本承诺。平台 API 契约独立于 Maven 工程版本；规划中的两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。正式发行前需核对实际声明和测试，不能由字符串相似推断兼容。
 
 | 构建项         | artifactId / 最终文件                                                                          | 装配关系                                                                                |
 | -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | API            | `windowstolinux-appapi` / `appapi.jar`                                                         | 单独的公开契约叶子模块，仅依赖所需 JDK 模块。                                           |
-| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar`                                                 | ai、db、linux、main、mod、secret、service、source、ui、windows；依赖方向由 File 维护。  |
+| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar`                                                 | ai、db、file、linux、main、mod、secret、service、ui、windows；依赖方向由 File 维护。    |
 | 官方 Mod       | `windowstolinux-mod-deployment` / `deployment.jar`；`windowstolinux-mod-backup` / `backup.jar` | 各自独立主 JAR；平台 API 为 provided，备份对部署的编译依赖为 provided，只引用导出 API。 |
 | 聚合模块       | 根、app、mod 的 POM                                                                            | 不生成运行 JAR，不把后置 Web 加入新活动根构建。                                         |
 
@@ -138,12 +140,12 @@ app.mainclass=example.Main
 
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 
-工具主类固定为 `gold.debug.windowstolinux.app.mod.installation.ModPackageTool`，使用 app/mod 现有安装校验职责，不新增 Maven 业务模块。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
+工具主类固定为 `gold.debug.windowstolinux.app.mod.install.ModPackageTool`，使用 app/mod 现有安装校验职责，不新增 Maven 业务模块。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
 
 ```text
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.installation.ModPackageTool describe --input <构建生成的输入JSON>
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.installation.ModPackageTool pack --input <构建生成的输入JSON> --output <目标.wtlmod>
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.installation.ModPackageTool verify --package <目标.wtlmod>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool describe --input <构建生成的输入JSON>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool pack --input <构建生成的输入JSON> --output <目标.wtlmod>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool verify --package <目标.wtlmod>
 ```
 
 输入 JSON 固定字段 `formatVersion`（1）、`workspace`、`buildInputs`、`manifest`、`mainJar`、`authorJars`、`libraries`、`readme`、`license`、`changelog`（可选）、`mainOutput`、`authorOutputs`；文件路径均为绝对路径，数组可以为空，无未知键和重复键，未使用的 changelog 省略。`workspace` 为明确工作区，`buildInputs` 是 Maven 提供的实际配置文件集合，算法见 [CLASS 开发描述](Mod.md#72-class-开发描述)。mainJar 为待打包主产物；describe 阶段允许 mainJar、authorJars、README/LICENSE 尚不存在，只验证这些字段的路径语法，并必须验证编译输出及处理后的资源。describe 结果的 contentSha256 是生成描述文件本身的 SHA-256，不是发行包内容摘要。作者原始清单的 mainJar 相对包路径保持不变，构建复制主产物到该路径，不要求物理 Maven JAR 同名。

@@ -21,7 +21,6 @@ import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
 import gold.debug.windowstolinux.app.mod.dev.DevelopmentModDiscovery;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 
-
 /** Registers verified CLASS builds without enabling them or changing an existing selection. / 登记已核验 CLASS 构建，不启用它们或改变已有单选。 */
 public final class PlatformModCatalog {
     /** Original physical engine boot. / 原物理引擎启动身份。 */

@@ -57,17 +57,25 @@ public final class PlatformInteractionService implements InteractionService, Aut
     /** Installs genuine local and independent AI review for preauthorized deletion. / 为前置删除安装真实本地与独立 AI 审批。
      * @param review platform-owned reviewer / 平台所属审批方 */
     public synchronized void installDeletionReview(DeletionReview review) {
-        if (closed || deletionReview != null) throw new IllegalStateException("Deletion review is already installed or closed");
+        if (closed || deletionReview != null)
+            throw new IllegalStateException("Deletion review is already installed or closed");
         deletionReview = Objects.requireNonNull(review);
     }
 
     /** Trusted review callback, absent from author appapi. / 不向作者 appapi 暴露的可信审核回调。 */
-    @FunctionalInterface public interface DeletionReview {
+    public interface DeletionReview {
         /** Verifies actual local facts and a separate AI approval. / 核验实际本地事实及独立 AI 审批。
          * @param intent exact deletion / 精确删除
          * @param task authentic task / 真实任务
+         * @return verified AI configuration revision / 已审核 AI 配置修订
          * @throws ApiException if either proof is unavailable or rejected / 任一证明不可用或拒绝时 */
-        void verify(ActionIntent intent, TaskContext task) throws ApiException;
+        String verify(ActionIntent intent, TaskContext task) throws ApiException;
+
+        /** Rechecks the proof revision without replaying its approval. / 不重放审批地复核证明修订。
+         * @param revision original verified revision / 原审核修订
+         * @param task original task / 原任务
+         * @throws ApiException if the original proof scope changed / 原证明作用域改变时 */
+        void validate(String revision, TaskContext task) throws ApiException;
     }
 
     /**
@@ -124,11 +132,12 @@ public final class PlatformInteractionService implements InteractionService, Aut
         worker();
         validate(intent, task);
         boolean independent = "file-delete".equals(intent.type()) && !ordinaryDelete;
+        String independentRevision = null;
         if (independent) {
             var reviewer = deletionReview;
             if (reviewer == null)
                 throw error(ProblemCode.UNAVAILABLE, "FILE_DELETE_REVIEW_UNAVAILABLE", "Independent deletion review is unavailable");
-            reviewer.verify(intent, task);
+            independentRevision = reviewer.verify(intent, task);
             validate(intent, task);
         }
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
@@ -151,13 +160,14 @@ public final class PlatformInteractionService implements InteractionService, Aut
             if (!permit.approved())
                 return cancelled();
             authorization.validate(permit, task);
+            if (independent) deletionReview.validate(independentRevision, task);
             synchronized (this) {
                 requireOpen();
                 var activeTasks = tasks.snapshots().stream().filter(snapshot -> snapshot.state() != TaskState.ENDED)
                     .map(TaskSnapshot::id).collect(java.util.stream.Collectors.toSet());
                 grants.entrySet().removeIf(entry -> !activeTasks.contains(entry.getValue().task().id()));
                 var grant = new ApprovalGrant(UUID.randomUUID());
-                grants.put(grant, new Reviewed(task, intent, permit, independent));
+                grants.put(grant, new Reviewed(task, intent, permit, Optional.ofNullable(independentRevision)));
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
         } finally {
@@ -235,6 +245,37 @@ public final class PlatformInteractionService implements InteractionService, Aut
         requireOpen();
         tasks.requireExecuting(task, owner, version);
         task.progress(prompts.transferProgress(progress), progress.fraction());
+    }
+
+    /** Presents the correct collision layer without treating a skipped item as task cancellation. / 呈现正确冲突层，不把跳过单项视为取消任务。
+     * @param source actual source / 实际源
+     * @param target actual target / 实际目标
+     * @param directory directory layer / 目录层
+     * @param task original task / 原任务
+     * @return explicit zero/one/two choice / 明确零一二选择
+     * @throws ApiException if prompt identity or cleanup fails / 提示身份或清理失败时 */
+    public int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
+                            gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory, TaskContext task) throws ApiException {
+        worker();
+        requireOpen();
+        tasks.requireExecuting(task, owner, version);
+        var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM", "interaction-" + UUID.randomUUID(), owner, false));
+        try {
+            var cancellation = cancelToken(task);
+            int choice = security.human(() -> prompts.fileConflict(source, target, directory,
+                tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+            requireOpen();
+            tasks.requireExecuting(task, owner, version);
+            if (choice < 0 || choice > 2)
+                throw error(ProblemCode.CONTRACT_VIOLATION, "FILE_CONFLICT_CHOICE", "Invalid collision choice");
+            return choice;
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            return 2;
+        } catch (RuntimeException failed) {
+            throw error(ProblemCode.UNAVAILABLE, "FILE_CONFLICT_PROMPT", "File collision review was unavailable");
+        } finally {
+            release(lease);
+        }
     }
 
     /**
@@ -326,6 +367,8 @@ public final class PlatformInteractionService implements InteractionService, Aut
             throw error(ProblemCode.ACCESS_DENIED, "APPROVAL_IDENTITY",
                 "Approval is foreign, expired or already consumed");
         authorization.validate(reviewed.permit(), task);
+        if (reviewed.independentRevision().isPresent())
+            deletionReview.validate(reviewed.independentRevision().orElseThrow(), task);
         return reviewed.intent();
     }
 
@@ -363,7 +406,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @throws ApiException if independent proof or identity is invalid / 独立证明或身份无效时 */
     public synchronized void consumeDeletionPermit(ApprovalGrant grant, ActionIntent intent, TaskContext task) throws ApiException {
         reviewed(grant, task);
-        if (!grants.get(grant).independentDeletion())
+        if (grants.get(grant).independentRevision().isEmpty())
             throw error(ProblemCode.ACCESS_DENIED, "FILE_DELETE_INDEPENDENT_REVIEW", "Deletion permit lacks independent approval");
         consume(grant, intent, task);
     }
@@ -441,12 +484,27 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task original accepted context / 原始已接纳上下文
      * @param intent complete reviewed intent / 完整已审核意图
      * @param permit original live-scope policy decision / 原活动作用域策略决定
+     * @param independentRevision frozen independent AI review revision, absent for ordinary confirmation / 冻结的独立 AI 审核修订，普通确认时缺失
      */
-    private record Reviewed(TaskContext task, ActionIntent intent, PlatformAuthorizationService.Permit permit, boolean independentDeletion) {
+    private record Reviewed(TaskContext task, ActionIntent intent, PlatformAuthorizationService.Permit permit,
+                            Optional<String> independentRevision) {
     }
 
     /** Host-owned human presentation; implementations marshal their controls to the EDT. / 宿主持有的人工呈现；实现将控件操作调度至 EDT。 */
     public interface Prompts {
+        /** Presents copy, merge/overwrite and skip on the applicable layer. / 在适用层呈现副本、合并或覆盖、不处理。
+         * @param source actual source / 实际源
+         * @param target actual target / 实际目标
+         * @param directory directory collision / 目录冲突
+         * @param task original task / 原任务
+         * @param cancellation original cancellation / 原取消
+         * @return explicit choice / 明确选择 */
+        default int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
+                                 gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory,
+                                 TaskSnapshot task, CancelToken cancellation) {
+            throw new UnsupportedOperationException("This presenter does not provide file collision decisions");
+        }
+
         /** Resolves an actual same-name conflict without inferring consent from authorization mode. / 解决实际同名冲突，不从授权模式推断同意。
          * @param conflict exact file conflict / 精确文件冲突
          * @param server selected server / 选定服务器

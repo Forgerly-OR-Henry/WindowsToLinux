@@ -189,7 +189,10 @@ class PlatformRecoveryServiceTest {
                 runtime.security().unlock(PASSWORD.toCharArray());
                 session.close();
                 await(() -> task(runtime, session).state() == TaskState.ENDED);
-                assertEquals(Optional.of(Outcome.CANCELLED), task(runtime, session).outcome());
+                var observed = session.snapshot();
+                assertEquals(Optional.of(Outcome.CANCELLED), task(runtime, session).outcome(),
+                    "Rescue state=" + observed.state() + ", event=" + observed.messageCode() + ", problem="
+                        + observed.failure().map(problem -> problem.code() + "/" + problem.eventCode()).orElse("none"));
                 assertTrue(browser(session).processes().stream().noneMatch(BrowserProcess::alive));
                 assertEquals(0, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));

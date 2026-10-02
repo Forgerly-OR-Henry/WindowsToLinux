@@ -11,7 +11,6 @@ import java.util.*;
 import gold.debug.windowstolinux.app.mod.load.ModCodeInspection;
 import gold.debug.windowstolinux.app.mod.config.ModManifest;
 
-
 /** Discovers current compiled Mod declarations without executing any author code. / 发现当前已编译 Mod 声明，不执行任何作者代码。 */
 public final class DevelopmentModDiscovery {
     /** Prevents instantiation of the stateless scanner. / 禁止实例化无状态扫描器。 */

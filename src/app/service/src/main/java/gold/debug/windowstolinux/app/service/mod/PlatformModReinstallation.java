@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
 import gold.debug.windowstolinux.app.windows.file.WindowsFilePublication;
 
-
 /** Repairs the original installed release while preserving data, choices and a recoverable old program. / 修复原安装发布，保留数据、选择及可恢复旧程序。 */
 public final class PlatformModReinstallation implements AutoCloseable {
     /** Original repair file identities, locations and authorized subsets. / 原修复文件身份、位置与授权子集。 */

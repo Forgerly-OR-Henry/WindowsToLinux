@@ -15,7 +15,6 @@ import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
-
 /** Strict version-one auxiliary-process frames, independent of task admission. / 独立于任务准入的严格第一版辅助进程帧。 */
 public final class ProcessProtocol {
     /** Maximum encoded frame including LF. / 包含 LF 的编码帧上限。 */

@@ -92,7 +92,7 @@ public final class DeploymentAssistedBuildEvidenceAssertions {
         var at = java.time.Instant.ofEpochSecond(1_700_000_000L, 123_456_789);
         var facts = new LinkedHashMap<>(actual.facts());
         facts.put("applicationId", actual.applicationId());
-        var source = actual.file();
+        var source = actual.source();
         String digest = DeploymentReviewedPlanDigest.from(new DeploymentReviewedPlanDigest.Values(actual.serverId(), UUID.fromString(source.get("snapshot")), source.get("manifest"), source.get("archive"),
             Long.parseLong(source.get("bytes")), Long.parseLong(source.get("uncompressedBytes")), facts, actual.requirements(), actual.configuration(), actual.secrets(), actual.resources(), actual.runtime(),
             actual.userAccessUrl(), actual.limits(), at, actual.containerRisk(), actual.adapterRisk()));

@@ -17,6 +17,89 @@ import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
 /** Owns platform storage, task execution and security for one desktop boot. / 为一次桌面启动持有平台存储、任务执行及安全会话。 */
 public final class PlatformRuntime implements AutoCloseable {
+    /** Returns original Mod cleanup and schema recovery as one host feature. / 将原 Mod 清理及数据恢复作为同一宿主功能返回。
+     * @return current host recovery / 当前宿主恢复 */
+    public ModRecovery modRecovery() {
+        return new ModRecovery();
+    }
+
+    /** Original Mod reconciliation, preserving current graph and exact reviews. / 保留当前图及精确审阅的原 Mod 核对。 */
+    public final class ModRecovery {
+        /** Binds the original surrounding runtime. / 绑定原外围运行时。 */
+        private ModRecovery() {
+        }
+
+        /** Releases drained original Mod sessions after explicit task reconciliation. / 在明确任务核对后释放已排空原 Mod 会话。
+         * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍残留时 */
+        public void release() throws gold.debug.windowstolinux.appapi.task.ApiException {
+            PlatformBuildIdentity.requireWorker();
+            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            synchronized (PlatformRuntime.this) {
+                coordinator = modCoordinator;
+            }
+            if (coordinator == null)
+                return;
+            try {
+                coordinator.releaseRecovery();
+            } catch (Exception failure) {
+                throw new gold.debug.windowstolinux.appapi.task.ApiException(
+                    new gold.debug.windowstolinux.appapi.task.Problem(
+                        gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN, "MOD_RECOVERY_CLEANUP_PENDING",
+                        "The task ended but original Mod cleanup remains; closing the application retries retained cleanup",
+                        java.util.Map.of(), java.util.Optional.empty()));
+            }
+        }
+
+        /** Runs an explicit original schema inspection through the retained original graph. / 经保留原图运行明确原数据检查。
+         * @param preparation original retained preparation / 原保留准备
+         * @return observed data outcome without business startup / 不含业务启动的已观察数据结果
+         * @throws Exception if authorization, graph or original cleanup is unavailable / 授权、图或原清理不可用时 */
+        public gold.debug.windowstolinux.appapi.task.Outcome reconcile(java.util.UUID preparation)
+            throws Exception {
+            PlatformBuildIdentity.requireWorker();
+            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            synchronized (PlatformRuntime.this) {
+                if (stopping || closed || modCoordinator == null)
+                    throw new IllegalStateException("Mod graph is unavailable");
+                coordinator = modCoordinator;
+            }
+            return coordinator.reconcileSchema(preparation);
+        }
+
+        /** Reviews an explicitly selected source for rebuilding a failed unused target. / 审阅明确所选来源以重建失败未使用目标。
+         * @param owner selected Mod / 已选 Mod
+         * @param source explicitly confirmed source / 明确确认来源
+         * @return original concrete retry review / 原具体重试审阅
+         * @throws Exception if the graph or retry requirements are unavailable / 图或重试条件不可用时 */
+        public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review(String owner,
+                                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
+            PlatformBuildIdentity.requireWorker();
+            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            synchronized (PlatformRuntime.this) {
+                if (stopping || closed || modCoordinator == null)
+                    throw new IllegalStateException("Mod graph is unavailable");
+                coordinator = modCoordinator;
+            }
+            return coordinator.reviewSchemaRetry(owner, source);
+        }
+
+        /** Executes one explicit retry in this boot without changing the user's selection. / 在本次启动执行一次明确重试，不改变用户选择。
+         * @param review user-confirmed original review / 用户确认原审阅
+         * @return actual data result without starting business / 不启动业务的实际数据结果
+         * @throws Exception if original execution or cleanup remains unconfirmed / 原执行或清理仍未确认时 */
+        public gold.debug.windowstolinux.appapi.task.Outcome retry(
+            gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
+            PlatformBuildIdentity.requireWorker();
+            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            synchronized (PlatformRuntime.this) {
+                if (stopping || closed || modCoordinator == null)
+                    throw new IllegalStateException("Mod graph is unavailable");
+                coordinator = modCoordinator;
+            }
+            return coordinator.retrySchema(review);
+        }
+    }
+
     /** Actual activation capabilities and their original physical ownership. / 实际启用能力及其原物理归属。 */
     private final ModCapabilities capabilities = new ModCapabilities();
 
@@ -40,6 +123,9 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Shared permanent connection and transfer preferences. / 共用常驻连接及传输偏好。 */
     private final gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers;
+
+    /** Persistent optional file explanation preference. / 持久可选文件说明偏好。 */
+    private final gold.debug.windowstolinux.app.service.file.FileSettingsService fileSettings;
 
     /** Actual Maven artifact version, also used by host-owned task recovery. / 实际 Maven 产物版本，同时用于宿主任务恢复。 */
     private final String version;
@@ -97,6 +183,7 @@ public final class PlatformRuntime implements AutoCloseable {
         initiallyDisabled = gold.debug.windowstolinux.app.db.mod.ModRestartLedger
             .initiallyDisabled(persistence.database());
         transfers = new gold.debug.windowstolinux.app.service.linux.TransferSettingsService(persistence, security);
+        fileSettings = new gold.debug.windowstolinux.app.service.file.FileSettingsService(persistence, security);
         version = PlatformBuildIdentity.readVersion();
         logs = new gold.debug.windowstolinux.app.service.log.PlatformLogService(persistence.database(), security);
         try {
@@ -271,76 +358,6 @@ public final class PlatformRuntime implements AutoCloseable {
         return coordinator.start();
     }
 
-    /** Releases drained original Mod sessions after explicit task reconciliation. / 在明确任务核对后释放已排空原 Mod 会话。
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍残留时 */
-    public void releaseModRecovery() throws gold.debug.windowstolinux.appapi.task.ApiException {
-        PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
-        synchronized (this) {
-            coordinator = modCoordinator;
-        }
-        if (coordinator == null)
-            return;
-        try {
-            coordinator.releaseRecovery();
-        } catch (Exception failure) {
-            throw new gold.debug.windowstolinux.appapi.task.ApiException(
-                new gold.debug.windowstolinux.appapi.task.Problem(
-                    gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN, "MOD_RECOVERY_CLEANUP_PENDING",
-                    "The task ended but original Mod cleanup remains; closing the application retries retained cleanup",
-                    java.util.Map.of(), java.util.Optional.empty()));
-        }
-    }
-
-    /** Runs an explicit original schema inspection through the retained original graph. / 经保留原图运行明确原数据检查。
-     * @param preparation original retained preparation / 原保留准备
-     * @return observed data outcome without business startup / 不含业务启动的已观察数据结果
-     * @throws Exception if authorization, graph or original cleanup is unavailable / 授权、图或原清理不可用时 */
-    public gold.debug.windowstolinux.appapi.task.Outcome reconcileModSchema(java.util.UUID preparation)
-        throws Exception {
-        PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
-        synchronized (this) {
-            if (stopping || closed || modCoordinator == null)
-                throw new IllegalStateException("Mod graph is unavailable");
-            coordinator = modCoordinator;
-        }
-        return coordinator.reconcileSchema(preparation);
-    }
-
-    /** Reviews an explicitly selected source for rebuilding a failed unused target. / 审阅明确所选来源以重建失败未使用目标。
-     * @param owner selected Mod / 已选 Mod
-     * @param source explicitly confirmed source / 明确确认来源
-     * @return original concrete retry review / 原具体重试审阅
-     * @throws Exception if the graph or retry requirements are unavailable / 图或重试条件不可用时 */
-    public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview reviewModSchemaRetry(String owner,
-                                                                                                         java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
-        PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
-        synchronized (this) {
-            if (stopping || closed || modCoordinator == null)
-                throw new IllegalStateException("Mod graph is unavailable");
-            coordinator = modCoordinator;
-        }
-        return coordinator.reviewSchemaRetry(owner, source);
-    }
-
-    /** Executes one explicit retry in this boot without changing the user's selection. / 在本次启动执行一次明确重试，不改变用户选择。
-     * @param review user-confirmed original review / 用户确认原审阅
-     * @return actual data result without starting business / 不启动业务的实际数据结果
-     * @throws Exception if original execution or cleanup remains unconfirmed / 原执行或清理仍未确认时 */
-    public gold.debug.windowstolinux.appapi.task.Outcome retryModSchema(
-        gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
-        PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
-        synchronized (this) {
-            if (stopping || closed || modCoordinator == null)
-                throw new IllegalStateException("Mod graph is unavailable");
-            coordinator = modCoordinator;
-        }
-        return coordinator.retrySchema(review);
-    }
-
     /** Returns service graph assembly for trusted lifecycle composition. / 返回供可信生命周期装配使用的服务图。
      * @return actual service publication owner / 实际服务发布所有者 */
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModServices services() {
@@ -355,6 +372,13 @@ public final class PlatformRuntime implements AutoCloseable {
         if (stopping || closed)
             throw new IllegalStateException("Platform authorization is closing");
         return authorization;
+    }
+
+    /** Returns the shared file preference for host settings. / 返回宿主设置共用文件偏好。
+     * @return actual preference owner / 实际偏好所有者 */
+    public synchronized gold.debug.windowstolinux.app.service.file.FileSettingsService fileSettings() {
+        if (stopping || closed) throw new IllegalStateException("Platform file settings are closing");
+        return fileSettings;
     }
 
     /** Returns host diagnostic management without exposing it to author contexts. / 返回宿主诊断管理，不将其暴露给作者上下文。
@@ -691,13 +715,37 @@ public final class PlatformRuntime implements AutoCloseable {
          * @param owner exact Mod identity / 精确 Mod 身份
          * @param version actual loaded release / 实际已加载版本
          * @return host-owned source capability / 宿主持有的来源能力 */
-        @Override
         public gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(String owner, String version) {
+            synchronized (PlatformRuntime.this) {
+                var remote = remoteCapabilities(owner, version);
+                var source = source(owner, version, remote);
+                source.ownOperations(remote);
+                return source;
+            }
+        }
+
+        /** Shares the same grant registry and connection owner as the actual Mod context. / 与实际 Mod 上下文共享同一许可登记及连接所有者。
+         * @param owner exact Mod identity / 精确 Mod 身份
+         * @param version actual loaded release / 实际已加载版本
+         * @param original original host-owned activation capabilities / 原宿主持有启用能力
+         * @return file service using the original interaction / 使用原交互的文件服务
+         * @throws IllegalArgumentException if ownership differs or the capability has closed / 归属不同或能力已关闭时 */
+        @Override
+        public gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(String owner, String version,
+                                                                                    gold.debug.windowstolinux.app.main.mod.PlatformModHost.Remote original) {
             synchronized (PlatformRuntime.this) {
                 if (closed || stopping || sourcePicker == null)
                     throw new IllegalStateException("Platform source capabilities are unavailable");
+                if (!(original instanceof RemoteCapabilities remote) || !remoteCapabilities.contains(remote)
+                    || !remote.owner.equals(owner) || !remote.version.equals(version))
+                    throw new IllegalArgumentException("File service requires the original activation capabilities");
                 var source = new gold.debug.windowstolinux.app.service.file.PlatformFileAccess(
                     persistence.database(), tasks, security, owner, version, sourcePicker);
+                var interaction = new gold.debug.windowstolinux.app.service.file.PlatformFileInteraction(
+                    remote.interaction, tasks, remote.reviewAi, fileSettings, owner, version);
+                gold.debug.windowstolinux.app.service.file.FileBackendAccess backends = backends(remote.linux);
+                source.installOperations(new gold.debug.windowstolinux.app.service.file.PlatformFileCoordinator(
+                    persistence.database(), tasks, security, owner, version, interaction, backends, remote.linux::transferFile));
                 sourceServices.add(source);
                 return source;
 
@@ -800,11 +848,37 @@ public final class PlatformRuntime implements AutoCloseable {
                     prompts);
                 var linux = new PlatformLinuxService(tasks, security, persistence.servers(), interaction, ownerId,
                     version, transfers);
-                var capabilities = new RemoteCapabilities(interaction, linux, authorization.launcher(ownerId, version));
+                var reviewAi = ai(ownerId, version);
+                interaction.installDeletionReview(new gold.debug.windowstolinux.app.service.file.FileDeletionReview(tasks, reviewAi, backends(linux)));
+                var capabilities = new RemoteCapabilities(ownerId, version, interaction, linux, authorization.launcher(ownerId, version), reviewAi);
                 remoteCapabilities.add(capabilities);
                 return capabilities;
 
             }
+        }
+
+        /** Routes exact file hosts to account primitives without exporting transport clients. / 将精确文件主机路由到账户原语而不导出传输客户端。
+         * @param linux original managed connection owner / 原受管连接所有者
+         * @return scoped backend adapter / 作用域后端适配 */
+        private gold.debug.windowstolinux.app.service.file.FileBackendAccess backends(PlatformLinuxService linux) {
+            return new gold.debug.windowstolinux.app.service.file.FileBackendAccess() {
+                /** Keeps local access unrestricted by artificial roots and remote access task-bound. / 本机不设人为根限制，远端保持任务绑定。
+                 * @param <T> result / 结果
+                 * @param host exact host / 精确主机
+                 * @param task original task / 原任务
+                 * @param work actual primitive work / 实际原语工作
+                 * @return actual result / 实际结果
+                 * @throws java.io.IOException if file I/O fails / 文件I/O失败时
+                 * @throws gold.debug.windowstolinux.appapi.task.ApiException if authorization fails / 授权失败时 */
+                @Override
+                public <T> T withBackend(gold.debug.windowstolinux.appapi.file.FilePath host,
+                                         gold.debug.windowstolinux.appapi.task.TaskContext task, Work<T> work) throws java.io.IOException, gold.debug.windowstolinux.appapi.task.ApiException {
+                    if (host.server().isPresent()) return linux.withFiles(host.server().orElseThrow(), task, work);
+                    try (var backend = new gold.debug.windowstolinux.app.file.LocalFileBackend()) {
+                        return work.run(backend);
+                    }
+                }
+            };
         }
 
         /** Releases host session bookkeeping after physical and durable cleanup. / 在物理及持久清理后释放宿主会话登记。
@@ -872,17 +946,30 @@ public final class PlatformRuntime implements AutoCloseable {
             /** Same activation's host-owned workflow start authority. / 同次启用的宿主所属流程启动授权。 */
             private final PlatformAuthorizationService.Launcher launcher;
 
+            /** Independent file approval and optional explanation service, owned by this activation. / 本启用所属的独立文件审批及可选说明服务。 */
+            private final gold.debug.windowstolinux.app.service.ai.PlatformAiService reviewAi;
+
+            /** Exact activation identity for shared capability assembly. / 共享能力装配的精确启用身份。 */
+            private final String owner, version;
+
             /**
              * Takes ownership of the actual platform adapters. / 接管实际平台适配器。
              * @param interaction review adapter / 审核适配器
              * @param linux transport adapter / 传输适配器
              * @param launcher host start authority / 宿主启动授权
+             * @param owner exact activating Mod / 精确正在启用的 Mod
+             * @param version loaded release / 加载发布版本
+             * @param reviewAi actual independent review service / 实际独立审核服务
              */
-            private RemoteCapabilities(PlatformInteractionService interaction, PlatformLinuxService linux,
-                                       PlatformAuthorizationService.Launcher launcher) {
+            private RemoteCapabilities(String owner, String version, PlatformInteractionService interaction, PlatformLinuxService linux,
+                                       PlatformAuthorizationService.Launcher launcher,
+                                       gold.debug.windowstolinux.app.service.ai.PlatformAiService reviewAi) {
                 this.interaction = interaction;
+                this.owner = owner;
+                this.version = version;
                 this.linux = linux;
                 this.launcher = launcher;
+                this.reviewAi = reviewAi;
             }
 
             /** Returns host start authority without exposing it through ordinary TaskService. / 返回宿主启动授权，不通过普通 TaskService 暴露。
@@ -922,6 +1009,7 @@ public final class PlatformRuntime implements AutoCloseable {
             public void close() throws gold.debug.windowstolinux.appapi.task.ApiException {
                 launcher.close();
                 linux.close();
+                reviewAi.close();
                 interaction.close();
                 synchronized (PlatformRuntime.this) {
                     remoteCapabilities.remove(this);

@@ -10,7 +10,6 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 
-
 /** Classifies complete bounded publication receipts without changing original outcomes. / 分类完整有界发布回执，不改变原结果。 */
 final class DeploymentPublicationReceipt {
     /** Prevents construction of the receipt utility. / 禁止构造回执工具。 */

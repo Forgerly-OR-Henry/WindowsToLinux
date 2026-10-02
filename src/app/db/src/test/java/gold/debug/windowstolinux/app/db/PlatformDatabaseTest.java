@@ -103,7 +103,7 @@ class PlatformDatabaseTest {
             generation = database.generation();
             firstBoot = database.bootId();
             database.started();
-            assertEquals(20, count(database,
+            assertEquals(23, count(database,
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'"));
             try (var c = database.openConnection(); var s = c.createStatement()) {
                 s.execute("INSERT INTO desktop_preference VALUES('test','retained')");

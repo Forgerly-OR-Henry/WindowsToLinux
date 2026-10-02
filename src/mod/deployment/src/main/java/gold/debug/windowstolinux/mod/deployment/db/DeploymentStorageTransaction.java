@@ -9,8 +9,6 @@ import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
 
-
-
 /** Commits an owned business transaction without treating uncertain acknowledgements as failure. / 提交所属业务事务，不将不确定的确认误记为已失败。 */
 final class DeploymentStorageTransaction {
     /** Prevents construction of the fixed transaction primitive. / 防止构造固定事务原语。 */

@@ -1188,9 +1188,9 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var handle = executor.submit(unit, Optional.empty(), credentials, task -> {
                 if (recoveryPort != 22)
                     real.linux().connect(server, task);
-                var selection = real.source().selectDirectory("Source", task);
-                var material = new DeploymentSourcePreparer(real.source()).prepare(selection, 65536, 100, task);
-                var archive = new DeploymentSourceArchiver(real.source()).prepare(material, 65536, task);
+                var selection = real.file().selectDirectory("Source", task);
+                var material = new DeploymentSourcePreparer(real.file()).prepare(selection, 65536, 100, task);
+                var archive = new DeploymentSourceArchiver(real.file()).prepare(material, 65536, task);
                 archiveSha.set(archive.sha256());
                 archiveBytes.set(archive.byteCount());
                 archivePath.set(archive.path());
@@ -1490,6 +1490,26 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     private ModContext withFullControlModels(ModContext real, AtomicReference<TaskContext> originalTask,
                                              AtomicInteger independentReviews) {
         AiService models = new AiService() {
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertTrue(purpose == AiPurpose.LANGUAGE || purpose == AiPurpose.APPROVAL);
                 return "a".repeat(64);

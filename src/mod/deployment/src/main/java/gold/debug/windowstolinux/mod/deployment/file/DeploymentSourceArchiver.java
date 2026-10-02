@@ -15,7 +15,6 @@ import gold.debug.windowstolinux.appapi.file.FileSnapshot;
 import gold.debug.windowstolinux.appapi.file.FileWorkspace;
 import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
 
-
 /** Builds deterministic archives using only platform-owned staging and snapshots. / 仅使用平台所属暂存及快照构建确定性归档。 */
 public final class DeploymentSourceArchiver {
     /** Original activation's source capability. / 原启用的来源能力。 */

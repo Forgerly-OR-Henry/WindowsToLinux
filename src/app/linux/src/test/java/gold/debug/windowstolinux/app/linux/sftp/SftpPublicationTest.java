@@ -85,7 +85,7 @@ class SftpPublicationTest {
     }
 
     @Test
-    void keepBothSkipsOccupiedNamesAndReturnsActualEndpointsWhileTerminateCreatesNothing() throws Exception {
+    void keepBothSkipsOccupiedNamesAndReturnsActualEndpointsWhileSkipCreatesNothing() throws Exception {
         try (var fixture = new Fixture(root, 3, new SftpEventListener() {
         });
              var connector = new SshConnector();
@@ -109,10 +109,15 @@ class SftpPublicationTest {
             assertEquals(Outcome.SUCCEEDED, received.outcome(), received.toString());
             assertEquals(root.resolve("file (2).txt"), received.value().orElseThrow().localPath());
             assertEquals("preserved", Files.readString(target));
-            var stopped = connection.transfer(new TransferRequest(target, "/file (2).txt", 3), digest("new".getBytes()),
-                false, Duration.ofSeconds(5), () -> false, progress -> {
+            var cancellation = new AtomicBoolean();
+            var skipped = connection.transfer(new TransferRequest(target, "/file (2).txt", 3), digest("new".getBytes()),
+                false, Duration.ofSeconds(5), cancellation::get, progress -> {
                 }, conflict -> TransferConflictChoice.SKIP, journal());
-            assertEquals(Outcome.CANCELLED, stopped.outcome());
+            assertEquals(Outcome.FAILED, skipped.outcome());
+            assertEquals("SFTP_CONFLICT_SKIPPED", skipped.problem().orElseThrow().eventCode());
+            assertFalse(cancellation.get());
+            assertEquals("preserved", Files.readString(target));
+            assertEquals("new", Files.readString(fixture.remote.resolve("file (2).txt")));
             try (var entries = Files.walk(root)) {
                 assertEquals(0,
                     entries.filter(path -> path.getFileName().toString().startsWith(".wtl-transfer-")).count());

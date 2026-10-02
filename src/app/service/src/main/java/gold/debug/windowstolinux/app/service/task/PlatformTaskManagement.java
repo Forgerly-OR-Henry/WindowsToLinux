@@ -12,7 +12,6 @@ import java.util.concurrent.CompletionStage;
 import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 
-
 /** Routes explicit desktop actions to original tasks and the host rescue confirmation boundary. / 将明确桌面操作路由到原任务及宿主救援确认边界。 */
 public final class PlatformTaskManagement implements TaskManagement {
     /** Original central task and resource owner. / 原中央任务及资源所有者。 */

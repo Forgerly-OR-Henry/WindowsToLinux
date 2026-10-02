@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Retains original recovery sessions beyond the lifetime of their tasks. / 在任务生命期之外保留原恢复会话。 */
 public final class ModRecoveryLedger {
     /** Original engine and boot identity. / 原引擎及启动身份。 */

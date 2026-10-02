@@ -15,7 +15,6 @@ import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
-
 /** Author-side version-one Git worker frames matching the public process contract. / 符合公开进程契约的作者侧第一版 Git worker 帧。 */
 final class DeploymentGitProtocol {
     /** Maximum encoded frame including LF. / 包含 LF 的编码帧上限。 */

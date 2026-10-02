@@ -72,7 +72,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @throws java.io.IOException if file I/O fails / 文件 I/O 失败时
      * @throws ApiException if task, connection or cleanup fails / 任务、连接或清理失败时 */
     public <T> T withFiles(ServerRef server, TaskContext task,
-                          gold.debug.windowstolinux.app.service.file.FileBackendAccess.Work<T> work)
+                           gold.debug.windowstolinux.app.service.file.FileBackendAccess.Work<T> work)
         throws java.io.IOException, ApiException {
         worker();
         if (fileSession.get() != null)
@@ -127,14 +127,14 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             var backend = new gold.debug.windowstolinux.app.linux.sftp.SftpFileBackend(session.connection.fileChannel(), session.server);
             var sourceBackend = upload ? new gold.debug.windowstolinux.app.file.LocalFileBackend() : backend;
             var current = new gold.debug.windowstolinux.app.file.FileEngine(sourceBackend)
-                .inspect(source.actual(), false, tasks.operationCancellation(task));
+                .inspect(source.requested(), false, tasks.operationCancellation(task));
             if (!gold.debug.windowstolinux.appapi.file.FileActions.stamp(current).equals(gold.debug.windowstolinux.appapi.file.FileActions.stamp(source)))
                 throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SOURCE_CHANGED", "Source changed after planning");
             var digest = java.security.MessageDigest.getInstance("SHA-256");
             try (var input = sourceBackend.read(source.actual())) {
                 byte[] bytes = new byte[65536];
                 long count = 0;
-                for (int read; (read = input.read(bytes)) >= 0;) {
+                for (int read; (read = input.read(bytes)) >= 0; ) {
                     if (tasks.operationCancellation(task).requested())
                         throw error(ProblemCode.CANCELLED, "FILE_TRANSFER_CANCELLED", "Transfer was cancelled");
                     count += read;
@@ -187,7 +187,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param path actual target / 实际目标
      * @param observation prior object or absence / 原对象或不存在 */
     private record FileTarget(gold.debug.windowstolinux.appapi.file.FilePath path,
-                              Optional<gold.debug.windowstolinux.appapi.file.FileInfo> observation) { }
+                              Optional<gold.debug.windowstolinux.appapi.file.FileInfo> observation) {
+    }
 
     /** Rejects new work after host shutdown begins. / 宿主开始关闭后拒绝新工作。 */
     private boolean closed;
@@ -297,13 +298,13 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 () -> error(ProblemCode.NOT_FOUND, "SERVER_MISSING", "The saved server is unavailable"));
             var expected = servers.findServer(server.id());
             var endpoint = new SshEndpoint(server.id(), profile.host(), profile.sshPort(), profile.username());
-            password = tasks.authorized(task, owner, version, () -> {
+            password = tasks.callbacks().authorized(task, owner, version, () -> {
                 try (var credentials = security.openCredentials()) {
                     return credentials.read(profile.credentialKey()).orElseThrow(() -> error(ProblemCode.NOT_FOUND,
                         "SERVER_CREDENTIAL_MISSING", "The saved server credential is unavailable"));
                 }
             });
-            var trust = tasks.<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
+            var trust = tasks.callbacks().<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
                 (target, fingerprint) -> {
                     if (expected.isPresent()) {
                         var trusted = expected.orElseThrow();
@@ -753,7 +754,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 var transferTimeout = thresholds.idleTimeout();
                 var cancellation = tasks.operationCancellation(task);
                 String fingerprint = connection.fingerprint();
-                var prepare = tasks.<TransferPlan, Void, ResourceLease>hostCallback(task, owner, version,
+                var prepare = tasks.callbacks().<TransferPlan, Void, ResourceLease>hostCallback(task, owner, version,
                     (prepared, ignored) -> {
                         try {
                             return prepare(prepared);
@@ -765,19 +766,30 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                                 "Original transfer ownership could not be recorded");
                         }
                     });
-                var choose = tasks.<TransferConflict, Void, TransferConflictChoice>hostCallback(task, owner, version,
+                var choose = tasks.callbacks().<TransferConflict, Void, TransferConflictChoice>hostCallback(task, owner, version,
                     (conflict, ignored) -> choice.isPresent() ? choice.orElseThrow() : interaction.transferConflict(conflict, server, task));
-                var observe = tasks.<TransferProgress, Void, Void>hostCallback(task, owner, version,
+                var observe = tasks.callbacks().<TransferProgress, Void, Void>hostCallback(task, owner, version,
                     (progress, ignored) -> {
                         progress(progress);
                         return null;
                     });
                 TransferJournal ownedJournal = prepared -> prepare.apply(prepared, null);
                 gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver resolver = new gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver() {
-                    /** Preserves the actual preplanned collision facts. / 保留实际预计划冲突事实。 */
-                    @Override public void validateTarget() throws ApiException { verifyFileTarget(Session.this); }
-                    /** Keeps the existing explicit choice callback. / 保留既有明确选择回调。 */
-                    @Override public TransferConflictChoice resolve(TransferConflict conflict) throws ApiException { return choose.apply(conflict, null); }
+                    /** Preserves the actual preplanned collision facts. / 保留实际预计划冲突事实。
+                     * @throws ApiException if the planned target observation has changed / 预计划目标观测变化时 */
+                    @Override
+                    public void validateTarget() throws ApiException {
+                        verifyFileTarget(Session.this);
+                    }
+
+                    /** Keeps the existing explicit choice callback. / 保留既有明确选择回调。
+                     * @param conflict actual observed source and destination collision / 实际观测源与目标冲突
+                     * @return explicit reviewed choice or current human decision / 明确已审核选择或当前人工决定
+                     * @throws ApiException if original task authority or interaction fails / 原任务权限或交互失败时 */
+                    @Override
+                    public TransferConflictChoice resolve(TransferConflict conflict) throws ApiException {
+                        return choose.apply(conflict, null);
+                    }
                 };
                 while (true) {
                     var result = plan == null
@@ -795,9 +807,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                         var actual = plan == null
                             ? request
                             : new TransferRequest(plan.localPath(), plan.remotePath(), request.maxBytes());
-                        var choice = interaction.transferStalled(
+                        var stallChoice = interaction.transferStalled(
                             new TransferStall(latest, actual, upload, transferTimeout), server, task);
-                        if (choice != TransferStallChoice.RETRY || cancellation.requested() || closing)
+                        if (stallChoice != TransferStallChoice.RETRY || cancellation.requested() || closing)
                             return result.outcome() == Outcome.UNKNOWN
                                 ? result
                                 : new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
@@ -906,7 +918,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @throws ApiException if identity or settings are unavailable / 身份或设置不可用时 */
     private TransferConfiguration thresholds(TaskContext task) throws ApiException {
         try {
-            return tasks.authorized(task, owner, version, settings::read);
+            return tasks.callbacks().authorized(task, owner, version, settings::read);
         } catch (ApiException failure) {
             throw failure;
         } catch (Exception failure) {

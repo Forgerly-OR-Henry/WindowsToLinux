@@ -73,7 +73,15 @@ public final class HostTaskRecovery {
                             || prefix == null || !id.startsWith(prefix))
                             throw new SQLException("Host recovery contains an unknown resource");
                         try {
-                            UUID.fromString(id.substring(prefix.length()));
+                            String suffix = id.substring(prefix.length());
+                            if (kind.equals("CONNECTION") && prefix.equals("ai-")) {
+                                if (suffix.startsWith("http-")) suffix = suffix.substring(5);
+                                else if (suffix.startsWith("voice-")) suffix = suffix.substring(6);
+                                else throw new IllegalArgumentException("Unknown AI connection protocol");
+                            }
+                            UUID parsed = UUID.fromString(suffix);
+                            if (!parsed.toString().equals(suffix))
+                                throw new IllegalArgumentException("Noncanonical host resource id");
                         } catch (IllegalArgumentException invalid) {
                             throw new SQLException("Host resource identity is invalid");
                         }

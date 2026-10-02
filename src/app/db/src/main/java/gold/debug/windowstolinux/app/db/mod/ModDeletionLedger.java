@@ -20,7 +20,6 @@ import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Persists exact installed-release or whole-Mod deletion before unregistering verified cleanup. / 持久化精确安装版本或整 Mod 删除，核验清理后才注销。
  * File removal belongs to the installer; this ledger independently proves the registered directory is absent. / 文件由安装服务移除；本账本独立证明登记目录已不存在。 */
 public final class ModDeletionLedger {

@@ -104,7 +104,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var source = source(runtime);
+                var source = file(runtime);
                 try (var material = material(source, task);
                      var api = new DeploymentSourceArchiver(source).prepare(material, "api", 100_000, task);
                      var web = new DeploymentSourceArchiver(source).prepare(material, "web", 100_000, task);
@@ -176,7 +176,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var source = source(runtime);
+                var source = file(runtime);
                 try (var material = material(source, task)) {
                     var archiver = new DeploymentSourceArchiver(source);
                     byte[] first;
@@ -217,7 +217,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var source = source(runtime);
+                var source = file(runtime);
                 try (var material = material(source, task)) {
                     var archiver = new DeploymentSourceArchiver(source);
                     long size;
@@ -249,7 +249,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var source = source(runtime);
+                var source = file(runtime);
                 try (var material = material(source, task)) {
                     assertEquals(ProblemCode.IO_FAILURE,
                         assertThrows(ApiException.class,
@@ -270,7 +270,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var source = source(runtime);
+                var source = file(runtime);
                 try (var material = material(source, task)) {
                     Path changed = material.snapshot().directory().resolve("source");
                     Files.setAttribute(changed, "dos:readonly", false);
@@ -293,7 +293,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var original = source(runtime);
+                var original = file(runtime);
                 try (var material = material(original, task)) {
                     var staged = new AtomicReference<FileWorkspace>();
                     var source = intercept(original, (target, method, args) -> {
@@ -323,7 +323,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             run(runtime, task -> {
-                var original = source(runtime);
+                var original = file(runtime);
                 var held = new AtomicReference<FileWorkspace>();
                 try (var material = material(original, task)) {
                     var source = intercept(original, (target, method, args) -> {
@@ -380,7 +380,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
                 .submit(new TaskRequest("archive", "Archive", List.of(), true), task -> {
                     try {
                         assertTrue(assigned.await(8, TimeUnit.SECONDS));
-                        var original = source(runtime);
+                        var original = file(runtime);
                         try (var material = material(original, task)) {
                             var source = intercept(original, (target, method, args) -> {
                                 Object result = method.invoke(target, args);

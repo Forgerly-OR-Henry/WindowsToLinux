@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
-
 /** Retained-task inspection and explicit original cancellation or reconciliation. / 保留任务检查及明确原任务取消或核对。 */
 public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     /** Host-only task access. / 仅供宿主的任务访问。 */

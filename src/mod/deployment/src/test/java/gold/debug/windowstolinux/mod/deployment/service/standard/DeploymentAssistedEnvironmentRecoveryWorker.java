@@ -229,6 +229,26 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
 
     private AiService models() {
         return new AiService() {
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertEquals(AiPurpose.LANGUAGE, purpose);
                 return "a".repeat(64);

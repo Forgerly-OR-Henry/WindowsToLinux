@@ -35,6 +35,181 @@ import gold.debug.windowstolinux.appapi.task.CancelToken;
 
 /** Runs caller-bound author work after durable admission and preserves unfinished ownership. / 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属。 */
 public final class PlatformTaskRuntime implements AutoCloseable {
+    /** Returns the original credential and synchronous callback authority. / 返回原凭据及同步回调授权方。
+     * @return original capability callbacks / 原能力回调 */
+    public CapabilityCallbacks callbacks() {
+        return capabilityCallbacks;
+    }
+
+    /** Credential, host and dependency calls sharing the exact original task scope. / 共用精确原任务作用域的凭据、宿主及依赖调用。 */
+    public final class CapabilityCallbacks {
+        /** Owned by the surrounding runtime only. / 仅由外围运行时持有。 */
+        private CapabilityCallbacks() {
+        }
+
+        /** Authenticates new explicitly requested work while rejecting reconciliation callbacks. / 认证新明确请求的工作并拒绝核对回调。
+         * @param context authentic current executing context / 真实当前执行上下文
+         * @param owner exact bound caller / 精确绑定调用方
+         * @param version exact loaded release / 精确加载发布
+         * @return original authenticated task snapshot / 原已认证任务快照
+         * @throws ApiException if authority is invalid or this is a recovery callback / 权限无效或属于恢复回调时 */
+        public TaskSnapshot requireOrdinaryExecuting(TaskContext context, String owner, String version) throws ApiException {
+            synchronized (PlatformTaskRuntime.this) {
+                var snapshot = requireExecuting(context, owner, version);
+                if (executions.get(snapshot.id()).reconciling)
+                    throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_RECOVERY_NEW_WORK",
+                        "Reconciliation cannot authorize new file work");
+                return snapshot;
+            }
+        }
+
+        /**
+         * Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
+         * @param <T> internal operation result / 内部操作结果
+         * @param context authentic active task / 真实活动任务
+         * @param ownerId bound Mod identity / 绑定的 Mod 身份
+         * @param version bound release / 绑定版本
+         * @param work adapter work whose resource lease remains held until return / 资源占用持续到返回的适配工作
+         * @return operation result / 操作结果
+         * @throws Exception if authorization or work fails / 授权或工作失败时
+         */
+        public <T> T authorized(TaskContext context, String ownerId, String version, Callable<T> work) throws Exception {
+            DesktopSecurityService.Task authorization;
+            synchronized (PlatformTaskRuntime.this) {
+                requireExecuting(context, ownerId, version);
+                authorization = executions.get(context.id()).authorization;
+            }
+            return authorization.execute(work);
+        }
+
+        /** Captures authority for one host-owned callback that may run on a transport thread. / 为可能在传输线程运行的一个宿主回调捕获授权。
+         * @param <A> first transport observation / 第一个传输观测
+         * @param <B> second transport observation / 第二个传输观测
+         * @param <R> host decision / 宿主决定
+         * @param context original task / 原任务
+         * @param owner bound capability owner / 绑定能力所有者
+         * @param version actual loaded release / 实际加载发布
+         * @param callback exact host callback, never author work / 精确宿主回调，不是作者工作
+         * @return callback valid only while its original provider scope executes / 仅在原提供方作用域执行期间有效的回调
+         * @throws ApiException if the capture is outside admitted work / 捕获不在已准入工作内时 */
+        public <A, B, R> HostCallback<A, B, R> hostCallback(TaskContext context, String owner, String version,
+                                                            HostCallback<A, B, R> callback) throws ApiException {
+            synchronized (PlatformTaskRuntime.this) {
+                requireExecuting(context, owner, version);
+                var captured = List.copyOf(dependencyStack.get());
+                return (first, second) -> {
+                    var previous = dependencyStack.get();
+                    synchronized (PlatformTaskRuntime.this) {
+                        for (var scope : captured)
+                            if (!scope.active || scope.context != context
+                                || dependencyScopes.get(scope.recovery.call()) != scope)
+                                throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "SERVICE_CALLBACK_EXPIRED",
+                                    "The original host callback scope has ended");
+                        dependencyStack.set(new ArrayDeque<>(captured));
+                    }
+                    try {
+                        requireExecuting(context, owner, version);
+                        return callback.apply(first, second);
+                    } finally {
+                        if (previous.isEmpty())
+                            dependencyStack.remove();
+                        else
+                            dependencyStack.set(previous);
+                    }
+                };
+            }
+        }
+
+        /** Executes one admitted synchronous dependency call using the original credential and server scope. / 使用原凭据及服务器范围执行一次已准入同步依赖调用。
+         * @param <T> copied synchronous result / 复制的同步结果
+         * @param context original task / 原任务
+         * @param caller exact caller Mod / 精确调用方 Mod
+         * @param callerVersion actual caller release / 实际调用方发布
+         * @param provider exact provider / 精确提供方
+         * @param providerVersion loaded provider release / 加载的提供方发布
+         * @param schema provider data generation / 提供方数据代次
+         * @param recoveryOnly whether the binding is recovery-only / 绑定是否仅供恢复
+         * @param resolver actual provider admission inside the platform transaction / 平台事务内实际提供方准入
+         * @param work synchronous callback / 同步回调
+         * @return copied result / 复制结果
+         * @throws Exception if authority, work or complete cleanup fails / 授权、工作或完整清理失败时 */
+        public <T> T dependencyCall(TaskContext context, String caller, String callerVersion, String provider,
+                                    String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+                                    boolean recoveryOnly, DependencyAdmission resolver, Callable<T> work) throws Exception {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER",
+                    "Service calls require a worker");
+            DependencyScope scope;
+            synchronized (PlatformTaskRuntime.this) {
+                var snapshot = requireExecuting(context, caller, callerVersion);
+                var execution = executions.get(context.id());
+                if (recoveryOnly && !execution.reconciling)
+                    throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
+                        "Recovery services require explicit original-task reconciliation");
+                if ((!recoveryOnly && (blockedOwners.containsKey(caller) || blockedOwners.containsKey(provider))) || closing
+                    || sealed && !execution.reconciling)
+                    throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_ADMISSION_CLOSED",
+                        "Caller or provider admission is sealed");
+                if (provider.equals(snapshot.ownerId())
+                    || dependencyStack.get().stream().anyMatch(s -> s.recovery.provider().equals(provider))
+                    || dependencyStack.get().size() >= 64)
+                    throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_CYCLE",
+                        "Dependency call cycles or excessive nesting are not permitted");
+                var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
+                scope = new DependencyScope(context, facts);
+                dependencyScopes.put(facts.call(), scope);
+                try {
+                    scope.leases = ledger.retainDependency(context.id(), facts, connection -> {
+                        try {
+                            return resolver.claims(connection);
+                        } catch (ApiException rejected) {
+                            throw new AdmissionRejectedException(rejected);
+                        }
+                    });
+                } catch (AdmissionRejectedException rejected) {
+                    dependencyScopes.remove(facts.call());
+                    throw rejected.rejection;
+                } catch (TaskLedger.DependencyBusyException busy) {
+                    dependencyScopes.remove(facts.call());
+                    throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
+                        "Provider resources are held by maintenance or another exclusive operation");
+                } catch (SQLException failure) {
+                    scope.active = false;
+                    execution.uncertainEffect = true;
+                    conclusion.uncertain(execution, "Dependency admission could not be confirmed");
+                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
+                        "Dependency admission requires reconciliation");
+                }
+            }
+            var stack = dependencyStack.get();
+            stack.push(scope);
+            try {
+                return authorized(context, caller, callerVersion, work);
+            } catch (Exception | Error failure) {
+                reportUncertainEffect(context);
+                throw failure;
+            } finally {
+                stack.pop();
+                if (stack.isEmpty())
+                    dependencyStack.remove();
+                synchronized (PlatformTaskRuntime.this) {
+                    scope.active = false;
+                    var execution = executions.get(context.id());
+                    if (!scope.resources.isEmpty() || execution.uncertainEffect) {
+                        execution.uncertainEffect = true;
+                        conclusion.uncertain(execution, "Dependency call resources or effects require reconciliation");
+                        throw TaskConclusion.error(ProblemCode.UNKNOWN, "SERVICE_RELEASE_PENDING",
+                            "Dependency resources or effects remain unconfirmed");
+                    }
+                    dependenciesSupport.releaseDependency(scope, scope.leases);
+                }
+            }
+        }
+    }
+
+    /** Original callback authority, without a second task manager. / 原回调授权方，不创建第二任务管理器。 */
+    private final CapabilityCallbacks capabilityCallbacks = new CapabilityCallbacks();
+
     /** Existing callback and archival conclusion operations. / 既有回调与归档结论操作。 */
     private final TaskConclusion conclusion = new TaskConclusion();
 
@@ -373,25 +548,6 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     }
 
     /**
-     * Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
-     * @param <T> internal operation result / 内部操作结果
-     * @param context authentic active task / 真实活动任务
-     * @param ownerId bound Mod identity / 绑定的 Mod 身份
-     * @param version bound release / 绑定版本
-     * @param work adapter work whose resource lease remains held until return / 资源占用持续到返回的适配工作
-     * @return operation result / 操作结果
-     * @throws Exception if authorization or work fails / 授权或工作失败时
-     */
-    public <T> T authorized(TaskContext context, String ownerId, String version, Callable<T> work) throws Exception {
-        DesktopSecurityService.Task authorization;
-        synchronized (this) {
-            requireExecuting(context, ownerId, version);
-            authorization = executions.get(context.id()).authorization;
-        }
-        return authorization.execute(work);
-    }
-
-    /**
      * Returns cancellation for current work; explicit recovery does not replay an older cancellation. / 返回当前工作取消状态；显式恢复不重放旧取消。
      * @param context authentic original task / 真实原始任务
      * @return cancellation checked dynamically during adapter work / 适配工作期间动态检查的取消状态
@@ -564,42 +720,6 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /** Captures authority for one host-owned callback that may run on a transport thread. / 为可能在传输线程运行的一个宿主回调捕获授权。
-     * @param <A> first transport observation / 第一个传输观测
-     * @param <B> second transport observation / 第二个传输观测
-     * @param <R> host decision / 宿主决定
-     * @param context original task / 原任务
-     * @param owner bound capability owner / 绑定能力所有者
-     * @param version actual loaded release / 实际加载发布
-     * @param callback exact host callback, never author work / 精确宿主回调，不是作者工作
-     * @return callback valid only while its original provider scope executes / 仅在原提供方作用域执行期间有效的回调
-     * @throws ApiException if the capture is outside admitted work / 捕获不在已准入工作内时 */
-    public synchronized <A, B, R> HostCallback<A, B, R> hostCallback(TaskContext context, String owner, String version,
-                                                                     HostCallback<A, B, R> callback) throws ApiException {
-        requireExecuting(context, owner, version);
-        var captured = List.copyOf(dependencyStack.get());
-        return (first, second) -> {
-            var previous = dependencyStack.get();
-            synchronized (PlatformTaskRuntime.this) {
-                for (var scope : captured)
-                    if (!scope.active || scope.context != context
-                        || dependencyScopes.get(scope.recovery.call()) != scope)
-                        throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "SERVICE_CALLBACK_EXPIRED",
-                            "The original host callback scope has ended");
-                dependencyStack.set(new ArrayDeque<>(captured));
-            }
-            try {
-                requireExecuting(context, owner, version);
-                return callback.apply(first, second);
-            } finally {
-                if (previous.isEmpty())
-                    dependencyStack.remove();
-                else
-                    dependencyStack.set(previous);
-            }
-        };
-    }
-
     /** Checked host transport callback, absent from the public Mod API. / 不在公开 Mod API 中的受检宿主传输回调。
      * @param <A> first observation / 第一个观测
      * @param <B> second observation / 第二个观测
@@ -612,92 +732,6 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @return actual decision / 实际决定
          * @throws ApiException if validation or review fails / 校验或审核失败时 */
         R apply(A first, B second) throws ApiException;
-    }
-
-    /** Executes one admitted synchronous dependency call using the original credential and server scope. / 使用原凭据及服务器范围执行一次已准入同步依赖调用。
-     * @param <T> copied synchronous result / 复制的同步结果
-     * @param context original task / 原任务
-     * @param caller exact caller Mod / 精确调用方 Mod
-     * @param callerVersion actual caller release / 实际调用方发布
-     * @param provider exact provider / 精确提供方
-     * @param providerVersion loaded provider release / 加载的提供方发布
-     * @param schema provider data generation / 提供方数据代次
-     * @param recoveryOnly whether the binding is recovery-only / 绑定是否仅供恢复
-     * @param resolver actual provider admission inside the platform transaction / 平台事务内实际提供方准入
-     * @param work synchronous callback / 同步回调
-     * @return copied result / 复制结果
-     * @throws Exception if authority, work or complete cleanup fails / 授权、工作或完整清理失败时 */
-    public <T> T dependencyCall(TaskContext context, String caller, String callerVersion, String provider,
-                                String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-                                boolean recoveryOnly, DependencyAdmission resolver, Callable<T> work) throws Exception {
-        if (javax.swing.SwingUtilities.isEventDispatchThread())
-            throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER",
-                "Service calls require a worker");
-        DependencyScope scope;
-        synchronized (this) {
-            var snapshot = requireExecuting(context, caller, callerVersion);
-            var execution = executions.get(context.id());
-            if (recoveryOnly && !execution.reconciling)
-                throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
-                    "Recovery services require explicit original-task reconciliation");
-            if ((!recoveryOnly && (blockedOwners.containsKey(caller) || blockedOwners.containsKey(provider))) || closing
-                || sealed && !execution.reconciling)
-                throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_ADMISSION_CLOSED",
-                    "Caller or provider admission is sealed");
-            if (provider.equals(snapshot.ownerId())
-                || dependencyStack.get().stream().anyMatch(s -> s.recovery.provider().equals(provider))
-                || dependencyStack.get().size() >= 64)
-                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_CYCLE",
-                    "Dependency call cycles or excessive nesting are not permitted");
-            var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
-            scope = new DependencyScope(context, facts);
-            dependencyScopes.put(facts.call(), scope);
-            try {
-                scope.leases = ledger.retainDependency(context.id(), facts, connection -> {
-                    try {
-                        return resolver.claims(connection);
-                    } catch (ApiException rejected) {
-                        throw new AdmissionRejectedException(rejected);
-                    }
-                });
-            } catch (AdmissionRejectedException rejected) {
-                dependencyScopes.remove(facts.call());
-                throw rejected.rejection;
-            } catch (TaskLedger.DependencyBusyException busy) {
-                dependencyScopes.remove(facts.call());
-                throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
-                    "Provider resources are held by maintenance or another exclusive operation");
-            } catch (SQLException failure) {
-                scope.active = false;
-                execution.uncertainEffect = true;
-                conclusion.uncertain(execution, "Dependency admission could not be confirmed");
-                throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
-                    "Dependency admission requires reconciliation");
-            }
-        }
-        var stack = dependencyStack.get();
-        stack.push(scope);
-        try {
-            return authorized(context, caller, callerVersion, work);
-        } catch (Exception | Error failure) {
-            reportUncertainEffect(context);
-            throw failure;
-        } finally {
-            stack.pop();
-            if (stack.isEmpty())
-                dependencyStack.remove();
-            synchronized (this) {
-                scope.active = false;
-                var execution = executions.get(context.id());
-                if (!scope.resources.isEmpty() || execution.uncertainEffect) {
-                    execution.uncertainEffect = true;
-                    conclusion.uncertain(execution, "Dependency call resources or effects require reconciliation");
-                    throw TaskConclusion.error(ProblemCode.UNKNOWN, "SERVICE_RELEASE_PENDING",
-                        "Dependency resources or effects remain unconfirmed");
-                }
-                dependenciesSupport.releaseDependency(scope, scope.leases);
-            }
-        }
     }
 
     /** Exposes explicit original-task recovery state to trusted service assembly. / 向可信服务装配公开明确原任务恢复状态。

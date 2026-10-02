@@ -10,7 +10,6 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-
 /** Exact business messages and exit receipts for one Git preparation request. / 一次 Git 准备请求的精确业务消息及退出凭据。 */
 public final class DeploymentGitMessages {
     /** Versioned author-local request type. / 版本化作者内部请求类型。 */

@@ -27,7 +27,6 @@ import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Reviews and atomically claims restart intentions or explicit data retries without invoking author code. / 审阅并原子取得重启意图或明确数据重试，不调用作者代码。 */
 public final class PlatformModIntents implements AutoCloseable {
     /** Exact owning boot. / 精确所属启动。 */

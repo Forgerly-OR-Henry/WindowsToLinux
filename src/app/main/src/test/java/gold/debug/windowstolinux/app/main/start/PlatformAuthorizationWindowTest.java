@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch;
-import gold.debug.windowstolinux.app.ui.control.WorkflowLaunchButton;
+import gold.debug.windowstolinux.app.ui.task.WorkflowLaunchButton;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;

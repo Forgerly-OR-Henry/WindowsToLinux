@@ -10,7 +10,6 @@ import java.util.*;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.server.*;
 
-
 abstract class DeploymentExecutionFixture extends DeploymentGraphFixture {
     Problem problem(Outcome outcome, String event) {
         return new Problem(outcome == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.UNKNOWN, event,

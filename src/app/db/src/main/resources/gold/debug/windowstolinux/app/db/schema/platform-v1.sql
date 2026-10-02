@@ -45,39 +45,43 @@ CREATE TABLE server_profile
 );
 CREATE TABLE ai_model
 (
-    model_id CHARACTER VARYING NOT NULL PRIMARY KEY,
-    credential_id CHARACTER VARYING NOT NULL REFERENCES credential (credential_id),
-    endpoint_url CHARACTER VARYING NOT NULL DEFAULT '',
-    file_endpoint_url CHARACTER VARYING NOT NULL DEFAULT '',
-    realtime_endpoint_url CHARACTER VARYING NOT NULL DEFAULT '',
-    model_name CHARACTER VARYING NOT NULL,
-    configuration_revision BIGINT NOT NULL DEFAULT 1 CHECK (configuration_revision > 0),
-    text_verified_revision BIGINT CHECK (text_verified_revision > 0),
-    text_verified_at BIGINT,
-    text_state CHARACTER VARYING NOT NULL DEFAULT 'UNVERIFIED' CHECK (text_state IN ('UNVERIFIED','AVAILABLE','UNSUPPORTED','FAILED')),
-    text_reason CHARACTER VARYING(80) NOT NULL DEFAULT '',
-    vision_verified_revision BIGINT CHECK (vision_verified_revision > 0),
-    vision_verified_at BIGINT,
-    vision_state CHARACTER VARYING NOT NULL DEFAULT 'UNVERIFIED' CHECK (vision_state IN ('UNVERIFIED','AVAILABLE','UNSUPPORTED','FAILED')),
-    vision_reason CHARACTER VARYING(80) NOT NULL DEFAULT '',
-    voice_file_verified_revision BIGINT CHECK (voice_file_verified_revision > 0),
-    voice_file_verified_at BIGINT,
-    voice_file_state CHARACTER VARYING NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_file_state IN ('UNVERIFIED','AVAILABLE','UNSUPPORTED','FAILED')),
-    voice_file_reason CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    model_id                         CHARACTER VARYING     NOT NULL PRIMARY KEY,
+    credential_id                    CHARACTER VARYING     NOT NULL REFERENCES credential (credential_id),
+    endpoint_url                     CHARACTER VARYING     NOT NULL DEFAULT '',
+    file_endpoint_url                CHARACTER VARYING     NOT NULL DEFAULT '',
+    realtime_endpoint_url            CHARACTER VARYING     NOT NULL DEFAULT '',
+    model_name                       CHARACTER VARYING     NOT NULL,
+    configuration_revision           BIGINT                NOT NULL DEFAULT 1 CHECK (configuration_revision > 0),
+    text_verified_revision           BIGINT CHECK (text_verified_revision > 0),
+    text_verified_at                 BIGINT,
+    text_state                       CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (text_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    text_reason                      CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    vision_verified_revision         BIGINT CHECK (vision_verified_revision > 0),
+    vision_verified_at               BIGINT,
+    vision_state                     CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (vision_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    vision_reason                    CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    voice_file_verified_revision     BIGINT CHECK (voice_file_verified_revision > 0),
+    voice_file_verified_at           BIGINT,
+    voice_file_state                 CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_file_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    voice_file_reason                CHARACTER VARYING(80) NOT NULL DEFAULT '',
     voice_realtime_verified_revision BIGINT CHECK (voice_realtime_verified_revision > 0),
-    voice_realtime_verified_at BIGINT,
-    voice_realtime_state CHARACTER VARYING NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_realtime_state IN ('UNVERIFIED','AVAILABLE','UNSUPPORTED','FAILED')),
-    voice_realtime_reason CHARACTER VARYING(80) NOT NULL DEFAULT '',
-    is_language_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_language_enabled IN (0,1)),
-    language_call_order INTEGER UNIQUE CHECK (language_call_order >= 0),
-    is_approval_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_approval_enabled IN (0,1)),
-    approval_call_order INTEGER UNIQUE CHECK (approval_call_order >= 0),
-    is_vision_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_vision_enabled IN (0,1)),
-    vision_call_order INTEGER UNIQUE CHECK (vision_call_order >= 0),
-    is_voice_enabled INTEGER NOT NULL DEFAULT 0 CHECK (is_voice_enabled IN (0,1)),
-    voice_call_order INTEGER UNIQUE CHECK (voice_call_order >= 0),
-    display_name CHARACTER VARYING NOT NULL,
-    display_order INTEGER NOT NULL UNIQUE CHECK (display_order >= 0),
+    voice_realtime_verified_at       BIGINT,
+    voice_realtime_state             CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_realtime_state IN
+                                                                                                ('UNVERIFIED',
+                                                                                                 'AVAILABLE',
+                                                                                                 'UNSUPPORTED',
+                                                                                                 'FAILED')),
+    voice_realtime_reason            CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    is_language_enabled              INTEGER               NOT NULL DEFAULT 0 CHECK (is_language_enabled IN (0, 1)),
+    language_call_order              INTEGER UNIQUE CHECK (language_call_order >= 0),
+    is_approval_enabled              INTEGER               NOT NULL DEFAULT 0 CHECK (is_approval_enabled IN (0, 1)),
+    approval_call_order              INTEGER UNIQUE CHECK (approval_call_order >= 0),
+    is_vision_enabled                INTEGER               NOT NULL DEFAULT 0 CHECK (is_vision_enabled IN (0, 1)),
+    vision_call_order                INTEGER UNIQUE CHECK (vision_call_order >= 0),
+    is_voice_enabled                 INTEGER               NOT NULL DEFAULT 0 CHECK (is_voice_enabled IN (0, 1)),
+    voice_call_order                 INTEGER UNIQUE CHECK (voice_call_order >= 0),
+    display_name                     CHARACTER VARYING     NOT NULL,
+    display_order                    INTEGER               NOT NULL UNIQUE CHECK (display_order >= 0),
     CHECK (endpoint_url <> '' OR file_endpoint_url <> '' OR realtime_endpoint_url <> ''),
     CHECK ((text_verified_revision IS NULL) = (text_verified_at IS NULL)),
     CHECK ((text_state = 'UNVERIFIED') = (text_verified_revision IS NULL)),
@@ -117,6 +121,8 @@ CREATE TABLE desktop_preference
     preference_key   CHARACTER VARYING NOT NULL PRIMARY KEY,
     preference_value CHARACTER VARYING NOT NULL
 );
+INSERT INTO desktop_preference(preference_key, preference_value)
+VALUES ('file_delete_ai_explanation', 'true');
 
 CREATE TABLE app_state
 (
@@ -228,7 +234,8 @@ CREATE TABLE platform_task
     owner_version  VARCHAR(512)      NOT NULL,
     task_type      VARCHAR(128)      NOT NULL,
     state          VARCHAR(20)       NOT NULL CHECK (state IN
-                                                     ('QUEUED', 'RUNNING', 'WAITING', 'CANCEL_REQUESTED', 'FINISHING', 'UNKNOWN',
+                                                     ('QUEUED', 'RUNNING', 'WAITING', 'CANCEL_REQUESTED', 'FINISHING',
+                                                      'UNKNOWN',
                                                       'ENDED')),
     outcome        VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
     cancellable    BOOLEAN           NOT NULL,
@@ -333,47 +340,51 @@ CREATE INDEX runtime_log_order ON runtime_log (owner_id, category, recorded_at D
 
 CREATE TABLE file_link
 (
-    owner_id VARCHAR(512) NOT NULL,
-    host_id VARCHAR(512) NOT NULL,
-    link_path VARCHAR(4096) NOT NULL,
-    link_identity CHARACTER VARYING NOT NULL,
-    link_target VARCHAR(4096) NOT NULL,
-    target_path VARCHAR(4096),
+    owner_id        VARCHAR(512)      NOT NULL,
+    host_id         VARCHAR(512)      NOT NULL,
+    link_path       VARCHAR(4096)     NOT NULL,
+    link_identity   CHARACTER VARYING NOT NULL,
+    link_target     VARCHAR(4096)     NOT NULL,
+    target_path     VARCHAR(4096),
     target_identity CHARACTER VARYING,
-    byte_count BIGINT NOT NULL CHECK(byte_count >= 0),
-    modified_at BIGINT NOT NULL,
-    task_id UUID NOT NULL,
-    last_state VARCHAR(16) NOT NULL CHECK(last_state IN ('CONFIRMED','BROKEN','UNKNOWN')),
-    updated_at BIGINT NOT NULL,
-    PRIMARY KEY(owner_id,host_id,link_path)
+    byte_count      BIGINT            NOT NULL CHECK (byte_count >= 0),
+    modified_at     BIGINT            NOT NULL,
+    task_id         UUID              NOT NULL,
+    last_state      VARCHAR(16)       NOT NULL CHECK (last_state IN ('CONFIRMED', 'UNVERIFIED')),
+    updated_at      BIGINT            NOT NULL,
+    PRIMARY KEY (owner_id, host_id, link_path)
 );
 CREATE TABLE file_operation
 (
-    operation_id UUID PRIMARY KEY,
-    task_id UUID NOT NULL,
-    owner_id VARCHAR(512) NOT NULL,
-    operation_type VARCHAR(40) NOT NULL,
-    phase VARCHAR(40) NOT NULL,
-    source_host VARCHAR(512) NOT NULL,
-    source_path VARCHAR(4096) NOT NULL,
-    target_host VARCHAR(512),
-    target_path VARCHAR(4096),
-    plan_text CHARACTER LARGE OBJECT NOT NULL,
-    updated_at BIGINT NOT NULL,
-    CHECK((target_host IS NULL) = (target_path IS NULL))
+    operation_id        UUID PRIMARY KEY,
+    task_id             UUID          NOT NULL,
+    owner_id            VARCHAR(512)  NOT NULL,
+    owner_version       VARCHAR(128)  NOT NULL,
+    parent_operation_id UUID REFERENCES file_operation (operation_id),
+    original_task_id    UUID,
+    operation_type      VARCHAR(40)   NOT NULL,
+    phase               VARCHAR(40)   NOT NULL,
+    source_host         VARCHAR(512)  NOT NULL,
+    source_path         VARCHAR(4096) NOT NULL,
+    target_host         VARCHAR(512),
+    target_path         VARCHAR(4096),
+    plan_text           CHARACTER LARGE OBJECT NOT NULL,
+    updated_at          BIGINT        NOT NULL,
+    CHECK ((target_host IS NULL) = (target_path IS NULL)),
+    CHECK ((parent_operation_id IS NULL) = (original_task_id IS NULL))
 );
-CREATE INDEX file_operation_owner_task ON file_operation(owner_id,task_id,updated_at);
+CREATE INDEX file_operation_owner_task ON file_operation (owner_id, task_id, updated_at);
 CREATE TABLE file_operation_step
 (
-    step_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    operation_id UUID NOT NULL REFERENCES file_operation(operation_id),
-    phase VARCHAR(40) NOT NULL,
-    source_host VARCHAR(512) NOT NULL,
-    source_path VARCHAR(4096) NOT NULL,
-    target_host VARCHAR(512),
-    target_path VARCHAR(4096),
-    detail CHARACTER VARYING NOT NULL,
-    created_at BIGINT NOT NULL,
-    CHECK((target_host IS NULL) = (target_path IS NULL))
+    step_id      BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    operation_id UUID              NOT NULL REFERENCES file_operation (operation_id),
+    phase        VARCHAR(40)       NOT NULL,
+    source_host  VARCHAR(512)      NOT NULL,
+    source_path  VARCHAR(4096)     NOT NULL,
+    target_host  VARCHAR(512),
+    target_path  VARCHAR(4096),
+    detail       CHARACTER VARYING NOT NULL,
+    created_at   BIGINT            NOT NULL,
+    CHECK ((target_host IS NULL) = (target_path IS NULL))
 );
-CREATE INDEX file_operation_step_original ON file_operation_step(operation_id,step_id);
+CREATE INDEX file_operation_step_original ON file_operation_step (operation_id, step_id);

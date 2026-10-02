@@ -19,6 +19,7 @@ class DesktopSchemaTest {
     void createsExactlyTwentyPlatformTablesAndPreservesPreferencesOnReopen() throws Exception {
         var expected = Set.of("security_profile", "credential", "server_profile", "ai_model",
             "browser_recovery_task", "browser_recovery_event", "desktop_preference", "app_state",
+            "file_link", "file_operation", "file_operation_step",
             "mod_registry", "mod_version", "mod_schema", "mod_operation", "mod_migration_step",
             "platform_task", "platform_task_resource", "mod_credential_reference", "mod_server_reference",
             "app_schema_history", "log_category", "runtime_log");

@@ -193,9 +193,11 @@ class AiModelInventoryTest {
             var localized = new PageMessagePresenter(MessageCatalog.forLanguageTag(language));
             var pane = new AtomicReference<AiModelInventoryPane>();
             SwingUtilities.invokeAndWait(() -> {
-                pane.set(new AiModelInventoryPane(service, c, localized, ignored -> {}));
+                pane.set(new AiModelInventoryPane(service, c, localized, ignored -> {
+                }));
                 pane.get().refresh();
-            }); idle();
+            });
+            idle();
             SwingUtilities.invokeAndWait(() -> {
                 pane.get().open(AiPurposeType.VOICE);
                 JList<String> inventory = field(pane.get(), "inventory", JList.class);

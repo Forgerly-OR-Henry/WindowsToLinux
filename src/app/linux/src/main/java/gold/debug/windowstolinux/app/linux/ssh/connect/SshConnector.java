@@ -170,6 +170,9 @@ public final class SshConnector implements AutoCloseable {
         /** Client owning every physical session and worker. / 持有所有物理会话及工作线程的客户端。 */
         private final SshClient client = SshClient.setUpDefaultClient();
 
+        /** Physical I/O ownership retained beyond SSHD's logical close future. / 在 SSHD 逻辑关闭凭据之后继续保留的物理 I/O 所有权。 */
+        private final ClientIoLifecycle io = new ClientIoLifecycle();
+
         /** Rejects concurrent lifecycle or transport mutation. / 拒绝并发的生命周期或传输修改。 */
         private final AtomicBoolean operating = new AtomicBoolean();
 
@@ -213,6 +216,7 @@ public final class SshConnector implements AutoCloseable {
          */
         private Connection(SshEndpoint endpoint, HostTrust trust) {
             this.endpoint = endpoint;
+            client.setIoServiceFactoryFactory(io);
             client.setHostConfigEntryResolver(HostConfigEntryResolver.EMPTY);
             client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
             client.setPasswordIdentityProvider(PasswordIdentityProvider.EMPTY_PASSWORDS_PROVIDER);
@@ -490,7 +494,8 @@ public final class SshConnector implements AutoCloseable {
             private boolean released;
 
             /** Creates only inside the owning connection. / 仅在所属连接中创建。 */
-            private FileScope() { }
+            private FileScope() {
+            }
 
             /** Returns the channel only while the exact worker still owns it. / 仅在精确线程持有时返回通道。
              * @return original channel / 原通道
@@ -502,7 +507,8 @@ public final class SshConnector implements AutoCloseable {
 
             /** Stops cancellation observation and verifies actual channel closure. / 停止取消观察并核验实际通道关闭。
              * @throws java.io.IOException if release is unconfirmed / 释放未确认时 */
-            @Override public void close() throws java.io.IOException {
+            @Override
+            public void close() throws java.io.IOException {
                 if (released) return;
                 fileOwner = null;
                 if (fileObserver != null) {
@@ -558,8 +564,18 @@ public final class SshConnector implements AutoCloseable {
             if (!operating.compareAndSet(false, true))
                 throw failure(ProblemCode.BUSY, "SSH_CONNECTION_BUSY", "SSH connection work has not returned");
             try {
-                if (!client.close(true).awaitUninterruptibly(Duration.ofSeconds(5)) || !client.isClosed()
-                    || session != null && !session.isClosed() || callbacks.get() != 0)
+                if (!client.close(true).awaitUninterruptibly(Duration.ofSeconds(5)) || !client.isClosed())
+                    throw failure(ProblemCode.BUSY, "SSH_CLOSE_PENDING", "SSH connection cleanup remains incomplete");
+                try {
+                    if (!io.close(Duration.ofSeconds(5)))
+                        throw failure(ProblemCode.BUSY, "SSH_IO_CLOSE_PENDING",
+                            "SSH I/O completion cleanup remains incomplete");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw failure(ProblemCode.BUSY, "SSH_IO_CLOSE_PENDING",
+                        "SSH I/O completion cleanup remains incomplete");
+                }
+                if (session != null && !session.isClosed() || callbacks.get() != 0)
                     throw failure(ProblemCode.BUSY, "SSH_CLOSE_PENDING", "SSH connection cleanup remains incomplete");
                 if (command != null && !command.close())
                     throw failure(ProblemCode.BUSY, "SSH_COMMAND_CLOSE_PENDING",
@@ -572,6 +588,21 @@ public final class SshConnector implements AutoCloseable {
                         throw failure(ProblemCode.BUSY, "SFTP_FILE_CLOSE_PENDING", "File channel cleanup remains incomplete");
                     fileChannel = null;
                 }
+                if (fileObserver != null) {
+                    fileObserver.interrupt();
+                    try {
+                        fileObserver.join(1500);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw failure(ProblemCode.BUSY, "SFTP_FILE_OBSERVER_PENDING",
+                            "File cancellation observer cleanup remains incomplete");
+                    }
+                    if (fileObserver.isAlive())
+                        throw failure(ProblemCode.BUSY, "SFTP_FILE_OBSERVER_PENDING",
+                            "File cancellation observer cleanup remains incomplete");
+                    fileObserver = null;
+                }
+                fileOwner = null;
                 command = null;
                 transfer = null;
                 closed = true;

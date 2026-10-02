@@ -493,7 +493,7 @@ class DeploymentReferenceFlowTest extends DeploymentExecutionFixture {
                     }
                 }
             }
-            runtime.releaseModRecovery();
+            runtime.modRecovery().release();
         }
     }
 

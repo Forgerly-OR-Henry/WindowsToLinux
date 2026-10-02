@@ -46,14 +46,44 @@ public final class PlatformFrame extends JFrame {
     /** Permanent model inventory and capability checks. / 常驻模型清单及能力检查。 */
     private gold.debug.windowstolinux.app.ui.ai.PlatformModelsPane models;
 
-    /** Permanent connection and transfer threshold settings. / 常驻连接及传输阈值设置。 */
-    private gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane transfers;
+    /** Owns mounted preference views with one window lifecycle. / 以同一窗口生命周期持有已挂载偏好视图。 */
+    private final SettingsViews settingsViews = new SettingsViews();
 
-    /** Permanent policy preference independent of AI review. / 独立于 AI 审批的常驻策略偏好。 */
-    private gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane authorization;
+    /** Preference surfaces grouped by their privacy and detach lifecycle. / 按隐私及分离生命周期组织的偏好界面。 */
+    private final class SettingsViews {
+        /** Binds the same outer window. / 绑定同一外围窗口。 */
+        private SettingsViews() {
+        }
 
-    /** Permanent diagnostic management page. / 常驻诊断管理页面。 */
-    private gold.debug.windowstolinux.app.ui.setting.LogSettingsPane logs;
+        /** Permanent connection and transfer threshold settings. / 常驻连接及传输阈值设置。 */
+        private gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane transfers;
+
+        /** Permanent policy preference independent of AI review. / 独立于 AI 审批的常驻策略偏好。 */
+        private gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane authorization;
+
+        /** Optional file explanation settings. / 可选文件说明设置。 */
+        private gold.debug.windowstolinux.app.ui.setting.FileSettingsPane fileSettings;
+
+        /** Permanent diagnostic management page. / 常驻诊断管理页面。 */
+        private gold.debug.windowstolinux.app.ui.setting.LogSettingsPane logs;
+
+        /** Applies the same privacy state to every preference view. / 将同一隐私状态应用到所有偏好视图。
+         * @param locked current privacy state / 当前隐私状态 */
+        private void locked(boolean locked) {
+            if (transfers != null) transfers.setLocked(locked);
+            if (authorization != null) authorization.setLocked(locked);
+            if (fileSettings != null) fileSettings.setLocked(locked);
+            if (logs != null) logs.setLocked(locked);
+        }
+
+        /** Detaches every mounted settings view without cancelling accepted writes. / 分离所有已挂载设置视图而不取消已接纳写入。 */
+        private void close() {
+            if (transfers != null) transfers.close();
+            if (authorization != null) authorization.close();
+            if (fileSettings != null) fileSettings.close();
+            if (logs != null) logs.close();
+        }
+    }
 
     /** Permanent original-task inspection and recovery. / 常驻原任务检查及恢复。 */
     private gold.debug.windowstolinux.app.ui.task.TaskRecoveryPane tasks;
@@ -137,19 +167,7 @@ public final class PlatformFrame extends JFrame {
         shell.register(settingsScroll, "security.settings", "shield", 20, true);
         shell.register(extensions.settingsComponent(), "platform.modSettings", "panels-top-left", 60, true);
         getContentPane().add(shell, BorderLayout.CENTER);
-        logIssue.setName("platform.logIssue");
-        modStatus.setName("platform.modStatus");
-        modIssues.setName("platform.modProblems");
-        messages.bind(modIssues, "platform.modProblems");
-        modIssues.setVisible(false);
-        modIssues.addActionListener(event -> showModProblems());
-        var footer = new JPanel(new java.awt.GridLayout(0, 1));
-        var modLine = new JPanel(new BorderLayout());
-        modLine.add(modStatus, BorderLayout.CENTER);
-        modLine.add(modIssues, BorderLayout.EAST);
-        footer.add(logIssue);
-        footer.add(modLine);
-        getContentPane().add(footer, BorderLayout.SOUTH);
+        installFooter();
         lock = DesktopLockController.attach(this, security, catalog, reports, shell.utilities(), appearance.components,
             false, () -> content.setSelectedComponent(settingsScroll));
         lock.onLockChange(locked -> {
@@ -159,12 +177,7 @@ public final class PlatformFrame extends JFrame {
                 servers.setLocked(locked);
             if (models != null)
                 models.setLocked(locked);
-            if (transfers != null)
-                transfers.setLocked(locked);
-            if (authorization != null)
-                authorization.setLocked(locked);
-            if (logs != null)
-                logs.setLocked(locked);
+            settingsViews.locked(locked);
             if (tasks != null)
                 tasks.setLocked(locked);
             if (navigation != null)
@@ -186,6 +199,23 @@ public final class PlatformFrame extends JFrame {
         setSize(1120, 760);
         setMinimumSize(new java.awt.Dimension(800, 560));
         setLocationRelativeTo(null);
+    }
+
+    /** Mounts startup and diagnostic feedback independently of the page shell. / 独立于页面外壳挂载启动及诊断反馈。 */
+    private void installFooter() {
+        logIssue.setName("platform.logIssue");
+        modStatus.setName("platform.modStatus");
+        modIssues.setName("platform.modProblems");
+        messages.bind(modIssues, "platform.modProblems");
+        modIssues.setVisible(false);
+        modIssues.addActionListener(event -> showModProblems());
+        var footer = new JPanel(new java.awt.GridLayout(0, 1));
+        var modLine = new JPanel(new BorderLayout());
+        modLine.add(modStatus, BorderLayout.CENTER);
+        modLine.add(modIssues, BorderLayout.EAST);
+        footer.add(logIssue);
+        footer.add(modLine);
+        getContentPane().add(footer, BorderLayout.SOUTH);
     }
 
     /** Sets standard dialog labels from the chosen application language. / 按所选应用语言设置标准弹窗按钮。 */
@@ -217,8 +247,8 @@ public final class PlatformFrame extends JFrame {
         shell.pins(navigation, navigation::setCollapsed);
         mods = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane(service, actions, appearance.components,
             messages, () -> {
-            if (logs != null)
-                content.setSelectedComponent(logs);
+            if (settingsViews.logs != null)
+                content.setSelectedComponent(settingsViews.logs);
         }, navigation);
         modManagement.setName("mods.management");
         modManagement.addTab(messages.text("mods.installed"), messages.bind(mods, "mods.installed"));
@@ -249,8 +279,8 @@ public final class PlatformFrame extends JFrame {
         }
         originals = new gold.debug.windowstolinux.app.ui.mod.ModOriginalsPane(service.orElseThrow(),
             appearance.components, messages, mods::refresh, () -> {
-            if (logs != null)
-                content.setSelectedComponent(logs);
+            if (settingsViews.logs != null)
+                content.setSelectedComponent(settingsViews.logs);
         });
         mods.installMaintenance(service.orElseThrow(), originals::refresh);
         modManagement.addTab(messages.text("originals.title"), messages.bind(originals, "originals.title"));
@@ -347,47 +377,58 @@ public final class PlatformFrame extends JFrame {
     /** Mounts independent platform connection and no-progress preferences. / 挂载独立平台连接及无进展偏好。
      * @param service shared persisted threshold owner / 共用持久阈值所有者 */
     public void installTransfers(gold.debug.windowstolinux.app.service.linux.TransferSettingsService service) {
-        if (!SwingUtilities.isEventDispatchThread() || transfers != null)
+        if (!SwingUtilities.isEventDispatchThread() || settingsViews.transfers != null)
             throw new IllegalStateException("Transfer settings must be installed once on the EDT");
-        transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, appearance.components,
+        settingsViews.transfers = new gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane(service, appearance.components,
             messages);
-        content.addTab(messages.text("transfer.settings.title"), messages.bind(transfers, "transfer.settings.title"));
-        shell.register(transfers, "transfer.settings.title", "arrow-right", 30, true);
-        transfers.setLocked(!security.securityState().unlocked());
+        content.addTab(messages.text("transfer.settings.title"), messages.bind(settingsViews.transfers, "transfer.settings.title"));
+        shell.register(settingsViews.transfers, "transfer.settings.title", "arrow-right", 30, true);
+        settingsViews.transfers.setLocked(!security.securityState().unlocked());
     }
 
-    /** Mounts platform authorization preferences independently of business AI modes. / 独立于业务 AI 模式挂载平台授权偏好。
+    /** Mounts platform settingsViews.authorization preferences independently of business AI modes. / 独立于业务 AI 模式挂载平台授权偏好。
      * @param service actual preference and scope owner / 实际偏好及作用域所有者 */
     public void installAuthorization(gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService service) {
-        if (!SwingUtilities.isEventDispatchThread() || authorization != null)
+        if (!SwingUtilities.isEventDispatchThread() || settingsViews.authorization != null)
             throw new IllegalStateException("Authorization settings must be installed once on the EDT");
-        authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service,
+        settingsViews.authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service,
             appearance.components, messages);
-        content.addTab(messages.text("authorization.title"), messages.bind(authorization, "authorization.title"));
-        shell.register(authorization, "authorization.title", "shield-alert", 40, true);
-        authorization.setLocked(!security.securityState().unlocked());
+        content.addTab(messages.text("authorization.title"), messages.bind(settingsViews.authorization, "authorization.title"));
+        shell.register(settingsViews.authorization, "authorization.title", "shield-alert", 40, true);
+        settingsViews.authorization.setLocked(!security.securityState().unlocked());
+    }
+
+    /** Mounts the persistent optional deletion explanation preference. / 挂载持久可选删除说明偏好。
+     * @param service actual preference owner / 实际偏好所有者 */
+    public void installFileSettings(gold.debug.windowstolinux.app.service.file.FileSettingsService service) {
+        if (!SwingUtilities.isEventDispatchThread() || settingsViews.fileSettings != null)
+            throw new IllegalStateException("File settings must be installed once on EDT");
+        settingsViews.fileSettings = new gold.debug.windowstolinux.app.ui.setting.FileSettingsPane(service, appearance.components, messages);
+        content.addTab(messages.text("file.settings.title"), messages.bind(settingsViews.fileSettings, "file.settings.title"));
+        shell.register(settingsViews.fileSettings, "file.settings.title", "folder-open", 35, true);
+        settingsViews.fileSettings.setLocked(!security.securityState().unlocked());
     }
 
     /** Mounts actual log management and storage-failure feedback. / 挂载实际日志管理及存储失败反馈。
      * @param service actual category and storage owner / 实际类别及存储所有者 */
     public void installLogs(gold.debug.windowstolinux.app.service.log.PlatformLogService service) {
-        if (!SwingUtilities.isEventDispatchThread() || logs != null)
+        if (!SwingUtilities.isEventDispatchThread() || settingsViews.logs != null)
             throw new IllegalStateException("Log settings must be installed once on the EDT");
-        logs = new gold.debug.windowstolinux.app.ui.setting.LogSettingsPane(service, appearance.components, messages);
-        content.addTab(messages.text("logs.title"), messages.bind(logs, "logs.title"));
-        shell.register(logs, "logs.title", "folder-open", 50, true);
+        settingsViews.logs = new gold.debug.windowstolinux.app.ui.setting.LogSettingsPane(service, appearance.components, messages);
+        content.addTab(messages.text("logs.title"), messages.bind(settingsViews.logs, "logs.title"));
+        shell.register(settingsViews.logs, "logs.title", "folder-open", 50, true);
         logSubscription = service.onIssue(problem -> SwingUtilities.invokeLater(() -> showLogIssue(problem)));
         service.issue().ifPresent(this::showLogIssue);
-        logs.setLocked(!security.securityState().unlocked());
+        settingsViews.logs.setLocked(!security.securityState().unlocked());
     }
 
     /** Mounts retained tasks through a narrow host contract, reusing the existing log history page. / 通过窄宿主契约挂载保留任务，复用已有日志历史页。
      * @param service original task-management service / 原任务管理服务 */
     public void installTasks(gold.debug.windowstolinux.app.service.task.TaskManagement service) {
-        if (!SwingUtilities.isEventDispatchThread() || tasks != null || logs == null)
+        if (!SwingUtilities.isEventDispatchThread() || tasks != null || settingsViews.logs == null)
             throw new IllegalStateException("Task management must be installed once after logs on the EDT");
         tasks = new gold.debug.windowstolinux.app.ui.task.TaskRecoveryPane(service, appearance.components, messages,
-            () -> content.setSelectedComponent(logs));
+            () -> content.setSelectedComponent(settingsViews.logs));
         content.addTab(messages.text("tasks.title"), messages.bind(tasks, "tasks.title"));
         shell.register(tasks, "tasks.title", "panels-top-left", 40, false);
         content.addChangeListener(event -> {
@@ -466,12 +507,7 @@ public final class PlatformFrame extends JFrame {
             servers.close();
         if (models != null)
             models.close();
-        if (transfers != null)
-            transfers.close();
-        if (authorization != null)
-            authorization.close();
-        if (logs != null)
-            logs.close();
+        settingsViews.close();
         if (tasks != null)
             tasks.close();
         if (mods != null)

@@ -80,6 +80,7 @@ class ModLifecycleIntegrationTest {
     static final String SOURCE = """
         package example.fixture;
         import gold.debug.windowstolinux.appapi.mod.*;
+        import gold.debug.windowstolinux.appapi.task.*;
         
         import gold.debug.windowstolinux.appapi.ui.*;
         import java.util.*;

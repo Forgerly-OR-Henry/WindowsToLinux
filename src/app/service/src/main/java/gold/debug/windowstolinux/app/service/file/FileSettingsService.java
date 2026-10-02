@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.service.file;
 import java.sql.SQLException;
 import java.util.Objects;
 import javax.swing.SwingUtilities;
+
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 
@@ -10,8 +11,10 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 public final class FileSettingsService {
     /** Saved application preference. / 应用持久偏好。 */
     public static final String KEY = "file_delete_ai_explanation";
+
     /** Actual storage owner. / 实际存储所有者。 */
     private final PlatformPersistence persistence;
+
     /** Current user privacy boundary. / 当前用户隐私边界。 */
     private final DesktopSecurityService security;
 

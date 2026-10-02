@@ -8,13 +8,13 @@
 
 当前根 Maven 聚合已切换为 `src/appapi`、`src/app` 和 `src/mod`；旧 shared/web 与 SQLite JDBC 已退出活动依赖。APP 默认入口保持 H2 2.5.250、原任务与能力授权、常驻服务器/模型配置、救援和 Mod 生命周期。官方 deployment Mod 已承接确定性、辅助和自主模式及部署后管理；功能验收按各批有效实际结果合集记录，源码结构及编译成功不作为真实远端验收证据。
 
-- 文档状态：S1～S5 活动源码迁移和首次完整根测试编译已完成；本机适用功能按有效实际结果合集验证，API 外形后置；当前界面在既有 Swing 与 Mod 边界内统一样式。
+- 文档状态：按当前活动源码与 1.2 分包规范同步；1.1 既有迁移及功能验收记录见其开发文档，1.2 实现与本机回归仍在进行，最终验收以对应开发文档证据为准。
 - 当前实现范围：12 个 Maven 叶子模块；平台装配在 `app/main`，公开 Mod 合同在 `appapi`，业务实现及其 helper、资源和 H2 Schema 在 `mod/deployment`。目录只列实际源码包，不创建空职责包。
 - 历史边界：`history-src` 保持冻结；仍存的旧 `src/shared`/`src/web` 文件不属于根活动构建，S6 备份 Mod 与 S7 发行打包仍暂缓。
 - 服务器/秘密引用支持按精确原资源和业务键只读找回 UUID，由 appapi 声明、service 校验原任务与代次、db 查询自身登记；显式恢复拒绝新增预留和秘密创建。Mod 负责保存原恢复事实及核对自己的业务结果，平台不读取业务私有表。
 - 已确认能力边界：受管应用生命周期复用既有模块，不新增独立 Maven 模块
 - 宿主失败报告复用 `app/db/log` 应急编码与 `app/service/log` 回填；`app/main/error` 仅提取有界安全证据和绑定实时平台日志，不新增文本日志目录或独立日志框架。
-- 更新日期：2026-10-02（APP 分包规范与架构检查；简单功能包、平台文件命名和 Mod 第一层职责规则随 1.2 迁移同步）
+- 更新日期：2026-10-03（APP 分包、平台文件命名、Mod 自主组织及精确门禁随 1.2 迁移同步）
 - 开发总纲：[DEVELOPMENT.md](development/DEVELOPMENT.md)
 - 功能分工：[分析与 Linux 部署链](development/PHASE-0.3.md#architecture)
 
@@ -45,6 +45,7 @@ WindowsToLinux/
    │  │  ├─ ai/
    │  │  ├─ connect/
    │  │  ├─ error/
+   │  │  ├─ file/
    │  │  ├─ init/
    │  │  ├─ log/
    │  │  ├─ mod/
@@ -268,7 +269,7 @@ test/
 - `mod/deployment/service/standard/analyze` 只生成来源绑定的确定性事实；跨语言协调、规则、注册、生态与工作负载分别归其现有职责包。辅助与自主模式各自拥有提案和执行门禁，不反向依赖彼此的算法。
 - `mod/deployment/service/core/model` 保存多个引擎共用纯值；公共交付归 `service/core/delivery`，业务记录归 `db`，秘密引用归 `secret`。File 与 Git 编排归 `file`，不复制平台素材能力。
 - 标准计划、构建、工具链、输入与发布分别归 `service/standard/deploy` 的实际职责包。发行版和运行时支持判断分别归 `support/distro`、`support/runtime`；不因类数或目录对称新增模块、空包或委托壳。
-- `app/linux` 独占 Apache SSHD 与物理命令、传输实现；Mod `linux` 通过公开受管 RemoteSession 发送固定业务协议。语言或工具链差异不得复制 SSH/SFTP、任务准入或通用执行逻辑。
+- `app/linux/sftp` 复用受管 SSH 会话执行远端文件协议；`app/linux` 独占 Apache SSHD 与物理命令、传输实现；Mod `linux` 通过公开受管 RemoteSession 发送固定业务协议。语言或工具链差异不得复制 SSH/SFTP、任务准入或通用执行逻辑。
 - helper 按显式清单组装；语言分派位于 `fragments/ecosystem`，原生数据库位于 `fragments/database`，其余基础、输入、发布、运行、备份和恢复片段按实际职责分组。仅资源迁移不改变组装字节、顺序、协议或固定摘要；行为变更需同步身份与合同。
 - 文件、包和类型存在不证明运行验收完成；真实 Linux 与本机受控回包分别记录。实际活动包必须出现在第一节，独立验收夹具不属于 Maven 业务模块。
 
@@ -323,7 +324,7 @@ APP 包名使用小写英文，采用常见、准确的名词或动词；`instal
 | 数据库 | `app/db/connect` 保存连接与事务基础，`schema` 保存命名空间和访问隔离；记录与读写按 `ai`、`server`、`security`、`setting`、`sshrecover`、`task`、`file` 等实际功能归包。 |
 | 平台服务 | 普通接口与专属数据分别归 `ai`、`server`、`file`、`security`、`task` 等功能；通用服务错误归 `error`，SSH 救援归 `sshrecover`。 |
 | SSH 与 SFTP | `app/linux/ssh/connect` 和 `ssh/recover` 有实际独立职责；`sftp` 使用已有受管 SSH 会话承担远端文件协议。其他模块的 SSH 救援使用单层 `sshrecover`。 |
-| 界面 | 控件和包内协作归 `control`，主窗口归 `window`，后台与通用恢复归 `task`，Mod 挂载归 `mod`，调试归 `debug`，语言与错误分别归 `language`、`error`。 |
+| 界面 | 控件和包内协作归 `control`，主窗口归 `window`，通用受管任务启动控件、后台与通用恢复归 `task`，Mod 挂载归 `mod`，调试归 `debug`，语言与错误分别归 `language`、`error`。 |
 | Mod 平台 | 安装、开发发现、运行与配置分别归 `app/mod/install`、`dev`、`run`、`config`；功能不同不因同词合并模块。 |
 
 同一功能不同时保留浅层包和加层后的同义包。Java 声明与物理路径一致、类型可见性、平台公开合同、Mod 入口和导出、权限、任务归属及实际依赖检查均保留。根包允许实现不表示实现自动公开。
@@ -565,9 +566,9 @@ Facts → Evidence → Assessment → Decision → Plan → Result/Outcome
 
 H2 引擎及实际连接所有权由 `app/db/connect/PlatformDatabase` 承担；模块根包的 `PlatformPersistence`、`DesktopPersistence` 只组合仓库。任务、日志和 Schema 实现依赖连接层，连接层不反向引用仓库、任务或 Schema 类型；口令派生只接收 Schema 层提供的精确已编码数据库用户名，沿用原命名空间和算法。
 
-宿主启动通过 `app/main/mod/PlatformModHost` 向 Mod 上下文与启动图注入已有能力和原会话访问，不由 `main/mod` 反向引用 `main/startup/PlatformRuntime`。`RunModeResolver` 用自身代码源定位所在的 main 模块，数据根仍用 DB 模块锚点。`app/ui/shell/PlatformNavigationShell` 负责侧栏、标题及设置分类，保留已挂载页面实例；`app/ui/component` 集中管理卡片、主题及操作区换行，官方 Mod 的 `ui/DeploymentPageStyle` 仅使用 Swing 主题值实现本地展示与从属高级窗口，不依赖宿主 UI 类。`app/ui/mod/ModPageRegistry` 只管理 Mod 页面及其生命周期，由 shell 注入挂载界面；Mod 管理页面不反向引用 shell。 CLASS 调试预览通过 `appapi.ui.UiService.registerPreview` 独立登记，仍受同一作者提交、锁定和关闭约束；普通页面导航不包含预览，JAR/App 未安装预览宿主。平台固定预览只持有显示控件，Mod 预览只捕获不可变示例值，不捕获原任务、数据库、SSH 或模型能力。
+宿主启动通过 `app/main/mod/PlatformModHost` 向 Mod 上下文与启动图注入已有能力和原会话访问，不由 `main/mod` 反向引用 `main/start/PlatformRuntime`。`RunModeResolver` 用自身代码源定位所在的 main 模块，数据根仍用 DB 模块锚点。`app/ui/window/PlatformNavigationShell` 负责侧栏、标题及设置分类，保留已挂载页面实例；`app/ui/control` 集中管理卡片、主题及操作区换行，官方 Mod 的 `ui/DeploymentPageStyle` 仅使用 Swing 主题值实现本地展示与从属高级窗口，不依赖宿主 UI 类。`app/ui/mod/ModPageRegistry` 只管理 Mod 页面及其生命周期，由 window 注入挂载界面；Mod 管理页面不反向引用 window。 CLASS 调试预览通过 `appapi.ui.UiService.registerPreview` 独立登记，仍受同一作者提交、锁定和关闭约束；普通页面导航不包含预览，JAR/App 未安装预览宿主。平台固定预览只持有显示控件，Mod 预览只捕获不可变示例值，不捕获原任务、数据库、SSH 或模型能力。
 
-`app/service/contract/profile` 保存服务器和模型的非秘密配置值，`contract/result` 保存模型清单摘要，`contract/spi` 保存平台配置所需的窄访问接口；这些契约不反向引用 service 的服务器或模型实现。`service/security` 管理安全会话，`service/task` 管理任务与授权；任务绑定的秘密适配归 `service/secret`，实际辅助进程适配归 `service/process`，二者依赖任务基础，任务基础不反向引用能力实现或日志服务。
+`app/service/server` 与 `app/service/ai` 分别保存所属功能的非秘密配置值、清单摘要及窄访问接口；功能合同不反向引用具体实现。`service/security` 管理安全会话，`service/task` 管理任务与授权；任务绑定的秘密适配归 `service/secret`，实际辅助进程适配归 `service/process`，二者依赖任务基础，任务基础不反向引用能力实现或日志服务。
 
 | 枚举性质   | 统一后缀      | 示例                         |
 | ---------- | ------------- | ---------------------------- |
@@ -587,11 +588,13 @@ H2 引擎及实际连接所有权由 `app/db/connect/PlatformDatabase` 承担；
 
 | 编号 | 枚举命名规范                                             | 正确示例                                       | 禁止示例                   |
 | ---- | -------------------------------------------------------- | ---------------------------------------------- | -------------------------- |
-| G-01 | 枚举必须使用“领域对象＋语义后缀”。                       | `LinuxDistroType`                              | `LinuxDistro`              |
+| G-01 | 枚举优先使用“领域对象＋语义后缀”；已确认 SDK 短名按精确类型登记。                       | `LinuxDistroType`                              | `LinuxDistro`              |
 | G-02 | 常用语义后缀优先；职责已明确的短名按精确类型登记，不能因浅层迁移强制加后缀。           | `SourceLanguageType`                           | `SourceLanguage`           |
 | G-03 | 生产、测试、顶级和嵌套枚举使用同一规则。                 | `ComponentIssue.SeverityLevel`                 | `ComponentIssue.Severity`  |
 | G-04 | APP 与平台 API 的顶级简单名称保持唯一；Mod 类型以完整限定名区分。                       | `DeploymentPlanAction`、`DeploymentTraceEvent` | 两个 `DeploymentStep`      |
-| G-05 | 嵌套类型以外部类型形成唯一作用域，但仍必须使用语义后缀。 | `ComponentDataPath.AccessMode`                 | `ComponentDataPath.Access` |
+| G-05 | 嵌套类型以外部类型形成唯一作用域；语义明确的 SDK 短名可精确登记。 | `ComponentDataPath.AccessMode`                 | `ComponentDataPath.Access` |
+
+平台文件合同的 `appapi.file.DeleteEffect` 表达回收或永久删除的实际效果，`FileChoice.Directory` / `FileChoice.Conflict` 分别表达两级冲突选择；它们依外部作用域保留简短语义名。`appapi.file.FileInfo` 是请求路径、实际对象、属性与链接链的不可变观测，和 `appapi.server.ServerInfo` 一样按完整限定名登记；不因此允许任意 `OtherInfo`、`OtherChoice`、私有同名类或广泛禁用命名检查。
 
 枚举常量统一使用：
 
@@ -703,7 +706,7 @@ Java 包前缀固定为 `gold.debug.windowstolinux`，其后按 `appapi`、`app.
 6. 新增包、合并包及资源移动按实际职责核对包内协作、重名、类可见性、资源路径及依赖，不为目录对称创建空包或委托壳。
 7. UI 使用明确的服务接口、数据合同与平台门面，不能直接访问 DB、Linux 或其他底层执行实现，也不能绕过服务直接调用公开 SDK 执行能力。
 8. Mod 入口发现、公开包导出、Mod 数据归属、任务、权限与资源生命周期不因内部命名自由而放宽。调用其他 Mod 必须经过已声明依赖和已导出接口。
-9. 普通类的既有职责规模检查继续覆盖 25 个实例字段、30 个直接声明方法及单方法 80 个 JDK AST 语句；行数、文件数和层数不能替代语义判断。
+9. 普通实现类保留 25 个实例字段、30 个直接声明的实现方法、单方法 80 个 JDK AST 语句上限。公开 API 接口的声明不按实现方法数限制；实现类仅排除实际 SDK 接口中匹配的公共 `@Override` 单语句委托：须直接返回调用结果或仅委托调用，接收者可由既有访问器取得，参数中的调用只允许精确登记的无参数不可变默认值 `java.util.Optional.empty()` 与 `appapi.file.FileChoice.ask()`，且不含内联校验分支、赋值、构造、数组分配或 lambda。所有字段、委托方法本身的语句数和承担实际工作的实现均继续检查；不能用带校验的 wrapper、无关方法、其它同名工厂或虚构接口规避。行数、文件数和层数不能替代语义判断。
 10. 官方 deployment 已有的纯值与引擎、只读分析与执行、协议与业务编排、仓库与界面依赖边界继续验收；其当前目录是实际实现事实，不作为 Mod 作者内部组织模板。
 
 ### 4.4 Linux 部署链内部依赖方向
@@ -739,7 +742,7 @@ mod/deployment ──→ appapi
 
 1. `appapi` 是独立公开合同，不反向依赖 APP 实现或业务 Mod。官方 deployment 的生产依赖仅为 appapi 和其明确外部编解码依赖；APP 的 Maven 主体不依赖业务 Mod。测试宿主依赖不构成生产授权。
 2. `app/main` 是实际装配根。平台 Linux、来源、秘密及 AI 实现不反向引用 UI，业务 Mod 不读取 APP 私有实现或其它 Mod 私有数据。
-3. `app/ai` 仅包含平台模型调用与库存纯值，不依赖数据库或界面。DB 和 UI 显式依赖 `app/ai`，仅复用 `AiCapabilityType`、`AiPurposeType`、`AiPurposeAssignment` 库存值；内部用途名称不替代公开 Mod 的 `AiPurpose` 合同。
+3. `app/ai` 包含平台模型调用及纯值，不依赖数据库或界面。DB 和 UI 显式依赖 `app/ai`，复用 `AiCapabilityType`、`AiCapabilityStateType`、`AiCapabilityCheck`、`AiPurposeType`、`AiPurposeAssignment` 的能力证据及用途值；内部用途名称不替代公开 Mod 的 `AiPurpose` 合同。
 4. APP UI 经 `app/service` 发起平台操作，不能直接使用 DB、Windows、Linux、来源、秘密或 Mod 执行实现，也不能绕过服务直接调用公开 SDK 的 Linux、进程、来源写入或秘密能力。SDK 的任务、问题、UI、审阅和只读值合同可按实际用途使用，不设旧业务整包例外。
 5. 服务通过实际任务、审批、秘密与引用账本维护授权；不能靠传递依赖取得未声明的直接生产依赖。平台与业务均禁止循环依赖和全局静态状态绕过边界。
 6. 辅助分析只使用原冻结源码的只读 list/read/search 和有界 AI 请求；原候选构建、纠正、恢复和正式发布由已审阅的执行路径负责，分析不能取得执行、秘密或可写源码能力。
@@ -1132,10 +1135,10 @@ mod-project/
 
 当前门禁适用于第 1～7 节的活动实现。APP 与 Mod 使用各自适用的组织规则；多个 Mod 的入口及内部同名类型以完整限定名区分。Mod 内部自由不豁免入口、导出、平台权限、资源归属及实际依赖检查；实施与验证见 [1.2 开发文档](development/PHASE-1.2.md#naming-delivery)。
 
-### S5-03/S5-04 当前模式源码
+### 部署 Mod 的当前模式源码
 
-部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面新增惰性自主部署页，仍按实际 Mod 所有者登记。活动根已退出旧 shared/web；S3/S4/S5 本机适用合同及受影响门禁已按有效实际结果合集验证。
+部署 Mod 的严格模型协议与纯提案值归 `ai`，自主决策、任务与恢复编排归 `service/agent`，辅助模式的只读建议与修订门禁归 `service/standard/deploy/assistance`。公共整图发布与原任务正式提交归 `service/core/delivery`，只接收已审阅不可变描述；两个引擎不反向调用彼此。源码阅读器只读原快照并拒绝内容漂移，发送门禁在实际 SSH 边界复核原审批。默认页面惰性创建自主部署页，按实际 Mod 所有者登记。活动根已退出旧 shared/web；1.1 的既有模式验收记录不替代 1.2 本机回归。
 
-### S3 平台库存值接线
+### 平台库存值接线
 
-`app/ai/model` 保存实际平台配置与模型调用使用的三个纯值。数据库和 UI 均显式依赖 `app-ai`，平台服务继续通过既有 AI 能力适配；不反向引入 DB/UI 依赖，也不向 `appapi` 混入内部 DEPLOYMENT 枚举。旧 AiModelGroupType 无活动生产调用，移除其测试未用 import，未在新包建立占位类型。旧 shared/web 已退出活动图；当前活动测试源已完整根编译，受影响结构门禁已通过。
+`app/ai/model` 保存实际平台配置与模型调用使用的能力、独立能力验证证据及用途纯值。数据库和 UI 均显式依赖 `app-ai`，平台服务通过 AI 能力适配；不反向引入 DB/UI 依赖，也不向 `appapi` 混入内部 DEPLOYMENT 枚举。文字、图片、文件语音与实时语音的状态均由现行配置及对应能力证据表达。

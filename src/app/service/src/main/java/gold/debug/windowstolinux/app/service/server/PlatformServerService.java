@@ -29,7 +29,6 @@ import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 
-
 /** Manages platform server settings and task-owned authentication checks without deployment code. / 管理平台服务器设置及任务所属认证检查，不依赖部署代码。 */
 public final class PlatformServerService implements ServerProfileEditor, AutoCloseable {
     /** Stable protocol for a check that never dispatches a remote command. / 从不发送远端命令的连接检查稳定协议。 */

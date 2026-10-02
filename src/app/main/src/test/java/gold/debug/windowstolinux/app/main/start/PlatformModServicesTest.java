@@ -70,6 +70,8 @@ class PlatformModServicesTest {
                 
                 
                 import gold.debug.windowstolinux.appapi.server.*;
+                import gold.debug.windowstolinux.appapi.db.ModDatabase;
+                import gold.debug.windowstolinux.appapi.task.*;
                 import java.util.*;
                 public final class Mod implements example.provider.api.Service {
                     private final ModDatabase db;
@@ -318,7 +320,7 @@ class PlatformModServicesTest {
                         return f.invoke(p, "snapshot", context);
                     });
                     handle.call(context, p -> {
-                        callback.set(f.runtime.tasks().hostCallback(context, PROVIDER, VERSION, (a, b) -> "allowed"));
+                        callback.set(f.runtime.tasks().callbacks().hostCallback(context, PROVIDER, VERSION, (a, b) -> "allowed"));
                         return "ready";
                     });
                     assertEquals("SERVICE_CALLBACK_EXPIRED",

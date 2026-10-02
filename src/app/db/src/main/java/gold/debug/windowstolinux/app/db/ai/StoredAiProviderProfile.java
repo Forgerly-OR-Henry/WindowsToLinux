@@ -10,7 +10,7 @@ import java.util.Objects;
  * @param fileEndpoint optional complete-audio address / 可选完整音频地址
  * @param realtimeEndpoint optional realtime address / 可选实时地址 */
 public record StoredAiProviderProfile(String id, String endpoint, String model, String credentialKey,
-    String fileEndpoint, String realtimeEndpoint) {
+                                      String fileEndpoint, String realtimeEndpoint) {
     /** Validates one model without requiring chat support. / 校验模型，不要求支持文字。
      * @param id identity / 身份
      * @param endpoint chat address or empty / 文字地址或空
@@ -19,12 +19,17 @@ public record StoredAiProviderProfile(String id, String endpoint, String model, 
      * @param fileEndpoint file address or empty / 文件地址或空
      * @param realtimeEndpoint realtime address or empty / 实时地址或空 */
     public StoredAiProviderProfile {
-        id = text(id); endpoint = text(endpoint); model = text(model); credentialKey = text(credentialKey);
-        fileEndpoint = text(fileEndpoint); realtimeEndpoint = text(realtimeEndpoint);
+        id = text(id);
+        endpoint = text(endpoint);
+        model = text(model);
+        credentialKey = text(credentialKey);
+        fileEndpoint = text(fileEndpoint);
+        realtimeEndpoint = text(realtimeEndpoint);
         if (!id.matches("[a-z][a-z0-9-]{0,63}") || model.isEmpty() || credentialKey.isEmpty()
             || endpoint.isEmpty() && fileEndpoint.isEmpty() && realtimeEndpoint.isEmpty())
             throw new IllegalArgumentException("Invalid model connection metadata");
     }
+
     /** Creates a chat-only configuration. / 创建仅文字配置。
      * @param id identity / 身份
      * @param endpoint chat endpoint / 文字端点
@@ -33,8 +38,11 @@ public record StoredAiProviderProfile(String id, String endpoint, String model, 
     public StoredAiProviderProfile(String id, String endpoint, String model, String credentialKey) {
         this(id, endpoint, model, credentialKey, "", "");
     }
+
     /** Normalizes non-secret metadata. / 规范化非秘密元数据。
      * @param value required string / 必需字符串
      * @return trimmed string / 去空白字符串 */
-    private static String text(String value) { return Objects.requireNonNull(value).strip(); }
+    private static String text(String value) {
+        return Objects.requireNonNull(value).strip();
+    }
 }

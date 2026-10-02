@@ -19,7 +19,6 @@ import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.*;
 
-
 /** Owns isolated original-release recovery groups before normal boot assembly. / 在普通启动装配前持有隔离的原发布恢复组。 */
 final class PlatformModRecovery {
     /** Original host capabilities. / 原宿主能力。 */

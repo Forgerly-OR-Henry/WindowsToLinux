@@ -148,7 +148,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var handle = caller.collect("demo", revision, List.of("worker:uploads"), () -> {
                     try {
                         var providerBusy = assertThrows(ApiException.class,
-                            () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                            () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                         assertThrows(SQLException.class,
                             () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
@@ -244,7 +244,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             runtime.modSessions().get(DeploymentApiCallerFixture.CALLER).state().name());
                         assertFalse(runtime.modSessions().get(DeploymentApiCallerFixture.CALLER).resourcesClosed());
                         var maintenance = assertThrows(ApiException.class,
-                            () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                            () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, maintenance.problem().code());
                         assertThrows(SQLException.class,
                             () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
@@ -336,7 +336,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             assertTrue(scalar(runtime,
                                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/restore' AND released_at IS NULL") > 0);
                             var providerBusy = assertThrows(ApiException.class,
-                                () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                                () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                             assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                             assertThrows(SQLException.class,
                                 () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));

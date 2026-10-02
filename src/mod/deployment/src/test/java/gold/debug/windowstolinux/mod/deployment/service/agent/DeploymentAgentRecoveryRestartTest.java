@@ -125,7 +125,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 assertEquals(0, replay.get());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }

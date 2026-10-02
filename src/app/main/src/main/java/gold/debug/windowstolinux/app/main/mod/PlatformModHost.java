@@ -60,11 +60,12 @@ public interface PlatformModHost {
     gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner, String version,
                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
 
-    /** Creates task-bound local source access for one Mod activation. / 为一次 Mod 启用创建任务绑定本地来源访问。
+    /** Creates task-bound file access sharing the original activation's interaction and transport. / 创建与原启用共享交互及传输的任务绑定文件访问。
      * @param owner exact Mod identity / 精确 Mod 身份
      * @param version actual loaded release / 实际已加载版本
+     * @param remote original activation's host-owned capability pair / 原启用宿主持有的能力组合
      * @return host-owned source capability / 宿主持有的来源能力 */
-    gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(String owner, String version);
+    gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(String owner, String version, Remote remote);
 
     /**
      * Creates an activation-bound public server reference capability. / 创建绑定一次启用的公开服务器引用能力。

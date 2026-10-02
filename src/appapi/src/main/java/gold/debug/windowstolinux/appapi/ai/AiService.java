@@ -28,7 +28,7 @@ public interface AiService {
      * @param options finite session and buffering limits / 有限会话及缓冲限制
      * @param listener serialized transcript observations / 串行转写观测
      * @param task original task, whose callback must stay active until completion / 原任务，其回调须保持活动直至完成
-     * @return owned session; caller must finish or cancel before returning from the task / 所属会话；调用方须在任务返回前结束或取消
+     * @return owned session; caller must finish or cancel and observe completion before returning from the task / 所属会话；调用方须在任务返回前结束或取消并观察完成
      * @throws ApiException if route, authorization or opening fails / 路由、授权或打开失败时 */
     VoiceSession openVoice(VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException;
 

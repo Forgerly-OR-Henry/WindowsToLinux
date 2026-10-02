@@ -117,7 +117,7 @@ public final class PlatformModContext implements ContextLease {
         var servers = own(runtime.serverAccess(identity.id(), identity.version(), schema));
         var ai = own(runtime.ai(identity.id(), identity.version()));
         var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
-        var source = own(runtime.source(identity.id(), identity.version()));
+        var source = own(runtime.source(identity.id(), identity.version(), remote));
         var processes = own(runtime.processes(identity.id(), identity.version()));
         var tasks = new RecoveryTasks(
             runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote);
@@ -277,14 +277,14 @@ public final class PlatformModContext implements ContextLease {
      * @param ai original model access / 原模型访问
      * @param db exact business generation / 精确业务代次
      * @param secrets original secret access / 原秘密访问
-     * @param source original source access / 原来源访问
+     * @param file original file access / 原文件访问
      * @param logs original diagnostic owner / 原诊断所有者
      * @param processes original process owner / 原进程所有者
      * @param services original service activation / 原服务启用 */
     private record BoundContext(ModIdentity identity, ModLaunchMode launchMode, UiService ui, TaskService tasks,
                                 InteractionService interaction, ServerService servers, LinuxService linux, AiService ai,
                                 ModDatabase db,
-                                SecretService secrets, FileService source, LogService logs, ProcessService processes,
+                                SecretService secrets, FileService file, LogService logs, ProcessService processes,
                                 ModServices services) implements ModContext {
     }
 

@@ -79,7 +79,7 @@
                 <argument>-classpath</argument>
                 <classpath/>
                 <argument
-                >gold.debug.windowstolinux.app.mod.installation.ModPackageTool
+                >gold.debug.windowstolinux.app.mod.install.ModPackageTool
                 </argument>
                 <argument>describe</argument>
                 <argument>--input</argument>

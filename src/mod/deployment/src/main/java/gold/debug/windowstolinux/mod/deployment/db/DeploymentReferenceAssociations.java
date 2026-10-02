@@ -8,7 +8,6 @@ import java.util.Objects;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 
-
 /** Reads authoritative retained business rows for one original platform association. / 读取一个原平台关联的权威保留业务行。 */
 public final class DeploymentReferenceAssociations {
     /** Original business database. / 原业务库。 */

@@ -18,7 +18,6 @@ import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Applies restart intentions and explicit data retries against original durable facts. / 根据原持久事实应用重启意图和明确数据重试。 */
 public final class ModRestartLedger {
     /** Existing-state responsibility collaborator. / 既有状态职责协作者。 */

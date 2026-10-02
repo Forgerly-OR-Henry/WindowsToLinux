@@ -87,7 +87,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var original = source(runtime);
+            var original = file(runtime);
             var reads = new ArrayList<String>();
             var directories = new ArrayList<String>();
             var observing = (FileService) Proxy.newProxyInstance(getClass().getClassLoader(),
@@ -144,7 +144,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var source = source(runtime);
+            var source = file(runtime);
             run(runtime, task -> {
                 var selection = source.selectDirectory("Source", task);
                 assertThrows(ApiException.class,
@@ -166,7 +166,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var source = source(runtime);
+            var source = file(runtime);
             run(runtime, task -> {
                 var selection = source.selectDirectory("Source", task);
                 assertThrows(ApiException.class, () -> new DeploymentSourcePreparer(source).prepare(selection,
@@ -186,7 +186,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var source = source(runtime);
+            var source = file(runtime);
             var held = new AtomicReference<FileSnapshot>();
             var changed = (FileService) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{FileService.class}, (proxy, method, args) -> {
@@ -249,7 +249,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var source = source(runtime);
+            var source = file(runtime);
             var captured = new CountDownLatch(1);
             var proceed = new CountDownLatch(1);
             var held = new AtomicReference<FileSnapshot>();
@@ -312,7 +312,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
             enable();
             try (var runtime = open()) {
                 start(runtime, true);
-                var source = source(runtime);
+                var source = file(runtime);
                 run(runtime, task -> {
                     var selected = source.selectDirectory("Source", task);
                     assertThrows(ApiException.class,
@@ -337,7 +337,7 @@ class DeploymentSourcePreparerTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var source = source(runtime);
+            var source = file(runtime);
             run(runtime, task -> {
                 var selected = source.selectDirectory("Source", task);
                 var preparer = new DeploymentSourcePreparer(source);

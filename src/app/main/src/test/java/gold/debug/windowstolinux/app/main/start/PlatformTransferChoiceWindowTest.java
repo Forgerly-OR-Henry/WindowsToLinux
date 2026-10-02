@@ -29,7 +29,7 @@ class PlatformTransferChoiceWindowTest {
     Path root;
 
     @Test
-    void actualWindowOffersAllThreeChoicesAndKeepsTerminationAsInitialChoice() throws Exception {
+    void actualWindowOffersThreeConflictChoicesAndKeepsStallTerminationAsInitialChoice() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
@@ -45,7 +45,7 @@ class PlatformTransferChoiceWindowTest {
                 runtime.authorization(), OWNER, VERSION, new TaskInteractionPresenter(frame, messages))) {
                 var conflict = new TransferConflict(
                     new TransferRequest(root.resolve("已存在 文件.txt"), "/application/data.txt", 100), false, 80, 50);
-                String[] labels = {"覆盖", "保留两份", "终止"};
+                String[] labels = {"覆盖", "保留两份", "不处理"};
                 int index = 0;
                 for (var expected : TransferConflictChoice.values()) {
                     var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> success(
@@ -54,7 +54,7 @@ class PlatformTransferChoiceWindowTest {
                     String label = labels[index++];
                     onEdt(() -> {
                         var window = dialog(frame);
-                        assertEquals("终止", window.getRootPane().getDefaultButton().getText());
+                        assertEquals("不处理", window.getRootPane().getDefaultButton().getText());
                         var text = ((JTextArea) named(window, "transfer.conflict.details")).getText();
                         assertTrue(text.contains(conflict.request().localPath().toString()));
                         assertTrue(text.contains(conflict.request().remoteAbsolutePath()));

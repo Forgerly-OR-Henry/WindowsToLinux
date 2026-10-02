@@ -90,20 +90,37 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         return call(request, task, false, Optional.empty());
     }
 
-    /** Routes complete audio only through explicitly selected, file-capable voice models. / 完整音频仅经明确选入且具备文件能力的语音模型路由。 */
-    @Override public OperationResult<VoiceResponse> call(VoiceRequest request, TaskContext task) throws ApiException {
+    /** Routes complete audio only through explicitly selected, file-capable voice models. / 完整音频仅经明确选入且具备文件能力的语音模型路由。
+     * @param request immutable complete audio / 不可变完整音频
+     * @param task authentic original task / 真实原任务
+     * @return actual classified transcript result / 实际分类转写结果
+     * @throws ApiException if route, authority or cleanup fails / 路由、授权或清理失败时 */
+    @Override
+    public OperationResult<VoiceResponse> call(VoiceRequest request, TaskContext task) throws ApiException {
         return callVoice(request, Optional.empty(), task);
     }
 
-    /** Checks the same frozen routing revision before sending audio. / 发送音频前检查相同冻结路由修订。 */
-    @Override public OperationResult<VoiceResponse> call(VoiceRequest request, String expectedRevision, TaskContext task)
+    /** Checks the same frozen routing revision before sending audio. / 发送音频前检查相同冻结路由修订。
+     * @param request immutable complete audio / 不可变完整音频
+     * @param expectedRevision original frozen routing digest / 原冻结路由摘要
+     * @param task authentic original task / 真实原任务
+     * @return actual classified transcript result / 实际分类转写结果
+     * @throws ApiException if revision, route, authority or cleanup fails / 修订、路由、授权或清理失败时 */
+    @Override
+    public OperationResult<VoiceResponse> call(VoiceRequest request, String expectedRevision, TaskContext task)
         throws ApiException {
         requireRevision(expectedRevision);
         return callVoice(request, Optional.of(expectedRevision), task);
     }
 
+    /** Holds routing and credential authority through one actual file request. / 在一次实际文件请求期间持有路由及凭据授权。
+     * @param request bounded complete WAV / 有界完整 WAV
+     * @param expectedRevision optional frozen route / 可选冻结路由
+     * @param task original executing task / 原执行任务
+     * @return actual file transcript outcome / 实际文件转写结果
+     * @throws ApiException if authority, routing or physical cleanup fails / 授权、路由或物理清理失败时 */
     private OperationResult<VoiceResponse> callVoice(VoiceRequest request, Optional<String> expectedRevision,
-        TaskContext task) throws ApiException {
+                                                     TaskContext task) throws ApiException {
         Objects.requireNonNull(request);
         long start = System.nanoTime();
         try {
@@ -118,16 +135,23 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
-    /** Opens one frozen actual audio-input session within the original task. / 在原任务内打开一个冻结的实际音频输入会话。 */
-    @Override public VoiceSession openVoice(VoiceOptions options, VoiceListener listener, TaskContext task)
+    /** Opens one frozen actual audio-input session within the original task. / 在原任务内打开一个冻结的实际音频输入会话。
+     * @param options finite session limits / 有限会话限制
+     * @param listener original-task observations / 原任务观测
+     * @param task authentic original task / 真实原任务
+     * @return ready session with retained actual resources / 持有实际资源的就绪会话
+     * @throws ApiException if route, authority or opening fails / 路由、授权或打开失败时 */
+    @Override
+    public VoiceSession openVoice(VoiceOptions options, VoiceListener listener, TaskContext task)
         throws ApiException {
-        Objects.requireNonNull(options); Objects.requireNonNull(listener);
+        Objects.requireNonNull(options);
+        Objects.requireNonNull(listener);
         long start = System.nanoTime();
         try {
             return scope.call(task, false, () -> {
                 var candidate = voiceCandidate(AiCapabilityType.VOICE_REALTIME, Optional.empty());
                 try (var prepared = capture(candidate, AiPurposeType.VOICE, task, Optional.empty())) {
-                    return openVoice(candidate.profile(), prepared.key(), remaining(options, start), listener, task);
+                    return openVoice(candidate.profile(), prepared.key(), VoiceBudget.remaining(options, start), listener, task);
                 }
             });
         } catch (SQLException failure) {
@@ -135,6 +159,12 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
+    /** Selects the first explicitly routed model with the requested verified input mode. / 选择明确用途路由中首个已验证所需输入方式的模型。
+     * @param capability exact voice input mode / 精确语音输入方式
+     * @param revision optional frozen whole-route digest / 可选冻结整路由摘要
+     * @return selected frozen configuration / 所选冻结配置
+     * @throws SQLException if route storage cannot be read / 路由存储无法读取时
+     * @throws ApiException if mode, route or revision is unavailable / 方式、路由或修订不可用时 */
     private StoredAiProviderConfiguration voiceCandidate(AiCapabilityType capability, Optional<String> revision)
         throws SQLException, ApiException {
         var candidates = revision.isPresent() ? routingSnapshotFor(revision.orElseThrow(), AiPurposeType.VOICE)
@@ -145,14 +175,23 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             error(ProblemCode.UNAVAILABLE, "VOICE_MODE_UNAVAILABLE", "No selected model supports the requested voice input mode"));
     }
 
+    /** Requires a complete non-secret routing digest. / 要求完整且不含秘密的路由摘要。
+     * @param revision requested frozen digest / 请求冻结摘要
+     * @throws ApiException if the digest format is invalid / 摘要格式无效时 */
     private static void requireRevision(String revision) throws ApiException {
         if (revision == null || !revision.matches("[0-9a-f]{64}"))
             throw error(ProblemCode.INVALID_INPUT, "AI_REVISION", "A frozen AI configuration revision is required");
     }
 
-    /** Probes file audio without enrolling a model into a business purpose. / 探测文件音频，不将模型纳入业务用途。 */
+    /** Probes file audio without enrolling a model into a business purpose. / 探测文件音频，不将模型纳入业务用途。
+     * @param profile saved unverified configuration / 已保存未验证配置
+     * @param key temporary protected credential / 临时受保护凭据
+     * @param request bounded WAV probe / 有界 WAV 探测
+     * @param task original verification task / 原验证任务
+     * @return actual classified probe result / 实际分类探测结果
+     * @throws ApiException if authority, resource storage or cleanup fails / 授权、资源存储或清理失败时 */
     OperationResult<VoiceResponse> probeVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
-        char[] key, VoiceRequest request, TaskContext task) throws ApiException {
+                                              char[] key, VoiceRequest request, TaskContext task) throws ApiException {
         long start = System.nanoTime();
         try (var prepared = new Prepared(key.clone(), 1)) {
             return scope.call(task, false, () -> sendVoice(profile, prepared.key(), request, task, start));
@@ -161,26 +200,40 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
-    /** Probes real PCM input and waits for a confirmed transcript. / 探测真实 PCM 输入并等待已确认转写。 */
+    /** Probes real PCM input and waits for a confirmed transcript. / 探测真实 PCM 输入并等待已确认转写。
+     * @param profile saved unverified configuration / 已保存未验证配置
+     * @param key temporary protected credential / 临时受保护凭据
+     * @param options bounded session limits / 有界会话限制
+     * @param pcm actual validated mono PCM16 input / 实际已校验单声道 PCM16 输入
+     * @param task original verification task / 原验证任务
+     * @return actual classified transcript result / 实际分类转写结果
+     * @throws ApiException if authority, opening, observation or cleanup fails / 授权、打开、观测或清理失败时 */
     OperationResult<VoiceResponse> probeRealtime(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
-        char[] key, VoiceOptions options, byte[] pcm, TaskContext task) throws ApiException {
+                                                 char[] key, VoiceOptions options, byte[] pcm, TaskContext task) throws ApiException {
         long start = System.nanoTime();
         try (var prepared = new Prepared(key.clone(), 1)) {
             return scope.call(task, false, () -> {
-                try (var session = openVoice(profile, prepared.key(), remaining(options, start), ignored -> { }, task)) {
+                try (var session = openVoice(profile, prepared.key(), VoiceBudget.remaining(options, start), ignored -> {
+                }, task)) {
                     for (int offset = 0; offset < pcm.length; offset += 65_536) {
                         byte[] chunk = Arrays.copyOfRange(pcm, offset, Math.min(pcm.length, offset + 65_536));
-                        try { session.send(chunk).toCompletableFuture().get(); }
-                        catch (InterruptedException interrupted) {
-                            Thread.currentThread().interrupt(); session.cancel();
+                        try {
+                            session.send(chunk).toCompletableFuture().get();
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            session.cancel();
                             return session.completion().toCompletableFuture().join();
                         } catch (ExecutionException failure) {
                             return session.completion().toCompletableFuture().join();
-                        } finally { Arrays.fill(chunk, (byte) 0); }
+                        } finally {
+                            Arrays.fill(chunk, (byte) 0);
+                        }
                     }
-                    try { return session.finish().toCompletableFuture().get(); }
-                    catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt(); session.cancel();
+                    try {
+                        return session.finish().toCompletableFuture().get();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        session.cancel();
                         return session.completion().toCompletableFuture().join();
                     } catch (ExecutionException failure) {
                         throw error(ProblemCode.UNKNOWN, "VOICE_PROBE_UNKNOWN", "Realtime probe completion could not be established");
@@ -192,50 +245,95 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
+    /** Retains an actual file client until physical termination and durable original-task release. / 保留实际文件客户端，直至物理终止及原任务持久释放。
+     * @param profile exact provider configuration / 精确提供方配置
+     * @param key temporary credential / 临时凭据
+     * @param request complete validated WAV / 完整已校验 WAV
+     * @param task original executing task / 原执行任务
+     * @param start original monotonic deadline start / 原单调期限起点
+     * @return classified actual file result / 分类后的实际文件结果
+     * @throws ApiException if admission, configuration or cleanup fails / 准入、配置或清理失败时 */
     private OperationResult<VoiceResponse> sendVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
-        char[] key, VoiceRequest request, TaskContext task, long start) throws ApiException {
+                                                     char[] key, VoiceRequest request, TaskContext task, long start) throws ApiException {
         ResourceLease lease = tasks.retain(task, new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
         var pending = new PendingCall(task, lease);
-        synchronized (this) { retained.add(pending); }
+        synchronized (this) {
+            retained.add(pending);
+        }
         try {
-            try { pending.voiceCall = new VoiceHttpCall(URI.create(profile.fileEndpoint()), key, profile.model(), profile.id(), request,
-                remaining(request.timeout(), start)); }
-            catch (IllegalArgumentException invalid) {
+            try {
+                pending.voiceCall = new VoiceHttpCall(URI.create(profile.fileEndpoint()), key, profile.model(), profile.id(), request,
+                    VoiceBudget.remaining(request.timeout(), start));
+            } catch (IllegalArgumentException invalid) {
                 throw error(ProblemCode.UNAVAILABLE, "VOICE_CONFIGURATION_INVALID", "The file transcription configuration is invalid");
             }
             var result = pending.voiceCall.execute(tasks.operationCancellation(task));
             if (result.outcome() == Outcome.UNKNOWN) tasks.reportUncertainEffect(task);
             return result;
         } finally {
-            synchronized (pending) { pending.running = false; }
-            try { pending.close(); }
-            catch (ApiException incomplete) { tasks.reportUncertainEffect(task); throw incomplete; }
+            synchronized (pending) {
+                pending.running = false;
+            }
+            try {
+                pending.close();
+            } catch (ApiException incomplete) {
+                tasks.reportUncertainEffect(task);
+                throw incomplete;
+            }
         }
     }
 
-    private static Duration remaining(Duration timeout, long start) throws ApiException {
-        long nanos = timeout.toNanos() - (System.nanoTime() - start);
-        if (nanos <= 0) throw error(ProblemCode.TIMEOUT, "VOICE_BEFORE_SEND_TIMEOUT", "Voice deadline ended before connection admission");
-        return Duration.ofNanos(nanos);
+    /** Original voice deadline after routing and protected credential capture. / 路由和受保护凭据捕获后的原语音截止预算。 */
+    private static final class VoiceBudget {
+        /** Deducts routing and credential time from the original deadline. / 从原期限扣除路由及凭据时间。
+         * @param timeout original positive deadline / 原正时限
+         * @param start original monotonic start / 原单调起点
+         * @return strictly positive remaining budget / 严格为正的剩余预算
+         * @throws ApiException if no budget remains before sending / 发送前已无剩余预算时 */
+        private static Duration remaining(Duration timeout, long start) throws ApiException {
+            long nanos = timeout.toNanos() - (System.nanoTime() - start);
+            if (nanos <= 0)
+                throw error(ProblemCode.TIMEOUT, "VOICE_BEFORE_SEND_TIMEOUT", "Voice deadline ended before connection admission");
+            return Duration.ofNanos(nanos);
+        }
+
+        /** Keeps frozen queue bounds while deducting elapsed admission time. / 扣除已用准入时间，同时保持冻结队列限制。
+         * @param options original immutable limits / 原不可变限制
+         * @param start original monotonic start / 原单调起点
+         * @return limits with the remaining original deadline / 使用原剩余期限的限制
+         * @throws ApiException if admission exhausted the deadline / 准入已耗尽期限时 */
+        private static VoiceOptions remaining(VoiceOptions options, long start) throws ApiException {
+            return new VoiceOptions(remaining(options.timeout(), start), options.maxBufferedBytes());
+        }
     }
 
-    private static VoiceOptions remaining(VoiceOptions options, long start) throws ApiException {
-        return new VoiceOptions(remaining(options.timeout(), start), options.maxBufferedBytes());
-    }
-
+    /** Binds the actual frozen socket and callbacks to an original retained task resource. / 将实际冻结套接字及回调绑定至原保留任务资源。
+     * @param profile exact provider configuration / 精确提供方配置
+     * @param key temporary captured credential / 临时捕获凭据
+     * @param options remaining original limits / 原剩余限制
+     * @param listener original-task listener / 原任务监听器
+     * @param task authentic executing task / 真实执行任务
+     * @return task-owned ready session / 任务所属就绪会话
+     * @throws ApiException if callback admission, connection or cleanup fails / 回调准入、连接或清理失败时 */
     private ManagedVoiceSession openVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
-        char[] key, VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException {
-        var callback = tasks.<VoiceEvent, Void, Void>hostCallback(task, owner, version, (event, ignored) -> {
-            listener.onEvent(event); return null;
+                                          char[] key, VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException {
+        var callback = tasks.callbacks().<VoiceEvent, Void, Void>hostCallback(task, owner, version, (event, ignored) -> {
+            listener.onEvent(event);
+            return null;
         });
         ResourceLease lease = tasks.retain(task, new TaskResource("CONNECTION", "ai-voice-" + UUID.randomUUID(), owner, false));
         var managed = new ManagedVoiceSession(task, lease);
-        synchronized (this) { voices.add(managed); }
+        synchronized (this) {
+            voices.add(managed);
+        }
         try {
             managed.session = VoiceSocketSession.open(URI.create(profile.realtimeEndpoint()), key, profile.model(), profile.id(),
                 options, event -> {
-                    try { callback.apply(event, null); }
-                    catch (ApiException expired) { throw new IllegalStateException("Original voice callback scope ended"); }
+                    try {
+                        callback.apply(event, null);
+                    } catch (ApiException expired) {
+                        throw new IllegalStateException("Original voice callback scope ended");
+                    }
                 }, tasks.operationCancellation(task), session -> managed.session = session);
             managed.session.completion().whenComplete((result, failure) -> managed.complete(result, failure));
             return managed;
@@ -243,8 +341,10 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             try {
                 if (managed.session != null) managed.session.close();
                 managed.release();
+            } catch (ApiException cleanup) {
+                tasks.reportUncertainEffect(task);
+                failure.addSuppressed(cleanup);
             }
-            catch (ApiException cleanup) { tasks.reportUncertainEffect(task); failure.addSuppressed(cleanup); }
             throw failure;
         }
     }
@@ -316,8 +416,16 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         return call(request, task, hostCeiling, expectedRevision, false);
     }
 
+    /** Applies ordinary candidate routing or a host-owned first-model explanation policy. / 应用普通候选路由或宿主持有的首模型说明规则。
+     * @param request original bounded request / 原有界请求
+     * @param task authentic original task / 真实原任务
+     * @param hostCeiling whether a smaller configured output is accepted / 是否接受较小配置输出
+     * @param expectedRevision optional frozen routing digest / 可选冻结路由摘要
+     * @param firstOnly whether only the first enabled language model may be used / 是否仅可使用首个启用语言模型
+     * @return actual classified model result / 实际分类模型结果
+     * @throws ApiException if request, authority, configuration or cleanup fails / 请求、授权、配置或清理失败时 */
     private OperationResult<AiResponse> call(AiRequest request, TaskContext task, boolean hostCeiling,
-        Optional<String> expectedRevision, boolean firstOnly) throws ApiException {
+                                             Optional<String> expectedRevision, boolean firstOnly) throws ApiException {
         if (request == null || request.purpose() == AiPurpose.VOICE)
             throw error(ProblemCode.INVALID_INPUT, "AI_REQUEST", "A model request is required");
         long timeout;
@@ -357,6 +465,10 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         }
     }
 
+    /** Requires the first enabled language member itself to remain available, without skipping it. / 要求首个启用语言成员本身仍可用，不跳过该成员。
+     * @return single selected language configuration / 唯一所选语言配置
+     * @throws SQLException if routing storage cannot be read / 路由存储无法读取时
+     * @throws ApiException if the first member is absent or unverified / 首个成员缺失或未验证时 */
     private List<StoredAiProviderConfiguration> firstLanguage() throws SQLException, ApiException {
         var first = profiles.routingState().members().get(AiPurposeType.DEPLOYMENT).stream()
             .filter(gold.debug.windowstolinux.app.db.ai.AiProfileRepository.RoutingMember::enabled)
@@ -540,7 +652,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         int[] limit = new int[1];
         boolean[] changed = new boolean[1];
         try {
-            tasks.authorized(task, owner, version, () -> {
+            tasks.callbacks().authorized(task, owner, version, () -> {
                 try (var store = security.openCredentials()) {
                     store.transaction(() -> {
                         var snapshot = routingSnapshot();
@@ -606,7 +718,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             if (pending.task == task)
                 pending.close();
         List<ManagedVoiceSession> sessions;
-        synchronized (this) { sessions = List.copyOf(voices); }
+        synchronized (this) {
+            sessions = List.copyOf(voices);
+        }
         for (var voice : sessions) if (voice.task == task) voice.drain();
     }
 
@@ -624,7 +738,9 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         for (var pending : calls)
             pending.close();
         List<ManagedVoiceSession> sessions;
-        synchronized (this) { sessions = List.copyOf(voices); }
+        synchronized (this) {
+            sessions = List.copyOf(voices);
+        }
         for (var voice : sessions) voice.drain();
     }
 
@@ -701,48 +817,124 @@ public final class PlatformAiService implements AiService, AutoCloseable {
 
     /** Task-bound session wrapper whose completion includes original lease release. / 完成状态包括原占用释放的任务绑定会话包装。 */
     private final class ManagedVoiceSession implements VoiceSession {
+        /** Authentic original executing context. / 真实原执行上下文。 */
         private final TaskContext task;
+
+        /** Original durable CONNECTION occupancy. / 原持久 CONNECTION 占用。 */
         private final ResourceLease lease;
+
+        /** Completion after both actual shutdown and original durable release. / 实际关闭及原持久释放均完成后的完成状态。 */
         private final CompletableFuture<OperationResult<VoiceResponse>> complete = new CompletableFuture<>();
+
+        /** Actual socket retained even if opening cleanup fails. / 即使打开清理失败仍保留的实际套接字。 */
         private VoiceSocketSession session;
+
+        /** Positive durable lease-release evidence protected by this monitor. / 由此监视器保护的持久占用释放正面证据。 */
         private boolean released;
-        private ManagedVoiceSession(TaskContext task, ResourceLease lease) { this.task = task; this.lease = lease; }
+
+        /** Captures original physical-resource ownership before connecting. / 连接前捕获原物理资源归属。
+         * @param task authentic original context / 真实原上下文
+         * @param lease actual retained occupancy / 实际保留占用 */
+        private ManagedVoiceSession(TaskContext task, ResourceLease lease) {
+            this.task = task;
+            this.lease = lease;
+        }
+
+        /** Records uncertainty and releases only physically terminated sessions. / 记录未知影响，仅释放已物理终止的会话。
+         * @param result actual classified transport result / 实际分类传输结果
+         * @param failure asynchronous transport failure / 异步传输失败 */
         private void complete(OperationResult<VoiceResponse> result, Throwable failure) {
             try {
                 if (failure != null || result.outcome() == Outcome.UNKNOWN) tasks.reportUncertainEffect(task);
                 if (result != null && result.problem().map(Problem::eventCode).filter("VOICE_CLOSE_UNKNOWN"::equals).isPresent()) {
-                    complete.complete(result); return;
+                    complete.complete(result);
+                    return;
                 }
                 release();
                 if (failure == null) complete.complete(result);
                 else complete.completeExceptionally(failure);
             } catch (ApiException cleanup) {
-                try { tasks.reportUncertainEffect(task); } catch (ApiException ignored) { }
+                try {
+                    tasks.reportUncertainEffect(task);
+                } catch (
+                    ApiException ignored) { /* Preserve the original cleanup failure and retained lease for reconciliation. / 保留原清理失败及占用，供核对处理。 */ }
                 complete.completeExceptionally(cleanup);
             }
         }
+
+        /** Removes occupancy only after its durable release succeeds. / 仅在持久释放成功后移除占用。
+         * @throws ApiException if original resource release cannot be recorded / 原资源释放无法登记时 */
         private synchronized void release() throws ApiException {
             if (released) return;
-            lease.close(); released = true;
-            synchronized (PlatformAiService.this) { voices.remove(this); }
+            lease.close();
+            released = true;
+            synchronized (PlatformAiService.this) {
+                voices.remove(this);
+            }
         }
+
+        /** Retries original physical cleanup before releasing occupancy. / 释放占用前重试原物理清理。
+         * @throws ApiException if cleanup or durable release remains pending / 清理或持久释放仍待完成时 */
         private void drain() throws ApiException {
-            if (session != null) session.close();
+            if (session != null) {
+                session.close();
+                if (!session.resourcesClosed())
+                    throw error(ProblemCode.BUSY, "VOICE_SESSION_CLOSING", "Voice resources are still closing");
+            }
             release();
         }
-        @Override public CompletionStage<Void> send(byte[] audio) throws ApiException {
-            tasks.requireExecuting(task, owner, version); return session.send(audio);
+
+        /** Checks original task authority before actual PCM admission. / 实际 PCM 准入前检查原任务授权。
+         * @param audio copied mono PCM16 chunk / 复制的单声道 PCM16 音频块
+         * @return actual serialized send completion / 实际串行发送完成
+         * @throws ApiException if authority, input or transport admission fails / 授权、输入或传输准入失败时 */
+        @Override
+        public CompletionStage<Void> send(byte[] audio) throws ApiException {
+            tasks.requireExecuting(task, owner, version);
+            return session.send(audio);
         }
-        @Override public CompletionStage<Void> commit() throws ApiException {
-            tasks.requireExecuting(task, owner, version); return session.commit();
+
+        /** Checks original task authority before committing one turn. / 提交一次轮次前检查原任务授权。
+         * @return actual commit send completion / 实际提交发送完成
+         * @throws ApiException if authority or current turn rejects commit / 授权或当前轮次拒绝提交时 */
+        @Override
+        public CompletionStage<Void> commit() throws ApiException {
+            tasks.requireExecuting(task, owner, version);
+            return session.commit();
         }
-        @Override public CompletionStage<OperationResult<VoiceResponse>> finish() throws ApiException {
-            tasks.requireExecuting(task, owner, version); session.finish(); return completion();
+
+        /** Seals authentic input and observes both physical and durable release. / 封闭真实输入，并观察物理及持久释放。
+         * @return classified completion after actual release / 实际释放后的分类完成
+         * @throws ApiException if authority or current input is invalid / 授权或当前输入无效时 */
+        @Override
+        public CompletionStage<OperationResult<VoiceResponse>> finish() throws ApiException {
+            tasks.requireExecuting(task, owner, version);
+            session.finish();
+            return completion();
         }
-        @Override public CompletionStage<OperationResult<VoiceResponse>> completion() { return complete.minimalCompletionStage(); }
-        @Override public void cancel() throws ApiException {
-            tasks.requireCleanup(task, owner, version); drain();
+
+        /** Exposes terminal observation without allowing callers to forge completion. / 暴露终态观察，不允许调用方伪造完成。
+         * @return terminal result including resource release / 包括资源释放的终态结果 */
+        @Override
+        public CompletionStage<OperationResult<VoiceResponse>> completion() {
+            return complete.minimalCompletionStage();
         }
-        @Override public void close() throws ApiException { cancel(); }
+
+        /** Cancels original input; callbacks release occupancy only after they return. / 取消原输入；回调仅在返回后释放占用。
+         * @throws ApiException if cleanup authority or physical cancellation fails / 清理授权或物理取消失败时 */
+        @Override
+        public void cancel() throws ApiException {
+            tasks.requireCleanup(task, owner, version);
+            session.cancel();
+            if (session.resourcesClosed()) release();
+        }
+
+        /** Drains actual original resources without implicit input commit. / 排空实际原资源，不隐式提交输入。
+         * @throws ApiException if cleanup authority, physical close or durable release fails / 清理授权、物理关闭或持久释放失败时 */
+        @Override
+        public void close() throws ApiException {
+            tasks.requireCleanup(task, owner, version);
+            drain();
+        }
     }
 }

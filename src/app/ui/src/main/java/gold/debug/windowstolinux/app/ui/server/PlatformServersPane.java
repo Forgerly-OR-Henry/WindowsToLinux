@@ -23,9 +23,17 @@ import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
-
 /** Permanent configuration and authentication-only SSH page with explicit task recovery. / 带显式任务恢复的常驻配置及仅认证 SSH 页面。 */
 public final class PlatformServersPane extends JPanel implements AutoCloseable {
+    /** Immutable original target and completed-failure eligibility. / 不可变原目标及已完成失败准入。
+     * @param id original check / 原检查
+     * @param profile original endpoint / 原端点
+     * @param handle original resource owner / 原资源所有者
+     * @param failed definite completed failure / 明确完成失败 */
+    private record CheckBinding(UUID id, ServerProfile profile,
+                                gold.debug.windowstolinux.appapi.task.TaskHandle<?> handle, boolean failed) {
+    }
+
     /** Parent for configuration and confirmation dialogs. / 配置及确认窗口的父级。 */
     private final Window owner;
 
@@ -44,14 +52,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Starts rescue for the original failed check, independent of the current list selection. / 与当前列表选择无关，救援原失败检查目标。 */
     private final JButton failedRescue;
 
-    /** Original checked configuration, retained only for a definite completed failure. / 仅为明确完成的失败保留原检查配置。 */
-    private ServerProfile failedProfile;
-
-    /** Latest submitted check; obsolete completions cannot replace its result. / 最新已提交检查，过时完成不能替换结果。 */
-    private UUID currentCheck;
-
-    /** Check whose cleanup was confirmed before offering rescue. / 提供救援前已确认清理的检查。 */
-    private gold.debug.windowstolinux.appapi.task.TaskHandle<?> failedHandle;
+    /** Original check and endpoint bound as one result lifetime. / 作为同一结果生命周期绑定的原检查及端点。 */
+    private CheckBinding checkBinding;
 
     /** Current themed controls. / 当前主题控件。 */
     private final DesktopComponentFactory components;
@@ -183,7 +185,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         output.setLineWrap(true);
         output.setWrapStyleWord(true);
         tasks.add(new JScrollPane(output), BorderLayout.CENTER);
-        failedRescue = button("server.rescueFailedCheck", "servers.rescueFailedCheck", () -> rescue(failedProfile));
+        failedRescue = button("server.rescueFailedCheck", "servers.rescueFailedCheck", () -> rescue(checkBinding == null ? null : checkBinding.profile()));
         failedRescue.setVisible(false);
         var failureActions = components.transparent(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         failureActions.add(failedRescue);
@@ -329,24 +331,21 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         if (profile == null)
             return;
         work(() -> service.check(profile), handle -> {
-            currentCheck = handle.id();
-            failedProfile = null;
-            failedHandle = null;
+            checkBinding = new CheckBinding(handle.id(), profile, handle, false);
             failedRescue.setVisible(false);
             output.setText(messages.text("server.checking"));
             handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
-                if (closed || locked || !handle.id().equals(currentCheck))
+                if (closed || locked || checkBinding == null || !handle.id().equals(checkBinding.id()))
                     return;
                 output.setText(failure != null
                     ? messages.safe(new java.util.concurrent.CompletionException(failure))
                     : messages.text("platform.outcome." + result.outcome())
                     + result.value().map(facts -> "\n" + facts.fingerprint()).orElse("")
                     + result.problem().map(problem -> "\n" + messages.safe(
-                        new gold.debug.windowstolinux.appapi.task.ApiException(problem))).orElse(""));
+                    new gold.debug.windowstolinux.appapi.task.ApiException(problem))).orElse(""));
                 if (failure == null && result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.FAILED
                     && handle.snapshot().state() == TaskState.ENDED) {
-                    failedProfile = profile;
-                    failedHandle = handle;
+                    checkBinding = new CheckBinding(handle.id(), profile, handle, true);
                     failedRescue.setVisible(true);
                 }
                 poll();
@@ -425,8 +424,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         delete.setEnabled(enabled && selected() != null);
         check.setEnabled(enabled && selected() != null);
         rescue.setEnabled(enabled && recovery != null && selected() != null);
-        failedRescue.setEnabled(enabled && recovery != null && failedProfile != null && failedHandle != null
-            && failedHandle.snapshot().state() == TaskState.ENDED);
+        failedRescue.setEnabled(enabled && recovery != null && checkBinding != null && checkBinding.failed()
+            && checkBinding.handle().snapshot().state() == TaskState.ENDED);
         var task = (TaskSnapshot) checks.getSelectedItem();
         cancel.setEnabled(
             enabled && task != null && (task.state() == TaskState.RUNNING || task.state() == TaskState.QUEUED));

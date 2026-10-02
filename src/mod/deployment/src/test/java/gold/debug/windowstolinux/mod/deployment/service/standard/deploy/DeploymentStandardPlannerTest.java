@@ -53,8 +53,10 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                         var selection = context.file().selectDirectory("Source", task);
                         try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 65536,
                             100, task);
-                             var archive = new DeploymentSourceArchiver(context.file()).prepare(material,
-                                 65536, task)) {
+                             var apiArchive = new DeploymentSourceArchiver(context.file()).prepare(material,
+                                 "api", 65536, task);
+                             var databaseArchive = new DeploymentSourceArchiver(context.file()).prepare(material,
+                                 "database", 65536, task)) {
                             var analyzer = new DeploymentStandardAnalyzer();
                             var graph = analyzer.analyzeComponents(material, "Reviewed Shop", "shop",
                                 List.of(component("api", 8080, Set.of("database")),
@@ -63,10 +65,11 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                             assertEquals(Outcome.SUCCEEDED, graph.outcome());
                             var assessment = graph.value().orElseThrow();
                             var server = new ServerRef("Server Exact 1");
+                            var archives = Map.of("api", apiArchive, "database", databaseArchive);
                             var requests = new TreeMap<String, ReviewedDeploymentRequest>();
                             for (var component : assessment.assessment().components())
                                 requests.put(component.componentId(), request(server, component.facts(), material,
-                                    archive, component.runtime().orElseThrow()));
+                                    archives.get(component.componentId()), component.runtime().orElseThrow()));
                             var planner = new DeploymentStandardPlanner();
                             var planned = planner.planComponents(material, assessment, requests, task);
                             assertEquals(Outcome.SUCCEEDED, planned.outcome());
@@ -74,10 +77,11 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                             assertEquals(List.of(List.of("database"), List.of("api")),
                                 plans.ordering().buildWaves());
                             assertEquals(List.of("api", "database"), plans.ordering().rollbackOrder());
-                            for (var plan : plans.components().values()) {
-                                var rendered = planner.render(plan, task);
+                            for (var plan : plans.components().entrySet()) {
+                                var rendered = planner.render(plan.getValue(), task);
                                 assertEquals(Outcome.SUCCEEDED, rendered.outcome());
-                                assertTrue(rendered.value().orElseThrow().buildScript().contains(archive.sha256()));
+                                assertTrue(rendered.value().orElseThrow().buildScript()
+                                    .contains(archives.get(plan.getKey()).sha256()));
                             }
                             assertThrows(IllegalArgumentException.class, () -> planner.planComponents(material,
                                 assessment, Map.of("api", requests.get("api")), task));

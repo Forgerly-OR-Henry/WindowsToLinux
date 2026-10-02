@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class VoiceConfigurationTest {
-    @TempDir Path root;
+    @TempDir
+    Path root;
 
     static AiProviderProfile profile(Endpoint endpoint, String realtime) {
         return new AiProviderProfile("speech", null, "speech-model", "ai/speech/key", endpoint.uri(),
@@ -66,7 +67,8 @@ class VoiceConfigurationTest {
                 assertTrue(service.listAiPurpose(AiPurposeType.DEPLOYMENT).isEmpty());
             }
             try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
-                runtime.security().unlock(PASSWORD.toCharArray()); runtime.started();
+                runtime.security().unlock(PASSWORD.toCharArray());
+                runtime.started();
                 var service = runtime.models();
                 var both = service.listAiConfigurations().getFirst();
                 assertTrue(both.verified(AiCapabilityType.VOICE_FILE));
@@ -103,7 +105,8 @@ class VoiceConfigurationTest {
             var denied = service.listAiConfigurations().getFirst();
             assertEquals(AiCapabilityStateType.FAILED, denied.checks().get(AiCapabilityType.VOICE_FILE).state());
             assertEquals("MODEL_PROBE_AUTH", denied.checks().get(AiCapabilityType.VOICE_FILE).reason());
-            endpoint.status.set(200); endpoint.response.set("{\"text\":\"unexpected transcript\"}");
+            endpoint.status.set(200);
+            endpoint.response.set("{\"text\":\"unexpected transcript\"}");
             var result = PlatformModelServiceTest.done(service.verify("speech", AiCapabilityType.VOICE_FILE,
                 VoiceServiceTest.audio(), "local speech"));
             assertEquals("MODEL_PROBE_ANSWER", result.problem().orElseThrow().eventCode());
@@ -111,7 +114,7 @@ class VoiceConfigurationTest {
             assertEquals("MODEL_PROBE_ANSWER", wrong.checks().get(AiCapabilityType.VOICE_FILE).reason());
             assertEquals(realtime, wrong.realtimeVoiceVerifiedAt());
             assertEquals(AiCapabilityStateType.UNVERIFIED, wrong.checks().get(AiCapabilityType.TEXT).state());
-            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM runtime_log WHERE details LIKE '%private-provider-text%'") );
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM runtime_log WHERE details LIKE '%private-provider-text%'"));
         }
     }
 
@@ -124,7 +127,8 @@ class VoiceConfigurationTest {
     static void availableExcept(PlatformModelService service, AiCapabilityType... absent) throws Exception {
         var no = Set.of(absent);
         var row = service.listAiConfigurations().getFirst();
-        for (var capability : AiCapabilityType.values()) assertEquals(!no.contains(capability), row.verified(capability), capability.name());
+        for (var capability : AiCapabilityType.values())
+            assertEquals(!no.contains(capability), row.verified(capability), capability.name());
     }
 
     @Test
@@ -134,7 +138,8 @@ class VoiceConfigurationTest {
             var service = PlatformModelServiceTest.setup(runtime);
             var profile = new AiProviderProfile("speech", URI.create("https://chat.example.test/completions"), "model", "ai/key",
                 endpoint.uri(), URI.create(live.ws()));
-            service.save(profile, "First", "key".toCharArray(), 128); markAll(runtime, service);
+            service.save(profile, "First", "key".toCharArray(), 128);
+            markAll(runtime, service);
             var before = service.listAiConfigurations().getFirst();
             service.save(before.profile(), "Renamed", new char[0], 128);
             service.reorderAiProviders(List.of("speech"));
@@ -147,23 +152,32 @@ class VoiceConfigurationTest {
                 old.fileTranscriptionEndpoint(), old.realtimeTranscriptionEndpoint());
             service.save(changed, "Renamed", new char[0], 128);
             availableExcept(service, AiCapabilityType.TEXT, AiCapabilityType.VISION);
-            markAll(runtime, service); old = service.listAiConfigurations().getFirst().profile();
+            markAll(runtime, service);
+            old = service.listAiConfigurations().getFirst().profile();
             changed = new AiProviderProfile(old.id(), old.chatCompletionsEndpoint(), old.model(), old.credentialKey(),
                 URI.create(endpoint.uri() + "/new"), old.realtimeTranscriptionEndpoint());
-            service.save(changed, "Renamed", new char[0], 128); availableExcept(service, AiCapabilityType.VOICE_FILE);
-            markAll(runtime, service); old = service.listAiConfigurations().getFirst().profile();
+            service.save(changed, "Renamed", new char[0], 128);
+            availableExcept(service, AiCapabilityType.VOICE_FILE);
+            markAll(runtime, service);
+            old = service.listAiConfigurations().getFirst().profile();
             changed = new AiProviderProfile(old.id(), old.chatCompletionsEndpoint(), old.model(), old.credentialKey(),
                 old.fileTranscriptionEndpoint(), URI.create(live.ws() + "/new"));
-            service.save(changed, "Renamed", new char[0], 128); availableExcept(service, AiCapabilityType.VOICE_REALTIME);
-            markAll(runtime, service); old = service.listAiConfigurations().getFirst().profile();
-            service.save(old, "Renamed", new char[0], 256); availableExcept(service, AiCapabilityType.TEXT, AiCapabilityType.VISION);
+            service.save(changed, "Renamed", new char[0], 128);
+            availableExcept(service, AiCapabilityType.VOICE_REALTIME);
+            markAll(runtime, service);
+            old = service.listAiConfigurations().getFirst().profile();
+            service.save(old, "Renamed", new char[0], 256);
+            availableExcept(service, AiCapabilityType.TEXT, AiCapabilityType.VISION);
             markAll(runtime, service);
             changed = new AiProviderProfile(old.id(), old.chatCompletionsEndpoint(), "new-model", old.credentialKey(),
                 old.fileTranscriptionEndpoint(), old.realtimeTranscriptionEndpoint());
-            service.save(changed, "Renamed", new char[0], 256); availableExcept(service, AiCapabilityType.values());
+            service.save(changed, "Renamed", new char[0], 256);
+            availableExcept(service, AiCapabilityType.values());
             markAll(runtime, service);
-            service.save(changed, "Renamed", "replacement".toCharArray(), 256); availableExcept(service, AiCapabilityType.values());
-            assertEquals(0, endpoint.calls.get()); assertNull(live.socketModel.get());
+            service.save(changed, "Renamed", "replacement".toCharArray(), 256);
+            availableExcept(service, AiCapabilityType.values());
+            assertEquals(0, endpoint.calls.get());
+            assertNull(live.socketModel.get());
         }
     }
 
@@ -172,14 +186,17 @@ class VoiceConfigurationTest {
         try (var endpoint = new Endpoint(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = PlatformModelServiceTest.setup(runtime);
             service.save(profile(endpoint, ""), "Speech", "key".toCharArray(), 128);
-            endpoint.entered = new CountDownLatch(1); endpoint.release = new CountDownLatch(1);
+            endpoint.entered = new CountDownLatch(1);
+            endpoint.release = new CountDownLatch(1);
             var task = service.verify("speech", AiCapabilityType.VOICE_FILE, VoiceServiceTest.audio(), "local speech");
             try {
                 assertTrue(endpoint.entered.await(3, TimeUnit.SECONDS));
                 var old = service.listAiConfigurations().getFirst().profile();
                 service.save(new AiProviderProfile(old.id(), null, old.model(), old.credentialKey(),
                     URI.create(endpoint.uri() + "/new"), null), "Changed", new char[0], 128);
-            } finally { endpoint.release.countDown(); }
+            } finally {
+                endpoint.release.countDown();
+            }
             assertEquals("MODEL_PROBE_STALE", PlatformModelServiceTest.done(task).problem().orElseThrow().eventCode());
             assertFalse(service.listAiConfigurations().getFirst().verified(AiPurposeType.VOICE));
             assertEquals(1, endpoint.calls.get());
@@ -187,8 +204,10 @@ class VoiceConfigurationTest {
     }
 
     static boolean contains(byte[] body, byte[] expected) {
-        outer: for (int start = 0; start <= body.length - expected.length; start++) {
-            for (int index = 0; index < expected.length; index++) if (body[start + index] != expected[index]) continue outer;
+        outer:
+        for (int start = 0; start <= body.length - expected.length; start++) {
+            for (int index = 0; index < expected.length; index++)
+                if (body[start + index] != expected[index]) continue outer;
             return true;
         }
         return false;
@@ -196,30 +215,50 @@ class VoiceConfigurationTest {
 
     static final class Endpoint implements AutoCloseable {
         final HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+
         final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
         final AtomicInteger calls = new AtomicInteger(), status = new AtomicInteger(200);
+
         final AtomicReference<String> response = new AtomicReference<>("{\"text\":\"local speech\"}");
+
         final AtomicReference<String> authorization = new AtomicReference<>();
+
         final AtomicReference<byte[]> body = new AtomicReference<>();
+
         volatile CountDownLatch entered, release;
+
         Endpoint() throws IOException {
             server.setExecutor(executor);
             server.createContext("/transcriptions", exchange -> {
                 try (exchange) {
-                    calls.incrementAndGet(); authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                    calls.incrementAndGet();
+                    authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
                     body.set(exchange.getRequestBody().readAllBytes());
                     if (entered != null) entered.countDown();
-                    if (release != null) try { release.await(5, TimeUnit.SECONDS); }
-                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                    if (release != null) try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
                     byte[] bytes = response.get().getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
-                    exchange.sendResponseHeaders(status.get(), bytes.length); exchange.getResponseBody().write(bytes);
+                    exchange.sendResponseHeaders(status.get(), bytes.length);
+                    exchange.getResponseBody().write(bytes);
                 }
-            }); server.start();
+            });
+            server.start();
         }
-        URI uri() { return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/transcriptions"); }
-        @Override public void close() throws Exception {
-            if (release != null) release.countDown(); server.stop(0); executor.shutdownNow();
+
+        URI uri() {
+            return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/transcriptions");
+        }
+
+        @Override
+        public void close() throws Exception {
+            if (release != null) release.countDown();
+            server.stop(0);
+            executor.shutdownNow();
             assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
         }
     }

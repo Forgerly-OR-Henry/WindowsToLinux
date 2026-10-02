@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-
 /** One bounded redacted record format shared by SQL and emergency storage. / SQL 与应急存储共用的有界脱敏记录格式。 */
 public final class LogRecordCodec {
     /** Maximum complete UTF-8 envelope including LF. / 含 LF 的完整 UTF-8 封套上限。 */

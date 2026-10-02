@@ -6,6 +6,9 @@ import gold.debug.windowstolinux.appapi.task.ApiException;
 import gold.debug.windowstolinux.appapi.task.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.appapi.task.TaskState;
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
 
 import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
@@ -38,6 +41,15 @@ class PlatformSourceServiceTest {
     @TempDir
     Path root;
 
+    static void rejectUnexpectedFileApproval(PlatformRuntime runtime) {
+        runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {
+            @Override
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancel) {
+                throw new AssertionError("Source selection, queries and owned workspaces must not request file approval");
+            }
+        });
+    }
+
     Path sourceFiles() throws Exception {
         var source = Files.createDirectories(root.resolve("用户选定"));
         Files.writeString(source.resolve(".env"), "fixture");
@@ -50,6 +62,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var foreign = runtime.capabilities().source("foreign.mod", VERSION);
             var another = runtime.capabilities().source(OWNER, VERSION);
@@ -103,6 +116,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var foreign = runtime.capabilities().source("foreign.mod", VERSION);
             var anotherActivation = runtime.capabilities().source(OWNER, VERSION);
@@ -149,6 +163,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var held = new AtomicReference<FileSnapshot>();
             var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
@@ -185,6 +200,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> selectionCalls.getAndIncrement() == 0 ? null : files);
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 assertEquals(ProblemCode.CANCELLED,
@@ -226,6 +242,7 @@ class PlatformSourceServiceTest {
                 }
                 return files;
             });
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                 context -> success(source.selectDirectory("Source", context)));
@@ -249,6 +266,7 @@ class PlatformSourceServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             runtime.setSourcePicker((title, task, cancel) -> files);
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var db = runtime.persistence().database();
             var original = new AtomicReference<TaskContext>();
@@ -311,6 +329,7 @@ class PlatformSourceServiceTest {
             runtime.setSourcePicker((title, current, cancel) -> {
                 throw new AssertionError("Recovery must not select again");
             });
+            rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, true);
             try (var registration = binding.registerRecovery("fixture", (previous, context) -> {

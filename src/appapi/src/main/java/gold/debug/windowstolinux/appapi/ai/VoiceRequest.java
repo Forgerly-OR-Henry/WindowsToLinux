@@ -13,24 +13,35 @@ public record VoiceRequest(byte[] audio, String filename, Duration timeout) {
     /** Provider upload ceiling in bytes. / 提供方上传字节上限。 */
     public static final int MAX_BYTES = 25_000_000;
 
-    /** Copies and validates audio before any provider request. / 在发送请求前复制并校验音频。 */
+    /** Copies and validates audio before any provider request. / 在发送请求前复制并校验音频。
+     * @param audio complete RIFF/WAVE input / 完整 RIFF/WAVE 输入
+     * @param filename safe WAV upload name / 安全 WAV 上传名称
+     * @param timeout whole operation deadline / 整体操作时限 */
     public VoiceRequest {
         Objects.requireNonNull(audio);
         filename = Objects.requireNonNull(filename).strip();
         if (!filename.matches("[A-Za-z0-9._-]{1,120}\\.wav"))
             throw new IllegalArgumentException("A safe .wav filename is required");
         validateTimeout(timeout);
+        if (audio.length < 44 || audio.length > MAX_BYTES)
+            throw new IllegalArgumentException("WAV input is empty or exceeds 25 MB");
         audio = audio.clone();
         byte[] samples = pcm(audio);
         java.util.Arrays.fill(samples, (byte) 0);
     }
 
-    /** Returns a copy, preserving immutable request ownership. / 返回副本，保持不可变请求归属。 */
-    @Override public byte[] audio() { return audio.clone(); }
+    /** Returns a copy, preserving immutable request ownership. / 返回副本，保持不可变请求归属。
+     * @return independent complete WAV bytes / 独立完整 WAV 字节 */
+    @Override
+    public byte[] audio() {
+        return audio.clone();
+    }
 
     /** Extracts validated raw samples without transcoding. / 提取已校验原始样本，不转码。
      * @return owned PCM16 sample copy / 所属 PCM16 样本副本 */
-    public byte[] pcm() { return pcm(audio); }
+    public byte[] pcm() {
+        return pcm(audio);
+    }
 
     /** Checks the shared operation deadline. / 检查共用操作时限。
      * @param timeout total operation deadline / 整体操作时限 */
@@ -40,7 +51,9 @@ public record VoiceRequest(byte[] audio, String filename, Duration timeout) {
             throw new IllegalArgumentException("Voice timeout must be positive and at most 30 minutes");
     }
 
-    /** Validates bounded RIFF chunks and extracts PCM. / 校验有界 RIFF 块并提取 PCM。 */
+    /** Validates bounded RIFF chunks and extracts PCM. / 校验有界 RIFF 块并提取 PCM。
+     * @param data complete bounded WAV bytes / 完整有界 WAV 字节
+     * @return copied mono PCM16 samples / 复制的单声道 PCM16 样本 */
     private static byte[] pcm(byte[] data) {
         if (data.length < 44 || data.length > MAX_BYTES)
             throw new IllegalArgumentException("WAV input is empty or exceeds 25 MB");

@@ -116,8 +116,8 @@ public final class SftpTransfer {
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     public SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
-                 CancelToken cancellation, TransferConflictResolver conflicts, TransferJournal journal,
-                 TransferProgressListener listener, TransferPlan recovery, boolean discard) throws ApiException {
+                        CancelToken cancellation, TransferConflictResolver conflicts, TransferJournal journal,
+                        TransferProgressListener listener, TransferPlan recovery, boolean discard) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
         this.digest = Objects.requireNonNull(digest);
@@ -208,21 +208,10 @@ public final class SftpTransfer {
             if (recovery != null)
                 return recover();
             Path path = request.localPath();
-            verifyLocalParents(path);
-            BasicFileAttributes before = upload ? regularLocal(path) : null;
-            String sourceIdentity = upload
-                ? gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(path)
-                : null;
-            if (upload) {
-                bounded(before.size());
-                local = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
-                if (local.size() != before.size() || !digest.equals(hashLocal(before.size())))
-                    throw new IOException("Source changed");
-                verifyUnchanged(before, regularLocal(path));
-                if (!sourceIdentity
-                    .equals(gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(path)))
-                    throw new IOException("Local source was replaced");
-            }
+            var source = new SftpSourcePreparation(path);
+            source.open();
+            BasicFileAttributes before = source.before;
+            String sourceIdentity = source.identity;
             check();
             phase = "sftp-open";
             opening = true;
@@ -244,12 +233,7 @@ public final class SftpTransfer {
                 remote = sftp.open(destination.remoteTemporary(), SftpClient.OpenMode.Read, SftpClient.OpenMode.Write,
                     SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive);
                 copyToRemote(remote, size, 0);
-                verifyUnchanged(before, regularLocal(path));
-                if (!sourceIdentity
-                    .equals(gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(path)))
-                    throw new IOException("Local source was replaced");
-                if (local.size() != size || !digest.equals(hashLocal(size)))
-                    throw new IOException("Source changed");
+                source.verify();
                 regularRemote(sftp.stat(remote), size);
                 if (!digest.equals(hashRemote(remote, size)))
                     throw new IOException("Destination digest mismatch");
@@ -831,6 +815,46 @@ public final class SftpTransfer {
             return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException impossible) {
             throw new AssertionError(impossible);
+        }
+    }
+
+    /** Opens and revalidates the upload source while the transfer retains actual channel ownership. / 传输保留实际通道归属期间打开及重新核验上传源。 */
+    private final class SftpSourcePreparation {
+        /** Exact local source or download position. / 精确本机来源或下载位置。 */
+        private final Path path;
+
+        /** Original no-follow upload source attributes. / 原不跟随上传来源属性。 */
+        private BasicFileAttributes before;
+
+        /** Native source identity captured before dispatch. / 发出前捕获的原生来源身份。 */
+        private String identity;
+
+        /** Retains the original request path. / 保留原请求位置。
+         * @param path original local request position / 原本机请求位置 */
+        private SftpSourcePreparation(Path path) {
+            this.path = path;
+        }
+
+        /** Opens the owned source and checks the initial extent and digest. / 打开所属来源并核对初始范围及摘要。
+         * @throws IOException if identity, permission or content differs / 身份、权限或内容不符时 */
+        private void open() throws IOException {
+            verifyLocalParents(path);
+            if (!upload) return;
+            before = regularLocal(path);
+            identity = gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(path);
+            bounded(before.size());
+            local = FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS);
+            verify();
+        }
+
+        /** Proves source identity and content still match the reviewed bytes. / 证明来源身份及内容仍与已审核字节一致。
+         * @throws IOException if the source was changed or replaced / 来源已改变或替换时 */
+        private void verify() throws IOException {
+            if (local.size() != before.size() || !digest.equals(hashLocal(before.size())))
+                throw new IOException("Source changed");
+            verifyUnchanged(before, regularLocal(path));
+            if (!identity.equals(gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity.read(path)))
+                throw new IOException("Local source was replaced");
         }
     }
 

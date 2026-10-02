@@ -48,7 +48,7 @@ class PlatformTaskManagementWindowTest {
         runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
         var recovery = runtime.recovery();
         return new PlatformTaskManagement(runtime.tasks(), runtime.security(), id -> recovery.reconcile(id, true),
-            runtime::releaseModRecovery);
+            runtime.modRecovery()::release);
     }
 
     static PlatformFrame window(PlatformRuntime runtime, TaskManagement service) throws Exception {

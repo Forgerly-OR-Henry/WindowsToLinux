@@ -18,7 +18,6 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Reconciles original unknown data without running migration or changing user choices. / 核对原未知数据，不运行迁移或改变用户选择。 */
 public final class ModSchemaReconciliation {
     /** Actual exclusively owned engine. / 实际独占引擎。 */

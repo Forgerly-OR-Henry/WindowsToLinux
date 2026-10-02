@@ -59,15 +59,15 @@ class PlatformModOriginalsTest {
                 window.installMods(intents, new PlatformModsPane.SchemaActions() {
                     public PlatformModIntents.RetryReview review(String owner, Optional<SchemaIdentity> source)
                         throws Exception {
-                        return runtime.reviewModSchemaRetry(owner, source);
+                        return runtime.modRecovery().review(owner, source);
                     }
 
                     public Outcome retry(PlatformModIntents.RetryReview review) throws Exception {
-                        return runtime.retryModSchema(review);
+                        return runtime.modRecovery().retry(review);
                     }
 
                     public Outcome reconcile(UUID operation) throws Exception {
-                        return runtime.reconcileModSchema(operation);
+                        return runtime.modRecovery().reconcile(operation);
                     }
                 });
                 window.installOriginalPackages(Optional.of(installer));
