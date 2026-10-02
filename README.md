@@ -1,6 +1,6 @@
 # WindowsToLinux
 
-WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，以 Windows 桌面 APP 提供通用能力，业务由 Mod 扩展。当前检出正在完成 [1.2 期 APP 整体调整](docs/development/PHASE-1.2.md)及本机验收；阶段状态和验证边界以该文档为准，尚未提供正式安装包。
+WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，以 Windows 桌面 APP 提供通用能力，业务由 Mod 扩展。当前检出已完成 [1.2 期 APP 整体调整](docs/development/PHASE-1.2.md)的源码实施及本机适用验收；阶段状态和验证边界以该文档为准，尚未提供正式安装包。
 
 ## 当前平台能力
 
