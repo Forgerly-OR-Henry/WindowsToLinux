@@ -1,9 +1,9 @@
 # WindowsToLinux 1.2 期开发计划：APP 整体调整
 
-> 状态：设计与执行计划已按本轮审核补齐，待实施。已纳入目录副本内部链接重定向、覆盖后链接保留目标路径、跳过单项后继续并报告部分失败、操作记录与中断核对、删除等待流程、分协议语音配置，以及默认开启并持久化的删除前 AI 用途说明开关。当前未发现仍需用户选择的产品待定项；实际系统能力与实现效果须按任务验证。S0～S6 均未开始，本文不代表代码、数据库或运行验收已完成。
+> 状态：源码实施中。S0 基线、完整公开 API 清单及范围核对已完成；S1～S4 已落地并进行本机回归，S5 尚未执行开发库切换，S6 在同步正式文档与准备完整回归。阶段只有满足任务产物和完成检查后才勾选；受控本机结果与真实远端/模型提供方验收分别记录。
 > 建立日期：2026-10-02。
-> 更新日期：2026-10-02（并入已审核补充方案与删除前 AI 用途说明开关，同步规格、42 项任务、数据库和验收要求；资源管理器、SQL 封装及 Swing 封装三个 Mod 仍留到后续）。
-> 定位：1.2 实施依据与阶段计划。第 3、4 节规定需求和边界，第 5 节安排执行步骤，第 6 节规定专项验收并保留既有证据，第 7 节对应全部已确认需求、实施选择及后续范围。当前只完成计划编写，S0～S6 均未开始；后续目标模式从第 5 节进入，不把本文的计划勾选项当作实现证据。
+> 更新日期：2026-10-03（S0 实施基线验收；同步当前源码链接，保留计划编制时的基线说明）。
+> 定位：1.2 实施依据与阶段验收。第 3、4 节规定需求和边界，第 5 节记录执行及完成检查，第 6 节规定专项验收并保留既有证据，第 7 节对应全部已确认需求、实施选择及后续范围。不把未勾选的计划项或接口示意当作验收证据。
 
 - [开发总纲](DEVELOPMENT.md) · [1.1 期工程](PHASE-1.1.md) · [实际源码结构](../File.md#current-source-tree) · [现行分包规则](../File.md#package-rules) · [Mod 开发规范](../Mod.md) · [运行约定](../Runtime.md)
 - [目标与承接](#scope) · [调整目录](#changes) · [功能规格](#features) · [依赖与边界](#boundaries) · [分阶段执行计划](#delivery) · [专项验收与已有证据](#acceptance) · [需求与任务对应](#requirement-coverage) · [实施决策与后续范围](#pending)
@@ -304,11 +304,11 @@ deleteLink(link, task, permit);  // 链接本身：校验前置许可后执行
 
 #### 当前代码基础
 
-以下为本次静态检查确认的职责分布，不代表重新完成了运行验收：
+以下为计划编制时的静态代码基线，保留原名说明迁移起点；链接已指向当前对应文件，不代表重新完成了运行验收：
 
-- [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/source/SourceService.java) 已提供用户选目录、有界读取和列举、受管工作目录、冻结快照及任务资源清理。
+- [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 已提供用户选目录、有界读取和列举、受管工作目录、冻结快照及任务资源清理。
 - `app/source` 当前主要实现选定目录边界、受管工作目录和冻结快照；任务授权、资源登记与公开接口适配由 `app/service/source/PlatformSourceAccess` 负责。
-- [SourceSnapshot](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/source/SourceSnapshot.java) 与 `SourceWorkspace` 暴露本机 `Path`。调用方取得目录后，仍有自行实现读取限额、路径检查、摘要和输出校验的情况。
+- [SourceSnapshot](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileSnapshot.java) 与 `SourceWorkspace` 暴露本机 `Path`。调用方取得目录后，仍有自行实现读取限额、路径检查、摘要和输出校验的情况。
 - [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/RemoteSession.java) 已提供上传、下载、续传和暂存丢弃；实际 SFTP 位于 `app/linux/ssh`，已有冲突处理、摘要校验、暂存发布和恢复机制。
 - `app/windows/filesystem` 提供 Windows 文件身份与原生发布操作。部署 Mod 的来源准备、归档及分析流程已部分复用平台能力，同时保留文件访问代码与部署业务规则。
 
@@ -758,12 +758,12 @@ session.cancel();                           // 取消并释放会话
 
 ### 3.8 现有 API 的重载补齐与行为对齐（已确认方向，待实施）
 
-本节基于现有 `appapi` 公开接口、请求类型、平台实现及调用方检查，承接第 3.1 节的同名重载规则。用户已认可下表结论：上传/下载和目录选择优先补齐，任务进度及第一页查询随公开 API 简化实施，传输停滞策略保留按需范围。以下现状是源码事实，新增重载均未实现；签名示意须结合 S1 改名和 S3 统一文件合同落地。
+本节基于现有 `appapi` 公开接口、请求类型、平台实现及调用方检查，承接第 3.1 节的同名重载规则。用户已认可下表结论：上传/下载和目录选择优先补齐，任务进度及第一页查询随公开 API 简化实施，传输停滞策略保留按需范围。以下现状是计划编制时的源码基线，链接指向当前对应文件；新增重载的实际状态由阶段验收记录说明。
 
 | 能力 | 当前代码与缺口 | 本期安排 |
 | --- | --- | --- |
 | 上传、下载 | [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/RemoteSession.java) 只有 `upload(request, grant)`、`download(request, grant)`；[TransferRequest](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/TransferRequest.java) 不含冲突方式，实际同名冲突转平台交互 | 优先补同名重载：未传方式时询问，显式传入时按方式执行。落到统一文件 API，既有会话调用路径同步衔接，底层仍复用原传输实现 |
-| 目录选择 | [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/source/SourceService.java) 只有 `selectDirectory(title, task)`；[平台实现](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/source/PlatformSourceAccess.java) 实际调用目录选择器 | 优先补接收明确目录路径的同名重载。适用于调用方已知目录的情形，不再让用户重复选择；仍核对任务授权、账户权限和物理目录身份 |
+| 目录选择 | [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 只有 `selectDirectory(title, task)`；[平台实现](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/file/PlatformFileAccess.java) 实际调用目录选择器 | 优先补接收明确目录路径的同名重载。适用于调用方已知目录的情形，不再让用户重复选择；仍核对任务授权、账户权限和物理目录身份 |
 | 任务进度 | [TaskContext](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskContext.java) 仅接收 `progress(text, Optional<Double>)`，生产调用方存在反复传空值的情形 | 补 `progress(text)` 和 `progress(text, fraction)`，分别表达纯文字状态与明确比例；复用原校验和发布逻辑 |
 | 第一页查询 | [ServerService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/server/ServerService.java) 的 `list`、`listConfigured` 及 [TaskService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java) 的 `list` 均需显式传游标，即使查询第一页 | 补省略游标的同名重载，保留显式页大小和原权限范围；后续页仍传原游标，不改成无界“查询全部” |
 | 传输停滞 | [PlatformLinuxService](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/linux/PlatformLinuxService.java) 在 `SFTP_STALLED` 后停止当前连接并询问重试/终止，与同名冲突是独立交互 | 按需增加带有限重试策略的重载；未传策略仍沿用原交互。若本期调用方需要自动处理停滞，则在 S3-06 落实，否则记录保留原行为，不直接列为本期新增必做能力 |
@@ -797,12 +797,12 @@ list(cursor, limit, task);       // ServerService 后续页
 #### 两处必须同步的实际行为
 
 1. **文件用途说明只用首模型。** 当前 [PlatformAiService](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java) 在特定 `AI_HTTP_REJECTED` 后可能继续下一候选；`expectedRevision` 仅冻结配置。因此 S3-09 先检查开关，再从实际语言用途列表取首个启用模型；失败保留人工确认，不暗换第二个，不从通用清单挑模型。只补平台说明所需内部约束，不新增任意指定模型的公开后门，其他用途保留原路由。
-2. **“不处理”不能沿用“取消”的结果。** 当前 [SftpDestination](../../src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/SftpDestination.java) 对 `TransferConflictChoice.TERMINATE` 抛出取消异常；新合同中的“不处理”要求该项复制/移动/传输失败并明确原因；整目录任务继续其他独立项，最终报告部分失败。S3-05、S3-06 须同步选择值、结果映射、界面文案、调用方与相关测试，不能只改枚举显示文字。用户主动取消任务仍保留取消语义。
+2. **“不处理”不能沿用“取消”的结果。** 当前 [SftpDestination](../../src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/sftp/SftpDestination.java) 对 `TransferConflictChoice.TERMINATE` 抛出取消异常；新合同中的“不处理”要求该项复制/移动/传输失败并明确原因；整目录任务继续其他独立项，最终报告部分失败。S3-05、S3-06 须同步选择值、结果映射、界面文案、调用方与相关测试，不能只改枚举显示文字。用户主动取消任务仍保留取消语义。
 
 #### 已有重载与不扩大的范围
 
 - [AiService.call](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/AiService.java) 已有普通调用与携带 `expectedRevision` 的重载；保留其配置修订约束，不为统一外观重复添加同义入口。
-- [SourceService.workspace](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/source/SourceService.java) 和 [ProcessService.start](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/ProcessService.java) 已有自动身份与显式预留身份的重载；保留原任务归属及首次创建约束，不能解释为任意复用旧资源。
+- [SourceService.workspace](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 和 [ProcessService.start](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/ProcessService.java) 已有自动身份与显式预留身份的重载；保留原任务归属及首次创建约束，不能解释为任意复用旧资源。
 - 数据库连接、凭据使用及资源关闭沿用现有显式合同，不统一新增“普通/高权限”重载。SSH 命令仍需要精确审核和真实许可，不仅为减少参数而省略权限或业务修订信息。
 - 以上是必要的基础 API 调用便利和交互选择，不扩大为主 APP 内置 SQL/Swing 业务封装框架，也不强制 Mod 作者修改自己的公开 API。
 
@@ -847,7 +847,7 @@ list(cursor, limit, task);       // ServerService 后续页
 
 | 阶段 | 目标与交付物 | 依赖及开始条件 | 当前状态 |
 | --- | --- | --- | --- |
-| S0 | 核对实施基线，形成受变清单及必要决策清单 | 用户启动源码实施目标；先读取实际工作区 | 未开始 |
+| S0 | 核对实施基线，形成受变清单及必要决策清单 | 用户启动源码实施目标；先读取实际工作区 | 已完成，见本节验收记录 |
 | S1 | APP 包名与平台公开 API 简化、进度及分页便利重载、Java 类按功能归包、规范与检查同步 | S0；命名、归属及重载方向已确认 | 未开始 |
 | S2 | 服务器页 SSH 检查失败后直接进入同目标救援 | S1；复用现有救援链 | 未开始 |
 | S3 | 统一文件 API、常用操作、回收与删除审批、现有调用方接入 | S1；按已确认权限和删除规则落实合同；不开发资源管理器界面或其 Mod | 未开始 |
@@ -865,25 +865,27 @@ list(cursor, limit, task);       // ServerService 后续页
 
 **开始条件：** 源码实施目标启动后开始；先读取实际工作区，不据本文假定代码仍与计划编写时一致。
 
-- [ ] S0-01：核对实际基线
+- [x] S0-01：核对实际基线
 
   **实施/产物：** 读取当前适用指令、源码、构建配置和既有进度；记录已实现事项、现有修改及本次受变范围。
 
   **完成检查：** 基线来自当前文件；已有用户修改保留；不重复实施已完成工作，不覆盖其他任务的进度。
 
-- [ ] S0-02：形成迁移与 API 对照清单
+- [x] S0-02：形成迁移与 API 对照清单
 
   **实施/产物：** 按第 3.4 节列出包、类、资源、测试、反射/类名字符串、Maven 路径及公开引用；全部平台自有公开 API 标明旧名、新名或保留决定、中文职责，纳入第 3.8 节重载安排。
 
   **完成检查：** 区分内部移动、公开合同与业务配置键；核对 Java 标识符、同名/重载影响及调用方；第 3.7 节原生接口和作者职责保留，SQL/Swing 封装不混入本期。
 
-- [ ] S0-03：落实影响执行的条件
+- [x] S0-03：落实影响执行的条件
 
   **实施/产物：** 按第 7 节区分常规实现选择、未纳入范围的扩展和真实环境条件，为相关任务记录处理方式。
 
   **完成检查：** 已确认内容不再询问；普通实现选择有落点；必要但无法从工程查明的数据效果或清理目标只阻塞相关步骤，不阻塞无关阶段。
 
 **阶段退出条件：** 已有可执行的受变清单、阶段依赖和验证入口。S0 不承担重新完成 1.1 验收，也不要求先解决所有文件和语音实现细节才能进入 S1。
+
+**S0 验收记录（2026-10-03）：** 工作区基线为 `main / 7325eab4f659ee28447c85b31f6c42a8ca095d7d`，原有 1001 个受跟踪文件改动及未跟踪界面/排版/计划文件均保留，`history-src` 未改动。实际迁移清单列出 291 个 Java 包/类型映射；初始 97 个公开类型逐项对应改名或保留决定。当前只读 Javac AST 清单覆盖 110 个 APPAPI 源文件、119 个公开及嵌套类型、208 个 record 组件和 748 个声明/语言生成公开成员，包含接口隐式 public 方法、参数、throws 及中文职责；旧 97 个类型全部映射且解析后逐源 SHA256 无快照漂移。完整清单、基线摘要与普通实现选择保存在当前任务进度证据中，正式源码索引见 [AllFile.md](../AllFile.md)。本期不开发资源管理器、SQL 或 Swing 封装 Mod、不做两台不同远端间复制，真实远端与真实提供方条件不阻塞独立本机回归。按用户追加要求，每阶段验收后本地提交；`75a59d0b` 是保留已有改动的开发中检查点，不代表 S1～S6 验收完成。
 
 #### S1：包名、层级与类归属
 
@@ -1411,7 +1413,7 @@ Linux 的回收位置、当前账户权限、文件系统及恢复效果须按�
 | 原文件移动、复制与覆盖 | APP 移动/重命名维护本次受管链接；单文件复制不改旧链接，整目录复制按内部映射；覆盖保持目标路径并更新身份。部分目录移动不提前更新整目录链接；权限或维护失败报告真实结果 | S3-01、S3-04～S3-06、S3-12、S5-03 |
 | APP 与系统独立操作 | 经统一文件 API 发起即由 APP 落实规则，底层调用 Windows / Linux 不改变归属；外部系统、其他程序及未接入 API 的脚本操作不监听、不接管、不事后修复 | S3-01、S3-05、S3-12；原生适配、外部移动、重开及失效记录 |
 
-现有 [SourceWorkDirectory](../../src/app/source/src/main/java/gold/debug/windowstolinux/app/source/snapshot/SourceWorkDirectory.java) 的受管临时清理已按链接本身删除，继续保留目标。相对链接按所在位置解析的机制见 [JDK 21 Files.createSymbolicLink](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html#createSymbolicLink(java.nio.file.Path,java.nio.file.Path,java.nio.file.attribute.FileAttribute...))；本计划的链接指向规则由 APP 在受管操作内实现，不宣称符号链接天然具有任意移动跟踪能力。
+现有 [SourceWorkDirectory](../../src/app/file/src/main/java/gold/debug/windowstolinux/app/file/SourceWorkDirectory.java) 的受管临时清理已按链接本身删除，继续保留目标。相对链接按所在位置解析的机制见 [JDK 21 Files.createSymbolicLink](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html#createSymbolicLink(java.nio.file.Path,java.nio.file.Path,java.nio.file.attribute.FileAttribute...))；本计划的链接指向规则由 APP 在受管操作内实现，不宣称符号链接天然具有任意移动跟踪能力。
 
 以下是尚未纳入基线的扩展或后续排期；未新增决定时按表中范围执行，无需等待用户选择后才开始本期：
 
