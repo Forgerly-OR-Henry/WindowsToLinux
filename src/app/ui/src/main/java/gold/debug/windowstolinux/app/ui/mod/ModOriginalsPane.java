@@ -11,10 +11,11 @@ import javax.swing.event.*;
 
 import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
 import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation.*;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.LocaleBinding;
-import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
+import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
 import gold.debug.windowstolinux.appapi.task.OperationResult;
 
 /** Manages explicitly discovered originals and their original interrupted installations. / 管理明确发现的原包及其原中断安装。 */
@@ -80,7 +81,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param installedChanged refreshes registered versions / 刷新登记版本
      * @param showLogs opens actual platform logs / 打开实际平台日志 */
     public ModOriginalsPane(PlatformModInstallation service, DesktopComponentFactory components,
-            PageMessagePresenter messages, Runnable installedChanged, Runnable showLogs) {
+                            PageMessagePresenter messages, Runnable installedChanged, Runnable showLogs) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Original management requires the EDT");
@@ -88,6 +89,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         this.messages = messages;
         this.installedChanged = installedChanged;
         setName("platform.originals");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
         prepareSearch();
         prepareInventory();
@@ -104,7 +106,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             return renderer.getListCellRendererComponent(list, value == null
                     ? ""
                     : value.owner() + " · " + value.version() + " · " + state(value.phase()) + " · " + value.id(),
-                    index, selected, focused);
+                index, selected, focused);
         });
         pending.addActionListener(event -> renderPending());
         var retained = new JPanel(new BorderLayout(8, 0));
@@ -207,7 +209,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         rows.clear();
         for (var value : all) {
             String text = value.file().getFileName()
-                    + value.manifest().map(m -> " " + m.name() + " " + m.id() + " " + m.version()).orElse("");
+                + value.manifest().map(m -> " " + m.name() + " " + m.id() + " " + m.version()).orElse("");
             if (text.toLowerCase(Locale.ROOT).contains(query))
                 rows.addElement(value);
         }
@@ -223,12 +225,12 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             messages.bind(details, all.isEmpty() ? "originals.empty" : "originals.noMatch");
         else {
             var text = new StringBuilder(value.file().toString()).append("\n\n")
-                    .append(messages.text("originals.local"));
+                .append(messages.text("originals.local"));
             value.manifest().ifPresent(m -> text.append("\n\n").append(m.name()).append("\n").append(m.id())
-                    .append("\n").append(m.version()));
+                .append("\n").append(m.version()));
             text.append("\n\n").append(state(value.state()));
             value.problem().ifPresent(
-                    p -> text.append("\n").append(messages.text("originals.invalid")).append("\n").append(p.message()));
+                p -> text.append("\n").append(messages.text("originals.invalid")).append("\n").append(p.message()));
             LocaleBinding.unbind(details);
             details.setText(text.toString());
         }
@@ -240,9 +242,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private void renderPending() {
         var value = (PendingView) pending.getSelectedItem();
         operationDetails.setText(value == null
-                ? ""
-                : state(value.state()) + " · " + state(value.phase())
-                        + value.failure().map(reason -> "\n" + reason).orElse(""));
+            ? ""
+            : state(value.state()) + " · " + state(value.phase())
+            + value.failure().map(reason -> "\n" + reason).orElse(""));
         operationDetails.setVisible(value != null);
         operationDetails.setCaretPosition(0);
         controls();
@@ -265,10 +267,10 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         install.setEnabled(available && current && selected != null && selected.state().equals("AVAILABLE"));
         delete.setEnabled(available && current && selected != null && selected.deletable());
         reconcile.setEnabled(available && current && operation != null
-                && Set.of("INSTALL", "REINSTALL").contains(operation.type()) && operation.state().equals("UNKNOWN"));
+            && Set.of("INSTALL", "REINSTALL").contains(operation.type()) && operation.state().equals("UNKNOWN"));
         cancelInstall.setEnabled(available && current && operation != null && operation.type().equals("INSTALL")
-                && operation.state().equals("UNKNOWN")
-                && Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(operation.phase()));
+            && operation.state().equals("UNKNOWN")
+            && Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(operation.phase()));
     }
 
     /** Persists only the selected preference and reloads uncertain saves without replay. / 仅持久选定偏好，保存不确定时重读而非重放。 */
@@ -289,9 +291,9 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         run(() -> service.review(file), review -> {
             var manifest = review.inspection().manifest();
             String text = messages.text("originals.confirmInstall",
-                    Map.of("path", file.toString(), "name", manifest.name(), "owner", manifest.id(), "version",
-                            manifest.version().toString(), "retention",
-                            messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter")));
+                Map.of("path", file.toString(), "name", manifest.name(), "owner", manifest.id(), "version",
+                    manifest.version().toString(), "retention",
+                    messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter")));
             if (confirm(text))
                 run(() -> service.install(review), this::outcome, true);
         }, true);
@@ -326,8 +328,8 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         }
         boolean cancellation = operation.phase().equals("CANCELLING");
         if (confirm(messages.text(cancellation ? "originals.confirmCancelContinue" : "originals.confirmReconcile",
-                Map.of("owner", operation.owner(), "version", operation.version(), "id", operation.id().toString(),
-                        "phase", state(operation.phase()))))) {
+            Map.of("owner", operation.owner(), "version", operation.version(), "id", operation.id().toString(),
+                "phase", state(operation.phase()))))) {
             if (cancellation)
                 run(() -> service.reconcileCancellation(operation.id()), this::cancelOutcome, true);
             else
@@ -340,11 +342,11 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         var operation = (PendingView) pending.getSelectedItem();
         run(() -> service.reviewCancellation(operation.id()), review -> {
             String paths = review.paths().isEmpty()
-                    ? messages.text("originals.cancelEmpty")
-                    : String.join("\n", review.paths().stream().map(Object::toString).toList());
+                ? messages.text("originals.cancelEmpty")
+                : String.join("\n", review.paths().stream().map(Object::toString).toList());
             if (confirm(messages.text("originals.confirmCancel",
-                    Map.of("owner", review.modId(), "version", review.version(), "id", review.id().toString(), "bytes",
-                            Long.toString(review.bytes()), "paths", paths))))
+                Map.of("owner", review.modId(), "version", review.version(), "id", review.id().toString(), "bytes",
+                    Long.toString(review.bytes()), "paths", paths))))
                 run(() -> service.cancel(review), this::cancelOutcome, true);
         }, true);
     }
@@ -354,8 +356,8 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private void cancelOutcome(OperationResult<CancellationReceipt> result) {
         LocaleBinding.unbind(status);
         status.setText(result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.CANCELLED
-                ? messages.text("originals.cancelled")
-                : messages.text("originals.cancelUnconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
+            ? messages.text("originals.cancelled")
+            : messages.text("originals.cancelUnconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
         refresh();
     }
 
@@ -366,10 +368,10 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         if (result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED) {
             var receipt = result.value().orElseThrow();
             status.setText(messages.text("originals.installed") + " "
-                    + messages.text("originals.cleanup." + receipt.originalCleanup()));
+                + messages.text("originals.cleanup." + receipt.originalCleanup()));
         } else
             status.setText(
-                    messages.text("originals.unconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
+                messages.text("originals.unconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
         changed();
     }
 
@@ -460,7 +462,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         location.setName("originals.location");
         location.setEditable(false);
         LocaleBinding.bind(location, LocalizedMessage.of("originals.location", "path", service.originalsDirectory()),
-                messages.catalog());
+            messages.catalog());
         location.setLineWrap(true);
         location.setWrapStyleWord(true);
         location.setOpaque(false);
@@ -486,7 +488,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
             var renderer = new DefaultListCellRenderer();
             renderer.putClientProperty("html.disable", true);
             return renderer.getListCellRendererComponent(list,
-                    value.file().getFileName() + " · " + state(value.state()), index, selected, focused);
+                value.file().getFileName() + " · " + state(value.state()), index, selected, focused);
         });
         inventory.addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting())

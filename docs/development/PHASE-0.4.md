@@ -1183,4 +1183,4 @@ Python helper 发现运行 100 项测试，无失败/错误；首次存在 22 �
 
 所有 AI 命令功能固定使用“人工审核、自动审批、完全控制”，分别为每条命令或完整脚本人工审核、仅高危人工审核、AI 审核通过直接执行。三档均受本地校验及独立 AI 审核约束；拒绝或不可用不执行，命令、目标、身份或证据变化重审。枚举及持久化值不变，完整长期规则见 [运行与行为约定](../Runtime.md#ai-命令审批长期规则)。`AssistedDeploymentInteraction` 将已有库结构变更和 SQLite 初始化的业务授权交给用户；其后实际命令仍经过公共审批，模型不能代替数据授权。
 
-格式工具及固定版本见 [工具说明](../../.mvn/formatting/README.md)。执行 `python .mvn/formatting/format.py --check` 验证全部维护代码；Java 随根 Maven `clean verify` 检查，前端另执行 `npm run format:check`、`npm test` 和 `npm run build`。辅助分析、恢复及命令审批使用本地模型替身；真实模型及 Linux 端到端行为仍需独立实机验收。
+当前格式检查入口和范围见 [工具说明](../../.mvn/formatting/README.md)，以该说明为准。辅助分析、恢复及命令审批使用本地模型替身；真实模型及 Linux 端到端行为仍需独立实机验收。

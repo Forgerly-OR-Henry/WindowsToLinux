@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.PageSlice;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,7 +21,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
@@ -47,7 +55,7 @@ public final class DeploymentApplicationExecutor {
      * @return saved summaries / 已保存摘要
      * @throws ApiException if evidence is unavailable / 依据不可用时 */
     public PageSlice<DeploymentApplicationSnapshot> list(Optional<String> cursor, int limit, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         return reader.list(cursor, limit, task);
     }
 
@@ -57,7 +65,7 @@ public final class DeploymentApplicationExecutor {
      * @return refreshed status or explicit uncertainty / 刷新状态或明确未知
      * @throws ApiException if platform access fails / 平台访问失败时 */
     public OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application,
-            TaskContext task) throws ApiException {
+                                                                  TaskContext task) throws ApiException {
         ApplicationFacts data = reader.find(application, task);
         var observations = observe(data, task);
         if (observations.outcome() != Outcome.SUCCEEDED)
@@ -67,8 +75,8 @@ public final class DeploymentApplicationExecutor {
         var state = overall(states);
         var original = data.snapshot();
         return success(new DeploymentApplicationSnapshot(original.application(), original.displayName(),
-                original.revisionSha256(), original.ownershipSha256(), state, Instant.now(), original.runtime(),
-                original.bindings(), original.healthPolicySha256()));
+            original.revisionSha256(), original.ownershipSha256(), state, Instant.now(), original.runtime(),
+            original.bindings(), original.healthPolicySha256()));
     }
 
     /** Applies one action after revisiting exact release, ownership, dependencies and health. / 重核精确发布、归属、依赖与健康后执行一次动作。
@@ -79,7 +87,7 @@ public final class DeploymentApplicationExecutor {
      * @return verified before and after / 已验证前后状态
      * @throws ApiException if platform access fails / 平台访问失败时 */
     public OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application, String revision,
-            DeploymentLifecycleAction action, TaskContext task) throws ApiException {
+                                                                DeploymentLifecycleAction action, TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         if (!data.snapshot().revisionSha256().equals(revision))
             return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_APPLICATION_REVISION_CHANGED");
@@ -95,8 +103,8 @@ public final class DeploymentApplicationExecutor {
         if (prior.isPresent() && !prior.orElseThrow().phase().equals("REVIEWED")) {
             var original = prior.orElseThrow();
             if (!original.applicationId().equals(application.id()) || !original.server().equals(application.server())
-                    || !original.currentRevision().equals(revision)
-                    || !original.action().equals("LIFECYCLE_" + action.name()))
+                || !original.currentRevision().equals(revision)
+                || !original.action().equals("LIFECYCLE_" + action.name()))
                 return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ORIGINAL_INTENT_CHANGED");
             return reconcileLifecycle(data, action, initial, states, original, task);
         }
@@ -106,27 +114,27 @@ public final class DeploymentApplicationExecutor {
             return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_APPLICATION_NOT_STOPPED");
         var graph = data.graph();
         var ordered = ordered(graph);
-        if (task.cancellation().requested())
+        if (task.cancelToken().requested())
             return cancelled();
         ObjectNode facts = DeploymentManagementJournal.facts().put("before", initial.name());
         var parts = facts.putObject("components");
         for (var component : graph.components())
             parts.putObject(component.componentId()).put("before", states.get(component.unit().id()).name())
-                    .put("attempted", false).put("verified", false);
+                .put("attempted", false).put("verified", false);
         var operation = journal.begin(application.id(), application.server(), "LIFECYCLE_" + action.name(), revision,
-                Optional.empty(), facts, task);
+            Optional.empty(), facts, task);
         if (!operation.phase().equals("REVIEWED"))
             return reconcileLifecycle(data, action, initial, states, operation, task);
         markUnknown(data, task);
         try (var session = context.linux().connect(application.server(), task)) {
             var helper = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                    context.interaction(), application.server(), task, revision).probe();
+                context.interaction(), application.server(), task, revision).probe();
             if (helper.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(helper);
             var channel = new DeploymentPublicationChannel(session, context.interaction(), application.server(), task,
-                    revision);
+                revision);
             var identity = new DeploymentHandoffChannel(session, context.interaction(), application.server(), task,
-                    revision);
+                revision);
             if (action == DeploymentLifecycleAction.RESTART) {
                 var stopped = run(channel, identity, data, ordered.reversed(), "stop", task, operation);
                 if (stopped.outcome() != Outcome.SUCCEEDED)
@@ -138,7 +146,7 @@ public final class DeploymentApplicationExecutor {
             } else {
                 var sequence = action == DeploymentLifecycleAction.STOP ? ordered.reversed() : ordered;
                 var effected = run(channel, identity, data, sequence, action.name().toLowerCase(java.util.Locale.ROOT),
-                        task, operation);
+                    task, operation);
                 if (effected.outcome() != Outcome.SUCCEEDED)
                     return withoutValue(effected);
             }
@@ -154,31 +162,31 @@ public final class DeploymentApplicationExecutor {
      * @return verified original result or retained uncertainty / 已核实原结果或留存未知
      * @throws ApiException if original evidence cannot be confirmed / 原依据无法确认时 */
     private OperationResult<DeploymentLifecycleResult> finishLifecycle(ApplicationFacts data,
-            DeploymentLifecycleAction action, ApplicationRunState initial, TaskContext task) throws ApiException {
+                                                                       DeploymentLifecycleAction action, ApplicationRunState initial, TaskContext task) throws ApiException {
         var after = observe(data, task);
         if (after.outcome() != Outcome.SUCCEEDED) {
             markUnknown(data, task);
             var current = journal.find(task).orElseThrow();
             journal.advance(current, "UNKNOWN",
-                    DeploymentManagementJournal.copy(current).put("finalObservationOutcome", after.outcome().name()),
-                    task);
+                DeploymentManagementJournal.copy(current).put("finalObservationOutcome", after.outcome().name()),
+                task);
             return unknown("DEPLOYMENT_LIFECYCLE_FINAL_OBSERVATION_UNCONFIRMED");
         }
         var finalStates = after.value().orElseThrow();
         persist(data, finalStates, task);
         var finalState = overall(finalStates);
         if (action == DeploymentLifecycleAction.STOP && finalState != ApplicationRunState.STOPPED
-                || action != DeploymentLifecycleAction.STOP && finalState != ApplicationRunState.RUNNING) {
+            || action != DeploymentLifecycleAction.STOP && finalState != ApplicationRunState.RUNNING) {
             var current = journal.find(task).orElseThrow();
             journal.advance(current, "UNKNOWN",
-                    DeploymentManagementJournal.copy(current).put("final", finalState.name()), task);
+                DeploymentManagementJournal.copy(current).put("final", finalState.name()), task);
             return unknown("DEPLOYMENT_APPLICATION_FINAL_STATE");
         }
         var current = journal.find(task).orElseThrow();
         journal.advance(current, "FINISHED", DeploymentManagementJournal.copy(current).put("final", finalState.name()),
-                task);
+            task);
         return success(new DeploymentLifecycleResult(data.snapshot().application(), initial, finalState,
-                "Verified original helper ownership, runtime and application health"));
+            "Verified original helper ownership, runtime and application health"));
     }
 
     /** Observes a prior original-task action without sending it again. / 只读观察原任务既有动作，不再次发送。
@@ -191,10 +199,10 @@ public final class DeploymentApplicationExecutor {
      * @return verified original result or uncertainty / 已核实原结果或未知
      * @throws ApiException if persisted evidence cannot be confirmed / 持久依据无法确认时 */
     private OperationResult<DeploymentLifecycleResult> reconcileLifecycle(ApplicationFacts data,
-            DeploymentLifecycleAction action, ApplicationRunState observed, Map<String, ApplicationRunState> states,
-            DeploymentManagementJournal.Entry operation, TaskContext task) throws ApiException {
+                                                                          DeploymentLifecycleAction action, ApplicationRunState observed, Map<String, ApplicationRunState> states,
+                                                                          DeploymentManagementJournal.Entry operation, TaskContext task) throws ApiException {
         if (!operation.phase().equals("EFFECTING") && !operation.phase().equals("UNKNOWN")
-                && !operation.phase().equals("FINISHED"))
+            && !operation.phase().equals("FINISHED"))
             return unknown("DEPLOYMENT_LIFECYCLE_PHASE_UNVERIFIED");
         if (observed == ApplicationRunState.UNKNOWN)
             return unknown("DEPLOYMENT_LIFECYCLE_OBSERVATION_UNKNOWN");
@@ -205,18 +213,18 @@ public final class DeploymentApplicationExecutor {
         for (var component : data.graph().components()) {
             var part = parts.path(component.componentId());
             if (!part.path("attempted").asBoolean(false)
-                    || action == DeploymentLifecycleAction.RESTART && !part.path("verified").asBoolean(false)
-                    || states.get(component.unit().id()) != goal)
+                || action == DeploymentLifecycleAction.RESTART && !part.path("verified").asBoolean(false)
+                || states.get(component.unit().id()) != goal)
                 return unknown("DEPLOYMENT_LIFECYCLE_COMPONENT_UNVERIFIED");
         }
         if (!operation.phase().equals("FINISHED")) {
             persist(data, states, task);
             journal.advance(operation, "FINISHED", DeploymentManagementJournal.copy(operation).put("final", goal.name())
-                    .put("reconciledReadOnly", true), task);
+                .put("reconciledReadOnly", true), task);
         }
         return success(new DeploymentLifecycleResult(data.snapshot().application(),
-                ApplicationRunState.valueOf(operation.facts().path("before").asText()), goal,
-                "Original action effects verified by read-only current identity and component health"));
+            ApplicationRunState.valueOf(operation.facts().path("before").asText()), goal,
+            "Original action effects verified by read-only current identity and component health"));
     }
 
     /** Dispatches reviewed components in one dependency-safe phase. / 在一个依赖安全阶段发送已审阅组件。
@@ -230,34 +238,34 @@ public final class DeploymentApplicationExecutor {
      * @return acknowledged phase or retained uncertainty / 已确认阶段或留存未知
      * @throws ApiException if original evidence cannot be persisted / 原依据无法持久化时 */
     private OperationResult<Void> run(DeploymentPublicationChannel channel, DeploymentHandoffChannel identity,
-            ApplicationFacts data, List<DeploymentApplicationGraph.Component> sequence, String verb, TaskContext task,
-            DeploymentManagementJournal.Entry entry) throws ApiException {
+                                      ApplicationFacts data, List<DeploymentApplicationGraph.Component> sequence, String verb, TaskContext task,
+                                      DeploymentManagementJournal.Entry entry) throws ApiException {
         for (var component : sequence) {
-            if (task.cancellation().requested()) {
+            if (task.cancelToken().requested()) {
                 journal.advance(entry, "UNKNOWN", DeploymentManagementJournal.copy(entry).put("interrupted", true),
-                        task);
+                    task);
                 return unknown("DEPLOYMENT_LIFECYCLE_INTERRUPTED");
             }
             for (var reviewed : data.graph().components()) {
                 var binding = data.release().bindings().stream()
-                        .filter(value -> value.unitId().equals(reviewed.unit().id())).findFirst().orElseThrow();
+                    .filter(value -> value.unitId().equals(reviewed.unit().id())).findFirst().orElseThrow();
                 var verified = identity.current(reviewed, binding.releaseSha256());
                 if (verified.outcome() != Outcome.SUCCEEDED) {
                     journal.advance(entry, "UNKNOWN",
-                            DeploymentManagementJournal.copy(entry).put("currentReleaseUnconfirmed", true), task);
+                        DeploymentManagementJournal.copy(entry).put("currentReleaseUnconfirmed", true), task);
                     return unknown("DEPLOYMENT_LIFECYCLE_CURRENT_RELEASE_CHANGED");
                 }
             }
             var facts = DeploymentManagementJournal.copy(entry);
             facts.withObject("components").withObject(component.componentId()).put("attempted", true).put("verb", verb)
-                    .put("verified", false);
+                .put("verified", false);
             entry = journal.advance(entry, "EFFECTING", facts, task);
             var result = channel.lifecycle(component.unit(), component.reviewedRuntime(), verb,
-                    data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
-                            .findFirst().orElseThrow().releaseSha256());
+                data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
+                    .findFirst().orElseThrow().releaseSha256());
             if (result.outcome() != Outcome.SUCCEEDED) {
                 journal.advance(entry, "UNKNOWN",
-                        DeploymentManagementJournal.copy(entry).put("effectOutcome", result.outcome().name()), task);
+                    DeploymentManagementJournal.copy(entry).put("effectOutcome", result.outcome().name()), task);
                 return unknown("DEPLOYMENT_LIFECYCLE_PARTIAL_OR_UNCONFIRMED");
             }
             facts = DeploymentManagementJournal.copy(entry);
@@ -273,22 +281,22 @@ public final class DeploymentApplicationExecutor {
      * @return complete component observations or failure / 完整组件观察或失败
      * @throws ApiException if session or authorization fails / 会话或授权失败时 */
     private OperationResult<Map<String, ApplicationRunState>> observe(ApplicationFacts data, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var states = new HashMap<String, ApplicationRunState>();
         var graph = data.graph();
         try (var session = context.linux().connect(data.snapshot().application().server(), task)) {
             var helper = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                    context.interaction(), data.snapshot().application().server(), task,
-                    data.snapshot().revisionSha256()).probe();
+                context.interaction(), data.snapshot().application().server(), task,
+                data.snapshot().revisionSha256()).probe();
             if (helper.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(helper);
             var channel = new DeploymentPublicationChannel(session, context.interaction(),
-                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                data.snapshot().application().server(), task, data.snapshot().revisionSha256());
             var identity = new DeploymentHandoffChannel(session, context.interaction(),
-                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                data.snapshot().application().server(), task, data.snapshot().revisionSha256());
             for (var component : graph.components()) {
                 var binding = data.release().bindings().stream()
-                        .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
+                    .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
                 var verified = identity.current(component, binding.releaseSha256());
                 if (verified.outcome() != Outcome.SUCCEEDED)
                     return withoutValue(verified);
@@ -313,8 +321,8 @@ public final class DeploymentApplicationExecutor {
             }
             if (overall(states) == ApplicationRunState.RUNNING) {
                 var health = graph.components().stream()
-                        .filter(component -> component.componentId().equals(graph.healthComponentId())).findFirst()
-                        .orElseThrow();
+                    .filter(component -> component.componentId().equals(graph.healthComponentId())).findFirst()
+                    .orElseThrow();
                 var checked = channel.healthCheck(health.unit(), graph.healthCheck());
                 if (checked.outcome() == Outcome.UNKNOWN || checked.outcome() == Outcome.CANCELLED)
                     return withoutValue(checked);
@@ -334,7 +342,7 @@ public final class DeploymentApplicationExecutor {
         while (result.size() < graph.components().size()) {
             int before = result.size();
             for (var component : graph.components().stream()
-                    .sorted(Comparator.comparing(DeploymentApplicationGraph.Component::componentId)).toList())
+                .sorted(Comparator.comparing(DeploymentApplicationGraph.Component::componentId)).toList())
                 if (!done.contains(component.componentId()) && done.containsAll(component.dependencies())) {
                     result.add(component);
                     done.add(component.componentId());
@@ -351,7 +359,7 @@ public final class DeploymentApplicationExecutor {
      * @param task authenticated original task / 已认证原任务
      * @throws ApiException if the original release or commit differs / 原发布或提交不符时 */
     private void persist(ApplicationFacts data, Map<String, ApplicationRunState> states, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         writeState(data, states, task);
     }
 
@@ -372,13 +380,13 @@ public final class DeploymentApplicationExecutor {
      * @param task authenticated original task / 已认证原任务
      * @throws ApiException if active identity or commit cannot be confirmed / 活动身份或提交无法确认时 */
     private void writeState(ApplicationFacts data, Map<String, ApplicationRunState> states, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task)) {
             connection.setAutoCommit(false);
             try {
                 try (var check = connection.prepareStatement(
-                        "SELECT release_sha256 FROM deployment_release WHERE application_id=? AND state='ACTIVE' FOR UPDATE")) {
+                    "SELECT release_sha256 FROM deployment_release WHERE application_id=? AND state='ACTIVE' FOR UPDATE")) {
                     check.setString(1, data.snapshot().application().id());
                     try (var rows = check.executeQuery()) {
                         if (!rows.next() || !data.snapshot().revisionSha256().equals(rows.getString(1)) || rows.next())
@@ -386,7 +394,7 @@ public final class DeploymentApplicationExecutor {
                     }
                 }
                 try (var update = connection.prepareStatement(
-                        "UPDATE deployment_unit SET runtime_state=?,autostart_state='UNKNOWN',is_ownership_verified=?,observation_evidence=?,observed_at=? WHERE deployment_unit_id=? AND current_release_sha256=?")) {
+                    "UPDATE deployment_unit SET runtime_state=?,autostart_state='UNKNOWN',is_ownership_verified=?,observation_evidence=?,observed_at=? WHERE deployment_unit_id=? AND current_release_sha256=?")) {
                     for (var component : data.graph().components()) {
                         var state = states.get(component.unit().id());
                         update.setString(1, state.name());
@@ -395,8 +403,8 @@ public final class DeploymentApplicationExecutor {
                         update.setLong(4, Instant.now().toEpochMilli());
                         update.setString(5, component.unit().id());
                         var binding = data.release().bindings().stream()
-                                .filter(value -> value.unitId().equals(component.unit().id())).findFirst()
-                                .orElseThrow();
+                            .filter(value -> value.unitId().equals(component.unit().id())).findFirst()
+                            .orElseThrow();
                         update.setString(6, binding.releaseSha256());
                         if (update.executeUpdate() != 1)
                             throw new SQLException("Current release changed");
@@ -427,8 +435,8 @@ public final class DeploymentApplicationExecutor {
         boolean running = states.containsValue(ApplicationRunState.RUNNING);
         boolean stopped = states.containsValue(ApplicationRunState.STOPPED);
         return running && stopped
-                ? ApplicationRunState.DEGRADED
-                : running ? ApplicationRunState.RUNNING : ApplicationRunState.STOPPED;
+            ? ApplicationRunState.DEGRADED
+            : running ? ApplicationRunState.RUNNING : ApplicationRunState.STOPPED;
     }
 
     /** Returns success with a copied payload. / 返回带副本载荷的成功结果。
@@ -454,7 +462,7 @@ public final class DeploymentApplicationExecutor {
      * @return known failure / 已知失败 */
     private static <T> OperationResult<T> failure(ProblemCode code, String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(
-                new Problem(code, event, "Managed application action was not accepted", Map.of(), Optional.empty())));
+            new Problem(code, event, "Managed application action was not accepted", Map.of(), Optional.empty())));
     }
 
     /** Leaves an attempted effect for read-only reconciliation. / 留待尝试过的副作用进行只读核对。
@@ -463,7 +471,7 @@ public final class DeploymentApplicationExecutor {
      * @return retained unknown result / 留存未知结果 */
     private static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Lifecycle effect requires original-task reconciliation", Map.of(), Optional.empty())));
+            event, "Lifecycle effect requires original-task reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Describes task cancellation before another effect. / 描述下一副作用前的任务取消。
@@ -471,7 +479,7 @@ public final class DeploymentApplicationExecutor {
      * @return known cancellation / 已知取消 */
     private static <T> OperationResult<T> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
-                "DEPLOYMENT_LIFECYCLE_CANCELLED", "Task cancelled", Map.of(), Optional.empty())));
+            "DEPLOYMENT_LIFECYCLE_CANCELLED", "Task cancelled", Map.of(), Optional.empty())));
     }
 
     /** Describes an unconfirmed local evidence transaction. / 描述未确认的本地依据事务。
@@ -480,6 +488,6 @@ public final class DeploymentApplicationExecutor {
      * @return original evidence exception / 原依据异常 */
     private static ApiException problem(ProblemCode code, String event) {
         return new ApiException(
-                new Problem(code, event, "Deployment state requires reconciliation", Map.of(), Optional.empty()));
+            new Problem(code, event, "Deployment state requires reconciliation", Map.of(), Optional.empty()));
     }
 }

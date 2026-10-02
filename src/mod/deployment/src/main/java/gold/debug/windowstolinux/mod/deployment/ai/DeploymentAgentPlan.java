@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
  * @param health independently reviewed whole probe / 独立审阅整图探测
  * @param components complete bounded graph / 完整有界图 */
 public record DeploymentAgentPlan(String applicationId, String healthComponentId, DeploymentHealthCheck health,
-        List<Component> components) {
+                                  List<Component> components) {
     /** One planned component before real managed identity is reserved. / 预留真实受管身份前的一项计划组件。
      * @param id component identity / 组件身份
      * @param dependencies required predecessors / 必需前驱
@@ -20,8 +20,8 @@ public record DeploymentAgentPlan(String applicationId, String healthComponentId
      * @param resources explicit managed resource bindings / 明确受管资源绑定
      * @param configuration typed nonsecret runtime values / 类型化不含秘密运行值 */
     public record Component(String id, List<String> dependencies, List<String> evidence,
-            DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources,
-            List<DeploymentConfigurationEntry> configuration) {
+                            DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources,
+                            List<DeploymentConfigurationEntry> configuration) {
         /** Copies and validates one component. / 复制并校验一个组件。
          * @param id component identity / 组件身份
          * @param dependencies predecessors / 前驱
@@ -40,7 +40,7 @@ public record DeploymentAgentPlan(String applicationId, String healthComponentId
             if (configuration.size() > 64)
                 throw new IllegalArgumentException("Agent configuration exceeds budget");
             if (evidence.isEmpty() || evidence.size() > 32 || dependencies.size() > 15
-                    || dependencies.size() != new HashSet<>(dependencies).size())
+                || dependencies.size() != new HashSet<>(dependencies).size())
                 throw new IllegalArgumentException("Invalid agent component evidence or dependencies");
         }
     }

@@ -1,12 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.task.*;
+
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -15,8 +21,12 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
         var observed = new AtomicReference<Throwable>();
         var context = runtime.modContexts().get(OWNER).context();
         var handle = context.tasks().submit(new TaskRequest("preference_acceptance", "Actual deployment preferences", List.of(), true), task -> {
-            try { return work.run(task); }
-            catch (Exception | AssertionError failure) { observed.set(failure); throw failure; }
+            try {
+                return work.run(task);
+            } catch (Exception | AssertionError failure) {
+                observed.set(failure);
+                throw failure;
+            }
         });
         try {
             var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
@@ -27,7 +37,9 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
         if (observed.get() != null) throw new AssertionError("Original preference work failed", observed.get());
     }
 
-    private OperationResult<Void> success() { return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty()); }
+    private OperationResult<Void> success() {
+        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+    }
 
     @Test
     void initializesOnlyMissingDeploymentPreferencesAndRejectsInvalidValues() throws Exception {
@@ -49,8 +61,9 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
                 }
                 assertThrows(IllegalArgumentException.class, () -> repository.read(task));
                 try (var connection = context.db().openConnection(task); var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT preference_value FROM preference WHERE preference_key='deploy_mode'")) {
-                    assertTrue(rows.next()); assertEquals("INVALID", rows.getString(1));
+                     var rows = statement.executeQuery("SELECT preference_value FROM preference WHERE preference_key='deploy_mode'")) {
+                    assertTrue(rows.next());
+                    assertEquals("INVALID", rows.getString(1));
                 }
                 assertThrows(IllegalArgumentException.class, () -> new DeploymentPreferences.Selection("STATIC", "INVALID"));
                 repository.save(task, new DeploymentPreferences.Selection("STATIC", "AUTOMATIC"));
@@ -65,11 +78,17 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
         var selection = new DeploymentPreferences.Selection("AGENT", "FULL_CONTROL");
         try (var runtime = open()) {
             start(runtime, true);
-            run(runtime, task -> { new DeploymentPreferences(runtime.modContexts().get(OWNER).context().db()).save(task, selection); return success(); });
+            run(runtime, task -> {
+                new DeploymentPreferences(runtime.modContexts().get(OWNER).context().db()).save(task, selection);
+                return success();
+            });
         }
         try (var runtime = open()) {
             start(runtime, true);
-            run(runtime, task -> { assertEquals(selection, new DeploymentPreferences(runtime.modContexts().get(OWNER).context().db()).read(task)); return success(); });
+            run(runtime, task -> {
+                assertEquals(selection, new DeploymentPreferences(runtime.modContexts().get(OWNER).context().db()).read(task));
+                return success();
+            });
         }
     }
 

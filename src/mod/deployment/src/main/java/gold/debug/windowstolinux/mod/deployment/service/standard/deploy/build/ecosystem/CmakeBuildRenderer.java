@@ -48,9 +48,9 @@ public final class CmakeBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.CmakeService cmake)
-                || facts.buildTool() != DeploymentBuildToolType.CMAKE) {
+            || facts.buildTool() != DeploymentBuildToolType.CMAKE) {
             throw new IllegalArgumentException("CMake renderer requires reviewed single-target inputs");
         }
         if (facts.languageFacts().sourceLanguages().isEmpty()) {
@@ -59,32 +59,32 @@ public final class CmakeBuildRenderer implements DeploymentBuildRenderer {
         String preset = SafeBuildScriptEnvelope.shellQuote(cmake.preset());
         String target = SafeBuildScriptEnvelope.shellQuote(cmake.target());
         String compilers = (facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
-                ? "command -v cc >/dev/null\n"
-                : "")
-                + (facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
-                        ? "command -v c++ >/dev/null\n"
-                        : "");
+            ? "command -v cc >/dev/null\n"
+            : "")
+            + (facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
+            ? "command -v c++ >/dev/null\n"
+            : "");
         String command = """
-                command -v cmake >/dev/null
-                command -v ninja >/dev/null
-                %scommand -v ldd >/dev/null
-                preset=%s
-                target=%s
-                test "$preset" = w2l-release
-                test -f ./CMakeLists.txt
-                test -f ./CMakePresets.json
-                run cmake -S . -B .w2l/cmake-build -G Ninja -DCMAKE_BUILD_TYPE=Release
-                run cmake --build .w2l/cmake-build --target "$target" --parallel 1
-                artifact="./.w2l/cmake-build/$target"
-                test -x "$artifact"
-                test ! -L "$artifact"
-                mkdir -p ./.w2l/bin
-                cp -- "$artifact" "./.w2l/bin/$target"
-                chmod 0555 -- "./.w2l/bin/$target"
-                ldd "./.w2l/bin/$target" > "./.w2l/bin/$target.ldd"
-                ! grep -F 'not found' "./.w2l/bin/$target.ldd"
-                printf 'ARTIFACT=%%s\n' "./.w2l/bin/$target"
-                """.formatted(compilers, preset, target);
+            command -v cmake >/dev/null
+            command -v ninja >/dev/null
+            %scommand -v ldd >/dev/null
+            preset=%s
+            target=%s
+            test "$preset" = w2l-release
+            test -f ./CMakeLists.txt
+            test -f ./CMakePresets.json
+            run cmake -S . -B .w2l/cmake-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+            run cmake --build .w2l/cmake-build --target "$target" --parallel 1
+            artifact="./.w2l/cmake-build/$target"
+            test -x "$artifact"
+            test ! -L "$artifact"
+            mkdir -p ./.w2l/bin
+            cp -- "$artifact" "./.w2l/bin/$target"
+            chmod 0555 -- "./.w2l/bin/$target"
+            ldd "./.w2l/bin/$target" > "./.w2l/bin/$target.ldd"
+            ! grep -F 'not found' "./.w2l/bin/$target.ldd"
+            printf 'ARTIFACT=%%s\n' "./.w2l/bin/$target"
+            """.formatted(compilers, preset, target);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

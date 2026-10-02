@@ -13,7 +13,7 @@ import java.util.List;
  * @param conflicts the observed conflicting facts / 观察到的冲突事实
  */
 public record KotlinCompilerFacts(String compilerVersion, String sourceRoot, String mainClass, List<String> sourceFiles,
-        List<String> missingItems, List<String> conflicts) {
+                                  List<String> missingItems, List<String> conflicts) {
     /**
      * Makes Kotlin architecture facts immutable. / 使 Kotlin 架构事实不可变。
      *

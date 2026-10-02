@@ -33,7 +33,7 @@ public interface DesktopUpdatePort {
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
     HandoffEvidence verifyIndependentUpdater(DesktopUpdateVerification update, BackupEvidence backup)
-            throws DesktopUpdateException;
+        throws DesktopUpdateException;
 
     /**
      * Replaces program files only after an independent handoff. / 仅在独立交接后替换程序文件。
@@ -54,7 +54,7 @@ public interface DesktopUpdatePort {
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
     StepEvidence validateDatabase(DesktopUpdateVerification update, BackupEvidence backup)
-            throws DesktopUpdateException;
+        throws DesktopUpdateException;
 
     /**
      * Starts and verifies the new program against the preserved data location and security profile. / 使用保留的数据位置及安全配置启动并验证新程序。
@@ -106,7 +106,7 @@ public interface DesktopUpdatePort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record BackupEvidence(String backupToken, boolean programBackedUp, boolean databaseBackedUp,
-            boolean dataLocationPreserved, boolean securityProfilePreserved, List<String> evidence) {
+                          boolean dataLocationPreserved, boolean securityProfilePreserved, List<String> evidence) {
         /**
          * Validates paired backup evidence. / 校验成对备份证据。
          *
@@ -132,7 +132,7 @@ public interface DesktopUpdatePort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record HandoffEvidence(boolean independentUpdaterVerified, boolean mainProcessExited, boolean handoffAuthenticated,
-            List<String> evidence) {
+                           List<String> evidence) {
         /**
          * Validates handoff evidence. / 校验交接证据。
          *
@@ -155,7 +155,7 @@ public interface DesktopUpdatePort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record RollbackEvidence(boolean programRestored, boolean databaseRestored, boolean previousVersionHealthy,
-            List<String> evidence) {
+                            List<String> evidence) {
         /**
          * Validates rollback evidence. / 校验回滚证据。
          *

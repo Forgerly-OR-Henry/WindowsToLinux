@@ -26,28 +26,28 @@ import org.junit.jupiter.api.TestFactory;
 /** Checks language/tool coverage and each scenario's actual admission result. / 检查语言工具覆盖及各场景的实际准入结果。 */
 class DeploymentEcosystemFixtureMatrixTest {
     private static final Set<String> SCENARIOS = Set.of("success-deployment-smoke", "success-json-api",
-            "success-runtime-config", "failure-health-rollback", "failure-configuration-rejected");
+        "success-runtime-config", "failure-health-rollback", "failure-configuration-rejected");
 
     @TestFactory
     Stream<DynamicTest> allScenariosHaveTheExpectedAdmissionAndLanguage() throws Exception {
         Path repository = repositoryRoot();
         return fixtures().stream().flatMap(fixture -> SCENARIOS.stream().sorted()
-                .map(scenario -> DynamicTest.dynamicTest(fixture.path() + "/" + scenario, () -> {
-                    Path root = repository.resolve("test/single-language").resolve(fixture.path()).resolve(scenario);
-                    var result = new DeploymentAnalysisCoordinator().analyze(root, fixture.projectType());
-                    if (scenario.equals("failure-configuration-rejected")) {
-                        assertTrue(Set.of(DeploymentAdmissionStatus.REJECTED, DeploymentAdmissionStatus.REQUIRES_INPUT)
-                                .contains(result.admission()), result.toString());
-                    } else {
-                        assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, result.admission(),
-                                result.toString());
-                        var facts = result.facts().orElseThrow();
-                        assertEquals(fixture.buildTool(), facts.buildTool());
-                        assertTrue(facts.languageFacts().sourceLanguages().contains(fixture.language()),
-                                () -> fixture.path() + ": " + facts.languageFacts());
-                        assertTrue(result.runtimeSuggestion().isPresent());
-                    }
-                })));
+            .map(scenario -> DynamicTest.dynamicTest(fixture.path() + "/" + scenario, () -> {
+                Path root = repository.resolve("test/single-language").resolve(fixture.path()).resolve(scenario);
+                var result = new DeploymentAnalysisCoordinator().analyze(root, fixture.projectType());
+                if (scenario.equals("failure-configuration-rejected")) {
+                    assertTrue(Set.of(DeploymentAdmissionStatus.REJECTED, DeploymentAdmissionStatus.REQUIRES_INPUT)
+                        .contains(result.admission()), result.toString());
+                } else {
+                    assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, result.admission(),
+                        result.toString());
+                    var facts = result.facts().orElseThrow();
+                    assertEquals(fixture.buildTool(), facts.buildTool());
+                    assertTrue(facts.languageFacts().sourceLanguages().contains(fixture.language()),
+                        () -> fixture.path() + ": " + facts.languageFacts());
+                    assertTrue(result.runtimeSuggestion().isPresent());
+                }
+            })));
     }
 
     @Test
@@ -57,45 +57,45 @@ class DeploymentEcosystemFixtureMatrixTest {
         assertEquals(12, fixtures.stream().map(Fixture::language).distinct().count());
         assertEquals(fixtures.size(), fixtures.stream().map(Fixture::path).distinct().count());
         Set<DeploymentArchitectureType> sourceArchitectures = DeploymentSupportCatalog.deployableArchitectures()
-                .stream()
-                .filter(architecture -> !Set.of(DeploymentProjectKind.JAVA_JAR, DeploymentProjectKind.STATIC_SITE,
-                        DeploymentProjectKind.DOCKERFILE_CONTAINER).contains(architecture.projectType()))
-                .collect(Collectors.toSet());
+            .stream()
+            .filter(architecture -> !Set.of(DeploymentProjectKind.JAVA_JAR, DeploymentProjectKind.STATIC_SITE,
+                DeploymentProjectKind.DOCKERFILE_CONTAINER).contains(architecture.projectType()))
+            .collect(Collectors.toSet());
         assertEquals(sourceArchitectures,
-                fixtures.stream()
-                        .map(fixture -> new DeploymentArchitectureType(fixture.projectType(), fixture.buildTool()))
-                        .collect(Collectors.toSet()));
+            fixtures.stream()
+                .map(fixture -> new DeploymentArchitectureType(fixture.projectType(), fixture.buildTool()))
+                .collect(Collectors.toSet()));
         Set<String> actualPaths = new HashSet<>();
         Path testRoot = repositoryRoot().resolve("test/single-language");
         try (var paths = Files.walk(testRoot, 3)) {
             paths.filter(Files::isDirectory).filter(path -> testRoot.relativize(path).getNameCount() == 3)
-                    .forEach(path -> actualPaths.add(testRoot.relativize(path).toString().replace('\\', '/')));
+                .forEach(path -> actualPaths.add(testRoot.relativize(path).toString().replace('\\', '/')));
         }
         assertEquals(fixtures.stream().map(Fixture::path).collect(Collectors.toSet()), actualPaths);
         for (Fixture fixture : fixtures) {
             try (var groups = Files.list(testRoot.resolve(fixture.path()))) {
                 assertEquals(SCENARIOS, groups.filter(Files::isDirectory).map(path -> path.getFileName().toString())
-                        .collect(Collectors.toSet()), fixture.path());
+                    .collect(Collectors.toSet()), fixture.path());
             }
         }
         for (String language : List.of("JAVASCRIPT", "TYPESCRIPT")) {
             assertEquals(
-                    Set.of(DeploymentBuildToolType.NPM, DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN),
-                    fixtures.stream().filter(fixture -> fixture.language().name().equals(language))
-                            .map(Fixture::buildTool).collect(Collectors.toSet()));
+                Set.of(DeploymentBuildToolType.NPM, DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN),
+                fixtures.stream().filter(fixture -> fixture.language().name().equals(language))
+                    .map(Fixture::buildTool).collect(Collectors.toSet()));
         }
     }
 
     private static List<Fixture> fixtures() throws Exception {
         JsonNode entries = new ObjectMapper()
-                .readTree(repositoryRoot().resolve("test/single-language/matrix.json").toFile());
+            .readTree(repositoryRoot().resolve("test/single-language/matrix.json").toFile());
         assertTrue(entries.isArray());
         java.util.ArrayList<Fixture> result = new java.util.ArrayList<>();
         for (JsonNode entry : entries) {
             result.add(new Fixture(entry.required("path").asText(),
-                    SourceLanguageType.valueOf(entry.required("language").asText()),
-                    DeploymentProjectKind.valueOf(entry.required("projectType").asText()),
-                    DeploymentBuildToolType.valueOf(entry.required("buildTool").asText())));
+                SourceLanguageType.valueOf(entry.required("language").asText()),
+                DeploymentProjectKind.valueOf(entry.required("projectType").asText()),
+                DeploymentBuildToolType.valueOf(entry.required("buildTool").asText())));
         }
         return List.copyOf(result);
     }
@@ -126,18 +126,18 @@ class DeploymentEcosystemFixtureMatrixTest {
                     files = paths.filter(Files::isRegularFile).toList();
                 }
                 var implementations = files.stream().filter(path -> path.toString().endsWith(extension))
-                        .filter(path -> !Set.of("build.js", "__init__.py").contains(path.getFileName().toString()))
-                        .filter(path -> !path.toString().replace('\\', '/').contains("/src/test/"))
-                        .filter(path -> !path.getFileName().toString().endsWith(".d.ts")).toList();
+                    .filter(path -> !Set.of("build.js", "__init__.py").contains(path.getFileName().toString()))
+                    .filter(path -> !path.toString().replace('\\', '/').contains("/src/test/"))
+                    .filter(path -> !path.getFileName().toString().endsWith(".d.ts")).toList();
                 assertTrue(implementations.size() >= 4, fixture.path() + "/" + scenario);
                 for (Path implementation : implementations)
                     assertFalse(Files.readString(implementation).isBlank(), implementation.toString());
                 if (fixture.language() == SourceLanguageType.C || fixture.language() == SourceLanguageType.CPP) {
                     assertTrue(
-                            files.stream()
-                                    .anyMatch(path -> path.toString()
-                                            .endsWith(fixture.language() == SourceLanguageType.C ? ".h" : ".hpp")),
-                            project.toString());
+                        files.stream()
+                            .anyMatch(path -> path.toString()
+                                .endsWith(fixture.language() == SourceLanguageType.C ? ".h" : ".hpp")),
+                        project.toString());
                     String cmake = Files.readString(project.resolve("CMakeLists.txt"));
                     for (Path implementation : implementations)
                         assertTrue(cmake.contains(project.relativize(implementation).toString().replace('\\', '/')));
@@ -149,13 +149,13 @@ class DeploymentEcosystemFixtureMatrixTest {
     private static Path repositoryRoot() {
         for (Path current = Path.of("").toAbsolutePath().normalize(); current != null; current = current.getParent()) {
             if (Files.isRegularFile(current.resolve("test/single-language/matrix.json"))
-                    && Files.isRegularFile(current.resolve("pom.xml")))
+                && Files.isRegularFile(current.resolve("pom.xml")))
                 return current;
         }
         throw new IllegalStateException("WindowsToLinux repository root was not found");
     }
 
     private record Fixture(String path, SourceLanguageType language, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool) {
+                           DeploymentBuildToolType buildTool) {
     }
 }

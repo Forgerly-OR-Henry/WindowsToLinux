@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -13,10 +15,10 @@ import java.util.concurrent.atomic.*;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
@@ -27,15 +29,15 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
 
     private final AtomicReference<TaskSnapshot> selected = new AtomicReference<>();
 
-    private final AtomicReference<CancellationToken> original = new AtomicReference<>();
+    private final AtomicReference<CancelToken> original = new AtomicReference<>();
 
     private final AtomicBoolean cancelled = new AtomicBoolean();
 
     private JFrame window;
 
     @Override
-    protected gold.debug.windowstolinux.app.main.startup.PlatformRuntime open() throws Exception {
-        var runtime = gold.debug.windowstolinux.app.main.startup.PlatformRuntime.open(root.resolve("data"), PROTECTION);
+    protected gold.debug.windowstolinux.app.main.start.PlatformRuntime open() throws Exception {
+        var runtime = gold.debug.windowstolinux.app.main.start.PlatformRuntime.open(root.resolve("data"), PROTECTION);
         if (runtime.security().securityState().configured())
             runtime.security().unlock(PASSWORD.toCharArray());
         else
@@ -64,10 +66,22 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
         Files.writeString(root.resolve("input/README.md"), "Controlled original source\n");
         enable();
         try (var runtime = open()) {
+            // Fixture metadata satisfies the existing pre-source model admission; no model call is made. / 夹具元数据满足既有来源前模型准入，不调用模型。
+            try (var operation = runtime.security().enterOperation();
+                 var credentials = runtime.security().openCredentials()) {
+                credentials.save("ai/visual-fixture", "fixture-only".toCharArray());
+            }
+            runtime.persistence().aiProfiles().saveVerified(
+                new gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile("visual-model",
+                    "https://example.invalid/v1/chat/completions", "fixture", "ai/visual-fixture"),
+                "Visual fixture", java.time.Instant.now());
+            runtime.persistence().aiProfiles().purposes().save(
+                gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT,
+                List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment("visual-model", true)));
             runtime.servers()
-                    .saveServerProfile(ServerProfile.fromStored(
-                            new StoredServerProfile("visual-agent", "127.0.0.1", 22, "root", "fixture-password")),
-                            "fixture-password".toCharArray());
+                .saveServerProfile(ServerProfile.fromStored(
+                        new StoredServerProfile("visual-agent", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
             var mounted = new AtomicReference<JComponent>();
             var pages = new ModPageRegistry(new ModPageRegistry.PageHost() {
                 public void show(ModPageRegistry.PageKey key, PageSpec spec, JComponent component) {
@@ -92,12 +106,19 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
             pages.openView(key);
             JComponent first = mounted.get();
             assertNotNull(first);
-            JPanel form = (JPanel) ((JScrollPane) first.getComponent(0)).getViewport().getView();
-            var mode = (JComboBox<?>) form.getComponent(3);
-            var source = (JComboBox<?>) form.getComponent(5);
-            var project = (JTextField) form.getComponent(7);
-            var url = (JTextField) form.getComponent(9);
-            var requirements = (JTextArea) ((JScrollPane) form.getComponent(19)).getViewport().getView();
+            var mode = (JComboBox<?>) named(first, "deployment.preference.approval");
+            var source = (JComboBox<?>) named(first, "deployment.agent.source");
+            SwingUtilities.invokeAndWait(() -> {
+                window = new JFrame();
+                window.setContentPane(first);
+                window.setSize(1000, 720);
+                ((JButton) named(first, "deployment.advanced")).doClick(0);
+            });
+            var advanced = window.getOwnedWindows()[0];
+            var project = (JTextField) named(advanced, "deployment.agent.projectName");
+            var url = (JTextField) named(advanced, "deployment.agent.gitUrl");
+            var requirements = (JTextArea) ((JScrollPane) named(advanced, "deployment.agent.requirements"))
+                .getViewport().getView();
             var start = button(first, "start", Locale.SIMPLIFIED_CHINESE);
             var cancel = button(first, "cancel", Locale.SIMPLIFIED_CHINESE);
             awaitEnabled(start, true);
@@ -118,6 +139,9 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
                 assertEquals("goal=retained human choice", requirements.getText());
                 source.setSelectedItem("LOCAL");
                 mode.setSelectedItem("MANUAL_REVIEW");
+            });
+            awaitEnabled(start, true);
+            SwingUtilities.invokeAndWait(() -> {
                 start.doClick();
                 assertFalse(start.isEnabled());
             });
@@ -144,12 +168,12 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
             release.countDown();
             until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
             while (scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task WHERE task_id='" + selected.get().id() + "'") != 0
-                    && System.nanoTime() < until)
+                "SELECT COUNT(*) FROM platform_task WHERE task_id='" + selected.get().id() + "'") != 0
+                && System.nanoTime() < until)
                 Thread.sleep(20);
             assertEquals(0,
-                    scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE task_id='" + selected.get().id() + "'"),
-                    diagnostic(runtime, selected.get().id()));
+                scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE task_id='" + selected.get().id() + "'"),
+                diagnostic(runtime, selected.get().id()));
             assertTrue(cancelled.get());
             awaitEnabled(start, true);
             pages.closeView(key);
@@ -159,7 +183,7 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
             awaitEnabled(button(mounted.get(), "start", Locale.ENGLISH), true);
             until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
             while (scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE owner_id='" + OWNER + "'") != 0
-                    && System.nanoTime() < until)
+                && System.nanoTime() < until)
                 Thread.sleep(20);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE owner_id='" + OWNER + "'"));
             pages.closeView(key);
@@ -173,19 +197,19 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
         }
     }
 
-    private String diagnostic(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime, UUID task)
-            throws Exception {
+    private String diagnostic(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task)
+        throws Exception {
         var details = new StringBuilder();
         try (var connection = runtime.persistence().database().openConnection()) {
             for (String query : List.of("SELECT state,outcome,progress_text FROM platform_task WHERE task_id=?",
-                    "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL"))
+                "SELECT resource_kind,resource_id FROM platform_task_resource WHERE task_id=? AND released_at IS NULL"))
                 try (var statement = connection.prepareStatement(query)) {
                     statement.setObject(1, task);
                     try (var rows = statement.executeQuery()) {
                         while (rows.next())
                             for (int i = 1; i <= rows.getMetaData().getColumnCount(); i++)
                                 details.append(rows.getMetaData().getColumnName(i)).append('=')
-                                        .append(rows.getString(i)).append(' ');
+                                    .append(rows.getString(i)).append(' ');
                     }
                 }
         }
@@ -200,7 +224,8 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
         var failure = new AtomicReference<Throwable>();
         SwingUtilities.invokeAndWait(() -> {
             try {
-                window = new JFrame("Actual CLASS autonomous deployment");
+                if (window == null)
+                    window = new JFrame("Actual CLASS autonomous deployment");
                 window.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
                 window.setContentPane(page);
                 window.pack();
@@ -225,12 +250,16 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
             throw new AssertionError("Actual visible CLASS page capture failed", failure.get());
     }
 
+    private static Component named(Container root, String name) {
+        return descendants(root).stream().filter(c -> name.equals(c.getName())).findFirst().orElseThrow();
+    }
+
     private static JButton button(JComponent root, String key, Locale locale) {
         String expected = ResourceBundle
-                .getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-agent-page", locale).getString(key);
+            .getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-agent-page", locale).getString(key);
         return descendants(root).stream()
-                .filter(value -> value instanceof JButton button && button.getText().equals(expected))
-                .map(JButton.class::cast).findFirst().orElseThrow();
+            .filter(value -> value instanceof JButton button && button.getText().equals(expected))
+            .map(JButton.class::cast).findFirst().orElseThrow();
     }
 
     private static List<Component> descendants(Container root) {

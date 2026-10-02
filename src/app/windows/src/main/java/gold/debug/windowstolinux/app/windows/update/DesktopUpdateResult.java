@@ -18,8 +18,9 @@ import gold.debug.windowstolinux.appapi.task.Problem;
  * @param problem structured problem occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
 public record DesktopUpdateResult(UUID operationIdentity, DesktopUpdateStatus status,
-        DesktopReleaseVersion requestedVersion, List<DesktopUpdateEvent> events, Optional<String> rollbackBackupToken,
-        Optional<Problem> problem) {
+                                  DesktopReleaseVersion requestedVersion, List<DesktopUpdateEvent> events,
+                                  Optional<String> rollbackBackupToken,
+                                  Optional<Problem> problem) {
     /**
      * Validates status-specific evidence. / 校验终态对应证据。
      *
@@ -44,7 +45,7 @@ public record DesktopUpdateResult(UUID operationIdentity, DesktopUpdateStatus st
         if (status == DesktopUpdateStatus.SUCCEEDED) {
             if (rollbackBackupToken.isEmpty() || problem.isPresent()) {
                 throw new IllegalArgumentException(
-                        "successful update requires retained rollback backup and no problem");
+                    "successful update requires retained rollback backup and no problem");
             }
         } else if (problem.isEmpty()) {
             throw new IllegalArgumentException("failed update requires a structured problem");

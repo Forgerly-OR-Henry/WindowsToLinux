@@ -76,14 +76,14 @@ public record ProcessRecovery(UUID boot, UUID process, OptionalLong pid, Optiona
         var f = recovery.fields();
         boolean running = "STARTED".equals(f.get("phase"));
         if (!recovery.protocol().equals(protocol) || !running && !"STARTING".equals(f.get("phase"))
-                || !f.keySet()
-                        .equals(running
-                                ? Set.of("bootId", "processId", "phase", "pid", "startedAt")
-                                : Set.of("bootId", "processId", "phase")))
+            || !f.keySet()
+            .equals(running
+                ? Set.of("bootId", "processId", "phase", "pid", "startedAt")
+                : Set.of("bootId", "processId", "phase")))
             throw new IllegalArgumentException("Unrecognized process checkpoint");
         var value = new ProcessRecovery(UUID.fromString(f.get("bootId")), UUID.fromString(f.get("processId")),
-                running ? OptionalLong.of(Long.parseLong(f.get("pid"))) : OptionalLong.empty(),
-                running ? Optional.of(Instant.parse(f.get("startedAt"))) : Optional.empty());
+            running ? OptionalLong.of(Long.parseLong(f.get("pid"))) : OptionalLong.empty(),
+            running ? Optional.of(Instant.parse(f.get("startedAt"))) : Optional.empty());
         if (!value.encode(protocol).equals(recovery))
             throw new IllegalArgumentException("Noncanonical process checkpoint");
         return value;

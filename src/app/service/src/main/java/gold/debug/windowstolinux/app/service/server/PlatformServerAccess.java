@@ -1,18 +1,26 @@
 package gold.debug.windowstolinux.app.service.server;
 
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.PageSlice;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.*;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.repository.ServerReferenceRepository;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.server.ServerReferenceRepository;
+
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Exposes task-admitted server observations and exact-generation persistent references. / 提供任务已准入服务器观测及精确代次持久引用。 */
 public final class PlatformServerAccess implements ServerService, AutoCloseable {
@@ -44,7 +52,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @param schema exact selected data generation, if any / 精确选定数据代次，可不存在
      */
     public PlatformServerAccess(PlatformDatabase database, PlatformTaskRuntime tasks,
-            ServerReferenceRepository repository, String owner, String version, Optional<SchemaIdentity> schema) {
+                                ServerReferenceRepository repository, String owner, String version, Optional<SchemaIdentity> schema) {
         this.tasks = Objects.requireNonNull(tasks);
         this.repository = Objects.requireNonNull(repository);
         this.ledger = new TaskLedger(database);
@@ -71,7 +79,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
             boolean more = values.size() > limit;
             var page = more ? values.subList(0, limit) : values;
             return new PageSlice<>(page,
-                    more ? Optional.of(encodeCursor(task.id(), page.getLast().ref().id())) : Optional.empty());
+                more ? Optional.of(encodeCursor(task.id(), page.getLast().ref().id())) : Optional.empty());
         });
     }
 
@@ -83,21 +91,21 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if current access, cursor or storage fails / 当前访问、游标或存储失败时 */
     @Override
     public PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         if (cursor == null || limit < 1 || limit > 200)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_PAGE", "Invalid server page request");
         return access(task, false, false, () -> {
             if (tasks.reconciling(task))
                 throw error(ProblemCode.CONTRACT_VIOLATION, "SERVER_DISCOVERY_RECOVERY",
-                        "Recovery cannot discover new servers");
+                    "Recovery cannot discover new servers");
             String after = cursor.isEmpty() ? null : decodeConfiguredCursor(cursor.orElseThrow(), task.id());
             var values = repository.listConfigured(after, limit + 1);
             boolean more = values.size() > limit;
             var page = more ? values.subList(0, limit) : values;
             return new PageSlice<>(page,
-                    more
-                            ? Optional.of(encodeConfiguredCursor(task.id(), page.getLast().ref().id()))
-                            : Optional.empty());
+                more
+                    ? Optional.of(encodeConfiguredCursor(task.id(), page.getLast().ref().id()))
+                    : Optional.empty());
         });
     }
 
@@ -147,7 +155,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      */
     @Override
     public Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         String id = serverId(server);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_REFERENCE_KEY", "Invalid server business key");
@@ -169,7 +177,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
     public void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException {
         if (referenceId == null || result == null)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_REFERENCE_RESULT",
-                    "A reference and resolution are required");
+                "A reference and resolution are required");
         var identity = requireSchema();
         access(task, true, true, () -> {
             var reference = repository.find(identity, referenceId);
@@ -191,31 +199,31 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if admission, access or durable cleanup fails / 准入、访问或持久清理失败时
      */
     private <T> T access(TaskContext task, boolean cleanup, boolean writes, TaskCapabilityScope.Work<T> work)
-            throws ApiException {
+        throws ApiException {
         try {
             return scope.call(task, cleanup, () -> {
                 if (writes && !cleanup && tasks.reconciling(task))
                     throw error(ProblemCode.CONTRACT_VIOLATION, "SERVER_REFERENCE_RECOVERY_WRITE",
-                            "Recovery cannot create new reference reservations");
+                        "Recovery cannot create new reference reservations");
                 try {
                     return work.run();
                 } catch (SQLException failure) {
                     String state = failure.getSQLState();
                     if ("42501".equals(state))
                         throw error(ProblemCode.ACCESS_DENIED, "SERVER_REFERENCE_OWNER",
-                                "The reference belongs to another generation");
+                            "The reference belongs to another generation");
                     if ("55000".equals(state))
                         throw error(ProblemCode.UNAVAILABLE, "SERVER_REFERENCE_SCHEMA",
-                                "The data generation is unavailable");
+                            "The data generation is unavailable");
                     if ("02000".equals(state))
                         throw error(ProblemCode.NOT_FOUND, "SERVER_REFERENCE_MISSING",
-                                "The requested reference or server is unavailable");
+                            "The requested reference or server is unavailable");
                     if (writes)
                         tasks.reportUncertainEffect(task);
                     throw error(writes ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE, "SERVER_REFERENCE_STORAGE",
-                            writes
-                                    ? "Server reference persistence requires reconciliation"
-                                    : "Server observations could not be read");
+                        writes
+                            ? "Server reference persistence requires reconciliation"
+                            : "Server observations could not be read");
                 }
             });
         } catch (SQLException failure) {
@@ -247,7 +255,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
     private SchemaIdentity requireSchema() throws ApiException {
         if (schema.isEmpty())
             throw error(ProblemCode.UNAVAILABLE, "SERVER_REFERENCE_NO_SCHEMA",
-                    "Persistent references require a business schema");
+                "Persistent references require a business schema");
         return schema.orElseThrow();
     }
 
@@ -260,7 +268,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      */
     private void requireServer(TaskContext task, String id) throws SQLException, ApiException {
         if (!ledger.queries().holds(task.id(),
-                new TaskResource("SERVER", id, tasks.requireContext(task).ownerId(), true)))
+            new TaskResource("SERVER", id, tasks.requireContext(task).ownerId(), true)))
             throw error(ProblemCode.ACCESS_DENIED, "SERVER_NOT_ADMITTED", "The server was not admitted with this task");
     }
 
@@ -284,7 +292,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      */
     private static String encodeCursor(UUID task, String id) {
         return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString((task + ":" + id).getBytes(StandardCharsets.UTF_8));
+            .encodeToString((task + ":" + id).getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -299,7 +307,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
             if (encoded.isEmpty() || encoded.length() > 4096)
                 throw new IllegalArgumentException();
             String decoded = StandardCharsets.UTF_8.newDecoder()
-                    .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
+                .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
             String prefix = task + ":";
             if (!decoded.startsWith(prefix) || decoded.length() <= prefix.length())
                 throw new IllegalArgumentException();
@@ -318,7 +326,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @return discovery-only cursor / 发现专用游标 */
     private static String encodeConfiguredCursor(UUID task, String id) {
         return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(("configured:" + task + ":" + id).getBytes(StandardCharsets.UTF_8));
+            .encodeToString(("configured:" + task + ":" + id).getBytes(StandardCharsets.UTF_8));
     }
 
     /** Decodes only the original task's discovery continuation. / 只解析原任务的发现续页。
@@ -331,7 +339,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
             if (encoded.isEmpty() || encoded.length() > 4096)
                 throw new IllegalArgumentException();
             String decoded = StandardCharsets.UTF_8.newDecoder()
-                    .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
+                .decode(ByteBuffer.wrap(Base64.getUrlDecoder().decode(encoded))).toString();
             String prefix = "configured:" + task + ":";
             if (!decoded.startsWith(prefix) || decoded.length() <= prefix.length())
                 throw new IllegalArgumentException();

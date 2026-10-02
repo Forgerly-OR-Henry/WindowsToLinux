@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -12,14 +16,17 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import com.sun.net.httpserver.HttpServer;
-import gold.debug.windowstolinux.app.ai.catalog.*;
-import gold.debug.windowstolinux.app.db.entity.*;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.source.SourceService;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.FileService;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -28,10 +35,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
     enum ConfigurationType {
         LANGUAGE_MISSING_MANUAL("MANUAL_REVIEW", false, null), LANGUAGE_MISSING_AUTOMATIC("AUTOMATIC", false,
-                true), LANGUAGE_MISSING_FULL("FULL_CONTROL", false, true), APPROVAL_MISSING_AUTOMATIC("AUTOMATIC", true,
-                        null), APPROVAL_MISSING_FULL("FULL_CONTROL", true, null), APPROVAL_DISABLED_AUTOMATIC(
-                                "AUTOMATIC", true, false), APPROVAL_DISABLED_FULL("FULL_CONTROL", true,
-                                        false), MANUAL_LANGUAGE_ONLY("MANUAL_REVIEW", true, null);
+            true), LANGUAGE_MISSING_FULL("FULL_CONTROL", false, true), APPROVAL_MISSING_AUTOMATIC("AUTOMATIC", true,
+            null), APPROVAL_MISSING_FULL("FULL_CONTROL", true, null), APPROVAL_DISABLED_AUTOMATIC(
+            "AUTOMATIC", true, false), APPROVAL_DISABLED_FULL("FULL_CONTROL", true,
+            false), MANUAL_LANGUAGE_ONLY("MANUAL_REVIEW", true, null);
 
         final String policy;
 
@@ -57,7 +64,7 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
     @ParameterizedTest(name = "original policy configuration {0}")
     @EnumSource(ConfigurationType.class)
     void requiredPurposesRejectBeforeSourceCaptureArchiveSshOrSendWhileManualNeedsOnlyLanguage(
-            ConfigurationType selected) throws Exception {
+        ConfigurationType selected) throws Exception {
         enable();
         var httpCalls = new AtomicInteger();
         var http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -73,12 +80,12 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile.fromStored(
-                            new StoredServerProfile("server", "127.0.0.1", 22, "deploy", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile.fromStored(
+                    new StoredServerProfile("server", "127.0.0.1", 22, "deploy", "fixture-password")),
+                "fixture-password".toCharArray());
             String credential = "ai/legacy/admission";
             try (var operation = runtime.security().enterOperation();
-                    var store = runtime.security().openCredentials()) {
+                 var store = runtime.security().openCredentials()) {
                 char[] key = "fixture-ai-key".toCharArray();
                 try {
                     store.save(credential, key);
@@ -87,16 +94,16 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
                 }
             }
             runtime.persistence().aiProfiles()
-                    .saveVerified(new StoredAiProviderProfile("model",
-                            "http://127.0.0.1:" + http.getAddress().getPort() + "/chat", "fixture/model", credential),
-                            "model", Instant.now(), AiCapabilityType.TEXT);
+                .saveVerified(new StoredAiProviderProfile("model",
+                        "http://127.0.0.1:" + http.getAddress().getPort() + "/chat", "fixture/model", credential),
+                    "model", Instant.now(), AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveOutputLimit("model", 1600);
             if (selected.language)
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
-                        List.of(new AiPurposeAssignment("model", true)));
+                    List.of(new AiPurposeAssignment("model", true)));
             if (selected.approval != null)
                 runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL,
-                        List.of(new AiPurposeAssignment("model", selected.approval)));
+                    List.of(new AiPurposeAssignment("model", selected.approval)));
 
             var selections = new AtomicInteger();
             var captures = new AtomicInteger();
@@ -105,44 +112,44 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             var sends = new AtomicInteger();
             var purposes = new CopyOnWriteArrayList<String>();
             var actual = runtime.modContexts().get(OWNER).context();
-            var source = (SourceService) Proxy.newProxyInstance(SourceService.class.getClassLoader(),
-                    new Class<?>[]{SourceService.class}, (proxy, method, arguments) -> {
-                        switch (method.getName()) {
-                            case "selectDirectory" -> selections.incrementAndGet();
-                            case "snapshot" -> captures.incrementAndGet();
-                            case "workspace" -> workspaces.incrementAndGet();
-                            default -> {
-                            }
+            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
+                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
+                    switch (method.getName()) {
+                        case "selectDirectory" -> selections.incrementAndGet();
+                        case "snapshot" -> captures.incrementAndGet();
+                        case "workspace" -> workspaces.incrementAndGet();
+                        default -> {
                         }
-                        return invoke(actual.source(), method, arguments);
-                    });
+                    }
+                    return invoke(actual.file(), method, arguments);
+                });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
-                    new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("connect"))
-                            connections.incrementAndGet();
-                        return invoke(actual.linux(), method, arguments);
-                    });
+                new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("connect"))
+                        connections.incrementAndGet();
+                    return invoke(actual.linux(), method, arguments);
+                });
             var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(),
-                    new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("call"))
-                            sends.incrementAndGet();
-                        if (method.getName().equals("configurationRevision"))
-                            purposes.add(arguments[0].toString());
-                        return invoke(actual.ai(), method, arguments);
-                    });
+                new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("call"))
+                        sends.incrementAndGet();
+                    if (method.getName().equals("configurationRevision"))
+                        purposes.add(arguments[0].toString());
+                    return invoke(actual.ai(), method, arguments);
+                });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
-                        return switch (method.getName()) {
-                            case "source" -> source;
-                            case "linux" -> linux;
-                            case "ai" -> ai;
-                            default -> invoke(actual, method, arguments);
-                        };
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    return switch (method.getName()) {
+                        case "source" -> source;
+                        case "linux" -> linux;
+                        case "ai" -> ai;
+                        default -> invoke(actual, method, arguments);
+                    };
+                });
             var request = new DeploymentAgentWorkflow.Request(Map.of("goal", "Actual original task"), selected.policy,
-                    65536, 100, 65536);
+                65536, 100, 65536);
             var handle = new DeploymentAgentWorkflow(bound)
-                    .submitLocal(new gold.debug.windowstolinux.appapi.server.ServerRef("server"), request);
+                .submitLocal(new gold.debug.windowstolinux.appapi.server.ServerRef("server"), request);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
             assertEquals(OWNER, handle.snapshot().ownerId());
@@ -167,8 +174,8 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             assertEquals(0, httpCalls.get());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             try (var access = scope(runtime, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement()) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement()) {
                 for (String table : List.of("deployment_agent_task", "deployment_execution"))
                     try (var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
                         assertTrue(rows.next());

@@ -39,7 +39,7 @@ public record DesktopReleaseVersion(int major, int minor, int patch) implements 
         }
         String[] parts = value.split("\\.");
         return new DesktopReleaseVersion(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
-                Integer.parseInt(parts[2]));
+            Integer.parseInt(parts[2]));
     }
 
     /**

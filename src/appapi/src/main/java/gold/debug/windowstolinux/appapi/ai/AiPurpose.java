@@ -15,5 +15,7 @@ public enum AiPurpose {
     /**
      * Configured models that accept image input. / 接受图像输入的配置模型组。
      */
-    VISION
+    VISION,
+    /** Speech recognition, filtered by complete or realtime input. / 语音识别，按完整或实时输入筛选。 */
+    VOICE
 }

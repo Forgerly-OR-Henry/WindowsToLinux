@@ -90,7 +90,7 @@ public final class DesktopHandoffEnvelopeCodec {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public byte[] write(PurposeType purpose, byte[] payload, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
+        throws WindowsWorkspaceException {
         purpose = Objects.requireNonNull(purpose, "purpose");
         if (payload == null)
             throw invalid("desktop handoff payload is missing", null);
@@ -136,7 +136,7 @@ public final class DesktopHandoffEnvelopeCodec {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public byte[] read(PurposeType expectedPurpose, byte[] document, SecretKey authenticationKey)
-            throws WindowsWorkspaceException {
+        throws WindowsWorkspaceException {
         expectedPurpose = Objects.requireNonNull(expectedPurpose, "expectedPurpose");
         if (document == null)
             throw invalid("desktop handoff envelope is missing", null);
@@ -156,7 +156,7 @@ public final class DesktopHandoffEnvelopeCodec {
             }
             try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(body))) {
                 if (input.readInt() != MAGIC || input.readInt() != VERSION
-                        || input.readUnsignedByte() != expectedPurpose.code) {
+                    || input.readUnsignedByte() != expectedPurpose.code) {
                     throw invalid("desktop handoff envelope header is unsupported", null);
                 }
                 int payloadLength = input.readInt();
@@ -193,7 +193,7 @@ public final class DesktopHandoffEnvelopeCodec {
         }
         byte[] keyBytes = authenticationKey.getEncoded();
         if (!"HmacSHA256".equalsIgnoreCase(authenticationKey.getAlgorithm()) || keyBytes == null || keyBytes.length < 32
-                || keyBytes.length > 64) {
+            || keyBytes.length > 64) {
             if (keyBytes != null)
                 Arrays.fill(keyBytes, (byte) 0);
             throw invalid("desktop handoff authentication key is invalid", null);

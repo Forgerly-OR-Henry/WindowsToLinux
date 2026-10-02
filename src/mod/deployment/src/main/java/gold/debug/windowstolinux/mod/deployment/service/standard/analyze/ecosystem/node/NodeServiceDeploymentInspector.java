@@ -56,11 +56,11 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         Optional<NodeBuildFacts> inspected = node.inspect(root, source.logicalRootName(root));
         if (inspected.isEmpty()) {
             rejections.add(new RejectionReason("NODE_PACKAGE_JSON_MISSING",
-                    DeploymentLocalizedMessage.of("analysis.deployment.rejection.nodePackageMissing"), "deployment"));
+                DeploymentLocalizedMessage.of("analysis.deployment.rejection.nodePackageMissing"), "deployment"));
             return null;
         }
         NodeBuildFacts project = inspected.orElseThrow();
@@ -78,11 +78,11 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
             missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.nodeStartScript"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
-                project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.nodePackage",
-                        "package.json", "analysis.deployment.evidence.detected")),
-                conflicts, missing);
+            project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.nodePackage",
+            "package.json", "analysis.deployment.evidence.detected")),
+            conflicts, missing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment
-                .valuesFor(projectType());
+            .valuesFor(projectType());
         String nodeVersion = languageFacts.values().get(LanguageFactKind.NODE_MAJOR_VERSION);
         if (nodeVersion != null) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION, nodeVersion);
@@ -93,11 +93,11 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.nodeVersion"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values,
-                Optional.empty(), Map.of(), List.of(),
-                languageFacts.evidence().stream().filter(
-                        evidence -> evidence.subject().key().equals("analysis.deployment.runtime.evidence.nodeVersion"))
-                        .toList(),
-                required);
+            Optional.empty(), Map.of(), List.of(),
+            languageFacts.evidence().stream().filter(
+                    evidence -> evidence.subject().key().equals("analysis.deployment.runtime.evidence.nodeVersion"))
+                .toList(),
+            required);
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -111,11 +111,11 @@ public final class NodeServiceDeploymentInspector implements DeploymentTypeInspe
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
-            String subject, String source, String conclusion) {
+        String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
-                source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
+            source,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
+            gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

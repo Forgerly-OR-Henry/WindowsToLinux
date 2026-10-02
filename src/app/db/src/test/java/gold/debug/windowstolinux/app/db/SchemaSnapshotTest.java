@@ -6,8 +6,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,7 +27,7 @@ class SchemaSnapshotTest {
             }
             assertThrows(java.sql.SQLException.class, () -> SchemaSnapshot.digest(db, coordinates));
             assertThrows(java.sql.SQLException.class,
-                    () -> new SchemaAccessScope(db, identity, UUID.randomUUID(), true));
+                () -> new SchemaAccessScope(db, identity, UUID.randomUUID(), true));
             assertEquals(0, db.openConnections());
         }
     }
@@ -37,12 +39,12 @@ class SchemaSnapshotTest {
             var identity = helper.prepare(db, "snapshot.original", "1");
             var coordinates = new SchemaCoordinates(identity);
             try (var access = new SchemaAccessScope(db, identity, UUID.randomUUID(), false);
-                    var c = access.openConnection();
-                    var s = c.createStatement()) {
+                 var c = access.openConnection();
+                 var s = c.createStatement()) {
                 s.execute(
-                        "CREATE TABLE \"精确 数据\"(id INT PRIMARY KEY,c CLOB,b BLOB,a INT ARRAY,u UUID,j JSON,t TIMESTAMP WITH TIME ZONE,n DECIMAL(30,10),z VARCHAR)");
+                    "CREATE TABLE \"精确 数据\"(id INT PRIMARY KEY,c CLOB,b BLOB,a INT ARRAY,u UUID,j JSON,t TIMESTAMP WITH TIME ZONE,n DECIMAL(30,10),z VARCHAR)");
                 try (var p = c.prepareStatement(
-                        "INSERT INTO \"精确 数据\" VALUES(?,?,?,ARRAY[1,NULL,3],UUID '00000000-0000-0000-0000-000000000001',JSON '{\"key\":2}',TIMESTAMP WITH TIME ZONE '2026-09-27 00:00:00+08',123456789.1234567890,NULL)")) {
+                    "INSERT INTO \"精确 数据\" VALUES(?,?,?,ARRAY[1,NULL,3],UUID '00000000-0000-0000-0000-000000000001',JSON '{\"key\":2}',TIMESTAMP WITH TIME ZONE '2026-09-27 00:00:00+08',123456789.1234567890,NULL)")) {
                     p.setInt(1, 1);
                     p.setString(2, "秘密不落盘-\ud83d\ude80".repeat(1200));
                     p.setBytes(3, new byte[19000]);
@@ -59,8 +61,8 @@ class SchemaSnapshotTest {
             }
             assertEquals(original, SchemaSnapshot.digest(db, coordinates));
             try (var access = new SchemaAccessScope(db, identity, UUID.randomUUID(), false);
-                    var c = access.openConnection();
-                    var s = c.createStatement()) {
+                 var c = access.openConnection();
+                 var s = c.createStatement()) {
                 s.execute("UPDATE \"精确 数据\" SET b=X'010203'");
                 assertNotEquals(original, SchemaSnapshot.digest(db, coordinates));
                 try (var p = c.prepareStatement("UPDATE \"精确 数据\" SET b=?")) {
@@ -87,7 +89,7 @@ class SchemaSnapshotTest {
         Set<Path> before;
         try (var files = Files.list(temporary)) {
             before = files.filter(p -> p.getFileName().toString().endsWith(".temp.db"))
-                    .collect(java.util.stream.Collectors.toSet());
+                .collect(java.util.stream.Collectors.toSet());
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var identity = new SchemaAccessScopeTest().prepare(db, "snapshot.spill", "1");
@@ -95,8 +97,8 @@ class SchemaSnapshotTest {
                 s.execute("SET MAX_MEMORY_ROWS 1");
             }
             try (var writer = new SchemaAccessScope(db, identity, UUID.randomUUID(), false);
-                    var c = writer.openConnection();
-                    var s = c.createStatement()) {
+                 var c = writer.openConnection();
+                 var s = c.createStatement()) {
                 s.execute("CREATE TABLE item(id INT PRIMARY KEY,value_text VARCHAR)");
                 s.execute("INSERT INTO item SELECT n,SPACE(100) FROM SYSTEM_RANGE(1,1000) r(n)");
             }
@@ -108,7 +110,7 @@ class SchemaSnapshotTest {
         }
         try (var files = Files.list(temporary)) {
             var remaining = files.filter(p -> p.getFileName().toString().endsWith(".temp.db"))
-                    .collect(java.util.stream.Collectors.toSet());
+                .collect(java.util.stream.Collectors.toSet());
             remaining.removeAll(before);
             assertTrue(remaining.isEmpty(), remaining.toString());
         }

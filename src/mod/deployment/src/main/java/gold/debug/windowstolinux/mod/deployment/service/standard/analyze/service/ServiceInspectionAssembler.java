@@ -41,10 +41,10 @@ public final class ServiceInspectionAssembler {
      * @return constructed or resolved deployment type assessment / 构造或解析得到的部署类型评估
      */
     public static DeploymentTypeAssessment assemble(Path root, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts, ServiceProjectFacts shape,
-            boolean requiresServicePort) {
+                                                    DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts, ServiceProjectFacts shape,
+                                                    boolean requiresServicePort) {
         return assemble(root, ProjectIdentityResolver.rootName(root), projectType, buildTool, languageFacts, shape,
-                requiresServicePort);
+            requiresServicePort);
     }
 
     /** Assembles service facts with an explicit reviewed root-name fallback. / 使用明确审阅的根名称回退组装服务事实。
@@ -57,11 +57,11 @@ public final class ServiceInspectionAssembler {
      * @param requiresServicePort whether a service port is required / 是否要求服务端口
      * @return typed service assessment / 类型化服务评估 */
     public static DeploymentTypeAssessment assemble(Path root, String logicalRootName,
-            DeploymentProjectKind projectType, DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts,
-            ServiceProjectFacts shape, boolean requiresServicePort) {
+                                                    DeploymentProjectKind projectType, DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts,
+                                                    ServiceProjectFacts shape, boolean requiresServicePort) {
         List<DeploymentLocalizedMessage> missing = new ArrayList<>();
         shape.missingFiles()
-                .forEach(file -> missing.add(DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", file)));
+            .forEach(file -> missing.add(DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", file)));
         if (shape.version() == null) {
             missing.add(DeploymentLocalizedMessage.of("analysis.service.missingVersion"));
         }
@@ -72,12 +72,12 @@ public final class ServiceInspectionAssembler {
             missing.add(DeploymentLocalizedMessage.of("analysis.service.missingEntrypoint"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
-                ProjectIdentityResolver.rootApplicationId(logicalRootName), projectType, buildTool, languageFacts,
-                List.of(evidence("analysis.service.metadata", shape.primaryMetadata(),
-                        "analysis.deployment.evidence.detected")),
-                List.of(), missing);
+            ProjectIdentityResolver.rootApplicationId(logicalRootName), projectType, buildTool, languageFacts,
+            List.of(evidence("analysis.service.metadata", shape.primaryMetadata(),
+                "analysis.deployment.evidence.detected")),
+            List.of(), missing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = new EnumMap<>(
-                DeploymentRuntimeAssessment.RuntimeInputType.class);
+            DeploymentRuntimeAssessment.RuntimeInputType.class);
         if (shape.version() != null) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION, shape.version());
         }
@@ -102,7 +102,7 @@ public final class ServiceInspectionAssembler {
             required.add(DeploymentLocalizedMessage.of("analysis.service.missingEntrypoint"));
         }
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType, values,
-                Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
+            Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
     }
 
     /**
@@ -116,6 +116,6 @@ public final class ServiceInspectionAssembler {
      */
     private static AnalysisEvidence evidence(String subject, String source, String conclusion) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of(subject), source, DeploymentLocalizedMessage.of(conclusion),
-                EvidenceConfidenceLevel.HIGH);
+            EvidenceConfidenceLevel.HIGH);
     }
 }

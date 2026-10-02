@@ -38,8 +38,8 @@ public final class MultiComponentDeploymentPlanner {
         }
         Map<String, DeploymentComponent> components = new LinkedHashMap<>();
         assessment.components().stream().filter(component -> component.runtime().isPresent())
-                .sorted(Comparator.comparing(DeploymentComponent::componentId))
-                .forEach(component -> components.put(component.componentId(), component));
+            .sorted(Comparator.comparing(DeploymentComponent::componentId))
+            .forEach(component -> components.put(component.componentId(), component));
         if (components.isEmpty())
             throw new IllegalArgumentException("component plans require deployable components");
         Map<String, String> namespaces = new LinkedHashMap<>();
@@ -62,13 +62,13 @@ public final class MultiComponentDeploymentPlanner {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public MultiComponentDeploymentPlan restore(String applicationId, Map<String, String> candidateNamespaces,
-            Map<String, List<String>> componentDependencies) {
+                                                Map<String, List<String>> componentDependencies) {
         applicationId = Objects.requireNonNull(applicationId, "applicationId");
         Map<String, String> namespaces = Map.copyOf(Objects.requireNonNull(candidateNamespaces, "candidateNamespaces"));
         Map<String, List<String>> dependencies = new LinkedHashMap<>();
         Objects.requireNonNull(componentDependencies, "componentDependencies").entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> dependencies.put(entry.getKey(), List.copyOf(entry.getValue())));
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> dependencies.put(entry.getKey(), List.copyOf(entry.getValue())));
         if (namespaces.isEmpty() || !namespaces.keySet().equals(dependencies.keySet())) {
             throw new IllegalArgumentException("durable graph namespaces and dependencies must exactly match");
         }
@@ -77,7 +77,7 @@ public final class MultiComponentDeploymentPlanner {
         List<String> reverse = new ArrayList<>(start);
         Collections.reverse(reverse);
         return new MultiComponentDeploymentPlan(applicationId, waves, reverse, start, start, reverse, namespaces,
-                dependencies);
+            dependencies);
     }
 
     /**
@@ -94,12 +94,12 @@ public final class MultiComponentDeploymentPlanner {
         for (Map.Entry<String, List<String>> component : components.entrySet()) {
             Set<String> dependencies = new TreeSet<>(component.getValue());
             if (dependencies.size() != component.getValue().size() || !components.keySet().containsAll(dependencies)
-                    || dependencies.contains(component.getKey())) {
+                || dependencies.contains(component.getKey())) {
                 throw new IllegalArgumentException("deployable component graph contains a non-deployable dependency");
             }
             remainingDependencies.put(component.getKey(), dependencies.size());
             dependencies.forEach(dependency -> dependents.computeIfAbsent(dependency, ignored -> new TreeSet<>())
-                    .add(component.getKey()));
+                .add(component.getKey()));
         }
         TreeSet<String> ready = new TreeSet<>();
         remainingDependencies.forEach((id, count) -> {

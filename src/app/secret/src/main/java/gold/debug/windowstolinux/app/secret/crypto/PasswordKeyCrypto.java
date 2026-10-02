@@ -8,8 +8,8 @@ import java.util.*;
 import javax.crypto.Cipher;
 import javax.crypto.spec.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredCredential;
-import gold.debug.windowstolinux.app.db.entity.StoredSecurityProfile;
+import gold.debug.windowstolinux.app.db.security.StoredCredential;
+import gold.debug.windowstolinux.app.db.security.StoredSecurityProfile;
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
 import org.bouncycastle.crypto.params.Argon2Parameters;
 
@@ -26,6 +26,7 @@ public final class PasswordKeyCrypto {
     /** Versioned password verifier format. / 带版本的密码验证格式。
      */
     private static final String VERIFIER_PREFIX = "$argon2id$v=19$m=65536,t=3,p=1$";
+
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      */
     private PasswordKeyCrypto() {
@@ -49,17 +50,17 @@ public final class PasswordKeyCrypto {
      * @throws GeneralSecurityException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public static StoredSecurityProfile wrap(char[] password, byte[] dataKey, boolean encrypted)
-            throws GeneralSecurityException {
+        throws GeneralSecurityException {
         requirePassword(password);
         byte[] verifierSalt = random(16), wrapSalt = random(16), nonce = random(12);
         byte[] hash = derive(password, verifierSalt), wrappingKey = null;
         try {
             String verifier = VERIFIER_PREFIX + Base64.getEncoder().withoutPadding().encodeToString(verifierSalt) + "$"
-                    + Base64.getEncoder().withoutPadding().encodeToString(hash);
+                + Base64.getEncoder().withoutPadding().encodeToString(hash);
             wrappingKey = derive(password, wrapSalt);
             byte[] wrapped = crypt(Cipher.ENCRYPT_MODE, wrappingKey, nonce, wrapAad(), dataKey);
             return new StoredSecurityProfile(encrypted, verifier, wrapped, "AES256_GCM_V1", nonce, "ARGON2ID_V1",
-                    wrapSalt, PARAMETERS, 1);
+                wrapSalt, PARAMETERS, 1);
         } finally {
             clear(hash);
             clear(wrappingKey);
@@ -89,7 +90,7 @@ public final class PasswordKeyCrypto {
                 throw new GeneralSecurityException("password verification failed");
             key = derive(password, profile.keyDerivationSalt());
             byte[] dataKey = crypt(Cipher.DECRYPT_MODE, key, profile.keyWrapNonce(), wrapAad(),
-                    profile.wrappedDataKey());
+                profile.wrappedDataKey());
             if (dataKey.length != 32) {
                 clear(dataKey);
                 throw new GeneralSecurityException("invalid data key");
@@ -110,11 +111,11 @@ public final class PasswordKeyCrypto {
      */
     public static void validateProfile(StoredSecurityProfile profile) throws GeneralSecurityException {
         if (profile.formatVersion() != 1 || !profile.keyWrapAlgorithm().equals("AES256_GCM_V1")
-                || !profile.keyDerivationAlgorithm().equals("ARGON2ID_V1")
-                || !profile.keyDerivationParameters().equals(PARAMETERS)
-                || !profile.passwordVerifier().startsWith(VERIFIER_PREFIX) || profile.passwordVerifier().length() > 256
-                || profile.keyDerivationSalt().length != 16 || profile.keyWrapNonce().length != 12
-                || profile.wrappedDataKey().length != 48)
+            || !profile.keyDerivationAlgorithm().equals("ARGON2ID_V1")
+            || !profile.keyDerivationParameters().equals(PARAMETERS)
+            || !profile.passwordVerifier().startsWith(VERIFIER_PREFIX) || profile.passwordVerifier().length() > 256
+            || profile.keyDerivationSalt().length != 16 || profile.keyWrapNonce().length != 12
+            || profile.wrappedDataKey().length != 48)
             throw new GeneralSecurityException("unsupported security profile");
     }
 
@@ -127,7 +128,7 @@ public final class PasswordKeyCrypto {
      * @throws GeneralSecurityException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public static StoredCredential encode(String id, char[] value, byte[] dataKey, boolean encrypted)
-            throws GeneralSecurityException {
+        throws GeneralSecurityException {
         if (value.length == 0)
             throw new IllegalArgumentException("credential must not be empty");
         byte[] plain = utf8(value), payload = null, nonce = encrypted ? random(12) : null;
@@ -149,16 +150,16 @@ public final class PasswordKeyCrypto {
      * @throws GeneralSecurityException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     public static char[] decode(StoredCredential record, byte[] dataKey, boolean encrypted)
-            throws GeneralSecurityException {
+        throws GeneralSecurityException {
         if (!record.storageFormat().equals(encrypted ? "AES256_GCM_V1" : "PLAIN_V1")
-                || (encrypted ? (record.nonce() == null || record.nonce().length != 12) : record.nonce() != null))
+            || (encrypted ? (record.nonce() == null || record.nonce().length != 12) : record.nonce() != null))
             throw new GeneralSecurityException("credential format differs from security profile");
         byte[] payload = record.payload(), plain = null;
         CharBuffer chars = null;
         try {
             plain = encrypted
-                    ? crypt(Cipher.DECRYPT_MODE, dataKey, record.nonce(), credentialAad(record.id()), payload)
-                    : payload;
+                ? crypt(Cipher.DECRYPT_MODE, dataKey, record.nonce(), credentialAad(record.id()), payload)
+                : payload;
             chars = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(plain));
             char[] result = new char[chars.remaining()];
             chars.get(result);
@@ -181,8 +182,8 @@ public final class PasswordKeyCrypto {
      */
     private static byte[] derive(char[] password, byte[] salt) {
         var params = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
-                .withVersion(Argon2Parameters.ARGON2_VERSION_13).withSalt(salt).withIterations(3).withMemoryAsKB(65536)
-                .withParallelism(1).build();
+            .withVersion(Argon2Parameters.ARGON2_VERSION_13).withSalt(salt).withIterations(3).withMemoryAsKB(65536)
+            .withParallelism(1).build();
         var generator = new Argon2BytesGenerator();
         generator.init(params);
         byte[] key = new byte[32];
@@ -201,7 +202,7 @@ public final class PasswordKeyCrypto {
      * @throws GeneralSecurityException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     private static byte[] crypt(int mode, byte[] key, byte[] nonce, byte[] aad, byte[] value)
-            throws GeneralSecurityException {
+        throws GeneralSecurityException {
         var cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(mode, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
         cipher.updateAAD(aad);

@@ -35,11 +35,11 @@ public final class StaticSiteAdapter implements DeploymentAdapter {
     public ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request) {
         DeploymentRuntimeDefinition.StaticSite runtime = (DeploymentRuntimeDefinition.StaticSite) request.runtime();
         boolean nodeBuild = request.facts().buildTool() == DeploymentBuildToolType.NPM
-                || request.facts().buildTool() == DeploymentBuildToolType.PNPM
-                || request.facts().buildTool() == DeploymentBuildToolType.YARN;
+            || request.facts().buildTool() == DeploymentBuildToolType.PNPM
+            || request.facts().buildTool() == DeploymentBuildToolType.YARN;
         if (nodeBuild != runtime.nodeMajorVersion().isPresent()) {
             throw new IllegalArgumentException(
-                    "built static sites require an explicit Node.js major and pure static sites forbid one");
+                "built static sites require an explicit Node.js major and pure static sites forbid one");
         }
         return DeploymentPlanFactory.plan(request, projectType(), true, false);
     }

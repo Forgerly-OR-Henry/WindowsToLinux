@@ -33,37 +33,37 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return constructed or resolved runtime capability decision / 构造或解析得到的运行时能力决定
      */
     public static DeploymentRuntimeCapabilityDecision evaluate(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
+                                                               DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
+                                                               gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
         if (tools.selections().isEmpty())
             return evaluate(capabilities, facts, runtime);
         if (!runtime.workload().companions().isEmpty() && !companionBuildTools(capabilities))
             return DeploymentRuntimeCapabilityDecision
-                    .unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
+                .unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
         var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog
-                .defaults();
+            .defaults();
         for (var requirement : gold.debug.windowstolinux.mod.deployment.service.standard.deploy.toolchain.DeploymentProjectToolchainRequirements
-                .from(facts, runtime)) {
+            .from(facts, runtime)) {
             var candidates = catalog.candidates(requirement);
             if (candidates.isEmpty())
                 return DeploymentRuntimeCapabilityDecision
-                        .unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
+                    .unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
             if (candidates.stream().allMatch(candidate -> candidate
-                    .installation() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)) {
+                .installation() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)) {
                 DeploymentEcosystemToolType compiler = requirement
-                        .ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.C
-                                ? DeploymentEcosystemToolType.C_COMPILER
-                                : DeploymentEcosystemToolType.CPP_COMPILER;
+                    .ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.C
+                    ? DeploymentEcosystemToolType.C_COMPILER
+                    : DeploymentEcosystemToolType.CPP_COMPILER;
                 if (!hasTool(capabilities, compiler))
                     return DeploymentRuntimeCapabilityDecision
-                            .unsupportedRuntime("The declared companion compiler is unavailable: " + compiler);
+                        .unsupportedRuntime("The declared companion compiler is unavailable: " + compiler);
                 continue;
             }
             var selected = tools.selections().stream().filter(s -> s.requirement().equals(requirement)).findFirst();
             if (selected.isEmpty() || !catalog.permits(selected.orElseThrow().version()) || candidates.stream()
-                    .noneMatch(b -> b.version().equals(selected.orElseThrow().version().branch())))
+                .noneMatch(b -> b.version().equals(selected.orElseThrow().version().branch())))
                 return DeploymentRuntimeCapabilityDecision
-                        .unsupportedRuntime("Prepared toolchain does not match the reviewed requirement");
+                    .unsupportedRuntime("Prepared toolchain does not match the reviewed requirement");
         }
         return DeploymentRuntimeCapabilityDecision.supportedRuntime();
     }
@@ -80,7 +80,7 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DeploymentRuntimeCapabilityDecision evaluate(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
+                                                               DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
         capabilities = Objects.requireNonNull(capabilities, "capabilities");
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
@@ -89,18 +89,18 @@ public final class DeploymentRuntimeCapabilityEvaluator {
         }
         if (!runtime.workload().companions().isEmpty() && !companionBuildTools(capabilities))
             return DeploymentRuntimeCapabilityDecision
-                    .unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
+                .unsupportedRuntime("Companion builds require CMake 3.25 or later and Ninja");
         for (var requirement : gold.debug.windowstolinux.mod.deployment.service.standard.deploy.toolchain.DeploymentProjectToolchainRequirements
-                .from(facts, runtime)) {
+            .from(facts, runtime)) {
             if (gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog
-                    .defaults().candidates(requirement).isEmpty())
+                .defaults().candidates(requirement).isEmpty())
                 return DeploymentRuntimeCapabilityDecision
-                        .unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
+                    .unsupportedRuntime("No supported toolchain candidate: " + requirement.declaration());
         }
         String detail = missingRuntime(capabilities, facts, runtime);
         return detail == null
-                ? DeploymentRuntimeCapabilityDecision.supportedRuntime()
-                : DeploymentRuntimeCapabilityDecision.unsupportedRuntime(detail);
+            ? DeploymentRuntimeCapabilityDecision.supportedRuntime()
+            : DeploymentRuntimeCapabilityDecision.unsupportedRuntime(detail);
     }
 
     /**
@@ -112,8 +112,8 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      */
     private static boolean companionBuildTools(DeploymentLinuxCapabilityFacts capabilities) {
         return anyVersion(capabilities, DeploymentEcosystemToolType.CMAKE,
-                version -> version[0] > 3 || version[0] == 3 && version[1] >= 25)
-                && hasTool(capabilities, DeploymentEcosystemToolType.NINJA);
+            version -> version[0] > 3 || version[0] == 3 && version[1] >= 25)
+            && hasTool(capabilities, DeploymentEcosystemToolType.NINJA);
     }
 
     /**
@@ -127,7 +127,7 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static String missingRuntime(DeploymentLinuxCapabilityFacts capabilities, DeploymentProjectFacts facts,
-            DeploymentRuntimeDefinition runtime) {
+                                         DeploymentRuntimeDefinition runtime) {
         return switch (runtime) {
             case DeploymentRuntimeDefinition.ManagedProcess ignored ->
                 throw new IllegalArgumentException("generic runtime requires artifact evidence");
@@ -136,19 +136,19 @@ public final class DeploymentRuntimeCapabilityEvaluator {
                     yield "The declared Java version requires preparation for the Spring Boot build and runtime";
                 }
                 yield facts.buildTool() == DeploymentBuildToolType.MAVEN && !capabilities.mavenAvailable()
-                        ? "Maven is required for the reviewed system Maven build"
-                        : null;
+                    ? "Maven is required for the reviewed system Maven build"
+                    : null;
             }
             case DeploymentRuntimeDefinition.JavaJar javaJar ->
                 capabilities.javaMajorVersions().contains(Integer.parseInt(javaJar.javaVersion()))
-                        ? null
-                        : "the selected Java major is not available";
+                    ? null
+                    : "the selected Java major is not available";
             case DeploymentRuntimeDefinition.JavaSource java ->
                 capabilities.javaMajorVersions().contains(Integer.parseInt(java.javaVersion()))
-                        && hasMajor(capabilities, DeploymentEcosystemToolType.JAVAC, java.javaVersion())
-                        && hasTool(capabilities, DeploymentEcosystemToolType.JAR)
-                                ? null
-                                : "Java source requires its declared JDK, javac, and jar tools";
+                    && hasMajor(capabilities, DeploymentEcosystemToolType.JAVAC, java.javaVersion())
+                    && hasTool(capabilities, DeploymentEcosystemToolType.JAR)
+                    ? null
+                    : "Java source requires its declared JDK, javac, and jar tools";
             case DeploymentRuntimeDefinition.NodeService node -> {
                 DeploymentEcosystemToolType packageManager = switch (facts.buildTool()) {
                     case NPM -> DeploymentEcosystemToolType.NPM;
@@ -157,9 +157,9 @@ public final class DeploymentRuntimeCapabilityEvaluator {
                     default -> throw new IllegalArgumentException("Node service facts require one package manager");
                 };
                 yield capabilities.nodeMajorVersions().contains(node.nodeMajorVersion())
-                        && compatibleNodePackageManager(capabilities, packageManager)
-                                ? null
-                                : "the selected Node.js major and package manager must both be available";
+                    && compatibleNodePackageManager(capabilities, packageManager)
+                    ? null
+                    : "the selected Node.js major and package manager must both be available";
             }
             case DeploymentRuntimeDefinition.PythonService python -> {
                 DeploymentEcosystemToolType dependencyTool = switch (facts.buildTool()) {
@@ -172,24 +172,24 @@ public final class DeploymentRuntimeCapabilityEvaluator {
                         throw new IllegalArgumentException("Python service facts require one dependency architecture");
                 };
                 yield capabilities.pythonVersions().contains(python.pythonVersion())
-                        && (dependencyTool == null || compatiblePythonTool(capabilities, dependencyTool))
-                                ? null
-                                : "the selected Python interpreter and dependency tool must both be available";
+                    && (dependencyTool == null || compatiblePythonTool(capabilities, dependencyTool))
+                    ? null
+                    : "the selected Python interpreter and dependency tool must both be available";
             }
             case DeploymentRuntimeDefinition.StaticSite site -> site.nodeMajorVersion().isPresent()
-                    ? capabilities.npmAvailable()
-                            && capabilities.nodeMajorVersions().contains(site.nodeMajorVersion().getAsInt())
-                                    ? null
-                                    : "the selected Node.js major and npm are required for the static build"
-                    : capabilities.python3Available() ? null : "Python 3 is required for the managed static server";
+                ? capabilities.npmAvailable()
+                && capabilities.nodeMajorVersions().contains(site.nodeMajorVersion().getAsInt())
+                ? null
+                : "the selected Node.js major and npm are required for the static build"
+                : capabilities.python3Available() ? null : "Python 3 is required for the managed static server";
             case DeploymentRuntimeDefinition.Container container -> switch (container.engine()) {
                 case DOCKER -> capabilities.dockerAvailable() && capabilities.dockerOperational()
-                        ? null
-                        : "the Docker client and daemon must be usable by the authenticated account";
+                    ? null
+                    : "the Docker client and daemon must be usable by the authenticated account";
                 case PODMAN -> capabilities.podmanAvailable() && capabilities.podmanOperational()
-                        && capabilities.podmanQuadletAvailable()
-                                ? null
-                                : "Podman and Quadlet must be usable by the authenticated account";
+                    && capabilities.podmanQuadletAvailable()
+                    ? null
+                    : "Podman and Quadlet must be usable by the authenticated account";
             };
             case DeploymentRuntimeDefinition.GoService service ->
                 serviceVersion(capabilities, service.projectType(), service.version());
@@ -200,33 +200,33 @@ public final class DeploymentRuntimeCapabilityEvaluator {
             case DeploymentRuntimeDefinition.KotlinService service -> {
                 boolean java = capabilities.javaMajorVersions().contains(Integer.parseInt(service.jvmTarget()));
                 boolean compiler = facts.buildTool() != DeploymentBuildToolType.KOTLINC
-                        || hasVersion(capabilities, DeploymentEcosystemToolType.KOTLINC, service.version());
+                    || hasVersion(capabilities, DeploymentEcosystemToolType.KOTLINC, service.version());
                 yield java && compiler
-                        ? null
-                        : "the selected Kotlin architecture requires its declared compiler and JVM toolchain";
+                    ? null
+                    : "the selected Kotlin architecture requires its declared compiler and JVM toolchain";
             }
             case DeploymentRuntimeDefinition.PhpService service ->
                 serviceVersion(capabilities, service.projectType(), service.version()) == null
-                        && (facts.buildTool() == DeploymentBuildToolType.PHP_CLI
-                                || hasTool(capabilities, DeploymentEcosystemToolType.COMPOSER))
-                                        ? null
-                                        : "the selected PHP runtime and dependency tool are not available";
+                    && (facts.buildTool() == DeploymentBuildToolType.PHP_CLI
+                    || hasTool(capabilities, DeploymentEcosystemToolType.COMPOSER))
+                    ? null
+                    : "the selected PHP runtime and dependency tool are not available";
             case DeploymentRuntimeDefinition.RubyService service ->
                 serviceVersion(capabilities, service.projectType(), service.version()) == null
-                        && (facts.buildTool() == DeploymentBuildToolType.RUBY_CLI
-                                || hasTool(capabilities, DeploymentEcosystemToolType.BUNDLER))
-                                        ? null
-                                        : "the selected Ruby runtime and dependency tool are not available";
+                    && (facts.buildTool() == DeploymentBuildToolType.RUBY_CLI
+                    || hasTool(capabilities, DeploymentEcosystemToolType.BUNDLER))
+                    ? null
+                    : "the selected Ruby runtime and dependency tool are not available";
             case DeploymentRuntimeDefinition.CmakeService ignored -> !facts.languageFacts().sourceLanguages().isEmpty()
-                    && anyVersion(capabilities, DeploymentEcosystemToolType.CMAKE,
-                            segments -> segments[0] > 3 || segments[0] == 3 && segments[1] >= 25)
-                    && hasTool(capabilities, DeploymentEcosystemToolType.NINJA)
-                    && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
-                            || hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER))
-                    && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
-                            || hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER))
-                                    ? null
-                                    : "CMake, Ninja, and every compiler required by the reviewed source language set must be available";
+                && anyVersion(capabilities, DeploymentEcosystemToolType.CMAKE,
+                segments -> segments[0] > 3 || segments[0] == 3 && segments[1] >= 25)
+                && hasTool(capabilities, DeploymentEcosystemToolType.NINJA)
+                && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.C)
+                || hasTool(capabilities, DeploymentEcosystemToolType.C_COMPILER))
+                && (!facts.languageFacts().sourceLanguages().contains(SourceLanguageType.CPP)
+                || hasTool(capabilities, DeploymentEcosystemToolType.CPP_COMPILER))
+                ? null
+                : "CMake, Ninja, and every compiler required by the reviewed source language set must be available";
         };
     }
 
@@ -240,10 +240,10 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return missing version reason, or null when the exact version is available / 缺失版本原因；精确版本可用时为 null
      */
     private static String serviceVersion(DeploymentLinuxCapabilityFacts capabilities, DeploymentProjectKind projectType,
-            String version) {
+                                         String version) {
         return capabilities.serviceRuntimeVersions().getOrDefault(projectType, java.util.Set.of()).contains(version)
-                ? null
-                : "the selected ecosystem service runtime version is not available";
+            ? null
+            : "the selected ecosystem service runtime version is not available";
     }
 
     /**
@@ -268,7 +268,7 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return true when version of the relevant protocol, configuration or runtime condition holds for this contract, false otherwise / 当前契约是否满足相应协议、配置或运行时的版本条件时为 true，否则为 false
      */
     private static boolean hasVersion(DeploymentLinuxCapabilityFacts capabilities, DeploymentEcosystemToolType tool,
-            String version) {
+                                      String version) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).contains(version);
     }
 
@@ -282,9 +282,9 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return true when major condition holds for this contract, false otherwise / 当前契约是否满足主版本条件时为 true，否则为 false
      */
     private static boolean hasMajor(DeploymentLinuxCapabilityFacts capabilities, DeploymentEcosystemToolType tool,
-            String major) {
+                                    String major) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
-                .anyMatch(version -> version.equals(major) || version.startsWith(major + "."));
+            .anyMatch(version -> version.equals(major) || version.startsWith(major + "."));
     }
 
     /**
@@ -296,7 +296,7 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return true when compatible node package manager predicate against the supplied evidence, false otherwise / 根据所提供证据检查兼容节点软件包管理器条件时为 true，否则为 false
      */
     private static boolean compatibleNodePackageManager(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentEcosystemToolType tool) {
+                                                        DeploymentEcosystemToolType tool) {
         return switch (tool) {
             case NPM -> hasTool(capabilities, tool);
             case PNPM -> anyVersion(capabilities, tool, segments -> segments[0] >= 8);
@@ -314,7 +314,7 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return true when compatible python tool predicate against the supplied evidence, false otherwise / 根据所提供证据检查兼容Python工具条件时为 true，否则为 false
      */
     private static boolean compatiblePythonTool(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentEcosystemToolType tool) {
+                                                DeploymentEcosystemToolType tool) {
         return switch (tool) {
             case PIP, PIPENV -> hasTool(capabilities, tool);
             case POETRY -> anyVersion(capabilities, tool, segments -> segments[0] >= 2);
@@ -333,9 +333,9 @@ public final class DeploymentRuntimeCapabilityEvaluator {
      * @return true when any version predicate against the supplied evidence, false otherwise / 根据所提供证据检查任意版本条件时为 true，否则为 false
      */
     private static boolean anyVersion(DeploymentLinuxCapabilityFacts capabilities, DeploymentEcosystemToolType tool,
-            java.util.function.Predicate<int[]> accepted) {
+                                      java.util.function.Predicate<int[]> accepted) {
         return capabilities.ecosystemToolVersions().getOrDefault(tool, java.util.Set.of()).stream()
-                .map(DeploymentRuntimeCapabilityEvaluator::numericVersion).filter(Objects::nonNull).anyMatch(accepted);
+            .map(DeploymentRuntimeCapabilityEvaluator::numericVersion).filter(Objects::nonNull).anyMatch(accepted);
     }
 
     /**
@@ -350,6 +350,6 @@ public final class DeploymentRuntimeCapabilityEvaluator {
         if (!matcher.find())
             return null;
         return new int[]{Integer.parseInt(matcher.group(1)),
-                matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2))};
+            matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2))};
     }
 }

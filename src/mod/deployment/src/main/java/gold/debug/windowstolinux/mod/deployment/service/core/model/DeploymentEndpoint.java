@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param accessUrl access url / 访问URL
  */
 public record DeploymentEndpoint(String id, ProtocolType protocol, String bindAddress, int hostPort, int targetPort,
-        ExposureType exposure, String accessUrl) {
+                                 ExposureType exposure, String accessUrl) {
     /**
      * Identifies the network protocol of a reviewed application endpoint.
      * <p>标识已审阅应用端点的网络协议。
@@ -40,6 +40,7 @@ public record DeploymentEndpoint(String id, ProtocolType protocol, String bindAd
          * <p>协议类型中的UDP分类。
          */
         UDP;
+
         /**
          * Returns transport.
          * <p>返回传输。
@@ -89,7 +90,7 @@ public record DeploymentEndpoint(String id, ProtocolType protocol, String bindAd
         Objects.requireNonNull(exposure);
         Objects.requireNonNull(accessUrl);
         if (!Objects.requireNonNull(bindAddress).matches("[0-9a-fA-F:.]{2,64}")
-                || !(bindAddress.contains(":") || bindAddress.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")))
+            || !(bindAddress.contains(":") || bindAddress.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")))
             throw new IllegalArgumentException("endpoint binding must be a literal IP address");
         try {
             java.net.InetAddress.getByName(bindAddress);
@@ -142,7 +143,7 @@ public record DeploymentEndpoint(String id, ProtocolType protocol, String bindAd
             normalized = normalized.substring(1, normalized.length() - 1);
         }
         return normalized.equals("localhost") || normalized.equals("0.0.0.0") || normalized.equals("::")
-                || normalized.equals("::1") || normalized.equals("0:0:0:0:0:0:0:1") || normalized.startsWith("127.");
+            || normalized.equals("::1") || normalized.equals("0:0:0:0:0:0:0:1") || normalized.startsWith("127.");
     }
 
     /**
@@ -163,6 +164,6 @@ public record DeploymentEndpoint(String id, ProtocolType protocol, String bindAd
      */
     public String publishArgument() {
         return (bindAddress.contains(":") ? "[" + bindAddress + "]" : bindAddress) + ":" + hostPort + ":" + targetPort
-                + "/" + protocol.transport();
+            + "/" + protocol.transport();
     }
 }

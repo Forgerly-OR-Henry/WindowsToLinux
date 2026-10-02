@@ -12,6 +12,8 @@ public enum TaskState {
      * Author work is executing. / 作者任务逻辑正在执行。
      */
     RUNNING,
+    /** Waiting for an explicit user decision while the original callback is retained. / 保留原回调并等待明确用户决定。 */
+    WAITING,
     /**
      * Cancellation was requested but cleanup is not yet confirmed. / 已请求取消，尚未确认清理完成。
      */

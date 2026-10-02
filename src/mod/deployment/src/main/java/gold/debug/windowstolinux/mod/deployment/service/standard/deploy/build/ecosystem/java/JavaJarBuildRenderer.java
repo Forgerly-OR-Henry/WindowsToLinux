@@ -46,17 +46,17 @@ public final class JavaJarBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.JavaJar javaJar)
-                || facts.buildTool() != DeploymentBuildToolType.JAVA) {
+            || facts.buildTool() != DeploymentBuildToolType.JAVA) {
             throw new IllegalArgumentException("Java JAR renderer requires reviewed Java inputs");
         }
         String command = """
-                artifact=%s
-                test -f "$artifact"
-                test ! -L "$artifact"
-                printf 'ARTIFACT=%%s\n' "$artifact"
-                """.formatted(SafeBuildScriptEnvelope.shellQuote("./" + javaJar.jarRelativePath()));
+            artifact=%s
+            test -f "$artifact"
+            test ! -L "$artifact"
+            printf 'ARTIFACT=%%s\n' "$artifact"
+            """.formatted(SafeBuildScriptEnvelope.shellQuote("./" + javaJar.jarRelativePath()));
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

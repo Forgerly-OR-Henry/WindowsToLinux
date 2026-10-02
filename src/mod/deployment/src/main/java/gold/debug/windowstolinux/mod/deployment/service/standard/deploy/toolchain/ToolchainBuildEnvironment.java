@@ -90,13 +90,13 @@ public final class ToolchainBuildEnvironment {
         };
         for (String name : names) {
             String executable = selection.directory() + (ecosystem == DeploymentToolchainType.DOTNET ? "/" : "/bin/")
-                    + name;
+                + name;
             String quoted = gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.generation.script.SafeBuildScriptEnvelope
-                    .shellQuote(executable);
+                .shellQuote(executable);
             script.append("if [ \"$(command -v ").append(name).append(")\" != ").append(quoted).append(" ] || [ ! -x ")
-                    .append(quoted).append(" ]; then\n").append("  printf 'TOOLCHAIN_FAILURE=integrity:selected ")
-                    .append(ecosystem).append(' ').append(name)
-                    .append(" is inaccessible to the build identity\\n'\n  exit 65\nfi\n");
+                .append(quoted).append(" ]; then\n").append("  printf 'TOOLCHAIN_FAILURE=integrity:selected ")
+                .append(ecosystem).append(' ').append(name)
+                .append(" is inaccessible to the build identity\\n'\n  exit 65\nfi\n");
         }
     }
 
@@ -111,7 +111,7 @@ public final class ToolchainBuildEnvironment {
     private static void variable(StringBuilder out, String name, String value) {
         out.append("export ").append(name).append('=').append(
                 gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.generation.script.SafeBuildScriptEnvelope
-                        .shellQuote(value))
-                .append('\n');
+                    .shellQuote(value))
+            .append('\n');
     }
 }

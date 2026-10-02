@@ -48,9 +48,9 @@ public final class DesktopUninstallException extends IOException {
      * @throws NullPointerException if type or diagnostic is absent / 类型或诊断缺失时
      * @throws IllegalArgumentException if diagnostic is blank / 诊断为空时 */
     public static DesktopUninstallException create(DesktopUninstallFailureType type, String diagnostic,
-            Throwable cause) {
+                                                   Throwable cause) {
         return new DesktopUninstallException(
-                Objects.requireNonNull(type, "type").problem(UUID.randomUUID(), diagnostic), cause);
+            Objects.requireNonNull(type, "type").problem(UUID.randomUUID(), diagnostic), cause);
     }
 
     /**

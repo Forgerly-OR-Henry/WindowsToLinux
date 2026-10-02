@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
  */
 public record DeploymentUnitIdentity(String id, ServerRef server, String systemdUnit, String releaseRoot,
-        String ownershipManifestSha256) {
+                                     String ownershipManifestSha256) {
     /**
      * Validates and binds the inputs required by managed application.
      * <p>校验并绑定受管应用所需输入。
@@ -57,7 +57,7 @@ public record DeploymentUnitIdentity(String id, ServerRef server, String systemd
     public static DeploymentUnitIdentity forManaged(String id, ServerRef server, String ownershipManifestSha256) {
         String normalizedId = DeploymentServerIdentity.requireIdentifier(id, "id");
         return new DeploymentUnitIdentity(normalizedId, server, "windowstolinux-" + normalizedId + ".service",
-                DeploymentStorageLocation.installationRoot(normalizedId), ownershipManifestSha256);
+            DeploymentStorageLocation.installationRoot(normalizedId), ownershipManifestSha256);
     }
 
     /**

@@ -9,12 +9,13 @@ import java.util.stream.Stream;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
-import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-import gold.debug.windowstolinux.app.ui.i18n.*;
+import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import org.junit.jupiter.api.Test;
 
 class ServerProfileDialogTest {
@@ -42,19 +43,19 @@ class ServerProfileDialogTest {
         AtomicReference<ServerProfileDialog> dialog = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             dialog.set(new ServerProfileDialog(null, service, new DesktopComponentFactory(ThemePalette.light()),
-                    messages, new ServerProfile("first", "192.0.2.1", 22, "tester", "custom/credential", "Production"),
-                    saved -> {
-                        assertEquals("custom/credential", saved.credentialKey());
-                        notifications.incrementAndGet();
-                    }));
+                messages, new ServerProfile("first", "192.0.2.1", 22, "tester", "custom/credential", "Production"),
+                saved -> {
+                    assertEquals("custom/credential", saved.credentialKey());
+                    notifications.incrementAndGet();
+                }));
             dialog.get().setModalityType(Dialog.ModalityType.MODELESS);
             dialog.get().setVisible(true);
         });
         try {
             SwingUtilities.invokeAndWait(() -> {
                 var save = descendants(dialog.get()).filter(JButton.class::isInstance).map(JButton.class::cast)
-                        .filter(button -> messages.text("button.saveServer").equals(button.getText())).findFirst()
-                        .orElseThrow();
+                    .filter(button -> messages.text("button.saveServer").equals(button.getText())).findFirst()
+                    .orElseThrow();
                 save.doClick();
                 save.doClick();
                 assertFalse(save.isEnabled());
@@ -67,14 +68,14 @@ class ServerProfileDialogTest {
             SwingUtilities.invokeAndWait(() -> {
                 assertTrue(dialog.get().isVisible());
                 assertTrue(descendants(dialog.get()).filter(JTextField.class::isInstance).map(JTextField.class::cast)
-                        .anyMatch(field -> field.getText().equals("Production")));
+                    .anyMatch(field -> field.getText().equals("Production")));
             });
             assertEquals(1, saves.get());
             assertEquals(0, checks.get());
             assertEquals(0, notifications.get());
             SwingUtilities.invokeAndWait(() -> descendants(dialog.get()).filter(JButton.class::isInstance)
-                    .map(JButton.class::cast).filter(button -> "server.save".equals(button.getName())).findFirst()
-                    .orElseThrow().doClick(0));
+                .map(JButton.class::cast).filter(button -> "server.save".equals(button.getName())).findFirst()
+                .orElseThrow().doClick(0));
             deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
             while (DesktopTaskExecutor.hasActiveTasks() && System.nanoTime() < deadline)
                 Thread.sleep(10);
@@ -90,8 +91,8 @@ class ServerProfileDialogTest {
 
     private static Stream<Component> descendants(Container root) {
         return Stream.of(root.getComponents())
-                .flatMap(child -> child instanceof Container nested
-                        ? Stream.concat(Stream.of(child), descendants(nested))
-                        : Stream.of(child));
+            .flatMap(child -> child instanceof Container nested
+                ? Stream.concat(Stream.of(child), descendants(nested))
+                : Stream.of(child));
     }
 }

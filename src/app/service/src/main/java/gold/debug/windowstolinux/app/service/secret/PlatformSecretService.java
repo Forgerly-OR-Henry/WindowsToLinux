@@ -1,17 +1,22 @@
 package gold.debug.windowstolinux.app.service.secret;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Provides owner-bound protected bytes and generation-owned references through accepted tasks. / 经已接纳任务提供所有者绑定的受保护字节及代次所属引用。 */
 public final class PlatformSecretService implements SecretService, AutoCloseable {
@@ -50,7 +55,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @param schema selected optional data generation / 可选的选定数据代次
      */
     public PlatformSecretService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
-            CredentialReferenceRepository references, String owner, String version, Optional<SchemaIdentity> schema) {
+                                 CredentialReferenceRepository references, String owner, String version, Optional<SchemaIdentity> schema) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.references = Objects.requireNonNull(references);
@@ -117,7 +122,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      */
     @Override
     public Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         requireSecret(secret);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_REFERENCE_KEY", "Invalid secret business key");
@@ -136,7 +141,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
     public void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException {
         if (referenceId == null || result == null)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_REFERENCE_RESULT",
-                    "A reference and resolution are required");
+                "A reference and resolution are required");
         var identity = requireSchema();
         access(task, true, true, () -> {
             references.resolve(identity, referenceId, result);
@@ -156,7 +161,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      */
     @Override
     public <T> T use(SecretRef secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
-            throws ApiException {
+        throws ApiException {
         requireSecret(secret);
         requirePurpose(purpose);
         if (!purpose.equals(secret.purpose()))
@@ -167,7 +172,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
             CredentialReferenceRepository.requireOwned(owner, secret);
             return credentials(task, store -> {
                 char[] encoded = store.read(secret.id()).orElseThrow(
-                        () -> error(ProblemCode.NOT_FOUND, "SECRET_MISSING", "The requested secret is unavailable"));
+                    () -> error(ProblemCode.NOT_FOUND, "SECRET_MISSING", "The requested secret is unavailable"));
                 byte[] plaintext = null;
                 try {
                     plaintext = decode(encoded);
@@ -181,7 +186,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
                     }
                     if (result == plaintext)
                         throw error(ProblemCode.CONTRACT_VIOLATION, "SECRET_RETURNED",
-                                "The consumer cannot return the plaintext buffer");
+                            "The consumer cannot return the plaintext buffer");
                     return result;
                 } finally {
                     Arrays.fill(encoded, '\0');
@@ -229,29 +234,29 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if authorization or storage fails / 授权或存储失败时
      */
     private <T> T access(TaskContext task, boolean cleanup, boolean writes, TaskCapabilityScope.Work<T> work)
-            throws ApiException {
+        throws ApiException {
         try {
             return scope.call(task, cleanup, () -> {
                 if (writes && !cleanup && tasks.reconciling(task))
                     throw error(ProblemCode.CONTRACT_VIOLATION, "SECRET_RECOVERY_WRITE",
-                            "Recovery cannot create new secrets or reserve references");
+                        "Recovery cannot create new secrets or reserve references");
                 try {
                     return work.run();
                 } catch (SQLException failure) {
                     if ("42501".equals(failure.getSQLState()))
                         throw error(ProblemCode.ACCESS_DENIED, "SECRET_OWNER",
-                                "The secret belongs to another owner, purpose or generation");
+                            "The secret belongs to another owner, purpose or generation");
                     if ("55000".equals(failure.getSQLState()))
                         throw error(ProblemCode.UNAVAILABLE, "SECRET_SCHEMA", "The data generation is unavailable");
                     if ("02000".equals(failure.getSQLState()))
                         throw error(ProblemCode.NOT_FOUND, "SECRET_MISSING",
-                                "The requested secret or reference is unavailable");
+                            "The requested secret or reference is unavailable");
                     if (writes)
                         tasks.reportUncertainEffect(task);
                     throw error(writes ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE, "SECRET_STORAGE",
-                            writes
-                                    ? "Secret persistence requires reconciliation"
-                                    : "The protected secret could not be read");
+                        writes
+                            ? "Secret persistence requires reconciliation"
+                            : "The protected secret could not be read");
                 }
             });
         } catch (SQLException failure) {
@@ -283,7 +288,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if the stored representation is invalid / 存储表示无效时 */
     private static byte[] decode(char[] encoded) throws ApiException {
         if (encoded.length < 3 || encoded.length > 3 + 4 * ((MAX_BYTES + 2) / 3) || encoded[0] != 'B'
-                || encoded[1] != '1' || encoded[2] != ':')
+            || encoded[1] != '1' || encoded[2] != ':')
             throw error(ProblemCode.IO_FAILURE, "SECRET_ENCODING", "The stored secret format is invalid");
         byte[] text = new byte[encoded.length - 3];
         try {
@@ -311,7 +316,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
     private static void requirePurpose(String purpose) throws ApiException {
         if (purpose == null || purpose.isBlank() || purpose.length() > 128)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_PURPOSE",
-                    "Secret purpose must contain one to 128 characters");
+                "Secret purpose must contain one to 128 characters");
     }
 
     /** Validates public reference size and purpose. / 校验公开引用大小和用途。

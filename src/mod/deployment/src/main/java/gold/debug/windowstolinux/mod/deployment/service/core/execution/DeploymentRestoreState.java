@@ -1,9 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreEvidence.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 
 /** Original restore journal cursor with one authenticated task. / 单项已认证任务的原恢复账本游标。 */
@@ -19,6 +24,7 @@ final class DeploymentRestoreState {
 
     /** Authentic original root context retained by the caller. / 调用方保留的真实原根上下文。 */
     final TaskContext task;
+
     /** Copies evidence without transferring root-resource ownership. / 复制依据而不转移根资源归属。
      * @param ledger original provider journal / 原提供方账本
      * @param entry authorized original row / 已授权原行
@@ -43,7 +49,7 @@ final class DeploymentRestoreState {
     void save(DeploymentHandoffState state) throws ApiException {
         ledger.advance(entry, entry.publicValue().state(), state, facts, entry.result(), task);
         entry = ledger.find(entry.publicValue().id(), task)
-                .orElseThrow(() -> new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_JOURNAL_ABSENT")));
+            .orElseThrow(() -> new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_JOURNAL_ABSENT")));
     }
 
     /** Persists an explicit blocker without concluding the root task. / 持久保存明确阻碍而不结束根任务。
@@ -64,7 +70,7 @@ final class DeploymentRestoreState {
      * @throws ApiException if original evidence cannot be loaded or saved / 原依据无法加载或保存时 */
     <T> OperationResult<T> retain(String event) throws ApiException {
         entry = ledger.find(entry.publicValue().id(), task)
-                .orElseThrow(() -> new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_JOURNAL_ABSENT")));
+            .orElseThrow(() -> new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_JOURNAL_ABSENT")));
         return entry.publicValue().state() != DeploymentHandoffState.FINISHED ? uncertain(event) : unknown(event);
     }
 }

@@ -21,7 +21,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Anal
  * @param evidence bounded evidence for the observations / 观测结果的有界证据
  */
 public record ProjectLanguageFacts(Set<LanguageEcosystemType> ecosystems, Set<SourceLanguageType> sourceLanguages,
-        Map<LanguageFactKind, String> values, List<AnalysisEvidence> evidence) {
+                                   Map<LanguageFactKind, String> values, List<AnalysisEvidence> evidence) {
     /**
      * Creates immutable language facts. / 创建不可变语言事实。
      *

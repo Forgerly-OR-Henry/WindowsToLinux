@@ -22,8 +22,10 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.
  * @param sqlite sqlite / SQLite 数据库
  */
 public record DatabaseRequirement(String id, DeploymentDatabaseEngineType engine, String version, String database,
-        String username, String environmentPrefix, String passwordEnvironment, List<String> initializationFiles,
-        boolean springDatasource, String evidence, Optional<DeploymentSqliteRequirement> sqlite) {
+                                  String username, String environmentPrefix, String passwordEnvironment,
+                                  List<String> initializationFiles,
+                                  boolean springDatasource, String evidence,
+                                  Optional<DeploymentSqliteRequirement> sqlite) {
     /**
      * Validates and binds the inputs required by database requirement.
      * <p>校验并绑定数据库要求所需输入。
@@ -55,7 +57,7 @@ public record DatabaseRequirement(String id, DeploymentDatabaseEngineType engine
         environmentPrefix = environment(environmentPrefix);
         passwordEnvironment = environment(passwordEnvironment);
         if (!passwordEnvironment.isEmpty() && !passwordEnvironment.endsWith("_PASSWORD")
-                && !passwordEnvironment.endsWith("_PASSWORD_FILE"))
+            && !passwordEnvironment.endsWith("_PASSWORD_FILE"))
             throw new IllegalArgumentException("DB password input must name a password environment variable");
         initializationFiles = List.copyOf(initializationFiles);
         Objects.requireNonNull(evidence);
@@ -65,7 +67,7 @@ public record DatabaseRequirement(String id, DeploymentDatabaseEngineType engine
             throw new IllegalArgumentException("database declaration exceeds limits");
         for (String path : initializationFiles) {
             if (!path.matches("[a-zA-Z0-9_./-]{1,255}") || path.startsWith("/")
-                    || Arrays.asList(path.split("/")).contains("..") || !path.endsWith(".sql"))
+                || Arrays.asList(path.split("/")).contains("..") || !path.endsWith(".sql"))
                 throw new IllegalArgumentException("initialization must reference a bounded relative SQL file");
         }
     }
@@ -86,13 +88,13 @@ public record DatabaseRequirement(String id, DeploymentDatabaseEngineType engine
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     public DatabaseRequirement(String id, DeploymentDatabaseEngineType engine, String version, String database,
-            String username, String environmentPrefix, String passwordEnvironment, List<String> initializationFiles,
-            boolean springDatasource, String evidence) {
+                               String username, String environmentPrefix, String passwordEnvironment, List<String> initializationFiles,
+                               boolean springDatasource, String evidence) {
         this(id, engine, version, database, username, environmentPrefix, passwordEnvironment, initializationFiles,
-                springDatasource, evidence,
-                engine == DeploymentDatabaseEngineType.SQLITE
-                        ? Optional.of(DeploymentSqliteRequirement.fromPath("", "", ""))
-                        : Optional.empty());
+            springDatasource, evidence,
+            engine == DeploymentDatabaseEngineType.SQLITE
+                ? Optional.of(DeploymentSqliteRequirement.fromPath("", "", ""))
+                : Optional.empty());
     }
 
     /**

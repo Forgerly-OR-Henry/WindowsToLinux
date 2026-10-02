@@ -28,10 +28,10 @@ class DesktopUpdateVerifierTest {
         KeyPair key = keys();
         Path update = packageFile("signed desktop package");
         DesktopUpdateManifest manifest = signedManifest(key, update, "release-2", "2.0.0",
-                DesktopArchitectureType.X86_64, false);
+            DesktopArchitectureType.X86_64, false);
 
         DesktopUpdateVerification verified = new DesktopUpdateVerifier().verify(update, manifest,
-                policy(key, "1.0.0", Set.of(), false));
+            policy(key, "1.0.0", Set.of(), false));
 
         assertEquals(DesktopReleaseVersion.parse("2.0.0"), verified.version());
         assertEquals(4, verified.evidence().size());
@@ -42,11 +42,11 @@ class DesktopUpdateVerifierTest {
         KeyPair key = keys();
         Path update = packageFile("original package");
         DesktopUpdateManifest manifest = signedManifest(key, update, "release-2", "2.0.0",
-                DesktopArchitectureType.X86_64, false);
+            DesktopArchitectureType.X86_64, false);
         Files.writeString(update, "changed package");
 
         DesktopUpdateException failure = assertThrows(DesktopUpdateException.class,
-                () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
+            () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
 
         assertEquals("windows.update.package-invalid", failure.problem().eventCode());
     }
@@ -57,17 +57,17 @@ class DesktopUpdateVerifierTest {
         KeyPair unknown = keys();
         Path update = packageFile("signed package");
         DesktopUpdateManifest unknownSignature = signedManifest(unknown, update, "release-2", "2.0.0",
-                DesktopArchitectureType.X86_64, false);
+            DesktopArchitectureType.X86_64, false);
 
         DesktopUpdateException signatureFailure = assertThrows(DesktopUpdateException.class,
-                () -> new DesktopUpdateVerifier().verify(update, unknownSignature,
-                        policy(trusted, "1.0.0", Set.of(), false)));
+            () -> new DesktopUpdateVerifier().verify(update, unknownSignature,
+                policy(trusted, "1.0.0", Set.of(), false)));
         assertEquals("windows.update.signature-invalid", signatureFailure.problem().eventCode());
 
         DesktopUpdateManifest trustedManifest = signedManifest(trusted, update, "release-2", "2.0.0",
-                DesktopArchitectureType.X86_64, false);
+            DesktopArchitectureType.X86_64, false);
         DesktopUpdateException revoked = assertThrows(DesktopUpdateException.class, () -> new DesktopUpdateVerifier()
-                .verify(update, trustedManifest, policy(trusted, "1.0.0", Set.of("release-2"), false)));
+            .verify(update, trustedManifest, policy(trusted, "1.0.0", Set.of("release-2"), false)));
         assertEquals("windows.update.version-rejected", revoked.problem().eventCode());
     }
 
@@ -76,13 +76,13 @@ class DesktopUpdateVerifierTest {
         KeyPair key = keys();
         Path update = packageFile("emergency rollback package");
         DesktopUpdateManifest rollback = signedManifest(key, update, "release-1", "1.0.0",
-                DesktopArchitectureType.X86_64, true);
+            DesktopArchitectureType.X86_64, true);
 
         assertThrows(DesktopUpdateException.class,
-                () -> new DesktopUpdateVerifier().verify(update, rollback, policy(key, "2.0.0", Set.of(), false)));
+            () -> new DesktopUpdateVerifier().verify(update, rollback, policy(key, "2.0.0", Set.of(), false)));
 
         DesktopUpdateVerification approved = new DesktopUpdateVerifier().verify(update, rollback,
-                policy(key, "2.0.0", Set.of(), true));
+            policy(key, "2.0.0", Set.of(), true));
         assertEquals(DesktopReleaseVersion.parse("1.0.0"), approved.version());
     }
 
@@ -91,10 +91,10 @@ class DesktopUpdateVerifierTest {
         KeyPair key = keys();
         Path update = packageFile("arm package");
         DesktopUpdateManifest manifest = signedManifest(key, update, "release-arm", "2.0.0",
-                DesktopArchitectureType.ARM64, false);
+            DesktopArchitectureType.ARM64, false);
 
         DesktopUpdateException failure = assertThrows(DesktopUpdateException.class,
-                () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
+            () -> new DesktopUpdateVerifier().verify(update, manifest, policy(key, "1.0.0", Set.of(), false)));
         assertEquals("windows.update.architecture-rejected", failure.problem().eventCode());
     }
 
@@ -105,25 +105,25 @@ class DesktopUpdateVerifierTest {
     }
 
     private DesktopUpdateManifest signedManifest(KeyPair key, Path packageFile, String releaseId, String version,
-            DesktopArchitectureType architecture, boolean emergencyRollback) throws Exception {
+                                                 DesktopArchitectureType architecture, boolean emergencyRollback) throws Exception {
         byte[] bytes = Files.readAllBytes(packageFile);
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         String placeholder = Base64.getEncoder().encodeToString(new byte[64]);
         DesktopUpdateManifest unsigned = new DesktopUpdateManifest(releaseId, DesktopReleaseVersion.parse(version),
-                architecture, bytes.length, digest, NOW.minusSeconds(60), NOW.plusSeconds(3600), "release-key",
-                emergencyRollback, placeholder);
+            architecture, bytes.length, digest, NOW.minusSeconds(60), NOW.plusSeconds(3600), "release-key",
+            emergencyRollback, placeholder);
         Signature signer = Signature.getInstance("Ed25519");
         signer.initSign(key.getPrivate());
         signer.update(unsigned.signedPayload());
         return new DesktopUpdateManifest(releaseId, unsigned.version(), architecture, bytes.length, digest,
-                unsigned.issuedAt(), unsigned.expiresAt(), unsigned.keyId(), emergencyRollback,
-                Base64.getEncoder().encodeToString(signer.sign()));
+            unsigned.issuedAt(), unsigned.expiresAt(), unsigned.keyId(), emergencyRollback,
+            Base64.getEncoder().encodeToString(signer.sign()));
     }
 
     private DesktopUpdateTrustPolicy policy(KeyPair key, String currentVersion, Set<String> revoked,
-            boolean rollbackApproved) {
+                                            boolean rollbackApproved) {
         return new DesktopUpdateTrustPolicy(DesktopReleaseVersion.parse(currentVersion), DesktopArchitectureType.X86_64,
-                "release-key", key.getPublic(), revoked, NOW, rollbackApproved);
+            "release-key", key.getPublic(), revoked, NOW, rollbackApproved);
     }
 
     private KeyPair keys() throws Exception {

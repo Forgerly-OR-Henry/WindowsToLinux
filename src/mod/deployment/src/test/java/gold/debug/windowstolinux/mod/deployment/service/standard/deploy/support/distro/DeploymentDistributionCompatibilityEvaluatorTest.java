@@ -23,11 +23,11 @@ class DeploymentDistributionCompatibilityEvaluatorTest {
         var evidence = new ArrayList<String>();
 
         DeploymentHostCapabilityStatus support = DeploymentDistributionCompatibilityEvaluator
-                .evaluate(capabilities(LinuxDistroType.UBUNTU), evidence);
+            .evaluate(capabilities(LinuxDistroType.UBUNTU), evidence);
 
         assertEquals(DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION, support);
         assertEquals("package-architecture=amd64; cpu=X86_64_V1; security=APPARMOR/ENABLED; firewall=UFW/ACTIVE",
-                evidence.get(0));
+            evidence.get(0));
         assertEquals("Ubuntu CPU baseline satisfied: x86-64-v1", evidence.get(1));
     }
 
@@ -36,7 +36,7 @@ class DeploymentDistributionCompatibilityEvaluatorTest {
         var evidence = new ArrayList<String>();
 
         DeploymentHostCapabilityStatus support = DeploymentDistributionCompatibilityEvaluator
-                .evaluate(capabilities(LinuxDistroType.OTHER), evidence);
+            .evaluate(capabilities(LinuxDistroType.OTHER), evidence);
 
         assertEquals(DeploymentHostCapabilityStatus.UNSUPPORTED, support);
         assertEquals("distribution is outside the typed deployment matrix", evidence.get(1));
@@ -44,11 +44,11 @@ class DeploymentDistributionCompatibilityEvaluatorTest {
 
     private static DeploymentLinuxCapabilityFacts capabilities(LinuxDistroType distro) {
         return new DeploymentLinuxCapabilityFacts(distro, "24.04", "x86_64", "apt", "amd64", true, true, true, true,
-                Set.of(21), Set.of(22), true, true, Set.of("3.12"), true, Map.of(), Map.of(), true, true,
-                DeploymentCpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),
-                new DeploymentLinuxSecurityPosture(DeploymentLinuxSecurityModuleType.APPARMOR,
-                        DeploymentLinuxSecurityState.ENABLED, DeploymentLinuxFirewallKind.UFW,
-                        DeploymentLinuxFirewallState.ACTIVE),
-                "test evidence");
+            Set.of(21), Set.of(22), true, true, Set.of("3.12"), true, Map.of(), Map.of(), true, true,
+            DeploymentCpuMicroarchitectureLevel.X86_64_V1, Set.of("sse4_2", "popcnt"),
+            new DeploymentLinuxSecurityPosture(DeploymentLinuxSecurityModuleType.APPARMOR,
+                DeploymentLinuxSecurityState.ENABLED, DeploymentLinuxFirewallKind.UFW,
+                DeploymentLinuxFirewallState.ACTIVE),
+            "test evidence");
     }
 }

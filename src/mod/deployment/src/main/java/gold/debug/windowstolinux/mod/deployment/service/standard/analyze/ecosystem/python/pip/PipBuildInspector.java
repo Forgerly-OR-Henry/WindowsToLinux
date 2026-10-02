@@ -32,7 +32,7 @@ public final class PipBuildInspector {
         String content = BoundedMetadataInspector.read(path);
         String logical = content.replace("\r\n", "\n").replace("\\\n", " ");
         boolean valid = logical.lines().map(String::trim).filter(line -> !line.isEmpty() && !line.startsWith("#"))
-                .allMatch(line -> !line.startsWith("-") && line.contains("==") && HASH.matcher(line).find());
+            .allMatch(line -> !line.startsWith("-") && line.contains("==") && HASH.matcher(line).find());
         return valid ? Optional.of(lockFile) : Optional.empty();
     }
 }

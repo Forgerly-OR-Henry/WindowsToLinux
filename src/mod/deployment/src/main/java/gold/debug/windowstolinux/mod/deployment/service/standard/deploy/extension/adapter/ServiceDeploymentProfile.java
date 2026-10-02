@@ -18,10 +18,10 @@ public record ServiceDeploymentProfile(DeploymentProjectKind projectType) {
      * <p>服务类型集合。
      */
     private static final EnumSet<DeploymentProjectKind> SERVICE_TYPES = EnumSet.of(DeploymentProjectKind.SPRING_BOOT,
-            DeploymentProjectKind.JAVA_JAR, DeploymentProjectKind.JAVA_SOURCE, DeploymentProjectKind.NODE_SERVICE,
-            DeploymentProjectKind.PYTHON_SERVICE, DeploymentProjectKind.GO_SERVICE, DeploymentProjectKind.RUST_SERVICE,
-            DeploymentProjectKind.DOTNET_SERVICE, DeploymentProjectKind.KOTLIN_SERVICE,
-            DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.RUBY_SERVICE, DeploymentProjectKind.CMAKE_SERVICE);
+        DeploymentProjectKind.JAVA_JAR, DeploymentProjectKind.JAVA_SOURCE, DeploymentProjectKind.NODE_SERVICE,
+        DeploymentProjectKind.PYTHON_SERVICE, DeploymentProjectKind.GO_SERVICE, DeploymentProjectKind.RUST_SERVICE,
+        DeploymentProjectKind.DOTNET_SERVICE, DeploymentProjectKind.KOTLIN_SERVICE,
+        DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.RUBY_SERVICE, DeploymentProjectKind.CMAKE_SERVICE);
 
     /**
      * Validates that this profile represents a normal service rather than a workload. / 验证 Profile 表示普通服务而不是工作负载。
@@ -34,7 +34,7 @@ public record ServiceDeploymentProfile(DeploymentProjectKind projectType) {
         projectType = Objects.requireNonNull(projectType, "projectType");
         if (!SERVICE_TYPES.contains(projectType)) {
             throw new IllegalArgumentException(
-                    "service deployment profiles may not represent workloads or preview types");
+                "service deployment profiles may not represent workloads or preview types");
         }
     }
 

@@ -25,7 +25,7 @@ public final class PythonBuildInspector {
      * <p>用于识别名称的匹配模式。
      */
     private static final Pattern NAME = Pattern
-            .compile("(?m)^\\s*name\\s*=\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"\\s*$");
+        .compile("(?m)^\\s*name\\s*=\\s*\\\"([a-z0-9][a-z0-9._-]{0,62})\\\"\\s*$");
 
     /**
      * Bound pip build inspector collaborator for pip.
@@ -75,20 +75,20 @@ public final class PythonBuildInspector {
         String toml = BoundedMetadataInspector.read(pyproject);
         List<PythonBuildArchitectureFacts> selected = List.of(
                 pip.inspect(root)
-                        .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIP_LOCKED, lock)),
+                    .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIP_LOCKED, lock)),
                 pipenv.inspect(root)
-                        .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIPENV_LOCKED, lock)),
+                    .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.PIPENV_LOCKED, lock)),
                 poetry.inspect(root)
-                        .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.POETRY_LOCKED, lock)),
+                    .map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.POETRY_LOCKED, lock)),
                 uv.inspect(root).map(lock -> new PythonBuildArchitectureFacts(DeploymentBuildToolType.UV_LOCKED, lock)))
-                .stream().flatMap(Optional::stream).toList();
+            .stream().flatMap(Optional::stream).toList();
         List<String> lockFiles = selected.stream().map(PythonBuildArchitectureFacts::lockFile).toList();
         boolean stdlib = selected.isEmpty() && toml.matches("(?s).*\n?\\s*dependencies\\s*=\\s*\\[\\s*]\\s*(?:\n|$).*")
-                && !toml.contains("dynamic") && !toml.contains("[tool.poetry.dependencies]");
+            && !toml.contains("dynamic") && !toml.contains("[tool.poetry.dependencies]");
         DeploymentBuildToolType buildTool = stdlib
-                ? DeploymentBuildToolType.PYTHON_STDLIB
-                : selected.size() == 1 ? selected.getFirst().buildTool() : DeploymentBuildToolType.PIP_LOCKED;
+            ? DeploymentBuildToolType.PYTHON_STDLIB
+            : selected.size() == 1 ? selected.getFirst().buildTool() : DeploymentBuildToolType.PIP_LOCKED;
         return Optional.of(new PythonBuildFacts(
-                ProjectIdentityResolver.applicationId(root, toml, NAME, logicalRootName), buildTool, lockFiles));
+            ProjectIdentityResolver.applicationId(root, toml, NAME, logicalRootName), buildTool, lockFiles));
     }
 }

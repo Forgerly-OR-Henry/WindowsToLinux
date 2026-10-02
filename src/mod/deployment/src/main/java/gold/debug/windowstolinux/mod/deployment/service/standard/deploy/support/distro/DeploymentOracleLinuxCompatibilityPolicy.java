@@ -20,16 +20,16 @@ final class DeploymentOracleLinuxCompatibilityPolicy implements DeploymentDistri
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"dnf".equals(capabilities.packageManager()) || !"x86_64".equals(capabilities.packageArchitecture())
-                || !("9.7".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
+            || !("9.7".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
             return DeploymentDistributionCompatibilityRules.unsupported(
-                    "Oracle Linux must be the current 9.7 or 10.2 update with dnf and x86_64 packages", evidence);
+                "Oracle Linux must be the current 9.7 or 10.2 update with dnf and x86_64 packages", evidence);
         }
         boolean ten = capabilities.version().startsWith("10.");
         DeploymentCpuMicroarchitectureLevel required = ten
-                ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
-                : DeploymentCpuMicroarchitectureLevel.X86_64_V1;
+            ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
+            : DeploymentCpuMicroarchitectureLevel.X86_64_V1;
         DeploymentHostCapabilityStatus cpu = DeploymentDistributionCompatibilityRules.requireCpu(capabilities, required,
-                "Oracle Linux", evidence);
+            "Oracle Linux", evidence);
         if (cpu != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION) {
             return cpu;
         }

@@ -3,9 +3,9 @@ package gold.debug.windowstolinux.app.secret;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredCredential;
-import gold.debug.windowstolinux.app.db.entity.StoredSecurityProfile;
-import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
+import gold.debug.windowstolinux.app.db.security.StoredCredential;
+import gold.debug.windowstolinux.app.db.security.StoredSecurityProfile;
+import gold.debug.windowstolinux.app.db.security.SecurityRepository;
 import gold.debug.windowstolinux.app.secret.crypto.PasswordKeyCrypto;
 
 /** Unified database vault with reference-counted, memory-only key handles. / 使用仅内存引用计数密钥句柄的统一数据库凭据库。 */
@@ -13,6 +13,7 @@ public final class CredentialVault {
     /** Persistence boundary for profiles and credentials. / 配置及凭据的持久化边界。
      */
     private final SecurityRepository repository;
+
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param repository repository supplied to this boundary / 传入当前边界的repository值
      */
@@ -147,7 +148,7 @@ public final class CredentialVault {
      */
     private StoredSecurityProfile profile() throws Exception {
         var profile = repository.profile()
-                .orElseThrow(() -> new SQLException("master password has not been configured"));
+            .orElseThrow(() -> new SQLException("master password has not been configured"));
         PasswordKeyCrypto.validateProfile(profile);
         return profile;
     }
@@ -162,6 +163,7 @@ public final class CredentialVault {
         /** Number of live key handles. / 存活密钥句柄数。
          */
         private int references;
+
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param key key supplied to this boundary / 传入当前边界的key值
          */
@@ -179,6 +181,7 @@ public final class CredentialVault {
         /** Whether this resource has been released. / 当前资源是否已释放。
          */
         private boolean closed;
+
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param material material supplied to this boundary / 传入当前边界的material值
          */
@@ -215,7 +218,7 @@ public final class CredentialVault {
                         return Optional.empty();
                     try (var record = found.get()) {
                         return Optional
-                                .of(PasswordKeyCrypto.decode(record, material.key, profile().encryptionEnabled()));
+                            .of(PasswordKeyCrypto.decode(record, material.key, profile().encryptionEnabled()));
                     }
                 } catch (Exception failure) {
                     throw failure("credential cannot be read", failure);
@@ -242,14 +245,14 @@ public final class CredentialVault {
                             if (found.isPresent())
                                 try (var record = found.get()) {
                                     previous = PasswordKeyCrypto.decode(record, material.key,
-                                            profile.encryptionEnabled());
+                                        profile.encryptionEnabled());
                                 }
                             if (previous != null && Arrays.equals(previous, value))
                                 return;
                             if (previous != null && repository.isVersioned(id))
                                 throw new SQLException("business secret revisions are immutable");
                             try (var record = PasswordKeyCrypto.encode(id, value, material.key,
-                                    profile.encryptionEnabled())) {
+                                profile.encryptionEnabled())) {
                                 repository.save(record, previous != null);
                             }
                         } catch (Exception failure) {
@@ -343,6 +346,7 @@ public final class CredentialVault {
         /** Exception serialization version. / 异常序列化版本。
          */
         private static final long serialVersionUID = 1L;
+
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param cause cause supplied to this boundary / 传入当前边界的cause值
          */
@@ -350,6 +354,7 @@ public final class CredentialVault {
             super("credential transaction failed", cause);
         }
     }
+
     /** Rejects empty or unsupported credential identifiers. / 拒绝空白或格式不受支持的凭据标识。
      * @param id stable persisted identifier / 稳定持久化标识
      */

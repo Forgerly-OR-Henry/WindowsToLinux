@@ -48,36 +48,36 @@ public final class DotNetSdkBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.DotNetService service)
-                || facts.buildTool() != DeploymentBuildToolType.DOTNET_LOCKED) {
+            || facts.buildTool() != DeploymentBuildToolType.DOTNET_LOCKED) {
             throw new IllegalArgumentException(".NET SDK renderer requires reviewed locked inputs");
         }
         String artifact = SafeBuildScriptEnvelope.shellQuote(service.artifactName());
         String version = SafeBuildScriptEnvelope.shellQuote("^" + service.version().replace(".", "[.]") + "$");
         String command = """
-                artifact_name=%s
-                export DOTNET_CLI_TELEMETRY_OPTOUT=1
-                export DOTNET_NOLOGO=1
-                export DOTNET_GCHeapHardLimit=0x40000000
-                command -v dotnet >/dev/null
-                dotnet_command=(dotnet)
-                if [ -n "${WTL_DOTNET_VERSION:-}" ]; then
-                  test -f "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll"
-                  dotnet_command=("$DOTNET_ROOT/dotnet" exec "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll")
-                  export MSBuildSDKsPath="$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/Sdks"
-                  "${dotnet_command[@]}" --version | grep -Fx "$WTL_DOTNET_VERSION"
-                else dotnet --version | grep -Eq %s; fi
-                test -f ./global.json
-                test -f ./packages.lock.json
-                run "${dotnet_command[@]}" restore --locked-mode
-                mkdir -p ./.w2l/dotnet
-                run "${dotnet_command[@]}" publish --no-restore --configuration Release "-p:PublishDir=$PWD/.w2l/dotnet/"
-                test -f "./.w2l/dotnet/$artifact_name.dll"
-                test ! -L "./.w2l/dotnet/$artifact_name.dll"
-                printf 'ARTIFACT=%%s\n' "./.w2l/dotnet/$artifact_name.dll"
-                """
-                .formatted(artifact, version);
+            artifact_name=%s
+            export DOTNET_CLI_TELEMETRY_OPTOUT=1
+            export DOTNET_NOLOGO=1
+            export DOTNET_GCHeapHardLimit=0x40000000
+            command -v dotnet >/dev/null
+            dotnet_command=(dotnet)
+            if [ -n "${WTL_DOTNET_VERSION:-}" ]; then
+              test -f "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll"
+              dotnet_command=("$DOTNET_ROOT/dotnet" exec "$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/dotnet.dll")
+              export MSBuildSDKsPath="$DOTNET_ROOT/sdk/$WTL_DOTNET_VERSION/Sdks"
+              "${dotnet_command[@]}" --version | grep -Fx "$WTL_DOTNET_VERSION"
+            else dotnet --version | grep -Eq %s; fi
+            test -f ./global.json
+            test -f ./packages.lock.json
+            run "${dotnet_command[@]}" restore --locked-mode
+            mkdir -p ./.w2l/dotnet
+            run "${dotnet_command[@]}" publish --no-restore --configuration Release "-p:PublishDir=$PWD/.w2l/dotnet/"
+            test -f "./.w2l/dotnet/$artifact_name.dll"
+            test ! -L "./.w2l/dotnet/$artifact_name.dll"
+            printf 'ARTIFACT=%%s\n' "./.w2l/dotnet/$artifact_name.dll"
+            """
+            .formatted(artifact, version);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

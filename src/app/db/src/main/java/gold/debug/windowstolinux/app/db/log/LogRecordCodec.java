@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.db.log;
 
+import gold.debug.windowstolinux.appapi.task.LogEvent;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.*;
@@ -9,7 +13,7 @@ import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** One bounded redacted record format shared by SQL and emergency storage. / SQL 与应急存储共用的有界脱敏记录格式。 */
 public final class LogRecordCodec {
@@ -18,12 +22,13 @@ public final class LogRecordCodec {
 
     /** Strict object parser without duplicate keys or trailing documents. / 拒绝重复键及尾随文档的严格对象解析器。 */
     private static final ObjectMapper JSON = JsonMapper.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
 
     /** Mandatory version-one record fields. / 第一版记录必需字段。 */
     private static final Set<String> FIELDS = Set.of("log_id", "recorded_at", "owner_id", "category", "level",
-            "event_code", "message", "details", "subject_mod_id", "mod_version", "task_id", "operation_id", "outcome",
-            "truncated");
+        "event_code", "message", "details", "subject_mod_id", "mod_version", "task_id", "operation_id", "outcome",
+        "truncated");
+
     /** Prevents utility construction. / 禁止构造工具实例。 */
     private LogRecordCodec() {
     }
@@ -35,7 +40,7 @@ public final class LogRecordCodec {
      * @return immutable record with its original identifier and timestamp / 带原标识及时间的不可变记录 */
     public static Record create(LogRepository.Target target, String version, LogEvent event) {
         return createSummary(target, version, event, UUID.randomUUID(), System.currentTimeMillis(),
-                target.owner().equals("app") ? null : target.owner());
+            target.owner().equals("app") ? null : target.owner());
     }
 
     /** Bounds a host summary using its already persisted identity, timestamp and subject. / 按已持久身份、时间及主体限制宿主摘要。
@@ -47,24 +52,24 @@ public final class LogRecordCodec {
      * @param subject associated Mod or null for platform work / 关联 Mod，平台工作可为空
      * @return bounded exact summary / 有界精确摘要 */
     public static Record createSummary(LogRepository.Target target, String version, LogEvent event, UUID id,
-            long recordedAt, String subject) {
+                                       long recordedAt, String subject) {
         Objects.requireNonNull(event);
         Objects.requireNonNull(id);
         if (recordedAt < 0 || subject != null && (subject.isBlank() || subject.length() > 512))
             throw new IllegalArgumentException("Invalid summary attribution");
         if (!event.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || version == null || version.length() > 512
-                || version.isBlank() || event.outcome().orElse(null) == Outcome.UNKNOWN)
+            || version.isBlank() || event.outcome().orElse(null) == Outcome.UNKNOWN)
             throw new IllegalArgumentException("Invalid diagnostic identity or terminal outcome");
         String message = redact(event.message()), details = event.details().map(LogRecordCodec::redact).orElse(null);
         boolean truncated = event.message().length() > 65536
-                || event.details().map(s -> s.length() > 65536).orElse(false);
+            || event.details().map(s -> s.length() > 65536).orElse(false);
         String limited = utf8Prefix(message, 2048);
         truncated |= !limited.equals(message);
         if (limited.isBlank())
             throw new IllegalArgumentException("Diagnostic message is empty");
         var record = new Record(id, recordedAt, target.owner(), target.category(), event.level(), event.eventCode(),
-                limited, details, subject, version, event.taskId().orElse(null), event.operationId().orElse(null),
-                event.outcome().orElse(null), truncated);
+            limited, details, subject, version, event.taskId().orElse(null), event.operationId().orElse(null),
+            event.outcome().orElse(null), truncated);
         if (encode(target.key(), record).length <= MAX_BYTES)
             return record;
         int low = 0, high = details == null ? 0 : details.codePointCount(0, details.length());
@@ -74,13 +79,13 @@ public final class LogRecordCodec {
         while (low < high) {
             int middle = (low + high + 1) / 2;
             if (encode(target.key(), record.withDetails(details.substring(0, details.offsetByCodePoints(0, middle)),
-                    true)).length <= MAX_BYTES)
+                true)).length <= MAX_BYTES)
                 low = middle;
             else
                 high = middle - 1;
         }
         return record.withDetails(details == null ? null : details.substring(0, details.offsetByCodePoints(0, low)),
-                true);
+            true);
     }
 
     /** Removes common secret forms before any diagnostic persistence or display. / 任一诊断持久化或显示前移除常见秘密形式。
@@ -92,10 +97,10 @@ public final class LogRecordCodec {
         if (!value.isEmpty() && Character.isHighSurrogate(value.charAt(value.length() - 1)))
             value = value.substring(0, value.length() - 1);
         value = value
-                .replaceAll("(?is)-----BEGIN[^-]*PRIVATE KEY-----.*?(?:-----END[^-]*PRIVATE KEY-----|$)", "[redacted]")
-                .replaceAll("(?i)Bearer\\s+[^\\s,;]+", "Bearer [redacted]").replaceAll(
-                        "(?i)([\"']?(?:password|passwd|secret|token|api[-_ ]?key|authorization|密码|密钥)[\"']?\\s*[:=：]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)",
-                        "$1[redacted]");
+            .replaceAll("(?is)-----BEGIN[^-]*PRIVATE KEY-----.*?(?:-----END[^-]*PRIVATE KEY-----|$)", "[redacted]")
+            .replaceAll("(?i)Bearer\\s+[^\\s,;]+", "Bearer [redacted]").replaceAll(
+                "(?i)([\"']?(?:password|passwd|secret|token|api[-_ ]?key|authorization|密码|密钥)[\"']?\\s*[:=：]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)",
+                "$1[redacted]");
         if (value.contains("://"))
             value = value.replaceAll("[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s]+", "[redacted-uri]");
         return value.replaceAll("\\x1B\\[[0-?]*[ -/]*[@-~]", "").replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", "");
@@ -125,15 +130,15 @@ public final class LogRecordCodec {
         var root = JSON.createObjectNode().put("format_version", 1).put("target_key", target.toString());
         var body = root.putObject("record");
         body.put("log_id", record.id().toString()).put("recorded_at", record.recordedAt())
-                .put("owner_id", record.owner()).put("category", record.category()).put("level", record.level().name())
-                .put("event_code", record.eventCode()).put("message", record.message()).put("details", record.details())
-                .put("subject_mod_id", record.subjectMod()).put("mod_version", record.version())
-                .put("task_id", string(record.taskId())).put("operation_id", string(record.operationId()))
-                .put("outcome", record.outcome() == null ? null : record.outcome().name())
-                .put("truncated", record.truncated());
+            .put("owner_id", record.owner()).put("category", record.category()).put("level", record.level().name())
+            .put("event_code", record.eventCode()).put("message", record.message()).put("details", record.details())
+            .put("subject_mod_id", record.subjectMod()).put("mod_version", record.version())
+            .put("task_id", string(record.taskId())).put("operation_id", string(record.operationId()))
+            .put("outcome", record.outcome() == null ? null : record.outcome().name())
+            .put("truncated", record.truncated());
         try {
             var encoded = StandardCharsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .encode(java.nio.CharBuffer.wrap(root + "\n"));
+                .encode(java.nio.CharBuffer.wrap(root + "\n"));
             byte[] bytes = new byte[encoded.remaining()];
             encoded.get(bytes);
             return bytes;
@@ -152,37 +157,37 @@ public final class LogRecordCodec {
             if (bytes.length == 0 || bytes.length > MAX_BYTES || bytes[bytes.length - 1] != '\n')
                 throw new IllegalArgumentException();
             String line = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes)).toString();
+                .decode(ByteBuffer.wrap(bytes)).toString();
             if (line.charAt(0) == '\uFEFF')
                 throw new IllegalArgumentException();
             var root = JSON.readTree(line);
             fields(root, Set.of("format_version", "target_key", "record"));
             if (!root.get("format_version").isInt() || root.get("format_version").intValue() != 1
-                    || !target.key().equals(uuid(root, "target_key", false)))
+                || !target.key().equals(uuid(root, "target_key", false)))
                 throw new IllegalArgumentException();
             var n = root.get("record");
             fields(n, FIELDS);
             if (!n.get("recorded_at").isIntegralNumber() || !n.get("recorded_at").canConvertToLong()
-                    || n.get("recorded_at").longValue() < 0 || !n.get("truncated").isBoolean())
+                || n.get("recorded_at").longValue() < 0 || !n.get("truncated").isBoolean())
                 throw new IllegalArgumentException();
             var outcome = text(n, "outcome", true);
             var record = new Record(uuid(n, "log_id", false), n.get("recorded_at").longValue(),
-                    text(n, "owner_id", false), text(n, "category", false), LogLevel.valueOf(text(n, "level", false)),
-                    text(n, "event_code", false), text(n, "message", false), text(n, "details", true),
-                    text(n, "subject_mod_id", true), text(n, "mod_version", true), uuid(n, "task_id", true),
-                    uuid(n, "operation_id", true), outcome == null ? null : Outcome.valueOf(outcome),
-                    n.get("truncated").booleanValue());
+                text(n, "owner_id", false), text(n, "category", false), LogLevel.valueOf(text(n, "level", false)),
+                text(n, "event_code", false), text(n, "message", false), text(n, "details", true),
+                text(n, "subject_mod_id", true), text(n, "mod_version", true), uuid(n, "task_id", true),
+                uuid(n, "operation_id", true), outcome == null ? null : Outcome.valueOf(outcome),
+                n.get("truncated").booleanValue());
             if (!target.owner().equals(record.owner()) || !target.category().equals(record.category())
-                    || !record.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || record.outcome() == Outcome.UNKNOWN
-                    || record.message().isBlank() || record.message().getBytes(StandardCharsets.UTF_8).length > 2048
-                    || !target.owner().equals("app")
-                            && (!Objects.equals(record.subjectMod(), target.owner()) || record.version() == null)
-                    || record.subjectMod() != null
-                            && (record.subjectMod().isBlank() || record.subjectMod().length() > 512)
-                    || record.version() != null && (record.version().isBlank() || record.version().length() > 512)
-                    || !record.message().equals(redact(record.message()))
-                    || record.details() != null && !record.details().equals(redact(record.details()))
-                    || encode(target.key(), record).length > MAX_BYTES)
+                || !record.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || record.outcome() == Outcome.UNKNOWN
+                || record.message().isBlank() || record.message().getBytes(StandardCharsets.UTF_8).length > 2048
+                || !target.owner().equals("app")
+                && (!Objects.equals(record.subjectMod(), target.owner()) || record.version() == null)
+                || record.subjectMod() != null
+                && (record.subjectMod().isBlank() || record.subjectMod().length() > 512)
+                || record.version() != null && (record.version().isBlank() || record.version().length() > 512)
+                || !record.message().equals(redact(record.message()))
+                || record.details() != null && !record.details().equals(redact(record.details()))
+                || encode(target.key(), record).length > MAX_BYTES)
                 throw new IllegalArgumentException();
             return record;
         } catch (RuntimeException | IOException invalid) {
@@ -254,15 +259,16 @@ public final class LogRecordCodec {
      * @param outcome optional known terminal outcome / 可空已知终态
      * @param truncated incomplete diagnostic flag / 诊断不完整标记 */
     public record Record(UUID id, long recordedAt, String owner, String category, LogLevel level, String eventCode,
-            String message, String details, String subjectMod, String version, UUID taskId, UUID operationId,
-            Outcome outcome, boolean truncated) {
+                         String message, String details, String subjectMod, String version, UUID taskId,
+                         UUID operationId,
+                         Outcome outcome, boolean truncated) {
         /** Copies only the bounded body and truncation marker. / 仅复制有界正文及截断标记。
          * @param value replacement detail / 替换正文
          * @param shortened truncation state / 截断状态
          * @return same identity and attribution / 相同身份及归属 */
         public Record withDetails(String value, boolean shortened) {
             return new Record(id, recordedAt, owner, category, level, eventCode, message, value, subjectMod, version,
-                    taskId, operationId, outcome, shortened);
+                taskId, operationId, outcome, shortened);
         }
     }
 }

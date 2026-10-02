@@ -61,8 +61,8 @@ public final class DeploymentUnitRuntimeCodec {
             var identity = DeploymentIdentityMode.valueOf(in.readUTF());
             String url = in.readUTF();
             var result = new DeploymentUnitRuntimeConfiguration(health,
-                    url.isEmpty() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(URI.create(url))), identity,
-                    DeploymentWorkloadCodec.read(in, version == 2));
+                url.isEmpty() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(URI.create(url))), identity,
+                DeploymentWorkloadCodec.read(in, version == 2));
             if (in.read() != -1)
                 throw new IOException("trailing application runtime data");
             return result;

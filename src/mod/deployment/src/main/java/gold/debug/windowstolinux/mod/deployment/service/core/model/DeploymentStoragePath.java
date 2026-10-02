@@ -25,7 +25,7 @@ public record DeploymentStoragePath(String path, AccessMode access, String schem
      */
     public DeploymentStoragePath {
         path = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation
-                .validatedPath(path);
+            .validatedPath(path);
         access = Objects.requireNonNull(access, "access");
         schemaId = requireIdentifier(schemaId, "schemaId");
         if (access == AccessMode.READ_ONLY && !reversible) {

@@ -99,11 +99,11 @@ public final class DeploymentNativeSqlSource {
         long size = 0;
         for (String name : files) {
             if (name == null || !name.matches("[a-zA-Z0-9_./-]{1,255}") || name.startsWith("/")
-                    || Arrays.asList(name.split("/")).contains("..") || !name.endsWith(".sql"))
+                || Arrays.asList(name.split("/")).contains("..") || !name.endsWith(".sql"))
                 throw new IOException("Invalid native SQL source path");
             Path file = root.resolve(name).normalize();
             if (!file.startsWith(root) || !file.toRealPath().startsWith(realRoot) || Files.isSymbolicLink(file)
-                    || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
+                || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
                 throw new IOException("Native SQL source exceeds frozen file boundary");
             long measuredSize = Files.size(file);
             if (measuredSize > MAX_BYTES || (size += measuredSize + 1) > MAX_BYTES)
@@ -151,7 +151,7 @@ public final class DeploymentNativeSqlSource {
         var characters = CharBuffer.allocate(bytes.length);
         try {
             var decoder = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
             var decoded = decoder.decode(ByteBuffer.wrap(bytes), characters, true);
             if (decoded.isError() || decoded.isOverflow())
                 throw new IOException("Native SQL is not bounded UTF-8");

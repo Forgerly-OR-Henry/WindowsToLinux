@@ -96,8 +96,8 @@ public final class DesktopUninstallHandoffCodec {
             }
             UUID operation = UUID.fromString(input.readUTF());
             DesktopUninstallRequest request = new DesktopUninstallRequest(
-                    Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())), Path.of(input.readUTF()),
-                    Path.of(input.readUTF()));
+                Optional.of(DesktopUninstallDecisionType.valueOf(input.readUTF())), Path.of(input.readUTF()),
+                Path.of(input.readUTF()));
             List<DesktopUninstallEvent> events = readEvents(input);
             if (input.available() != 0)
                 throw invalid("uninstall handoff payload has trailing bytes", null);
@@ -143,7 +143,7 @@ public final class DesktopUninstallHandoffCodec {
         List<DesktopUninstallEvent> events = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
             events.add(new DesktopUninstallEvent(DesktopUninstallState.valueOf(input.readUTF()), input.readBoolean(),
-                    input.readUTF()));
+                input.readUTF()));
         }
         return List.copyOf(events);
     }

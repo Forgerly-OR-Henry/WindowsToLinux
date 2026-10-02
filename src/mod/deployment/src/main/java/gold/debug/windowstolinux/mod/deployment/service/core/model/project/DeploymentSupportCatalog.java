@@ -19,7 +19,7 @@ public final class DeploymentSupportCatalog {
      * <p>Ubuntu 24.04 验证目标。
      */
     private static final ValidatedDeploymentTarget UBUNTU_2404 = new ValidatedDeploymentTarget(LinuxDistroType.UBUNTU,
-            "24.04", "x86_64", LocalDate.of(2026, 8, 12));
+        "24.04", "x86_64", LocalDate.of(2026, 8, 12));
 
     /**
      * PHASE THREE EVIDENCE.
@@ -41,33 +41,33 @@ public final class DeploymentSupportCatalog {
      */
     public static Set<DeploymentArchitectureType> deployableArchitectures() {
         return Set.of(architecture(DeploymentProjectKind.SPRING_BOOT, DeploymentBuildToolType.GRADLE_WRAPPER),
-                architecture(DeploymentProjectKind.SPRING_BOOT, DeploymentBuildToolType.MAVEN_WRAPPER),
-                architecture(DeploymentProjectKind.SPRING_BOOT, DeploymentBuildToolType.MAVEN),
-                architecture(DeploymentProjectKind.JAVA_JAR, DeploymentBuildToolType.JAVA),
-                architecture(DeploymentProjectKind.JAVA_SOURCE, DeploymentBuildToolType.JDK),
-                architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.NPM),
-                architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.PNPM),
-                architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.YARN),
-                architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PIP_LOCKED),
-                architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PYTHON_STDLIB),
-                architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PIPENV_LOCKED),
-                architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.POETRY_LOCKED),
-                architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.UV_LOCKED),
-                architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.STATIC_SITE_BUILD),
-                architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.NPM),
-                architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.PNPM),
-                architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.YARN),
-                architecture(DeploymentProjectKind.DOCKERFILE_CONTAINER, DeploymentBuildToolType.CONTAINER_BUILD),
-                architecture(DeploymentProjectKind.GO_SERVICE, DeploymentBuildToolType.GO_MODULE),
-                architecture(DeploymentProjectKind.RUST_SERVICE, DeploymentBuildToolType.CARGO_LOCKED),
-                architecture(DeploymentProjectKind.DOTNET_SERVICE, DeploymentBuildToolType.DOTNET_LOCKED),
-                architecture(DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER),
-                architecture(DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC),
-                architecture(DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.COMPOSER_LOCKED),
-                architecture(DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI),
-                architecture(DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.BUNDLER_LOCKED),
-                architecture(DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI),
-                architecture(DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE));
+            architecture(DeploymentProjectKind.SPRING_BOOT, DeploymentBuildToolType.MAVEN_WRAPPER),
+            architecture(DeploymentProjectKind.SPRING_BOOT, DeploymentBuildToolType.MAVEN),
+            architecture(DeploymentProjectKind.JAVA_JAR, DeploymentBuildToolType.JAVA),
+            architecture(DeploymentProjectKind.JAVA_SOURCE, DeploymentBuildToolType.JDK),
+            architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.NPM),
+            architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.PNPM),
+            architecture(DeploymentProjectKind.NODE_SERVICE, DeploymentBuildToolType.YARN),
+            architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PIP_LOCKED),
+            architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PYTHON_STDLIB),
+            architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.PIPENV_LOCKED),
+            architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.POETRY_LOCKED),
+            architecture(DeploymentProjectKind.PYTHON_SERVICE, DeploymentBuildToolType.UV_LOCKED),
+            architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.STATIC_SITE_BUILD),
+            architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.NPM),
+            architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.PNPM),
+            architecture(DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.YARN),
+            architecture(DeploymentProjectKind.DOCKERFILE_CONTAINER, DeploymentBuildToolType.CONTAINER_BUILD),
+            architecture(DeploymentProjectKind.GO_SERVICE, DeploymentBuildToolType.GO_MODULE),
+            architecture(DeploymentProjectKind.RUST_SERVICE, DeploymentBuildToolType.CARGO_LOCKED),
+            architecture(DeploymentProjectKind.DOTNET_SERVICE, DeploymentBuildToolType.DOTNET_LOCKED),
+            architecture(DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER),
+            architecture(DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC),
+            architecture(DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.COMPOSER_LOCKED),
+            architecture(DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI),
+            architecture(DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.BUNDLER_LOCKED),
+            architecture(DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI),
+            architecture(DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE));
     }
 
     /**
@@ -79,7 +79,7 @@ public final class DeploymentSupportCatalog {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DeploymentSupportProfile forArchitecture(DeploymentProjectKind type,
-            DeploymentBuildToolType buildTool) {
+                                                           DeploymentBuildToolType buildTool) {
         type = Objects.requireNonNull(type, "type");
         buildTool = Objects.requireNonNull(buildTool, "buildTool");
         return switch (type) {
@@ -89,11 +89,11 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case JAVA_JAR -> buildTool == DeploymentBuildToolType.JAVA
-                    ? formal(SourceLanguageType.JAVA, "jar", "Java executable JAR")
-                    : invalid(type, buildTool);
+                ? formal(SourceLanguageType.JAVA, "jar", "Java executable JAR")
+                : invalid(type, buildTool);
             case JAVA_SOURCE -> buildTool == DeploymentBuildToolType.JDK
-                    ? experimental(SourceLanguageType.JAVA, "jdk", "Dependency-free Java source")
-                    : invalid(type, buildTool);
+                ? experimental(SourceLanguageType.JAVA, "jdk", "Dependency-free Java source")
+                : invalid(type, buildTool);
             case NODE_SERVICE -> switch (buildTool) {
                 case NPM -> formal(SourceLanguageType.JAVASCRIPT, "npm", "Node.js service");
                 case PNPM -> experimental(SourceLanguageType.JAVASCRIPT, "pnpm", "Node.js service");
@@ -115,17 +115,17 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case DOCKERFILE_CONTAINER -> buildTool == DeploymentBuildToolType.CONTAINER_BUILD
-                    ? formal(SourceLanguageType.CONTAINERFILE, "dockerfile", "Single Dockerfile container")
-                    : invalid(type, buildTool);
+                ? formal(SourceLanguageType.CONTAINERFILE, "dockerfile", "Single Dockerfile container")
+                : invalid(type, buildTool);
             case GO_SERVICE -> buildTool == DeploymentBuildToolType.GO_MODULE
-                    ? experimental(SourceLanguageType.GO, "gomodule", "Go service")
-                    : invalid(type, buildTool);
+                ? experimental(SourceLanguageType.GO, "gomodule", "Go service")
+                : invalid(type, buildTool);
             case RUST_SERVICE -> buildTool == DeploymentBuildToolType.CARGO_LOCKED
-                    ? experimental(SourceLanguageType.RUST, "cargo", "Rust service")
-                    : invalid(type, buildTool);
+                ? experimental(SourceLanguageType.RUST, "cargo", "Rust service")
+                : invalid(type, buildTool);
             case DOTNET_SERVICE -> buildTool == DeploymentBuildToolType.DOTNET_LOCKED
-                    ? experimental(SourceLanguageType.CSHARP, "dotnetsdk", ".NET service")
-                    : invalid(type, buildTool);
+                ? experimental(SourceLanguageType.CSHARP, "dotnetsdk", ".NET service")
+                : invalid(type, buildTool);
             case KOTLIN_SERVICE -> switch (buildTool) {
                 case GRADLE_KOTLIN_WRAPPER -> experimental(SourceLanguageType.KOTLIN, "gradle", "Kotlin/JVM service");
                 case KOTLINC ->
@@ -143,13 +143,13 @@ public final class DeploymentSupportCatalog {
                 default -> invalid(type, buildTool);
             };
             case CMAKE_SERVICE -> buildTool == DeploymentBuildToolType.CMAKE
-                    ? experimental(SourceLanguageType.C, "cmake", "C/C++ service executable")
-                    : invalid(type, buildTool);
+                ? experimental(SourceLanguageType.C, "cmake", "C/C++ service executable")
+                : invalid(type, buildTool);
             case MANAGED_PROCESS ->
                 throw new IllegalArgumentException("generic delivery is outside standard recognition");
             case RECOGNITION_PREVIEW -> buildTool == DeploymentBuildToolType.NONE_PREVIEW
-                    ? preview(SourceLanguageType.UNKNOWN)
-                    : invalid(type, buildTool);
+                ? preview(SourceLanguageType.UNKNOWN)
+                : invalid(type, buildTool);
         };
     }
 
@@ -161,8 +161,8 @@ public final class DeploymentSupportCatalog {
      */
     public static DeploymentSupportProfile preview(SourceLanguageType language) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.RECOGNITION_PREVIEW, language, "none",
-                "Unclassified project", List.of(), List.of(),
-                List.of(DeploymentLocalizedMessage.of("support.limitation.previewOnly")));
+            "Unclassified project", List.of(), List.of(),
+            List.of(DeploymentLocalizedMessage.of("support.limitation.previewOnly")));
     }
 
     /**
@@ -172,8 +172,8 @@ public final class DeploymentSupportCatalog {
      */
     public static DeploymentSupportProfile unrecognized() {
         return new DeploymentSupportProfile(DeploymentSupportLevel.UNRECOGNIZED, SourceLanguageType.UNKNOWN, "none",
-                "Unrecognized project", List.of(), List.of(),
-                List.of(DeploymentLocalizedMessage.of("support.limitation.unrecognized")));
+            "Unrecognized project", List.of(), List.of(),
+            List.of(DeploymentLocalizedMessage.of("support.limitation.unrecognized")));
     }
 
     /**
@@ -186,9 +186,9 @@ public final class DeploymentSupportCatalog {
      * @return deployment support profile from the supplied experimental inputs / 根据所提供实验性输入构建部署支持配置资料
      */
     private static DeploymentSupportProfile experimental(SourceLanguageType language, String architecture,
-            String framework) {
+                                                         String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.EXPERIMENTAL_ADAPTER, language, architecture,
-                framework, List.of(), List.of(), List.of(DeploymentLocalizedMessage.of("support.limitation.runtimePending")));
+            framework, List.of(), List.of(), List.of(DeploymentLocalizedMessage.of("support.limitation.runtimePending")));
     }
 
     /**
@@ -202,8 +202,8 @@ public final class DeploymentSupportCatalog {
      */
     private static DeploymentSupportProfile formal(SourceLanguageType language, String architecture, String framework) {
         return new DeploymentSupportProfile(DeploymentSupportLevel.FORMALLY_SUPPORTED, language, architecture,
-                framework, List.of(UBUNTU_2404), List.of(PHASE_THREE_EVIDENCE),
-                List.of(DeploymentLocalizedMessage.of("support.limitation.listedMatrixOnly")));
+            framework, List.of(UBUNTU_2404), List.of(PHASE_THREE_EVIDENCE),
+            List.of(DeploymentLocalizedMessage.of("support.limitation.listedMatrixOnly")));
     }
 
     /**
@@ -228,7 +228,7 @@ public final class DeploymentSupportCatalog {
      * @return deployment architecture type from the supplied architecture inputs / 根据所提供架构输入构建部署架构类型
      */
     private static DeploymentArchitectureType architecture(DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool) {
+                                                           DeploymentBuildToolType buildTool) {
         return new DeploymentArchitectureType(projectType, buildTool);
     }
 }

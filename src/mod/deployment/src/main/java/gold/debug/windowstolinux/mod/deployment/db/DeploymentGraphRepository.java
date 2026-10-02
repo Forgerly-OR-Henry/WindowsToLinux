@@ -29,7 +29,7 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if units, ownership or SQL cannot be confirmed / 无法确认单元、归属或SQL时
      * @throws ApiException if task access or transaction acknowledgement is unavailable / 任务访问或事务确认不可用时 */
     public void save(TaskContext task, DeploymentApplicationGraph graph, Instant updatedAt)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         Objects.requireNonNull(graph);
         Objects.requireNonNull(updatedAt);
         var connection = connection(task);
@@ -43,7 +43,7 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if persisted facts cannot form a valid graph / 持久事实无法构成有效图时
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public Optional<DeploymentApplicationGraph> find(TaskContext task, String applicationId)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         Objects.requireNonNull(applicationId);
         try (var connection = connection(task)) {
             connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
@@ -78,9 +78,9 @@ public final class DeploymentGraphRepository {
             requireUnit(connection, component);
         prepare(connection, graph, updatedAt);
         try (var dependencies = connection
-                .prepareStatement("DELETE FROM managed_application_dependency WHERE application_id=?");
-                var components = connection
-                        .prepareStatement("DELETE FROM managed_application_component WHERE application_id=?")) {
+            .prepareStatement("DELETE FROM managed_application_dependency WHERE application_id=?");
+             var components = connection
+                 .prepareStatement("DELETE FROM managed_application_component WHERE application_id=?")) {
             dependencies.setString(1, graph.applicationId());
             dependencies.executeUpdate();
             components.setString(1, graph.applicationId());
@@ -89,7 +89,7 @@ public final class DeploymentGraphRepository {
         insertComponents(connection, graph);
         insertDependencies(connection, graph);
         try (var statement = connection.prepareStatement(
-                "UPDATE managed_application SET health_component_id=?,health_check_payload=?,graph_ready=TRUE,updated_at=? WHERE application_id=?")) {
+            "UPDATE managed_application SET health_component_id=?,health_check_payload=?,graph_ready=TRUE,updated_at=? WHERE application_id=?")) {
             statement.setString(1, graph.healthComponentId());
             statement.setBytes(2, new DeploymentHealthCodec().write(graph.healthCheck()));
             statement.setLong(3, updatedAt.toEpochMilli());
@@ -106,13 +106,13 @@ public final class DeploymentGraphRepository {
      * @param component reviewed component / 已审阅组件
      * @throws SQLException if the unit is absent or differs / 单元不存在或不一致时 */
     private static void requireUnit(Connection connection, DeploymentApplicationGraph.Component component)
-            throws SQLException {
+        throws SQLException {
         try (var statement = connection
-                .prepareStatement("SELECT * FROM deployment_unit WHERE deployment_unit_id=? FOR UPDATE")) {
+            .prepareStatement("SELECT * FROM deployment_unit WHERE deployment_unit_id=? FOR UPDATE")) {
             statement.setString(1, component.unit().id());
             try (var row = statement.executeQuery()) {
                 if (!row.next() || !unit(row).equals(component.unit()) || !new DeploymentUnitRuntimeCodec()
-                        .read(DeploymentPayloadReader.read(row, "runtime_payload")).equals(component.runtime()))
+                    .read(DeploymentPayloadReader.read(row, "runtime_payload")).equals(component.runtime()))
                     throw new SQLException("Reviewed component differs from its persisted unit");
             }
         } catch (IOException | IllegalArgumentException failure) {
@@ -126,11 +126,11 @@ public final class DeploymentGraphRepository {
      * @param updatedAt original observation time / 原观测时间
      * @throws SQLException if the existing application belongs elsewhere / 既有应用属于其他目标时 */
     private static void prepare(Connection connection, DeploymentApplicationGraph graph, Instant updatedAt)
-            throws SQLException {
+        throws SQLException {
         String server = graph.components().getFirst().unit().server().id();
         boolean exists;
         try (var statement = connection.prepareStatement(
-                "SELECT server_profile_id FROM managed_application WHERE application_id=? FOR UPDATE")) {
+            "SELECT server_profile_id FROM managed_application WHERE application_id=? FOR UPDATE")) {
             statement.setString(1, graph.applicationId());
             try (var row = statement.executeQuery()) {
                 exists = row.next();
@@ -140,13 +140,13 @@ public final class DeploymentGraphRepository {
         }
         if (exists) {
             try (var statement = connection.prepareStatement(
-                    "UPDATE managed_application SET graph_ready=FALSE,health_component_id=NULL,health_check_payload=NULL WHERE application_id=?")) {
+                "UPDATE managed_application SET graph_ready=FALSE,health_component_id=NULL,health_check_payload=NULL WHERE application_id=?")) {
                 statement.setString(1, graph.applicationId());
                 statement.executeUpdate();
             }
         } else {
             try (var statement = connection.prepareStatement(
-                    "INSERT INTO managed_application(application_id,server_profile_id,updated_at,graph_ready) VALUES(?,?,?,FALSE)")) {
+                "INSERT INTO managed_application(application_id,server_profile_id,updated_at,graph_ready) VALUES(?,?,?,FALSE)")) {
                 statement.setString(1, graph.applicationId());
                 statement.setString(2, server);
                 statement.setLong(3, updatedAt.toEpochMilli());
@@ -161,7 +161,7 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if documents or ownership constraints cannot persist / 文档或归属约束无法持久化时 */
     private static void insertComponents(Connection connection, DeploymentApplicationGraph graph) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id,reviewed_runtime_payload,reviewed_data_paths_payload,reviewed_resource_bindings_payload) VALUES(?,?,?,?,?,?)")) {
+            "INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id,reviewed_runtime_payload,reviewed_data_paths_payload,reviewed_resource_bindings_payload) VALUES(?,?,?,?,?,?)")) {
             for (var component : graph.components()) {
                 statement.setString(1, graph.applicationId());
                 statement.setString(2, component.componentId());
@@ -182,9 +182,9 @@ public final class DeploymentGraphRepository {
      * @param graph complete reviewed graph / 完整审阅图
      * @throws SQLException if dependencies cannot persist / 依赖无法持久化时 */
     private static void insertDependencies(Connection connection, DeploymentApplicationGraph graph)
-            throws SQLException {
+        throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO managed_application_dependency(application_id,component_id,dependency_component_id) VALUES(?,?,?)")) {
+            "INSERT INTO managed_application_dependency(application_id,component_id,dependency_component_id) VALUES(?,?,?)")) {
             for (var component : graph.components())
                 for (var dependency : component.dependencies()) {
                     statement.setString(1, graph.applicationId());
@@ -203,7 +203,7 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if persisted facts are invalid / 持久事实无效时 */
     static Optional<DeploymentApplicationGraph> read(Connection connection, String applicationId) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT server_profile_id,health_component_id,health_check_payload FROM managed_application WHERE application_id=? AND graph_ready=TRUE")) {
+            "SELECT server_profile_id,health_component_id,health_check_payload FROM managed_application WHERE application_id=? AND graph_ready=TRUE")) {
             statement.setString(1, applicationId);
             try (var row = statement.executeQuery()) {
                 if (!row.next())
@@ -213,8 +213,8 @@ public final class DeploymentGraphRepository {
                 if (components.stream().anyMatch(c -> !c.unit().server().id().equals(server)))
                     throw new SQLException("Application and component servers differ");
                 var graph = new DeploymentApplicationGraph(applicationId, row.getString("health_component_id"),
-                        new DeploymentHealthCodec().read(DeploymentPayloadReader.read(row, "health_check_payload")),
-                        components);
+                    new DeploymentHealthCodec().read(DeploymentPayloadReader.read(row, "health_check_payload")),
+                    components);
                 return Optional.of(graph);
             }
         } catch (IOException | IllegalArgumentException | NullPointerException failure) {
@@ -229,27 +229,27 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if rows are unavailable / 记录不可用时
      * @throws IOException if component documents are malformed / 组件文档格式错误时 */
     private static List<DeploymentApplicationGraph.Component> components(Connection connection, String applicationId)
-            throws SQLException, IOException {
+        throws SQLException, IOException {
         var dependencies = dependencies(connection, applicationId);
         var result = new ArrayList<DeploymentApplicationGraph.Component>();
         try (var statement = connection.prepareStatement(
-                "SELECT c.component_id,c.reviewed_runtime_payload,c.reviewed_data_paths_payload,c.reviewed_resource_bindings_payload,u.* FROM managed_application_component c JOIN deployment_unit u ON u.deployment_unit_id=c.deployment_unit_id WHERE c.application_id=? ORDER BY c.component_id")) {
+            "SELECT c.component_id,c.reviewed_runtime_payload,c.reviewed_data_paths_payload,c.reviewed_resource_bindings_payload,u.* FROM managed_application_component c JOIN deployment_unit u ON u.deployment_unit_id=c.deployment_unit_id WHERE c.application_id=? ORDER BY c.component_id")) {
             statement.setString(1, applicationId);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     if (result.size() == 64)
                         throw new SQLException("Application graph exceeds its component bound");
                     var runtime = new DeploymentUnitRuntimeCodec()
-                            .read(DeploymentPayloadReader.read(rows, "runtime_payload"));
+                        .read(DeploymentPayloadReader.read(rows, "runtime_payload"));
                     result.add(new DeploymentApplicationGraph.Component(rows.getString("component_id"), unit(rows),
-                            runtime, dependencies.getOrDefault(rows.getString("component_id"), List.of()),
-                            new DeploymentRuntimeCodec().read(
-                                    DeploymentPayloadReader.read(rows, "reviewed_runtime_payload"),
-                                    runtime.healthCheck()),
-                            new DeploymentStoragePathCodec()
-                                    .read(DeploymentPayloadReader.read(rows, "reviewed_data_paths_payload")),
-                            new DeploymentResourceCodec()
-                                    .read(DeploymentPayloadReader.read(rows, "reviewed_resource_bindings_payload"))));
+                        runtime, dependencies.getOrDefault(rows.getString("component_id"), List.of()),
+                        new DeploymentRuntimeCodec().read(
+                            DeploymentPayloadReader.read(rows, "reviewed_runtime_payload"),
+                            runtime.healthCheck()),
+                        new DeploymentStoragePathCodec()
+                            .read(DeploymentPayloadReader.read(rows, "reviewed_data_paths_payload")),
+                        new DeploymentResourceCodec()
+                            .read(DeploymentPayloadReader.read(rows, "reviewed_resource_bindings_payload"))));
                 }
             }
         }
@@ -262,10 +262,10 @@ public final class DeploymentGraphRepository {
      * @return dependencies grouped by component / 按组件分组的依赖
      * @throws SQLException if rows are unavailable or exceed the graph bound / 记录不可用或超出图上限时 */
     private static Map<String, List<String>> dependencies(Connection connection, String applicationId)
-            throws SQLException {
+        throws SQLException {
         var result = new HashMap<String, List<String>>();
         try (var statement = connection.prepareStatement(
-                "SELECT component_id,dependency_component_id FROM managed_application_dependency WHERE application_id=? ORDER BY component_id,dependency_component_id")) {
+            "SELECT component_id,dependency_component_id FROM managed_application_dependency WHERE application_id=? ORDER BY component_id,dependency_component_id")) {
             statement.setString(1, applicationId);
             try (var rows = statement.executeQuery()) {
                 int count = 0;
@@ -286,8 +286,8 @@ public final class DeploymentGraphRepository {
     static DeploymentUnitIdentity unit(ResultSet row) throws SQLException {
         String id = row.getString("deployment_unit_id");
         var unit = new DeploymentUnitIdentity(id, new ServerRef(row.getString("server_profile_id")),
-                row.getString("systemd_unit_name"), row.getString("release_root_path"),
-                row.getString("ownership_manifest_sha256"));
+            row.getString("systemd_unit_name"), row.getString("release_root_path"),
+            row.getString("ownership_manifest_sha256"));
         if (!id.equals(unit.id()))
             throw new SQLException("Stored deployment identity is not canonical");
         return unit;
@@ -298,11 +298,11 @@ public final class DeploymentGraphRepository {
      * @throws SQLException if a complete graph is inconsistent / 完整图不一致时 */
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement
-                        .executeQuery("SELECT application_id FROM managed_application WHERE graph_ready=TRUE")) {
+             var rows = statement
+                 .executeQuery("SELECT application_id FROM managed_application WHERE graph_ready=TRUE")) {
             while (rows.next())
                 read(connection, rows.getString(1))
-                        .orElseThrow(() -> new SQLException("Complete application disappeared"));
+                    .orElseThrow(() -> new SQLException("Complete application disappeared"));
         }
     }
 }

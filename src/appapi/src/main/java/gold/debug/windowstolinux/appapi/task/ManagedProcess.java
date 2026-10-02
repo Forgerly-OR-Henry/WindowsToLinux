@@ -23,7 +23,7 @@ public interface ManagedProcess extends AutoCloseable {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     CompletionStage<OperationResult<ProcessMessage>> request(ProcessMessage message, Duration timeout)
-            throws ApiException;
+        throws ApiException;
 
     /**
      * Requests cooperative cancellation without pretending cleanup is complete. / 请求协作取消，不将其视为清理已经完成。

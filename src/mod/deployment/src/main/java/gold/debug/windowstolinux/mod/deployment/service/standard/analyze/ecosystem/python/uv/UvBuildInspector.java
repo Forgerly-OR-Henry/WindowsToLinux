@@ -24,9 +24,9 @@ public final class UvBuildInspector {
             return Optional.empty();
         String content = BoundedMetadataInspector.read(path);
         boolean shape = content.matches("(?s)^version\\s*=\\s*[1-9][0-9]*.*")
-                && content.matches("(?s).*revision\\s*=\\s*[1-9][0-9]*.*")
-                && content.matches("(?s).*requires-python\\s*=\\s*\\\"[^\\\"\\r\\n]+\\\".*")
-                && content.contains("[[package]]");
+            && content.matches("(?s).*revision\\s*=\\s*[1-9][0-9]*.*")
+            && content.matches("(?s).*requires-python\\s*=\\s*\\\"[^\\\"\\r\\n]+\\\".*")
+            && content.contains("[[package]]");
         return shape ? Optional.of(lockFile) : Optional.empty();
     }
 }

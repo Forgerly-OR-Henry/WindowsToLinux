@@ -50,7 +50,7 @@ public final class DesktopUpdateException extends IOException {
      */
     public static DesktopUpdateException create(DesktopUpdateFailureType type, String diagnostic, Throwable cause) {
         return new DesktopUpdateException(Objects.requireNonNull(type, "type").problem(UUID.randomUUID(), diagnostic),
-                cause);
+            cause);
     }
 
     /**

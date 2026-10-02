@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -12,7 +23,7 @@ import java.util.function.Function;
 
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.junit.jupiter.api.Test;
 
@@ -26,24 +37,24 @@ class DeploymentPublicationChannelTest {
         var peer = channel(request -> {
             if (request.script().contains("snapshot-deployment-attempt"))
                 return reply(0, "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
-                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n");
+                    + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n");
             if (request.script().contains("publication-original-status-attempt"))
                 return reply(0, "PUBLICATION_STATUS=1\nCURRENT=" + "d".repeat(64)
-                        + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=" + operation + "\nSNAPSHOT_OLD="
-                        + "d".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
-                        + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n");
+                    + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=" + operation + "\nSNAPSHOT_OLD="
+                    + "d".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
+                    + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n");
             return reply(0, "SNAPSHOT_DISCARDED=1\n");
         }, scripts);
         assertEquals(Optional.of(operation.toString()), peer.snapshot(unit(), runtime(), operation,
-                Optional.of("d".repeat(64))).value().orElseThrow().token());
+            Optional.of("d".repeat(64))).value().orElseThrow().token());
         assertEquals(Outcome.SUCCEEDED, peer.originalStatus(unit(), "demo-" + "a".repeat(16),
-                Optional.of("d".repeat(64)), "native", "none", operation).outcome());
+            Optional.of("d".repeat(64)), "native", "none", operation).outcome());
         assertEquals(Outcome.SUCCEEDED, peer.discardSnapshot(unit(), operation).outcome());
         assertEquals(3, scripts.size());
         String identity = "'demo' '" + "b".repeat(64) + "' '11111111-1111-4111-8111-111111111111' '" + operation + "'";
         assertTrue(scripts.get(0).contains("'snapshot-deployment-attempt' " + identity + " '" + "d".repeat(64) + "'"), scripts.get(0));
         assertTrue(scripts.get(1).contains("'publication-original-status-attempt' " + identity + " 'demo-" + "a".repeat(16)
-                + "' '" + "d".repeat(64) + "' 'native' 'none'"), scripts.get(1));
+            + "' '" + "d".repeat(64) + "' 'native' 'none'"), scripts.get(1));
         assertTrue(scripts.get(2).contains("'snapshot-discard-attempt' " + identity), scripts.get(2));
     }
 
@@ -52,18 +63,18 @@ class DeploymentPublicationChannelTest {
     void attemptSnapshotRejectsBorrowedTokenAndChangedPreviousWithoutAnotherSend() throws Exception {
         var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
         for (String body : List.of("PREVIOUS=0\n",
-                "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
-                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n",
-                "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
-                        + "e".repeat(64) + "\nPREVIOUS_KIND=deployment\n")) {
+            "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n",
+            "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
+                + "e".repeat(64) + "\nPREVIOUS_KIND=deployment\n")) {
             var scripts = new ArrayList<String>();
             assertEquals(Outcome.UNKNOWN, channel(request -> reply(0, body), scripts)
-                    .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).outcome());
+                .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64))).outcome());
             assertEquals(1, scripts.size());
         }
         var scripts = new ArrayList<String>();
         assertEquals(Outcome.SUCCEEDED, channel(request -> reply(0, "PREVIOUS=0\n"), scripts)
-                .snapshot(unit(), runtime(), operation, Optional.empty()).outcome());
+            .snapshot(unit(), runtime(), operation, Optional.empty()).outcome());
         assertTrue(scripts.getFirst().endsWith(" 'empty'"), scripts.getFirst());
     }
 
@@ -74,12 +85,13 @@ class DeploymentPublicationChannelTest {
         var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
         var scripts = new ArrayList<String>();
         var result = channel(request -> reply(0, "SNAPSHOT_TOKEN=" + operation
-                + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST=" + "d".repeat(64)
-                + "\nPREVIOUS_KIND=ordinary\n"), scripts)
-                .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
+            + "\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST=" + "d".repeat(64)
+            + "\nPREVIOUS_KIND=ordinary\n"), scripts)
+            .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
         assertEquals(Outcome.UNKNOWN, result.outcome());
         assertEquals("DEPLOYMENT_SNAPSHOT_PREVIOUS_CHANGED", result.problem().orElseThrow().eventCode());
-        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
+        assertEquals(1, scripts.size());
+        assertTrue(scripts.getFirst().contains("'" + operation + "'"));
     }
 
     /** A correct digest/token and kind cannot hide changed previous activity. / 正确摘要、令牌和类别不能掩盖旧运行状态变化。
@@ -89,12 +101,13 @@ class DeploymentPublicationChannelTest {
         var operation = UUID.fromString("22222222-2222-4222-8222-222222222222");
         var scripts = new ArrayList<String>();
         var result = channel(request -> reply(0, "SNAPSHOT_TOKEN=" + operation
-                + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
-                + "\nPREVIOUS_KIND=deployment\n"), scripts)
-                .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
+            + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
+            + "\nPREVIOUS_KIND=deployment\n"), scripts)
+            .snapshot(unit(), runtime(), operation, Optional.of("d".repeat(64)), "deployment", true);
         assertEquals(Outcome.UNKNOWN, result.outcome());
         assertEquals("DEPLOYMENT_SNAPSHOT_PREVIOUS_CHANGED", result.problem().orElseThrow().eventCode());
-        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
+        assertEquals(1, scripts.size());
+        assertTrue(scripts.getFirst().contains("'" + operation + "'"));
     }
 
     /** Empty previous state requires none/inactive before sending any snapshot. / 空旧状态在发送快照前必须是none和非运行。
@@ -105,16 +118,17 @@ class DeploymentPublicationChannelTest {
         var scripts = new ArrayList<String>();
         var peer = channel(request -> reply(0, "PREVIOUS=0\n"), scripts);
         assertThrows(IllegalArgumentException.class,
-                () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "deployment", false));
+            () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "deployment", false));
         assertThrows(IllegalArgumentException.class,
-                () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "none", true));
+            () -> peer.snapshot(unit(), runtime(), operation, Optional.empty(), "none", true));
         assertTrue(scripts.isEmpty());
         var result = peer.snapshot(unit(), runtime(), operation, Optional.empty(), "none", false);
         assertEquals(Outcome.SUCCEEDED, result.outcome());
         assertEquals("none", result.value().orElseThrow().previousKind());
         assertFalse(result.value().orElseThrow().previousRunning());
         assertTrue(result.value().orElseThrow().token().isEmpty());
-        assertEquals(1, scripts.size()); assertTrue(scripts.getFirst().contains("'" + operation + "'"));
+        assertEquals(1, scripts.size());
+        assertTrue(scripts.getFirst().contains("'" + operation + "'"));
     }
 
     /** Rejects a missing first-release flag and preserves an exact previous token. / 拒绝缺失首次发布标志并保留精确旧令牌。 */
@@ -125,13 +139,13 @@ class DeploymentPublicationChannelTest {
         assertEquals(Outcome.UNKNOWN, missing.snapshot(unit, runtime()).outcome());
         var previous = channel(request -> reply(0,
                 "SNAPSHOT_TOKEN=11111111-1111-4111-8111-111111111111\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
-                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
-                new ArrayList<>());
+                    + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
+            new ArrayList<>());
         assertTrue(previous.snapshot(unit, runtime()).value().orElseThrow().previousRunning());
         var foreign = channel(request -> reply(0,
                 "SNAPSHOT_TOKEN=22222222-2222-4222-8222-222222222222\nPREVIOUS=1\nPREVIOUS_RUNNING=1\nPREVIOUS_DIGEST="
-                        + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
-                new ArrayList<>());
+                    + "d".repeat(64) + "\nPREVIOUS_KIND=deployment\n"),
+            new ArrayList<>());
         assertEquals(Outcome.UNKNOWN, foreign.snapshot(unit, runtime()).outcome());
     }
 
@@ -140,23 +154,23 @@ class DeploymentPublicationChannelTest {
     void originalStatusRejectsMissingAndConflictingRecoveryFacts() throws Exception {
         var unit = unit();
         String body = "PUBLICATION_STATUS=1\nCURRENT=" + "d".repeat(64)
-                + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD="
-                + "e".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
-                + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+            + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD="
+            + "e".repeat(64) + "\nSNAPSHOT_KIND=deployment\nSNAPSHOT_RUNNING=1\nMAINTENANCE=none\n"
+            + "CANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
         var good = channel(request -> reply(0, body), new ArrayList<>());
         var observed = good.originalStatus(unit, "demo-" + "a".repeat(16), Optional.of("d".repeat(64)), "native",
-                "none");
+            "none");
         assertEquals(Outcome.SUCCEEDED, observed.outcome());
         assertEquals(Optional.of("e".repeat(64)), observed.value().orElseThrow().previousDigest());
         for (String malformed : List.of(body.replace("SNAPSHOT_RUNNING=1", "SNAPSHOT_RUNNING=wrong"),
-                body.replace("SNAPSHOT=11111111-1111-4111-8111-111111111111",
-                        "SNAPSHOT=22222222-2222-4222-8222-222222222222"),
-                body.replace("BUILD_ACTIVE=no", "BUILD_ACTIVE=maybe"),
-                body.replace("CONTAINER_PRESENT=not-applicable", "CONTAINER_PRESENT=no"), body + "CURRENT=none\n")) {
+            body.replace("SNAPSHOT=11111111-1111-4111-8111-111111111111",
+                "SNAPSHOT=22222222-2222-4222-8222-222222222222"),
+            body.replace("BUILD_ACTIVE=no", "BUILD_ACTIVE=maybe"),
+            body.replace("CONTAINER_PRESENT=not-applicable", "CONTAINER_PRESENT=no"), body + "CURRENT=none\n")) {
             var peer = channel(request -> reply(0, malformed), new ArrayList<>());
             assertEquals(Outcome.UNKNOWN,
-                    peer.originalStatus(unit, "demo-" + "a".repeat(16), Optional.of("d".repeat(64)), "native", "none")
-                            .outcome());
+                peer.originalStatus(unit, "demo-" + "a".repeat(16), Optional.of("d".repeat(64)), "native", "none")
+                    .outcome());
         }
     }
 
@@ -185,7 +199,7 @@ class DeploymentPublicationChannelTest {
         assertTrue(requests.getFirst().contains("demo-" + "a".repeat(16)), requests.getFirst());
         assertTrue(requests.getFirst().contains("11111111-1111-4111-8111-111111111111"), requests.getFirst());
         assertEquals(Outcome.UNKNOWN, channel(unitRequest -> reply(0, "CANDIDATE=other\n"), new ArrayList<>())
-                .cleanupCandidate(unit, "demo-" + "a".repeat(16)).outcome());
+            .cleanupCandidate(unit, "demo-" + "a".repeat(16)).outcome());
     }
 
     /** Unconfirmed publish and cleanup receipts never become known successful effects. / 未确认的发布和清理回执绝不成为已知成功副作用。 */
@@ -195,8 +209,8 @@ class DeploymentPublicationChannelTest {
         var requests = new ArrayList<String>();
         var channel = channel(request -> new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_RECEIPT_LOST", "Controlled loss", Map.of(),
-                        Optional.empty()))),
-                requests);
+                    Optional.empty()))),
+            requests);
         assertEquals(Outcome.UNKNOWN, new PublishArguments(unit).publish(channel).outcome());
         assertEquals(Outcome.UNKNOWN, channel.cleanupCandidate(unit, "demo-" + "a".repeat(16)).outcome());
         assertEquals(2, requests.size());
@@ -209,8 +223,8 @@ class DeploymentPublicationChannelTest {
         var requests = new ArrayList<String>();
         var peer = channel(request -> new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.CANCELLED, "FIXTURE_CANCELLED", "Controlled cancellation", Map.of(),
-                        Optional.empty()))),
-                requests);
+                    Optional.empty()))),
+            requests);
         assertEquals(Outcome.UNKNOWN, peer.cleanupCandidate(unit(), "demo-" + "a".repeat(16)).outcome());
         assertEquals(1, requests.size());
     }
@@ -236,15 +250,15 @@ class DeploymentPublicationChannelTest {
     void runtimeObservationKeepsOnDemandAndNativeBoundaries() throws Exception {
         var unit = unit();
         var onDemand = channel(request -> reply(0, "KIND=container\nENGINE=docker\nMODE=ON_DEMAND\n"),
-                new ArrayList<>());
+            new ArrayList<>());
         assertEquals(DeploymentRemoteRuntimeObservation.StateType.INSTALLED,
-                onDemand.observeRestored(unit).value().orElseThrow().state());
+            onDemand.observeRestored(unit).value().orElseThrow().state());
         var nativePeer = new java.util.concurrent.atomic.AtomicInteger();
         var malformed = channel(request -> nativePeer.getAndIncrement() == 0
                 ? reply(0, "KIND=deployment\nMODE=DAEMON\n")
                 : reply(0, "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\n"
-                        + "SubState=running\nResult=success\nExecMainCode=wrong\nExecMainStatus=0\nMainPID=123\n"),
-                new ArrayList<>());
+                + "SubState=running\nResult=success\nExecMainCode=wrong\nExecMainStatus=0\nMainPID=123\n"),
+            new ArrayList<>());
         assertEquals(Outcome.UNKNOWN, malformed.observeRestored(unit).outcome());
     }
 
@@ -271,7 +285,7 @@ class DeploymentPublicationChannelTest {
      * @return reviewed runtime / 已审阅运行时 */
     private static DeploymentRuntimeDefinition runtime() {
         return new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go",
-                new DeploymentHealthCheck.Tcp(8080, 10, 2));
+            new DeploymentHealthCheck.Tcp(8080, 10, 2));
     }
 
     /** Binds approved fixed commands to a deterministic controlled peer. / 将已审核固定命令绑定到确定性受控对等端。
@@ -279,13 +293,13 @@ class DeploymentPublicationChannelTest {
      * @param scripts dispatched scripts / 已发送脚本
      * @return channel under test / 待测通道 */
     private static DeploymentPublicationChannel channel(Function<CommandRequest, OperationResult<CommandResult>> answer,
-            List<String> scripts) {
+                                                        List<String> scripts) {
         var task = new TaskContext() {
             public UUID id() {
                 return UUID.fromString("11111111-1111-4111-8111-111111111111");
             }
 
-            public CancellationToken cancellation() {
+            public CancelToken cancelToken() {
                 return () -> false;
             }
 
@@ -306,20 +320,20 @@ class DeploymentPublicationChannelTest {
             }
 
             public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                    TaskContext actual) {
+                                                       TaskContext actual) {
                 throw new AssertionError();
             }
         };
         RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    assertEquals("execute", method.getName());
-                    assertSame(grant, args[1]);
-                    var request = (CommandRequest) args[0];
-                    scripts.add(request.script());
-                    return answer.apply(request);
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                assertEquals("execute", method.getName());
+                assertSame(grant, args[1]);
+                var request = (CommandRequest) args[0];
+                scripts.add(request.script());
+                return answer.apply(request);
+            });
         return new DeploymentPublicationChannel(session, interaction, new ServerRef("Server-Exact"), task,
-                "f".repeat(64));
+            "f".repeat(64));
     }
 
     /** Returns a known complete process observation. / 返回已知完整进程观测。
@@ -328,7 +342,7 @@ class DeploymentPublicationChannelTest {
      * @return observed result / 观测结果 */
     private static OperationResult<CommandResult> reply(int exit, String output) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
     }
 
     /** Supplies only fields that the fixed publish command actually reads. / 仅提供固定发布命令实际读取的字段。
@@ -340,12 +354,12 @@ class DeploymentPublicationChannelTest {
          * @throws ApiException if the host rejects admission / 宿主拒绝准入时 */
         OperationResult<Void> publish(DeploymentPublicationChannel channel) throws ApiException {
             var facts = new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(
-                    java.nio.file.Path.of("."), "demo", DeploymentProjectKind.GO_SERVICE,
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.GO_MODULE,
-                    List.of(), List.of(), List.of());
+                java.nio.file.Path.of("."), "demo", DeploymentProjectKind.GO_SERVICE,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.GO_MODULE,
+                List.of(), List.of(), List.of());
             return channel.publish(unit, facts, runtime(),
-                    new DeploymentResourceBindings(List.of(), Optional.of(List.of())), "c".repeat(64), Map.of(),
-                    "demo-" + "a".repeat(16), "d".repeat(64), "e".repeat(64), false);
+                new DeploymentResourceBindings(List.of(), Optional.of(List.of())), "c".repeat(64), Map.of(),
+                "demo-" + "a".repeat(16), "d".repeat(64), "e".repeat(64), false);
         }
     }
 }

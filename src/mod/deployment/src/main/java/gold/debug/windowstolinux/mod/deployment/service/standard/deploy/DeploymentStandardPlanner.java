@@ -1,15 +1,21 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer.SnapshotAssessment;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.extension.registry.DeploymentBuildRendererRegistry;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.*;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 
 /** Plans all deterministic single and mixed deployments against the original still-owned source. / 对原仍受管源码规划全部确定性单组件及混合部署。 */
 public final class DeploymentStandardPlanner {
@@ -30,7 +36,7 @@ public final class DeploymentStandardPlanner {
      * @param ordering dependency-safe build and runtime order / 依赖安全的构建和运行顺序
      * @param components exact plans by component ID / 按组件ID索引的精确计划 */
     public record ComponentPlans(MultiComponentDeploymentPlan ordering,
-            Map<String, ReviewedDeploymentPlan> components) {
+                                 Map<String, ReviewedDeploymentPlan> components) {
         /** Retains each original component once. / 各原组件仅保留一次。
          * @param ordering deterministic graph / 确定性图
          * @param components complete plans / 完整计划 */
@@ -81,7 +87,7 @@ public final class DeploymentStandardPlanner {
         if (!requireOriginal(request.material(), source.id(), request.archive().sourceManifestSha256(), request))
             return cancelled(task) ? cancellation() : unavailable();
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new RenderedPlan(plan, ReviewedPlanIdentity.from(request), script)), Optional.empty());
+            Optional.of(new RenderedPlan(plan, ReviewedPlanIdentity.from(request), script)), Optional.empty());
     }
 
     /** Plans one assessment only while its original snapshot and archive remain owned. / 仅在原快照和归档仍受管时规划单组件评估。
@@ -91,8 +97,8 @@ public final class DeploymentStandardPlanner {
      * @param task original admitted task / 原准入任务
      * @return original deterministic plan or cancellation / 原确定性计划或取消 */
     public OperationResult<ReviewedDeploymentPlan> plan(DeploymentSourceMaterial material,
-            SnapshotAssessment<DeploymentProjectAssessment> analysis, ReviewedDeploymentRequest request,
-            TaskContext task) {
+                                                        SnapshotAssessment<DeploymentProjectAssessment> analysis, ReviewedDeploymentRequest request,
+                                                        TaskContext task) {
         Objects.requireNonNull(material);
         Objects.requireNonNull(analysis);
         Objects.requireNonNull(request);
@@ -102,7 +108,7 @@ public final class DeploymentStandardPlanner {
         if (!requireOriginal(material, analysis.snapshotId(), analysis.snapshotSha256(), request))
             return cancelled(task) ? cancellation() : unavailable();
         if (analysis.assessment().facts().isEmpty()
-                || !analysis.assessment().facts().orElseThrow().equals(request.facts()))
+            || !analysis.assessment().facts().orElseThrow().equals(request.facts()))
             throw new IllegalArgumentException("Reviewed facts differ from the actual source assessment");
         var plan = single.plan(request);
         if (cancelled(task))
@@ -119,8 +125,8 @@ public final class DeploymentStandardPlanner {
      * @param task original admitted task / 原准入任务
      * @return complete graph and component plans or cancellation / 完整图及组件计划或取消 */
     public OperationResult<ComponentPlans> planComponents(DeploymentSourceMaterial material,
-            SnapshotAssessment<MultiComponentProjectAssessment> analysis,
-            Map<String, ReviewedDeploymentRequest> requests, TaskContext task) {
+                                                          SnapshotAssessment<MultiComponentProjectAssessment> analysis,
+                                                          Map<String, ReviewedDeploymentRequest> requests, TaskContext task) {
         Objects.requireNonNull(material);
         Objects.requireNonNull(analysis);
         Objects.requireNonNull(requests);
@@ -141,8 +147,8 @@ public final class DeploymentStandardPlanner {
             if (!requireOriginal(material, analysis.snapshotId(), analysis.snapshotSha256(), request))
                 return cancelled(task) ? cancellation() : unavailable();
             if (!request.facts().equals(component.facts())
-                    || !request.runtime().equals(component.runtime().orElseThrow()) || !graph.candidateNamespaces()
-                            .get(component.componentId()).equals(request.facts().applicationId()))
+                || !request.runtime().equals(component.runtime().orElseThrow()) || !graph.candidateNamespaces()
+                .get(component.componentId()).equals(request.facts().applicationId()))
                 throw new IllegalArgumentException("Reviewed component differs from analyzed graph");
             if (serverId != null && !serverId.equals(request.server().id()))
                 throw new IllegalArgumentException("One application graph requires one server");
@@ -155,7 +161,7 @@ public final class DeploymentStandardPlanner {
             if (!requireOriginal(material, analysis.snapshotId(), analysis.snapshotSha256(), request))
                 return cancelled(task) ? cancellation() : unavailable();
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ComponentPlans(graph, components)),
-                Optional.empty());
+            Optional.empty());
     }
 
     /** Requires one original frozen source and its own measured tar bytes. / 要求同一原冻结源码及其实际测量的 tar 字节。
@@ -165,16 +171,16 @@ public final class DeploymentStandardPlanner {
      * @param request candidate request / 候选请求
      * @return true while the exact original source and archive remain available / 精确原素材和归档仍可用时为真 */
     private static boolean requireOriginal(DeploymentSourceMaterial material, UUID snapshotId, String manifestSha,
-            ReviewedDeploymentRequest request) {
+                                           ReviewedDeploymentRequest request) {
         try {
             var source = material.snapshot();
             source.directory();
             request.archive().path();
             if (!source.id().equals(snapshotId) || !source.sha256().equals(manifestSha)
-                    || !source.id().equals(request.material().snapshot().id())
-                    || !source.sha256().equals(request.material().snapshot().sha256())
-                    || !source.id().equals(request.archive().originSnapshotId())
-                    || !source.sha256().equals(request.archive().sourceManifestSha256()))
+                || !source.id().equals(request.material().snapshot().id())
+                || !source.sha256().equals(request.material().snapshot().sha256())
+                || !source.id().equals(request.archive().originSnapshotId())
+                || !source.sha256().equals(request.archive().sourceManifestSha256()))
                 throw new IllegalArgumentException("Reviewed source or archive does not belong to this assessment");
             return true;
         } catch (IllegalStateException closed) {
@@ -186,7 +192,7 @@ public final class DeploymentStandardPlanner {
      * @param task original task / 原任务
      * @return true only after a cancellation request / 仅请求取消后为真 */
     private static boolean cancelled(TaskContext task) {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 
     /** Returns a safe cancelled plan without claiming a remote effect. / 返回安全取消的计划，不声称远端效果。
@@ -194,7 +200,7 @@ public final class DeploymentStandardPlanner {
      * @return cancelled result / 已取消结果 */
     private static <T> OperationResult<T> cancellation() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
-                "DEPLOYMENT_PLAN_CANCELLED", "Standard planning was cancelled", Map.of(), Optional.empty())));
+            "DEPLOYMENT_PLAN_CANCELLED", "Standard planning was cancelled", Map.of(), Optional.empty())));
     }
 
     /** Returns a fixed source-unavailable result for an already closed original handle. / 原句柄已关闭时返回固定来源不可用结果。
@@ -202,7 +208,7 @@ public final class DeploymentStandardPlanner {
      * @return failed source observation / 失败的来源观测 */
     private static <T> OperationResult<T> unavailable() {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PLAN_SOURCE_UNAVAILABLE",
-                        "Original source material is unavailable", Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PLAN_SOURCE_UNAVAILABLE",
+                "Original source material is unavailable", Map.of(), Optional.empty())));
     }
 }

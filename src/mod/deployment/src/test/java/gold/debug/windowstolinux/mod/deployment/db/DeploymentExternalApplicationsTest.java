@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.SQLException;
@@ -7,7 +10,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,7 +39,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(List.of("DOCKER_PERMISSION"), publicScan.value().orElseThrow().issues());
             assertEquals(1, publicScan.value().orElseThrow().applications().size());
             assertEquals(0, peer.effects.get(),
-                    "A nonfatal Docker permission issue must preserve read-only scan behavior");
+                "A nonfatal Docker permission issue must preserve read-only scan behavior");
             var external = new DeploymentExternalApplications(actual);
             var handle = rootTask(runtime, task -> {
                 var scanned = external.scan(new ServerRef("server"), task);
@@ -50,7 +53,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
                 assertEquals(Outcome.SUCCEEDED, repeated.outcome());
                 assertEquals(Optional.of(id), repeated.value());
                 assertEquals(reads, peer.reads.get(),
-                        "Original-task adoption repeat must only read its durable row/reference");
+                    "Original-task adoption repeat must only read its durable row/reference");
                 var rows = external.list(task);
                 assertEquals(1, rows.size());
                 assertEquals(id, rows.getFirst().id());
@@ -62,8 +65,8 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
                 assertEquals("FINISHED", operation.phase());
                 assertEquals(id, operation.facts().path("registrationId").textValue());
                 var reference = actual.servers()
-                        .findReference(new ServerRef("server"), operation.facts().path("businessKey").textValue(), task)
-                        .orElseThrow();
+                    .findReference(new ServerRef("server"), operation.facts().path("businessKey").textValue(), task)
+                    .orElseThrow();
                 assertEquals(operation.facts().path("referenceId").textValue(), reference.id().toString());
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM external_application"));
                 return success();
@@ -74,11 +77,11 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(1, listed.value().orElseThrow().size());
             var selected = listed.value().orElseThrow().getFirst();
             assertEquals(Outcome.SUCCEEDED,
-                    await(new DeploymentApplicationsService(actual).externalAction(selected, "REFRESH_STATUS"))
-                            .outcome());
+                await(new DeploymentApplicationsService(actual).externalAction(selected, "REFRESH_STATUS"))
+                    .outcome());
             assertEquals(0, peer.effects.get());
             assertEquals(1, scalar(runtime,
-                    "SELECT COUNT(*) FROM mod_server_reference WHERE business_key LIKE 'deployment.external.%' AND state='ACTIVE'"));
+                "SELECT COUNT(*) FROM mod_server_reference WHERE business_key LIKE 'deployment.external.%' AND state='ACTIVE'"));
             assertNoActiveResources(runtime);
         }
     }
@@ -99,14 +102,14 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
                     peer.managed = true;
                 assertEquals(Outcome.FAILED, await(service.adopt(new ServerRef("server"), scanned)).outcome());
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM external_application")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM external_application")) {
                     assertTrue(rows.next());
                     assertEquals(0, rows.getLong(1));
                 }
                 assertEquals(0, scalar(runtime,
-                        "SELECT COUNT(*) FROM mod_server_reference WHERE business_key LIKE 'deployment.external.%'"));
+                    "SELECT COUNT(*) FROM mod_server_reference WHERE business_key LIKE 'deployment.external.%'"));
             } else {
                 assertEquals(Outcome.SUCCEEDED, await(service.adopt(new ServerRef("server"), scanned)).outcome());
                 var selected = await(service.externalApplications()).value().orElseThrow().getFirst();
@@ -120,14 +123,14 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
                     assertEquals(reads, peer.reads.get(), "Stored endpoint drift must fail before a connection");
             }
             assertEquals(0, peer.effects.get(),
-                    "Managed or changed identities cannot receive an external lifecycle effect");
+                "Managed or changed identities cannot receive an external lifecycle effect");
             assertNoActiveResources(runtime);
         }
     }
 
     @Test
     void durableInsertWithLostJournalAcknowledgementRecoversOriginalRowAndReferenceWithoutScanOrInsert()
-            throws Exception {
+        throws Exception {
         enable();
         try (var ssh = ssh(); var runtime = open()) {
             start(runtime, true);
@@ -135,7 +138,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             var service = new DeploymentApplicationsService(context(runtime));
             var scanned = await(service.scan(new ServerRef("server"))).value().orElseThrow().applications().getFirst();
             schemaFault(runtime,
-                    "ALTER TABLE deployment_management_operation ADD CONSTRAINT lost_adoption_ack CHECK(phase<>'REGISTERED')");
+                "ALTER TABLE deployment_management_operation ADD CONSTRAINT lost_adoption_ack CHECK(phase<>'REGISTERED')");
             var handle = service.adopt(new ServerRef("server"), scanned);
             awaitState(handle);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
@@ -143,20 +146,20 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             String originalId;
             UUID referenceId;
             try (var access = scope(runtime, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT external_application_id,identity_fingerprint FROM external_application")) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "SELECT external_application_id,identity_fingerprint FROM external_application")) {
                 assertTrue(rows.next());
                 originalId = rows.getString(1);
                 assertEquals(scanned.fingerprint(), rows.getString(2));
                 assertFalse(rows.next());
             }
             try (var connection = runtime.persistence().database().openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
-                                    + originalId + "'")) {
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
+                         + originalId + "'")) {
                 assertTrue(rows.next());
                 referenceId = rows.getObject(1, UUID.class);
                 assertEquals("RESERVED", rows.getString(2));
@@ -173,10 +176,10 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(1, listed.size());
             assertEquals(originalId, listed.getFirst().id());
             try (var connection = runtime.persistence().database().openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
-                                    + originalId + "'")) {
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
+                         + originalId + "'")) {
                 assertTrue(rows.next());
                 assertEquals(referenceId, rows.getObject(1, UUID.class));
                 assertEquals("ACTIVE", rows.getString(2));
@@ -209,9 +212,9 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(Optional.of(Outcome.SUCCEEDED), result.outcome());
             assertEquals(1, peer.effects.get());
             assertEquals(reads + 1, peer.reads.get(),
-                    "Original recovery must issue exactly one read-only status observation");
+                "Original recovery must issue exactly one read-only status observation");
             assertEquals("RUNNING",
-                    await(service.externalApplications()).value().orElseThrow().getFirst().target().state());
+                await(service.externalApplications()).value().orElseThrow().getFirst().target().state());
             assertNoActiveResources(runtime);
         }
     }
@@ -228,7 +231,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             String id = await(first).value().orElseThrow();
             var selected = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals(Outcome.SUCCEEDED, await(service.editExternal(selected, "Original label", "WEBSITE",
-                    Optional.of("https://demo.debug.gold/"))).outcome());
+                Optional.of("https://demo.debug.gold/"))).outcome());
             var before = registration(runtime, id);
             int journals = managementCount(runtime);
             int reads = peer.reads.get();
@@ -237,12 +240,12 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(Optional.of(id), await(repeated).value());
             assertEquals(reads + 1, peer.reads.get(), "Cross-task reuse must verify the exact remote identity once");
             assertEquals(before, registration(runtime, id),
-                    "Repeat must preserve adoptedAt and every presentation/runtime field");
+                "Repeat must preserve adoptedAt and every presentation/runtime field");
             assertEquals(journals, managementCount(runtime),
-                    "Exact reuse cannot journal a new registration or reserve another reference");
+                "Exact reuse cannot journal a new registration or reserve another reference");
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + id + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + id + "' AND state='ACTIVE'"));
             selected = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals("Original label", selected.displayName());
             assertEquals("WEBSITE", selected.category());
@@ -263,7 +266,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             String oldId = await(service.adopt(new ServerRef("server"), target)).value().orElseThrow();
             var selected = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals(Outcome.SUCCEEDED, await(service.editExternal(selected, "Old presentation", "WEBSITE",
-                    Optional.of("https://demo.debug.gold/"))).outcome());
+                Optional.of("https://demo.debug.gold/"))).outcome());
             selected = await(service.externalApplications()).value().orElseThrow().getFirst();
             var old = registration(runtime, oldId);
             int journals = managementCount(runtime);
@@ -294,13 +297,13 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals("APP", actual.getFirst().category());
             assertTrue(actual.getFirst().accessUrl().isEmpty());
             assertTrue(Long.parseLong(registration(runtime, newId).get("adopted_at")) >= Long
-                    .parseLong(old.get("adopted_at")));
+                .parseLong(old.get("adopted_at")));
             assertEquals(0,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + oldId + "'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + oldId + "'"));
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + newId + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + newId + "' AND state='ACTIVE'"));
             assertEquals(0, peer.effects.get());
             assertNoActiveResources(runtime);
         }
@@ -319,19 +322,19 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             var before = registration(runtime, oldId);
             int reads = peer.reads.get(), journals = managementCount(runtime);
             assertThrows(SQLException.class,
-                    () -> runtime.servers().saveServerProfile(
-                            gold.debug.windowstolinux.app.service.contract.profile.ServerProfile.fromStored(
-                                    new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("server",
-                                            "localhost", ssh.server().getPort(), "tester", "fixture-secret")),
-                            "fixture-secret".toCharArray()));
+                () -> runtime.servers().saveServerProfile(
+                    gold.debug.windowstolinux.app.service.server.ServerProfile.fromStored(
+                        new gold.debug.windowstolinux.app.db.server.StoredServerProfile("server",
+                            "localhost", ssh.server().getPort(), "tester", "fixture-secret")),
+                    "fixture-secret".toCharArray()));
             assertEquals(reads, peer.reads.get(), "Referenced endpoint rejection does not send SSH");
             assertEquals(journals, managementCount(runtime));
             assertEquals(before, registration(runtime, oldId));
             assertEquals(selected, await(service.externalApplications()).value().orElseThrow().getFirst());
             assertEquals("127.0.0.1", runtime.persistence().servers().findServerProfile("server").orElseThrow().host());
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + oldId + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + oldId + "' AND state='ACTIVE'"));
             assertEquals(0, peer.effects.get());
             assertNoActiveResources(runtime);
         }
@@ -354,7 +357,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             var review = await(service.reviewReattachment(selected, fresh)).value().orElseThrow();
             if (drift == ReviewDriftType.PRESENTATION)
                 assertEquals(Outcome.SUCCEEDED,
-                        await(service.editExternal(selected, "Later label", "APP", Optional.empty())).outcome());
+                    await(service.editExternal(selected, "Later label", "APP", Optional.empty())).outcome());
             else if (drift == ReviewDriftType.ENDPOINT)
                 server(runtime, ssh.server().getPort(), "changed");
             else
@@ -367,8 +370,8 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             if (drift != ReviewDriftType.OBSERVATION)
                 assertEquals(reads, peer.reads.get());
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + id + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + id + "' AND state='ACTIVE'"));
             assertEquals(0, peer.effects.get());
             assertNoActiveResources(runtime);
         }
@@ -376,7 +379,7 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
 
     @Test
     void lostReplacementAcknowledgementRecoversExactNewRowAndBothOriginalReferencesWithoutRepeatingDelete()
-            throws Exception {
+        throws Exception {
         enable();
         try (var ssh = ssh(); var runtime = open()) {
             start(runtime, true);
@@ -390,30 +393,30 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             var fresh = await(service.scan(new ServerRef("server"))).value().orElseThrow().applications().getFirst();
             var review = await(service.reviewReattachment(selected, fresh)).value().orElseThrow();
             schemaFault(runtime,
-                    "ALTER TABLE deployment_management_operation ADD CONSTRAINT lost_reattachment_ack CHECK(phase<>'REGISTERED')");
+                "ALTER TABLE deployment_management_operation ADD CONSTRAINT lost_reattachment_ack CHECK(phase<>'REGISTERED')");
             var handle = service.reattach(review);
             awaitState(handle);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertTrue(handle.snapshot().outcome().isEmpty());
             assertTrue(registration(runtime, oldId).isEmpty(),
-                    "Atomic replacement committed before journal acknowledgement loss");
+                "Atomic replacement committed before journal acknowledgement loss");
             String newId = await(service.externalApplications()).value().orElseThrow().getFirst().id();
             var row = registration(runtime, newId);
             assertNotEquals(oldId, newId);
             UUID reference;
             try (var connection = runtime.persistence().database().openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
-                                    + newId + "'")) {
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "SELECT reference_id,state FROM mod_server_reference WHERE business_key='deployment.external."
+                         + newId + "'")) {
                 assertTrue(rows.next());
                 reference = rows.getObject(1, UUID.class);
                 assertEquals("RESERVED", rows.getString(2));
                 assertFalse(rows.next());
             }
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + oldId + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + oldId + "' AND state='ACTIVE'"));
             int reads = peer.reads.get();
             schemaFault(runtime, "ALTER TABLE deployment_management_operation DROP CONSTRAINT lost_reattachment_ack");
             var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30, TimeUnit.SECONDS);
@@ -423,10 +426,10 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(row, registration(runtime, newId));
             assertTrue(registration(runtime, oldId).isEmpty());
             assertEquals(0,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + oldId + "'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + oldId + "'"));
             assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE reference_id='" + reference
-                    + "' AND state='ACTIVE'"));
+                + "' AND state='ACTIVE'"));
             assertEquals(0, peer.effects.get());
             assertNoActiveResources(runtime);
         }
@@ -457,13 +460,13 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
             assertEquals(TaskState.UNKNOWN, original.snapshot().state());
             assertTrue(original.snapshot().outcome().isEmpty());
             assertEquals(1,
-                    scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
-                            + id + "' AND state='ACTIVE'"));
+                scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE business_key='deployment.external."
+                    + id + "' AND state='ACTIVE'"));
             var settled = runtime.tasks().reconcile(original.id()).toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, settled.state());
             assertEquals(Optional.of(Outcome.SUCCEEDED), settled.outcome());
             assertEquals(Outcome.FAILED, await(service.reattach(review)).outcome(),
-                    "Original observation changed the exact old row review");
+                "Original observation changed the exact old row review");
             assertEquals(id, await(service.externalApplications()).value().orElseThrow().getFirst().id());
             assertEquals(1, peer.effects.get());
             assertNoActiveResources(runtime);
@@ -471,12 +474,12 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
     }
 
     /** Reads the actual complete registration, including adopted time and presentation. / 读取实际完整登记，包括接管时间与展示。 */
-    private Map<String, String> registration(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime,
-            String id) throws Exception {
+    private Map<String, String> registration(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime,
+                                             String id) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var query = connection
-                        .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
+             var connection = access.openConnection();
+             var query = connection
+                 .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
             query.setString(1, id);
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
@@ -491,11 +494,11 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
     }
 
     /** Counts original journal rows without mutating author task state. / 不改变作者任务状态地计数原账本行。 */
-    private int managementCount(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime) throws Exception {
+    private int managementCount(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_management_operation")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_management_operation")) {
             assertTrue(rows.next());
             return rows.getInt(1);
         }

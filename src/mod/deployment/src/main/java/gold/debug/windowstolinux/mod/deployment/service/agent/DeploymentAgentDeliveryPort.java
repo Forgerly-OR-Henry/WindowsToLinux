@@ -58,7 +58,7 @@ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
      * @return actual bounded result / 真实有界结果
      * @throws Exception on denied or unknown command / 命令被拒绝或未知时 */
     CommandFeedback command(TaskContext task, Prepared candidate, String revision, String script, Duration timeout)
-            throws Exception;
+        throws Exception;
 
     /** Reads only current protected task source. / 仅读取当前受保护任务源码。
      * @param task original task / 原任务
@@ -70,7 +70,7 @@ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
      * @return bounded redacted lines / 有界脱敏行
      * @throws Exception on unavailable reading / 读取不可用时 */
     String read(TaskContext task, Prepared candidate, String revision, String path, int offset, int limit)
-            throws Exception;
+        throws Exception;
 
     /** Applies a separately reviewed exact source patch and returns a new revision. / 应用单独审核的精确源码补丁并返回新修订。
      * @param task original task / 原任务
@@ -98,7 +98,7 @@ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
      * @return actual result or retained uncertainty / 真实结果或保留的不确定性
      * @throws Exception on unavailable delivery evidence / 交付依据不可用时 */
     OperationResult<Published> deliver(TaskContext task, DeploymentAgentPlan plan, Map<String, Prepared> candidates,
-            Map<String, String> revisions, Map<String, String> artifacts) throws Exception;
+                                       Map<String, String> revisions, Map<String, String> artifacts) throws Exception;
 
     /** Rebinds all actual sends after an explicitly authorized paused model replacement. / 明确授权暂停模型替换后重新绑定全部真实发送。
      * @param revision newly verified whole-route revision / 新核实整路由修订

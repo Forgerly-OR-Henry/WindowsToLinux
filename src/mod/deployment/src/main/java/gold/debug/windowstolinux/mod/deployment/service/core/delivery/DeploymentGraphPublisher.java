@@ -1,12 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.delivery;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentUnitCommit;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
@@ -33,7 +39,8 @@ public final class DeploymentGraphPublisher {
      * @param hasTools whether toolchain binding is active / 工具链绑定是否有效
      * @param credentials exact persisted secret references / 精确已存秘密引用 */
     public record Candidate(String candidateId, String artifactSha256, String sourceRevision,
-            String toolchainBindingSha256, boolean hasTools, Map<DeploymentSecretReference, SecretRef> credentials) {
+                            String toolchainBindingSha256, boolean hasTools,
+                            Map<DeploymentSecretReference, SecretRef> credentials) {
         /** Validates and copies one confirmed candidate. / 校验并复制一项已确认候选。
          * @param candidateId remote candidate / 远端候选
          * @param artifactSha256 sealed artifact / 封存制品
@@ -43,7 +50,7 @@ public final class DeploymentGraphPublisher {
          * @param credentials exact secrets / 精确秘密 */
         public Candidate {
             if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}")
-                    || !digest(artifactSha256) || !digest(sourceRevision) || !digest(toolchainBindingSha256))
+                || !digest(artifactSha256) || !digest(sourceRevision) || !digest(toolchainBindingSha256))
                 throw new IllegalArgumentException("Invalid graph candidate identity");
             credentials = Map.copyOf(credentials);
         }
@@ -86,7 +93,7 @@ public final class DeploymentGraphPublisher {
      * @param task original task / 原任务
      * @param ledger mode-owned original durable events / 模式持有的原持久事件 */
     public DeploymentGraphPublisher(ModContext context, RemoteSession session, ServerRef server, TaskContext task,
-            Ledger ledger) {
+                                    Ledger ledger) {
         this(context, session, server, task, ledger, DeploymentSendGuard.NONE);
     }
 
@@ -98,7 +105,7 @@ public final class DeploymentGraphPublisher {
      * @param ledger durable mode events / 模式持久事件
      * @param beforeSend caller-owned frozen binding / 调用方持有的冻结绑定 */
     public DeploymentGraphPublisher(ModContext context, RemoteSession session, ServerRef server, TaskContext task,
-            Ledger ledger, DeploymentSendGuard beforeSend) {
+                                    Ledger ledger, DeploymentSendGuard beforeSend) {
         this.context = Objects.requireNonNull(context);
         this.session = Objects.requireNonNull(session);
         this.server = Objects.requireNonNull(server);
@@ -112,7 +119,7 @@ public final class DeploymentGraphPublisher {
      * @param candidates one confirmed candidate per component / 每组件一份已确认候选
      * @return actual remote outcome and complete proposal / 真实远端结果及完整提案 */
     public OperationResult<DeploymentPublication> publish(DeploymentPublication proposal,
-            Map<String, Candidate> candidates) {
+                                                          Map<String, Candidate> candidates) {
         try {
             var graph = proposal.graph();
             var commits = byComponent(proposal, candidates);
@@ -120,7 +127,7 @@ public final class DeploymentGraphPublisher {
             for (String id : order) {
                 var unit = component(graph, id).unit();
                 channels.put(id, new DeploymentPublicationChannel(session, context.interaction(), server, task,
-                        candidates.get(id).artifactSha256(), beforeSend));
+                    candidates.get(id).artifactSha256(), beforeSend));
                 if (!unit.server().equals(server))
                     throw new IllegalArgumentException("Graph target changed");
             }
@@ -163,9 +170,9 @@ public final class DeploymentGraphPublisher {
                 affected.add(id);
                 ledger.append("PUBLISH_EXECUTING", id, commit.release().sha256());
                 var published = channels.get(id).publish(commit.unit(), null, component.reviewedRuntime(),
-                        component.resources(), commit.configuration().sha256(), secrets.get(id),
-                        candidate.candidateId(), commit.release().sha256(), candidate.toolchainBindingSha256(),
-                        candidate.hasTools());
+                    component.resources(), commit.configuration().sha256(), secrets.get(id),
+                    candidate.candidateId(), commit.release().sha256(), candidate.toolchainBindingSha256(),
+                    candidate.hasTools());
                 if (published.outcome() == Outcome.FAILED)
                     return rollback(proposal, candidates, order, published.problem().orElseThrow());
                 if (published.outcome() != Outcome.SUCCEEDED)
@@ -203,7 +210,7 @@ public final class DeploymentGraphPublisher {
      * @param successful whether new releases were fully verified / 新发布是否完整核实
      * @return confirmed cleanup or retained uncertainty / 已确认收尾或留存未知 */
     public OperationResult<Void> cleanup(DeploymentPublication proposal, Map<String, Candidate> candidates,
-            boolean successful) {
+                                         boolean successful) {
         try {
             var order = topological(proposal.graph());
             var observed = observeOriginal(proposal, candidates);
@@ -212,14 +219,14 @@ public final class DeploymentGraphPublisher {
             for (String id : order) {
                 var component = component(proposal.graph(), id);
                 var channel = channels.computeIfAbsent(id, ignored -> new DeploymentPublicationChannel(session,
-                        context.interaction(), server, task, candidates.get(id).artifactSha256(), beforeSend));
+                    context.interaction(), server, task, candidates.get(id).artifactSha256(), beforeSend));
                 var status = observed.value().orElseThrow().get(id);
                 var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit()))
-                        .findFirst().orElseThrow();
+                    .findFirst().orElseThrow();
                 if (status.maintenance()) {
                     ledger.append("MAINTENANCE_END_EXECUTING", id, commit.release().sha256());
                     if (channel.endMaintenance(component.unit(), commit.release().sha256())
-                            .outcome() != Outcome.SUCCEEDED)
+                        .outcome() != Outcome.SUCCEEDED)
                         return unknownVoid("DEPLOYMENT_GRAPH_MAINTENANCE_UNCONFIRMED");
                     ledger.append("MAINTENANCE_END_RESULT", id, commit.release().sha256());
                 }
@@ -238,7 +245,7 @@ public final class DeploymentGraphPublisher {
                 if (status.candidate()) {
                     ledger.append("CANDIDATE_CLEANUP_EXECUTING", id, candidates.get(id).candidateId());
                     if (channel.cleanupCandidate(component.unit(), candidates.get(id).candidateId())
-                            .outcome() != Outcome.SUCCEEDED)
+                        .outcome() != Outcome.SUCCEEDED)
                         return unknownVoid("DEPLOYMENT_GRAPH_CANDIDATE_CLEANUP_UNCONFIRMED");
                     ledger.append("CANDIDATE_CLEANUP_RESULT", id, candidates.get(id).candidateId());
                 }
@@ -255,33 +262,33 @@ public final class DeploymentGraphPublisher {
      * @param candidates original candidate identities / 原候选身份
      * @return all component statuses or retained uncertainty / 全部组件状态或留存未知 */
     public OperationResult<Map<String, DeploymentOriginalPublicationStatus>> observeOriginal(
-            DeploymentPublication proposal, Map<String, Candidate> candidates) {
+        DeploymentPublication proposal, Map<String, Candidate> candidates) {
         try {
             var values = new LinkedHashMap<String, DeploymentOriginalPublicationStatus>();
             for (var component : proposal.graph().components()) {
                 String id = component.componentId();
                 var candidate = candidates.get(id);
                 var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit()))
-                        .findFirst().orElseThrow();
+                    .findFirst().orElseThrow();
                 var channel = channels.computeIfAbsent(id, ignored -> new DeploymentPublicationChannel(session,
-                        context.interaction(), server, task, candidate.artifactSha256(), beforeSend));
+                    context.interaction(), server, task, candidate.artifactSha256(), beforeSend));
                 String backend = component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
-                        ? "container"
-                        : "native";
+                    ? "container"
+                    : "native";
                 String engine = component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container container
-                        ? container.engine().name().toLowerCase(Locale.ROOT)
-                        : "none";
+                    ? container.engine().name().toLowerCase(Locale.ROOT)
+                    : "none";
                 var status = channel.originalStatus(component.unit(), candidate.candidateId(),
-                        Optional.of(commit.release().sha256()), backend, engine);
+                    Optional.of(commit.release().sha256()), backend, engine);
                 if (status.outcome() != Outcome.SUCCEEDED || status.value().isEmpty())
                     return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_STATUS_UNCONFIRMED")));
+                        Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_STATUS_UNCONFIRMED")));
                 values.put(id, status.value().orElseThrow());
             }
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.copyOf(values)), Optional.empty());
         } catch (Exception unavailable) {
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_STATUS_UNAVAILABLE")));
+                Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_STATUS_UNAVAILABLE")));
         }
     }
 
@@ -298,7 +305,7 @@ public final class DeploymentGraphPublisher {
                 String id = component.componentId();
                 var status = statuses.value().orElseThrow().get(id);
                 var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit()))
-                        .findFirst().orElseThrow();
+                    .findFirst().orElseThrow();
                 if (!status.current().equals(Optional.of(commit.release().sha256())) || status.buildActive())
                     return unknownVoid("DEPLOYMENT_GRAPH_CURRENT_CHANGED");
                 var checked = health(component);
@@ -308,8 +315,8 @@ public final class DeploymentGraphPublisher {
             var owner = component(proposal.graph(), proposal.graph().healthComponentId());
             var whole = channels.get(owner.componentId()).healthCheck(owner.unit(), proposal.graph().healthCheck());
             return whole.outcome() == Outcome.SUCCEEDED
-                    ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
-                    : unknownVoid("DEPLOYMENT_GRAPH_WHOLE_HEALTH_UNCONFIRMED");
+                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+                : unknownVoid("DEPLOYMENT_GRAPH_WHOLE_HEALTH_UNCONFIRMED");
         } catch (Exception unavailable) {
             return unknownVoid("DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE");
         }
@@ -320,7 +327,7 @@ public final class DeploymentGraphPublisher {
      * @param previousRunning exact original snapshot state per existing unit / 每个既有单元的精确原快照状态
      * @return success only if all observed states match / 仅全部观察状态匹配时成功 */
     public OperationResult<Void> verifyRestoredState(DeploymentPublication proposal,
-            Map<String, Boolean> previousRunning) {
+                                                     Map<String, Boolean> previousRunning) {
         try {
             for (var component : proposal.graph().components()) {
                 Boolean expected = previousRunning.get(component.componentId());
@@ -331,10 +338,10 @@ public final class DeploymentGraphPublisher {
                     return unknownVoid("DEPLOYMENT_GRAPH_RESTORED_CHANNEL_MISSING");
                 var observed = channel.observeRestored(component.unit());
                 if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
-                        || observed.value().orElseThrow()
-                                .state() != (expected
-                                        ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
-                                        : DeploymentRemoteRuntimeObservation.StateType.STOPPED))
+                    || observed.value().orElseThrow()
+                    .state() != (expected
+                    ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
+                    : DeploymentRemoteRuntimeObservation.StateType.STOPPED))
                     return unknownVoid("DEPLOYMENT_GRAPH_OLD_RUNTIME_UNCONFIRMED");
             }
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
@@ -370,7 +377,7 @@ public final class DeploymentGraphPublisher {
                 throw new IllegalArgumentException("Missing exact secret authority");
             ledger.append("SECRET_STAGE_EXECUTING", id, revision.identifier() + ":" + revision.revision());
             var staged = context.secrets().use(ref, ref.purpose(), task, plaintext -> channel.stageSecret(commit.unit(),
-                    revision.identifier(), revision.revision(), plaintext));
+                revision.identifier(), revision.revision(), plaintext));
             if (staged.outcome() != Outcome.SUCCEEDED)
                 return unknownVoid("DEPLOYMENT_GRAPH_SECRET_STAGE_UNCONFIRMED");
             digests.put(revision, staged.value().orElseThrow());
@@ -393,8 +400,8 @@ public final class DeploymentGraphPublisher {
         if (current.outcome() != Outcome.SUCCEEDED || current.value().isEmpty())
             return unknownVoid("DEPLOYMENT_GRAPH_RUNTIME_UNCONFIRMED");
         var expected = component.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
-                ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
-                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+            ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
+            : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         if (current.value().orElseThrow().state() != expected)
             return failure("DEPLOYMENT_GRAPH_RUNTIME_UNHEALTHY");
         ledger.append("HEALTH_RESULT", component.componentId(), expected.name());
@@ -409,26 +416,26 @@ public final class DeploymentGraphPublisher {
      * @return failed only after full verified rollback / 仅完整核实回滚后为失败
      * @throws Exception on unavailable evidence / 依据不可用时 */
     private OperationResult<DeploymentPublication> rollback(DeploymentPublication proposal,
-            Map<String, Candidate> candidates, List<String> order, Problem reason) throws Exception {
+                                                            Map<String, Candidate> candidates, List<String> order, Problem reason) throws Exception {
         for (String id : reversed(order)) {
             if (!affected.contains(id))
                 continue;
             var component = component(proposal.graph(), id);
             var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit())).findFirst()
-                    .orElseThrow();
+                .orElseThrow();
             ledger.append("ROLLBACK_EXECUTING", id, commit.release().sha256());
             var restored = channels.get(id).rollback(component.unit(), commit.release().sha256(), snapshots.get(id),
-                    component.reviewedRuntime());
+                component.reviewedRuntime());
             if (restored.outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_GRAPH_ROLLBACK_UNCONFIRMED");
             var snapshot = snapshots.get(id);
             if (snapshot.token().isPresent()) {
                 var observation = channels.get(id).observeRestored(component.unit());
                 if (observation.outcome() != Outcome.SUCCEEDED || observation.value().isEmpty()
-                        || observation.value().orElseThrow()
-                                .state() == DeploymentRemoteRuntimeObservation.StateType.ERROR
-                        || snapshot.previousRunning() != (observation.value().orElseThrow()
-                                .state() == DeploymentRemoteRuntimeObservation.StateType.RUNNING))
+                    || observation.value().orElseThrow()
+                    .state() == DeploymentRemoteRuntimeObservation.StateType.ERROR
+                    || snapshot.previousRunning() != (observation.value().orElseThrow()
+                    .state() == DeploymentRemoteRuntimeObservation.StateType.RUNNING))
                     return unknown("DEPLOYMENT_GRAPH_RESTORED_STATE_UNCONFIRMED");
             }
             ledger.append("ROLLBACK_RESULT", id, snapshotDetail(snapshot));
@@ -442,14 +449,14 @@ public final class DeploymentGraphPublisher {
      * @param candidates exact candidates / 精确候选
      * @return component-to-commit map / 组件至提交映射 */
     private static Map<String, DeploymentUnitCommit> byComponent(DeploymentPublication proposal,
-            Map<String, Candidate> candidates) {
+                                                                 Map<String, Candidate> candidates) {
         var commits = new HashMap<String, DeploymentUnitCommit>();
         for (var component : proposal.graph().components()) {
             var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit())).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Missing graph commit"));
+                .orElseThrow(() -> new IllegalArgumentException("Missing graph commit"));
             if (!component.unit().equals(commit.unit()) || !candidates.containsKey(component.componentId())
-                    || !candidates.get(component.componentId()).credentials().keySet()
-                            .equals(Set.copyOf(commit.secrets())))
+                || !candidates.get(component.componentId()).credentials().keySet()
+                .equals(Set.copyOf(commit.secrets())))
                 throw new IllegalArgumentException("Graph publication inputs differ");
             commits.put(component.componentId(), commit);
         }
@@ -499,7 +506,7 @@ public final class DeploymentGraphPublisher {
      * @return stable scalar encoding / 稳定标量编码 */
     private static String snapshotDetail(DeploymentRemoteReleaseSnapshot snapshot) {
         return snapshot.token().orElse("none") + ":" + (snapshot.previousRunning() ? "1" : "0") + ":"
-                + snapshot.previousDigest().orElse("none") + ":" + snapshot.previousKind();
+            + snapshot.previousDigest().orElse("none") + ":" + snapshot.previousKind();
     }
 
     /** Binds current nonsecret publication identities. / 绑定当前不含秘密发布身份。
@@ -521,7 +528,7 @@ public final class DeploymentGraphPublisher {
     /** Checks original cooperative cancellation. / 检查原协作取消。
      * @return request state / 请求状态 */
     private boolean cancelled() {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 
     /** Checks a lowercase SHA-256 scalar. / 检查小写 SHA-256 标量。
@@ -543,7 +550,7 @@ public final class DeploymentGraphPublisher {
      * @return failed result / 失败结果 */
     private static OperationResult<Void> failure(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INCOMPATIBLE, event)));
+            Optional.of(problem(ProblemCode.INCOMPATIBLE, event)));
     }
 
     /** Reports a void effect still unconfirmed. / 报告仍未确认的无值副作用。
@@ -551,7 +558,7 @@ public final class DeploymentGraphPublisher {
      * @return unknown result / 未知结果 */
     private static OperationResult<Void> unknownVoid(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Reports unknown graph effects without automatic replay. / 报告未知图副作用且不自动重放。
@@ -559,7 +566,7 @@ public final class DeploymentGraphPublisher {
      * @return unknown result / 未知结果 */
     private static OperationResult<DeploymentPublication> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Builds one nonsecret public problem. / 构造一项不含秘密公开问题。

@@ -1,9 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
 import static gold.debug.windowstolinux.mod.deployment.db.DeploymentJsonDocument.*;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -14,14 +16,19 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Too
 public final class DeploymentAssistedBuildReviewCodec {
     /** Two complete descriptions remain bounded independently of publication metadata. / 两份完整描述独立于发布元数据保持有界。 */
     public static final int LIMIT = 16 * 1_048_576;
+
     /** Only the originally permitted typed correction fields. / 仅原允许的类型化纠正字段。 */
     private static final Set<String> INPUTS = Set.of("primary", "secondary", "version", "jvmTarget");
+
     /** Fixed source identity without live platform handles or local absolute paths. / 不含活动平台句柄或本地绝对路径的固定来源身份。 */
     private static final Set<String> SOURCE = Set.of("snapshot", "manifest", "archive", "relativeRoot", "bytes", "uncompressedBytes");
+
     /** Fixed deterministic facts required by a build description. / 构建描述所需的固定确定性事实。 */
     private static final Set<String> FACTS = Set.of("projectType", "buildTool", "buildDirectory", "language", "support", "architecture", "framework");
+
     /** Prevents construction. / 禁止构造。 */
-    private DeploymentAssistedBuildReviewCodec() {}
+    private DeploymentAssistedBuildReviewCodec() {
+    }
 
     /** Complete durable typed description; source authority remains with the original task. / 完整持久类型化描述，来源权限仍属于原任务。
      * @param applicationId original unit / 原单元
@@ -42,12 +49,14 @@ public final class DeploymentAssistedBuildReviewCodec {
      * @param adapterRisk original explicit adapter choice / 原明确适配器选择
      * @param reviewedRevision exact complete reviewed plan SHA / 精确完整审阅计划SHA */
     public record Description(String applicationId, String serverId, Map<String, String> source,
-            Map<String, String> facts, List<ToolchainRequirement> requirements, Optional<DeploymentAccessUrl> userAccessUrl,
-            DeploymentConfigurationSnapshot configuration,
-            List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
-            DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, List<String> steps,
-            Map<String, String> inputs, Instant reviewedAt, boolean containerRisk, boolean adapterRisk,
-            String reviewedRevision) {
+                              Map<String, String> facts, List<ToolchainRequirement> requirements,
+                              Optional<DeploymentAccessUrl> userAccessUrl,
+                              DeploymentConfigurationSnapshot configuration,
+                              List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
+                              DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, List<String> steps,
+                              Map<String, String> inputs, Instant reviewedAt, boolean containerRisk,
+                              boolean adapterRisk,
+                              String reviewedRevision) {
         /** Copies and validates the complete durable values. / 复制并校验完整持久值。
          * @param applicationId original unit / 原单元
          * @param serverId original server / 原服务器
@@ -67,27 +76,34 @@ public final class DeploymentAssistedBuildReviewCodec {
          * @param adapterRisk original risk / 原风险
          * @param reviewedRevision exact plan SHA / 精确计划SHA */
         public Description {
-            source = Map.copyOf(source); facts = Map.copyOf(facts); secrets = List.copyOf(secrets); requirements = List.copyOf(requirements);
+            source = Map.copyOf(source);
+            facts = Map.copyOf(facts);
+            secrets = List.copyOf(secrets);
+            requirements = List.copyOf(requirements);
             Objects.requireNonNull(userAccessUrl);
-            steps = List.copyOf(steps); inputs = Map.copyOf(inputs);
+            steps = List.copyOf(steps);
+            inputs = Map.copyOf(inputs);
             if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}") || serverId.isBlank() || serverId.length() > 512
-                    || !source.keySet().equals(SOURCE) || !facts.keySet().equals(FACTS)
-                    || !inputs.keySet().equals(INPUTS) || inputs.values().stream().anyMatch(value -> value.length() > 4096 || value.indexOf('\0') >= 0)
-                    || !reviewedRevision.matches("[0-9a-f]{64}") || !configuration.applicationId().equals(applicationId)
-                    || limits.runAsRoot() || !runtime.workload().buildDirectory().equals(facts.get("buildDirectory")))
+                || !source.keySet().equals(SOURCE) || !facts.keySet().equals(FACTS)
+                || !inputs.keySet().equals(INPUTS) || inputs.values().stream().anyMatch(value -> value.length() > 4096 || value.indexOf('\0') >= 0)
+                || !reviewedRevision.matches("[0-9a-f]{64}") || !configuration.applicationId().equals(applicationId)
+                || limits.runAsRoot() || !runtime.workload().buildDirectory().equals(facts.get("buildDirectory")))
                 throw new IllegalArgumentException("Invalid complete assisted build description");
             if (!UUID.fromString(source.get("snapshot")).toString().equals(source.get("snapshot"))
-                    || !DeploymentCommand.relative(source.get("relativeRoot"), true).equals(source.get("relativeRoot")))
+                || !DeploymentCommand.relative(source.get("relativeRoot"), true).equals(source.get("relativeRoot")))
                 throw new IllegalArgumentException("Invalid original source identity");
             for (String key : List.of("bytes", "uncompressedBytes"))
                 if (!source.get(key).matches("[0-9]{1,19}") || !Long.toString(Long.parseLong(source.get(key))).equals(source.get(key))
-                        || Long.parseLong(source.get(key)) < (key.equals("bytes") ? 1 : 0)) throw new IllegalArgumentException("Invalid original source size");
+                    || Long.parseLong(source.get(key)) < (key.equals("bytes") ? 1 : 0))
+                    throw new IllegalArgumentException("Invalid original source size");
             if (!source.get("manifest").matches("[0-9a-f]{64}") || !source.get("archive").matches("[0-9a-f]{64}"))
                 throw new IllegalArgumentException("Invalid original source digest");
-            DeploymentProjectKind.valueOf(facts.get("projectType")); DeploymentBuildToolType.valueOf(facts.get("buildTool"));
-            Objects.requireNonNull(reviewedAt); Objects.requireNonNull(resources);
+            DeploymentProjectKind.valueOf(facts.get("projectType"));
+            DeploymentBuildToolType.valueOf(facts.get("buildTool"));
+            Objects.requireNonNull(reviewedAt);
+            Objects.requireNonNull(resources);
             if (!reviewedRevision.equals(DeploymentReviewedPlanDigest.from(hashValues(applicationId, serverId, source, facts,
-                    requirements, userAccessUrl, configuration, secrets, resources, runtime, limits, reviewedAt, containerRisk, adapterRisk))))
+                requirements, userAccessUrl, configuration, secrets, resources, runtime, limits, reviewedAt, containerRisk, adapterRisk))))
                 throw new IllegalArgumentException("Complete reviewed description digest changed");
         }
     }
@@ -99,28 +115,33 @@ public final class DeploymentAssistedBuildReviewCodec {
     public static String encodeDescription(Description value) throws SQLException {
         try {
             var node = object().put("formatVersion", 1).put("applicationId", value.applicationId()).put("serverId", value.serverId())
-                    .put("reviewedRevision", value.reviewedRevision()).put("reviewedAt", value.reviewedAt().toString())
-                    .put("containerRisk", value.containerRisk()).put("adapterRisk", value.adapterRisk());
-            textMap(node.putObject("source"), value.source()); textMap(node.putObject("facts"), value.facts());
+                .put("reviewedRevision", value.reviewedRevision()).put("reviewedAt", value.reviewedAt().toString())
+                .put("containerRisk", value.containerRisk()).put("adapterRisk", value.adapterRisk());
+            textMap(node.putObject("source"), value.source());
+            textMap(node.putObject("facts"), value.facts());
             textMap(node.putObject("inputs"), value.inputs());
             value.userAccessUrl().ifPresentOrElse(url -> node.put("userAccessUrl", url.url().toString()), () -> node.putNull("userAccessUrl"));
             var declarations = node.putArray("requirements");
             for (var declaration : value.requirements()) {
                 var item = declarations.addObject().put("ecosystem", declaration.ecosystem().name()).put("declaration", declaration.declaration())
-                        .put("source", declaration.source()).put("purpose", declaration.purpose().name()).put("constraint", declaration.constraint().name());
+                    .put("source", declaration.source()).put("purpose", declaration.purpose().name()).put("constraint", declaration.constraint().name());
                 declaration.version().ifPresentOrElse(version -> item.put("version", version.text()), () -> item.putNull("version"));
             }
             DeploymentPublicationTemplateCodec.configuration(node.putObject("configuration"), value.configuration());
-            var secrets = node.putArray("secrets"); value.secrets().forEach(secret -> secrets.addObject().put("identifier", secret.identifier()).put("revision", secret.revision()));
-            var steps = node.putArray("steps"); value.steps().forEach(steps::add);
+            var secrets = node.putArray("secrets");
+            value.secrets().forEach(secret -> secrets.addObject().put("identifier", secret.identifier()).put("revision", secret.revision()));
+            var steps = node.putArray("steps");
+            value.steps().forEach(steps::add);
             node.put("runtime", Base64.getEncoder().encodeToString(new DeploymentRuntimeCodec().write(value.runtime())));
             node.put("health", Base64.getEncoder().encodeToString(new DeploymentHealthCodec().write(value.runtime().healthCheck())));
             node.put("resources", Base64.getEncoder().encodeToString(new DeploymentResourceCodec().write(value.resources())));
             var limits = node.putObject("limits").put("timeout", value.limits().timeoutSeconds()).put("processes", value.limits().maxProcesses())
-                    .put("memory", value.limits().maxMemoryMiB()).put("output", value.limits().maxOutputBytes()).put("workspace", value.limits().maxWorkspaceBytes());
+                .put("memory", value.limits().maxMemoryMiB()).put("output", value.limits().maxOutputBytes()).put("workspace", value.limits().maxWorkspaceBytes());
             limits.put("root", false);
             return encode(node, LIMIT);
-        } catch (java.io.IOException invalid) { throw new SQLException("Complete build description cannot be encoded", invalid); }
+        } catch (java.io.IOException invalid) {
+            throw new SQLException("Complete build description cannot be encoded", invalid);
+        }
     }
 
     /** Reconstructs complete typed data and requires byte-for-byte canonical framing. / 重建完整类型化数据并要求逐字节规范信封。
@@ -130,9 +151,9 @@ public final class DeploymentAssistedBuildReviewCodec {
     public static Description decodeDescription(String text) throws SQLException {
         var node = parse(text, LIMIT);
         fields(node, Set.of("formatVersion", "applicationId", "serverId", "reviewedRevision", "reviewedAt", "containerRisk", "adapterRisk",
-                "source", "facts", "requirements", "userAccessUrl", "inputs", "configuration", "secrets", "steps", "runtime", "health", "resources", "limits"));
+            "source", "facts", "requirements", "userAccessUrl", "inputs", "configuration", "secrets", "steps", "runtime", "health", "resources", "limits"));
         if (!node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1 || !node.path("reviewedAt").isTextual()
-                || !node.path("containerRisk").isBoolean() || !node.path("adapterRisk").isBoolean())
+            || !node.path("containerRisk").isBoolean() || !node.path("adapterRisk").isBoolean())
             throw new SQLException("Invalid typed build description header");
         try {
             var health = new DeploymentHealthCodec().read(Base64.getDecoder().decode(string(node, "health")));
@@ -141,23 +162,35 @@ public final class DeploymentAssistedBuildReviewCodec {
             var secrets = new ArrayList<DeploymentSecretReference>();
             for (var entry : array(node, "secrets", 4096)) {
                 fields(entry, Set.of("identifier", "revision"));
-                if (!entry.path("revision").isIntegralNumber() || !entry.path("revision").canConvertToLong()) throw new SQLException("Invalid secret revision");
+                if (!entry.path("revision").isIntegralNumber() || !entry.path("revision").canConvertToLong())
+                    throw new SQLException("Invalid secret revision");
                 secrets.add(new DeploymentSecretReference(string(entry, "identifier"), entry.path("revision").longValue()));
             }
             var steps = new ArrayList<String>();
-            for (var entry : array(node, "steps", 64)) { if (!entry.isTextual()) throw new SQLException("Invalid fixed stage"); steps.add(entry.textValue()); }
-            var limits = node.path("limits"); fields(limits, Set.of("timeout", "processes", "memory", "output", "workspace", "root"));
-            for (String name : List.of("timeout", "processes", "memory")) if (!limits.path(name).isInt()) throw new SQLException("Invalid build limit");
-            for (String name : List.of("output", "workspace")) if (!limits.path(name).isIntegralNumber() || !limits.path(name).canConvertToLong()) throw new SQLException("Invalid build byte limit");
-            if (!limits.path("root").isBoolean() || limits.path("root").booleanValue()) throw new SQLException("Invalid build root privilege");
+            for (var entry : array(node, "steps", 64)) {
+                if (!entry.isTextual()) throw new SQLException("Invalid fixed stage");
+                steps.add(entry.textValue());
+            }
+            var limits = node.path("limits");
+            fields(limits, Set.of("timeout", "processes", "memory", "output", "workspace", "root"));
+            for (String name : List.of("timeout", "processes", "memory"))
+                if (!limits.path(name).isInt()) throw new SQLException("Invalid build limit");
+            for (String name : List.of("output", "workspace"))
+                if (!limits.path(name).isIntegralNumber() || !limits.path(name).canConvertToLong())
+                    throw new SQLException("Invalid build byte limit");
+            if (!limits.path("root").isBoolean() || limits.path("root").booleanValue())
+                throw new SQLException("Invalid build root privilege");
             var value = new Description(string(node, "applicationId"), string(node, "serverId"), readMap(node.path("source")), readMap(node.path("facts")),
-                    requirements(node), node.path("userAccessUrl").isNull() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(java.net.URI.create(string(node, "userAccessUrl")))),
-                    DeploymentPublicationTemplateCodec.configuration(node.path("configuration"), string(node, "applicationId")), secrets, resources, runtime,
-                    new DeploymentBuildLimits(limits.path("timeout").intValue(), limits.path("processes").intValue(), limits.path("memory").intValue(), limits.path("output").longValue(), limits.path("workspace").longValue(), false),
-                    steps, readMap(node.path("inputs")), Instant.parse(string(node, "reviewedAt")), node.path("containerRisk").booleanValue(), node.path("adapterRisk").booleanValue(), string(node, "reviewedRevision"));
-            if (!encodeDescription(value).equals(text)) throw new SQLException("Noncanonical complete build description");
+                requirements(node), node.path("userAccessUrl").isNull() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(java.net.URI.create(string(node, "userAccessUrl")))),
+                DeploymentPublicationTemplateCodec.configuration(node.path("configuration"), string(node, "applicationId")), secrets, resources, runtime,
+                new DeploymentBuildLimits(limits.path("timeout").intValue(), limits.path("processes").intValue(), limits.path("memory").intValue(), limits.path("output").longValue(), limits.path("workspace").longValue(), false),
+                steps, readMap(node.path("inputs")), Instant.parse(string(node, "reviewedAt")), node.path("containerRisk").booleanValue(), node.path("adapterRisk").booleanValue(), string(node, "reviewedRevision"));
+            if (!encodeDescription(value).equals(text))
+                throw new SQLException("Noncanonical complete build description");
             return value;
-        } catch (java.io.IOException | IllegalArgumentException invalid) { throw new SQLException("Invalid complete typed build description", invalid); }
+        } catch (java.io.IOException | IllegalArgumentException invalid) {
+            throw new SQLException("Invalid complete typed build description", invalid);
+        }
     }
 
     /** Reads complete typed declarations with the original precise version constraints. / 读取带原精确版本约束的完整类型化声明。
@@ -170,9 +203,9 @@ public final class DeploymentAssistedBuildReviewCodec {
             fields(entry, Set.of("ecosystem", "declaration", "source", "purpose", "constraint", "version"));
             var ecosystem = DeploymentToolchainType.valueOf(string(entry, "ecosystem"));
             var version = entry.path("version").isNull() ? Optional.<DeploymentToolchainVersion>empty()
-                    : Optional.of(DeploymentToolchainVersion.parse(ecosystem, string(entry, "version")).orElseThrow());
+                : Optional.of(DeploymentToolchainVersion.parse(ecosystem, string(entry, "version")).orElseThrow());
             result.add(new ToolchainRequirement(ecosystem, string(entry, "declaration"), string(entry, "source"),
-                    ToolchainRequirement.PurposeType.valueOf(string(entry, "purpose")), ToolchainRequirement.ConstraintType.valueOf(string(entry, "constraint")), version));
+                ToolchainRequirement.PurposeType.valueOf(string(entry, "purpose")), ToolchainRequirement.ConstraintType.valueOf(string(entry, "constraint")), version));
         }
         return List.copyOf(result);
     }
@@ -184,15 +217,20 @@ public final class DeploymentAssistedBuildReviewCodec {
     public static String encodeGraph(DeploymentReviewedPlanDigest.GraphValues value) throws SQLException {
         try {
             var node = object().put("formatVersion", 1).put("application", value.applicationId()).put("healthOwner", value.healthOwner())
-                    .put("health", Base64.getEncoder().encodeToString(new DeploymentHealthCodec().write(value.health())));
-            var order = node.putArray("order"); value.order().forEach(order::add);
-            textMap(node.putObject("namespaces"), value.namespaces()); textMap(node.putObject("identities"), value.identities());
+                .put("health", Base64.getEncoder().encodeToString(new DeploymentHealthCodec().write(value.health())));
+            var order = node.putArray("order");
+            value.order().forEach(order::add);
+            textMap(node.putObject("namespaces"), value.namespaces());
+            textMap(node.putObject("identities"), value.identities());
             var dependencies = node.putObject("dependencies");
             for (var id : new TreeSet<>(value.dependencies().keySet())) {
-                var prior = dependencies.putArray(id); value.dependencies().get(id).forEach(prior::add);
+                var prior = dependencies.putArray(id);
+                value.dependencies().get(id).forEach(prior::add);
             }
             return encode(node, 65536);
-        } catch (java.io.IOException invalid) { throw new SQLException("Complete reviewed graph cannot be encoded", invalid); }
+        } catch (java.io.IOException invalid) {
+            throw new SQLException("Complete reviewed graph cannot be encoded", invalid);
+        }
     }
 
     /** Reconstructs exact original graph order, health, units and child identities. / 重建精确原图顺序、健康、单元与子身份。
@@ -206,21 +244,31 @@ public final class DeploymentAssistedBuildReviewCodec {
             throw new SQLException("Invalid complete reviewed graph header");
         try {
             var order = new ArrayList<String>();
-            for (var id : array(node, "order", 16)) { if (!id.isTextual()) throw new SQLException("Invalid graph component"); order.add(id.textValue()); }
+            for (var id : array(node, "order", 16)) {
+                if (!id.isTextual()) throw new SQLException("Invalid graph component");
+                order.add(id.textValue());
+            }
             var dependencies = new LinkedHashMap<String, List<String>>();
             var entries = node.path("dependencies").fields();
             while (entries.hasNext()) {
-                var entry = entries.next(); var prior = new ArrayList<String>();
-                if (!entry.getValue().isArray() || entry.getValue().size() > 16) throw new SQLException("Invalid graph predecessors");
-                for (var id : entry.getValue()) { if (!id.isTextual()) throw new SQLException("Invalid graph predecessor"); prior.add(id.textValue()); }
+                var entry = entries.next();
+                var prior = new ArrayList<String>();
+                if (!entry.getValue().isArray() || entry.getValue().size() > 16)
+                    throw new SQLException("Invalid graph predecessors");
+                for (var id : entry.getValue()) {
+                    if (!id.isTextual()) throw new SQLException("Invalid graph predecessor");
+                    prior.add(id.textValue());
+                }
                 dependencies.put(entry.getKey(), List.copyOf(prior));
             }
             var value = new DeploymentReviewedPlanDigest.GraphValues(string(node, "application"), string(node, "healthOwner"),
-                    new DeploymentHealthCodec().read(Base64.getDecoder().decode(string(node, "health"))), order,
-                    readMap(node.path("namespaces")), dependencies, readMap(node.path("identities")));
+                new DeploymentHealthCodec().read(Base64.getDecoder().decode(string(node, "health"))), order,
+                readMap(node.path("namespaces")), dependencies, readMap(node.path("identities")));
             if (!encodeGraph(value).equals(text)) throw new SQLException("Noncanonical original reviewed graph");
             return value;
-        } catch (java.io.IOException | IllegalArgumentException invalid) { throw new SQLException("Invalid complete reviewed graph", invalid); }
+        } catch (java.io.IOException | IllegalArgumentException invalid) {
+            throw new SQLException("Invalid complete reviewed graph", invalid);
+        }
     }
 
     /** Builds exact shared writer inputs without live source handles or invented facts. / 不使用活动来源句柄或臆造事实地构建精确共用写入器输入。
@@ -240,19 +288,23 @@ public final class DeploymentAssistedBuildReviewCodec {
      * @param adapter original choice / 原选择
      * @return complete non-authorizing hash values / 完整非授权哈希值 */
     private static DeploymentReviewedPlanDigest.Values hashValues(String application, String server, Map<String, String> source,
-            Map<String, String> facts, List<ToolchainRequirement> requirements, Optional<DeploymentAccessUrl> url,
-            DeploymentConfigurationSnapshot configuration, List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
-            DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, Instant at, boolean container, boolean adapter) {
-        var hashFacts = new LinkedHashMap<>(facts); hashFacts.put("applicationId", application);
+                                                                  Map<String, String> facts, List<ToolchainRequirement> requirements, Optional<DeploymentAccessUrl> url,
+                                                                  DeploymentConfigurationSnapshot configuration, List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
+                                                                  DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, Instant at, boolean container, boolean adapter) {
+        var hashFacts = new LinkedHashMap<>(facts);
+        hashFacts.put("applicationId", application);
         return new DeploymentReviewedPlanDigest.Values(server, UUID.fromString(source.get("snapshot")), source.get("manifest"), source.get("archive"),
-                Long.parseLong(source.get("bytes")), Long.parseLong(source.get("uncompressedBytes")), hashFacts, requirements, configuration,
-                secrets, resources, runtime, url, limits, at, container, adapter);
+            Long.parseLong(source.get("bytes")), Long.parseLong(source.get("uncompressedBytes")), hashFacts, requirements, configuration,
+            secrets, resources, runtime, url, limits, at, container, adapter);
     }
 
     /** Encodes sorted bounded text fields. / 编码排序有界文本字段。
      * @param node target object / 目标对象
      * @param values original typed text / 原类型化文本 */
-    private static void textMap(com.fasterxml.jackson.databind.node.ObjectNode node, Map<String, String> values) { new TreeMap<>(values).forEach(node::put); }
+    private static void textMap(com.fasterxml.jackson.databind.node.ObjectNode node, Map<String, String> values) {
+        new TreeMap<>(values).forEach(node::put);
+    }
+
     /** Reads strict bounded text fields without coercion. / 不强制转换地读取严格有界文本字段。
      * @param node original object / 原对象
      * @return exact fields / 精确字段
@@ -261,7 +313,12 @@ public final class DeploymentAssistedBuildReviewCodec {
         if (!node.isObject() || node.size() > 16) throw new SQLException("Invalid build description text map");
         var result = new LinkedHashMap<String, String>();
         var entries = node.fields();
-        while (entries.hasNext()) { var entry = entries.next(); if (!entry.getValue().isTextual() || entry.getValue().textValue().length() > 4096) throw new SQLException("Invalid typed input"); result.put(entry.getKey(), entry.getValue().textValue()); }
+        while (entries.hasNext()) {
+            var entry = entries.next();
+            if (!entry.getValue().isTextual() || entry.getValue().textValue().length() > 4096)
+                throw new SQLException("Invalid typed input");
+            result.put(entry.getKey(), entry.getValue().textValue());
+        }
         return Map.copyOf(result);
     }
 }

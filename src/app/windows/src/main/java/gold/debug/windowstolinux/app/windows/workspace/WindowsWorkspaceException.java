@@ -37,9 +37,9 @@ public final class WindowsWorkspaceException extends IOException {
      * @return a typed workspace problem / 类型化工作区失败
      */
     public static WindowsWorkspaceException create(WindowsWorkspaceFailureType type, String diagnostic,
-            Throwable cause) {
+                                                   Throwable cause) {
         return new WindowsWorkspaceException(
-                Objects.requireNonNull(type, "type").problem(UUID.randomUUID(), diagnostic), cause);
+            Objects.requireNonNull(type, "type").problem(UUID.randomUUID(), diagnostic), cause);
     }
 
     /**

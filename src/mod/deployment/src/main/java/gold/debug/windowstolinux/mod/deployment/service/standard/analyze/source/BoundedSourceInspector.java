@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 
-import gold.debug.windowstolinux.appapi.task.CancellationToken;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
 
@@ -46,10 +46,10 @@ public final class BoundedSourceInspector {
      * <p>文本EXTENSIONS。
      */
     private static final Set<String> TEXT_EXTENSIONS = Set.of(".java", ".kt", ".groovy", ".xml", ".properties", ".yml",
-            ".yaml", ".json", ".toml", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini",
-            ".cfg", ".gradle", ".go", ".rs", ".cs", ".csproj", ".kts", ".php", ".rb", ".c", ".h", ".cc", ".cpp", ".cxx",
-            ".hpp", ".scala", ".sbt", ".clj", ".cljs", ".cljc", ".edn", ".ex", ".exs", ".dart", ".lua", ".pl", ".pm",
-            ".swift", ".sh", ".html", ".htm", ".sql");
+        ".yaml", ".json", ".toml", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".ini",
+        ".cfg", ".gradle", ".go", ".rs", ".cs", ".csproj", ".kts", ".php", ".rb", ".c", ".h", ".cc", ".cpp", ".cxx",
+        ".hpp", ".scala", ".sbt", ".clj", ".cljs", ".cljc", ".edn", ".ex", ".exs", ".dart", ".lua", ".pl", ".pm",
+        ".swift", ".sh", ".html", ".htm", ".sql");
 
     /**
      * Inspects source inspection facts.
@@ -68,7 +68,7 @@ public final class BoundedSourceInspector {
      * @param rejections original rejection collection / 原拒绝集合
      * @param cancellation original cooperative token / 原协作取消令牌
      * @return bounded source facts / 有界源码事实 */
-    public SourceInspectionFacts inspect(Path root, List<RejectionReason> rejections, CancellationToken cancellation) {
+    public SourceInspectionFacts inspect(Path root, List<RejectionReason> rejections, CancelToken cancellation) {
         TreeInspection visitor = new TreeInspection(root, rejections, cancellation);
         try {
             Files.walkFileTree(root, visitor);
@@ -92,7 +92,7 @@ public final class BoundedSourceInspector {
         }
         String text = name.toString().toLowerCase(Locale.ROOT);
         return text.equals("pom.xml") || text.startsWith("application.")
-                || TEXT_EXTENSIONS.stream().anyMatch(text::endsWith);
+            || TEXT_EXTENSIONS.stream().anyMatch(text::endsWith);
     }
 
     /**
@@ -119,7 +119,7 @@ public final class BoundedSourceInspector {
      * @return a localized source-rejection reason without extra message arguments / 不附带额外消息参数的本地化源码拒绝原因
      */
     private static RejectionReason reason(String code, String messageKey, String nextAction,
-            java.util.Map<String, ?> arguments) {
+                                          java.util.Map<String, ?> arguments) {
         return new RejectionReason(code, DeploymentLocalizedMessage.of(messageKey, arguments), nextAction);
     }
 
@@ -141,7 +141,7 @@ public final class BoundedSourceInspector {
         private final List<RejectionReason> rejections;
 
         /** Original cooperative cancellation. / 原协作取消。 */
-        private final CancellationToken cancellation;
+        private final CancelToken cancellation;
 
         /**
          * Bounded text consumed or produced by the current formatter.
@@ -175,7 +175,7 @@ public final class BoundedSourceInspector {
          * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
          * @param cancellation original cooperative token / 原协作取消令牌
          */
-        private TreeInspection(Path root, List<RejectionReason> rejections, CancellationToken cancellation) {
+        private TreeInspection(Path root, List<RejectionReason> rejections, CancelToken cancellation) {
             this.root = root;
             this.rejections = rejections;
             this.cancellation = cancellation;
@@ -217,7 +217,7 @@ public final class BoundedSourceInspector {
             }
             if (relativeFiles.size() >= MAX_SOURCE_ENTRIES) {
                 rejections.add(
-                        reason("SOURCE_ENTRY_LIMIT_EXCEEDED", "analysis.rejection.sourceEntryLimitExceeded", "input"));
+                    reason("SOURCE_ENTRY_LIMIT_EXCEEDED", "analysis.rejection.sourceEntryLimitExceeded", "input"));
                 return FileVisitResult.TERMINATE;
             }
             relativeFiles.add(root.relativize(file));
@@ -225,12 +225,12 @@ public final class BoundedSourceInspector {
                 long size = Files.size(file);
                 if (size > MAX_TEXT_FILE_BYTES) {
                     rejections.add(reason("SOURCE_TEXT_ENTRY_TOO_LARGE", "analysis.rejection.sourceTextEntryTooLarge",
-                            "input"));
+                        "input"));
                     return FileVisitResult.CONTINUE;
                 }
                 if (scannedTextBytes + size > MAX_TOTAL_TEXT_BYTES) {
                     rejections.add(reason("SOURCE_TEXT_TOTAL_TOO_LARGE", "analysis.rejection.sourceTextTotalTooLarge",
-                            "input"));
+                        "input"));
                     return FileVisitResult.CONTINUE;
                 }
                 text.append('\n').append(Files.readString(file, StandardCharsets.UTF_8));
@@ -259,7 +259,7 @@ public final class BoundedSourceInspector {
         @Override
         public FileVisitResult visitFileFailed(Path file, IOException exception) {
             rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceEntryReadFailed", "input",
-                    java.util.Map.of("entry", file.getFileName())));
+                java.util.Map.of("entry", file.getFileName())));
             return FileVisitResult.CONTINUE;
         }
 
@@ -275,7 +275,7 @@ public final class BoundedSourceInspector {
         public FileVisitResult postVisitDirectory(Path directory, IOException exception) {
             if (exception != null) {
                 rejections.add(reason("SOURCE_READ_FAILED", "analysis.rejection.sourceDirectoryReadFailed", "input",
-                        java.util.Map.of("directory", directory.getFileName())));
+                    java.util.Map.of("directory", directory.getFileName())));
             }
             return FileVisitResult.CONTINUE;
         }

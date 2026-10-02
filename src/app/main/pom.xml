@@ -21,7 +21,7 @@
     </dependency>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-app-source</artifactId>
+      <artifactId>windowstolinux-app-file</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -108,8 +108,8 @@
             <configuration>
               <classifier>test-support</classifier>
               <includes>
-                <include>gold/debug/windowstolinux/app/main/startup/LoopbackSshServer*.class</include>
-                <include>gold/debug/windowstolinux/app/main/startup/BackgroundExceptionScope*.class</include>
+                <include>gold/debug/windowstolinux/app/main/start/LoopbackSshServer*.class</include>
+                <include>gold/debug/windowstolinux/app/main/start/BackgroundExceptionScope*.class</include>
               </includes>
             </configuration>
           </execution>

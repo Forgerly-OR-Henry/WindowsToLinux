@@ -16,8 +16,10 @@ import gold.debug.windowstolinux.mod.deployment.db.*;
  * @param references exact durable application, unit and secret-revision associations / 精确的应用、单元及秘密修订持久关联
  * @param createdAt original observed creation time / 原始观测创建时间 */
 public record DeploymentPublicationPlan(UUID executionId, Optional<DeploymentProjectRecord> project,
-        String applicationId, ServerRef server, DeploymentExecutionIdentity.DeploymentExecutionMode mode,
-        String reviewedRevision, List<DeploymentReferenceIntent> references, Instant createdAt) {
+                                        String applicationId, ServerRef server,
+                                        DeploymentExecutionIdentity.DeploymentExecutionMode mode,
+                                        String reviewedRevision, List<DeploymentReferenceIntent> references,
+                                        Instant createdAt) {
     /** Copies the original request and requires its application server association. / 复制原请求并要求其应用服务器关联。
      * @param executionId original operation / 原操作
      * @param project reviewed source / 已审阅来源
@@ -39,7 +41,7 @@ public record DeploymentPublicationPlan(UUID executionId, Optional<DeploymentPro
         if (reviewedRevision == null || !reviewedRevision.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid reviewed revision");
         if (!references.contains(
-                DeploymentReferenceIntent.server(server, DeploymentReferenceKey.applicationKey(applicationId))))
+            DeploymentReferenceIntent.server(server, DeploymentReferenceKey.applicationKey(applicationId))))
             throw new IllegalArgumentException("Application server association is required");
         for (var intent : references)
             DeploymentReferenceKey.requireOriginal(intent, applicationId, server);

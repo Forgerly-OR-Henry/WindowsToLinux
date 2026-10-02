@@ -13,8 +13,8 @@ public final class EmergencyLogs {
 
     /** Canonical newest-first ordering shared with SQL CHAR UUID ordering. / 与 SQL 字符 UUID 排序共用的规范新旧顺序。 */
     public static final Comparator<LogRecordCodec.Record> NEWEST_FIRST = Comparator
-            .comparingLong(LogRecordCodec.Record::recordedAt).thenComparing(record -> record.id().toString())
-            .reversed();
+        .comparingLong(LogRecordCodec.Record::recordedAt).thenComparing(record -> record.id().toString())
+        .reversed();
 
     /** Binds storage without making fallback directories elsewhere. / 绑定存储，不在其他位置创建备用目录。
      * @param root confirmed database root / 已确认数据库根 */
@@ -32,9 +32,9 @@ public final class EmergencyLogs {
             return List.of();
         try (var paths = Files.list(directory)) {
             return paths.map(path -> path.getFileName().toString())
-                    .filter(name -> name
-                            .matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(log|pending)"))
-                    .filter(name -> !registered.contains(UUID.fromString(name.substring(0, 36)))).sorted().toList();
+                .filter(name -> name
+                    .matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(log|pending)"))
+                .filter(name -> !registered.contains(UUID.fromString(name.substring(0, 36)))).sorted().toList();
         }
     }
 
@@ -82,7 +82,7 @@ public final class EmergencyLogs {
         var directory = directory(true);
         var pending = directory.resolve(target.key() + ".pending");
         try (var file = FileChannel.open(pending, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
-                LinkOption.NOFOLLOW_LINKS)) {
+            LinkOption.NOFOLLOW_LINKS)) {
             var buffer = ByteBuffer.wrap(bytes.toByteArray());
             while (buffer.hasRemaining())
                 file.write(buffer);
@@ -90,7 +90,7 @@ public final class EmergencyLogs {
         }
         readFile(target, pending);
         Files.move(pending, directory.resolve(target.key() + ".log"), StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING);
+            StandardCopyOption.REPLACE_EXISTING);
     }
 
     /** Validates fixed directories without following symbolic links or junctions. / 不跟随符号链接或联接地校验固定目录。
@@ -109,7 +109,7 @@ public final class EmergencyLogs {
                 Files.createDirectory(current);
             }
             if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(current)
-                    || !current.toRealPath().equals(current))
+                || !current.toRealPath().equals(current))
                 throw new IOException("Emergency directory identity is unsafe");
         }
         return current;
@@ -124,7 +124,7 @@ public final class EmergencyLogs {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS))
             return List.of();
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)
-                || !path.toRealPath().equals(path) || Files.size(path) > 100L * LogRecordCodec.MAX_BYTES)
+            || !path.toRealPath().equals(path) || Files.size(path) > 100L * LogRecordCodec.MAX_BYTES)
             throw new IOException("Emergency file is not a bounded regular category file");
         var records = new ArrayList<LogRecordCodec.Record>();
         try (var input = new BufferedInputStream(Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS))) {
@@ -153,7 +153,7 @@ public final class EmergencyLogs {
      * @return newest complete records / 最新完整记录
      * @throws IOException if duplicate IDs have conflicting content / 重复 ID 内容冲突时 */
     public static List<LogRecordCodec.Record> merge(Collection<LogRecordCodec.Record> records, int keep)
-            throws IOException {
+        throws IOException {
         var unique = new HashMap<UUID, LogRecordCodec.Record>();
         for (var record : records) {
             var prior = unique.putIfAbsent(record.id(), record);

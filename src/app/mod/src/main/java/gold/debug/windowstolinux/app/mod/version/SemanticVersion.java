@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 public final class SemanticVersion implements Comparable<SemanticVersion> {
     /** Accepted canonical three-part release syntax. / 接受的规范三段发布语法。 */
     private static final Pattern SYNTAX = Pattern
-            .compile("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?");
+        .compile("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?");
 
     /** Original canonical spelling used as the installation identity. / 安装身份使用的原始规范拼写。 */
     private final String text;
@@ -49,7 +49,7 @@ public final class SemanticVersion implements Comparable<SemanticVersion> {
             if (numeric(part) && part.length() > 1 && part.startsWith("0"))
                 throw new IllegalArgumentException("Prerelease numeric identifier has a leading zero");
         return new SemanticVersion(text, List.of(new BigInteger(matcher.group(1)), new BigInteger(matcher.group(2)),
-                new BigInteger(matcher.group(3))), pre);
+            new BigInteger(matcher.group(3))), pre);
     }
 
     /**
@@ -80,8 +80,8 @@ public final class SemanticVersion implements Comparable<SemanticVersion> {
             String a = prerelease.get(i), b = right.prerelease.get(i);
             boolean an = numeric(a), bn = numeric(b);
             int compared = an && bn
-                    ? new BigInteger(a).compareTo(new BigInteger(b))
-                    : an != bn ? (an ? -1 : 1) : a.compareTo(b);
+                ? new BigInteger(a).compareTo(new BigInteger(b))
+                : an != bn ? (an ? -1 : 1) : a.compareTo(b);
             if (compared != 0)
                 return compared;
         }

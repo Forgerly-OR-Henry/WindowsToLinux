@@ -22,7 +22,8 @@ public final class GradleBuildInspector {
      * <p>用于识别根目录项目名称的匹配模式。
      */
     private static final Pattern ROOT_PROJECT_NAME = Pattern
-            .compile("(?m)^\\s*rootProject\\.name\\s*=\\s*['\"]([a-zA-Z0-9][a-zA-Z0-9._-]{0,62})['\"]\\s*$");
+        .compile("(?m)^\\s*rootProject\\.name\\s*=\\s*['\"]([a-zA-Z0-9][a-zA-Z0-9._-]{0,62})['\"]\\s*$");
+
     /**
      * Returns fixed Gradle facts or records a rejection. / 返回固定 Gradle 事实或记录拒绝原因。
      *
@@ -42,26 +43,26 @@ public final class GradleBuildInspector {
      * @return build facts when present / 存在时的构建事实
      * @throws IOException if reading fails / 读取失败时 */
     public Optional<GradleBuildFacts> inspect(Path root, List<RejectionReason> rejections, String logicalRootName)
-            throws IOException {
+        throws IOException {
         boolean groovy = BoundedMetadataInspector.regular(root.resolve("build.gradle"));
         boolean kotlin = BoundedMetadataInspector.regular(root.resolve("build.gradle.kts"));
         if (groovy && kotlin) {
             rejections.add(
-                    rejection("GRADLE_BUILD_SCRIPT_AMBIGUOUS", "analysis.deployment.rejection.gradleBuildAmbiguous"));
+                rejection("GRADLE_BUILD_SCRIPT_AMBIGUOUS", "analysis.deployment.rejection.gradleBuildAmbiguous"));
             return Optional.empty();
         }
         if (!groovy && !kotlin) {
             rejections
-                    .add(rejection("GRADLE_BUILD_SCRIPT_MISSING", "analysis.deployment.rejection.gradleBuildMissing"));
+                .add(rejection("GRADLE_BUILD_SCRIPT_MISSING", "analysis.deployment.rejection.gradleBuildMissing"));
             return Optional.empty();
         }
         Path script = root.resolve(groovy ? "build.gradle" : "build.gradle.kts");
         boolean wrapper = BoundedMetadataInspector.regular(root.resolve("gradlew"))
-                && BoundedMetadataInspector.regular(root.resolve("gradle/wrapper/gradle-wrapper.properties"))
-                && BoundedMetadataInspector.containsZipEntry(root.resolve("gradle/wrapper/gradle-wrapper.jar"),
-                        "org/gradle/wrapper/GradleWrapperMain.class");
+            && BoundedMetadataInspector.regular(root.resolve("gradle/wrapper/gradle-wrapper.properties"))
+            && BoundedMetadataInspector.containsZipEntry(root.resolve("gradle/wrapper/gradle-wrapper.jar"),
+            "org/gradle/wrapper/GradleWrapperMain.class");
         return Optional.of(new GradleBuildFacts(applicationId(root, logicalRootName), script,
-                BoundedMetadataInspector.read(script), wrapper));
+            BoundedMetadataInspector.read(script), wrapper));
     }
 
     /**
@@ -78,7 +79,7 @@ public final class GradleBuildInspector {
             Path settings = root.resolve(name);
             if (BoundedMetadataInspector.regular(settings)) {
                 return ProjectIdentityResolver.applicationId(root, BoundedMetadataInspector.read(settings),
-                        ROOT_PROJECT_NAME, logicalRootName);
+                    ROOT_PROJECT_NAME, logicalRootName);
             }
         }
         return ProjectIdentityResolver.rootApplicationId(logicalRootName);

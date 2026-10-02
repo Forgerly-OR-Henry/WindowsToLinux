@@ -35,7 +35,7 @@ public final class SourceLanguageEvidence {
      * @return constructed or resolved project language facts / 构造或解析得到的项目语言事实
      */
     public static ProjectLanguageFacts collect(SourceInspectionFacts source, LanguageEcosystemType ecosystem,
-            Function<String, SourceLanguageType> marker) {
+                                               Function<String, SourceLanguageType> marker) {
         EnumMap<SourceLanguageType, Path> firstEvidence = new EnumMap<>(SourceLanguageType.class);
         for (Path path : source.relativeFiles()) {
             SourceLanguageType language = marker.apply(path.getFileName().toString().toLowerCase(Locale.ROOT));
@@ -45,11 +45,11 @@ public final class SourceLanguageEvidence {
         if (firstEvidence.isEmpty())
             return ProjectLanguageFacts.empty();
         List<AnalysisEvidence> evidence = firstEvidence.entrySet().stream()
-                .map(entry -> new AnalysisEvidence(
-                        DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", entry.getKey().name()),
-                        entry.getValue().toString(), DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"),
-                        EvidenceConfidenceLevel.HIGH))
-                .toList();
+            .map(entry -> new AnalysisEvidence(
+                DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", entry.getKey().name()),
+                entry.getValue().toString(), DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"),
+                EvidenceConfidenceLevel.HIGH))
+            .toList();
         return new ProjectLanguageFacts(Set.of(ecosystem), firstEvidence.keySet(), Map.of(), evidence);
     }
 }

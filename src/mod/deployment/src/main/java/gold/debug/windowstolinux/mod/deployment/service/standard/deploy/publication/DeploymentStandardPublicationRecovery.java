@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Objects;
@@ -7,7 +14,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRemoteRecovery;
@@ -30,12 +37,12 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return absent for reference-only work, otherwise verified or uncertain remote result / 纯引用任务为空，否则返回已核实或未决远端结果 */
     @Override
     public Optional<OperationResult<DeploymentPublicationProposal>> reconcile(TaskContext task,
-            DeploymentExecutionRecord record) {
+                                                                              DeploymentExecutionRecord record) {
         try {
             var graph = DeploymentGraphPublicationJournal.reopen(context, task);
             if (graph.isPresent())
                 return Optional.of(new DeploymentMultiComponentPublicationRecovery(context).reconcile(task, record,
-                        graph.orElseThrow()));
+                    graph.orElseThrow()));
         } catch (ApiException | IllegalArgumentException unavailable) {
             return Optional.of(unknown("DEPLOYMENT_GRAPH_JOURNAL_UNAVAILABLE"));
         }
@@ -51,40 +58,40 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
         OperationResult<DeploymentPublicationProposal> proven = null;
         try {
             if (!DeploymentPublicationAttemptRecovery.child(context, task, record, journal)
-                    || !DeploymentAssistedReviewRecovery.child(context, task, record, journal))
+                || !DeploymentAssistedReviewRecovery.child(context, task, record, journal))
                 return Optional.of(unknown("DEPLOYMENT_ASSISTED_REVIEW_RECOVERY_UNCONFIRMED"));
             var facts = DeploymentPublicationRecoveryFacts.read(journal.facts(), record);
             var proposal = new DeploymentExecutionRepository(context.db()).publicationTemplate(record);
             if (journal.released()) {
                 if (record.outcome().filter(outcome -> outcome != Outcome.UNKNOWN).isEmpty()
-                        && facts.verifiedOutcome().isEmpty())
+                    && facts.verifiedOutcome().isEmpty())
                     return Optional.of(unknown("DEPLOYMENT_RELEASED_WITH_UNKNOWN_BUSINESS"));
                 if (!context.linux().pendingTransfers(task).isEmpty())
                     return Optional.of(unknown("DEPLOYMENT_ORIGINAL_TRANSFER_PENDING"));
-                context.source().closeTaskResources(task);
+                context.file().closeTaskResources(task);
                 return Optional.of(record.outcome().filter(outcome -> outcome != Outcome.UNKNOWN).isPresent()
-                        ? known(record, proposal, facts)
-                        : verified(facts, proposal));
+                    ? known(record, proposal, facts)
+                    : verified(facts, proposal));
             }
             if (journal.facts().path("phase").asText().equals("REMOTE_CLEANUP_VERIFIED")
-                    || journal.facts().path("phase").asText().equals("SESSION_CLOSED")
-                    || journal.facts().path("phase").asText().equals("CLEANUP_VERIFIED")) {
+                || journal.facts().path("phase").asText().equals("SESSION_CLOSED")
+                || journal.facts().path("phase").asText().equals("CLEANUP_VERIFIED")) {
                 if (record.outcome().filter(outcome -> outcome != Outcome.UNKNOWN).isEmpty()
-                        && facts.verifiedOutcome().isEmpty() || !context.linux().pendingTransfers(task).isEmpty())
+                    && facts.verifiedOutcome().isEmpty() || !context.linux().pendingTransfers(task).isEmpty())
                     return Optional.of(unknown("DEPLOYMENT_CLEANUP_WITHOUT_KNOWN_BUSINESS"));
-                context.source().closeTaskResources(task);
+                context.file().closeTaskResources(task);
                 if (!journal.sessionClosed() || !journal.release())
                     return Optional.of(unknown("DEPLOYMENT_RECOVERY_CHECKPOINT_UNCONFIRMED"));
                 return Optional.of(record.outcome().filter(outcome -> outcome != Outcome.UNKNOWN).isPresent()
-                        ? known(record, proposal, facts)
-                        : verified(facts, proposal));
+                    ? known(record, proposal, facts)
+                    : verified(facts, proposal));
             }
             if (!context.linux().pendingTransfers(task).isEmpty())
                 return Optional.of(unknown("DEPLOYMENT_ORIGINAL_TRANSFER_PENDING"));
             OperationResult<DeploymentPublicationProposal> result;
             try (RemoteSession session = context.linux().connect(facts.unit().server(), task)) {
                 var channel = new DeploymentPublicationChannel(session, context.interaction(), facts.unit().server(),
-                        task, facts.plan());
+                    task, facts.plan());
                 var observed = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
                 if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
                     return Optional.of(unknown("DEPLOYMENT_ORIGINAL_STATUS_UNCONFIRMED"));
@@ -106,7 +113,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
             if (!context.linux().pendingTransfers(task).isEmpty())
                 return Optional.of(result);
             try {
-                context.source().closeTaskResources(task);
+                context.file().closeTaskResources(task);
             } catch (ApiException unavailable) {
                 return Optional.of(result);
             }
@@ -125,15 +132,15 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return original known business result / 原已知业务结果
      * @throws SQLException if original result cannot be read / 原结果不可读取时 */
     private OperationResult<DeploymentPublicationProposal> known(DeploymentExecutionRecord record,
-            Optional<DeploymentPublicationProposal> proposal, DeploymentPublicationRecoveryFacts facts)
-            throws SQLException {
+                                                                 Optional<DeploymentPublicationProposal> proposal, DeploymentPublicationRecoveryFacts facts)
+        throws SQLException {
         if (record.outcome().orElse(null) == Outcome.SUCCEEDED)
             return record.businessCommitted() && proposal.isPresent() && facts.release().isPresent()
-                    ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
-                    : unknown("DEPLOYMENT_COMMITTED_PROPOSAL_MISSING");
+                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+                : unknown("DEPLOYMENT_COMMITTED_PROPOSAL_MISSING");
         if (record.outcome().orElse(null) == Outcome.FAILED)
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    new DeploymentExecutionRepository(context.db()).problem(record));
+                new DeploymentExecutionRepository(context.db()).problem(record));
         return unknown("DEPLOYMENT_REMOTE_RESULT_NOT_KNOWN");
     }
 
@@ -142,17 +149,17 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @param proposal original full proposed commit / 原完整拟提交内容
      * @return verified original result / 已核实原结果 */
     private static OperationResult<DeploymentPublicationProposal> verified(DeploymentPublicationRecoveryFacts facts,
-            Optional<DeploymentPublicationProposal> proposal) {
+                                                                           Optional<DeploymentPublicationProposal> proposal) {
         if (facts.verifiedOutcome().orElse(null) == Outcome.SUCCEEDED)
             return proposal.isPresent() && facts.release().isPresent()
-                    && proposal.orElseThrow().units().getFirst().release().sha256()
-                            .equals(facts.release().orElseThrow())
-                                    ? new OperationResult<>(Outcome.SUCCEEDED, proposal, Optional.empty())
-                                    : unknown("DEPLOYMENT_VERIFIED_PROPOSAL_MISSING");
+                && proposal.orElseThrow().units().getFirst().release().sha256()
+                .equals(facts.release().orElseThrow())
+                ? new OperationResult<>(Outcome.SUCCEEDED, proposal, Optional.empty())
+                : unknown("DEPLOYMENT_VERIFIED_PROPOSAL_MISSING");
         if (facts.verifiedOutcome().orElse(null) == Outcome.FAILED)
             return facts.verifiedProblem().isPresent()
-                    ? new OperationResult<>(Outcome.FAILED, Optional.empty(), facts.verifiedProblem())
-                    : unknown("DEPLOYMENT_VERIFIED_FAILURE_MISSING");
+                ? new OperationResult<>(Outcome.FAILED, Optional.empty(), facts.verifiedProblem())
+                : unknown("DEPLOYMENT_VERIFIED_FAILURE_MISSING");
         return unknown("DEPLOYMENT_VERIFIED_RESULT_MISSING");
     }
 
@@ -167,14 +174,14 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @throws ApiException if a read-only check is unavailable / 只读核对不可用时
      * @throws SQLException if original business evidence cannot be read / 原业务依据不可读取时 */
     private OperationResult<DeploymentPublicationProposal> business(DeploymentExecutionRecord record,
-            Optional<DeploymentPublicationProposal> proposal, DeploymentPublicationRecoveryFacts facts,
-            DeploymentOriginalPublicationStatus status, DeploymentPublicationChannel channel,
-            DeploymentPublicationCleanupJournal journal) throws ApiException, SQLException {
+                                                                    Optional<DeploymentPublicationProposal> proposal, DeploymentPublicationRecoveryFacts facts,
+                                                                    DeploymentOriginalPublicationStatus status, DeploymentPublicationChannel channel,
+                                                                    DeploymentPublicationCleanupJournal journal) throws ApiException, SQLException {
         if (facts.verifiedOutcome().isPresent()) {
             var result = verified(facts, proposal);
             if (result.outcome() == Outcome.SUCCEEDED && !status.current().equals(facts.release())
-                    || result.outcome() == Outcome.FAILED && facts.release().isPresent()
-                            && !restored(facts, status, channel))
+                || result.outcome() == Outcome.FAILED && facts.release().isPresent()
+                && !restored(facts, status, channel))
                 return unknown("DEPLOYMENT_ORIGINAL_BUSINESS_STATE_CHANGED");
             return result;
         }
@@ -185,7 +192,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
             if (result.outcome() == Outcome.UNKNOWN)
                 return result;
             if (result.outcome() == Outcome.SUCCEEDED && !status.current().equals(facts.release())
-                    || result.outcome() == Outcome.FAILED && !restored(facts, status, channel))
+                || result.outcome() == Outcome.FAILED && !restored(facts, status, channel))
                 return unknown("DEPLOYMENT_ORIGINAL_BUSINESS_STATE_CHANGED");
             return result;
         }
@@ -199,8 +206,8 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                     return unknown("DEPLOYMENT_PREPUBLISH_CURRENT_CHANGED");
                 if (facts.snapshot().isEmpty()) {
                     var recovered = new DeploymentRemoteReleaseSnapshot(
-                            Optional.of(facts.operation().orElse(record.identity().taskId()).toString()), status.previousRunning().orElseThrow(),
-                            status.previousDigest(), status.previousKind());
+                        Optional.of(facts.operation().orElse(record.identity().taskId()).toString()), status.previousRunning().orElseThrow(),
+                        status.previousDigest(), status.previousKind());
                     if (!journal.snapshot(recovered))
                         return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_RECORD_UNCONFIRMED");
                 }
@@ -219,31 +226,31 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                 if (!journal.mark("SNAPSHOT_DISCARDED"))
                     return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_DISCARD_UNCONFIRMED");
             } else if (facts.snapshot().filter(saved -> saved.token().isPresent()).isPresent()
-                    && !facts.phase().equals("SNAPSHOT_DISCARD_MAY_HAVE_RUN")
-                    && !facts.phase().equals("SNAPSHOT_DISCARDED"))
+                && !facts.phase().equals("SNAPSHOT_DISCARD_MAY_HAVE_RUN")
+                && !facts.phase().equals("SNAPSHOT_DISCARDED"))
                 return unknown("DEPLOYMENT_PREPUBLISH_SNAPSHOT_MISSING");
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNAVAILABLE, "DEPLOYMENT_PUBLICATION_NOT_STARTED",
-                            "Original publication ended before dispatch", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNAVAILABLE, "DEPLOYMENT_PUBLICATION_NOT_STARTED",
+                    "Original publication ended before dispatch", Map.of(), Optional.empty())));
         }
         if (proposal.isEmpty()
-                || !proposal.orElseThrow().units().getFirst().release().sha256().equals(facts.release().orElseThrow())
-                || facts.snapshot().isEmpty())
+            || !proposal.orElseThrow().units().getFirst().release().sha256().equals(facts.release().orElseThrow())
+            || facts.snapshot().isEmpty())
             return unknown("DEPLOYMENT_ORIGINAL_PROPOSAL_MISSING");
         if (facts.phase().startsWith("ROLLBACK_") && restored(facts, status, channel))
             return new OperationResult<>(Outcome.FAILED, Optional.empty(), facts.failure());
         if (facts.phase().startsWith("ROLLBACK_"))
             return unknown("DEPLOYMENT_ROLLBACK_UNCONFIRMED");
         if (!status.current().equals(facts.release())
-                || facts.snapshot().orElseThrow().token().isPresent() && !snapshotMatches(facts, status))
+            || facts.snapshot().orElseThrow().token().isPresent() && !snapshotMatches(facts, status))
             return unknown("DEPLOYMENT_PUBLISHED_OWNER_UNCONFIRMED");
         var reviewedRuntime = proposal.orElseThrow().graph().components().getFirst().reviewedRuntime();
         var observed = channel.observe(facts.unit(), reviewedRuntime);
         if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
             return unknown("DEPLOYMENT_PUBLISHED_RUNTIME_UNCONFIRMED");
         var expected = reviewedRuntime.workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
-                ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
-                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+            ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
+            : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         if (observed.value().orElseThrow().state() != expected)
             return unknown("DEPLOYMENT_PUBLISHED_RUNTIME_CHANGED");
         var health = channel.healthCheck(facts.unit(), reviewedRuntime.healthCheck());
@@ -260,14 +267,14 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      *         / 仅原恢复获确认时为真
      * @throws ApiException if observation cannot be made / 无法观察时 */
     private boolean restored(DeploymentPublicationRecoveryFacts facts, DeploymentOriginalPublicationStatus status,
-            DeploymentPublicationChannel channel) throws ApiException {
+                             DeploymentPublicationChannel channel) throws ApiException {
         var original = facts.snapshot();
         if (original.isEmpty() || status.snapshot() || status.buildActive())
             return false;
         var saved = original.orElseThrow();
         if (saved.token().isEmpty())
             return status.current().isEmpty() && !status.unitPresent()
-                    && status.containerPresent().filter(Boolean::booleanValue).isEmpty();
+                && status.containerPresent().filter(Boolean::booleanValue).isEmpty();
         if (!status.current().equals(saved.previousDigest()) || !status.currentKind().equals(saved.previousKind()))
             return false;
         var observed = channel.observeRestored(facts.unit());
@@ -275,7 +282,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
             return false;
         var state = observed.value().orElseThrow().state();
         return state != DeploymentRemoteRuntimeObservation.StateType.ERROR
-                && saved.previousRunning() == (state == DeploymentRemoteRuntimeObservation.StateType.RUNNING);
+            && saved.previousRunning() == (state == DeploymentRemoteRuntimeObservation.StateType.RUNNING);
     }
 
     /** Checks the exact task-token snapshot before trusting its old-release claim. / 信任旧发布声明前核对精确任务令牌快照。
@@ -283,11 +290,11 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @param status remote observation / 远端观察
      * @return whether all old identities match / 全部旧身份是否匹配 */
     private static boolean snapshotMatches(DeploymentPublicationRecoveryFacts facts,
-            DeploymentOriginalPublicationStatus status) {
+                                           DeploymentOriginalPublicationStatus status) {
         return facts.snapshot().isPresent() && status.snapshot()
-                && status.previousDigest().equals(facts.snapshot().orElseThrow().previousDigest())
-                && status.previousKind().equals(facts.snapshot().orElseThrow().previousKind())
-                && status.previousRunning().equals(Optional.of(facts.snapshot().orElseThrow().previousRunning()));
+            && status.previousDigest().equals(facts.snapshot().orElseThrow().previousDigest())
+            && status.previousKind().equals(facts.snapshot().orElseThrow().previousKind())
+            && status.previousRunning().equals(Optional.of(facts.snapshot().orElseThrow().previousRunning()));
     }
 
     /** Finishes only original confirmed cleanup steps in their historical order. / 仅按原历史顺序完成原已确认收尾步骤。
@@ -299,26 +306,26 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return whether every remote effect and acknowledgement was confirmed / 全部远端效果与确认是否已核实
      * @throws ApiException if host admission fails / 宿主准入失败时 */
     private boolean finishRemote(DeploymentPublicationCleanupJournal journal, DeploymentPublicationRecoveryFacts facts,
-            DeploymentOriginalPublicationStatus status, DeploymentPublicationChannel channel, boolean successful)
-            throws ApiException {
+                                 DeploymentOriginalPublicationStatus status, DeploymentPublicationChannel channel, boolean successful)
+        throws ApiException {
         if (journal.facts().path("phase").asText().equals("REMOTE_CLEANUP_VERIFIED")
-                || journal.facts().path("phase").asText().equals("SESSION_CLOSED")
-                || journal.facts().path("phase").asText().equals("CLEANUP_VERIFIED"))
+            || journal.facts().path("phase").asText().equals("SESSION_CLOSED")
+            || journal.facts().path("phase").asText().equals("CLEANUP_VERIFIED"))
             return true;
         var current = status;
         var phase = journal.facts().path("phase").asText();
         if (successful && !current.current().equals(facts.release()))
             return false;
         if (!successful && facts.release().isPresent() && !restored(facts, current, channel)
-                || !successful && facts.release().isEmpty() && current.snapshot())
+            || !successful && facts.release().isEmpty() && current.snapshot())
             return false;
         if (current.maintenance()) {
             if (facts.release().isEmpty() || phase.equals("MAINTENANCE_END_MAY_HAVE_RUN")
-                    || cleanupOrder(phase) >= cleanupOrder("MAINTENANCE_ENDED")
-                    || !journal.mark("MAINTENANCE_END_MAY_HAVE_RUN"))
+                || cleanupOrder(phase) >= cleanupOrder("MAINTENANCE_ENDED")
+                || !journal.mark("MAINTENANCE_END_MAY_HAVE_RUN"))
                 return false;
             var ended = cleanupCall(journal, phase,
-                    () -> channel.endMaintenance(facts.unit(), facts.release().orElseThrow()));
+                () -> channel.endMaintenance(facts.unit(), facts.release().orElseThrow()));
             if (notDispatched(journal, phase, ended))
                 return false;
             current = reread(channel, facts);
@@ -331,7 +338,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
         if (successful) {
             if (current.retainedCount() > 3) {
                 if (phase.equals("RETAIN_MAY_HAVE_RUN") || cleanupOrder(phase) >= cleanupOrder("RETAIN_VERIFIED")
-                        || !journal.mark("RETAIN_MAY_HAVE_RUN"))
+                    || !journal.mark("RETAIN_MAY_HAVE_RUN"))
                     return false;
                 var retained = cleanupCall(journal, phase, () -> channel.retain(facts.unit()));
                 if (notDispatched(journal, phase, retained))
@@ -346,8 +353,8 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
         }
         if (current.candidate()) {
             if (phase.equals("CANDIDATE_CLEANUP_MAY_HAVE_RUN")
-                    || cleanupOrder(phase) >= cleanupOrder("CANDIDATE_CLEANED")
-                    || !journal.mark("CANDIDATE_CLEANUP_MAY_HAVE_RUN"))
+                || cleanupOrder(phase) >= cleanupOrder("CANDIDATE_CLEANED")
+                || !journal.mark("CANDIDATE_CLEANUP_MAY_HAVE_RUN"))
                 return false;
             var cleaned = cleanupCall(journal, phase, () -> channel.cleanupCandidate(facts.unit(), facts.candidate()));
             if (notDispatched(journal, phase, cleaned))
@@ -357,8 +364,8 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
                 return false;
         }
         return !current.maintenance() && !current.buildActive()
-                && (cleanupOrder(phase) >= cleanupOrder("CANDIDATE_CLEANED") || journal.mark("CANDIDATE_CLEANED"))
-                && journal.remoteClean();
+            && (cleanupOrder(phase) >= cleanupOrder("CANDIDATE_CLEANED") || journal.mark("CANDIDATE_CLEANED"))
+            && journal.remoteClean();
     }
 
     /** Orders only durable remote cleanup phases so a later uncertain step cannot be erased. / 仅排序远端持久收尾阶段，防止擦掉较晚的未确认步骤。
@@ -393,12 +400,12 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return command observation / 命令观测
      * @throws ApiException if admission failed before dispatch / 发送前准入失败时 */
     private static OperationResult<?> cleanupCall(DeploymentPublicationCleanupJournal journal, String previous,
-            CleanupCommand command) throws ApiException {
+                                                  CleanupCommand command) throws ApiException {
         try {
             return command.run();
         } catch (ApiException rejected) {
             if (rejected.problem().code() == ProblemCode.ACCESS_DENIED
-                    || rejected.problem().code() == ProblemCode.INVALID_INPUT)
+                || rejected.problem().code() == ProblemCode.INVALID_INPUT)
                 journal.mark(previous);
             throw rejected;
         }
@@ -410,7 +417,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @param result observed command / 已观察命令
      * @return true only when dispatch was definitely refused / 仅明确拒绝发送时为真 */
     private static boolean notDispatched(DeploymentPublicationCleanupJournal journal, String previous,
-            OperationResult<?> result) {
+                                         OperationResult<?> result) {
         if ((result.outcome() == Outcome.FAILED || result.outcome() == Outcome.CANCELLED) && result.value().isEmpty()) {
             journal.mark(previous);
             return true;
@@ -424,7 +431,7 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return current complete status or null when uncertain / 当前完整状态；未知时为空
      * @throws ApiException if host admission fails / 宿主准入失败时 */
     private static DeploymentOriginalPublicationStatus reread(DeploymentPublicationChannel channel,
-            DeploymentPublicationRecoveryFacts facts) throws ApiException {
+                                                              DeploymentPublicationRecoveryFacts facts) throws ApiException {
         var read = facts.operation().isEmpty() ? channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine()) : channel.originalStatus(facts.unit(), facts.candidate(), facts.release(), facts.backend(), facts.engine(), facts.operation().orElseThrow());
         return read.outcome() == Outcome.SUCCEEDED ? read.value().orElse(null) : null;
     }
@@ -441,6 +448,6 @@ public final class DeploymentStandardPublicationRecovery implements DeploymentRe
      * @return public problem / 公开问题 */
     private static Optional<Problem> newProblem(String event) {
         return Optional.of(new Problem(ProblemCode.UNKNOWN, event, "Original publication evidence remains unconfirmed",
-                Map.of(), Optional.empty()));
+            Map.of(), Optional.empty()));
     }
 }

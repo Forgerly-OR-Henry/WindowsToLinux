@@ -17,8 +17,10 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract
  * @param containerDaemonRiskAccepted explicit container daemon risk decision / 容器守护进程风险的显式决定
  * @param experimentalAdapterRiskAccepted explicit adapter risk decision / 适配器风险的显式决定 */
 public record DeploymentStaticReviewAnswers(Map<String, String> values, List<DeploymentFileBinding> files,
-        long configurationRevision, DeploymentBuildLimits limits, DeploymentReviewConsent consent,
-        boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) {
+                                            long configurationRevision, DeploymentBuildLimits limits,
+                                            DeploymentReviewConsent consent,
+                                            boolean containerDaemonRiskAccepted,
+                                            boolean experimentalAdapterRiskAccepted) {
     /** Copies all submitted answers without turning their existence into approval. / 复制已提交答案，不把存在本身视为批准。
      * @param values reviewed non-secret text / 经审阅不含秘密文本
      * @param files managed files / 受管文件

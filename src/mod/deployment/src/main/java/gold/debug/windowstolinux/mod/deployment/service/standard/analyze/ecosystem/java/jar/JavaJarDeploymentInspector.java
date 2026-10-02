@@ -55,9 +55,9 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) {
+                                            List<RejectionReason> rejections) {
         List<Path> jars = source.relativeFiles().stream().filter(path -> path.getNameCount() == 1)
-                .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar")).toList();
+            .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar")).toList();
         List<DeploymentLocalizedMessage> missing = new ArrayList<>();
         List<DeploymentLocalizedMessage> conflicts = new ArrayList<>();
         if (jars.isEmpty()) {
@@ -70,32 +70,32 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
         }
         String evidenceSource = jars.isEmpty() ? "source root" : jars.getFirst().toString();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
-                ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
-                DeploymentBuildToolType.JAVA, languageFacts,
-                List.of(evidence("analysis.deployment.evidence.javaJar", evidenceSource,
-                        jars.isEmpty()
-                                ? "analysis.deployment.evidence.notDetected"
-                                : "analysis.deployment.evidence.detected")),
-                conflicts, missing);
+            ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
+            DeploymentBuildToolType.JAVA, languageFacts,
+            List.of(evidence("analysis.deployment.evidence.javaJar", evidenceSource,
+                jars.isEmpty()
+                    ? "analysis.deployment.evidence.notDetected"
+                    : "analysis.deployment.evidence.detected")),
+            conflicts, missing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment
-                .valuesFor(projectType());
+            .valuesFor(projectType());
         List<AnalysisEvidence> runtimeEvidence = new ArrayList<>();
         if (jars.size() == 1) {
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH,
-                    jars.getFirst().toString().replace('\\', '/'));
+                jars.getFirst().toString().replace('\\', '/'));
             runtimeEvidence.add(evidence("analysis.deployment.runtime.evidence.javaJarPath", jars.getFirst().toString(),
-                    "analysis.deployment.evidence.detected"));
+                "analysis.deployment.evidence.detected"));
         }
         put(values, DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS, languageFacts,
-                LanguageFactKind.JAVA_MAIN_CLASS);
+            LanguageFactKind.JAVA_MAIN_CLASS);
         put(values, DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION, languageFacts,
-                LanguageFactKind.JAVA_VERSION);
+            LanguageFactKind.JAVA_VERSION);
         Set<String> keys = Set.of("analysis.deployment.runtime.evidence.javaMainClass",
-                "analysis.deployment.runtime.evidence.javaVersion");
+            "analysis.deployment.runtime.evidence.javaVersion");
         runtimeEvidence
-                .addAll(languageFacts.evidence().stream().filter(item -> keys.contains(item.subject().key())).toList());
+            .addAll(languageFacts.evidence().stream().filter(item -> keys.contains(item.subject().key())).toList());
         List<DeploymentLocalizedMessage> required = new ArrayList<>(
-                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
+            List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (!values.containsKey(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS)) {
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.javaMainClass"));
         }
@@ -103,7 +103,7 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.javaVersion"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values,
-                Optional.empty(), Map.of(), List.of(), runtimeEvidence, required);
+            Optional.empty(), Map.of(), List.of(), runtimeEvidence, required);
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -117,7 +117,7 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
      * @param fact fact / 事实
      */
     private static void put(Map<DeploymentRuntimeAssessment.RuntimeInputType, String> target,
-            DeploymentRuntimeAssessment.RuntimeInputType input, ProjectLanguageFacts facts, LanguageFactKind fact) {
+                            DeploymentRuntimeAssessment.RuntimeInputType input, ProjectLanguageFacts facts, LanguageFactKind fact) {
         String value = facts.values().get(fact);
         if (value != null) {
             target.put(input, value);
@@ -134,11 +134,11 @@ public final class JavaJarDeploymentInspector implements DeploymentTypeInspector
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
-            String subject, String source, String conclusion) {
+        String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
-                source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
+            source,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
+            gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

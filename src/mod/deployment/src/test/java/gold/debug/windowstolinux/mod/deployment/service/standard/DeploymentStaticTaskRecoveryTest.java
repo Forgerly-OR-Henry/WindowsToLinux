@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
@@ -14,19 +22,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourcePreparer;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourcePreparer;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 import org.junit.jupiter.api.Test;
 
 /** Checks only original no-effect preparation evidence and retained uncertainty. / 仅核对原无效果准备依据及保留的不确定性。 */
 class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
     private static final Path GIT = java.util.Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
-            .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
-            .toAbsolutePath().normalize();
+        .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
+        .toAbsolutePath().normalize();
+
     @Override
     protected Path selectedSourceDirectory() {
         return root.resolve("input");
@@ -44,27 +53,27 @@ class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             var calls = new java.util.concurrent.atomic.AtomicInteger();
             var handle = context.tasks().submit(
-                    new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Recover original preparation", List.of(), true),
-                    task -> {
-                        calls.incrementAndGet();
-                        DeploymentStaticPreparationJournal.begin(context.tasks(), task, new ServerRef("server"));
-                        new DeploymentSourcePreparer(context.source())
-                                .prepare(context.source().selectDirectory("Source", task), 65536, 100, task);
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_PREPARATION_INTERRUPTED",
-                                        "Local preparation interrupted", java.util.Map.of(), Optional.empty())));
-                    });
+                new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Recover original preparation", List.of(), true),
+                task -> {
+                    calls.incrementAndGet();
+                    DeploymentStaticPreparationJournal.begin(context.tasks(), task, new ServerRef("server"));
+                    new DeploymentSourcePreparer(context.file())
+                        .prepare(context.file().selectDirectory("Source", task), 65536, 100, task);
+                    return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_PREPARATION_INTERRUPTED",
+                            "Local preparation interrupted", java.util.Map.of(), Optional.empty())));
+                });
             for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
                 Thread.sleep(50);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertEquals(1, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
             var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(15, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, recovered.state(), recovered.toString());
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(1, calls.get());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
     }
 
@@ -81,25 +90,25 @@ class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
         git(repo, "add", ".");
         git(repo, "commit", "-m", "first");
         var request = new DeploymentGitRequest(new DeploymentGitRemote(repo.toUri()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
         enable();
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var calls = new java.util.concurrent.atomic.AtomicInteger();
             var handle = context.tasks().submit(
-                    new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Recover original pinned Git", List.of(), true),
-                    task -> {
-                        calls.incrementAndGet();
-                        DeploymentStaticPreparationJournal.begin(context.tasks(), task, new ServerRef("server"));
-                        var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
-                                "reviewed-git-project", 65536, 100, task);
-                        assertTrue(Files
-                                .isRegularFile(pinned.material().source().snapshot().directory().resolve("main.go")));
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_PREPARATION_INTERRUPTED",
-                                        "Git prepared before publication", java.util.Map.of(), Optional.empty())));
-                    });
+                new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Recover original pinned Git", List.of(), true),
+                task -> {
+                    calls.incrementAndGet();
+                    DeploymentStaticPreparationJournal.begin(context.tasks(), task, new ServerRef("server"));
+                    var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
+                        "reviewed-git-project", 65536, 100, task);
+                    assertTrue(Files
+                        .isRegularFile(pinned.material().source().snapshot().directory().resolve("main.go")));
+                    return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_PREPARATION_INTERRUPTED",
+                            "Git prepared before publication", java.util.Map.of(), Optional.empty())));
+                });
             for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
                 Thread.sleep(50);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
@@ -109,7 +118,7 @@ class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(1, calls.get());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
     }
 
@@ -137,32 +146,32 @@ class DeploymentStaticTaskRecoveryTest extends DeploymentRuntimeFixture {
                 final int selected = scenario;
                 var callbackFailure = new AtomicReference<Throwable>();
                 var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                        "Recover local preparation", List.of(), true), task -> {
-                            try {
-                                var previous = new TaskSnapshot(task.id(), OWNER, "1.0.0",
-                                        DeploymentReferenceFlow.TASK_TYPE, TaskState.RUNNING, Optional.empty(), "",
-                                        Instant.now(), Optional.empty(), List.of());
-                                if (selected == 0) {
-                                    assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
-                                } else if (selected == 1) {
-                                    var damaged = context.tasks().beginCheckpoint(task,
-                                            DeploymentStaticPreparationJournal.KEY, "{}");
-                                    assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
-                                    damaged.close();
-                                } else {
-                                    var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task,
-                                            new ServerRef("server"));
-                                    marker.cancelled();
-                                    assertEquals(Outcome.CANCELLED, recovery.reconcile(previous, task).outcome());
-                                    assertTrue(context.tasks().resourcesReleased(task));
-                                }
-                            } catch (Exception | AssertionError failure) {
-                                callbackFailure.set(failure);
-                            }
-                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                        });
+                    "Recover local preparation", List.of(), true), task -> {
+                    try {
+                        var previous = new TaskSnapshot(task.id(), OWNER, "1.0.0",
+                            DeploymentReferenceFlow.TASK_TYPE, TaskState.RUNNING, Optional.empty(), "",
+                            Instant.now(), Optional.empty(), List.of());
+                        if (selected == 0) {
+                            assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
+                        } else if (selected == 1) {
+                            var damaged = context.tasks().beginCheckpoint(task,
+                                DeploymentStaticPreparationJournal.KEY, "{}");
+                            assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
+                            damaged.close();
+                        } else {
+                            var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task,
+                                new ServerRef("server"));
+                            marker.cancelled();
+                            assertEquals(Outcome.CANCELLED, recovery.reconcile(previous, task).outcome());
+                            assertTrue(context.tasks().resourcesReleased(task));
+                        }
+                    } catch (Exception | AssertionError failure) {
+                        callbackFailure.set(failure);
+                    }
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
                 assertEquals(Outcome.SUCCEEDED,
-                        handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                 if (callbackFailure.get() != null)
                     throw new AssertionError("Original local recovery failed", callbackFailure.get());
             }

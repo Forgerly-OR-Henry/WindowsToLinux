@@ -18,6 +18,6 @@ public final class KotlinLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.KOTLIN,
-                name -> name.endsWith(".kt") || name.endsWith(".kts") ? SourceLanguageType.KOTLIN : null);
+            name -> name.endsWith(".kt") || name.endsWith(".kts") ? SourceLanguageType.KOTLIN : null);
     }
 }

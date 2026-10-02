@@ -30,17 +30,17 @@ class DesktopUninstallHandoffCodecTest {
 
         assertEquals(handoff, codec.read(document, key(4)));
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
-                () -> codec.read(document, key(5)));
+            () -> codec.read(document, key(5)));
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
 
     @Test
     void rejectsAuthenticatedButMalformedUninstallPayloads() throws Exception {
         byte[] document = new DesktopHandoffEnvelopeCodec().write(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL,
-                new byte[]{0, 0, 0, 2}, key(4));
+            new byte[]{0, 0, 0, 2}, key(4));
 
         WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
-                () -> new DesktopUninstallHandoffCodec().read(document, key(4)));
+            () -> new DesktopUninstallHandoffCodec().read(document, key(4)));
 
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
@@ -50,19 +50,19 @@ class DesktopUninstallHandoffCodecTest {
         Path install = temporary.resolve("a".repeat(4096));
 
         assertThrows(IllegalArgumentException.class,
-                () -> new DesktopUninstallRequest(Optional.of(DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS),
-                        install, install.resolve("data")));
+            () -> new DesktopUninstallRequest(Optional.of(DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS),
+                install, install.resolve("data")));
     }
 
     private DesktopUninstallHandoff handoff() {
         Path install = temporary.resolve("WindowsToLinux");
         DesktopUninstallRequest request = new DesktopUninstallRequest(
-                Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS), install,
-                install.resolve("data"));
+            Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS), install,
+            install.resolve("data"));
         return new DesktopUninstallHandoff(UUID.fromString("22222222-2222-2222-2222-222222222222"), request,
-                List.of(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, true,
-                        "delete explicitly selected"),
-                        new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, true, "owned tasks stopped")));
+            List.of(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, true,
+                    "delete explicitly selected"),
+                new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, true, "owned tasks stopped")));
     }
 
     private static SecretKey key(int marker) {

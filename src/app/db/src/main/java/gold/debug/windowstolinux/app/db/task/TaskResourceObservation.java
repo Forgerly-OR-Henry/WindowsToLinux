@@ -4,7 +4,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 
 /** Read-only observation of the same explicit-resource predicate used by task finalization. / 对任务收尾所用相同显式资源判据进行只读观察。 */
 public final class TaskResourceObservation {
@@ -23,8 +23,8 @@ public final class TaskResourceObservation {
      * @throws SQLException if the task is absent or storage cannot be read / 任务不存在或存储不可读时 */
     public boolean released(UUID taskId) throws SQLException {
         try (var connection = database.openConnection();
-                var query = connection.prepareStatement(
-                        "SELECT COUNT(r.lease_id) FROM platform_task t LEFT JOIN platform_task_resource r ON r.task_id=t.task_id AND r.released_at IS NULL AND (r.recovery_json IS NULL OR r.recovery_json<>?) WHERE t.task_id=? GROUP BY t.task_id")) {
+             var query = connection.prepareStatement(
+                 "SELECT COUNT(r.lease_id) FROM platform_task t LEFT JOIN platform_task_resource r ON r.task_id=t.task_id AND r.released_at IS NULL AND (r.recovery_json IS NULL OR r.recovery_json<>?) WHERE t.task_id=? GROUP BY t.task_id")) {
             query.setString(1, ResourceRecovery.TASK_END);
             query.setObject(2, Objects.requireNonNull(taskId));
             try (var rows = query.executeQuery()) {

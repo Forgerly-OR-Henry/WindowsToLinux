@@ -7,8 +7,10 @@ import java.sql.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,7 +29,7 @@ class ModVersionDeletionLedgerTest {
 
     void owner(PlatformDatabase db) throws Exception {
         sql(db, "INSERT INTO mod_registry(mod_id,selection_initialized,revision,disable_ack_revision,last_boot_id,last_runtime_state,updated_at) VALUES(?,TRUE,7,7,?,'STOPPED',1)",
-                OWNER, db.bootId());
+            OWNER, db.bootId());
     }
 
     Path program(String version) {
@@ -39,20 +41,20 @@ class ModVersionDeletionLedgerTest {
         Files.createDirectories(target);
         Files.writeString(target.resolve("main.jar"), "independent program fixture");
         sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,?,?,?,?,'LOCAL',1,'READY')",
-                OWNER, version, target.toString(), "c".repeat(64), schema,
-                "{\"id\":\"" + OWNER + "\",\"version\":\"" + version + "\",\"dependencies\":[]}");
+            OWNER, version, target.toString(), "c".repeat(64), schema,
+            "{\"id\":\"" + OWNER + "\",\"version\":\"" + version + "\",\"dependencies\":[]}");
     }
 
     SchemaIdentity schema(PlatformDatabase db, String version) throws Exception {
         var identity = new SchemaIdentity(OWNER, version, UUID.randomUUID());
         var coordinates = new SchemaCoordinates(identity);
         sql(db, "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',1)",
-                OWNER, version, identity.generation(), coordinates.physicalName(), coordinates.databaseUser());
+            OWNER, version, identity.generation(), coordinates.physicalName(), coordinates.databaseUser());
         new SchemaProvisioner(db).create(identity);
         sql(db, "CREATE TABLE " + coordinates.physicalName() + ".items(id INT PRIMARY KEY, value_text VARCHAR)");
         sql(db, "INSERT INTO " + coordinates.physicalName() + ".items VALUES(1,'retained data')");
         sql(db, "UPDATE mod_schema SET state='READY',ever_used=TRUE,validated_at=1,validation_digest=? WHERE generation=?",
-                "a".repeat(64), identity.generation());
+            "a".repeat(64), identity.generation());
         return identity;
     }
 
@@ -109,7 +111,7 @@ class ModVersionDeletionLedgerTest {
             removeProgram("1.0.0");
             complete(ledger, id);
             assertEquals("retained data",
-                    value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
+                value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
             assertEquals("TRUE", value(db, "SELECT selection_initialized FROM mod_registry WHERE mod_id=?", OWNER));
             assertNull(value(db, "SELECT selected_version FROM mod_registry WHERE mod_id=?", OWNER));
             var last = ledger.review(OWNER, "1.1.0");
@@ -119,12 +121,12 @@ class ModVersionDeletionLedgerTest {
             complete(ledger, id);
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_schema WHERE mod_id=?", OWNER));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?",
-                    new SchemaCoordinates(data).physicalName()));
+                new SchemaCoordinates(data).physicalName()));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM information_schema.users WHERE user_name=?",
-                    new SchemaCoordinates(data).databaseUser()));
+                new SchemaCoordinates(data).databaseUser()));
             assertEquals("2", value(db,
-                    "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_VERSION_DELETED' AND subject_mod_id=?",
-                    OWNER));
+                "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_VERSION_DELETED' AND subject_mod_id=?",
+                OWNER));
             assertFalse(ledger.finish(id));
             assertEquals("FALSE", value(db, "SELECT enabled FROM mod_registry WHERE mod_id=?", OWNER));
         }
@@ -139,12 +141,12 @@ class ModVersionDeletionLedgerTest {
             sql(db, "UPDATE mod_registry SET selected_version='2.0.0' WHERE mod_id=?", OWNER);
             var ledger = new ModDeletionLedger(db, root);
             for (String change : List.of("enabled=TRUE", "disable_ack_revision=NULL", "disable_ack_revision=6",
-                    "last_runtime_state='RUNNING',actual_version='2.0.0'", "last_runtime_state='UNKNOWN'",
-                    "last_boot_id=NULL")) {
+                "last_runtime_state='RUNNING',actual_version='2.0.0'", "last_runtime_state='UNKNOWN'",
+                "last_boot_id=NULL")) {
                 sql(db, "UPDATE mod_registry SET " + change + " WHERE mod_id=?", OWNER);
                 assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"), change);
                 sql(db, "UPDATE mod_registry SET enabled=FALSE,disable_ack_revision=7,last_runtime_state='STOPPED',actual_version=NULL,last_boot_id=? WHERE mod_id=?",
-                        db.bootId(), OWNER);
+                    db.bootId(), OWNER);
             }
             assertEquals("0", value(db, "SELECT COUNT(*) FROM mod_operation"));
             assertTrue(Files.exists(program("1.0.0").resolve("main.jar")));
@@ -183,7 +185,7 @@ class ModVersionDeletionLedgerTest {
             assertThrows(SQLException.class, () -> ledger.removeData(id));
             assertEquals("UNKNOWN/QUIESCENT", phase(db, id));
             assertEquals("retained data",
-                    value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
+                value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM mod_schema WHERE state='DELETE_PENDING'"));
         }
     }
@@ -206,9 +208,9 @@ class ModVersionDeletionLedgerTest {
             assertThrows(SQLException.class, () -> ledger.removeData(id));
             assertEquals("UNKNOWN/PROGRAM_REMOVED", phase(db, id));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?",
-                    new SchemaCoordinates(data).physicalName()));
+                new SchemaCoordinates(data).physicalName()));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM mod_schema WHERE generation=? AND state='DELETE_PENDING'",
-                    data.generation()));
+                data.generation()));
             sql(db, "ALTER TABLE mod_operation DROP CONSTRAINT fixture_checkpoint");
             ledger.resume(id); // Simulate interruption of an explicitly resumed attempt.
         }
@@ -270,10 +272,10 @@ class ModVersionDeletionLedgerTest {
             ledger.programRemoved(id);
             String request = value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id);
             sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?",
-                    request.replace("\"version\":\"1.0.0\"", "\"version\":\"9.0.0\""), id);
+                request.replace("\"version\":\"1.0.0\"", "\"version\":\"9.0.0\""), id);
             assertThrows(SQLException.class, () -> ledger.removeData(id));
             assertEquals("retained data",
-                    value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
+                value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
             sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?", request, id);
             ledger.resume(id);
             ledger.removeData(id);
@@ -310,7 +312,7 @@ class ModVersionDeletionLedgerTest {
             var names = new SchemaCoordinates(data);
             var ledger = new ModDeletionLedger(db, root);
             try (var scope = new SchemaAccessScope(db, data, UUID.randomUUID(), false);
-                    var c = scope.openConnection()) {
+                 var c = scope.openConnection()) {
                 assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             }
             try (var scope = new SchemaAccessScope(db, data, UUID.randomUUID(), true)) {
@@ -320,7 +322,7 @@ class ModVersionDeletionLedgerTest {
                 assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             }
             sql(db, "CREATE TABLE app.fixture_dependent(id INT PRIMARY KEY, FOREIGN KEY(id) REFERENCES "
-                    + names.physicalName() + ".items(id))");
+                + names.physicalName() + ".items(id))");
             sql(db, "INSERT INTO app.fixture_dependent VALUES(1)");
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM app.fixture_dependent"));
@@ -436,7 +438,7 @@ class ModVersionDeletionLedgerTest {
             assertThrows(SQLException.class, () -> ledger.removeData(id));
             assertEquals("UNKNOWN/PROGRAM_REMOVED", phase(db, id));
             assertEquals("retained data",
-                    value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
+                value(db, "SELECT value_text FROM " + new SchemaCoordinates(data).physicalName() + ".items"));
         }
     }
 
@@ -449,22 +451,22 @@ class ModVersionDeletionLedgerTest {
             var ledger = new ModDeletionLedger(db, root);
             UUID task = UUID.randomUUID();
             sql(db, "INSERT INTO platform_task(task_id,owner_id,owner_version,task_type,state,cancellable,boot_id,request_json,recovery_json,archive_log_id,progress_text,started_at) VALUES(?,?,'1.0.0','fixture','UNKNOWN',FALSE,?,'{}','{}',?,'',1)",
-                    task, OWNER, db.bootId(), UUID.randomUUID().toString());
+                task, OWNER, db.bootId(), UUID.randomUUID().toString());
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             sql(db, "UPDATE platform_task SET owner_id='other.owner' WHERE task_id=?", task);
             sql(db, "INSERT INTO platform_task_resource VALUES(?,?,'SCHEMA',?,'other.owner','SHARED',1,NULL,'{}')",
-                    UUID.randomUUID(), task, data.generation().toString());
+                UUID.randomUUID(), task, data.generation().toString());
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             sql(db, "DELETE FROM platform_task_resource");
             sql(db, "DELETE FROM platform_task");
             UUID operation = UUID.randomUUID();
             sql(db, "INSERT INTO mod_operation(operation_id,mod_id,operation_type,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'INSTALL','UNKNOWN','STAGED','{}','{}',?,1,1)",
-                    operation, OWNER, UUID.randomUUID().toString());
+                operation, OWNER, UUID.randomUUID().toString());
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             sql(db, "DELETE FROM mod_operation WHERE operation_id=?", operation);
             sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES('consumer',1)");
             sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,manifest_json,origin_kind,installed_at,state) VALUES('consumer','1.0.0','fixture',?,?,'LOCAL',1,'READY')",
-                    "0".repeat(64), "{\"dependencies\":[{\"id\":\"" + OWNER + "\",\"versionRange\":\"*\"}]}");
+                "0".repeat(64), "{\"dependencies\":[{\"id\":\"" + OWNER + "\",\"versionRange\":\"*\"}]}");
             sql(db, "UPDATE mod_registry SET enabled=TRUE,selected_version='1.0.0' WHERE mod_id='consumer'");
             assertThrows(SQLException.class, () -> ledger.review(OWNER, "1.0.0"));
             assertEquals("TRUE", value(db, "SELECT enabled FROM mod_registry WHERE mod_id='consumer'"));
@@ -483,16 +485,16 @@ class ModVersionDeletionLedgerTest {
             release(db, "1.0.0", "1");
             var data = schema(db, "1");
             sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
-                    new byte[48], new byte[12], new byte[16]);
+                new byte[48], new byte[12], new byte[16]);
             sql(db, "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('shared','AES256_GCM_V1',?,?)",
-                    new byte[20], new byte[12]);
+                new byte[20], new byte[12]);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared','shared','localhost',22,'fixture','fixture')");
             sql(db, "INSERT INTO mod_server_reference VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
-                    UUID.randomUUID(), OWNER, data.generation());
+                UUID.randomUUID(), OWNER, data.generation());
             sql(db, "INSERT INTO mod_credential_reference VALUES(?,'shared',?,'1',?,'record','fixture','UNKNOWN',1)",
-                    UUID.randomUUID(), OWNER, data.generation());
+                UUID.randomUUID(), OWNER, data.generation());
             sql(db, "INSERT INTO log_category VALUES(?,?,?, ?,?,'fixture','fixture_log','fixture',1)",
-                    UUID.randomUUID(), OWNER, "v1", data.generation(), new SchemaCoordinates(data).physicalName());
+                UUID.randomUUID(), OWNER, "v1", data.generation(), new SchemaCoordinates(data).physicalName());
             var ledger = new ModDeletionLedger(db, root);
             var id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{}");
             removeProgram("1.0.0");
@@ -515,7 +517,7 @@ class ModVersionDeletionLedgerTest {
             assertEquals("1", value(db, "SELECT COUNT(*) FROM server_profile"));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM credential"));
             assertEquals("1",
-                    value(db, "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND operation_id=?", id));
+                value(db, "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND operation_id=?", id));
         }
     }
 }

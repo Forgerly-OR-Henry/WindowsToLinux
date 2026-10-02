@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.execution.schema.*;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -22,17 +23,17 @@ class DeploymentSchemaMigration23Test extends DeploymentRuntimeFixture {
             byte[] payload = new byte[2 * 1024 * 1024];
             Arrays.fill(payload, (byte) 0x6a);
             try (var access = DeploymentSchemaMigration12Test.scope(runtime, source, false);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement()) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement()) {
                 for (var command : DeploymentSchema.resource("schema-v2.sql").split(";"))
                     if (!command.isBlank())
                         statement.executeUpdate(command);
                 statement.executeUpdate("INSERT INTO preference VALUES('original','preserved')");
                 statement.executeUpdate(
-                        "INSERT INTO secret_revision VALUES('credential',3,'opaque',123,'DATABASE_AUTH')");
+                    "INSERT INTO secret_revision VALUES('credential',3,'opaque',123,'DATABASE_AUTH')");
                 statement.execute("ALTER TABLE deployment_agent_event ALTER COLUMN event_id RESTART WITH 2000");
                 try (var insert = connection.prepareStatement(
-                        "INSERT INTO deployment_execution(execution_id,platform_task_id,server_profile_id,mode,phase,reviewed_revision,request_payload,recovery_payload,created_at,updated_at) VALUES(?,?,'server','STATIC','PREPARED',?,?,?,1,1)")) {
+                    "INSERT INTO deployment_execution(execution_id,platform_task_id,server_profile_id,mode,phase,reviewed_revision,request_payload,recovery_payload,created_at,updated_at) VALUES(?,?,'server','STATIC','PREPARED',?,?,?,1,1)")) {
                     insert.setObject(1, UUID.randomUUID());
                     insert.setObject(2, UUID.randomUUID());
                     insert.setString(3, "a".repeat(64));
@@ -43,17 +44,17 @@ class DeploymentSchemaMigration23Test extends DeploymentRuntimeFixture {
             }
             var before = SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source));
             try (var reader = DeploymentSchemaMigration12Test.scope(runtime, source, true);
-                    var writer = DeploymentSchemaMigration12Test.scope(runtime, target, false)) {
+                 var writer = DeploymentSchemaMigration12Test.scope(runtime, target, false)) {
                 new DeploymentSchemaMigration23().migrate(reader, writer);
             }
             assertEquals(before,
-                    SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source)));
+                SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source)));
             try (var access = DeploymentSchemaMigration12Test.scope(runtime, target, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement()) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement()) {
                 assertEquals(19, DeploymentSchemaMigration.inventory(connection, "3").size());
                 try (var rows = statement
-                        .executeQuery("SELECT request_payload,recovery_payload FROM deployment_execution")) {
+                    .executeQuery("SELECT request_payload,recovery_payload FROM deployment_execution")) {
                     assertTrue(rows.next());
                     assertArrayEquals(payload, rows.getBytes(1));
                     assertArrayEquals(new byte[]{1, 2, 3}, rows.getBytes(2));
@@ -67,7 +68,7 @@ class DeploymentSchemaMigration23Test extends DeploymentRuntimeFixture {
                     assertEquals(0, rows.getInt(1));
                 }
                 try (var rows = statement.executeQuery(
-                        "SELECT identity_base FROM information_schema.columns WHERE UPPER(table_schema)=UPPER(CURRENT_SCHEMA) AND UPPER(table_name)='DEPLOYMENT_AGENT_EVENT' AND UPPER(column_name)='EVENT_ID'")) {
+                    "SELECT identity_base FROM information_schema.columns WHERE UPPER(table_schema)=UPPER(CURRENT_SCHEMA) AND UPPER(table_name)='DEPLOYMENT_AGENT_EVENT' AND UPPER(column_name)='EVENT_ID'")) {
                     assertTrue(rows.next());
                     assertEquals(2000, rows.getLong(1));
                 }
@@ -83,8 +84,8 @@ class DeploymentSchemaMigration23Test extends DeploymentRuntimeFixture {
             var source = register(runtime, "2");
             var target = register(runtime, "3");
             try (var access = DeploymentSchemaMigration12Test.scope(runtime, source, false);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement()) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement()) {
                 for (var command : DeploymentSchema.resource("schema-v2.sql").split(";"))
                     if (!command.isBlank())
                         statement.executeUpdate(command);
@@ -92,15 +93,15 @@ class DeploymentSchemaMigration23Test extends DeploymentRuntimeFixture {
             }
             var before = SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source));
             try (var reader = DeploymentSchemaMigration12Test.scope(runtime, source, true);
-                    var writer = DeploymentSchemaMigration12Test.scope(runtime, target, false)) {
+                 var writer = DeploymentSchemaMigration12Test.scope(runtime, target, false)) {
                 assertThrows(SQLException.class, () -> new DeploymentSchemaMigration23().migrate(reader, writer));
             }
             assertEquals(before,
-                    SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source)));
+                SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(source)));
             try (var access = DeploymentSchemaMigration12Test.scope(runtime, target, true);
-                    var connection = access.openConnection();
-                    var statement = connection.prepareStatement(
-                            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
+                 var connection = access.openConnection();
+                 var statement = connection.prepareStatement(
+                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
                 statement.setString(1, connection.getSchema());
                 try (var rows = statement.executeQuery()) {
                     assertTrue(rows.next());

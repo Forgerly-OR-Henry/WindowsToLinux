@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -8,7 +15,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationArguments;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
@@ -31,9 +38,9 @@ final class DeploymentPublicationStaging {
      * @return sealed secret digests or explicit non-success / 已封存秘密摘要或显式非成功
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     static OperationResult<Map<DeploymentSecretReference, String>> stage(ModContext context,
-            ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
-            Map<DeploymentSecretReference, SecretRef> credentials, DeploymentPublicationChannel channel,
-            TaskContext task) throws ApiException {
+                                                                         ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
+                                                                         Map<DeploymentSecretReference, SecretRef> credentials, DeploymentPublicationChannel channel,
+                                                                         TaskContext task) throws ApiException {
         var request = plan.request();
         var systemd = DeploymentPublicationArguments.configuration(request.configuration(), "systemd");
         var container = DeploymentPublicationArguments.configuration(request.configuration(), "container");
@@ -41,7 +48,7 @@ final class DeploymentPublicationStaging {
         try {
             for (String format : java.util.List.of("systemd", "container")) {
                 var observed = channel.stageConfiguration(unit, request.configuration().sha256(), format,
-                        format.equals("systemd") ? systemd : container);
+                    format.equals("systemd") ? systemd : container);
                 if (observed.outcome() != Outcome.SUCCEEDED) {
                     if (!staged && observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
                         return new OperationResult<>(Outcome.FAILED, Optional.empty(), observed.problem());
@@ -55,12 +62,12 @@ final class DeploymentPublicationStaging {
         }
         var digests = new HashMap<DeploymentSecretReference, String>();
         for (var revision : request.secretReferences().stream()
-                .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                        .thenComparingLong(DeploymentSecretReference::revision))
-                .toList()) {
+            .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
+                .thenComparingLong(DeploymentSecretReference::revision))
+            .toList()) {
             var ref = credentials.get(revision);
             var observed = context.secrets().use(ref, ref.purpose(), task,
-                    plaintext -> channel.stageSecret(unit, revision.identifier(), revision.revision(), plaintext));
+                plaintext -> channel.stageSecret(unit, revision.identifier(), revision.revision(), plaintext));
             if (observed.outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_SECRET_STAGE_UNCONFIRMED");
             digests.put(revision, observed.value().orElseThrow());
@@ -73,8 +80,8 @@ final class DeploymentPublicationStaging {
      * @return retained uncertainty / 保留未知 */
     private static OperationResult<Map<DeploymentSecretReference, String>> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.UNKNOWN, event,
-                        "Original configuration or secret staging requires reconciliation", Map.of(),
-                        Optional.empty())));
+            Optional.of(new Problem(ProblemCode.UNKNOWN, event,
+                "Original configuration or secret staging requires reconciliation", Map.of(),
+                Optional.empty())));
     }
 }

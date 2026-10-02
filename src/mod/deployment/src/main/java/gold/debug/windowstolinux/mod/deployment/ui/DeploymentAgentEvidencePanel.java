@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.awt.BorderLayout;
 import java.util.*;
 import java.util.concurrent.Executor;
@@ -7,7 +13,7 @@ import java.util.function.Supplier;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.agent.*;
 
 /** Displays original evidence and explicit safe-boundary controls without holding task capabilities. / 展示原依据及明确安全边界控件，不持有任务能力。 */
@@ -58,7 +64,7 @@ final class DeploymentAgentEvidencePanel {
             button.addActionListener(ignored -> perform(key));
         }
         entries.setRenderer((list, value, index, selected, focus) -> new JLabel(
-                value == null ? "" : value.id() + "  " + value.state() + "  " + value.updatedAt()));
+            value == null ? "" : value.id() + "  " + value.state() + "  " + value.updatedAt()));
         var north = new JPanel(new BorderLayout());
         north.add(controls, BorderLayout.NORTH);
         north.add(entries, BorderLayout.SOUTH);
@@ -116,11 +122,11 @@ final class DeploymentAgentEvidencePanel {
                         if (selected == null)
                             throw new IllegalStateException("Select original history");
                         observe(service.events(selected.id()), view,
-                                value -> detail.setText(value.entry() + "\n"
-                                        + value.events().stream()
-                                                .map(event -> event.id() + " " + event.type() + " " + event.action()
-                                                        + " " + event.detail())
-                                                .collect(java.util.stream.Collectors.joining("\n"))));
+                            value -> detail.setText(value.entry() + "\n"
+                                + value.events().stream()
+                                .map(event -> event.id() + " " + event.type() + " " + event.action()
+                                    + " " + event.detail())
+                                .collect(java.util.stream.Collectors.joining("\n"))));
                     }
                     case "inspect" -> inspect(selected, view);
                     default -> throw new IllegalArgumentException("Unknown agent control");
@@ -139,10 +145,10 @@ final class DeploymentAgentEvidencePanel {
         if (selected == null)
             throw new IllegalStateException("Select original history");
         boolean retained = service.tasks().stream()
-                .anyMatch(task -> task.id().equals(selected.id()) && task.state() == TaskState.UNKNOWN);
+            .anyMatch(task -> task.id().equals(selected.id()) && task.state() == TaskState.UNKNOWN);
         if (retained)
             observe(service.requestInspection(selected.id()), view, request -> detail
-                    .setText(messages.getString("inspectWaiting") + "\n" + selected.id() + " / " + request));
+                .setText(messages.getString("inspectWaiting") + "\n" + selected.id() + " / " + request));
         else
             observe(service.inspect(selected), view, facts -> detail.setText(facts.toString()));
     }
@@ -170,7 +176,7 @@ final class DeploymentAgentEvidencePanel {
      * @return safe localized diagnostic / 安全本地化诊断 */
     private String diagnostic(Throwable failure) {
         if ((failure instanceof java.util.concurrent.CompletionException
-                || failure instanceof java.util.concurrent.ExecutionException) && failure.getCause() != null)
+            || failure instanceof java.util.concurrent.ExecutionException) && failure.getCause() != null)
             failure = failure.getCause();
         return failure instanceof ApiException api ? diagnostic(api.problem()) : messages.getString("evidenceError");
     }

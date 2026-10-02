@@ -15,18 +15,18 @@ import org.junit.jupiter.params.provider.ValueSource;
 class DeploymentReleaseCodecTest extends DeploymentGraphFixture {
     DeploymentReleaseRecord record(String runtime, String health) {
         return new DeploymentReleaseRecord("application",
-                new DeploymentReleaseIdentity(UUID.randomUUID(), DeploymentReleaseCodec.digest(runtime, health)),
-                UUID.randomUUID(), DeploymentReleaseState.ACTIVE, runtime, health, OBSERVED);
+            new DeploymentReleaseIdentity(UUID.randomUUID(), DeploymentReleaseCodec.digest(runtime, health)),
+            UUID.randomUUID(), DeploymentReleaseState.ACTIVE, runtime, health, OBSERVED);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"binary", "padding", "health", "cycle", "missing", "revision", "unknown-field", "identity",
-            "normalization"})
+        "normalization"})
     void matchingDigestDoesNotHideMalformedOrNoncanonicalManifest(String fault) throws Exception {
         var graph = graph("application");
         var snapshot = DeploymentReleaseSnapshot.capture(graph, publications(graph, 1, List.of()));
         var runtime = DeploymentJsonDocument.parse(DeploymentReleaseCodec.runtime(snapshot),
-                DeploymentReleaseCodec.LIMIT);
+            DeploymentReleaseCodec.LIMIT);
         var health = DeploymentJsonDocument.parse(DeploymentReleaseCodec.health(snapshot));
         var component = (ObjectNode) runtime.path("components").get(0);
         switch (fault) {
@@ -42,7 +42,7 @@ class DeploymentReleaseCodecTest extends DeploymentGraphFixture {
             default -> throw new AssertionError(fault);
         }
         var record = record(DeploymentJsonDocument.encode(runtime, DeploymentReleaseCodec.LIMIT),
-                DeploymentJsonDocument.encode(health));
+            DeploymentJsonDocument.encode(health));
         assertThrows(SQLException.class, () -> DeploymentReleaseCodec.snapshot(record));
     }
 

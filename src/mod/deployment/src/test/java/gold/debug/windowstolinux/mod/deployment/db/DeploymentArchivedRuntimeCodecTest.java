@@ -28,25 +28,25 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
         String health = DeploymentReleaseCodec.health(snapshot);
         String digest = DeploymentReleaseCodec.digest(runtime, health);
         var record = new DeploymentReleaseRecord("application",
-                new DeploymentReleaseIdentity(UUID.randomUUID(), digest), UUID.randomUUID(),
-                DeploymentReleaseState.ACTIVE, runtime, health, OBSERVED);
+            new DeploymentReleaseIdentity(UUID.randomUUID(), digest), UUID.randomUUID(),
+            DeploymentReleaseState.ACTIVE, runtime, health, OBSERVED);
 
         VersionedRuntime archived = DeploymentArchivedRuntimeCodec.encode(
-                new DeploymentPublicationProposal(graph, publications(graph, 1, List.of())), List.of(),
-                new DeploymentReleaseRepository(nullDatabase()));
+            new DeploymentPublicationProposal(graph, publications(graph, 1, List.of())), List.of(),
+            new DeploymentReleaseRepository(nullDatabase()));
         assertEquals(3, archived.formatVersion());
         assertEquals(snapshot, DeploymentReleaseCodec
-                .snapshot(DeploymentArchivedRuntimeCodec.decode("application", digest, archived)));
+            .snapshot(DeploymentArchivedRuntimeCodec.decode("application", digest, archived)));
 
         byte[] changed = archived.payload();
         int templateSize = java.nio.ByteBuffer.wrap(changed, "W2L-RELEASE-3\n".length(), 4).getInt();
         changed["W2L-RELEASE-3\n".length() + 4 + templateSize - 1] ^= 1;
         assertEquals(snapshot, DeploymentReleaseCodec
-                .snapshot(DeploymentArchivedRuntimeCodec.decode("application", digest, archived)));
+            .snapshot(DeploymentArchivedRuntimeCodec.decode("application", digest, archived)));
         assertThrows(Exception.class, () -> DeploymentReleaseCodec.snapshot(
-                DeploymentArchivedRuntimeCodec.decode("application", digest, new VersionedRuntime(3, changed))));
+            DeploymentArchivedRuntimeCodec.decode("application", digest, new VersionedRuntime(3, changed))));
         assertThrows(IOException.class, () -> DeploymentArchivedRuntimeCodec.decode("application", digest,
-                new VersionedRuntime(1, archived.payload())));
+            new VersionedRuntime(1, archived.payload())));
     }
 
     @Test
@@ -55,7 +55,7 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
         var secret = new DeploymentSecretReference("database-password", 7);
         var proposal = new DeploymentPublicationProposal(graph, publications(graph, 4, List.of(secret)));
         var metadata = new DeploymentSecretRevision(secret, "opaque-original-credential", OBSERVED,
-                Optional.of("deployment-database"));
+            Optional.of("deployment-database"));
         var repository = new DeploymentReleaseRepository(nullDatabase());
         var runtime = DeploymentArchivedRuntimeCodec.encode(proposal, List.of(metadata), repository);
         var snapshot = publicSnapshot(proposal, runtime);
@@ -63,9 +63,9 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
         assertEquals(proposal, restored.publication());
         assertEquals(List.of(metadata), restored.secrets());
         assertEquals(proposal.units().getFirst().configuration(),
-                restored.publication().units().getFirst().configuration());
+            restored.publication().units().getFirst().configuration());
         assertEquals(List.of("web:uploads", "worker:uploads"),
-                snapshot.bindings().stream().map(DeploymentBinding::id).toList());
+            snapshot.bindings().stream().map(DeploymentBinding::id).toList());
     }
 
     @Test
@@ -75,8 +75,8 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
         var proposal = new DeploymentPublicationProposal(graph, publications(graph, 1, List.of(secret)));
         var repository = new DeploymentReleaseRepository(nullDatabase());
         var runtime = DeploymentArchivedRuntimeCodec.encode(proposal,
-                List.of(new DeploymentSecretRevision(secret, "credential", OBSERVED, Optional.of("database"))),
-                repository);
+            List.of(new DeploymentSecretRevision(secret, "credential", OBSERVED, Optional.of("database"))),
+            repository);
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         for (String field : List.of("revision", "createdAt", "identifier", "credentialId", "purpose")) {
             byte[] payload = runtime.payload();
@@ -92,15 +92,15 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
                 value.put(field, 123);
             var changed = replaceMetadata(runtime, json.writeValueAsBytes(metadata));
             var rejected = assertThrows(IOException.class,
-                    () -> DeploymentArchivedRuntimeCodec.restore(publicSnapshot(proposal, changed), repository));
+                () -> DeploymentArchivedRuntimeCodec.restore(publicSnapshot(proposal, changed), repository));
             assertEquals("Invalid archived secret identity", rejected.getMessage(), field);
         }
         var rejected = assertThrows(IOException.class,
-                () -> DeploymentArchivedRuntimeCodec.restore(
-                        publicSnapshot(proposal,
-                                replaceMetadata(runtime,
-                                        "{\"formatVersion\":1.5,\"secrets\":[]}".getBytes(StandardCharsets.UTF_8))),
-                        repository));
+            () -> DeploymentArchivedRuntimeCodec.restore(
+                publicSnapshot(proposal,
+                    replaceMetadata(runtime,
+                        "{\"formatVersion\":1.5,\"secrets\":[]}".getBytes(StandardCharsets.UTF_8))),
+                repository));
         assertEquals("Invalid archived secret metadata", rejected.getMessage());
     }
 
@@ -109,31 +109,31 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
         int prefix = "W2L-RELEASE-3\n".length();
         int template = ByteBuffer.wrap(old, prefix, 4).getInt();
         return new VersionedRuntime(3, ByteBuffer.allocate(prefix + 8 + template + metadata.length)
-                .put(old, 0, prefix + 4 + template).putInt(metadata.length).put(metadata).array());
+            .put(old, 0, prefix + 4 + template).putInt(metadata.length).put(metadata).array());
     }
 
     private DeploymentApplicationSnapshot publicSnapshot(DeploymentPublicationProposal proposal,
-            VersionedRuntime runtime) throws Exception {
+                                                         VersionedRuntime runtime) throws Exception {
         var graph = proposal.graph();
         var release = DeploymentReleaseSnapshot.capture(graph, proposal.units());
         String revision = DeploymentReleaseCodec.digest(DeploymentReleaseCodec.runtime(release),
-                DeploymentReleaseCodec.health(release));
+            DeploymentReleaseCodec.health(release));
         var ownership = new StringBuilder("deployment-ownership-v1\n");
         for (var component : graph.components())
             ownership.append(component.componentId()).append('\n').append(component.unit().id()).append('\n')
-                    .append(component.unit().ownershipManifestSha256()).append('\n');
+                .append(component.unit().ownershipManifestSha256()).append('\n');
         var bindings = graph.components().stream()
-                .flatMap(component -> component.resources().fileBindings().stream()
-                        .map(file -> new DeploymentBinding(component.componentId() + ":" + file.bindingId(),
-                                component.componentId(), "FILE", file.physicalPath(component.unit().id()), "", true,
-                                Optional.empty())))
-                .sorted(java.util.Comparator.comparing(DeploymentBinding::componentId)
-                        .thenComparing(DeploymentBinding::id))
-                .toList();
+            .flatMap(component -> component.resources().fileBindings().stream()
+                .map(file -> new DeploymentBinding(component.componentId() + ":" + file.bindingId(),
+                    component.componentId(), "FILE", file.physicalPath(component.unit().id()), "", true,
+                    Optional.empty())))
+            .sorted(java.util.Comparator.comparing(DeploymentBinding::componentId)
+                .thenComparing(DeploymentBinding::id))
+            .toList();
         return new DeploymentApplicationSnapshot(
-                new DeploymentApplicationRef(graph.applicationId(), new ServerRef("server")), "Archived", revision,
-                sha(ownership.toString().getBytes(StandardCharsets.UTF_8)), ApplicationRunState.RUNNING, OBSERVED,
-                runtime, bindings, sha(new DeploymentHealthCodec().write(graph.healthCheck())));
+            new DeploymentApplicationRef(graph.applicationId(), new ServerRef("server")), "Archived", revision,
+            sha(ownership.toString().getBytes(StandardCharsets.UTF_8)), ApplicationRunState.RUNNING, OBSERVED,
+            runtime, bindings, sha(new DeploymentHealthCodec().write(graph.healthCheck())));
     }
 
     private String sha(byte[] bytes) throws Exception {

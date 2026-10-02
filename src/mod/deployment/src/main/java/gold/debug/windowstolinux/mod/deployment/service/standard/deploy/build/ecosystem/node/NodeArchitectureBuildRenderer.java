@@ -32,11 +32,11 @@ final class NodeArchitectureBuildRenderer {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     static String render(DeploymentBuildToolType expected, DeploymentProjectFacts facts,
-            DeploymentRuntimeDefinition runtime, DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRuntimeDefinition runtime, DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.NodeService node) || facts.buildTool() != expected) {
             throw new IllegalArgumentException("Node architecture renderer requires matching reviewed inputs");
         }
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits,
-                NodePackageBuildScript.render(expected, node.nodeMajorVersion(), false, null));
+            NodePackageBuildScript.render(expected, node.nodeMajorVersion(), false, null));
     }
 }

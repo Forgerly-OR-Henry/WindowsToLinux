@@ -14,7 +14,7 @@ import java.util.Optional;
  * @param observedAt time at which the reported facts were observed / 报告事实的观察时间
  */
 public record ServerInfo(ServerRef ref, String name, String host, int port, String username,
-        Optional<String> trustedFingerprint, Optional<Instant> observedAt) {
+                         Optional<String> trustedFingerprint, Optional<Instant> observedAt) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param ref stable platform server reference / 稳定的平台服务器引用

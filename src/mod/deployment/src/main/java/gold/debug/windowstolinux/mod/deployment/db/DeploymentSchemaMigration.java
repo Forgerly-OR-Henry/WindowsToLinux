@@ -20,12 +20,12 @@ final class DeploymentSchemaMigration {
      * @param toVersion exact target format / 精确目标格式
      * @throws Exception if identity, inventory, rows or constraints differ / 身份、清单、原行或约束不符时 */
     static void migrate(SchemaAccess source, SchemaAccess target, String fromVersion, String toVersion)
-            throws Exception {
+        throws Exception {
         if (!DeploymentSchema.OWNER.equals(source.identity().ownerId())
-                || !fromVersion.equals(source.identity().schemaVersion())
-                || !DeploymentSchema.OWNER.equals(target.identity().ownerId())
-                || !toVersion.equals(target.identity().schemaVersion())
-                || source.identity().generation().equals(target.identity().generation()))
+            || !fromVersion.equals(source.identity().schemaVersion())
+            || !DeploymentSchema.OWNER.equals(target.identity().ownerId())
+            || !toVersion.equals(target.identity().schemaVersion())
+            || source.identity().generation().equals(target.identity().generation()))
             throw new SQLException("Deployment migration requires exact independent source and target identities");
         try (var from = source.openConnection(); var to = target.openConnection()) {
             if (!tables(to).isEmpty())
@@ -44,7 +44,7 @@ final class DeploymentSchemaMigration {
                 for (var table : original)
                     statement.execute("ALTER TABLE " + table + " SET REFERENTIAL_INTEGRITY TRUE CHECK");
                 statement.execute("ALTER TABLE deployment_agent_event ALTER COLUMN event_id RESTART WITH "
-                        + Math.max(nextEvent(to), sourceNextEvent(from)));
+                    + Math.max(nextEvent(to), sourceNextEvent(from)));
             }
             inventory(to, toVersion);
         }
@@ -60,11 +60,12 @@ final class DeploymentSchemaMigration {
         for (var query : DeploymentSchema.resource("validation-v" + version + ".sql").split(";")) {
             if (query.isBlank())
                 continue;
-            var table = query.substring(query.indexOf(" FROM ") + 6, query.indexOf(" WHERE "));
+            var declaration = query.replaceAll("\\s+", " ");
+            var table = declaration.substring(declaration.indexOf(" FROM ") + 6, declaration.indexOf(" WHERE "));
             try (var statement = from.createStatement(); var rows = statement.executeQuery(query)) {
                 var declared = rows.getMetaData();
                 try (var actualStatement = from.createStatement();
-                        var actualRows = actualStatement.executeQuery("SELECT * FROM " + table + " WHERE 1=0")) {
+                     var actualRows = actualStatement.executeQuery("SELECT * FROM " + table + " WHERE 1=0")) {
                     var actual = actualRows.getMetaData();
                     if (declared.getColumnCount() != actual.getColumnCount())
                         throw new SQLException("Migration source columns differ: " + table);
@@ -92,7 +93,7 @@ final class DeploymentSchemaMigration {
             for (int index = 1; index <= metadata.getColumnCount(); index++)
                 columns.add(metadata.getColumnName(index));
             var insert = "INSERT INTO " + table + "(" + String.join(",", columns) + ") VALUES("
-                    + String.join(",", Collections.nCopies(columns.size(), "?")) + ")";
+                + String.join(",", Collections.nCopies(columns.size(), "?")) + ")";
             try (var write = to.prepareStatement(insert)) {
                 while (rows.next()) {
                     var streams = new ArrayList<InputStream>();
@@ -151,7 +152,7 @@ final class DeploymentSchemaMigration {
     private static Set<String> tables(Connection connection) throws SQLException {
         var result = new HashSet<String>();
         try (var statement = connection.prepareStatement(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
             statement.setString(1, connection.getSchema());
             try (var rows = statement.executeQuery()) {
                 while (rows.next())
@@ -167,7 +168,7 @@ final class DeploymentSchemaMigration {
      * @throws SQLException if event state is unavailable / 事件状态不可用时 */
     private static long nextEvent(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COALESCE(MAX(event_id),0)+1 FROM deployment_agent_event")) {
+             var rows = statement.executeQuery("SELECT COALESCE(MAX(event_id),0)+1 FROM deployment_agent_event")) {
             rows.next();
             return rows.getLong(1);
         }
@@ -179,7 +180,7 @@ final class DeploymentSchemaMigration {
      * @throws SQLException if identity metadata is unavailable / 身份元数据不可用时 */
     private static long sourceNextEvent(Connection source) throws SQLException {
         try (var statement = source.prepareStatement(
-                "SELECT identity_base FROM information_schema.columns WHERE UPPER(table_schema)=UPPER(?) AND UPPER(table_name)='DEPLOYMENT_AGENT_EVENT' AND UPPER(column_name)='EVENT_ID'")) {
+            "SELECT identity_base FROM information_schema.columns WHERE UPPER(table_schema)=UPPER(?) AND UPPER(table_name)='DEPLOYMENT_AGENT_EVENT' AND UPPER(column_name)='EVENT_ID'")) {
             statement.setString(1, source.getSchema());
             try (var rows = statement.executeQuery()) {
                 if (!rows.next() || rows.getObject(1) == null)

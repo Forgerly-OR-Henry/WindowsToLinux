@@ -99,9 +99,9 @@ public final class ProjectLanguageInspector {
      */
     public ProjectLanguageFacts inspect(Path root, SourceInspectionFacts source) throws IOException {
         return ProjectLanguageFacts.merge(cInspector.inspect(source), dotNetInspector.inspect(source),
-                goInspector.inspect(source), javaInspector.inspect(source), kotlinInspector.inspect(source),
-                nodeInspector.inspect(root, source), phpInspector.inspect(source),
-                pythonInspector.inspect(root, source), rubyInspector.inspect(source), rustInspector.inspect(source),
-                previewMarkerCatalog.inspect(source));
+            goInspector.inspect(source), javaInspector.inspect(source), kotlinInspector.inspect(source),
+            nodeInspector.inspect(root, source), phpInspector.inspect(source),
+            pythonInspector.inspect(root, source), rubyInspector.inspect(source), rustInspector.inspect(source),
+            previewMarkerCatalog.inspect(source));
     }
 }

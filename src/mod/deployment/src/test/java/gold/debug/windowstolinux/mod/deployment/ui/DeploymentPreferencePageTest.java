@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -12,9 +16,9 @@ import java.util.function.BooleanSupplier;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
@@ -37,18 +41,28 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             var approval = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
             var assisted = (JCheckBox) named(mounted.get(), "deployment.preference.assisted");
             await(() -> approval.isEnabled());
-            edt(() -> { assertTrue(assisted.isSelected()); assertEquals("AUTOMATIC", approval.getSelectedItem()); assisted.doClick(); });
+            edt(() -> {
+                assertTrue(assisted.isSelected());
+                assertEquals("AUTOMATIC", approval.getSelectedItem());
+                assisted.doClick();
+            });
             await(() -> approval.isEnabled());
             edt(() -> approval.setSelectedItem("FULL_CONTROL"));
             await(() -> approval.isEnabled());
             pages.environment(new UiEnvironment(Locale.ENGLISH, "DARK", false));
-            edt(() -> { assertFalse(assisted.isSelected()); assertEquals("FULL_CONTROL", approval.getSelectedItem()); });
+            edt(() -> {
+                assertFalse(assisted.isSelected());
+                assertEquals("FULL_CONTROL", approval.getSelectedItem());
+            });
             pages.closeView(staticKey);
             pages.openView(staticKey);
             show(window, mounted.get());
             var reopened = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
             await(() -> reopened.isEnabled());
-            edt(() -> { assertEquals("FULL_CONTROL", reopened.getSelectedItem()); assertFalse(((JCheckBox) named(mounted.get(), "deployment.preference.assisted")).isSelected()); });
+            edt(() -> {
+                assertEquals("FULL_CONTROL", reopened.getSelectedItem());
+                assertFalse(((JCheckBox) named(mounted.get(), "deployment.preference.assisted")).isSelected());
+            });
             assertPair(runtime, "STATIC", "FULL_CONTROL");
             sql(runtime, "ALTER TABLE preference ADD CONSTRAINT reject_page_approval CHECK(preference_key<>'deploy_approval' OR preference_value<>'MANUAL_REVIEW')");
             edt(() -> reopened.setSelectedItem("MANUAL_REVIEW"));
@@ -61,7 +75,10 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             show(window, mounted.get());
             var agent = (JComboBox<?>) named(mounted.get(), "deployment.preference.approval");
             await(() -> agent.isEnabled());
-            edt(() -> { assertEquals("FULL_CONTROL", agent.getSelectedItem()); agent.setSelectedItem("MANUAL_REVIEW"); });
+            edt(() -> {
+                assertEquals("FULL_CONTROL", agent.getSelectedItem());
+                agent.setSelectedItem("MANUAL_REVIEW");
+            });
             await(() -> agent.isEnabled());
             pages.closeView(agentKey);
             pages.openView(agentKey);
@@ -78,41 +95,67 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             edt(window::dispose);
         }
         await(() -> Thread.getAllStackTraces().keySet().stream().noneMatch(thread -> thread.isAlive()
-                && (thread.getName().equals("deployment-page-view") || thread.getName().equals("deployment-agent-page"))));
+            && (thread.getName().equals("deployment-page-view") || thread.getName().equals("deployment-agent-page"))));
     }
 
     private ModPageRegistry registry(AtomicReference<JComponent> mounted) {
         return new ModPageRegistry(new ModPageRegistry.PageHost() {
-            public void show(ModPageRegistry.PageKey key, PageSpec spec, JComponent component) { mounted.set(component); }
-            public void focus(ModPageRegistry.PageKey key) { }
-            public void remove(ModPageRegistry.PageKey key) { mounted.set(null); }
-            public void environment(UiEnvironment environment) { }
+            public void show(ModPageRegistry.PageKey key, PageSpec spec, JComponent component) {
+                mounted.set(component);
+            }
+
+            public void focus(ModPageRegistry.PageKey key) {
+            }
+
+            public void remove(ModPageRegistry.PageKey key) {
+                mounted.set(null);
+            }
+
+            public void environment(UiEnvironment environment) {
+            }
         }, new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
     }
 
     private void show(JFrame window, JComponent component) throws Exception {
-        edt(() -> { window.setContentPane(component); window.pack(); window.setVisible(true); });
+        edt(() -> {
+            window.setContentPane(component);
+            window.pack();
+            window.setVisible(true);
+        });
     }
 
     private Component named(Container root, String name) {
         for (var child : root.getComponents()) {
             if (name.equals(child.getName())) return child;
-            if (child instanceof Container nested) { var found = named(nested, name); if (found != null) return found; }
+            if (child instanceof Container nested) {
+                var found = named(nested, name);
+                if (found != null) return found;
+            }
         }
         return null;
     }
 
-    private void edt(Runnable action) throws Exception { SwingUtilities.invokeAndWait(action); }
+    private void edt(Runnable action) throws Exception {
+        SwingUtilities.invokeAndWait(action);
+    }
 
     private void await(BooleanSupplier predicate) throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         var result = new boolean[1];
-        do { edt(() -> result[0] = predicate.getAsBoolean()); if (result[0]) return; Thread.sleep(20); } while (System.nanoTime() < until);
+        do {
+            edt(() -> result[0] = predicate.getAsBoolean());
+            if (result[0]) return;
+            Thread.sleep(20);
+        } while (System.nanoTime() < until);
         fail("Actual page/task did not reach its expected state");
     }
 
     private long scalarUnchecked(PlatformRuntime runtime, String query) {
-        try { return scalar(runtime, query); } catch (Exception failure) { throw new AssertionError(failure); }
+        try {
+            return scalar(runtime, query);
+        } catch (Exception failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     private void assertPair(PlatformRuntime runtime, String mode, String approval) throws Exception {
@@ -121,8 +164,9 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             var actual = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).read(task);
             assertEquals(new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(mode, approval), actual);
             try (var connection = context.db().openConnection(task); var statement = connection.createStatement();
-                    var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
-                assertTrue(rows.next()); assertEquals(0, rows.getLong(1));
+                 var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
+                assertTrue(rows.next());
+                assertEquals(0, rows.getLong(1));
             }
             return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         });
@@ -132,7 +176,9 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
     private void sql(PlatformRuntime runtime, String query) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var handle = context.tasks().submit(new TaskRequest("preference_page_fault", "Controlled preference constraint", List.of(), true), task -> {
-            try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) { statement.execute(query); }
+            try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
+                statement.execute(query);
+            }
             return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         });
         assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());

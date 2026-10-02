@@ -50,7 +50,7 @@ public final class ReviewedDeploymentPlanner {
     public ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request) {
         request = Objects.requireNonNull(request, "request");
         gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.ApplicationDeclaration
-                .verifyBuildOwnership(request.facts(), request.runtime());
+            .verifyBuildOwnership(request.facts(), request.runtime());
         return adapters.require(request.facts().projectType()).plan(request);
     }
 }

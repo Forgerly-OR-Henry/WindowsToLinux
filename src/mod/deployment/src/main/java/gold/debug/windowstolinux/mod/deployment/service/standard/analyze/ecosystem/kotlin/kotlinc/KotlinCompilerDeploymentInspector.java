@@ -55,14 +55,14 @@ public final class KotlinCompilerDeploymentInspector {
      * <p>用于识别软件包的匹配模式。
      */
     private static final Pattern PACKAGE = Pattern
-            .compile("(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*)\\s*$");
+        .compile("(?m)^\\s*package\\s+([A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*)\\s*$");
 
     /**
      * Pattern recognizing DECLARATION.
      * <p>用于识别声明的匹配模式。
      */
     private static final Pattern DECLARATION = Pattern
-            .compile("\\b(?:class|interface|object|fun|val|var|typealias)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
+        .compile("\\b(?:class|interface|object|fun|val|var|typealias)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
 
     /**
      * Inspects one native Kotlin compiler architecture. / 检查一个原生 Kotlin 编译器架构。
@@ -75,7 +75,7 @@ public final class KotlinCompilerDeploymentInspector {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = new ArrayList<>();
         List<String> conflicts = new ArrayList<>();
         String metadata = ServiceMetadataInspector.readIfPresent(root.resolve(METADATA));
@@ -92,12 +92,12 @@ public final class KotlinCompilerDeploymentInspector {
         if (mainClass == null)
             missing.add("mainClass=...");
         if (gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion
-                .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
-                        values.get("jvmTarget"))
-                .isEmpty())
+            .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
+                values.get("jvmTarget"))
+            .isEmpty())
             missing.add("jvmTarget=...");
         List<String> sources = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
-                .filter(path -> path.endsWith(".kt")).sorted().toList();
+            .filter(path -> path.endsWith(".kt")).sorted().toList();
         if (sources.isEmpty())
             missing.add("Kotlin source files");
         if (sourceRoot != null) {
@@ -106,8 +106,8 @@ public final class KotlinCompilerDeploymentInspector {
                 conflicts.add("kotlin-source-outside-root");
         }
         if (source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
-                .anyMatch(path -> path.equals("build.gradle") || path.equals("build.gradle.kts")
-                        || path.equals("gradlew") || path.endsWith(".jar"))) {
+            .anyMatch(path -> path.equals("build.gradle") || path.equals("build.gradle.kts")
+                || path.equals("gradlew") || path.endsWith(".jar"))) {
             conflicts.add("kotlin-external-build");
         }
         Set<String> localDeclarations = new HashSet<>();
@@ -135,11 +135,11 @@ public final class KotlinCompilerDeploymentInspector {
             while (imports.find()) {
                 String imported = imports.group(1);
                 if (!(imported.startsWith("kotlin.") || imported.startsWith("java.") || imported.startsWith("javax.")
-                        || localDeclarations.stream()
-                                .anyMatch(declaration -> imported.equals(declaration)
-                                        || imported.startsWith(declaration + ".")
-                                        || imported.endsWith(".") && declaration.startsWith(imported)
-                                                && declaration.lastIndexOf('.') == imported.length() - 1))) {
+                    || localDeclarations.stream()
+                    .anyMatch(declaration -> imported.equals(declaration)
+                        || imported.startsWith(declaration + ".")
+                        || imported.endsWith(".") && declaration.startsWith(imported)
+                        && declaration.lastIndexOf('.') == imported.length() - 1))) {
                     conflicts.add("kotlin-external-import:" + imported);
                 }
             }
@@ -150,14 +150,14 @@ public final class KotlinCompilerDeploymentInspector {
             conflicts.add("kotlin-main-class:" + detectedMainClass);
         }
         KotlinCompilerFacts architecture = new KotlinCompilerFacts(compilerVersion, sourceRoot, mainClass, sources,
-                missing, conflicts);
+            missing, conflicts);
         List<String> shapeMissing = new ArrayList<>(architecture.missingItems());
         shapeMissing.addAll(architecture.conflicts());
         ServiceProjectFacts shape = new ServiceProjectFacts(METADATA, architecture.compilerVersion(),
-                ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), architecture.mainClass(),
-                shapeMissing);
+            ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), architecture.mainClass(),
+            shapeMissing);
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root),
-                DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC, languageFacts, shape, false);
+            DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC, languageFacts, shape, false);
     }
 
     /**
@@ -173,7 +173,7 @@ public final class KotlinCompilerDeploymentInspector {
         Matcher matcher = PROPERTY.matcher(text);
         while (matcher.find()) {
             if (!List.of("compilerVersion", "sourceRoot", "mainClass", "jvmTarget").contains(matcher.group(1))
-                    || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
+                || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
                 conflicts.add("kotlin-metadata-property:" + matcher.group(1));
             }
         }
@@ -203,7 +203,7 @@ public final class KotlinCompilerDeploymentInspector {
             return null;
         value = value.replace('\\', '/');
         return value.matches("[A-Za-z0-9._/-]{1,255}") && !value.startsWith("/") && !value.contains("..")
-                && !value.contains("//") ? value : null;
+            && !value.contains("//") ? value : null;
     }
 
     /**
@@ -215,8 +215,8 @@ public final class KotlinCompilerDeploymentInspector {
      */
     private static String javaName(String value) {
         return value != null && value.matches("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*")
-                ? value
-                : null;
+            ? value
+            : null;
     }
 
     /**

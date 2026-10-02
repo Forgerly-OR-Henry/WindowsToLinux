@@ -18,7 +18,7 @@ public interface TaskContext {
      * Returns this task's cooperative cancellation signal. / 返回此任务的协作取消信号。
      * @return the owned result described by this capability / 此能力约定的所属结果
      */
-    CancellationToken cancellation();
+    CancelToken cancelToken();
 
     /**
      * Updates bounded task progress without changing its business result. / 更新有界任务进度，不改变业务结果。
@@ -27,6 +27,23 @@ public interface TaskContext {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     void progress(String text, Optional<Double> fraction) throws ApiException;
+
+    /** Publishes text with an unknown progress fraction. / 发布比例未知的文字进度。
+     * @param text bounded progress text / 有界进度文字
+     * @throws ApiException if the original task or text is invalid / 原任务或文字无效时
+     */
+    default void progress(String text) throws ApiException {
+        progress(text, Optional.empty());
+    }
+
+    /** Publishes an explicit fraction using the existing validation. / 沿现有校验发布明确比例。
+     * @param text bounded progress text / 有界进度文字
+     * @param fraction finite fraction from zero to one / 零到一之间的有限比例
+     * @throws ApiException if the task, text or fraction is invalid / 任务、文字或比例无效时
+     */
+    default void progress(String text, double fraction) throws ApiException {
+        progress(text, Optional.of(fraction));
+    }
 
     /**
      * Registers an owned local resource without granting extra server locks. / 登记所属本地资源，不授予额外服务器锁。

@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreEvidence.*;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +16,7 @@ import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
@@ -37,14 +42,14 @@ final class DeploymentRestoreSteps {
      * @return whether the original step is confirmed / 是否原步骤已确证
      * @throws Exception if original identity or persistence is unavailable / 原身份或持久化不可用时 */
     static boolean step(DeploymentHandoffChannel channel, DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            String component, String key, String verb, List<String> args, String receipt) throws Exception {
+                        String component, String key, String verb, List<String> args, String receipt) throws Exception {
         var steps = cursor.unit(component).withObject("steps");
         if (steps.path(key).path("attempted").asBoolean())
             return stepObserved(channel, cursor, plan, component, key, verb, args);
         steps.putObject(key).put("attempted", true).put("done", false).put("receipt", receipt);
         cursor.save(cursor.entry.publicValue().state());
         var result = send(channel, "handoff-restore-step", stepArguments(plan, cursor, component, key, verb, args),
-                Duration.ofMinutes(30));
+            Duration.ofMinutes(30));
         if (!DeploymentHandoffChannel.receipt(result, "RESTORE_STEP=DONE\n" + receipt))
             return false;
         steps.withObject(key).put("done", true);
@@ -63,12 +68,12 @@ final class DeploymentRestoreSteps {
      * @return whether the complete original receipt matches / 是否完整原回执匹配
      * @throws Exception if original identity or evidence is unavailable / 原身份或依据不可用时 */
     static boolean stepObserved(DeploymentHandoffChannel channel, DeploymentRestoreState cursor,
-            DeploymentRestorePlan plan, String component, String key, String verb, List<String> args) throws Exception {
+                                DeploymentRestorePlan plan, String component, String key, String verb, List<String> args) throws Exception {
         var saved = cursor.unit(component).path("steps").path(key);
         if (!saved.path("attempted").asBoolean() || saved.path("receipt").asText().isEmpty())
             return false;
         var result = send(channel, "handoff-restore-step-status",
-                stepArguments(plan, cursor, component, key, verb, args), Duration.ofMinutes(2));
+            stepArguments(plan, cursor, component, key, verb, args), Duration.ofMinutes(2));
         if (!DeploymentHandoffChannel.receipt(result, "RESTORE_STEP=DONE\n" + saved.path("receipt").asText()))
             return false;
         cursor.unit(component).withObject("steps").withObject(key).put("done", true);
@@ -82,20 +87,20 @@ final class DeploymentRestoreSteps {
      * @param component original component identity / 原组件身份
      * @return exact fixed preparation arguments / 精确固定准备参数 */
     static List<String> preparation(DeploymentRestorePlan plan, DeploymentRestoreState cursor,
-            DeploymentApplicationGraph.Component component) {
+                                    DeploymentApplicationGraph.Component component) {
         var inputs = plan.files.stream().filter(value -> value.artifact().componentId().equals(component.componentId()))
-                .toList();
+            .toList();
         var files = inputs.stream().filter(value -> value.artifact().kind().equals("file"))
-                .map(DeploymentRestorePlan.FileInput::member).toList();
+            .map(DeploymentRestorePlan.FileInput::member).toList();
         var args = new ArrayList<>(List.of(
-                cursor.unit(component.componentId()).path("candidate").asText(), token(cursor.task),
-                component.componentId(), component.unit().id(), component.unit().ownershipManifestSha256(),
-                plan.commit(component.componentId()).release().sha256(), inputs.stream()
-                        .filter(value -> value.artifact().kind().equals("release")).findFirst().orElseThrow().member(),
-                Integer.toString(files.size())));
+            cursor.unit(component.componentId()).path("candidate").asText(), token(cursor.task),
+            component.componentId(), component.unit().id(), component.unit().ownershipManifestSha256(),
+            plan.commit(component.componentId()).release().sha256(), inputs.stream()
+                .filter(value -> value.artifact().kind().equals("release")).findFirst().orElseThrow().member(),
+            Integer.toString(files.size())));
         args.addAll(files);
         args.add(inputs.stream().filter(value -> value.artifact().kind().equals("oci")).findFirst()
-                .map(DeploymentRestorePlan.FileInput::member).orElse("-"));
+            .map(DeploymentRestorePlan.FileInput::member).orElse("-"));
         args.add("0");
         return List.copyOf(args);
     }
@@ -107,7 +112,7 @@ final class DeploymentRestoreSteps {
     static List<DeploymentRestorePlan.FileInput> databases(DeploymentRestorePlan plan, String component) {
         return plan.files.stream().filter(
                 value -> value.artifact().componentId().equals(component) && value.artifact().kind().equals("database"))
-                .toList();
+            .toList();
     }
 
     /** Derives a distinct stable step key from the public full-graph binding identity. / 从公开全图绑定身份推导独立稳定步骤键。
@@ -115,7 +120,7 @@ final class DeploymentRestoreSteps {
      * @return original database step key / 原数据库步骤键 */
     static String databaseKey(DeploymentRestorePlan.FileInput input) {
         return "db-" + UUID.nameUUIDFromBytes(input.file().bindingId().getBytes(StandardCharsets.UTF_8)).toString()
-                .replace("-", "").substring(0, 16);
+            .replace("-", "").substring(0, 16);
     }
 
     /** Derives one database candidate per original handoff and binding. / 每个原交接及绑定推导独立数据库候选。
@@ -124,11 +129,11 @@ final class DeploymentRestoreSteps {
      * @param input original database input / 原数据库输入
      * @return stable original database candidate / 稳定原数据库候选 */
     static String databaseCandidate(DeploymentRestoreState cursor, DeploymentApplicationGraph.Component component,
-            DeploymentRestorePlan.FileInput input) {
+                                    DeploymentRestorePlan.FileInput input) {
         return component.unit().id() + "-"
-                + UUID.nameUUIDFromBytes(
-                        (cursor.entry.publicValue().id() + input.file().bindingId()).getBytes(StandardCharsets.UTF_8))
-                        .toString().replace("-", "").substring(0, 16);
+            + UUID.nameUUIDFromBytes(
+                (cursor.entry.publicValue().id() + input.file().bindingId()).getBytes(StandardCharsets.UTF_8))
+            .toString().replace("-", "").substring(0, 16);
     }
 
     /** Derives an isolated imported artifact identity for the original binding. / 为原绑定推导隔离导入产物身份。
@@ -137,8 +142,8 @@ final class DeploymentRestoreSteps {
      * @return stable original imported artifact / 稳定原导入产物 */
     static String databaseArtifact(DeploymentRestoreState cursor, DeploymentRestorePlan.FileInput input) {
         return "db-"
-                + UUID.nameUUIDFromBytes((cursor.entry.publicValue().id() + ":artifact:" + input.file().bindingId())
-                        .getBytes(StandardCharsets.UTF_8)).toString().replace("-", "");
+            + UUID.nameUUIDFromBytes((cursor.entry.publicValue().id() + ":artifact:" + input.file().bindingId())
+            .getBytes(StandardCharsets.UTF_8)).toString().replace("-", "");
     }
 
     /** Reuses database recovery arguments with this binding's isolated candidate and artifact. / 以本绑定隔离候选与产物复用数据库恢复参数。
@@ -147,9 +152,9 @@ final class DeploymentRestoreSteps {
      * @param input original database input / 原数据库输入
      * @return exact original database arguments / 精确原数据库参数 */
     static List<String> databaseArguments(DeploymentRestoreState cursor, DeploymentApplicationGraph.Component component,
-            DeploymentRestorePlan.FileInput input) {
+                                          DeploymentRestorePlan.FileInput input) {
         var args = new ArrayList<>(List.of(component.unit().id(), component.unit().id(),
-                databaseCandidate(cursor, component, input), databaseArtifact(cursor, input)));
+            databaseCandidate(cursor, component, input), databaseArtifact(cursor, input)));
         var collected = input.artifact().databaseArguments();
         args.addAll(collected.subList(3, collected.size()));
         return List.copyOf(args);
@@ -162,9 +167,9 @@ final class DeploymentRestoreSteps {
      * @return full immutable original operation identity / 完整不可变原操作身份 */
     static List<String> identity(DeploymentRestorePlan plan, DeploymentRestoreState cursor, String component) {
         var unit = plan.proposal.graph().components().stream().filter(value -> value.componentId().equals(component))
-                .findFirst().orElseThrow().unit();
+            .findFirst().orElseThrow().unit();
         return List.of(unit.id(), cursor.unit(component).path("candidate").asText(), cursor.task.id().toString(),
-                plan.request.reviewedTargetSha256());
+            plan.request.reviewedTargetSha256());
     }
 
     /** Seals the complete original operation identity together with its exact request. / 将完整原操作身份与精确请求共同封印。
@@ -176,7 +181,7 @@ final class DeploymentRestoreSteps {
      * @param args exact original arguments / 精确原参数
      * @return full immutable original step request / 完整不可变原步骤请求 */
     static List<String> stepArguments(DeploymentRestorePlan plan, DeploymentRestoreState cursor, String component,
-            String key, String verb, List<String> args) {
+                                      String key, String verb, List<String> args) {
         var all = new ArrayList<>(identity(plan, cursor, component));
         all.add(key);
         all.add(verb);
@@ -216,7 +221,7 @@ final class DeploymentRestoreSteps {
      * @return actual remote command conclusion / 实际远端命令结论
      * @throws ApiException if current provider authority is unavailable / 当前提供方权限不可用时 */
     static OperationResult<CommandResult> send(DeploymentHandoffChannel channel, String verb, List<String> args,
-            Duration timeout) throws ApiException {
+                                               Duration timeout) throws ApiException {
         return channel.execute(verb, args, new byte[0], timeout, 65536);
     }
 
@@ -242,22 +247,22 @@ final class DeploymentRestoreSteps {
      * @return verified activation steps or retained uncertainty / 已确证激活步骤或留存未知
      * @throws Exception if original identity or effect evidence is unavailable / 原身份或副作用依据不可用时 */
     static OperationResult<Void> activatePrepared(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            DeploymentHandoffChannel channel) throws Exception {
+                                                  DeploymentHandoffChannel channel) throws Exception {
         var before = before(cursor);
         for (var component : order(plan.proposal.graph()).reversed()) {
             if (!targets(plan.proposal.graph(), channel).equals(before))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_CURRENT_CHANGED");
             if (!step(channel, cursor, plan, component.componentId(), "snapshot", "restore-snapshot", append(
                     List.of(cursor.unit(component.componentId()).path("candidate").asText(), token(cursor.task),
-                            component.componentId()),
+                        component.componentId()),
                     before.get(component.componentId()).equals("-") ? "empty" : before.get(component.componentId())),
-                    "SNAPSHOT=1\nPREVIOUS=" + (before.get(component.componentId()).equals("-") ? "0" : "1") + "\n"))
+                "SNAPSHOT=1\nPREVIOUS=" + (before.get(component.componentId()).equals("-") ? "0" : "1") + "\n"))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_SNAPSHOT_UNKNOWN");
         }
         for (var component : plan.proposal.graph().components()) {
             String candidate = cursor.unit(component.componentId()).path("candidate").asText();
             if (!step(channel, cursor, plan, component.componentId(), "quiesced", "restore-mark-quiesced",
-                    List.of(candidate, token(cursor.task), "1", component.componentId()), "QUIESCED=1\n"))
+                List.of(candidate, token(cursor.task), "1", component.componentId()), "QUIESCED=1\n"))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_QUIESCENCE_UNKNOWN");
         }
         for (var component : order(plan.proposal.graph()))
@@ -265,15 +270,15 @@ final class DeploymentRestoreSteps {
                 if (!targets(plan.proposal.graph(), channel).equals(before))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_CURRENT_CHANGED");
                 if (!step(channel, cursor, plan, component.componentId(), "commit-" + databaseKey(input),
-                        "database-commit-candidate", databaseArguments(cursor, component, input), "CANDIDATE_ID="
-                                + databaseCandidate(cursor, component, input) + "\nCOMMITTED=1\nPREVIOUS_RETAINED=1\n"))
+                    "database-commit-candidate", databaseArguments(cursor, component, input), "CANDIDATE_ID="
+                        + databaseCandidate(cursor, component, input) + "\nCOMMITTED=1\nPREVIOUS_RETAINED=1\n"))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_DATABASE_COMMIT_UNKNOWN");
             }
         for (var component : order(plan.proposal.graph())) {
             String candidate = cursor.unit(component.componentId()).path("candidate").asText();
             if (!step(channel, cursor, plan, component.componentId(), "formal", "restore-start-formal",
-                    List.of(candidate, token(cursor.task), component.componentId()),
-                    "FORMAL_STARTED=1\nAPP=" + component.unit().id() + "\n"))
+                List.of(candidate, token(cursor.task), component.componentId()),
+                "FORMAL_STARTED=1\nAPP=" + component.unit().id() + "\n"))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_FORMAL_START_UNKNOWN");
         }
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());

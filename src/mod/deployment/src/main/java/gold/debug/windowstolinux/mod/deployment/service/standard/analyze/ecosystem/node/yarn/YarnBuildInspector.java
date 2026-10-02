@@ -16,7 +16,7 @@ public final class YarnBuildInspector {
      * <p>用于识别管理器的匹配模式。
      */
     private static final Pattern MANAGER = Pattern
-            .compile("\\\"packageManager\\\"\\s*:\\s*\\\"yarn@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
+        .compile("\\\"packageManager\\\"\\s*:\\s*\\\"yarn@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
 
     /**
      * Pattern recognizing METADATA.
@@ -45,6 +45,6 @@ public final class YarnBuildInspector {
         String lock = BoundedMetadataInspector.read(path);
         String manifest = BoundedMetadataInspector.read(root.resolve("package.json"));
         return METADATA.matcher(lock).find() && METADATA_VERSION.matcher(lock).find()
-                && MANAGER.matcher(manifest).find() ? Optional.of(lockFile) : Optional.empty();
+            && MANAGER.matcher(manifest).find() ? Optional.of(lockFile) : Optional.empty();
     }
 }

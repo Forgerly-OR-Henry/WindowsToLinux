@@ -31,9 +31,12 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
  * @param isolation requested execution capabilities / 请求的执行能力
  */
 public record DeploymentComponent(String componentId, Path sourceRoot, DeploymentProjectFacts facts,
-        Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths, Set<Integer> ports,
-        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentStoragePath> dataPaths,
-        Set<String> dependencies, boolean required, ComponentIsolationSpecification isolation) {
+                                  Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths,
+                                  Set<Integer> ports,
+                                  List<String> configurationKeys, List<String> secretIdentifiers,
+                                  List<DeploymentStoragePath> dataPaths,
+                                  Set<String> dependencies, boolean required,
+                                  ComponentIsolationSpecification isolation) {
     /**
      * Validates a complete bounded component record. / 验证完整有界组件记录。
      *
@@ -74,19 +77,19 @@ public record DeploymentComponent(String componentId, Path sourceRoot, Deploymen
         normalizedPorts.forEach(DeploymentComponent::requirePort);
         ports = java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(normalizedPorts));
         configurationKeys = sortedDistinct(configurationKeys, DeploymentComponent::configurationKey,
-                "configurationKeys");
+            "configurationKeys");
         secretIdentifiers = sortedDistinct(secretIdentifiers, value -> identifier(value, "secret identifier"),
-                "secretIdentifiers");
+            "secretIdentifiers");
         dataPaths = List.copyOf(Objects.requireNonNull(dataPaths, "dataPaths"));
         if (dataPaths.stream().map(DeploymentStoragePath::path).distinct().count() != dataPaths.size()) {
             throw new IllegalArgumentException("component data paths must be unique");
         }
         dependencies = java.util.Collections.unmodifiableSet(
-                new java.util.LinkedHashSet<>(new TreeSet<>(Objects.requireNonNull(dependencies, "dependencies")
-                        .stream().map(value -> identifier(value, "dependency")).toList())));
+            new java.util.LinkedHashSet<>(new TreeSet<>(Objects.requireNonNull(dependencies, "dependencies")
+                .stream().map(value -> identifier(value, "dependency")).toList())));
         isolation = Objects.requireNonNull(isolation, "isolation");
         if (runtime.isPresent() && runtime.orElseThrow().healthCheck().portNumber().isPresent()
-                && !ports.contains(runtime.orElseThrow().healthCheck().portNumber().orElseThrow())) {
+            && !ports.contains(runtime.orElseThrow().healthCheck().portNumber().orElseThrow())) {
             throw new IllegalArgumentException("component ports must include the health-check port");
         }
     }
@@ -130,7 +133,7 @@ public record DeploymentComponent(String componentId, Path sourceRoot, Deploymen
     private static String relativePath(String value) {
         value = Objects.requireNonNull(value, "artifact path").trim().replace('\\', '/');
         if (value.equals(".") || !value.matches("[A-Za-z0-9._/-]{1,255}") || value.startsWith("/")
-                || value.contains("..") || value.contains("//")) {
+            || value.contains("..") || value.contains("//")) {
             throw new IllegalArgumentException("artifact paths must be bounded and relative to the application root");
         }
         return value;
@@ -177,7 +180,7 @@ public record DeploymentComponent(String componentId, Path sourceRoot, Deploymen
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     private static List<String> sortedDistinct(List<String> values,
-            java.util.function.Function<String, String> normalizer, String name) {
+                                               java.util.function.Function<String, String> normalizer, String name) {
         Objects.requireNonNull(values, name);
         List<String> normalized = values.stream().map(normalizer).sorted().toList();
         if (normalized.stream().distinct().count() != normalized.size()) {

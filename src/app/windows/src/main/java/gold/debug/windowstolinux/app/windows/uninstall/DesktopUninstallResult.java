@@ -18,8 +18,9 @@ import gold.debug.windowstolinux.appapi.task.Problem;
  * @param problem structured problem occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
 public record DesktopUninstallResult(UUID operationIdentity, DesktopUninstallStatus status,
-        List<DesktopUninstallEvent> events, List<String> residualItems, List<String> intentionallyRetainedItems,
-        Optional<Problem> problem) {
+                                     List<DesktopUninstallEvent> events, List<String> residualItems,
+                                     List<String> intentionallyRetainedItems,
+                                     Optional<Problem> problem) {
     /**
      * Validates status, problem and residual consistency. / 校验终态、失败及残留一致性。
      *
@@ -38,7 +39,7 @@ public record DesktopUninstallResult(UUID operationIdentity, DesktopUninstallSta
         events = List.copyOf(Objects.requireNonNull(events, "events"));
         residualItems = List.copyOf(Objects.requireNonNull(residualItems, "residualItems"));
         intentionallyRetainedItems = List
-                .copyOf(Objects.requireNonNull(intentionallyRetainedItems, "intentionallyRetainedItems"));
+            .copyOf(Objects.requireNonNull(intentionallyRetainedItems, "intentionallyRetainedItems"));
         problem = Objects.requireNonNull(problem, "problem");
         if (events.isEmpty())
             throw new IllegalArgumentException("uninstall result requires events");
@@ -49,7 +50,7 @@ public record DesktopUninstallResult(UUID operationIdentity, DesktopUninstallSta
             throw new IllegalArgumentException("only residual terminal status may report failed removals");
         }
         boolean successful = status == DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED
-                || status == DesktopUninstallStatus.SUCCEEDED_DATA_DELETED;
+            || status == DesktopUninstallStatus.SUCCEEDED_DATA_DELETED;
         if (successful == problem.isPresent()) {
             throw new IllegalArgumentException("successful uninstall has no problem; other statuses require one");
         }

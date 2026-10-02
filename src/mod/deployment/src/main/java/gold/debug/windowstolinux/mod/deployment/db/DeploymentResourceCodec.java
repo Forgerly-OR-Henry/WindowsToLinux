@@ -38,6 +38,7 @@ public final class DeploymentResourceCodec {
             result.add(input.readUTF());
         return java.util.List.copyOf(result);
     }
+
     /**
      * MAGIC.
      * <p>格式标记。
@@ -79,7 +80,7 @@ public final class DeploymentResourceCodec {
     public byte[] write(DeploymentResourceBindings bindings) throws IOException {
         bindings = java.util.Objects.requireNonNull(bindings, "bindings");
         if (bindings.fileBindings().size() > MAX_FILE_BINDINGS
-                || bindings.databaseBindings().map(List::size).orElse(0) > MAX_DATABASE_BINDINGS) {
+            || bindings.databaseBindings().map(List::size).orElse(0) > MAX_DATABASE_BINDINGS) {
             throw new IOException("managed resource binding collection exceeds the storage limit");
         }
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -138,7 +139,7 @@ public final class DeploymentResourceCodec {
                 throw new IOException("managed resource binding document contains trailing data");
             DeploymentResourceBindings bindings = new DeploymentResourceBindings(files, databases);
             if (!bindings.fileBindings().equals(files) || databases.isPresent()
-                    && !bindings.databaseBindings().orElseThrow().equals(databases.orElseThrow())) {
+                && !bindings.databaseBindings().orElseThrow().equals(databases.orElseThrow())) {
                 throw new IOException("managed resource binding document is not in canonical order");
             }
             return bindings;
@@ -187,14 +188,14 @@ public final class DeploymentResourceCodec {
         String schemaId = input.readUTF();
         boolean reversible = readBoolean(input, "managed file binding reversible value");
         var location = new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
-                        .valueOf(input.readUTF()),
-                input.readUTF());
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
+                .valueOf(input.readUTF()),
+            input.readUTF());
         return new DeploymentFileBinding(bindingId, new DeploymentStoragePath(path, access, schemaId, reversible),
-                location,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageResourceType
-                        .valueOf(input.readUTF()),
-                input.readUTF(), input.readUTF());
+            location,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageResourceType
+                .valueOf(input.readUTF()),
+            input.readUTF(), input.readUTF());
     }
 
     /**
@@ -243,15 +244,15 @@ public final class DeploymentResourceCodec {
         DeploymentDatabaseConnection connection;
         if (engine == DeploymentDatabaseEngineType.SQLITE) {
             connection = new DeploymentDatabaseConnection.Sqlite(input.readUTF(),
-                    new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation(
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
-                                    .valueOf(input.readUTF()),
-                            input.readUTF()),
-                    input.readUTF(), input.readUTF(), readInitialization(input));
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation(
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
+                        .valueOf(input.readUTF()),
+                    input.readUTF()),
+                input.readUTF(), input.readUTF(), readInitialization(input));
         } else {
             connection = new DeploymentDatabaseConnection.Server(engine, input.readUTF(), input.readInt(),
-                    input.readUTF(), input.readUTF(), new DeploymentSecretReference(input.readUTF(), input.readLong()),
-                    readBoolean(input, "managed database TLS value"));
+                input.readUTF(), input.readUTF(), new DeploymentSecretReference(input.readUTF(), input.readLong()),
+                readBoolean(input, "managed database TLS value"));
         }
         return new DeploymentDatabaseBinding(databaseId, connection);
     }

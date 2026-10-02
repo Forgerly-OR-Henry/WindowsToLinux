@@ -1,12 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
+import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.db.*;
+import gold.debug.windowstolinux.appapi.db.CheckResult;
 
 /** Initializes and reads the fixed official deployment schema through public managed JDBC. / 通过公开受管 JDBC 初始化并读取固定官方部署结构。 */
 public final class DeploymentSchema implements ModSchemaLifecycle {
@@ -25,7 +29,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     public static void requireIdentity(SchemaIdentity identity) {
         if (!OWNER.equals(identity.ownerId()) || !VERSION.equals(identity.schemaVersion()))
             throw new IllegalArgumentException(
-                    "Deployment schema identity differs from the supported owner and version");
+                "Deployment schema identity differs from the supported owner and version");
     }
 
     /** Creates the documented tables only inside the fresh platform target. / 仅在全新平台目标内创建文档约定表。
@@ -52,7 +56,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
      * @return deterministic structure evidence and any safe violations / 确定性结构依据及安全违规说明
      * @throws Exception if reading cannot establish a result / 读取无法确立结果时 */
     @Override
-    public ValidationReport validate(SchemaAccess target) throws Exception {
+    public CheckResult validate(SchemaAccess target) throws Exception {
         requireIdentity(target.identity());
         var violations = new ArrayList<String>();
         String inventory = resource("validation-v3.sql");
@@ -61,12 +65,13 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             for (var query : inventory.split(";")) {
                 if (query.isBlank())
                     continue;
-                String table = query.substring(query.indexOf(" FROM ") + 6, query.indexOf(" WHERE "));
+                String declaration = query.replaceAll("\\s+", " ");
+                String table = declaration.substring(declaration.indexOf(" FROM ") + 6, declaration.indexOf(" WHERE "));
                 expected.add(table);
                 try (var statement = connection.createStatement(); var rows = statement.executeQuery(query)) {
                     int declared = rows.getMetaData().getColumnCount();
                     try (var all = connection.createStatement();
-                            var columns = all.executeQuery("SELECT * FROM " + table + " WHERE 1=0")) {
+                         var columns = all.executeQuery("SELECT * FROM " + table + " WHERE 1=0")) {
                         if (declared != columns.getMetaData().getColumnCount())
                             violations.add("Unexpected deployment columns: " + table);
                     }
@@ -125,9 +130,9 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             }
         }
         var digest = MessageDigest.getInstance("SHA-256")
-                .digest((resource("schema-v3.sql") + inventory).getBytes(StandardCharsets.UTF_8));
-        return new ValidationReport(violations.isEmpty(), violations,
-                violations.isEmpty() ? Optional.of(HexFormat.of().formatHex(digest)) : Optional.empty());
+            .digest((resource("schema-v3.sql") + inventory).getBytes(StandardCharsets.UTF_8));
+        return new CheckResult(violations.isEmpty(), violations,
+            violations.isEmpty() ? Optional.of(HexFormat.of().formatHex(digest)) : Optional.empty());
     }
 
     /** Checks stored relationships that ordinary foreign keys do not bind by digest. / 核对普通外键未按摘要绑定的存储关系。
@@ -136,12 +141,12 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
      * @throws SQLException if relationships cannot be read / 无法读取关系时 */
     private static void validateBindings(Connection connection, List<String> violations) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        """
-                                SELECT COUNT(*) FROM deployment_unit_release_binding b
-                                JOIN deployment_unit_configuration_snapshot s ON s.deployment_unit_id=b.deployment_unit_id AND s.configuration_revision=b.configuration_revision
-                                WHERE b.configuration_sha256<>s.configuration_sha256
-                                """)) {
+             var rows = statement.executeQuery(
+                 """
+                     SELECT COUNT(*) FROM deployment_unit_release_binding b
+                     JOIN deployment_unit_configuration_snapshot s ON s.deployment_unit_id=b.deployment_unit_id AND s.configuration_revision=b.configuration_revision
+                     WHERE b.configuration_sha256<>s.configuration_sha256
+                     """)) {
             rows.next();
             if (rows.getLong(1) != 0)
                 violations.add("Release configuration digests differ from their immutable snapshots");
@@ -155,7 +160,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     private static Set<String> tables(Connection connection) throws SQLException {
         var result = new TreeSet<String>();
         try (var statement = connection.prepareStatement(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema=? AND table_type='BASE TABLE'")) {
             statement.setString(1, connection.getSchema());
             try (var rows = statement.executeQuery()) {
                 while (rows.next())

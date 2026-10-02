@@ -21,6 +21,7 @@ public record DeploymentRemoteWorkspace(String applicationId, String archiveSha2
     public DeploymentRemoteWorkspace(String applicationId, String archiveSha256) {
         this(applicationId, archiveSha256, Optional.empty());
     }
+
     /**
      * Validates and binds the inputs required by remote workspace.
      * <p>校验并绑定远端工作区所需输入。
@@ -61,7 +62,7 @@ public record DeploymentRemoteWorkspace(String applicationId, String archiveSha2
         try {
             var digest = java.security.MessageDigest.getInstance("SHA-256");
             byte[] bytes = ("deployment-publication-attempt-v1\n" + archiveSha256 + "\n" + operation.orElseThrow())
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
             return java.util.HexFormat.of().formatHex(digest.digest(bytes)).substring(0, 16);
         } catch (java.security.NoSuchAlgorithmException unavailable) {
             throw new IllegalStateException("JDK SHA-256 unavailable", unavailable);

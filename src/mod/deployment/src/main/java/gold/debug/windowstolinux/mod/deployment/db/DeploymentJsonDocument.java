@@ -14,10 +14,11 @@ import com.fasterxml.jackson.databind.node.*;
 final class DeploymentJsonDocument {
     /** Existing project JSON parser with strict duplicate and trailing content checks. / 已有项目JSON解析器，严格检查重复键和尾随内容。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Default bound for one business document. / 单份执行文档的默认上限。 */
     private static final int LIMIT = 1_048_576;
+
     /** Prevents construction of the fixed primitives. / 防止构造固定原语。 */
     private DeploymentJsonDocument() {
     }
@@ -46,7 +47,7 @@ final class DeploymentJsonDocument {
             throw new SQLException("Missing or oversized business document");
         try {
             String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
+                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
             parse(text, limit);
             return text;
         } catch (CharacterCodingException invalid) {
@@ -73,7 +74,7 @@ final class DeploymentJsonDocument {
                 throw new IOException("Business document exceeds bound");
             var node = JSON.readTree(text);
             if (!(node instanceof ObjectNode object) || !object.path("formatVersion").isInt()
-                    || object.path("formatVersion").intValue() < 1)
+                || object.path("formatVersion").intValue() < 1)
                 throw new IOException("Business document version is absent");
             return object;
         } catch (IOException invalid) {

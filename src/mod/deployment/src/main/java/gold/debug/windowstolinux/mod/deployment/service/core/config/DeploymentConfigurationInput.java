@@ -47,7 +47,7 @@ public final class DeploymentConfigurationInput {
                 declaredKey = declaredKey.substring(scopeSeparator + 1).trim();
             }
             entries.add(new DeploymentConfigurationEntry(declaredKey, scope,
-                    configurationValue(value.substring(separator + 1).trim())));
+                configurationValue(value.substring(separator + 1).trim())));
         }
         return List.copyOf(entries);
     }
@@ -87,7 +87,7 @@ public final class DeploymentConfigurationInput {
                 throw new IllegalArgumentException("secret reference must contain an identifier and revision");
             }
             references.add(new DeploymentSecretReference(value.substring(0, separator).trim(),
-                    Long.parseLong(value.substring(separator + 1).trim())));
+                Long.parseLong(value.substring(separator + 1).trim())));
         }
         return List.copyOf(references);
     }

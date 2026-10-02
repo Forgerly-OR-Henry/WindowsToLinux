@@ -18,7 +18,7 @@
   </properties>
   <modules>
     <module>ai</module>
-    <module>source</module>
+    <module>file</module>
     <module>linux</module>
     <module>mod</module>
     <module>ui</module>

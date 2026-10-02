@@ -12,7 +12,7 @@ import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
@@ -24,6 +24,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 final class DeploymentRestoreCleanup {
     /** Provider-owned transfer observations for original cleanup. / 原清理使用的提供方所属传输观察。 */
     private final ModContext context;
+
     /** Binds original cleanup to the actual provider. / 将原清理绑定实际提供方。
      * @param context actual provider context / 实际提供方上下文 */
     DeploymentRestoreCleanup(ModContext context) {
@@ -38,7 +39,7 @@ final class DeploymentRestoreCleanup {
      * @return whether original cleanup is confirmed / 是否原清理已确证
      * @throws Exception if original identity or cleanup evidence is unavailable / 原身份或清理依据不可用时 */
     boolean abortCleanup(DeploymentRestoreState cursor, DeploymentRestorePlan plan, DeploymentHandoffChannel channel,
-            boolean observeOnly) throws Exception {
+                         boolean observeOnly) throws Exception {
         if (!context.linux().pendingTransfers(cursor.task).isEmpty())
             return false;
         for (var component : plan.proposal.graph().components()) {
@@ -49,29 +50,29 @@ final class DeploymentRestoreCleanup {
                 String key = "discard-" + databaseKey(input);
                 if (observeOnly || unit.path("steps").path(key).path("attempted").asBoolean()) {
                     if (!stepObserved(channel, cursor, plan, component.componentId(), key, "database-discard-original",
-                            databaseArguments(cursor, component, input)))
+                        databaseArguments(cursor, component, input)))
                         return false;
                 } else if (!step(channel, cursor, plan, component.componentId(), key, "database-discard-original",
-                        databaseArguments(cursor, component, input), "DATABASE_DISCARDED=1\n"))
+                    databaseArguments(cursor, component, input), "DATABASE_DISCARDED=1\n"))
                     return false;
             }
             String candidate = unit.path("candidate").asText();
             if (observeOnly || unit.path("steps").path("abort").path("attempted").asBoolean()) {
                 if (!stepObserved(channel, cursor, plan, component.componentId(), "abort", "restore-abort",
-                        List.of(candidate, token(cursor.task), component.componentId())))
+                    List.of(candidate, token(cursor.task), component.componentId())))
                     return false;
             } else if (!step(channel, cursor, plan, component.componentId(), "abort", "restore-abort",
-                    List.of(candidate, token(cursor.task), component.componentId()), "RESTORE_ABORTED=1\n"))
+                List.of(candidate, token(cursor.task), component.componentId()), "RESTORE_ABORTED=1\n"))
                 return false;
             if (observeOnly || unit.path("cleanupAttempted").asBoolean()) {
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-cleanup-status",
-                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
+                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
                     return false;
             } else {
                 unit.put("cleanupAttempted", true);
                 cursor.save(DeploymentHandoffState.COMPENSATING);
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-cleanup",
-                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
+                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
                     return false;
             }
             unit.put("cleaned", true);
@@ -88,14 +89,14 @@ final class DeploymentRestoreCleanup {
      * @return whether all original cleanup is confirmed / 是否全部原清理已确证
      * @throws Exception if original identity or cleanup evidence is unavailable / 原身份或清理依据不可用时 */
     boolean cleanup(DeploymentRestoreState cursor, DeploymentRestorePlan plan, DeploymentHandoffChannel channel,
-            boolean observeOnly) throws Exception {
+                    boolean observeOnly) throws Exception {
         if (!context.linux().pendingTransfers(cursor.task).isEmpty())
             return false;
         for (var component : plan.proposal.graph().components()) {
             var unit = cursor.unit(component.componentId());
             if (unit.path("cleaned").asBoolean()) {
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-cleanup-status",
-                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
+                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
                     return false;
                 continue;
             }
@@ -103,29 +104,29 @@ final class DeploymentRestoreCleanup {
                 String key = "finish-" + databaseKey(input);
                 if (observeOnly || unit.path("steps").path(key).path("attempted").asBoolean()) {
                     if (!stepObserved(channel, cursor, plan, component.componentId(), key, "database-finish-candidate",
-                            databaseArguments(cursor, component, input)))
+                        databaseArguments(cursor, component, input)))
                         return false;
                 } else if (!step(channel, cursor, plan, component.componentId(), key, "database-finish-candidate",
-                        databaseArguments(cursor, component, input), "DATABASE_FINISHED=1\n"))
+                    databaseArguments(cursor, component, input), "DATABASE_FINISHED=1\n"))
                     return false;
             }
             String candidate = unit.path("candidate").asText();
             if (observeOnly || unit.path("steps").path("finish").path("attempted").asBoolean()) {
                 if (!stepObserved(channel, cursor, plan, component.componentId(), "finish", "restore-finish",
-                        List.of(candidate, token(cursor.task), component.componentId())))
+                    List.of(candidate, token(cursor.task), component.componentId())))
                     return false;
             } else if (!step(channel, cursor, plan, component.componentId(), "finish", "restore-finish",
-                    List.of(candidate, token(cursor.task), component.componentId()), "RESTORE_FINISHED=1\n"))
+                List.of(candidate, token(cursor.task), component.componentId()), "RESTORE_FINISHED=1\n"))
                 return false;
             if (observeOnly || unit.path("cleanupAttempted").asBoolean()) {
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-cleanup-status",
-                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
+                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
                     return false;
             } else {
                 unit.put("cleanupAttempted", true);
                 cursor.save(DeploymentHandoffState.ACTIVE);
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-cleanup",
-                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
+                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_CLEANUP=1\n"))
                     return false;
                 unit.put("cleaned", true);
                 cursor.save(DeploymentHandoffState.ACTIVE);
@@ -141,17 +142,17 @@ final class DeploymentRestoreCleanup {
      * @return whether all original candidates have confirmed discard / 是否全部原候选已确证丢弃
      * @throws Exception if original identity or discard evidence is unavailable / 原身份或丢弃依据不可用时 */
     boolean discardCandidates(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            DeploymentHandoffChannel channel) throws Exception {
+                              DeploymentHandoffChannel channel) throws Exception {
         for (var component : plan.proposal.graph().components()) {
             var unit = cursor.unit(component.componentId());
             if (!unit.path("createAttempted").asBoolean())
                 continue;
             if (unit.path("discardAttempted").asBoolean()) {
                 if (!DeploymentHandoffChannel
-                        .receipt(
-                                send(channel, "handoff-restore-discard-status",
-                                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
-                                "RESTORE_DISCARDED=1\n"))
+                    .receipt(
+                        send(channel, "handoff-restore-discard-status",
+                            identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
+                        "RESTORE_DISCARDED=1\n"))
                     return false;
                 unit.put("discarded", true);
                 cursor.save(DeploymentHandoffState.COMPENSATING);
@@ -161,19 +162,19 @@ final class DeploymentRestoreCleanup {
             for (var input : databases(plan, component.componentId())) {
                 if (unit.path("steps").path("prepare-" + databaseKey(input)).path("attempted").asBoolean())
                     if (!stepObserved(channel, cursor, plan, component.componentId(), "prepare-" + databaseKey(input),
-                            "database-restore-candidate", databaseArguments(cursor, component, input)))
+                        "database-restore-candidate", databaseArguments(cursor, component, input)))
                         return false;
                 if (unit.path("steps").path("create-" + databaseKey(input)).path("attempted").asBoolean()) {
                     if (!step(channel, cursor, plan, component.componentId(), "discard-" + databaseKey(input),
-                            "database-discard-original", databaseArguments(cursor, component, input),
-                            "DATABASE_DISCARDED=1\n"))
+                        "database-discard-original", databaseArguments(cursor, component, input),
+                        "DATABASE_DISCARDED=1\n"))
                         return false;
                 }
             }
             unit.put("discardAttempted", true);
             cursor.save(DeploymentHandoffState.COMPENSATING);
             if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-discard",
-                    identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_DISCARDED=1\n"))
+                identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)), "RESTORE_DISCARDED=1\n"))
                 return false;
             unit.put("discarded", true);
             cursor.save(DeploymentHandoffState.COMPENSATING);

@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -8,33 +16,44 @@ import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection;
 
 /** Persists explicit view edits without writing initialization or locale changes. / 持久化明确视图编辑，不写初始化或语言变化。 */
 final class DeploymentPreferenceSelection {
     /** Existing serial view worker. / 既有串行视图工作线程。 */
     private final ExecutorService actions;
+
     /** Original owner task admission. / 原所有者任务准入。 */
     private final Saver saver;
+
     /** Captures current EDT values. / 抓取当前EDT值。 */
     private final Supplier<Selection> capture;
+
     /** Restores only confirmed controls. / 仅恢复已确认控件。 */
     private final Consumer<Selection> apply;
+
     /** Displays safe task identity or failure. / 显示安全任务身份或失败。 */
     private final Consumer<String> failure;
+
     /** Recomputes original control availability. / 重算原控件可用性。 */
     private final Runnable availability;
+
     /** Last successfully persisted pair. / 最近成功持久化配对。 */
     private Selection confirmed;
+
     /** Whether initialization established valid stored values. / 初始化是否建立有效存储值。 */
     private boolean ready;
+
     /** Whether an explicit write remains active. / 明确写入是否仍活动。 */
     private boolean saving;
+
     /** Whether this view has closed. / 此视图是否关闭。 */
     private boolean closed;
+
     /** Observes retained UNKNOWN without waiting for a terminal future. / 无需等待终态Future即可观察留存UNKNOWN。 */
     private Timer observer;
+
     /** Safe retained write diagnostic, independent of task-list refresh. / 安全留存写入诊断，独立于任务列表刷新。 */
     private String diagnostic = "";
 
@@ -46,7 +65,7 @@ final class DeploymentPreferenceSelection {
      * @param failure safe original identity display / 安全原身份显示
      * @param availability original control refresh / 原控件刷新 */
     DeploymentPreferenceSelection(ExecutorService actions, Saver saver, Supplier<Selection> capture,
-            Consumer<Selection> apply, Consumer<String> failure, Runnable availability) {
+                                  Consumer<Selection> apply, Consumer<String> failure, Runnable availability) {
         this.actions = Objects.requireNonNull(actions);
         this.saver = Objects.requireNonNull(saver);
         this.capture = Objects.requireNonNull(capture);
@@ -57,11 +76,15 @@ final class DeploymentPreferenceSelection {
 
     /** Returns whether a stored selection is confirmed and editable. / 返回存储选择是否已确认且可编辑。
      * @return actual readiness / 实际就绪状态 */
-    boolean ready() { return ready && !saving && !closed; }
+    boolean ready() {
+        return ready && !saving && !closed;
+    }
 
     /** Returns the original safe edit diagnostic without hiding uncertainty. / 返回原安全编辑诊断，不隐藏未知。
      * @return fixed event or original retained identity / 固定事件或原留存身份 */
-    String diagnostic() { return diagnostic; }
+    String diagnostic() {
+        return diagnostic;
+    }
 
     /** Installs valid stored values while suppressing programmatic change events. / 安装有效存储值，同时抑制程序化变化事件。
      * @param selection actual stored pair / 实际存储配对 */
@@ -116,16 +139,16 @@ final class DeploymentPreferenceSelection {
             diagnostic = "";
             load(result.value().orElseThrow());
         } else if (error == null && result != null && result.outcome() == Outcome.UNKNOWN
-                || error instanceof ApiException api && api.problem().code() == ProblemCode.UNKNOWN) {
+            || error instanceof ApiException api && api.problem().code() == ProblemCode.UNKNOWN) {
             ready = false;
             diagnostic = error instanceof ApiException api ? api.problem().eventCode()
-                    : result.problem().map(Problem::eventCode).orElse("UNKNOWN");
+                : result.problem().map(Problem::eventCode).orElse("UNKNOWN");
             failure.accept(diagnostic);
         } else {
             load(confirmed);
             diagnostic = error instanceof ApiException api ? api.problem().eventCode()
-                    : result == null ? "DEPLOYMENT_PREFERENCE_SAVE_FAILED"
-                    : result.problem().map(Problem::eventCode).orElse("DEPLOYMENT_PREFERENCE_SAVE_FAILED");
+                : result == null ? "DEPLOYMENT_PREFERENCE_SAVE_FAILED"
+                : result.problem().map(Problem::eventCode).orElse("DEPLOYMENT_PREFERENCE_SAVE_FAILED");
             failure.accept(diagnostic);
         }
         availability.run();

@@ -19,13 +19,13 @@ class DeploymentConfigurationSnapshotTest {
         // Frozen original digest; original-format-provenance.md records the archived writer. / 冻结的原摘要；出处见旧格式样本记录。
         assertEquals("572a20bfd4263bfa7bc11b9a0ef0ce46b46710ea01439566982ce882ef2a3134", snapshot.sha256());
         assertEquals(snapshot.sha256(), DeploymentConfigurationSnapshot
-                .create("demo", 2, "v1", now.plusSeconds(1), entries.reversed()).sha256());
+            .create("demo", 2, "v1", now.plusSeconds(1), entries.reversed()).sha256());
         assertNotEquals(snapshot.sha256(),
-                DeploymentConfigurationSnapshot.create("demo", 3, "v1", now, entries).sha256());
+            DeploymentConfigurationSnapshot.create("demo", 3, "v1", now, entries).sha256());
         assertNotEquals(snapshot.sha256(),
-                DeploymentConfigurationSnapshot.create("other", 2, "v1", now, entries).sha256());
+            DeploymentConfigurationSnapshot.create("other", 2, "v1", now, entries).sha256());
         assertNotEquals(snapshot.sha256(),
-                DeploymentConfigurationSnapshot.create("demo", 2, "v2", now, entries).sha256());
+            DeploymentConfigurationSnapshot.create("demo", 2, "v2", now, entries).sha256());
     }
 
     @Test
@@ -33,13 +33,13 @@ class DeploymentConfigurationSnapshotTest {
         var entries = DeploymentConfigurationInput.parse("PORT=8080;BUILD:OPTIMIZE=true;LABEL=  production  ");
         var snapshot = DeploymentConfigurationSnapshot.create("demo", 1, "v1", Instant.EPOCH, entries);
         assertEquals(new DeploymentConfigurationValue.Number(8080),
-                snapshot.requireValue("PORT", DeploymentConfigurationScopeType.RUNTIME));
+            snapshot.requireValue("PORT", DeploymentConfigurationScopeType.RUNTIME));
         assertEquals(new DeploymentConfigurationValue.Flag(true),
-                snapshot.requireValue("OPTIMIZE", DeploymentConfigurationScopeType.BUILD));
+            snapshot.requireValue("OPTIMIZE", DeploymentConfigurationScopeType.BUILD));
         assertEquals(new DeploymentConfigurationValue.Text("production"),
-                snapshot.requireValue("LABEL", DeploymentConfigurationScopeType.RUNTIME));
+            snapshot.requireValue("LABEL", DeploymentConfigurationScopeType.RUNTIME));
         assertThrows(IllegalArgumentException.class,
-                () -> snapshot.requireValue("OPTIMIZE", DeploymentConfigurationScopeType.RUNTIME));
+            () -> snapshot.requireValue("OPTIMIZE", DeploymentConfigurationScopeType.RUNTIME));
     }
 
     @Test
@@ -50,8 +50,8 @@ class DeploymentConfigurationSnapshotTest {
         assertEquals(1, snapshot.entries().size());
         assertThrows(UnsupportedOperationException.class, () -> snapshot.entries().clear());
         var failure = assertThrows(DeploymentConfigurationException.class,
-                () -> new DeploymentConfigurationSnapshot("demo", 1, "v1", Instant.EPOCH, snapshot.entries(),
-                        "a".repeat(64)));
+            () -> new DeploymentConfigurationSnapshot("demo", 1, "v1", Instant.EPOCH, snapshot.entries(),
+                "a".repeat(64)));
         assertEquals(ProblemCode.INVALID_INPUT, failure.problem().code());
         assertEquals("configuration.snapshot.integrity-failed", failure.problem().eventCode());
     }
@@ -60,9 +60,9 @@ class DeploymentConfigurationSnapshotTest {
     void duplicateKeysAndSecretsAreRejectedWithoutEchoingSubmittedValues() {
         var duplicate = DeploymentConfigurationInput.parse("PORT=80;BUILD:PORT=81");
         assertThrows(DeploymentConfigurationException.class,
-                () -> DeploymentConfigurationSnapshot.create("demo", 1, "v1", Instant.EPOCH, duplicate));
+            () -> DeploymentConfigurationSnapshot.create("demo", 1, "v1", Instant.EPOCH, duplicate));
         var failure = assertThrows(DeploymentConfigurationException.class,
-                () -> DeploymentConfigurationInput.parse("API_TOKEN=do-not-echo-this"));
+            () -> DeploymentConfigurationInput.parse("API_TOKEN=do-not-echo-this"));
         assertFalse(failure.problem().toString().contains("do-not-echo-this"));
         assertThrows(DeploymentConfigurationException.class, () -> DeploymentConfigurationInput.parse("PORT=70000"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentConfigurationInput.parse("UNKNOWN:PORT=80"));
@@ -72,16 +72,16 @@ class DeploymentConfigurationSnapshotTest {
     @Test
     void secretReferencesRemainOpaqueExactPositiveRevisions() {
         assertEquals(List.of(new DeploymentSecretReference("database-password", 2)),
-                DeploymentConfigurationInput.secrets("database-password:2"));
+            DeploymentConfigurationInput.secrets("database-password:2"));
         assertThrows(DeploymentConfigurationException.class,
-                () -> DeploymentConfigurationInput.secrets("database-password:0"));
+            () -> DeploymentConfigurationInput.secrets("database-password:0"));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentConfigurationInput.secrets("database-password:invalid"));
+            () -> DeploymentConfigurationInput.secrets("database-password:invalid"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentConfigurationInput.secrets("missing-revision"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentConfigurationInput.secrets("database-password:"));
         assertThrows(DeploymentConfigurationException.class,
-                () -> DeploymentConfigurationInput.secrets("database-password:-1"));
+            () -> DeploymentConfigurationInput.secrets("database-password:-1"));
         assertThrows(DeploymentConfigurationException.class,
-                () -> DeploymentConfigurationSnapshot.create("../demo", 1, "v1", Instant.EPOCH, List.of()));
+            () -> DeploymentConfigurationSnapshot.create("../demo", 1, "v1", Instant.EPOCH, List.of()));
     }
 }

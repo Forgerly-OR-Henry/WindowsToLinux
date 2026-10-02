@@ -1,6 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import java.awt.GridLayout;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
@@ -29,7 +34,7 @@ final class DeploymentStaticSecretControls {
     private final DeploymentStaticPageService service;
 
     /** Visible inputs and status. / 可见输入与状态。 */
-    private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+    private final JPanel panel = DeploymentPageStyle.form();
 
     /** Secret section title. / 秘密区域标题。 */
     private final JLabel title = new JLabel();
@@ -82,16 +87,17 @@ final class DeploymentStaticSecretControls {
     DeploymentStaticSecretControls(DeploymentStaticPage page, DeploymentStaticPageService service) {
         this.page = page;
         this.service = service;
+        panel.setName("deployment.secrets");
+        identifier.setName("deployment.secret.identifier");
         panel.add(title);
         panel.add(state);
-        panel.add(identifierLabel);
-        panel.add(identifier);
-        panel.add(revisionLabel);
-        panel.add(revision);
-        panel.add(choicesLabel);
-        panel.add(listed);
-        panel.add(create);
-        panel.add(reload);
+        DeploymentPageStyle.field(panel, identifierLabel, identifier);
+        DeploymentPageStyle.field(panel, revisionLabel, revision);
+        DeploymentPageStyle.field(panel, choicesLabel, listed);
+        var buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT));
+        buttons.add(create);
+        buttons.add(reload);
+        panel.add(buttons);
         listed.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : format(value) + " (" + value.purpose() + ")");
             label.setOpaque(true);
@@ -118,7 +124,7 @@ final class DeploymentStaticSecretControls {
 
     /** Replaces all locale-sensitive labels. / 更新全部随语言变化的标签。 */
     void localize() {
-        title.setText(page.text("secretSection"));
+        title.setText("<html>" + page.text("secretSection") + "</html>");
         identifierLabel.setText(page.text("secretIdentifier"));
         revisionLabel.setText(page.text("secretRevision"));
         choicesLabel.setText(page.text("secretChoices"));
@@ -143,7 +149,7 @@ final class DeploymentStaticSecretControls {
                     return;
                 try {
                     var unresolved = service.secretTasks().stream().filter(item -> item.state() == TaskState.UNKNOWN)
-                            .map(TaskSnapshot::id).findFirst();
+                        .map(TaskSnapshot::id).findFirst();
                     var handle = service.secretChoices();
                     lookup = handle;
                     if (!page.active(view))
@@ -161,7 +167,7 @@ final class DeploymentStaticSecretControls {
                         listed.removeAllItems();
                         choices.forEach(listed::addItem);
                         state.setText(unresolved.map(id -> page.text("secretUnknown") + " " + id)
-                                .orElseGet(() -> page.text("secretReady")));
+                            .orElseGet(() -> page.text("secretReady")));
                     }));
                 } catch (Exception failure) {
                     SwingUtilities.invokeLater(() -> {
@@ -187,7 +193,7 @@ final class DeploymentStaticSecretControls {
         DeploymentSecretReference reference;
         try {
             reference = new DeploymentSecretReference(identifier.getText().trim(),
-                    Long.parseLong(revision.getText().trim()));
+                Long.parseLong(revision.getText().trim()));
         } catch (RuntimeException invalid) {
             state.setText(page.text("secretInvalidReference"));
             return;
@@ -208,13 +214,13 @@ final class DeploymentStaticSecretControls {
                         if (!once.compareAndSet(false, true))
                             throw new IllegalStateException("Secret input was already requested");
                         return DeploymentStaticPasswordInput.request(page, view, task, page.text("secretPasswordTitle"),
-                                page.text("secretPassword"), false, () -> confirmedCreation = true);
+                            page.text("secretPassword"), false, () -> confirmedCreation = true);
                     });
                     creation = handle;
                     if (!page.active(view) && !confirmedCreation)
                         cancel(handle);
                     Thread.ofVirtual().name("deployment-secret-observation")
-                            .start(() -> observe(handle, reference, view));
+                        .start(() -> observe(handle, reference, view));
                 } catch (Exception unavailable) {
                     finish(view, page.text("secretCreateError"));
                 }
@@ -245,12 +251,12 @@ final class DeploymentStaticSecretControls {
                                 listed.addItem(selected);
                             }
                             finish(view, page.text("secretCreated") + " " + reference.identifier() + ":"
-                                    + reference.revision());
+                                + reference.revision());
                             if (page.active(view))
                                 refresh(view);
                         } else
                             finish(view,
-                                    page.text("secretCreateError") + " " + snapshot.outcome().orElse(Outcome.UNKNOWN));
+                                page.text("secretCreateError") + " " + snapshot.outcome().orElse(Outcome.UNKNOWN));
                     });
                     return;
                 }

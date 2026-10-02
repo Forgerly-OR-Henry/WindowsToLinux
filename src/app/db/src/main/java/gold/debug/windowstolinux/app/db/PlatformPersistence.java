@@ -3,9 +3,15 @@ package gold.debug.windowstolinux.app.db;
 import java.sql.SQLException;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.persistence.repository.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.ai.AiProfileRepository;
+import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
+import gold.debug.windowstolinux.app.db.security.SecurityRepository;
+import gold.debug.windowstolinux.app.db.server.ServerProfileRepository;
+import gold.debug.windowstolinux.app.db.server.ServerReferenceRepository;
+import gold.debug.windowstolinux.app.db.setting.DesktopPreferenceRepository;
+import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryRepository;
 
 /** Composes platform-owned configuration repositories over the protected H2 engine. / 在受保护 H2 引擎上装配平台所属配置仓库。 */
 public final class PlatformPersistence implements AutoCloseable {

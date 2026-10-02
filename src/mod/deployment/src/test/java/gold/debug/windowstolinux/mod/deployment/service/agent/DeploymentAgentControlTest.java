@@ -1,12 +1,19 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -42,60 +49,60 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
             var original = new AtomicReference<UUID>();
             String type = "deployment-agent-control-test";
             try (var registration = context.tasks().registerRecovery(type, (previous,
-                    task) -> new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(), Optional.empty()))) {
+                                                                            task) -> new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(), Optional.empty()))) {
                 var handle = context.tasks()
-                        .submit(new TaskRequest(type, "Original controlled worker", List.of(), true), task -> {
-                            original.set(task.id());
-                            journal.create(task, new DeploymentAgentJournal.Identity("boundary-only", "a".repeat(64),
-                                    "a".repeat(64), "MANUAL_REVIEW"));
-                            entered.countDown();
-                            settled.await(5, TimeUnit.SECONDS);
-                            try {
-                                boolean changed = control.checkpoint(task, new DeploymentAgentControl.Boundary() {
-                                    public void paused() throws Exception {
-                                        journal.state(task, "WAITING");
-                                    }
+                    .submit(new TaskRequest(type, "Original controlled worker", List.of(), true), task -> {
+                        original.set(task.id());
+                        journal.create(task, new DeploymentAgentJournal.Identity("boundary-only", "a".repeat(64),
+                            "a".repeat(64), "MANUAL_REVIEW"));
+                        entered.countDown();
+                        settled.await(5, TimeUnit.SECONDS);
+                        try {
+                            boolean changed = control.checkpoint(task, new DeploymentAgentControl.Boundary() {
+                                public void paused() throws Exception {
+                                    journal.state(task, "WAITING");
+                                }
 
-                                    public boolean refresh() throws Exception {
-                                        if (reject && refreshed.getAndIncrement() == 0)
-                                            throw new DeploymentAgentControl.RefreshRejectedException(
-                                                    new Problem(ProblemCode.INVALID_INPUT,
-                                                            "CONTROLLED_REFRESH_REJECTED", "Invalid selected route",
-                                                            Map.of("task", task.id().toString()),
-                                                            Optional.of(task.id())),
-                                                    new IllegalArgumentException("Invalid selected route"));
-                                        if (!reject)
-                                            refreshed.incrementAndGet();
-                                        journal.replaceConfiguration(task, "a".repeat(64), "b".repeat(64));
-                                        return true;
-                                    }
+                                public boolean refresh() throws Exception {
+                                    if (reject && refreshed.getAndIncrement() == 0)
+                                        throw new DeploymentAgentControl.RefreshRejectedException(
+                                            new Problem(ProblemCode.INVALID_INPUT,
+                                                "CONTROLLED_REFRESH_REJECTED", "Invalid selected route",
+                                                Map.of("task", task.id().toString()),
+                                                Optional.of(task.id())),
+                                            new IllegalArgumentException("Invalid selected route"));
+                                    if (!reject)
+                                        refreshed.incrementAndGet();
+                                    journal.replaceConfiguration(task, "a".repeat(64), "b".repeat(64));
+                                    return true;
+                                }
 
-                                    public void resumed() throws Exception {
-                                        continued.incrementAndGet();
-                                        journal.state(task, "RUNNING");
-                                    }
-                                });
-                                assertTrue(changed);
-                                assertEquals(original.get(), task.id());
-                                journal.state(task, "SUCCEEDED");
-                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                            } catch (CancellationException requested) {
-                                journal.state(task, "CANCELLED");
-                                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
-                            } catch (Throwable problem) {
-                                failure.set(problem);
-                                if (problem instanceof Exception exception)
-                                    throw exception;
-                                if (problem instanceof Error error)
-                                    throw error;
-                                throw new IllegalStateException(problem);
-                            } finally {
-                                control.finish();
-                            }
-                        });
+                                public void resumed() throws Exception {
+                                    continued.incrementAndGet();
+                                    journal.state(task, "RUNNING");
+                                }
+                            });
+                            assertTrue(changed);
+                            assertEquals(original.get(), task.id());
+                            journal.state(task, "SUCCEEDED");
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        } catch (CancellationException requested) {
+                            journal.state(task, "CANCELLED");
+                            return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        } catch (Throwable problem) {
+                            failure.set(problem);
+                            if (problem instanceof Exception exception)
+                                throw exception;
+                            if (problem instanceof Error error)
+                                throw error;
+                            throw new IllegalStateException(problem);
+                        } finally {
+                            control.finish();
+                        }
+                    });
                 assertTrue(entered.await(5, TimeUnit.SECONDS));
                 assertThrows(IllegalStateException.class,
-                        () -> control.request(DeploymentAgentControl.CommandAction.REFRESH_MODELS));
+                    () -> control.request(DeploymentAgentControl.CommandAction.REFRESH_MODELS));
                 control.request(DeploymentAgentControl.CommandAction.PAUSE);
                 assertEquals(DeploymentAgentControl.State.PAUSE_REQUESTED, control.state());
                 assertEquals(TaskState.RUNNING, handle.snapshot().state());
@@ -124,13 +131,13 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
                 assertEquals(original.get(), handle.id());
                 assertEquals(DeploymentAgentControl.State.FINISHED, control.state());
                 assertThrows(IllegalStateException.class,
-                        () -> control.request(DeploymentAgentControl.CommandAction.RESUME));
+                    () -> control.request(DeploymentAgentControl.CommandAction.RESUME));
             }
         }
     }
 
     private static void awaitState(DeploymentAgentControl control, DeploymentAgentControl.State wanted)
-            throws Exception {
+        throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (control.state() != wanted && System.nanoTime() < deadline)
             Thread.sleep(10);

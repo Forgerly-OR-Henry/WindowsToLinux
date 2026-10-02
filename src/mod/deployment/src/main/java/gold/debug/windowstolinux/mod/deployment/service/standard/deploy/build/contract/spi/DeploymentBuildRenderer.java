@@ -35,5 +35,5 @@ public interface DeploymentBuildRenderer {
      * @return render text / 渲染文本
      */
     String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits);
+                  DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits);
 }

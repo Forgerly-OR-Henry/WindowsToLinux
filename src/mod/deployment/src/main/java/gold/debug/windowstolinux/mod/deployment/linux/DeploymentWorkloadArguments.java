@@ -40,15 +40,15 @@ public final class DeploymentWorkloadArguments {
         fields.add(Integer.toString(workload.endpoints().size()));
         for (var endpoint : workload.endpoints())
             fields.addAll(List.of(endpoint.id(), endpoint.protocol().name(), endpoint.bindAddress(),
-                    Integer.toString(endpoint.hostPort()), Integer.toString(endpoint.targetPort()),
-                    endpoint.exposure().name(), endpoint.accessUrl()));
+                Integer.toString(endpoint.hostPort()), Integer.toString(endpoint.targetPort()),
+                endpoint.exposure().name(), endpoint.accessUrl()));
         fields.add(Integer.toString(workload.inputs().size()));
         for (var input : workload.inputs())
             fields.addAll(List.of(input.id(), input.hostPath(), input.accessPath()));
         fields.add(Integer.toString(workload.companions().size()));
         for (var companion : workload.companions())
             fields.addAll(List.of(companion.id(), companion.sourcePath(), companion.projectType().name(),
-                    companion.artifactPath(), companion.environment()));
+                companion.artifactPath(), companion.environment()));
         if (!workload.workers().isEmpty()) {
             fields.add(Integer.toString(workload.workers().size()));
             for (var worker : workload.workers()) {
@@ -85,11 +85,11 @@ public final class DeploymentWorkloadArguments {
         switch (check) {
             case DeploymentHealthCheck.Http http ->
                 fields.addAll(List.of("HTTP", Integer.toString(http.timeoutSeconds()), http.endpoint().toString(),
-                        Integer.toString(http.expectedStatus())));
+                    Integer.toString(http.expectedStatus())));
             case DeploymentHealthCheck.Tcp tcp -> fields.addAll(List.of("TCP", Integer.toString(tcp.timeoutSeconds()),
-                    Integer.toString(tcp.port()), Integer.toString(tcp.stabilitySeconds())));
+                Integer.toString(tcp.port()), Integer.toString(tcp.stabilitySeconds())));
             case DeploymentHealthCheck.Process process -> fields.addAll(List.of("PROCESS",
-                    Integer.toString(process.timeoutSeconds()), Integer.toString(process.stabilitySeconds())));
+                Integer.toString(process.timeoutSeconds()), Integer.toString(process.stabilitySeconds())));
             case DeploymentHealthCheck.Command verification -> {
                 fields.addAll(List.of("COMMAND", Integer.toString(verification.timeoutSeconds())));
                 command(fields, verification.command());
@@ -97,7 +97,7 @@ public final class DeploymentWorkloadArguments {
             }
             case DeploymentHealthCheck.Udp udp -> {
                 fields.addAll(List.of("UDP", Integer.toString(udp.timeoutSeconds()), Integer.toString(udp.port()),
-                        udp.requestHex(), udp.responseHex()));
+                    udp.requestHex(), udp.responseHex()));
                 optional(fields, udp.probe());
             }
         }

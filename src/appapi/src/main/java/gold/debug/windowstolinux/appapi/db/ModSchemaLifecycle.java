@@ -18,5 +18,5 @@ public interface ModSchemaLifecycle {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws Exception if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    ValidationReport validate(SchemaAccess target) throws Exception;
+    CheckResult validate(SchemaAccess target) throws Exception;
 }

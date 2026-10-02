@@ -12,8 +12,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
  * @param configuration exact immutable configuration / 精确不可变配置
  * @param secrets exact secret revision set, including explicit empty / 精确秘密修订集合，包括显式空集合 */
 public record DeploymentUnitCommit(DeploymentUnitIdentity unit, DeploymentUnitRuntimeConfiguration runtime,
-        DeploymentCurrentRelease release, DeploymentConfigurationSnapshot configuration,
-        List<DeploymentSecretReference> secrets) {
+                                   DeploymentCurrentRelease release, DeploymentConfigurationSnapshot configuration,
+                                   List<DeploymentSecretReference> secrets) {
     /** Requires all records to belong to the same unit and copies the exact secret set. / 要求全部记录属于同一单元并复制精确秘密集合。
      * @param unit reviewed unit identity / 已审阅单元身份
      * @param runtime reviewed activation contract / 已审阅激活契约

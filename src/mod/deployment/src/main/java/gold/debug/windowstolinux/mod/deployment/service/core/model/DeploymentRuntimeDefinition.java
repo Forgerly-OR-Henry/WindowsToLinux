@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
+import gold.debug.windowstolinux.appapi.task.ManagedProcess;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,20 +16,20 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWor
  *  <p>恰好一个部署单组件项目类型的类型化运行定义。
  */
 public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDefinition.SpringBoot,
-        DeploymentRuntimeDefinition.JavaJar, DeploymentRuntimeDefinition.JavaSource,
-        DeploymentRuntimeDefinition.NodeService, DeploymentRuntimeDefinition.PythonService,
-        DeploymentRuntimeDefinition.StaticSite, DeploymentRuntimeDefinition.Container,
-        DeploymentRuntimeDefinition.GoService, DeploymentRuntimeDefinition.RustService,
-        DeploymentRuntimeDefinition.DotNetService, DeploymentRuntimeDefinition.KotlinService,
-        DeploymentRuntimeDefinition.PhpService, DeploymentRuntimeDefinition.RubyService,
-        DeploymentRuntimeDefinition.CmakeService, DeploymentRuntimeDefinition.ManagedProcess {
+    DeploymentRuntimeDefinition.JavaJar, DeploymentRuntimeDefinition.JavaSource,
+    DeploymentRuntimeDefinition.NodeService, DeploymentRuntimeDefinition.PythonService,
+    DeploymentRuntimeDefinition.StaticSite, DeploymentRuntimeDefinition.Container,
+    DeploymentRuntimeDefinition.GoService, DeploymentRuntimeDefinition.RustService,
+    DeploymentRuntimeDefinition.DotNetService, DeploymentRuntimeDefinition.KotlinService,
+    DeploymentRuntimeDefinition.PhpService, DeploymentRuntimeDefinition.RubyService,
+    DeploymentRuntimeDefinition.CmakeService, DeploymentRuntimeDefinition.ManagedProcess {
     /** Language-independent process delivery, with an explicit artifact entrypoint. / 具有显式制品入口且与语言无关的进程交付。
      * @param healthCheck evidence required after publication / 发布后所需证据
      * @param identityPolicy managed service isolation / 受管服务隔离
      * @param workload reviewed execution contract / 已审核执行契约
      */
     record ManagedProcess(DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                          DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /** Validates the neutral runtime without inferring a language or framework. / 校验中立运行时，不推断语言或框架。
          * @param healthCheck health evidence contract / 健康证据契约
          * @param identityPolicy process isolation / 进程隔离
@@ -91,32 +93,32 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
                 new SpringBoot(value.javaVersion(), value.healthCheck(), value.identityPolicy(), workload);
             case JavaJar value ->
                 new JavaJar(value.jarRelativePath(), value.mainClass(), value.javaVersion(), value.jvmArguments(),
-                        value.applicationArguments(), value.healthCheck(), value.identityPolicy(), workload);
+                    value.applicationArguments(), value.healthCheck(), value.identityPolicy(), workload);
             case JavaSource value ->
                 new JavaSource(value.sourceRoot(), value.mainClass(), value.javaVersion(), value.jvmArguments(),
-                        value.applicationArguments(), value.healthCheck(), value.identityPolicy(), workload);
+                    value.applicationArguments(), value.healthCheck(), value.identityPolicy(), workload);
             case NodeService value ->
                 new NodeService(value.nodeMajorVersion(), value.healthCheck(), value.identityPolicy(), workload);
             case PythonService value -> new PythonService(value.pythonVersion(), value.entrypoint(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case StaticSite value -> new StaticSite(value.outputDirectory(), value.nodeMajorVersion(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case Container value -> new Container(value.engine(), value.publishedPorts(), value.volumes(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case GoService value -> new GoService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case RustService value -> new RustService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case DotNetService value -> new DotNetService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
             case KotlinService value -> new KotlinService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.jvmTarget(), value.healthCheck(), value.identityPolicy(), workload);
+                value.jvmTarget(), value.healthCheck(), value.identityPolicy(), workload);
             case PhpService value -> new PhpService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.servicePort(), value.healthCheck(), value.identityPolicy(), workload);
+                value.servicePort(), value.healthCheck(), value.identityPolicy(), workload);
             case RubyService value -> new RubyService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.servicePort(), value.healthCheck(), value.identityPolicy(), workload);
+                value.servicePort(), value.healthCheck(), value.identityPolicy(), workload);
             case CmakeService value -> new CmakeService(value.preset(), value.target(), value.artifactName(),
-                    value.healthCheck(), value.identityPolicy(), workload);
+                value.healthCheck(), value.identityPolicy(), workload);
         };
     }
 
@@ -131,31 +133,31 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
             case ManagedProcess value -> new ManagedProcess(value.healthCheck(), policy, workload());
             case SpringBoot value -> new SpringBoot(value.javaVersion(), value.healthCheck(), policy, workload());
             case JavaJar value -> new JavaJar(value.jarRelativePath(), value.mainClass(), value.javaVersion(),
-                    value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy, workload());
+                value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy, workload());
             case JavaSource value -> new JavaSource(value.sourceRoot(), value.mainClass(), value.javaVersion(),
-                    value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy, workload());
+                value.jvmArguments(), value.applicationArguments(), value.healthCheck(), policy, workload());
             case NodeService value ->
                 new NodeService(value.nodeMajorVersion(), value.healthCheck(), policy, workload());
             case PythonService value ->
                 new PythonService(value.pythonVersion(), value.entrypoint(), value.healthCheck(), policy, workload());
             case StaticSite value -> new StaticSite(value.outputDirectory(), value.nodeMajorVersion(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
             case Container value -> new Container(value.engine(), value.publishedPorts(), value.volumes(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
             case GoService value -> new GoService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
             case RustService value -> new RustService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
             case DotNetService value -> new DotNetService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
             case KotlinService value -> new KotlinService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.jvmTarget(), value.healthCheck(), policy, workload());
+                value.jvmTarget(), value.healthCheck(), policy, workload());
             case PhpService value -> new PhpService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.servicePort(), value.healthCheck(), policy, workload());
+                value.servicePort(), value.healthCheck(), policy, workload());
             case RubyService value -> new RubyService(value.version(), value.artifactName(), value.entrypoint(),
-                    value.servicePort(), value.healthCheck(), policy, workload());
+                value.servicePort(), value.healthCheck(), policy, workload());
             case CmakeService value -> new CmakeService(value.preset(), value.target(), value.artifactName(),
-                    value.healthCheck(), policy, workload());
+                value.healthCheck(), policy, workload());
         };
     }
 
@@ -184,7 +186,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record SpringBoot(String javaVersion, DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                      DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -193,7 +195,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public SpringBoot(String javaVersion, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                          DeploymentIdentityMode identityPolicy) {
             this(javaVersion, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -257,8 +259,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record JavaJar(String jarRelativePath, String mainClass, String javaVersion, List<String> jvmArguments,
-            List<String> applicationArguments, DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                   List<String> applicationArguments, DeploymentHealthCheck healthCheck,
+                   DeploymentIdentityMode identityPolicy,
+                   DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -271,10 +274,10 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public JavaJar(String jarRelativePath, String mainClass, String javaVersion, List<String> jvmArguments,
-                List<String> applicationArguments, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                       List<String> applicationArguments, DeploymentHealthCheck healthCheck,
+                       DeploymentIdentityMode identityPolicy) {
             this(jarRelativePath, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck,
-                    identityPolicy, DeploymentWorkload.unspecified());
+                identityPolicy, DeploymentWorkload.unspecified());
         }
 
         /**
@@ -288,9 +291,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public JavaJar(String jarRelativePath, String mainClass, String javaVersion, List<String> jvmArguments,
-                List<String> applicationArguments, DeploymentHealthCheck healthCheck) {
+                       List<String> applicationArguments, DeploymentHealthCheck healthCheck) {
             this(jarRelativePath, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck,
-                    DeploymentIdentityMode.SYSTEMD_STATIC);
+                DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
         /**
@@ -341,8 +344,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
-            List<String> applicationArguments, DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                      List<String> applicationArguments, DeploymentHealthCheck healthCheck,
+                      DeploymentIdentityMode identityPolicy,
+                      DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -355,10 +359,10 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
-                List<String> applicationArguments, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                          List<String> applicationArguments, DeploymentHealthCheck healthCheck,
+                          DeploymentIdentityMode identityPolicy) {
             this(sourceRoot, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck, identityPolicy,
-                    DeploymentWorkload.unspecified());
+                DeploymentWorkload.unspecified());
         }
 
         /**
@@ -372,9 +376,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public JavaSource(String sourceRoot, String mainClass, String javaVersion, List<String> jvmArguments,
-                List<String> applicationArguments, DeploymentHealthCheck healthCheck) {
+                          List<String> applicationArguments, DeploymentHealthCheck healthCheck) {
             this(sourceRoot, mainClass, javaVersion, jvmArguments, applicationArguments, healthCheck,
-                    DeploymentIdentityMode.SYSTEMD_STATIC);
+                DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
         /**
@@ -421,7 +425,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record NodeService(int nodeMajorVersion, DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                       DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -430,7 +434,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public NodeService(int nodeMajorVersion, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                           DeploymentIdentityMode identityPolicy) {
             this(nodeMajorVersion, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -484,7 +488,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record PythonService(String pythonVersion, String entrypoint, DeploymentHealthCheck healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                         DeploymentIdentityMode identityPolicy,
+                         DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -494,7 +499,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public PythonService(String pythonVersion, String entrypoint, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                             DeploymentIdentityMode identityPolicy) {
             this(pythonVersion, entrypoint, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -548,7 +553,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record StaticSite(String outputDirectory, OptionalInt nodeMajorVersion, DeploymentHealthCheck.Http healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                      DeploymentIdentityMode identityPolicy,
+                      DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -558,7 +564,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public StaticSite(String outputDirectory, OptionalInt nodeMajorVersion, DeploymentHealthCheck.Http healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                          DeploymentIdentityMode identityPolicy) {
             this(outputDirectory, nodeMajorVersion, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -570,7 +576,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public StaticSite(String outputDirectory, OptionalInt nodeMajorVersion,
-                DeploymentHealthCheck.Http healthCheck) {
+                          DeploymentHealthCheck.Http healthCheck) {
             this(outputDirectory, nodeMajorVersion, healthCheck, DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
@@ -631,8 +637,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
-            DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                     DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
+                     DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -643,7 +649,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
-                DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
+                         DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
             this(engine, publishedPorts, volumes, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -656,7 +662,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public Container(ContainerEngineType engine, Map<Integer, Integer> publishedPorts, List<ManagedVolume> volumes,
-                DeploymentHealthCheck healthCheck) {
+                         DeploymentHealthCheck healthCheck) {
             this(engine, publishedPorts, volumes, healthCheck, DeploymentIdentityMode.CONTAINER_NON_ROOT);
         }
 
@@ -681,7 +687,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
             publishedPorts = Map.copyOf(Objects.requireNonNull(publishedPorts, "publishedPorts"));
             publishedPorts.forEach((hostPort, containerPort) -> {
                 if (hostPort == null || containerPort == null || hostPort < 1 || hostPort > 65535 || containerPort < 1
-                        || containerPort > 65535) {
+                    || containerPort > 65535) {
                     throw new IllegalArgumentException("container ports must be in the TCP/UDP port range");
                 }
             });
@@ -711,7 +717,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record GoService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                     DeploymentIdentityMode identityPolicy,
+                     DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -722,7 +729,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public GoService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                         DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -781,7 +788,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record RustService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                       DeploymentIdentityMode identityPolicy,
+                       DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -792,7 +800,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public RustService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                           DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -851,7 +859,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record DotNetService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                         DeploymentIdentityMode identityPolicy,
+                         DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -862,7 +871,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public DotNetService(String version, String artifactName, String entrypoint, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                             DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -875,7 +884,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public DotNetService(String version, String artifactName, String entrypoint,
-                DeploymentHealthCheck healthCheck) {
+                             DeploymentHealthCheck healthCheck) {
             this(version, artifactName, entrypoint, healthCheck, DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
@@ -923,8 +932,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record KotlinService(String version, String artifactName, String entrypoint, String jvmTarget,
-            DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                         DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
+                         DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -936,9 +945,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public KotlinService(String version, String artifactName, String entrypoint, String jvmTarget,
-                DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
+                             DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, jvmTarget, healthCheck, identityPolicy,
-                    DeploymentWorkload.unspecified());
+                DeploymentWorkload.unspecified());
         }
 
         /**
@@ -951,7 +960,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public KotlinService(String version, String artifactName, String entrypoint, String jvmTarget,
-                DeploymentHealthCheck healthCheck) {
+                             DeploymentHealthCheck healthCheck) {
             this(version, artifactName, entrypoint, jvmTarget, healthCheck, DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
@@ -986,7 +995,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public KotlinService(String version, String artifactName, String entrypoint,
-                DeploymentHealthCheck healthCheck) {
+                             DeploymentHealthCheck healthCheck) {
             this(version, artifactName, entrypoint, "21", healthCheck);
         }
 
@@ -1014,8 +1023,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record PhpService(String version, String artifactName, String entrypoint, int servicePort,
-            DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                      DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
+                      DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -1027,9 +1036,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public PhpService(String version, String artifactName, String entrypoint, int servicePort,
-                DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
+                          DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, servicePort, healthCheck, identityPolicy,
-                    DeploymentWorkload.unspecified());
+                DeploymentWorkload.unspecified());
         }
 
         /**
@@ -1042,7 +1051,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public PhpService(String version, String artifactName, String entrypoint, int servicePort,
-                DeploymentHealthCheck healthCheck) {
+                          DeploymentHealthCheck healthCheck) {
             this(version, artifactName, entrypoint, servicePort, healthCheck, DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
@@ -1101,8 +1110,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record RubyService(String version, String artifactName, String entrypoint, int servicePort,
-            DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
-            DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                       DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy,
+                       DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -1114,9 +1123,9 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public RubyService(String version, String artifactName, String entrypoint, int servicePort,
-                DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
+                           DeploymentHealthCheck healthCheck, DeploymentIdentityMode identityPolicy) {
             this(version, artifactName, entrypoint, servicePort, healthCheck, identityPolicy,
-                    DeploymentWorkload.unspecified());
+                DeploymentWorkload.unspecified());
         }
 
         /**
@@ -1129,7 +1138,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param healthCheck reviewed probe and its success criteria / 已审阅探测及其成功条件
          */
         public RubyService(String version, String artifactName, String entrypoint, int servicePort,
-                DeploymentHealthCheck healthCheck) {
+                           DeploymentHealthCheck healthCheck) {
             this(version, artifactName, entrypoint, servicePort, healthCheck, DeploymentIdentityMode.SYSTEMD_STATIC);
         }
 
@@ -1153,7 +1162,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
             artifactName = safeName(artifactName, "artifactName");
             entrypoint = relativePath(entrypoint, "entrypoint");
             boolean bundler = artifactName.equals("bundle")
-                    && (entrypoint.equals("config.ru") || servicePort == 0 && entrypoint.endsWith(".rb"));
+                && (entrypoint.equals("config.ru") || servicePort == 0 && entrypoint.endsWith(".rb"));
             boolean cli = artifactName.equals("source") && entrypoint.endsWith(".rb");
             if (!bundler && !cli) {
                 throw new IllegalArgumentException("Ruby runtime must be one reviewed Bundler or CLI shape");
@@ -1185,7 +1194,8 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
      */
     record CmakeService(String preset, String target, String artifactName, DeploymentHealthCheck healthCheck,
-            DeploymentIdentityMode identityPolicy, DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
+                        DeploymentIdentityMode identityPolicy,
+                        DeploymentWorkload workload) implements DeploymentRuntimeDefinition {
         /**
          * Constructs an unreviewed execution declaration for programmatic callers. / 程序化调用者需另行审阅执行声明。
          *
@@ -1196,7 +1206,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
          * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
          */
         public CmakeService(String preset, String target, String artifactName, DeploymentHealthCheck healthCheck,
-                DeploymentIdentityMode identityPolicy) {
+                            DeploymentIdentityMode identityPolicy) {
             this(preset, target, artifactName, healthCheck, identityPolicy, DeploymentWorkload.unspecified());
         }
 
@@ -1249,12 +1259,12 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      */
     enum ContainerEngineType {
         /**
-        * Docker daemon. / Docker 守护进程。
-        */
+         * Docker daemon. / Docker 守护进程。
+         */
         DOCKER,
         /**
-        * Podman Quadlet. / Podman Quadlet 单元定义。
-        */
+         * Podman Quadlet. / Podman Quadlet 单元定义。
+         */
         PODMAN
     }
 
@@ -1292,7 +1302,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
             }
             containerPath = Objects.requireNonNull(containerPath, "containerPath").trim();
             if (!containerPath.matches("/[A-Za-z0-9._/-]{1,255}") || containerPath.equals("/")
-                    || containerPath.contains("..") || containerPath.contains("//")) {
+                || containerPath.contains("..") || containerPath.contains("//")) {
                 throw new IllegalArgumentException("container volume paths must be bounded absolute non-root paths");
             }
         }
@@ -1311,7 +1321,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
     private static String relativePath(String value, String name) {
         value = Objects.requireNonNull(value, name).trim().replace('\\', '/');
         if (value.isBlank() || value.startsWith("/") || value.contains("..") || value.contains("//")
-                || !value.matches("[A-Za-z0-9._/-]{1,255}")) {
+            || !value.matches("[A-Za-z0-9._/-]{1,255}")) {
             throw new IllegalArgumentException(name + " must be a bounded safe relative path");
         }
         return value;
@@ -1410,7 +1420,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
     private static String requireJavaVersion(String value) {
         value = Objects.requireNonNull(value, "javaVersion").trim();
         var parsed = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion
-                .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA, value);
+            .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA, value);
         if (parsed.isEmpty())
             throw new IllegalArgumentException("javaVersion must be an explicit version");
         return parsed.orElseThrow().branch();

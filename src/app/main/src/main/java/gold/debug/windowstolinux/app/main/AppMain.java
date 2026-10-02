@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main;
 
-import gold.debug.windowstolinux.app.main.startup.DesktopMain;
+import gold.debug.windowstolinux.app.main.start.DesktopMain;
 
 /**
  * WindowsToLinux desktop application entrypoint.

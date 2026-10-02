@@ -11,6 +11,11 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-app-ai</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -57,7 +62,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <argLine>"-Djava.io.tmpdir=${project.build.directory}" "-Djdk.net.unixdomain.tmpdir=${project.build.directory}"</argLine>
+          <argLine>"-Djava.io.tmpdir=${project.build.directory}"
+            "-Djdk.net.unixdomain.tmpdir=${project.build.directory}"
+          </argLine>
         </configuration>
       </plugin>
     </plugins>

@@ -23,11 +23,11 @@ public record DeploymentSecretReference(String identifier, long revision) {
         identifier = Objects.requireNonNull(identifier, "identifier").trim();
         if (!identifier.matches("[a-z0-9][a-z0-9._-]{0,63}")) {
             throw DeploymentConfigurationException.create("configuration.validation.identifier-invalid",
-                    "A configuration identifier must be bounded and lowercase");
+                "A configuration identifier must be bounded and lowercase");
         }
         if (revision < 1) {
             throw DeploymentConfigurationException.create("configuration.validation.revision-invalid",
-                    "A configuration revision must be positive");
+                "A configuration revision must be positive");
         }
     }
 }

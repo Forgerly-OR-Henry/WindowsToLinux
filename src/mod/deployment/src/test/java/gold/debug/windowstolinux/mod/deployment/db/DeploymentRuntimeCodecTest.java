@@ -18,22 +18,22 @@ class DeploymentRuntimeCodecTest {
     private static final DeploymentHealthCheck.Tcp TCP = new DeploymentHealthCheck.Tcp(18080, 20, 2);
 
     private static final DeploymentHealthCheck.Http HTTP = new DeploymentHealthCheck.Http(
-            URI.create("http://127.0.0.1:18081/health"), 200, 20);
+        URI.create("http://127.0.0.1:18081/health"), 200, 20);
 
     private final DeploymentRuntimeCodec codec = new DeploymentRuntimeCodec();
 
     @Test
     void genericProcessUsesVersionSevenAndNeverGuessesMissingRuntimeFields() throws Exception {
         var workload = new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON,
-                true,
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand("bin/zig-app",
-                        List.of("--listen", "18080")),
-                "", List.of(), java.util.Optional.empty(), "", java.util.Optional.empty(), List.of(), List.of(), "",
-                List.of());
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON,
+            true,
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand("bin/zig-app",
+                List.of("--listen", "18080")),
+            "", List.of(), java.util.Optional.empty(), "", java.util.Optional.empty(), List.of(), List.of(), "",
+            List.of());
         var runtime = new DeploymentRuntimeDefinition.ManagedProcess(TCP,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentIdentityMode.SYSTEMD_STATIC,
-                workload);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentIdentityMode.SYSTEMD_STATIC,
+            workload);
         var encoded = DeploymentCodecCompatibility.write(runtime);
         assertEquals(7, encoded[4]);
         assertEquals(runtime, codec.read(encoded, TCP));
@@ -62,24 +62,24 @@ class DeploymentRuntimeCodecTest {
         ports.put(18080, 8080);
         ports.put(18443, 8443);
         List<DeploymentRuntimeDefinition> runtimes = List.of(new DeploymentRuntimeDefinition.SpringBoot(TCP),
-                new DeploymentRuntimeDefinition.JavaJar("app.jar", "demo.Main", "21", List.of("-Xmx256m"),
-                        List.of("--mode=test"), TCP),
-                new DeploymentRuntimeDefinition.JavaSource("src", "demo.Main", "21", List.of("-Xmx256m"),
-                        List.of("--mode=test"), TCP),
-                new DeploymentRuntimeDefinition.NodeService(22, TCP),
-                new DeploymentRuntimeDefinition.PythonService("3.12", "demo.main", TCP),
-                new DeploymentRuntimeDefinition.StaticSite("dist", OptionalInt.of(22), HTTP),
-                new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.PODMAN, ports,
-                        List.of(new DeploymentRuntimeDefinition.ManagedVolume("windowstolinux-demo", "/var/lib/demo",
-                                true)),
-                        TCP),
-                new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go", TCP),
-                new DeploymentRuntimeDefinition.RustService("1.90.0", "demo", "src/main.rs", TCP),
-                new DeploymentRuntimeDefinition.DotNetService("8.0", "demo", "demo.dll", TCP),
-                new DeploymentRuntimeDefinition.KotlinService("2.1.0", "demo", "demo.MainKt", TCP),
-                new DeploymentRuntimeDefinition.PhpService("8.3", "public", "public/index.php", 18080, TCP),
-                new DeploymentRuntimeDefinition.RubyService("3.3.5", "source", "server.rb", 18080, TCP),
-                new DeploymentRuntimeDefinition.CmakeService("release", "demo", "demo", TCP));
+            new DeploymentRuntimeDefinition.JavaJar("app.jar", "demo.Main", "21", List.of("-Xmx256m"),
+                List.of("--mode=test"), TCP),
+            new DeploymentRuntimeDefinition.JavaSource("src", "demo.Main", "21", List.of("-Xmx256m"),
+                List.of("--mode=test"), TCP),
+            new DeploymentRuntimeDefinition.NodeService(22, TCP),
+            new DeploymentRuntimeDefinition.PythonService("3.12", "demo.main", TCP),
+            new DeploymentRuntimeDefinition.StaticSite("dist", OptionalInt.of(22), HTTP),
+            new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.PODMAN, ports,
+                List.of(new DeploymentRuntimeDefinition.ManagedVolume("windowstolinux-demo", "/var/lib/demo",
+                    true)),
+                TCP),
+            new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go", TCP),
+            new DeploymentRuntimeDefinition.RustService("1.90.0", "demo", "src/main.rs", TCP),
+            new DeploymentRuntimeDefinition.DotNetService("8.0", "demo", "demo.dll", TCP),
+            new DeploymentRuntimeDefinition.KotlinService("2.1.0", "demo", "demo.MainKt", TCP),
+            new DeploymentRuntimeDefinition.PhpService("8.3", "public", "public/index.php", 18080, TCP),
+            new DeploymentRuntimeDefinition.RubyService("3.3.5", "source", "server.rb", 18080, TCP),
+            new DeploymentRuntimeDefinition.CmakeService("release", "demo", "demo", TCP));
 
         for (DeploymentRuntimeDefinition runtime : runtimes) {
             assertEquals(runtime, codec.read(DeploymentCodecCompatibility.write(runtime), runtime.healthCheck()));

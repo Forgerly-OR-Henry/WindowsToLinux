@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.*;
 public final class ModNavigationPreferences {
     /** Strict persisted preference decoder. / 严格持久偏好解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Prevents construction of this transaction helper. / 禁止构造此事务助手。 */
     private ModNavigationPreferences() {
@@ -25,7 +25,7 @@ public final class ModNavigationPreferences {
          * @param pageId local page / 内部页面 */
         public PagePin {
             if (ownerId == null || ownerId.isBlank() || ownerId.length() > 512 || ownerId.indexOf('\0') >= 0
-                    || pageId == null || pageId.isBlank() || pageId.length() > 1024 || pageId.indexOf('\0') >= 0)
+                || pageId == null || pageId.isBlank() || pageId.length() > 1024 || pageId.indexOf('\0') >= 0)
                 throw new IllegalArgumentException("Invalid navigation identity");
         }
     }
@@ -36,8 +36,8 @@ public final class ModNavigationPreferences {
      * @throws SQLException if retained data is invalid / 保留数据无效时 */
     public static List<PagePin> read(Connection c) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT preference_value FROM desktop_preference WHERE preference_key='mod_navigation_pins'");
-                var r = p.executeQuery()) {
+            "SELECT preference_value FROM desktop_preference WHERE preference_key='mod_navigation_pins'");
+             var r = p.executeQuery()) {
             if (!r.next())
                 return List.of();
             String stored = r.getString(1);
@@ -46,14 +46,14 @@ public final class ModNavigationPreferences {
                     throw new IllegalArgumentException("Oversized pins");
                 var node = JSON.readTree(stored);
                 if (node == null || !node.isObject() || node.size() != 2 || !node.path("formatVersion").isInt()
-                        || node.path("formatVersion").asInt() != 1 || !node.path("pages").isArray()
-                        || node.path("pages").size() > 1024)
+                    || node.path("formatVersion").asInt() != 1 || !node.path("pages").isArray()
+                    || node.path("pages").size() > 1024)
                     throw new IllegalArgumentException("Invalid pins");
                 var pins = new LinkedHashSet<PagePin>();
                 for (var page : node.path("pages")) {
                     if (!page.isObject() || page.size() != 2 || !page.path("ownerId").isTextual()
-                            || !page.path("pageId").isTextual() || !pins.add(
-                                    new PagePin(page.path("ownerId").textValue(), page.path("pageId").textValue())))
+                        || !page.path("pageId").isTextual() || !pins.add(
+                        new PagePin(page.path("ownerId").textValue(), page.path("pageId").textValue())))
                         throw new IllegalArgumentException("Invalid pin identity");
                 }
                 return List.copyOf(pins);
@@ -69,14 +69,14 @@ public final class ModNavigationPreferences {
      * @throws SQLException if values exceed bounds or persistence fails / 值超限或持久化失败时 */
     public static void write(Connection c, List<PagePin> pins) throws SQLException {
         if (c.getAutoCommit() || pins.size() > 1024 || pins.stream().anyMatch(Objects::isNull)
-                || new HashSet<>(pins).size() != pins.size())
+            || new HashSet<>(pins).size() != pins.size())
             throw new SQLException("Invalid navigation write", "MOD_NAVIGATION_FULL");
         var node = JSON.createObjectNode().put("formatVersion", 1);
         node.set("pages", JSON.valueToTree(pins));
         if (node.toString().length() > 1024 * 1024)
             throw new SQLException("Navigation preference limit reached", "MOD_NAVIGATION_FULL");
         try (var p = c.prepareStatement(
-                "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES('mod_navigation_pins',?)")) {
+            "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES('mod_navigation_pins',?)")) {
             p.setString(1, node.toString());
             p.executeUpdate();
         }

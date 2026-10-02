@@ -33,7 +33,7 @@ public final class StaticSiteBuildRenderer implements DeploymentBuildRenderer {
     @Override
     public java.util.Set<DeploymentBuildToolType> buildTools() {
         return java.util.Set.of(DeploymentBuildToolType.STATIC_SITE_BUILD, DeploymentBuildToolType.NPM,
-                DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN);
+            DeploymentBuildToolType.PNPM, DeploymentBuildToolType.YARN);
     }
 
     /**
@@ -48,7 +48,7 @@ public final class StaticSiteBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.StaticSite site)) {
             throw new IllegalArgumentException("Static-site renderer requires reviewed static-site inputs");
         }
@@ -59,17 +59,17 @@ public final class StaticSiteBuildRenderer implements DeploymentBuildRenderer {
             }
             String output = SafeBuildScriptEnvelope.shellQuote("./" + site.outputDirectory());
             command = """
-                    test -f ./index.html
-                    test -d %s
-                    printf 'ARTIFACT=%%s\n' %s
-                    """.formatted(output, output);
+                test -f ./index.html
+                test -d %s
+                printf 'ARTIFACT=%%s\n' %s
+                """.formatted(output, output);
         } else {
             if (site.nodeMajorVersion().isEmpty()) {
                 throw new IllegalArgumentException(
-                        "Node-built static sites require an explicit reviewed Node major version");
+                    "Node-built static sites require an explicit reviewed Node major version");
             }
             command = NodePackageBuildScript.render(facts.buildTool(), site.nodeMajorVersion().getAsInt(), true,
-                    site.outputDirectory());
+                site.outputDirectory());
         }
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }

@@ -34,14 +34,14 @@ public final class DeploymentPlanFactory {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public static ReviewedDeploymentPlan plan(ReviewedDeploymentRequest request, DeploymentProjectKind expectedType,
-            boolean staticOutput, boolean containerPolicy) {
+                                              boolean staticOutput, boolean containerPolicy) {
         if (request.facts().projectType() != expectedType) {
             throw new IllegalArgumentException("adapter cannot plan a different project type");
         }
         List<DeploymentPlanAction> steps = new ArrayList<>(
-                List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY, DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT,
-                        DeploymentPlanAction.VERIFY_SECRET_REVISIONS, DeploymentPlanAction.PREPARE_CANDIDATE,
-                        DeploymentPlanAction.BUILD, DeploymentPlanAction.VERIFY_ARTIFACT));
+            List.of(DeploymentPlanAction.VERIFY_SOURCE_IDENTITY, DeploymentPlanAction.VERIFY_CONFIGURATION_SNAPSHOT,
+                DeploymentPlanAction.VERIFY_SECRET_REVISIONS, DeploymentPlanAction.PREPARE_CANDIDATE,
+                DeploymentPlanAction.BUILD, DeploymentPlanAction.VERIFY_ARTIFACT));
         if (staticOutput) {
             steps.add(DeploymentPlanAction.VERIFY_STATIC_OUTPUT);
         }
@@ -49,8 +49,8 @@ public final class DeploymentPlanFactory {
             steps.add(DeploymentPlanAction.VERIFY_CONTAINER_POLICY);
         }
         steps.addAll(List.of(DeploymentPlanAction.STOP_PREVIOUS, DeploymentPlanAction.ACTIVATE_CANDIDATE,
-                DeploymentPlanAction.CHECK_HEALTH, DeploymentPlanAction.COMMIT_RELEASE,
-                DeploymentPlanAction.ROLLBACK_ON_FAILURE));
+            DeploymentPlanAction.CHECK_HEALTH, DeploymentPlanAction.COMMIT_RELEASE,
+            DeploymentPlanAction.ROLLBACK_ON_FAILURE));
         return new ReviewedDeploymentPlan(request, steps);
     }
 }

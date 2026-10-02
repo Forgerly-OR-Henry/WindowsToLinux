@@ -6,6 +6,6 @@ public enum TransferConflictChoice {
     OVERWRITE,
     /** Publish under an automatically selected unused name. / 使用自动选择的未占用名称发布。 */
     KEEP_BOTH,
-    /** Stop this transfer without replacing the target. / 停止本次传输，不替换目标。 */
-    TERMINATE
+    /** Leave this item unchanged and report a known failure. / 保持此项不变并报告明确失败。 */
+    SKIP
 }

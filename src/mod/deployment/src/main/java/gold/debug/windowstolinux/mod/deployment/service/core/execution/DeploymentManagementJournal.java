@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
@@ -14,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 
 /** Journals an original management task before any remote effect and keeps uncertain phases. / 在远端副作用前记录原管理任务，并保留未知阶段。 */
@@ -47,8 +53,9 @@ public final class DeploymentManagementJournal {
      * @param phase durable phase / 持久阶段
      * @param facts bounded operation facts / 有界操作事实 */
     public record Entry(UUID id, UUID taskId, String ownerId, String ownerVersion, String applicationId,
-            ServerRef server, String action, String currentRevision, Optional<String> targetRevision, String phase,
-            JsonNode facts) {
+                        ServerRef server, String action, String currentRevision, Optional<String> targetRevision,
+                        String phase,
+                        JsonNode facts) {
     }
 
     /** Inserts or confirms the exact original intent. / 插入或核实精确原意图。
@@ -62,7 +69,7 @@ public final class DeploymentManagementJournal {
      * @return original row / 原行
      * @throws ApiException if owner, intent or commit cannot be confirmed / 所有者、意图或提交无法确认时 */
     public Entry begin(String application, ServerRef server, String action, String currentRevision,
-            Optional<String> targetRevision, JsonNode facts, TaskContext task) throws ApiException {
+                       Optional<String> targetRevision, JsonNode facts, TaskContext task) throws ApiException {
         TaskSnapshot owner = context.tasks().inspect(task);
         context.servers().get(server, task);
         byte[] payload = bytes(facts);
@@ -71,18 +78,18 @@ public final class DeploymentManagementJournal {
         if (existing.isPresent()) {
             var value = existing.orElseThrow();
             if (!value.applicationId().equals(application) || !value.server().equals(server)
-                    || !value.action().equals(action) || !value.currentRevision().equals(currentRevision)
-                    || !value.targetRevision().equals(targetRevision)
-                    || value.phase().equals("REVIEWED") && !value.facts().equals(facts))
+                || !value.action().equals(action) || !value.currentRevision().equals(currentRevision)
+                || !value.targetRevision().equals(targetRevision)
+                || value.phase().equals("REVIEWED") && !value.facts().equals(facts))
                 throw incompatible();
             return value;
         }
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var insert = connection.prepareStatement("INSERT INTO deployment_management_operation("
-                        + "operation_id,platform_task_id,owner_mod_id,owner_mod_version,application_id,"
-                        + "server_profile_id,action,current_release_sha256,target_release_sha256,phase,"
-                        + "component_state,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'REVIEWED',?,?)")) {
+             var insert = connection.prepareStatement("INSERT INTO deployment_management_operation("
+                 + "operation_id,platform_task_id,owner_mod_id,owner_mod_version,application_id,"
+                 + "server_profile_id,action,current_release_sha256,target_release_sha256,phase,"
+                 + "component_state,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'REVIEWED',?,?)")) {
             insert.setObject(1, id);
             insert.setObject(2, owner.id());
             insert.setString(3, owner.ownerId());
@@ -96,7 +103,7 @@ public final class DeploymentManagementJournal {
             insert.setLong(11, Instant.now().toEpochMilli());
             insert.executeUpdate();
             return new Entry(id, owner.id(), owner.ownerId(), owner.ownerVersion(), application, server, action,
-                    currentRevision, targetRevision, "REVIEWED", facts.deepCopy());
+                currentRevision, targetRevision, "REVIEWED", facts.deepCopy());
         } catch (SQLException failure) {
             throw unknown("DEPLOYMENT_MANAGEMENT_BEGIN_UNKNOWN");
         }
@@ -110,21 +117,21 @@ public final class DeploymentManagementJournal {
         TaskSnapshot owner = context.tasks().inspect(task);
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var query = connection
-                        .prepareStatement("SELECT * FROM deployment_management_operation WHERE platform_task_id=?")) {
+             var query = connection
+                 .prepareStatement("SELECT * FROM deployment_management_operation WHERE platform_task_id=?")) {
             query.setObject(1, owner.id());
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     return Optional.empty();
                 if (!owner.ownerId().equals(rows.getString("owner_mod_id"))
-                        || !owner.ownerVersion().equals(rows.getString("owner_mod_version")))
+                    || !owner.ownerVersion().equals(rows.getString("owner_mod_version")))
                     throw denied();
                 var entry = new Entry(rows.getObject("operation_id", UUID.class), owner.id(), owner.ownerId(),
-                        owner.ownerVersion(), rows.getString("application_id"),
-                        new ServerRef(rows.getString("server_profile_id")), rows.getString("action"),
-                        rows.getString("current_release_sha256"),
-                        Optional.ofNullable(rows.getString("target_release_sha256")), rows.getString("phase"),
-                        parse(rows.getBytes("component_state")));
+                    owner.ownerVersion(), rows.getString("application_id"),
+                    new ServerRef(rows.getString("server_profile_id")), rows.getString("action"),
+                    rows.getString("current_release_sha256"),
+                    Optional.ofNullable(rows.getString("target_release_sha256")), rows.getString("phase"),
+                    parse(rows.getBytes("component_state")));
                 if (rows.next())
                     throw incompatible();
                 context.servers().get(entry.server(), task);
@@ -145,15 +152,15 @@ public final class DeploymentManagementJournal {
     public Entry advance(Entry entry, String phase, JsonNode facts, TaskContext task) throws ApiException {
         TaskSnapshot owner = context.tasks().inspect(task);
         if (!owner.id().equals(entry.taskId()) || !owner.ownerId().equals(entry.ownerId())
-                || !owner.ownerVersion().equals(entry.ownerVersion()))
+            || !owner.ownerVersion().equals(entry.ownerVersion()))
             throw denied();
         context.servers().get(entry.server(), task);
         byte[] payload = bytes(facts);
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var update = connection.prepareStatement("UPDATE deployment_management_operation SET phase=?,"
-                        + "component_state=?,updated_at=? WHERE operation_id=? AND platform_task_id=? AND "
-                        + "owner_mod_id=? AND owner_mod_version=? AND phase=?")) {
+             var update = connection.prepareStatement("UPDATE deployment_management_operation SET phase=?,"
+                 + "component_state=?,updated_at=? WHERE operation_id=? AND platform_task_id=? AND "
+                 + "owner_mod_id=? AND owner_mod_version=? AND phase=?")) {
             update.setString(1, phase);
             update.setBytes(2, payload);
             update.setLong(3, Instant.now().toEpochMilli());
@@ -165,8 +172,8 @@ public final class DeploymentManagementJournal {
             if (update.executeUpdate() != 1)
                 throw incompatible();
             return new Entry(entry.id(), entry.taskId(), entry.ownerId(), entry.ownerVersion(), entry.applicationId(),
-                    entry.server(), entry.action(), entry.currentRevision(), entry.targetRevision(), phase,
-                    facts.deepCopy());
+                entry.server(), entry.action(), entry.currentRevision(), entry.targetRevision(), phase,
+                facts.deepCopy());
         } catch (SQLException failure) {
             throw unknown("DEPLOYMENT_MANAGEMENT_COMMIT_UNKNOWN");
         }
@@ -209,7 +216,7 @@ public final class DeploymentManagementJournal {
         try (var parser = JSON.createParser(binary)) {
             JsonNode value = JSON.readTree(parser);
             if (parser.nextToken() != null || value == null || !value.isObject()
-                    || value.path("formatVersion").asInt() != 1)
+                || value.path("formatVersion").asInt() != 1)
                 throw new IOException("Management facts invalid");
             return value;
         }
@@ -240,6 +247,6 @@ public final class DeploymentManagementJournal {
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException problem(ProblemCode code, String event) {
         return new ApiException(new Problem(code, event, "Management operation requires original-task review", Map.of(),
-                Optional.empty()));
+            Optional.empty()));
     }
 }

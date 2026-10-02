@@ -25,7 +25,7 @@ public final class GoModuleDeploymentInspector implements DeploymentTypeInspecto
      * <p>用于识别GO版本的匹配模式。
      */
     private static final Pattern GO_VERSION = Pattern
-            .compile("(?m)^go\\s+([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?)\\s*$");
+        .compile("(?m)^go\\s+([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?)\\s*$");
 
     /**
      * Returns the supported project category handled by this strategy.
@@ -51,13 +51,13 @@ public final class GoModuleDeploymentInspector implements DeploymentTypeInspecto
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         GoModuleFacts facts = new GoModuleFacts(ServiceMetadataInspector
-                .match(ServiceMetadataInspector.readIfPresent(root.resolve("go.mod")), GO_VERSION),
-                ServiceMetadataInspector.missing(root, "go.mod", "go.sum", "main.go"));
+            .match(ServiceMetadataInspector.readIfPresent(root.resolve("go.mod")), GO_VERSION),
+            ServiceMetadataInspector.missing(root, "go.mod", "go.sum", "main.go"));
         ServiceProjectFacts shape = new ServiceProjectFacts("go.mod", facts.version(), "w2l-app",
-                ServiceMetadataInspector.present(root, "main.go") ? "main.go" : null, facts.missingFiles());
+            ServiceMetadataInspector.present(root, "main.go") ? "main.go" : null, facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.GO_MODULE, languageFacts, shape, false);
+            DeploymentBuildToolType.GO_MODULE, languageFacts, shape, false);
     }
 }

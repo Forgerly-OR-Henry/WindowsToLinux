@@ -42,7 +42,7 @@ public final class DeploymentContainerArguments {
             values.add(Integer.toString(port.targetPort()));
         });
         List<DeploymentRuntimeDefinition.ManagedVolume> volumes = runtime.volumes().stream()
-                .sorted(Comparator.comparing(DeploymentRuntimeDefinition.ManagedVolume::name)).toList();
+            .sorted(Comparator.comparing(DeploymentRuntimeDefinition.ManagedVolume::name)).toList();
         values.add(Integer.toString(volumes.size()));
         volumes.forEach(volume -> {
             values.add(volume.name());

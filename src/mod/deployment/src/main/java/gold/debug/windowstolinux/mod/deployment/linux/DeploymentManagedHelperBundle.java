@@ -53,66 +53,66 @@ public final class DeploymentManagedHelperBundle {
      * <p>资源INSERTS。
      */
     private static final Map<String, String> RESOURCE_INSERTS = Map.of("# @compat:agent-source@\n",
-            "workspace/source-operations.py", "# @compat:apparmor@\n",
-            "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
-            "runtime/systemd/helper/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
-            "runtime/systemd/helper/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
-            "distro/dnf/centos-source-repositories.py");
+        "workspace/source-operations.py", "# @compat:apparmor@\n",
+        "execution/protocol/helper/fragments/workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
+        "runtime/systemd/helper/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
+        "runtime/systemd/helper/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
+        "distro/dnf/centos-source-repositories.py");
 
     /**
      * Ordered packaged helper fragments.
      * <p>有序打包 helper 片段。
      */
     private static final List<String> FRAGMENTS = List.of(
-            "execution/protocol/helper/fragments/00-protocol-foundation.sh",
-            "execution/protocol/helper/fragments/release/10-typed-release.sh",
-            "execution/protocol/helper/fragments/release/12-container-image-input.sh",
-            "execution/protocol/helper/fragments/input/15-deployment-input.sh",
-            "execution/protocol/helper/fragments/input/16-application-input.sh",
-            "execution/protocol/helper/fragments/input/17-managed-content.sh",
-            "execution/protocol/helper/fragments/release/18-container-storage.sh",
-            "execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh",
-            "execution/protocol/helper/fragments/workspace/21-workspace-volume.sh",
-            "execution/protocol/helper/fragments/workspace/22-restricted-build.sh",
-            "execution/protocol/helper/fragments/workspace/23-container-builder.sh",
-            "execution/protocol/helper/fragments/workspace/25-workspace-recovery.sh",
-            "execution/protocol/helper/fragments/workspace/26-build-output.sh",
-            "execution/protocol/helper/fragments/workspace/27-agent-workspace.sh",
-            "execution/protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh",
-            "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
-            "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
-            "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
-            "execution/protocol/helper/fragments/runtime/41-application-admission.sh",
-            "execution/protocol/helper/fragments/runtime/41-application-runtime.sh",
-            "execution/protocol/helper/fragments/runtime/42-application-job.sh",
-            "execution/protocol/helper/fragments/runtime/43-application-container.sh",
-            "execution/protocol/helper/fragments/runtime/44-application-health.sh",
-            "execution/protocol/helper/fragments/runtime/45-application-container-contract.sh",
-            "execution/protocol/helper/fragments/release/50-container-release.sh",
-            "execution/protocol/helper/fragments/release/52-container-recovery.sh",
-            "execution/protocol/helper/fragments/release/53-publication-observation.sh",
-            "execution/protocol/helper/fragments/release/55-publication-snapshot.sh",
-            "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
-            "execution/protocol/helper/fragments/restore/56-restore-recovery.sh",
-            "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
-            "execution/protocol/helper/fragments/restore/57-application-restore.sh",
-            "execution/protocol/helper/fragments/release/58-retained-activation.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-restore.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh",
-            "execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh",
-            "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
-            "runtime/systemd/helper/61-service-identity.sh",
-            "execution/protocol/helper/fragments/database/64-database-client.sh",
-            "execution/protocol/helper/fragments/database/63-database-inspection.sh",
-            "execution/protocol/helper/fragments/database/65-database-backup.sh",
-            "execution/protocol/helper/fragments/database/66-database-activation.sh",
-            "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
-            "execution/protocol/helper/fragments/database/68-handoff-database.sh",
-            "execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh",
-            "execution/protocol/helper/fragments/database/10-native-instances.sh",
-            "execution/protocol/helper/fragments/database/20-native-targets.sh",
-            "execution/protocol/helper/fragments/database/21-native-operations.sh",
-            "execution/protocol/helper/fragments/70-command-dispatch.sh");
+        "execution/protocol/helper/fragments/00-protocol-foundation.sh",
+        "execution/protocol/helper/fragments/release/10-typed-release.sh",
+        "execution/protocol/helper/fragments/release/12-container-image-input.sh",
+        "execution/protocol/helper/fragments/input/15-deployment-input.sh",
+        "execution/protocol/helper/fragments/input/16-application-input.sh",
+        "execution/protocol/helper/fragments/input/17-managed-content.sh",
+        "execution/protocol/helper/fragments/release/18-container-storage.sh",
+        "execution/protocol/helper/fragments/workspace/20-candidate-workspace.sh",
+        "execution/protocol/helper/fragments/workspace/21-workspace-volume.sh",
+        "execution/protocol/helper/fragments/workspace/22-restricted-build.sh",
+        "execution/protocol/helper/fragments/workspace/23-container-builder.sh",
+        "execution/protocol/helper/fragments/workspace/25-workspace-recovery.sh",
+        "execution/protocol/helper/fragments/workspace/26-build-output.sh",
+        "execution/protocol/helper/fragments/workspace/27-agent-workspace.sh",
+        "execution/protocol/helper/fragments/ecosystem/35-ecosystem-dispatch.sh",
+        "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
+        "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
+        "execution/protocol/helper/fragments/runtime/40-typed-runtime.sh",
+        "execution/protocol/helper/fragments/runtime/41-application-admission.sh",
+        "execution/protocol/helper/fragments/runtime/41-application-runtime.sh",
+        "execution/protocol/helper/fragments/runtime/42-application-job.sh",
+        "execution/protocol/helper/fragments/runtime/43-application-container.sh",
+        "execution/protocol/helper/fragments/runtime/44-application-health.sh",
+        "execution/protocol/helper/fragments/runtime/45-application-container-contract.sh",
+        "execution/protocol/helper/fragments/release/50-container-release.sh",
+        "execution/protocol/helper/fragments/release/52-container-recovery.sh",
+        "execution/protocol/helper/fragments/release/53-publication-observation.sh",
+        "execution/protocol/helper/fragments/release/55-publication-snapshot.sh",
+        "execution/protocol/helper/fragments/restore/54-restore-candidate.sh",
+        "execution/protocol/helper/fragments/restore/56-restore-recovery.sh",
+        "execution/protocol/helper/fragments/restore/56-restore-commit.sh",
+        "execution/protocol/helper/fragments/restore/57-application-restore.sh",
+        "execution/protocol/helper/fragments/release/58-retained-activation.sh",
+        "execution/protocol/helper/fragments/restore/59-handoff-restore.sh",
+        "execution/protocol/helper/fragments/restore/59-handoff-database-restore.sh",
+        "execution/protocol/helper/fragments/restore/59-handoff-restore-cleanup.sh",
+        "runtime/container/helper/55-podman-quadlet.sh", "runtime/systemd/helper/60-lifecycle.sh",
+        "runtime/systemd/helper/61-service-identity.sh",
+        "execution/protocol/helper/fragments/database/64-database-client.sh",
+        "execution/protocol/helper/fragments/database/63-database-inspection.sh",
+        "execution/protocol/helper/fragments/database/65-database-backup.sh",
+        "execution/protocol/helper/fragments/database/66-database-activation.sh",
+        "execution/protocol/helper/fragments/backup/67-managed-backup.sh",
+        "execution/protocol/helper/fragments/database/68-handoff-database.sh",
+        "execution/protocol/helper/fragments/backup/69-handoff-backup-status.sh",
+        "execution/protocol/helper/fragments/database/10-native-instances.sh",
+        "execution/protocol/helper/fragments/database/20-native-targets.sh",
+        "execution/protocol/helper/fragments/database/21-native-operations.sh",
+        "execution/protocol/helper/fragments/70-command-dispatch.sh");
 
     /**
      * Installed non-privileged build entrypoint. / 安装后的非特权构建入口。
@@ -122,7 +122,7 @@ public final class DeploymentManagedHelperBundle {
      */
     public static String renderBuildEntry() {
         try (InputStream stream = DeploymentManagedHelperBundle.class
-                .getResourceAsStream(ROOT + "execution/protocol/helper/fragments/workspace/24-build-entry.sh")) {
+            .getResourceAsStream(ROOT + "execution/protocol/helper/fragments/workspace/24-build-entry.sh")) {
             if (stream == null)
                 throw new IllegalStateException("Build entry resource unavailable");
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
@@ -177,15 +177,15 @@ public final class DeploymentManagedHelperBundle {
             try (InputStream stream = DeploymentManagedHelperBundle.class.getResourceAsStream(ROOT + fragment)) {
                 if (stream == null) {
                     throw new IllegalStateException(
-                            "managed-deployment privilege helper fragment is unavailable: " + fragment);
+                        "managed-deployment privilege helper fragment is unavailable: " + fragment);
                 }
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
                 content = expandResourceInserts(content);
                 if (fragment.startsWith("toolchain/")) {
                     if (fragment.endsWith("10-release-metadata.py"))
                         output.write(
-                                ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
-                                        + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
+                            ("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n"
+                                + catalogLiteral(catalog)).getBytes(StandardCharsets.UTF_8));
                     output.write((content + "\n").getBytes(StandardCharsets.UTF_8));
                     if (fragment.endsWith("40-binding-protocol.py"))
                         output.write("WTL_OFFICIAL_TOOLCHAINS\n}\n".getBytes(StandardCharsets.UTF_8));
@@ -193,19 +193,19 @@ public final class DeploymentManagedHelperBundle {
                 }
                 if (fragment.endsWith("00-protocol-foundation.sh")) {
                     content += "build_entry_sha256=" + sha256(renderBuildEntry().getBytes(StandardCharsets.UTF_8))
-                            + "\n";
+                        + "\n";
                 }
                 // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
                 output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")
-                        || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh") || fragment.endsWith("23-container-builder.sh")
-                        || fragment.endsWith("12-container-image-input.sh")
-                        || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-"))
-                                ? content
-                                : content.replace("\\\\", "\\"))
-                        .getBytes(StandardCharsets.UTF_8));
+                    || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh") || fragment.endsWith("23-container-builder.sh")
+                    || fragment.endsWith("12-container-image-input.sh")
+                    || fragment.endsWith("18-container-storage.sh") || fragment.contains("application-"))
+                    ? content
+                    : content.replace("\\\\", "\\"))
+                    .getBytes(StandardCharsets.UTF_8));
             } catch (IOException exception) {
                 throw new IllegalStateException(
-                        "managed-deployment privilege helper fragment cannot be read: " + fragment, exception);
+                    "managed-deployment privilege helper fragment cannot be read: " + fragment, exception);
             }
         }
         return output.toByteArray();
@@ -225,14 +225,14 @@ public final class DeploymentManagedHelperBundle {
             if (!script.contains(insert.getKey()))
                 continue;
             try (InputStream input = DeploymentManagedHelperBundle.class
-                    .getResourceAsStream(ROOT + insert.getValue())) {
+                .getResourceAsStream(ROOT + insert.getValue())) {
                 if (input == null) {
                     throw new IllegalStateException(
-                            "managed-deployment privilege helper insert is unavailable: " + insert.getValue());
+                        "managed-deployment privilege helper insert is unavailable: " + insert.getValue());
                 }
                 script = script.replaceAll("(?m)^[ \t]*" + java.util.regex.Pattern.quote(insert.getKey()),
-                        java.util.regex.Matcher.quoteReplacement(
-                                new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n")));
+                    java.util.regex.Matcher.quoteReplacement(
+                        new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n")));
             }
         }
         return script;
@@ -250,7 +250,7 @@ public final class DeploymentManagedHelperBundle {
         for (var ecosystem : DeploymentToolchainType.values()) {
             data.append("    '").append(ecosystem.name()).append("': [");
             data.append(catalog.branches(ecosystem).stream().map(b -> "'" + b.version() + "'")
-                    .collect(java.util.stream.Collectors.joining(", "))).append("],\n");
+                .collect(java.util.stream.Collectors.joining(", "))).append("],\n");
         }
         return data.append("}\n").toString();
     }

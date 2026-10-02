@@ -20,11 +20,11 @@ final class DeploymentDebianCompatibilityPolicy implements DeploymentDistributio
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"13".equals(capabilities.version()) || !"apt".equals(capabilities.packageManager())
-                || !"amd64".equals(capabilities.packageArchitecture())) {
+            || !"amd64".equals(capabilities.packageArchitecture())) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("Debian must be stable 13 with apt and amd64 packages", evidence);
+                .unsupported("Debian must be stable 13 with apt and amd64 packages", evidence);
         }
         return DeploymentDistributionCompatibilityRules.requireCpu(capabilities,
-                DeploymentCpuMicroarchitectureLevel.X86_64_V1, "Debian", evidence);
+            DeploymentCpuMicroarchitectureLevel.X86_64_V1, "Debian", evidence);
     }
 }

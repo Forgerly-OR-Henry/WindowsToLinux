@@ -39,7 +39,7 @@ public final class DeploymentHostCompatibilityEvaluator {
         if (!capabilities.systemdAvailable())
             return result(DeploymentHostCapabilityStatus.UNSUPPORTED, "systemd is required", evidence);
         return new DeploymentHostCompatibilityDecision(
-                DeploymentDistributionCompatibilityEvaluator.evaluate(capabilities, evidence), evidence);
+            DeploymentDistributionCompatibilityEvaluator.evaluate(capabilities, evidence), evidence);
     }
 
     /**
@@ -52,10 +52,10 @@ public final class DeploymentHostCompatibilityEvaluator {
      * @return conservative compatibility outcome / 保守兼容性结果
      */
     public static DeploymentHostCompatibilityDecision evaluate(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
+                                                               DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime) {
         return evaluate(capabilities, facts, runtime,
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains(
-                        "legacy", List.of()));
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains(
+                "legacy", List.of()));
     }
 
     /**
@@ -71,8 +71,8 @@ public final class DeploymentHostCompatibilityEvaluator {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DeploymentHostCompatibilityDecision evaluate(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
+                                                               DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
+                                                               gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
         capabilities = Objects.requireNonNull(capabilities, "capabilities");
         facts = Objects.requireNonNull(facts, "facts");
         runtime = Objects.requireNonNull(runtime, "runtime");
@@ -85,21 +85,21 @@ public final class DeploymentHostCompatibilityEvaluator {
         }
         if (!capabilities.systemdAvailable()) {
             return result(DeploymentHostCapabilityStatus.UNSUPPORTED, "systemd is required for managed lifecycle",
-                    evidence);
+                evidence);
         }
         DeploymentHostCapabilityStatus base = DeploymentDistributionCompatibilityEvaluator.evaluate(capabilities,
-                evidence);
+            evidence);
         if (base != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION) {
             return new DeploymentHostCompatibilityDecision(base, evidence);
         }
         DeploymentRuntimeCapabilityDecision runtimeDecision = DeploymentRuntimeCapabilityEvaluator
-                .evaluate(capabilities, facts, runtime, tools);
+            .evaluate(capabilities, facts, runtime, tools);
         if (!runtimeDecision.supported()) {
             return result(DeploymentHostCapabilityStatus.UNSUPPORTED, runtimeDecision.detail().orElseThrow(), evidence);
         }
         evidence.add("runtime matrix matches collected host facts only");
         return new DeploymentHostCompatibilityDecision(DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION,
-                evidence);
+            evidence);
     }
 
     /**
@@ -112,7 +112,7 @@ public final class DeploymentHostCompatibilityEvaluator {
      * @return host support decision from the supplied result inputs / 根据所提供结果输入构建主机支持决定
      */
     private static DeploymentHostCompatibilityDecision result(DeploymentHostCapabilityStatus support, String detail,
-            List<String> evidence) {
+                                                              List<String> evidence) {
         evidence.add(detail);
         return new DeploymentHostCompatibilityDecision(support, evidence);
     }

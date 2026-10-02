@@ -48,6 +48,7 @@ public final class DeploymentNativeDatabaseWire {
             Arrays.fill(buf, (byte) 0);
         }
     }
+
     /** Original session. / 原会话。 */
     private final RemoteSession session;
 
@@ -74,7 +75,7 @@ public final class DeploymentNativeDatabaseWire {
      * @param server admitted server / 已准入服务器
      * @param task original task / 原任务 */
     public DeploymentNativeDatabaseWire(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task) {
+                                        TaskContext task) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -90,25 +91,25 @@ public final class DeploymentNativeDatabaseWire {
      * @return exact platform observation or review rejection / 平台精确观察或审核拒绝
      * @throws ApiException if review, dispatch transition or transport fails / 审核、发送阶段转换或传输失败时 */
     public OperationResult<CommandResult> send(String action, byte[] frame, String revision, String target,
-            BeforeExecute beforeExecute) throws ApiException {
+                                               BeforeExecute beforeExecute) throws ApiException {
         if (!Set.of("inspect", "install", "start", "resume", "target", "prepare", "initialize", "status")
-                .contains(action))
+            .contains(action))
             throw new IllegalArgumentException("Unsupported native database action");
         try (var request = new CommandRequest("'" + DeploymentManagedHelperBundle.PATH + "' native-db " + action, frame,
-                "status".equals(action)
-                        ? Duration.ofSeconds(30)
-                        : "install".equals(action) ? Duration.ofMinutes(30) : Duration.ofMinutes(10),
-                131072)) {
+            "status".equals(action)
+                ? Duration.ofSeconds(30)
+                : "install".equals(action) ? Duration.ofMinutes(30) : Duration.ofMinutes(10),
+            131072)) {
             ActionIntent intent = RemoteActions.command(server, revision, request)
-                    .withSemantics(new ActionSemantics("deployment.native-db." + action + ".v1",
-                            Set.of(new ActionTarget(server.id(), "native-database", target))));
+                .withSemantics(new ActionSemantics("deployment.native-db." + action + ".v1",
+                    Set.of(new ActionTarget(server.id(), "native-database", target))));
             var grant = interaction.approve(intent, task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), java.util.Optional.empty(), grant.problem());
-            if (task.cancellation().requested())
+            if (task.cancelToken().requested())
                 return new OperationResult<>(Outcome.CANCELLED, java.util.Optional.empty(),
-                        java.util.Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_UNSENT",
-                                "Native database operation was not sent", Map.of(), java.util.Optional.empty())));
+                    java.util.Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_UNSENT",
+                        "Native database operation was not sent", Map.of(), java.util.Optional.empty())));
             beforeExecute.run();
             return session.execute(request, grant.value().orElseThrow());
         }

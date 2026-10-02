@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -10,9 +21,9 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.db.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
 import org.junit.jupiter.api.Test;
@@ -20,21 +31,21 @@ import org.junit.jupiter.api.Test;
 class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
     DeploymentConfigurationSnapshot snapshot(long revision, String input) {
         return DeploymentConfigurationSnapshot.create("demo", revision, "v1",
-                Instant.parse("2026-09-27T00:00:00.123456Z"), DeploymentConfigurationInput.parse(input));
+            Instant.parse("2026-09-27T00:00:00.123456Z"), DeploymentConfigurationInput.parse(input));
     }
 
     void run(PlatformRuntime runtime, TaskWork<Void> work) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var observed = new AtomicReference<Throwable>();
         var handle = context.tasks().submit(
-                new TaskRequest("configuration_acceptance", "Configuration acceptance", List.of(), true), task -> {
-                    try {
-                        return work.run(task);
-                    } catch (Exception | AssertionError failure) {
-                        observed.set(failure);
-                        throw failure;
-                    }
-                });
+            new TaskRequest("configuration_acceptance", "Configuration acceptance", List.of(), true), task -> {
+                try {
+                    return work.run(task);
+                } catch (Exception | AssertionError failure) {
+                    observed.set(failure);
+                    throw failure;
+                }
+            });
         var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
         if (observed.get() != null)
             throw new AssertionError("Original fixture work failed", observed.get());
@@ -60,13 +71,13 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                 assertEquals(accepted.sha256(), loaded.sha256());
                 assertEquals(accepted.createdAt().toEpochMilli(), loaded.createdAt().toEpochMilli());
                 repository.save(task, DeploymentConfigurationSnapshot.create("demo", 1, "v1", accepted.createdAt(),
-                        accepted.entries().reversed()));
+                    accepted.entries().reversed()));
                 assertThrows(SQLException.class, () -> repository.save(task, snapshot(1, "PORT=9000")));
                 assertThrows(SQLException.class,
-                        () -> repository.saveAndBindRelease(task, snapshot(2, "PORT=9000"), "a".repeat(64)));
+                    () -> repository.saveAndBindRelease(task, snapshot(2, "PORT=9000"), "a".repeat(64)));
                 assertTrue(repository.find(task, "demo", 2).isEmpty());
                 assertThrows(SQLException.class, () -> repository.save(task, DeploymentConfigurationSnapshot
-                        .create("demo", 1, "v1", accepted.createdAt().plusMillis(1), accepted.entries())));
+                    .create("demo", 1, "v1", accepted.createdAt().plusMillis(1), accepted.entries())));
                 return success();
             });
         }
@@ -75,7 +86,7 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             run(runtime, task -> {
                 var repository = new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db());
                 assertEquals(accepted.sha256(),
-                        repository.findRelease(task, "demo", "a".repeat(64)).orElseThrow().sha256());
+                    repository.findRelease(task, "demo", "a".repeat(64)).orElseThrow().sha256());
                 assertEquals(2, repository.nextRevision(task, "demo"));
                 assertTrue(repository.findRelease(task, "demo", "absent").isEmpty());
                 return success();
@@ -92,15 +103,15 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             run(runtime, task -> {
                 try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
                     statement.executeUpdate(
-                            "INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256,is_secret_binding_complete) VALUES('demo','release',1)");
+                        "INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256,is_secret_binding_complete) VALUES('demo','release',1)");
                 }
                 var repository = new DeploymentConfigurationRepository(context.db());
                 repository.saveAndBindRelease(task, snapshot(1, "PORT=8080"), "release");
                 repository.saveAndBindRelease(task, snapshot(1, "PORT=8080"), "release");
                 try (var connection = context.db().openConnection(task);
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery(
-                                "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE is_secret_binding_complete=1 AND configuration_revision=1")) {
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery(
+                         "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE is_secret_binding_complete=1 AND configuration_revision=1")) {
                     assertTrue(rows.next());
                     assertEquals(1, rows.getInt(1));
                 }
@@ -118,11 +129,11 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             run(runtime, task -> {
                 try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
                     statement.execute(
-                            "ALTER TABLE deployment_unit_configuration_entry ADD CONSTRAINT fixture_value CHECK(value_text<>'9000')");
+                        "ALTER TABLE deployment_unit_configuration_entry ADD CONSTRAINT fixture_value CHECK(value_text<>'9000')");
                 }
                 var repository = new DeploymentConfigurationRepository(context.db());
                 assertThrows(SQLException.class,
-                        () -> repository.saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
+                    () -> repository.saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
                 assertTrue(repository.find(task, "demo", 1).isEmpty());
                 assertTrue(repository.findRelease(task, "demo", "release").isEmpty());
                 repository.saveAndBindRelease(task, snapshot(1, "PORT=8080"), "release");
@@ -142,14 +153,14 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                 repository.save(task, snapshot(1, "FEATURE=true"));
                 try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
                     for (String damage : List.of("value_text='not-boolean'", "value_text='false'",
-                            "value_text='true',configuration_scope='UNKNOWN'")) {
+                        "value_text='true',configuration_scope='UNKNOWN'")) {
                         statement.executeUpdate("UPDATE deployment_unit_configuration_entry SET " + damage);
                         assertThrows(SQLException.class, () -> repository.find(task, "demo", 1));
                         try (var access = scope(runtime, true)) {
                             var report = new DeploymentSchema().validate(access);
                             assertFalse(report.valid());
                             assertTrue(report.violations()
-                                    .contains("Stored deployment configuration snapshots are invalid"));
+                                .contains("Stored deployment configuration snapshots are invalid"));
                         }
                     }
                 }
@@ -173,30 +184,30 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                 public Connection openConnection(TaskContext task) throws ApiException, SQLException {
                     var original = context.db().openConnection(task);
                     return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                            new Class<?>[]{Connection.class}, (proxy, method, args) -> {
-                                try {
-                                    var result = method.invoke(original, args);
-                                    if (method.getName().equals("commit") && failOnce.getAndSet(false))
-                                        throw new SQLException("fixture lost acknowledgement");
-                                    return result;
-                                } catch (InvocationTargetException wrapped) {
-                                    throw wrapped.getCause();
-                                }
-                            });
+                        new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                            try {
+                                var result = method.invoke(original, args);
+                                if (method.getName().equals("commit") && failOnce.getAndSet(false))
+                                    throw new SQLException("fixture lost acknowledgement");
+                                return result;
+                            } catch (InvocationTargetException wrapped) {
+                                throw wrapped.getCause();
+                            }
+                        });
                 }
             };
             run(runtime, task -> {
                 var original = snapshot(1, "PORT=8080");
                 var repository = new DeploymentConfigurationRepository(adapted);
                 var failure = assertThrows(ApiException.class,
-                        () -> repository.saveAndBindRelease(task, original, "release"));
+                    () -> repository.saveAndBindRelease(task, original, "release"));
                 assertEquals(ProblemCode.UNKNOWN, failure.problem().code());
                 assertEquals("DEPLOYMENT_COMMIT_UNKNOWN", failure.problem().eventCode());
                 assertFalse(failure.problem().message().contains("fixture"));
                 assertEquals(original.sha256(), repository.findRelease(task, "demo", "release").orElseThrow().sha256());
                 repository.saveAndBindRelease(task, original, "release");
                 assertThrows(SQLException.class,
-                        () -> repository.saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
+                    () -> repository.saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
                 return success();
             });
         }
@@ -211,11 +222,11 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             run(runtime, task -> {
                 var repository = new DeploymentConfigurationRepository(context.db());
                 assertThrows(SQLException.class,
-                        () -> repository.save(task, snapshot(Integer.MAX_VALUE + 1L, "PORT=8080")));
+                    () -> repository.save(task, snapshot(Integer.MAX_VALUE + 1L, "PORT=8080")));
                 assertTrue(repository.find(task, "demo", Integer.MAX_VALUE + 1L).isEmpty());
                 repository.save(task, snapshot(Integer.MAX_VALUE, "PORT=8080"));
                 assertEquals(Integer.MAX_VALUE,
-                        repository.find(task, "demo", Integer.MAX_VALUE).orElseThrow().revision());
+                    repository.find(task, "demo", Integer.MAX_VALUE).orElseThrow().revision());
                 var foreign = new ModDatabase() {
                     public SchemaIdentity identity() {
                         return new SchemaIdentity("example.other", "1", UUID.randomUUID());
@@ -226,7 +237,7 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                     }
                 };
                 assertThrows(IllegalArgumentException.class,
-                        () -> new DeploymentConfigurationRepository(foreign).save(task, snapshot(1, "PORT=80")));
+                    () -> new DeploymentConfigurationRepository(foreign).save(task, snapshot(1, "PORT=80")));
                 return success();
             });
         }
@@ -241,7 +252,7 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             run(runtime, task -> {
                 try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
                     statement.execute(
-                            "ALTER TABLE deployment_unit_configuration_entry ADD CONSTRAINT fixture_reject CHECK(value_text<>'9000')");
+                        "ALTER TABLE deployment_unit_configuration_entry ADD CONSTRAINT fixture_reject CHECK(value_text<>'9000')");
                 }
                 var adapted = new ModDatabase() {
                     public SchemaIdentity identity() throws ApiException {
@@ -251,19 +262,19 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                     public Connection openConnection(TaskContext originalTask) throws ApiException, SQLException {
                         var original = context.db().openConnection(originalTask);
                         return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                                new Class<?>[]{Connection.class}, (proxy, method, args) -> {
-                                    if (method.getName().equals("rollback"))
-                                        throw new SQLException("fixture rollback acknowledgement unavailable");
-                                    try {
-                                        return method.invoke(original, args);
-                                    } catch (InvocationTargetException wrapped) {
-                                        throw wrapped.getCause();
-                                    }
-                                });
+                            new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                                if (method.getName().equals("rollback"))
+                                    throw new SQLException("fixture rollback acknowledgement unavailable");
+                                try {
+                                    return method.invoke(original, args);
+                                } catch (InvocationTargetException wrapped) {
+                                    throw wrapped.getCause();
+                                }
+                            });
                     }
                 };
                 var failure = assertThrows(ApiException.class, () -> new DeploymentConfigurationRepository(adapted)
-                        .saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
+                    .saveAndBindRelease(task, snapshot(1, "PORT=9000"), "release"));
                 assertEquals(ProblemCode.UNKNOWN, failure.problem().code());
                 assertEquals("DEPLOYMENT_ROLLBACK_UNKNOWN", failure.problem().eventCode());
                 var repository = new DeploymentConfigurationRepository(context.db());
@@ -289,21 +300,21 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
                     public Connection openConnection(TaskContext originalTask) throws ApiException, SQLException {
                         var original = context.db().openConnection(originalTask);
                         return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                                new Class<?>[]{Connection.class}, (proxy, method, args) -> {
-                                    try {
-                                        var result = method.invoke(original, args);
-                                        if (method.getName().equals("close"))
-                                            throw new SQLException("fixture close acknowledgement unavailable");
-                                        return result;
-                                    } catch (InvocationTargetException wrapped) {
-                                        throw wrapped.getCause();
-                                    }
-                                });
+                            new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                                try {
+                                    var result = method.invoke(original, args);
+                                    if (method.getName().equals("close"))
+                                        throw new SQLException("fixture close acknowledgement unavailable");
+                                    return result;
+                                } catch (InvocationTargetException wrapped) {
+                                    throw wrapped.getCause();
+                                }
+                            });
                     }
                 };
                 var accepted = snapshot(1, "PORT=8080");
                 var failure = assertThrows(ApiException.class, () -> new DeploymentConfigurationRepository(adapted)
-                        .saveAndBindRelease(task, accepted, "release"));
+                    .saveAndBindRelease(task, accepted, "release"));
                 assertEquals(ProblemCode.UNKNOWN, failure.problem().code());
                 assertEquals("DEPLOYMENT_CONNECTION_RELEASE_UNKNOWN", failure.problem().eventCode());
                 var repository = new DeploymentConfigurationRepository(context.db());
@@ -325,17 +336,17 @@ class DeploymentConfigurationRepositoryTest extends DeploymentRuntimeFixture {
             for (int i = 1; i <= 2; i++) {
                 var input = snapshot(i, "PORT=" + (8080 + i));
                 handles.add(context.tasks()
-                        .submit(new TaskRequest("configuration_race", "Configuration race", List.of(), true), task -> {
-                            barrier.await(10, TimeUnit.SECONDS);
-                            boolean saved;
-                            try {
-                                repository.saveAndBindRelease(task, input, "release");
-                                saved = true;
-                            } catch (SQLException conflict) {
-                                saved = false;
-                            }
-                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(saved), Optional.empty());
-                        }));
+                    .submit(new TaskRequest("configuration_race", "Configuration race", List.of(), true), task -> {
+                        barrier.await(10, TimeUnit.SECONDS);
+                        boolean saved;
+                        try {
+                            repository.saveAndBindRelease(task, input, "release");
+                            saved = true;
+                        } catch (SQLException conflict) {
+                            saved = false;
+                        }
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(saved), Optional.empty());
+                    }));
             }
             int winners = 0;
             for (var handle : handles) {

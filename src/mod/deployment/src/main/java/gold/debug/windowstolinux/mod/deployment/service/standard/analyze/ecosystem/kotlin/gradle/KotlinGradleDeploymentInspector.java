@@ -26,35 +26,35 @@ public final class KotlinGradleDeploymentInspector implements DeploymentTypeInsp
      * <p>用于识别KOTLIN主的匹配模式。
      */
     private static final Pattern KOTLIN_MAIN = Pattern
-            .compile("mainClass(?:\\.set)?\\s*\\(?[\"']([A-Za-z_$][A-Za-z0-9_$.]{0,255})[\"']\\)?");
+        .compile("mainClass(?:\\.set)?\\s*\\(?[\"']([A-Za-z_$][A-Za-z0-9_$.]{0,255})[\"']\\)?");
 
     /**
      * Pattern recognizing KOTLIN PLUGIN VERSION.
      * <p>用于识别KOTLINPLUGIN版本的匹配模式。
      */
     private static final Pattern KOTLIN_PLUGIN_VERSION = Pattern.compile(
-            "kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\)\\s*version\\s*[\"']([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?)[\"']");
+        "kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\)\\s*version\\s*[\"']([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?)[\"']");
 
     /**
      * Pattern recognizing KOTLIN APPLICATION PLUGIN.
      * <p>用于识别KOTLIN应用PLUGIN的匹配模式。
      */
     private static final Pattern KOTLIN_APPLICATION_PLUGIN = Pattern
-            .compile("(?s)plugins\\s*\\{[^}]*\\bapplication\\b");
+        .compile("(?s)plugins\\s*\\{[^}]*\\bapplication\\b");
 
     /**
      * Pattern recognizing Kotlin dependency-locking configuration.
      * <p>用于识别Kotlin 依赖锁定配置的匹配模式。
      */
     private static final Pattern KOTLIN_DEPENDENCY_LOCKING = Pattern
-            .compile("(?s)dependencyLocking\\s*\\{[^}]*lockAllConfigurations\\s*\\(\\s*\\)");
+        .compile("(?s)dependencyLocking\\s*\\{[^}]*lockAllConfigurations\\s*\\(\\s*\\)");
 
     /**
      * Pattern recognizing KOTLIN JAVA TARGET.
      * <p>用于识别KOTLINJava目标的匹配模式。
      */
     private static final Pattern KOTLIN_JAVA_TARGET = Pattern
-            .compile("(?:JavaLanguageVersion\\.of\\(\\s*[0-9]+\\s*\\)|jvmToolchain\\(\\s*[0-9]+\\s*\\))");
+        .compile("(?:JavaLanguageVersion\\.of\\(\\s*[0-9]+\\s*\\)|jvmToolchain\\(\\s*[0-9]+\\s*\\))");
 
     /**
      * Returns the supported project category handled by this strategy.
@@ -80,10 +80,10 @@ public final class KotlinGradleDeploymentInspector implements DeploymentTypeInsp
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = ServiceMetadataInspector.missing(root, "build.gradle.kts", "settings.gradle.kts",
-                "gradlew", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties",
-                "gradle.lockfile");
+            "gradlew", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties",
+            "gradle.lockfile");
         String build = ServiceMetadataInspector.readIfPresent(root.resolve("build.gradle.kts"));
         if (!KOTLIN_APPLICATION_PLUGIN.matcher(build).find()) {
             missing = ServiceMetadataInspector.append(missing, "application-plugin");
@@ -99,11 +99,11 @@ public final class KotlinGradleDeploymentInspector implements DeploymentTypeInsp
             missing = ServiceMetadataInspector.append(missing, "exact-kotlin-jvm-plugin-version");
         }
         KotlinGradleFacts facts = new KotlinGradleFacts(compilerVersion,
-                ServiceMetadataInspector.match(build, KOTLIN_MAIN), missing);
+            ServiceMetadataInspector.match(build, KOTLIN_MAIN), missing);
         ServiceProjectFacts shape = new ServiceProjectFacts("build.gradle.kts", facts.compilerVersion(),
-                ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), facts.mainClass(),
-                facts.missingFiles());
+            ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), facts.mainClass(),
+            facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER, languageFacts, shape, false);
+            DeploymentBuildToolType.GRADLE_KOTLIN_WRAPPER, languageFacts, shape, false);
     }
 }

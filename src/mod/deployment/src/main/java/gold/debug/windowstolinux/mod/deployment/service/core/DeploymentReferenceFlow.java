@@ -1,5 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.core;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
@@ -7,7 +19,7 @@ import java.util.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 
 /** Submits a real publication task and reconciles its original references without replaying effects. / 提交真实发布任务，并在不重放副作用的条件下核对原引用。 */
@@ -32,7 +44,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @param author one-shot original effect callback / 一次性原副作用回调
      * @param cleanup original prepared source and archive cleanup / 原已准备来源及归档清理 */
     public record PreparedPublication(DeploymentPublicationPlan plan, TaskWork<DeploymentPublication> author,
-            AutoCloseable cleanup) {
+                                      AutoCloseable cleanup) {
         /** Requires the actual plan, author and cleanup. / 要求真实计划、作者及清理。
          * @param plan complete intent / 完整意图
          * @param author original callback / 原回调
@@ -73,12 +85,12 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @return platform task handle / 平台任务句柄
      * @throws ApiException if task admission fails / 任务准入失败时 */
     public TaskHandle<Void> submit(DeploymentPublicationPlan plan, TaskWork<DeploymentPublication> author)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(author);
         return context.tasks().submit(
-                new TaskRequest(TASK_TYPE, "Deployment publication", List.of(plan.server().id()), true),
-                task -> execute(plan, author, task));
+            new TaskRequest(TASK_TYPE, "Deployment publication", List.of(plan.server().id()), true),
+            task -> execute(plan, author, task));
     }
 
     /** Prepares source, plan and exact references inside the same original publication task. / 在同一原发布任务内准备来源、计划及精确引用。
@@ -87,48 +99,48 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @return original platform task / 原平台任务
      * @throws ApiException if task admission fails / 任务准入失败时 */
     public TaskHandle<Void> submitPrepared(ServerRef server, TaskWork<PreparedPublication> preparation)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(preparation);
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Deployment publication", List.of(server.id()), true),
-                task -> {
-                    OperationResult<PreparedPublication> prepared;
-                    try {
-                        prepared = Objects.requireNonNull(preparation.run(task));
-                    } catch (Exception | LinkageError | AssertionError uncertain) {
-                        return unknown();
-                    }
-                    if (prepared.outcome() != Outcome.SUCCEEDED)
-                        return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
-                    if (prepared.value().isEmpty())
-                        return unknown();
-                    var ready = prepared.value().orElseThrow();
-                    var closed = new java.util.concurrent.atomic.AtomicBoolean();
-                    try {
-                        if (!server.equals(ready.plan().server()))
-                            return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
-                                    .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_PREPARED_SERVER_CHANGED")));
-                        return execute(ready.plan(), original -> {
-                            OperationResult<DeploymentPublication> result = null;
-                            try {
-                                result = ready.author().run(original);
-                                return result;
-                            } finally {
-                                if (closed.compareAndSet(false, true)) {
-                                    try {
-                                        ready.cleanup().close();
-                                    } catch (Exception uncertainCleanup) {
-                                        if (result == null || result.outcome() == Outcome.UNKNOWN)
-                                            throw uncertainCleanup;
-                                    }
+            task -> {
+                OperationResult<PreparedPublication> prepared;
+                try {
+                    prepared = Objects.requireNonNull(preparation.run(task));
+                } catch (Exception | LinkageError | AssertionError uncertain) {
+                    return unknown();
+                }
+                if (prepared.outcome() != Outcome.SUCCEEDED)
+                    return new OperationResult<>(prepared.outcome(), Optional.empty(), prepared.problem());
+                if (prepared.value().isEmpty())
+                    return unknown();
+                var ready = prepared.value().orElseThrow();
+                var closed = new java.util.concurrent.atomic.AtomicBoolean();
+                try {
+                    if (!server.equals(ready.plan().server()))
+                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
+                            .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_PREPARED_SERVER_CHANGED")));
+                    return execute(ready.plan(), original -> {
+                        OperationResult<DeploymentPublication> result = null;
+                        try {
+                            result = ready.author().run(original);
+                            return result;
+                        } finally {
+                            if (closed.compareAndSet(false, true)) {
+                                try {
+                                    ready.cleanup().close();
+                                } catch (Exception uncertainCleanup) {
+                                    if (result == null || result.outcome() == Outcome.UNKNOWN)
+                                        throw uncertainCleanup;
                                 }
                             }
-                        }, task);
-                    } finally {
-                        if (closed.compareAndSet(false, true))
-                            ready.cleanup().close();
-                    }
-                });
+                        }
+                    }, task);
+                } finally {
+                    if (closed.compareAndSet(false, true))
+                        ready.cleanup().close();
+                }
+            });
     }
 
     /** Reconciles exact original evidence only; unknown external work is never run again. / 仅核对精确原证据；未知外部工作绝不重跑。
@@ -154,10 +166,10 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                     if (verified.outcome() == Outcome.SUCCEEDED) {
                         var proposal = verified.value().orElseThrow();
                         executions.commitApplication(task, record.identity().executionId(), proposal.graph(),
-                                proposal.units(), Instant.now());
+                            proposal.units(), Instant.now());
                     } else if (verified.outcome() == Outcome.FAILED || verified.outcome() == Outcome.CANCELLED) {
                         executions.recordUncommittedOutcome(task, record.identity().executionId(), verified.outcome(),
-                                verified.problem().orElseThrow(), Instant.now());
+                            verified.problem().orElseThrow(), Instant.now());
                     } else
                         return unknown();
                 } else if (record.outcome().orElseThrow() != verified.outcome())
@@ -174,10 +186,10 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @param task authentic accepted task / 真实准入任务
      * @return observed result / 观测结果 */
     private OperationResult<Void> execute(DeploymentPublicationPlan plan, TaskWork<DeploymentPublication> author,
-            TaskContext task) {
+                                          TaskContext task) {
         var identity = new DeploymentExecutionIdentity(plan.executionId(), task.id(),
-                plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
-                plan.reviewedRevision());
+            plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
+            plan.reviewedRevision());
         try {
             executions.begin(task, identity, TASK_TYPE, plan.references(), plan.project(), plan.createdAt());
             for (var intent : plan.references())
@@ -194,20 +206,20 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                 var publication = result.value().orElseThrow();
                 requirePublication(plan, publication, task);
                 executions.commitApplication(task, identity.executionId(), publication.graph(), publication.units(),
-                        Instant.now());
+                    Instant.now());
             } else {
                 if (result.outcome() == Outcome.UNKNOWN) {
                     var uncertainty = result.problem()
-                            .orElseGet(() -> problem(ProblemCode.UNKNOWN, "DEPLOYMENT_EFFECT_UNKNOWN"));
+                        .orElseGet(() -> problem(ProblemCode.UNKNOWN, "DEPLOYMENT_EFFECT_UNKNOWN"));
                     recordUnknown(task, identity.executionId(), uncertainty);
                     return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(uncertainty));
                 }
                 executions.recordUncommittedOutcome(task, identity.executionId(), result.outcome(),
-                        result.outcome() == Outcome.CANCELLED
-                                ? result.problem()
-                                        .orElseGet(() -> problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANCELLED"))
-                                : result.problem().orElseThrow(),
-                        Instant.now());
+                    result.outcome() == Outcome.CANCELLED
+                        ? result.problem()
+                        .orElseGet(() -> problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANCELLED"))
+                        : result.problem().orElseThrow(),
+                    Instant.now());
             }
             var finalRecord = executions.find(task, identity.executionId()).orElseThrow();
             var reconciled = reconcileRecord(task, finalRecord);
@@ -215,7 +227,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                 return reconciled;
             if (reconciled.outcome() == Outcome.CANCELLED || reconciled.outcome() == Outcome.FAILED)
                 return new OperationResult<>(reconciled.outcome(), Optional.empty(),
-                        result.problem().or(() -> reconciled.problem()));
+                    result.problem().or(() -> reconciled.problem()));
             return unknown();
         } catch (Exception | LinkageError | AssertionError uncertain) {
             recordUnknown(task, identity.executionId());
@@ -230,7 +242,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @throws SQLException if recording fails / 记录失败时
      * @throws ApiException if platform access fails / 平台访问失败时 */
     private void reserveOriginal(TaskContext task, DeploymentExecutionIdentity identity,
-            DeploymentReferenceIntent intent) throws SQLException, ApiException {
+                                 DeploymentReferenceIntent intent) throws SQLException, ApiException {
         var found = find(task, intent);
         UUID id = found.isPresent() ? found.orElseThrow() : reserve(task, intent);
         executions.recordReference(task, identity.executionId(), intent, id, Instant.now());
@@ -244,9 +256,9 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
     private Optional<UUID> find(TaskContext task, DeploymentReferenceIntent intent) throws ApiException {
         if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
             return context.servers().findReference(new ServerRef(intent.resourceId()), intent.businessKey(), task)
-                    .map(ServerReference::id);
+                .map(ServerReference::id);
         return context.secrets().findReference(new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()),
-                intent.businessKey(), task).map(gold.debug.windowstolinux.appapi.secret.SecretReference::id);
+            intent.businessKey(), task).map(gold.debug.windowstolinux.appapi.secret.SecretReference::id);
     }
 
     /** Reserves only inside original normal execution. / 仅在原正常执行期间预留。
@@ -258,8 +270,8 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
             return context.servers().reserve(new ServerRef(intent.resourceId()), intent.businessKey(), task).id();
         return context.secrets()
-                .reserve(new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()), intent.businessKey(), task)
-                .id();
+            .reserve(new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()), intent.businessKey(), task)
+            .id();
     }
 
     /** Checks that the author supplied only originally reserved publication associations. / 核实作者仅返回原已预留发布关联。
@@ -269,7 +281,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @throws SQLException if exact durable template conflicts / 精确持久模板冲突时
      * @throws ApiException if original task access is denied / 原任务访问被拒时 */
     private void requirePublication(DeploymentPublicationPlan plan, DeploymentPublication publication, TaskContext task)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (!publication.graph().applicationId().equals(plan.applicationId()))
             throw new IllegalArgumentException("Publication application changed");
         var published = new HashSet<DeploymentReferenceIntent>();
@@ -280,18 +292,18 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                 boolean matched = false;
                 for (var intent : plan.references())
                     if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET
-                            && intent
-                                    .businessKey().equals(
-                                            DeploymentReferenceKey
-                                                    .secretRevision(plan.server(),
-                                                            new SecretRef(intent.resourceId(),
-                                                                    intent.purpose().orElseThrow()),
-                                                            secret)
-                                                    .businessKey()))
+                        && intent
+                        .businessKey().equals(
+                            DeploymentReferenceKey
+                                .secretRevision(plan.server(),
+                                    new SecretRef(intent.resourceId(),
+                                        intent.purpose().orElseThrow()),
+                                    secret)
+                                .businessKey()))
                         matched = true;
                 if (!matched)
                     throw new IllegalArgumentException(
-                            "Publication secret revision and credential were not originally reserved");
+                        "Publication secret revision and credential were not originally reserved");
             }
         }
         if (!plan.references().containsAll(published))
@@ -299,7 +311,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         var formal = executions.find(task, plan.executionId()).orElseThrow();
         if (executions.publicationTemplate(formal).isPresent())
             executions.recordPublicationTemplate(task, plan.executionId(),
-                    new DeploymentPublicationProposal(publication.graph(), publication.units()), Instant.now());
+                new DeploymentPublicationProposal(publication.graph(), publication.units()), Instant.now());
     }
 
     /** Reconciles exact platform UUIDs and business rows, then confirms actual resource release. / 核对精确平台UUID与业务行，再确认真实资源释放。
@@ -309,7 +321,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @throws SQLException if durable evidence fails / 持久证据失败时
      * @throws ApiException if platform evidence fails / 平台证据失败时 */
     private OperationResult<Void> reconcileRecord(TaskContext task, DeploymentExecutionRecord record)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (!record.identity().taskId().equals(task.id()))
             return unknown();
         var intents = executions.references(record);
@@ -319,8 +331,8 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
         if (outcome.isEmpty() || outcome.get() == Outcome.UNKNOWN) {
             protectUnknown(task, record, intents);
             return outcome.isPresent()
-                    ? new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), executions.problem(record))
-                    : unknown();
+                ? new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), executions.problem(record))
+                : unknown();
         }
         if (record.businessCommitted() != (outcome.get() == Outcome.SUCCEEDED))
             return unknown();
@@ -334,7 +346,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                     original = observed.orElseThrow();
                     if (record.phase().equals("PREPARED"))
                         executions.recordReference(task, record.identity().executionId(), intent, original,
-                                Instant.now());
+                            Instant.now());
                 }
             } else if (observed.isPresent() && !original.equals(observed.orElseThrow()))
                 return unknown();
@@ -365,7 +377,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @throws SQLException if business evidence fails / 业务证据失败时
      * @throws ApiException if platform evidence fails / 平台证据失败时 */
     private OperationResult<Void> reconcileUnstarted(TaskContext task, DeploymentExecutionRecord record,
-            Map<DeploymentReferenceIntent, Optional<UUID>> intents) throws SQLException, ApiException {
+                                                     Map<DeploymentReferenceIntent, Optional<UUID>> intents) throws SQLException, ApiException {
         if (!context.tasks().resourcesReleased(task))
             return unknown();
         for (var entry : intents.entrySet()) {
@@ -382,18 +394,18 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                 return unknown();
             if (id.isEmpty() && found.isPresent()) {
                 executions.recordReference(task, record.identity().executionId(), intent, found.orElseThrow(),
-                        Instant.now());
+                    Instant.now());
                 id = found;
             }
             if (id.isPresent())
                 resolve(task, intent, id.orElseThrow(),
-                        association == DeploymentReferenceAssociations.AssociationState.REFERENCED
-                                ? ReferenceResolution.REFERENCED
-                                : ReferenceResolution.NOT_REFERENCED);
+                    association == DeploymentReferenceAssociations.AssociationState.REFERENCED
+                        ? ReferenceResolution.REFERENCED
+                        : ReferenceResolution.NOT_REFERENCED);
         }
         var failure = problem(ProblemCode.UNAVAILABLE, "DEPLOYMENT_UNSTARTED");
         executions.recordUncommittedOutcome(task, record.identity().executionId(), Outcome.FAILED, failure,
-                Instant.now());
+            Instant.now());
         executions.finishCleanup(task, record.identity().executionId(), Instant.now());
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
     }
@@ -405,7 +417,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @throws SQLException if business evidence is unavailable / 业务证据不可用时
      * @throws ApiException if platform evidence is unavailable / 平台证据不可用时 */
     private void protectUnknown(TaskContext task, DeploymentExecutionRecord record,
-            Map<DeploymentReferenceIntent, Optional<UUID>> intents) throws SQLException, ApiException {
+                                Map<DeploymentReferenceIntent, Optional<UUID>> intents) throws SQLException, ApiException {
         for (var entry : intents.entrySet()) {
             var intent = entry.getKey();
             DeploymentReferenceKey.requireOriginal(intent, record.identity());
@@ -419,9 +431,9 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
                 executions.recordReference(task, record.identity().executionId(), intent, original, Instant.now());
             var association = associations.observe(task, record.identity(), intent);
             resolve(task, intent, original,
-                    association == DeploymentReferenceAssociations.AssociationState.REFERENCED
-                            ? ReferenceResolution.REFERENCED
-                            : ReferenceResolution.UNKNOWN);
+                association == DeploymentReferenceAssociations.AssociationState.REFERENCED
+                    ? ReferenceResolution.REFERENCED
+                    : ReferenceResolution.UNKNOWN);
         }
     }
 
@@ -432,7 +444,7 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @param resolution proven association / 已证明关联
      * @throws ApiException if platform acknowledgement fails / 平台确认失败时 */
     private void resolve(TaskContext task, DeploymentReferenceIntent intent, UUID referenceId,
-            ReferenceResolution resolution) throws ApiException {
+                         ReferenceResolution resolution) throws ApiException {
         if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
             context.servers().resolve(referenceId, resolution, task);
         else
@@ -477,6 +489,6 @@ public final class DeploymentReferenceFlow implements TaskRecovery {
      * @return unknown task result / 未知任务结果 */
     private static OperationResult<Void> unknown() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_REFERENCE_UNKNOWN")));
+            Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_REFERENCE_UNKNOWN")));
     }
 }

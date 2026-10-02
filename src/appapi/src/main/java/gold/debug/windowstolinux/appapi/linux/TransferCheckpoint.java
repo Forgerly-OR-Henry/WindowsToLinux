@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param size original source byte length / 原源字节长度
  * @param overwrite whether the original choice replaces an observed target / 原选择是否替换已观察目标 */
 public record TransferCheckpoint(UUID id, ServerRef server, boolean upload, TransferRequest request, String sha256,
-        long size, boolean overwrite) {
+                                 long size, boolean overwrite) {
     /** Requires complete recovery review facts. / 要求完整恢复审核事实。
      * @param id original identity / 原身份
      * @param server saved server / 已保存服务器

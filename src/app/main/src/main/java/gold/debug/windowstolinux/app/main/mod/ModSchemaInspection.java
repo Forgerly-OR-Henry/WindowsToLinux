@@ -6,9 +6,12 @@ import java.sql.SQLException;
 import java.util.HexFormat;
 
 import gold.debug.windowstolinux.app.db.mod.ModSchemaReconciliation;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
+import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 
 /** Owns one explicit read-only inspection and retries only its original cleanup. / 持有一次明确只读检查，仅重试其原清理。 */
@@ -55,7 +58,7 @@ final class ModSchemaInspection implements AutoCloseable {
      * @param review original evidence / 原证据
      * @param loader isolated verified program / 隔离已验证程序 */
     ModSchemaInspection(PlatformDatabase database, ModSchemaReconciliation ledger,
-            ModSchemaReconciliation.Review review, ModClassLoader loader) {
+                        ModSchemaReconciliation.Review review, ModClassLoader loader) {
         this.database = database;
         this.ledger = ledger;
         this.review = review;
@@ -77,18 +80,18 @@ final class ModSchemaInspection implements AutoCloseable {
                     outcome = Outcome.FAILED;
                 else {
                     reader = SchemaAccessScope.reconciliation(database, review.plan().target(), attempt.reader(),
-                            attempt.operation());
+                        attempt.operation());
                     var report = ModSchemaPreparation.lifecycle(loader).validate(reader);
                     if (report != null && !report.valid())
                         outcome = Outcome.FAILED;
                     else if (report != null && report.businessDigest()
-                            .map(v -> v.getBytes(StandardCharsets.UTF_8).length <= 4096).orElse(true)) {
+                        .map(v -> v.getBytes(StandardCharsets.UTF_8).length <= 4096).orElse(true)) {
                         try {
                             String structural = SchemaValidation.validate(reader);
                             digest = HexFormat.of()
-                                    .formatHex(MessageDigest.getInstance("SHA-256")
-                                            .digest((structural + "\n" + report.businessDigest().orElse(""))
-                                                    .getBytes(StandardCharsets.UTF_8)));
+                                .formatHex(MessageDigest.getInstance("SHA-256")
+                                    .digest((structural + "\n" + report.businessDigest().orElse(""))
+                                        .getBytes(StandardCharsets.UTF_8)));
                             outcome = Outcome.SUCCEEDED;
                         } catch (SQLException invalid) {
                             if (invalid.getSQLState() != null && invalid.getSQLState().startsWith("23"))
@@ -114,7 +117,7 @@ final class ModSchemaInspection implements AutoCloseable {
         if (before.isEmpty() && review.beforeRetryExecution())
             return true;
         return before.isPresent() && before.get().matches("[0-9a-f]{64}") && before.get()
-                .equals(SchemaSnapshot.digest(database, new SchemaCoordinates(review.plan().source().get())));
+            .equals(SchemaSnapshot.digest(database, new SchemaCoordinates(review.plan().source().get())));
     }
 
     /** Returns the observed outcome after a cleanup retry. / 清理重试后返回已观察结果。

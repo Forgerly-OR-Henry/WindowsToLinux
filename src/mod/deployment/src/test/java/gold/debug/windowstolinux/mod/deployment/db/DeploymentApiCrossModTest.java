@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -14,14 +25,14 @@ import java.util.concurrent.atomic.*;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
-import gold.debug.windowstolinux.app.main.startup.LoopbackSshServer;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.StopReason;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
@@ -59,9 +70,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             var intents = runtime.modIntents();
             for (String owner : List.of(OWNER, DeploymentApiCallerFixture.CALLER))
                 intents.apply(intents.review(owner, new PlatformModIntents.Choice(true, Optional.of(VERSION)),
-                        Optional.empty()), false);
+                    Optional.empty()), false);
             assertEquals(2, scalar(runtime,
-                    "SELECT COUNT(*) FROM mod_operation WHERE state='WAITING' AND phase='WAIT_RESTART'"));
+                "SELECT COUNT(*) FROM mod_operation WHERE state='WAITING' AND phase='WAIT_RESTART'"));
             preparationBoot = runtime.persistence().database().bootId();
         }
     }
@@ -70,32 +81,32 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
     @Override
     protected void start(PlatformRuntime runtime, boolean enabled) throws Exception {
         var report = runtime.startDevelopmentMods(Objects.requireNonNull(crossWorkspace),
-                DeploymentApiCallerFixture.pages());
+            DeploymentApiCallerFixture.pages());
         assertTrue(report.problems().isEmpty(), report.problems().toString());
         assertEquals(enabled ? Set.of(OWNER, DeploymentApiCallerFixture.CALLER) : Set.of(), report.running());
         if (enabled) {
             assertNotEquals(preparationBoot, runtime.persistence().database().bootId());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_operation"),
-                    "Actual coordinator must archive both original enable applications");
+                "Actual coordinator must archive both original enable applications");
             assertEquals(2, scalar(runtime, "SELECT COUNT(*) FROM mod_registry WHERE actual_version='" + VERSION
-                    + "' AND last_runtime_state='RUNNING'"));
+                + "' AND last_runtime_state='RUNNING'"));
         }
     }
 
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken token) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
                 return true;
             }
 
             public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                           CancelToken token) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
-                    CancellationToken token) {
+                                                       CancelToken token) {
                 throw new AssertionError();
             }
 
@@ -105,7 +116,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken token) {
+                               CancelToken token) {
                 throw new AssertionError();
             }
         };
@@ -117,15 +128,15 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         enable();
         try (var ssh = new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
-                    (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
+                (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
             server.setCommandFactory((channel, command) -> new FramedReply());
         }); var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    gold.debug.windowstolinux.app.service.contract.profile.ServerProfile
-                            .fromStored(new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("server",
-                                    "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
-                    "fixture-secret".toCharArray());
+                gold.debug.windowstolinux.app.service.server.ServerProfile
+                    .fromStored(new gold.debug.windowstolinux.app.db.server.StoredServerProfile("server",
+                        "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
+                "fixture-secret".toCharArray());
             String revision = publishFixture(runtime);
             {
                 var caller = new DeploymentApiCallerFixture(runtime);
@@ -137,26 +148,26 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var handle = caller.collect("demo", revision, List.of("worker:uploads"), () -> {
                     try {
                         var providerBusy = assertThrows(ApiException.class,
-                                () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                            () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                         assertThrows(SQLException.class,
-                                () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                            () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
                         assertEquals(1, scalar(runtime,
-                                "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
+                            "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
                         assertEquals(0,
-                                scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
+                            scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
                         assertFalse(runtime.modSessions().get(OWNER).resourcesClosed());
                         var original = (TaskContext) caller.callerClass.getField("originalTask").get(null);
                         peer.originalTask = original.id();
                         peer.originalRevision = revision;
                         for (var identity : List.of(List.of(OWNER, VERSION),
-                                List.of(DeploymentApiCallerFixture.CALLER, "1.1.0-dev.2"))) {
+                            List.of(DeploymentApiCallerFixture.CALLER, "1.1.0-dev.2"))) {
                             var rejected = assertThrows(ApiException.class, () -> runtime.tasks()
-                                    .bind(identity.getFirst(), identity.getLast(), false).inspect(original));
+                                .bind(identity.getFirst(), identity.getLast(), false).inspect(original));
                             assertEquals(ProblemCode.ACCESS_DENIED, rejected.problem().code());
                         }
                         assertTrue(scalar(runtime,
-                                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND resource_id='example.deploymentcaller/checkpoint/handoff' AND released_at IS NULL") > 0);
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND resource_id='example.deploymentcaller/checkpoint/handoff' AND released_at IS NULL") > 0);
                     } catch (Exception failure) {
                         throw new AssertionError(failure);
                     }
@@ -169,25 +180,25 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), failure(runtime, caller, handle));
                     assertTrue(handle.snapshot().outcome().isEmpty());
                     assertTrue(scalar(runtime,
-                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND resource_id='example.deploymentcaller/checkpoint/handoff' AND released_at IS NULL") > 0);
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND resource_id='example.deploymentcaller/checkpoint/handoff' AND released_at IS NULL") > 0);
                     int creates = peer.created.get();
                     var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        TimeUnit.SECONDS);
                     assertEquals(TaskState.UNKNOWN, pending.state());
                     assertEquals(creates, peer.created.get());
                     peer.uncertain = false;
                     var finished = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        TimeUnit.SECONDS);
                     assertEquals(TaskState.ENDED, finished.state(), finished.toString());
                     assertEquals(Optional.of(Outcome.FAILED), finished.outcome());
                     assertEquals(creates, peer.created.get(), "Recovery cannot create the original archive again");
                 }
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT state FROM deployment_handoff")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT state FROM deployment_handoff")) {
                     assertTrue(rows.next());
                     assertEquals("FINISHED", rows.getString(1));
                     assertFalse(rows.next());
@@ -210,7 +221,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
                 assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             }
         }
     }
@@ -227,22 +238,22 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var handle = caller.occupancy(() -> {
                     try {
                         var busy = assertThrows(ApiException.class, () -> runtime.modSessions()
-                                .get(DeploymentApiCallerFixture.CALLER).stop(StopReason.APPLICATION_RESTART));
+                            .get(DeploymentApiCallerFixture.CALLER).stop(StopReason.APPLICATION_RESTART));
                         assertEquals(ProblemCode.BUSY, busy.problem().code());
                         assertEquals("STOPPING",
-                                runtime.modSessions().get(DeploymentApiCallerFixture.CALLER).state().name());
+                            runtime.modSessions().get(DeploymentApiCallerFixture.CALLER).state().name());
                         assertFalse(runtime.modSessions().get(DeploymentApiCallerFixture.CALLER).resourcesClosed());
                         var maintenance = assertThrows(ApiException.class,
-                                () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                            () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, maintenance.problem().code());
                         assertThrows(SQLException.class,
-                                () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                            () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
                         assertEquals(1, scalar(runtime,
-                                "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
+                            "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
                         assertEquals(0,
-                                scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
+                            scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
                         assertTrue(scalar(runtime,
-                                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/occupancy' AND released_at IS NULL") > 0);
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/occupancy' AND released_at IS NULL") > 0);
                     } catch (Exception failure) {
                         throw new AssertionError(failure);
                     }
@@ -254,11 +265,11 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 assertEquals(TaskState.ENDED, settled.state(), settled.toString());
                 assertEquals(Optional.of(Outcome.CANCELLED), settled.outcome());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_handoff")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_handoff")) {
                     assertTrue(rows.next());
                     assertEquals(0, rows.getLong(1), "Read-only SDK occupancy cannot create provider handoff work");
                 }
@@ -269,7 +280,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
     @ParameterizedTest(name = "cleanup receipt unknown={0}")
     @ValueSource(booleans = {true})
     void prepareAndActivateKeepCallerCheckpointAndDoNotRequireHistoricalSourceProfile(boolean unknown)
-            throws Exception {
+        throws Exception {
         Path sourceRoot = root;
         enable();
         var archived = new AtomicReference<gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot>();
@@ -279,9 +290,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(sourceRuntime, true);
             run(sourceRuntime, task -> {
                 archived.set(new DeploymentApplicationReader(sourceRuntime.modContexts().get(OWNER).context().db())
-                        .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                                new ServerRef("server")), task)
-                        .snapshot());
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
+                        new ServerRef("server")), task)
+                    .snapshot());
                 return success();
             });
         }
@@ -297,23 +308,23 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             enable();
             try (var ssh = new LoopbackSshServer(root, server -> {
                 server.setPasswordAuthenticator(
-                        (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
+                    (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
                 server.setFileSystemFactory(new VirtualFileSystemFactory(remote));
                 server.setSubsystemFactories(List.of(new SftpSubsystemFactory.Builder().build()));
                 server.setCommandFactory((channel, command) -> new FramedReply());
             }); var runtime = open()) {
                 start(runtime, true);
                 runtime.servers().saveServerProfile(
-                        gold.debug.windowstolinux.app.service.contract.profile.ServerProfile
-                                .fromStored(new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("target",
-                                        "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
-                        "fixture-secret".toCharArray());
+                    gold.debug.windowstolinux.app.service.server.ServerProfile
+                        .fromStored(new gold.debug.windowstolinux.app.db.server.StoredServerProfile("target",
+                            "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
+                    "fixture-secret".toCharArray());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM server_profile WHERE server_profile_id='server'"));
+                    scalar(runtime, "SELECT COUNT(*) FROM server_profile WHERE server_profile_id='server'"));
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM managed_application")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM managed_application")) {
                     assertTrue(rows.next());
                     assertEquals(0, rows.getLong(1), "Archived source application rows are absent on the fresh target");
                 }
@@ -323,14 +334,14 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     var handle = caller.restore(archive, files, () -> {
                         try {
                             assertTrue(scalar(runtime,
-                                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/restore' AND released_at IS NULL") > 0);
+                                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/restore' AND released_at IS NULL") > 0);
                             var providerBusy = assertThrows(ApiException.class,
-                                    () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
+                                () -> runtime.reviewModSchemaRetry(OWNER, Optional.empty()));
                             assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                             assertThrows(SQLException.class,
-                                    () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                                () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
                             assertEquals(0,
-                                    scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
+                                scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
                         } catch (Exception error) {
                             throw new AssertionError(error);
                         }
@@ -340,38 +351,38 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), failure(runtime, caller, handle));
                         assertTrue(handle.snapshot().outcome().isEmpty());
                         assertTrue(scalar(runtime,
-                                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/restore' AND released_at IS NULL") > 0);
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/restore' AND released_at IS NULL") > 0);
                         int effects = peer.restoreEffects.get();
                         int preparations = peer.restorePreparationEffects.get(),
-                                publications = peer.restorePublicationEffects.get();
+                            publications = peer.restorePublicationEffects.get();
                         int cleanups = peer.restoreCleanupEffects.get();
                         var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                                TimeUnit.SECONDS);
+                            TimeUnit.SECONDS);
                         assertEquals(TaskState.UNKNOWN, pending.state(), failure(runtime, caller, handle));
                         assertEquals(effects, peer.restoreEffects.get());
                         peer.restoreCleanupUncertain = false;
                         var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                                TimeUnit.SECONDS);
+                            TimeUnit.SECONDS);
                         assertEquals(TaskState.ENDED, settled.state(), failure(runtime, caller, handle));
                         assertEquals(Optional.of(Outcome.SUCCEEDED), settled.outcome());
                         assertEquals(preparations, peer.restorePreparationEffects.get(),
-                                "Recovery cannot prepare or build another candidate");
+                            "Recovery cannot prepare or build another candidate");
                         assertEquals(publications, peer.restorePublicationEffects.get(),
-                                "ACTIVE completion cannot replay publication");
+                            "ACTIVE completion cannot replay publication");
                         assertEquals(cleanups + 4, peer.restoreCleanupEffects.get(),
-                                "Explicit ACTIVE completion first finishes two worker databases, its runtime and its candidate cleanup");
+                            "Explicit ACTIVE completion first finishes two worker databases, its runtime and its candidate cleanup");
                         assertEquals(effects + 4, peer.restoreEffects.get(),
-                                "Only four previously unattempted worker cleanup effects are allowed");
+                            "Only four previously unattempted worker cleanup effects are allowed");
                     }
                     assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
                     assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
                     assertEquals(0,
-                            scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     try (var access = scope(runtime, true);
-                            var connection = access.openConnection();
-                            var statement = connection.createStatement();
-                            var rows = statement.executeQuery(
-                                    "SELECT platform_task_id,phase,outcome,business_committed,cleanup_complete FROM deployment_execution")) {
+                         var connection = access.openConnection();
+                         var statement = connection.createStatement();
+                         var rows = statement.executeQuery(
+                             "SELECT platform_task_id,phase,outcome,business_committed,cleanup_complete FROM deployment_execution")) {
                         assertTrue(rows.next());
                         assertEquals(handle.id(), rows.getObject(1, UUID.class));
                         assertEquals("FINISHED", rows.getString(2));
@@ -383,15 +394,15 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals(Set.of("worker", "web"), peer.active.keySet());
                     assertEquals(2, peer.databaseCandidates.size());
                     assertEquals(2,
-                            new HashSet<>(peer.databaseCandidates.values().stream().map(value -> value.get(3)).toList())
-                                    .size());
+                        new HashSet<>(peer.databaseCandidates.values().stream().map(value -> value.get(3)).toList())
+                            .size());
                     assertEquals(peer.databaseCandidates.keySet(), peer.databaseCommitted);
                     assertEquals(peer.databaseCandidates.keySet(), peer.databaseFinished);
                     assertEquals(8, peer.restorePreparationEffects.get());
                     assertEquals(8, peer.restorePublicationEffects.get());
                     assertEquals(6, peer.restoreCleanupEffects.get());
                     assertEquals(Set.of("alpha", "beta"), peer.databaseArguments.values().stream()
-                            .map(value -> value.get(5)).collect(java.util.stream.Collectors.toSet()));
+                        .map(value -> value.get(5)).collect(java.util.stream.Collectors.toSet()));
                 }
             }
         } finally {
@@ -416,9 +427,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(sourceRuntime, true);
             run(sourceRuntime, task -> {
                 archived.set(new DeploymentApplicationReader(sourceRuntime.modContexts().get(OWNER).context().db())
-                        .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                                new ServerRef("server")), task)
-                        .snapshot());
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
+                        new ServerRef("server")), task)
+                    .snapshot());
                 return success();
             });
         }
@@ -452,7 +463,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var sftp = new SftpSubsystemFactory.Builder().build();
                 sftp.addSftpEventListener(new SftpEventListener() {
                     public void written(ServerSession session, String handle, FileHandle file, long offset, byte[] data,
-                            int start, int length, Throwable failure) {
+                                        int start, int length, Throwable failure) {
                         if (failure == null) {
                             writes.incrementAndGet();
                             if (interrupt.compareAndSet(true, false))
@@ -465,10 +476,10 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             }); var runtime = open()) {
                 start(runtime, true);
                 runtime.servers().saveServerProfile(
-                        gold.debug.windowstolinux.app.service.contract.profile.ServerProfile
-                                .fromStored(new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("target",
-                                        "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
-                        "fixture-secret".toCharArray());
+                    gold.debug.windowstolinux.app.service.server.ServerProfile
+                        .fromStored(new gold.debug.windowstolinux.app.db.server.StoredServerProfile("target",
+                            "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
+                    "fixture-secret".toCharArray());
                 {
                     var caller = new DeploymentApiCallerFixture(runtime);
                     var handle = caller.lostPrepare(archive, files, prepared, () -> {
@@ -478,11 +489,11 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         }
                         // Host persistence fault only; no capability or recovery implementation enters the caller.
                         try (var connection = runtime.persistence().database().openConnection();
-                                var statement = connection.createStatement()) {
+                             var statement = connection.createStatement()) {
                             long cutoff = System.currentTimeMillis();
                             statement.execute(
-                                    "ALTER TABLE platform_task_resource ADD CONSTRAINT lost_prepare_release CHECK(resource_kind<>'MOD' OR released_at IS NULL OR released_at<="
-                                            + cutoff + ")");
+                                "ALTER TABLE platform_task_resource ADD CONSTRAINT lost_prepare_release CHECK(resource_kind<>'MOD' OR released_at IS NULL OR released_at<="
+                                    + cutoff + ")");
                             Thread.sleep(5);
                         } catch (Exception failure) {
                             throw new AssertionError(failure);
@@ -494,15 +505,15 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         assertEquals(0, peer.restoreEffects.get());
                     }, () -> {
                         assertEquals(lookupEffects.get(), peer.restoreEffects.get(),
-                                "Request lookup must not prepare again");
+                            "Request lookup must not prepare again");
                         assertEquals(lookupCreates.get(), peer.candidates.size());
                         assertEquals(lookupCommands.get(), peer.commands.get(),
-                                "Original request lookup must not send SSH commands");
+                            "Original request lookup must not send SSH commands");
                         assertEquals(lookupAuthentication.get(), authentication.get(),
-                                "Original request lookup must not connect again");
+                            "Original request lookup must not connect again");
                         if (inputMissing.get())
                             assertFalse(Files.exists(files.resolve("release-worker.pax")),
-                                    "Input remains absent during original request lookup");
+                                "Input remains absent during original request lookup");
                         lookupVerified.incrementAndGet();
                     });
                     waitReturned(handle);
@@ -510,36 +521,36 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertFalse((boolean) caller.callerClass.getField("firstPrepareReturned").get(null));
                     assertNull(caller.handoff(), "First prepare must lose the original ID");
                     assertTrue(writes.get() > 0,
-                            "First prepare must reach actual SFTP writes before losing its return value");
+                        "First prepare must reach actual SFTP writes before losing its return value");
                     if (!prepared)
                         assertFalse(interrupt.get(), "The original write acknowledgement fault was triggered");
                     assertEquals(prepared ? "SERVICE_RELEASE_PERSISTENCE" : "SERVICE_RELEASE_PENDING",
-                            caller.callerClass.getField("firstPrepareError").get(null),
-                            failure(runtime, caller, handle));
+                        caller.callerClass.getField("firstPrepareError").get(null),
+                        failure(runtime, caller, handle));
                     if (prepared) {
                         try (var connection = runtime.persistence().database().openConnection();
-                                var statement = connection.createStatement()) {
+                             var statement = connection.createStatement()) {
                             statement
-                                    .execute("ALTER TABLE platform_task_resource DROP CONSTRAINT lost_prepare_release");
+                                .execute("ALTER TABLE platform_task_resource DROP CONSTRAINT lost_prepare_release");
                         }
                     }
                     UUID originalId;
                     try (var access = scope(runtime, true);
-                            var connection = access.openConnection();
-                            var statement = connection.createStatement();
-                            var rows = statement.executeQuery(
-                                    "SELECT handoff_id,platform_task_id,state,recovery_payload FROM deployment_handoff")) {
+                         var connection = access.openConnection();
+                         var statement = connection.createStatement();
+                         var rows = statement.executeQuery(
+                             "SELECT handoff_id,platform_task_id,state,recovery_payload FROM deployment_handoff")) {
                         assertTrue(rows.next());
                         originalId = rows.getObject(1, UUID.class);
                         assertEquals(handle.id(), rows.getObject(2, UUID.class));
                         assertEquals(prepared ? "PREPARED" : "UNKNOWN", rows.getString(3),
-                                failure(runtime, caller, handle));
+                            failure(runtime, caller, handle));
                         assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getBinaryStream(4))
-                                .path("changed").asBoolean());
+                            .path("changed").asBoolean());
                         assertFalse(rows.next());
                     }
                     assertTrue(scalar(runtime,
-                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/lost-restore' AND released_at IS NULL") > 0);
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/lost-restore' AND released_at IS NULL") > 0);
                     var displaced = new LinkedHashMap<Path, Path>();
                     var originalAttributes = new HashMap<Path, java.nio.file.attribute.BasicFileAttributes>();
                     try (var paths = Files.list(files)) {
@@ -548,7 +559,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                                 Files.delete(file);
                             else {
                                 originalAttributes.put(file,
-                                        Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class));
+                                    Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class));
                                 Path retained = file.resolveSibling(file.getFileName() + ".retained");
                                 Files.move(file, retained);
                                 displaced.put(file, retained);
@@ -564,29 +575,29 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         Path staging;
                         try (var paths = Files.walk(remote)) {
                             var retained = paths.filter(path -> path.getFileName().toString()
-                                    .matches("\\.wtl-transfer-[0-9a-f-]{36}\\.part")).toList();
+                                .matches("\\.wtl-transfer-[0-9a-f-]{36}\\.part")).toList();
                             assertEquals(1, retained.size());
                             staging = retained.getFirst();
                         }
                         originalStaging.set(staging);
                         byte[] retained = Files.readAllBytes(staging);
                         var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                                TimeUnit.SECONDS);
+                            TimeUnit.SECONDS);
                         assertEquals(TaskState.UNKNOWN, pending.state(), failure(runtime, caller, handle));
                         assertEquals(originalId, caller.handoff());
                         assertArrayEquals(retained, Files.readAllBytes(staging));
                         assertEquals(originalWrites, writes.get());
                         assertEquals(lookupEffects.get(), peer.restoreEffects.get());
                         assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='"
-                                + handle.id() + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
+                            + handle.id() + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
                         assertTrue(scalar(runtime,
-                                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/lost-restore' AND released_at IS NULL") > 0);
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE resource_id='example.deploymentcaller/checkpoint/lost-restore' AND released_at IS NULL") > 0);
                         // Restore the same original file identities. The public provider must verify the prefix and remove the existing staging itself.
                         for (var original : displaced.entrySet()) {
                             Files.move(original.getValue(), original.getKey());
                             var before = originalAttributes.get(original.getKey());
                             var after = Files.readAttributes(original.getKey(),
-                                    java.nio.file.attribute.BasicFileAttributes.class);
+                                java.nio.file.attribute.BasicFileAttributes.class);
                             assertEquals(before.fileKey(), after.fileKey());
                             assertEquals(before.lastModifiedTime(), after.lastModifiedTime());
                             assertEquals(before.size(), after.size());
@@ -597,34 +608,34 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         lookupAuthentication.set(authentication.get());
                     }
                     var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        TimeUnit.SECONDS);
                     assertEquals(TaskState.ENDED, settled.state(), failure(runtime, caller, handle));
                     assertEquals(Optional.of(prepared ? Outcome.SUCCEEDED : Outcome.CANCELLED), settled.outcome());
                     assertEquals(originalId, caller.handoff());
                     assertEquals(prepared ? 1 : 2, lookupVerified.get());
                     assertEquals(originalWrites, writes.get(),
-                            "Original request recovery must never re-upload consumed inputs");
+                        "Original request recovery must never re-upload consumed inputs");
                     if (!prepared) {
                         assertFalse(Files.exists(originalStaging.get()),
-                                "The public provider must physically discard its verified original staging");
+                            "The public provider must physically discard its verified original staging");
                     }
                     assertEquals(lookupCreates.get(), peer.candidates.size(),
-                            "Original task must keep the original candidate identities");
+                        "Original task must keep the original candidate identities");
                     if (prepared) {
                         assertEquals(8, peer.restorePreparationEffects.get(),
-                                "Original request lookup cannot prepare or build again");
+                            "Original request lookup cannot prepare or build again");
                         assertEquals(8, peer.restorePublicationEffects.get(),
-                                "Two original components and databases publish exactly once");
+                            "Two original components and databases publish exactly once");
                         assertEquals(6, peer.restoreCleanupEffects.get(),
-                                "Each original database/runtime/candidate is cleaned exactly once");
+                            "Each original database/runtime/candidate is cleaned exactly once");
                     }
                     assertEquals(0,
-                            scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     try (var access = scope(runtime, true);
-                            var connection = access.openConnection();
-                            var statement = connection.createStatement();
-                            var rows = statement.executeQuery(
-                                    "SELECT h.handoff_id,h.state,e.outcome,e.cleanup_complete FROM deployment_handoff h JOIN deployment_execution e ON e.execution_id=h.handoff_id")) {
+                         var connection = access.openConnection();
+                         var statement = connection.createStatement();
+                         var rows = statement.executeQuery(
+                             "SELECT h.handoff_id,h.state,e.outcome,e.cleanup_complete FROM deployment_handoff h JOIN deployment_execution e ON e.execution_id=h.handoff_id")) {
                         assertTrue(rows.next());
                         assertEquals(originalId, rows.getObject(1, UUID.class));
                         assertEquals("FINISHED", rows.getString(2));
@@ -659,9 +670,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(source, false, secrets);
             run(source, task -> {
                 archived.set(new DeploymentApplicationReader(source.modContexts().get(OWNER).context().db())
-                        .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                                new ServerRef("server")), task)
-                        .snapshot());
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
+                        new ServerRef("server")), task)
+                    .snapshot());
                 return success();
             });
         }
@@ -678,12 +689,12 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             enable();
             try (var ssh = new LoopbackSshServer(root, server -> {
                 server.setPasswordAuthenticator(
-                        (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
+                    (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
                 server.setFileSystemFactory(new VirtualFileSystemFactory(remote));
                 var sftp = new SftpSubsystemFactory.Builder().build();
                 sftp.addSftpEventListener(new SftpEventListener() {
                     public void written(ServerSession session, String handle, FileHandle file, long offset, byte[] data,
-                            int start, int length, Throwable failure) {
+                                        int start, int length, Throwable failure) {
                         if (failure == null)
                             writes.incrementAndGet();
                     }
@@ -693,20 +704,20 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             }); var runtime = open()) {
                 start(runtime, true);
                 runtime.servers().saveServerProfile(
-                        gold.debug.windowstolinux.app.service.contract.profile.ServerProfile
-                                .fromStored(new gold.debug.windowstolinux.app.db.entity.StoredServerProfile("target",
-                                        "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
-                        "fixture-secret".toCharArray());
+                    gold.debug.windowstolinux.app.service.server.ServerProfile
+                        .fromStored(new gold.debug.windowstolinux.app.db.server.StoredServerProfile("target",
+                            "127.0.0.1", ssh.server().getPort(), "tester", "fixture-secret")),
+                    "fixture-secret".toCharArray());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM server_profile WHERE server_profile_id='server'"));
+                    scalar(runtime, "SELECT COUNT(*) FROM server_profile WHERE server_profile_id='server'"));
                 var conflict = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
-                        .create("worker", 1, "1", OBSERVED.plusSeconds(1),
-                                gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput
-                                        .parse("PORT=9999"));
+                    .create("worker", 1, "1", OBSERVED.plusSeconds(1),
+                        gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput
+                            .parse("PORT=9999"));
                 if (!secrets)
                     runTarget(runtime, task -> {
                         new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db())
-                                .save(task, conflict);
+                            .save(task, conflict);
                         return success();
                     });
                 {
@@ -715,25 +726,25 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         var snapshot = archived.get();
                         if (variant == 1)
                             snapshot = new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot(
-                                    snapshot.application(), snapshot.displayName(), snapshot.revisionSha256(),
-                                    snapshot.ownershipSha256(), snapshot.state(), snapshot.observedAt(),
-                                    new gold.debug.windowstolinux.mod.deployment.api.VersionedRuntime(
-                                            snapshot.runtime().formatVersion(),
-                                            changedCredentialPurpose(snapshot.runtime().payload())),
-                                    snapshot.bindings(), snapshot.healthPolicySha256());
+                                snapshot.application(), snapshot.displayName(), snapshot.revisionSha256(),
+                                snapshot.ownershipSha256(), snapshot.state(), snapshot.observedAt(),
+                                new gold.debug.windowstolinux.mod.deployment.api.VersionedRuntime(
+                                    snapshot.runtime().formatVersion(),
+                                    changedCredentialPurpose(snapshot.runtime().payload())),
+                                snapshot.bindings(), snapshot.healthPolicySha256());
                         var requestArchive = archive(snapshot, files);
                         var handle = caller.restoreRejected(requestArchive, files,
-                                secrets ? variant == 0 ? "NOT_FOUND" : "ACCESS_DENIED" : "INCOMPATIBLE",
-                                secrets
-                                        ? variant == 0 ? "SECRET_MISSING" : "SECRET_OWNER"
-                                        : "DEPLOYMENT_RESTORE_INPUT_INVALID",
-                                () -> beforePrepare.set(peer.commands.get()));
+                            secrets ? variant == 0 ? "NOT_FOUND" : "ACCESS_DENIED" : "INCOMPATIBLE",
+                            secrets
+                                ? variant == 0 ? "SECRET_MISSING" : "SECRET_OWNER"
+                                : "DEPLOYMENT_RESTORE_INPUT_INVALID",
+                            () -> beforePrepare.set(peer.commands.get()));
                         waitReturned(handle);
                         assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
                         assertEquals(Outcome.SUCCEEDED,
-                                handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
+                            handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                         assertEquals(beforePrepare.get(), peer.commands.get(),
-                                "Target input authorization must precede a new SSH connection or helper request");
+                            "Target input authorization must precede a new SSH connection or helper request");
                         assertEquals(0, writes.get());
                         assertEquals(0, peer.restoreEffects.get());
                         assertTrue(peer.candidates.isEmpty());
@@ -741,24 +752,24 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             assertTrue(paths.noneMatch(Files::isRegularFile));
                         }
                         try (var access = scope(runtime, true);
-                                var connection = access.openConnection();
-                                var statement = connection.createStatement()) {
+                             var connection = access.openConnection();
+                             var statement = connection.createStatement()) {
                             for (String table : List.of("deployment_handoff", "deployment_execution",
-                                    "managed_application"))
+                                "managed_application"))
                                 try (var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
                                     assertTrue(rows.next());
                                     assertEquals(0, rows.getLong(1), table);
                                 }
                         }
                         assertEquals(0, scalar(runtime,
-                                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     }
                 }
                 if (!secrets)
                     runTarget(runtime, task -> {
                         assertEquals(Optional.of(conflict),
-                                new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db())
-                                        .find(task, "worker", 1));
+                            new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db())
+                                .find(task, "worker", 1));
                         return success();
                     });
             }
@@ -781,22 +792,22 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         assertNotEquals(original, changed);
         byte[] payload = changed.getBytes(StandardCharsets.UTF_8);
         return java.nio.ByteBuffer.allocate(magic.length + 8 + template.length + payload.length).put(magic)
-                .putInt(template.length).put(template).putInt(payload.length).put(payload).array();
+            .putInt(template.length).put(template).putInt(payload.length).put(payload).array();
     }
 
-    private void runTarget(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime, TaskWork<Void> work)
-            throws Exception {
+    private void runTarget(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, TaskWork<Void> work)
+        throws Exception {
         var observed = new AtomicReference<Throwable>();
         var handle = runtime.modContexts().get(OWNER).context().tasks().submit(
-                new TaskRequest("target_input_acceptance", "Original target immutable input", List.of("target"), true),
-                task -> {
-                    try {
-                        return work.run(task);
-                    } catch (Exception | AssertionError failure) {
-                        observed.set(failure);
-                        throw failure;
-                    }
-                });
+            new TaskRequest("target_input_acceptance", "Original target immutable input", List.of("target"), true),
+            task -> {
+                try {
+                    return work.run(task);
+                } catch (Exception | AssertionError failure) {
+                    observed.set(failure);
+                    throw failure;
+                }
+            });
         waitReturned(handle);
         if (observed.get() != null)
             throw new AssertionError("Actual target input task failed", observed.get());
@@ -818,17 +829,17 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         assertNotEquals(original, malformed);
         byte[] changed = malformed.getBytes(StandardCharsets.UTF_8);
         return java.nio.ByteBuffer.allocate(magic.length + 8 + template.length + changed.length).put(magic)
-                .putInt(template.length).put(template).putInt(changed.length).put(changed).array();
+            .putInt(template.length).put(template).putInt(changed.length).put(changed).array();
     }
 
     private Map<String, Object> archive(
-            gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot value, Path files)
-            throws Exception {
+        gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot value, Path files)
+        throws Exception {
         var bindings = value.bindings().stream()
-                .map(binding -> Map.<String, Object>of("id", binding.id(), "component", binding.componentId(), "kind",
-                        binding.kind(), "path", binding.path(), "engine", binding.engine(), "quiescence",
-                        binding.needsQuiescence()))
-                .toList();
+            .map(binding -> Map.<String, Object>of("id", binding.id(), "component", binding.componentId(), "kind",
+                binding.kind(), "path", binding.path(), "engine", binding.engine(), "quiescence",
+                binding.needsQuiescence()))
+            .toList();
         var ids = new ArrayList<>(List.of("release:worker", "release:web"));
         value.bindings().forEach(binding -> ids.add(binding.id()));
         var bytes = new ByteArrayOutputStream();
@@ -856,37 +867,37 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         archive.put("bindings", bindings);
         archive.put("health", value.healthPolicySha256());
         archive.put("archiveSha",
-                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray())));
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray())));
         return Map.copyOf(archive);
     }
 
-    private String publishFixture(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime) throws Exception {
+    private String publishFixture(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime) throws Exception {
         return publishFixture(runtime, false);
     }
 
-    private String publishFixture(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime, boolean databases)
-            throws Exception {
+    private String publishFixture(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, boolean databases)
+        throws Exception {
         return publishFixture(runtime, databases, false);
     }
 
-    private String publishFixture(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime, boolean databases,
-            boolean withSecret) throws Exception {
+    private String publishFixture(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, boolean databases,
+                                  boolean withSecret) throws Exception {
         var observed = new AtomicReference<String>();
         run(runtime, task -> {
             var context = runtime.modContexts().get(OWNER).context();
             var graph = graph("demo");
             if (databases) {
                 var worker = graph.components().stream().filter(value -> value.componentId().equals("worker"))
-                        .findFirst().orElseThrow();
+                    .findFirst().orElseThrow();
                 var bindings = List.of(
-                        new DeploymentDatabaseBinding("alpha", new DeploymentDatabaseConnection.Sqlite("alpha.sqlite")),
-                        new DeploymentDatabaseBinding("beta", new DeploymentDatabaseConnection.Sqlite("beta.sqlite")));
+                    new DeploymentDatabaseBinding("alpha", new DeploymentDatabaseConnection.Sqlite("alpha.sqlite")),
+                    new DeploymentDatabaseBinding("beta", new DeploymentDatabaseConnection.Sqlite("beta.sqlite")));
                 var replaced = new DeploymentApplicationGraph.Component(worker.componentId(), worker.unit(),
-                        worker.runtime(), worker.dependencies(), worker.reviewedRuntime(), worker.dataPaths(),
-                        new DeploymentResourceBindings(worker.resources().fileBindings(), Optional.of(bindings)));
+                    worker.runtime(), worker.dependencies(), worker.reviewedRuntime(), worker.dataPaths(),
+                    new DeploymentResourceBindings(worker.resources().fileBindings(), Optional.of(bindings)));
                 graph = new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(),
-                        graph.healthCheck(), graph.components().stream()
-                                .map(value -> value.componentId().equals("worker") ? replaced : value).toList());
+                    graph.healthCheck(), graph.components().stream()
+                    .map(value -> value.componentId().equals("worker") ? replaced : value).toList());
             }
             peer.restoreComponents.clear();
             for (var component : graph.components())
@@ -897,24 +908,24 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var revision = new DeploymentSecretReference("restore-secret", 1);
                 var actual = context.secrets().create("deployment.restore", new byte[]{7}, task);
                 new DeploymentSecretRepository(context.db()).saveRevision(task,
-                        new DeploymentSecretRevision(revision, actual.id(), OBSERVED, Optional.of(actual.purpose())));
+                    new DeploymentSecretRevision(revision, actual.id(), OBSERVED, Optional.of(actual.purpose())));
                 secrets.add(revision);
                 references.put(revision, actual);
             }
             var proposal = new DeploymentPublication(graph, publications(graph, 1, secrets));
             var plan = new DeploymentPublicationPlan(UUID.randomUUID(), Optional.empty(), "demo",
-                    new ServerRef("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64),
-                    DeploymentOriginalPublicationCommit.references(new ServerRef("server"), proposal, references),
-                    Instant.now());
+                new ServerRef("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64),
+                DeploymentOriginalPublicationCommit.references(new ServerRef("server"), proposal, references),
+                Instant.now());
             var commit = new DeploymentOriginalPublicationCommit(context);
             commit.begin(plan, proposal, task, "deployment-agent");
             assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());
             var record = new DeploymentExecutionRepository(context.db()).find(task, plan.executionId()).orElseThrow();
             assertEquals(Outcome.SUCCEEDED, commit.finishKnown(task, record).outcome());
             observed.set(new DeploymentApplicationReader(context.db())
-                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                            new ServerRef("server")), task)
-                    .snapshot().revisionSha256());
+                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
+                    new ServerRef("server")), task)
+                .snapshot().revisionSha256());
             return success();
         });
         return observed.get();
@@ -922,54 +933,54 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
 
     /** Reads only non-secret original phase facts while the real runtime remains open. / 在真实运行时仍开放时仅读取原非秘密阶段依据。 */
     private String failure(PlatformRuntime runtime, DeploymentApiCallerFixture caller, TaskHandle<?> handle)
-            throws Exception {
+        throws Exception {
         var detail = new StringBuilder(handle.snapshot().toString()).append(" caller assertion=")
-                .append(caller.callerClass.getField("assertion").get(null)).append(" firstPrepareProvider=")
-                .append(caller.callerClass.getField("firstPrepareProviderEvidence").get(null)).append(" peer verbs=")
-                .append(peer.verbs).append(" restore calls=")
-                .append(caller.callerClass.getField("restoreCallEvidence").get(null)).append(" transfer observations=")
-                .append(transferObservations);
+            .append(caller.callerClass.getField("assertion").get(null)).append(" firstPrepareProvider=")
+            .append(caller.callerClass.getField("firstPrepareProviderEvidence").get(null)).append(" peer verbs=")
+            .append(peer.verbs).append(" restore calls=")
+            .append(caller.callerClass.getField("restoreCallEvidence").get(null)).append(" transfer observations=")
+            .append(transferObservations);
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.prepareStatement(
-                        "SELECT state,recovery_payload FROM deployment_handoff WHERE platform_task_id=?")) {
+             var connection = access.openConnection();
+             var statement = connection.prepareStatement(
+                 "SELECT state,recovery_payload FROM deployment_handoff WHERE platform_task_id=?")) {
             statement.setObject(1, handle.id());
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     var facts = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getBinaryStream(2));
                     detail.append(" handoff=").append(rows.getString(1)).append(" changed=")
-                            .append(facts.path("changed")).append(" executionStarted=")
-                            .append(facts.path("executionStarted")).append(" immutableStageAttempted=")
-                            .append(facts.path("immutableStageAttempted")).append(" components=")
-                            .append(facts.path("components"));
+                        .append(facts.path("changed")).append(" executionStarted=")
+                        .append(facts.path("executionStarted")).append(" immutableStageAttempted=")
+                        .append(facts.path("immutableStageAttempted")).append(" components=")
+                        .append(facts.path("components"));
                 }
             }
             try (var execution = connection.prepareStatement(
-                    "SELECT phase,outcome,business_committed,cleanup_complete FROM deployment_execution WHERE platform_task_id=?")) {
+                "SELECT phase,outcome,business_committed,cleanup_complete FROM deployment_execution WHERE platform_task_id=?")) {
                 execution.setObject(1, handle.id());
                 try (var rows = execution.executeQuery()) {
                     while (rows.next())
                         detail.append(" formal=").append(rows.getString(1)).append('/').append(rows.getString(2))
-                                .append('/').append(rows.getBoolean(3)).append('/').append(rows.getBoolean(4));
+                            .append('/').append(rows.getBoolean(3)).append('/').append(rows.getBoolean(4));
                 }
             }
         }
         try (var connection = runtime.persistence().database().openConnection();
-                var resources = connection.prepareStatement(
-                        "SELECT lease_id,resource_kind,resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL ORDER BY resource_kind,resource_id,lease_id")) {
+             var resources = connection.prepareStatement(
+                 "SELECT lease_id,resource_kind,resource_id,owner_id,access_mode,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL ORDER BY resource_kind,resource_id,lease_id")) {
             resources.setObject(1, handle.id());
             try (var rows = resources.executeQuery()) {
                 while (rows.next()) {
                     detail.append(" active lease=").append(rows.getObject(1)).append('/').append(rows.getString(2))
-                            .append('/').append(rows.getString(3)).append('/').append(rows.getString(4)).append('/')
-                            .append(rows.getString(5));
+                        .append('/').append(rows.getString(3)).append('/').append(rows.getString(4)).append('/')
+                        .append(rows.getString(5));
                     var recovery = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rows.getString(6));
                     detail.append(" release=").append(recovery.path("release")).append(" protocol=")
-                            .append(recovery.path("protocol"));
+                        .append(recovery.path("protocol"));
                     if (recovery.path("protocol").asText().equals("service.v1")) {
                         var identity = recovery.path("fields");
                         for (String field : List.of("bootId", "callId", "providerId", "providerVersion",
-                                "schemaVersion", "schemaGeneration"))
+                            "schemaVersion", "schemaGeneration"))
                             detail.append(' ').append(field).append('=').append(identity.path(field));
                     }
                 }
@@ -981,10 +992,10 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
     private static void waitReturned(TaskHandle<?> handle) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
         while (handle.snapshot().state() != TaskState.ENDED && handle.snapshot().state() != TaskState.UNKNOWN
-                && System.nanoTime() < deadline)
+            && System.nanoTime() < deadline)
             Thread.sleep(20);
         assertTrue(handle.snapshot().state() == TaskState.ENDED || handle.snapshot().state() == TaskState.UNKNOWN,
-                handle.snapshot().toString());
+            handle.snapshot().toString());
     }
 
     private final class Peer {
@@ -1029,7 +1040,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         final Map<String, List<String>> databaseArguments = new ConcurrentHashMap<>();
 
         final Set<String> databaseCommitted = ConcurrentHashMap.newKeySet(),
-                databaseFinished = ConcurrentHashMap.newKeySet();
+            databaseFinished = ConcurrentHashMap.newKeySet();
 
         final Map<String, String> active = new ConcurrentHashMap<>();
 
@@ -1042,11 +1053,12 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         volatile boolean uncertain;
 
         volatile boolean restoreCleanupUncertain;
+
         String response(String script) throws Exception {
             commands.incrementAndGet();
             if (script.contains("sha256sum --check --status"))
                 return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
             var arguments = new ArrayList<String>();
             var matcher = Pattern.compile("'([^']*)'").matcher(script);
             while (matcher.find())
@@ -1064,7 +1076,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals(component.unit().ownershipManifestSha256(), values.get(1));
                     assertEquals("deployment", values.get(2));
                     yield "MANAGED_TARGET=1\nPRESENT=" + (active.containsKey(values.getFirst()) ? 1 : 0)
-                            + "\nKIND=deployment\nRELEASE_SHA256=" + active.getOrDefault(values.getFirst(), "-") + "\n";
+                        + "\nKIND=deployment\nRELEASE_SHA256=" + active.getOrDefault(values.getFirst(), "-") + "\n";
                 }
                 case "handoff-restore-preflight" -> "RESTORE_SPACE_VERIFIED=1\n";
                 case "stage-config" -> "INPUT_STAGED=1\n";
@@ -1080,16 +1092,16 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     restoreEffects.incrementAndGet();
                     restorePreparationEffects.incrementAndGet();
                     Files.createDirectories(
-                            filesystem.resolve("var/lib/windowstolinux/candidates/" + candidate + "/mutable/restore"));
+                        filesystem.resolve("var/lib/windowstolinux/candidates/" + candidate + "/mutable/restore"));
                     yield "RESTORE_CANDIDATE=/var/lib/windowstolinux/candidates/" + candidate + "\n";
                 }
                 case "handoff-restore-file" -> {
                     assertEquals(candidates.get(values.get(1)), values.subList(0, 4));
                     Path actual = filesystem.resolve(
-                            "var/lib/windowstolinux/candidates/" + values.get(1) + "/mutable/restore/" + values.get(4));
+                        "var/lib/windowstolinux/candidates/" + values.get(1) + "/mutable/restore/" + values.get(4));
                     assertEquals(Long.parseLong(values.get(5)), Files.size(actual));
                     assertEquals(values.get(6), HexFormat.of()
-                            .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(actual))));
+                        .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(actual))));
                     yield "RESTORE_FILE_VERIFIED=1\n";
                 }
                 case "handoff-restore-step", "handoff-restore-step-status" -> {
@@ -1098,8 +1110,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     if (verb.endsWith("-status")) {
                         assertEquals(stepRequests.get(key), values);
                         yield restoreCleanupUncertain && values.getFirst().equals("web")
-                                ? ""
-                                : steps.getOrDefault(key, "");
+                            ? ""
+                            : steps.getOrDefault(key, "");
                     }
                     assertNull(stepRequests.putIfAbsent(key, List.copyOf(values)));
                     restoreEffects.incrementAndGet();
@@ -1107,8 +1119,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         case "restore-prepare", "restore-db-create", "database-restore-candidate" ->
                             restorePreparationEffects.incrementAndGet();
                         case "restore-snapshot", "restore-mark-quiesced", "restore-start-formal",
-                                "database-commit-candidate" ->
-                            restorePublicationEffects.incrementAndGet();
+                             "database-commit-candidate" -> restorePublicationEffects.incrementAndGet();
                         case "restore-finish", "database-finish-candidate" -> restoreCleanupEffects.incrementAndGet();
                         default -> throw new AssertionError("Unclassified restore effect " + values.get(5));
                     }
@@ -1139,19 +1150,19 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             assertEquals(component.unit().id(), action.getFirst());
                             assertEquals(5, action.size());
                             var binding = component.resources().databaseBindings().orElseThrow().stream()
-                                    .filter(value -> action.get(2).equals("__database-" + value.databaseId() + ".sql"))
-                                    .findFirst().orElseThrow();
+                                .filter(value -> action.get(2).equals("__database-" + value.databaseId() + ".sql"))
+                                .findFirst().orElseThrow();
                             String bindingId = component.componentId() + ":" + binding.databaseId();
                             assertEquals(
-                                    "create-db-" + UUID.nameUUIDFromBytes(bindingId.getBytes(StandardCharsets.UTF_8))
-                                            .toString().replace("-", "").substring(0, 16),
-                                    values.get(4));
+                                "create-db-" + UUID.nameUUIDFromBytes(bindingId.getBytes(StandardCharsets.UTF_8))
+                                    .toString().replace("-", "").substring(0, 16),
+                                values.get(4));
                             assertTrue(action.get(1).matches(Pattern.quote(component.unit().id()) + "-[0-9a-f]{16}"));
                             assertTrue(action.get(3).matches("db-[0-9a-f]{32}"));
                             Path input = filesystem.resolve("var/lib/windowstolinux/candidates/" + values.get(1)
-                                    + "/mutable/restore/" + action.get(2));
+                                + "/mutable/restore/" + action.get(2));
                             assertEquals(action.get(4), HexFormat.of()
-                                    .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(input))));
+                                .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(input))));
                             assertNull(databaseCandidates.putIfAbsent(action.get(1), List.copyOf(action)));
                             yield "DATABASE_CANDIDATE_CREATED=1\n";
                         }
@@ -1166,19 +1177,19 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             assertNotNull(component);
                             assertEquals(component.unit().id(), action.getFirst());
                             var binding = component.resources().databaseBindings().orElseThrow().stream()
-                                    .filter(value -> value.databaseId().equals(action.get(5))).findFirst()
-                                    .orElseThrow();
+                                .filter(value -> value.databaseId().equals(action.get(5))).findFirst()
+                                .orElseThrow();
                             var sqlite = assertInstanceOf(DeploymentDatabaseConnection.Sqlite.class,
-                                    binding.connection());
+                                binding.connection());
                             assertEquals(9, action.size());
                             assertEquals(sqlite.location().type().name(), action.get(6));
                             assertEquals(sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(),
-                                    action.get(7));
+                                action.get(7));
                             assertEquals(sqlite.fileName(), action.get(8));
                             assertEquals("__database-" + binding.databaseId() + ".sql", original.get(2));
                             assertNull(databaseArguments.putIfAbsent(action.get(2), List.copyOf(action)));
                             yield "CANDIDATE_ID=" + action.get(2) + "\nCONNECTION_TOKEN=" + action.get(2)
-                                    + "\nINTEGRITY_VERIFIED=1\nSCHEMA_READABLE=1\n";
+                                + "\nINTEGRITY_VERIFIED=1\nSCHEMA_READABLE=1\n";
                         }
                         case "database-commit-candidate" -> {
                             assertEquals(databaseArguments.get(action.get(2)), action);
@@ -1200,13 +1211,13 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 case "handoff-restore-discard", "handoff-restore-discard-status" -> {
                     assertEquals(candidates.get(values.get(1)), values);
                     Path candidate = filesystem.resolve("var/lib/windowstolinux/candidates/" + values.get(1))
-                            .normalize();
+                        .normalize();
                     assertTrue(candidate.startsWith(filesystem.normalize()));
                     if (verb.equals("handoff-restore-discard")) {
                         assertTrue(discarded.add(values.get(1)), "Original candidate discard cannot replay");
                         try (var paths = Files.walk(candidate)) {
                             assertFalse(paths.anyMatch(Files::isRegularFile),
-                                    "SDK must remove staging without publishing a final target before helper candidate cleanup");
+                                "SDK must remove staging without publishing a final target before helper candidate cleanup");
                         }
                         try (var paths = Files.walk(candidate)) {
                             for (Path path : paths.sorted(Comparator.reverseOrder()).toList())
@@ -1223,7 +1234,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     if (verb.equals("handoff-restore-cleanup")) {
                         assertTrue(cleaned.add(values.get(1)), "Original cleanup cannot be repeated");
                         Path candidate = filesystem.resolve("var/lib/windowstolinux/candidates/" + values.get(1))
-                                .normalize();
+                            .normalize();
                         assertTrue(candidate.startsWith(filesystem.normalize()));
                         try (var paths = Files.walk(candidate)) {
                             for (Path path : paths.sorted(Comparator.reverseOrder()).toList())
@@ -1234,9 +1245,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     }
                     assertFalse(Files.exists(filesystem.resolve("var/lib/windowstolinux/candidates/" + values.get(1))));
                     yield cleaned.contains(values.get(1))
-                            && !(restoreCleanupUncertain && values.getFirst().equals("web"))
-                                    ? "RESTORE_CLEANUP=1\n"
-                                    : "";
+                        && !(restoreCleanupUncertain && values.getFirst().equals("web"))
+                        ? "RESTORE_CLEANUP=1\n"
+                        : "";
                 }
                 case "application-health" -> "HEALTHY=1\n";
                 case "managed-current-status" -> {
@@ -1244,7 +1255,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals("a".repeat(64), values.get(1));
                     assertEquals("deployment", values.get(2));
                     assertTrue(active.containsKey(values.getFirst()),
-                            "Current release must be actual source or verified restored target");
+                        "Current release must be actual source or verified restored target");
                     yield "MANAGED_CURRENT=1\nKIND=deployment\nRELEASE_SHA256=" + active.get(values.getFirst()) + "\n";
                 }
                 case "inspect-runtime" -> "KIND=deployment\nMODE=DAEMON\n";
@@ -1254,9 +1265,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertTrue(Set.of("start", "stop").contains(values.get(1)));
                     assertEquals(manifests.get(values.getFirst()), values.get(2));
                     assertEquals(active.get(values.getFirst()), values.get(3),
-                            "Lifecycle must bind the exact original CURRENT");
+                        "Lifecycle must bind the exact original CURRENT");
                     assertTrue(maintenance.contains(values.getFirst()),
-                            "Collection lifecycle must retain its original maintenance marker");
+                        "Collection lifecycle must retain its original maintenance marker");
                     running.put(values.getFirst(), !values.get(1).equals("stop"));
                     yield "LIFECYCLE=" + values.get(1) + "\n";
                 }
@@ -1266,8 +1277,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals("a".repeat(64), values.get(1));
                     boolean live = running.getOrDefault(values.getFirst(), true);
                     yield "OWNER=1\nRUNNING=" + (live ? 1 : 0) + "\nENABLED=enabled\nQUERY_OK=1\nActiveState="
-                            + (live ? "active" : "inactive") + "\nSubState=" + (live ? "running" : "dead")
-                            + "\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=" + (live ? 123 : 0) + "\n";
+                        + (live ? "active" : "inactive") + "\nSubState=" + (live ? "running" : "dead")
+                        + "\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=" + (live ? 123 : 0) + "\n";
                 }
                 case "application-maintenance" -> {
                     assertEquals(5, values.size());
@@ -1302,13 +1313,13 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     assertEquals(values.get(6).equals("release") ? "release" : "uploads", values.get(7));
                     assertTrue(Long.parseLong(values.get(8)) > 0);
                     assertFalse(running.getOrDefault(values.get(3), true),
-                            "Producer must only run after verified source quiescence");
+                        "Producer must only run after verified source quiescence");
                     String id = artifact(values);
                     String sealed = "ARTIFACT=" + id + "\nKIND=" + values.get(6) + "\nSIZE=12\nSHA256=" + "b".repeat(64)
-                            + "\n";
+                        + "\n";
                     if (verb.equals("backup-create")) {
                         assertFalse(closed.contains(values.getFirst()),
-                                "Closed original operation cannot start another producer");
+                            "Closed original operation cannot start another producer");
                         created.incrementAndGet();
                         artifacts.put(id, sealed);
                         yield uncertain ? "" : sealed;
@@ -1316,8 +1327,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     if (uncertain)
                         yield "";
                     yield artifacts.containsKey(id)
-                            ? "HANDOFF_BACKUP=1\nPRESENT=1\nCOMPLETE=1\n" + artifacts.get(id)
-                            : "HANDOFF_BACKUP=1\nPRESENT=0\n";
+                        ? "HANDOFF_BACKUP=1\nPRESENT=1\nCOMPLETE=1\n" + artifacts.get(id)
+                        : "HANDOFF_BACKUP=1\nPRESENT=0\n";
                 }
                 case "backup-discard" -> {
                     artifacts.clear();
@@ -1345,6 +1356,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         private org.apache.sshd.server.ExitCallback callback;
 
         private Thread worker;
+
         public void setInputStream(InputStream value) {
             input = value;
         }
@@ -1364,7 +1376,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             worker = new Thread(() -> {
                 try {
                     var length = new ByteArrayOutputStream();
-                    for (int next; (next = input.read()) != '\n';) {
+                    for (int next; (next = input.read()) != '\n'; ) {
                         if (next < '0' || next > '9' || length.size() >= 8)
                             throw new IOException("Invalid frame");
                         length.write(next);
@@ -1376,7 +1388,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     if (bytes.length != count)
                         throw new IOException("Truncated frame");
                     output.write(
-                            peer.response(new String(bytes, StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
+                        peer.response(new String(bytes, StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
                     output.flush();
                     callback.onExit(0);
                 } catch (Throwable failure) {

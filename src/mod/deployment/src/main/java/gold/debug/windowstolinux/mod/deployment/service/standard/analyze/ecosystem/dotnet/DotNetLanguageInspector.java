@@ -18,6 +18,6 @@ public final class DotNetLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.DOTNET,
-                name -> name.endsWith(".cs") || name.endsWith(".csproj") ? SourceLanguageType.CSHARP : null);
+            name -> name.endsWith(".cs") || name.endsWith(".csproj") ? SourceLanguageType.CSHARP : null);
     }
 }

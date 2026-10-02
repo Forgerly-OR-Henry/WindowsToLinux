@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -11,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
@@ -22,7 +29,7 @@ final class DeploymentAssistedBuildPeer {
     final Map<String, Long> sizes = new LinkedHashMap<>();
 
     final Map<String, Integer> creates = new LinkedHashMap<>(), uploads = new LinkedHashMap<>(),
-            builds = new LinkedHashMap<>();
+        builds = new LinkedHashMap<>();
 
     final Map<String, List<String>> scripts = new LinkedHashMap<>();
 
@@ -62,6 +69,7 @@ final class DeploymentAssistedBuildPeer {
     final Map<String, UUID> snapshotOperations = new LinkedHashMap<>();
 
     final Set<String> discardedSnapshots = new HashSet<>();
+
     DeploymentAssistedBuildPeer(boolean failedAgain) {
         this.failedAgain = failedAgain;
     }
@@ -70,37 +78,37 @@ final class DeploymentAssistedBuildPeer {
         tasks.add(task.id());
         sessionsOpened++;
         var lease = task.retain("controlled_ssh", "assisted-build-" + UUID.randomUUID(),
-                "Controlled fixed build receipts");
+            "Controlled fixed build receipts");
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("facts"))
-                        return new RemoteFacts("linux", "x86_64", "SHA256:assisted-build");
-                    if (method.getName().equals("close")) {
-                        lease.close();
-                        sessionsClosed++;
-                        return null;
-                    }
-                    assertNotNull(args[1], "The exact original host grant must reach every send");
-                    if (method.getName().equals("upload")) {
-                        var transfer = (TransferRequest) args[0];
-                        var matcher = Pattern.compile("/work/([^/]+)/").matcher(transfer.remoteAbsolutePath());
-                        assertTrue(matcher.find(), transfer.remoteAbsolutePath());
-                        String candidate = matcher.group(1);
-                        assertTrue(present.contains(candidate));
-                        byte[] bytes = Files.readAllBytes(transfer.localPath());
-                        String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-                        if (!publicationAttempts)
-                            assertTrue(candidate.endsWith(sha.substring(0, 16)));
-                        archives.put(candidate, sha);
-                        sizes.put(candidate, (long) bytes.length);
-                        uploads.merge(candidate, 1, Integer::sum);
-                        Arrays.fill(bytes, (byte) 0);
-                        return success(new TransferResult(sizes.get(candidate), sha, transfer.localPath(),
-                                transfer.remoteAbsolutePath()));
-                    }
-                    assertEquals("execute", method.getName());
-                    return command((CommandRequest) args[0]);
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("facts"))
+                    return new RemoteFacts("linux", "x86_64", "SHA256:assisted-build");
+                if (method.getName().equals("close")) {
+                    lease.close();
+                    sessionsClosed++;
+                    return null;
+                }
+                assertNotNull(args[1], "The exact original host grant must reach every send");
+                if (method.getName().equals("upload")) {
+                    var transfer = (TransferRequest) args[0];
+                    var matcher = Pattern.compile("/work/([^/]+)/").matcher(transfer.remoteAbsolutePath());
+                    assertTrue(matcher.find(), transfer.remoteAbsolutePath());
+                    String candidate = matcher.group(1);
+                    assertTrue(present.contains(candidate));
+                    byte[] bytes = Files.readAllBytes(transfer.localPath());
+                    String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+                    if (!publicationAttempts)
+                        assertTrue(candidate.endsWith(sha.substring(0, 16)));
+                    archives.put(candidate, sha);
+                    sizes.put(candidate, (long) bytes.length);
+                    uploads.merge(candidate, 1, Integer::sum);
+                    Arrays.fill(bytes, (byte) 0);
+                    return success(new TransferResult(sizes.get(candidate), sha, transfer.localPath(),
+                        transfer.remoteAbsolutePath()));
+                }
+                assertEquals("execute", method.getName());
+                return command((CommandRequest) args[0]);
+            });
     }
 
     private OperationResult<CommandResult> command(CommandRequest request) throws Exception {
@@ -108,10 +116,10 @@ final class DeploymentAssistedBuildPeer {
         commands.add(script);
         if (script.contains("managed-helper' probe"))
             return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
         if (script.contains("DISTRO_ID="))
             return reply(
-                    "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
+                "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
         if (script.contains("stat -f -c"))
             return reply("1000000000 4096\n");
         if (script.contains("build-preflight"))
@@ -121,13 +129,13 @@ final class DeploymentAssistedBuildPeer {
             toolBranches.add(version.startsWith("1.25") ? "1.25" : "1.24");
             String sha = version.startsWith("1.25") ? "d".repeat(64) : "b".repeat(64);
             return reply("TOOLCHAIN=GO|" + version + "|/usr/local/lib/windowstolinux/toolchains/versions/go-" + sha
-                    + "|MANAGED|https://official.example/go|" + sha + "\n");
+                + "|MANAGED|https://official.example/go|" + sha + "\n");
         }
         if (script.contains("prepare-toolchains 'bind'")) {
             String encoded = script.substring(script.indexOf("'bind' '") + 8);
             encoded = encoded.substring(0, encoded.indexOf('\''));
             var tools = DeploymentToolchainBindingCodec
-                    .decode(new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8));
+                .decode(new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8));
             return reply("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(tools) + "\n");
         }
         if (script.contains("candidate-create-task")) {
@@ -140,21 +148,21 @@ final class DeploymentAssistedBuildPeer {
             String id = candidate(script);
             assertTrue(present.contains(id));
             return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + sizes.get(id) + "\nSHA256="
-                    + archives.get(id) + "\nOWNER=0\n");
+                + archives.get(id) + "\nOWNER=0\n");
         }
         if (script.contains("candidate-query-task"))
             return reply("CANDIDATE_STATE=" + (present.contains(candidate(script)) ? "owned" : "absent")
-                    + "\nBUILD_ACTIVE=no\n");
+                + "\nBUILD_ACTIVE=no\n");
         if (script.contains("publication-original-status")) {
             statusReads++;
             if (publicationAttempts)
                 assertFalse(current.containsKey(arguments(script).get(2)),
-                        "Fresh proof must observe an actually rolled back empty target");
+                    "Fresh proof must observe an actually rolled back empty target");
             return reply(
-                    "PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
-                            + (present.contains(candidate(script)) ? "owned" : "absent") + "\nBUILD_ACTIVE="
-                            + (active ? "yes" : "no")
-                            + "\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n");
+                "PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
+                    + (present.contains(candidate(script)) ? "owned" : "absent") + "\nBUILD_ACTIVE="
+                    + (active ? "yes" : "no")
+                    + "\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n");
         }
         if (script.startsWith("exec /usr/bin/python3 -I -c ")) {
             String id = candidate(script);
@@ -162,17 +170,17 @@ final class DeploymentAssistedBuildPeer {
             assertEquals(1, uploads.get(id));
             assertTrue(present.contains(id));
             scripts.computeIfAbsent(id, ignored -> new ArrayList<>())
-                    .add(new String(request.stdin(), StandardCharsets.UTF_8));
+                .add(new String(request.stdin(), StandardCharsets.UTF_8));
             deadlines.computeIfAbsent(id, ignored -> new ArrayList<>()).add(request.timeout().toSeconds());
             if (unknownBuild) {
                 active = true;
                 return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_BUILD_EXIT_UNKNOWN",
-                                "Original physical build exit was not acknowledged", Map.of(), Optional.empty())));
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_BUILD_EXIT_UNKNOWN",
+                        "Original physical build exit was not acknowledged", Map.of(), Optional.empty())));
             }
             int exit = publicationAttempts ? 0 : round == 1 || failedAgain ? 1 : 0;
             return reply("WTL_BUILD_REPORT=1\nEXIT=" + exit + "\nBYTES=0\nSHA256=" + "c".repeat(64)
-                    + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
+                + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
         }
         if (script.contains("stage-config"))
             return reply("INPUT_STAGED=1\n");
@@ -195,9 +203,9 @@ final class DeploymentAssistedBuildPeer {
                 var values = arguments(script);
                 String unit = values.get(2);
                 assertTrue(Set.of("snapshot-deployment", "snapshot-deployment-attempt").contains(values.get(1)),
-                        script);
+                    script);
                 assertFalse(current.containsKey(unit),
-                        "Actual previous target must be empty before this reviewed snapshot");
+                    "Actual previous target must be empty before this reviewed snapshot");
                 UUID task = UUID.fromString(values.get(4));
                 assertEquals(Set.of(task), tasks);
                 String previousOwner = snapshotOwners.putIfAbsent(unit, values.get(3));
@@ -232,12 +240,12 @@ final class DeploymentAssistedBuildPeer {
             healthChecks++;
             if (unknownHealth)
                 return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_HEALTH_UNKNOWN",
-                                "Health observation lost", Map.of(), Optional.empty())));
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_HEALTH_UNKNOWN",
+                        "Health observation lost", Map.of(), Optional.empty())));
             if (healthFailuresRemaining > 0) {
                 healthFailuresRemaining--;
                 return new OperationResult<>(Outcome.SUCCEEDED,
-                        Optional.of(new CommandResult(Optional.of(1), "HEALTHY=0\n", "", false)), Optional.empty());
+                    Optional.of(new CommandResult(Optional.of(1), "HEALTHY=0\n", "", false)), Optional.empty());
             }
             return reply("HEALTHY=1\n");
         }
@@ -250,7 +258,7 @@ final class DeploymentAssistedBuildPeer {
             return reply("KIND=deployment\nMODE=DAEMON\n");
         if (script.contains("observe-deployment"))
             return reply(
-                    "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
+                "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
         if (script.contains("application-maintenance"))
             return reply("MAINTENANCE=end\n");
         if (script.contains("candidate-cleanup-task")) {

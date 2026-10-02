@@ -20,12 +20,12 @@ final class DeploymentUbuntuCompatibilityPolicy implements DeploymentDistributio
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"apt".equals(capabilities.packageManager())
-                || !("22.04".equals(capabilities.version()) || "24.04".equals(capabilities.version()))
-                || !"amd64".equals(capabilities.packageArchitecture())) {
+            || !("22.04".equals(capabilities.version()) || "24.04".equals(capabilities.version()))
+            || !"amd64".equals(capabilities.packageArchitecture())) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("Ubuntu must be 22.04 or 24.04 with apt and amd64 packages", evidence);
+                .unsupported("Ubuntu must be 22.04 or 24.04 with apt and amd64 packages", evidence);
         }
         return DeploymentDistributionCompatibilityRules.requireCpu(capabilities,
-                DeploymentCpuMicroarchitectureLevel.X86_64_V1, "Ubuntu", evidence);
+            DeploymentCpuMicroarchitectureLevel.X86_64_V1, "Ubuntu", evidence);
     }
 }

@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.app.service.server;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.CompletionStage;
@@ -8,14 +21,14 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerSummary;
-import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerSummary;
+import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Manages platform server settings and task-owned authentication checks without deployment code. / 管理平台服务器设置及任务所属认证检查，不依赖部署代码。 */
 public final class PlatformServerService implements ServerProfileEditor, AutoCloseable {
@@ -57,7 +70,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @throws ApiException if recovery registration is unavailable / 恢复登记不可用时
      */
     public PlatformServerService(PlatformPersistence persistence, DesktopSecurityService security,
-            PlatformTaskRuntime runtime, String version, LinuxService linux, TaskCleanup cleanup) throws ApiException {
+                                 PlatformTaskRuntime runtime, String version, LinuxService linux, TaskCleanup cleanup) throws ApiException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
         this.runtime = Objects.requireNonNull(runtime);
@@ -71,14 +84,14 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
         try {
             for (var original : versions)
                 recoveries.add(runtime.bind(PlatformTaskAdmission.PLATFORM_OWNER, original, true)
-                        .registerRecovery(CHECK_TYPE, (previous, task) -> {
-                            if (!releasePreviousProcessResources(previous))
-                                this.cleanup.close(task);
-                            return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
-                                    ProblemCode.UNAVAILABLE, "SERVER_CHECK_INTERRUPTED",
-                                    "The earlier authentication check did not deliver a confirmed result; start a new check if needed",
-                                    Map.of(), Optional.empty())));
-                        }));
+                    .registerRecovery(CHECK_TYPE, (previous, task) -> {
+                        if (!releasePreviousProcessResources(previous))
+                            this.cleanup.close(task);
+                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.UNAVAILABLE, "SERVER_CHECK_INTERRUPTED",
+                            "The earlier authentication check did not deliver a confirmed result; start a new check if needed",
+                            Map.of(), Optional.empty())));
+                    }));
         } catch (ApiException failure) {
             try {
                 close();
@@ -101,7 +114,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
         for (var stored : persistence.servers().listServerProfiles()) {
             var observation = persistence.servers().observation(stored.id());
             summaries.add(new ServerSummary(ServerProfile.fromStored(stored), observation.checkedAt(),
-                    observation.connected(), observation.operatingSystem()));
+                observation.connected(), observation.operatingSystem()));
         }
         return List.copyOf(summaries);
     }
@@ -122,7 +135,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
                 credentials.transaction(() -> {
                     if (password.length == 0) {
                         var existing = persistence.servers().findServerProfile(profile.id())
-                                .orElseThrow(() -> new IllegalArgumentException("Server password is required"));
+                            .orElseThrow(() -> new IllegalArgumentException("Server password is required"));
                         if (!existing.credentialKey().equals(profile.credentialKey()))
                             throw new IllegalArgumentException("Changing credential storage requires a password");
                     } else {
@@ -162,21 +175,22 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
     public TaskHandle<RemoteFacts> check(ServerProfile profile) throws ApiException {
         worker();
         var handle = tasks.<RemoteFacts>submit(
-                new TaskRequest(CHECK_TYPE, "SSH: " + profile.displayName(), List.of(profile.id()), true), task -> {
-                    var current = persistence.servers().findServerProfile(profile.id())
-                            .orElseThrow(() -> new SQLException("Admitted server is missing"));
-                    try (var session = linux.connect(new ServerRef(profile.id()), task)) {
-                        var facts = session.facts();
-                        persistence.servers().recordObservation(current, true, facts.operatingSystem());
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(facts), Optional.empty());
-                    } catch (ApiException failure) {
-                        if (failure.problem().code() != ProblemCode.CANCELLED)
-                            persistence.servers().recordObservation(current, false, "");
-                        return new OperationResult<>(
-                                failure.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                                Optional.empty(), Optional.of(failure.problem()));
-                    }
-                });
+            new TaskRequest(CHECK_TYPE, "SSH: " + profile.displayName(), List.of(profile.id()), true), task -> {
+                var current = persistence.servers().findServerProfile(profile.id())
+                    .orElseThrow(() -> new SQLException("Admitted server is missing"));
+                try (var session = linux.connect(new ServerRef(profile.id()), task)) {
+                    var facts = session.facts();
+                    persistence.servers().recordObservation(current, true, facts.operatingSystem());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(facts), Optional.empty());
+                } catch (ApiException failure) {
+                    if (failure.problem().code() != ProblemCode.CANCELLED)
+                        persistence.servers().recordObservation(current, false, "");
+                    return new OperationResult<>(
+                        failure.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED
+                            : failure.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                        Optional.empty(), Optional.of(failure.problem()));
+                }
+            });
         handles.put(handle.id(), handle);
         handle.completion().whenComplete((result, failure) -> handles.remove(handle.id()));
         return handle;
@@ -192,7 +206,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
         var handle = handles.get(id);
         if (handle == null)
             throw new ApiException(new Problem(ProblemCode.NOT_FOUND, "SERVER_CHECK_HANDLE",
-                    "This check has no active cancellation handle", Map.of(), Optional.empty()));
+                "This check has no active cancellation handle", Map.of(), Optional.empty()));
         handle.requestCancel();
     }
 
@@ -204,14 +218,14 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      */
     private boolean releasePreviousProcessResources(TaskSnapshot task) throws SQLException {
         return HostTaskRecovery.releasePreviousProcess(persistence.database(), task,
-                Map.of("CONNECTION", "ssh-", "CUSTOM", "interaction-"));
+            Map.of("CONNECTION", "ssh-", "CUSTOM", "interaction-"));
     }
 
     /** Returns in-memory unfinished host checks without reading business tables. / 返回内存中的未结束宿主检查，不读取业务表。
      * @return immutable retained check snapshots / 不可变保留检查快照 */
     public List<TaskSnapshot> checks() {
         return runtime.snapshots().stream().filter(task -> task.ownerId().equals(PlatformTaskAdmission.PLATFORM_OWNER)
-                && task.type().equals(CHECK_TYPE) && task.state() != TaskState.ENDED).toList();
+            && task.type().equals(CHECK_TYPE) && task.state() != TaskState.ENDED).toList();
     }
 
     /**
@@ -224,7 +238,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
         worker();
         if (checks().stream().noneMatch(task -> task.id().equals(id)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "SERVER_CHECK_IDENTITY",
-                    "The task is not a retained platform authentication check", Map.of(), Optional.empty()));
+                "The task is not a retained platform authentication check", Map.of(), Optional.empty()));
         return runtime.reconcile(id);
     }
 

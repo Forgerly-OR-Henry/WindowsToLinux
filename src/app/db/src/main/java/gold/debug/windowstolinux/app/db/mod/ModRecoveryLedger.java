@@ -1,16 +1,21 @@
 package gold.debug.windowstolinux.app.db.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.*;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Retains original recovery sessions beyond the lifetime of their tasks. / 在任务生命期之外保留原恢复会话。 */
 public final class ModRecoveryLedger {
@@ -28,7 +33,7 @@ public final class ModRecoveryLedger {
 
     /** Strict original-fact decoder. / 严格原事实解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds recovery records to the actual platform. / 将恢复记录绑定到实际平台。
      * @param database original engine / 原引擎
@@ -38,7 +43,7 @@ public final class ModRecoveryLedger {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
 
     /** Immutable original group; construction never grants transition ownership. / 不可变原组；构造不授予转换归属。
@@ -82,13 +87,13 @@ public final class ModRecoveryLedger {
         return locked(c -> {
             UUID group = UUID.randomUUID();
             String request = JSON.createObjectNode().put("formatVersion", 1).put("mode", "MOD_SESSION")
-                    .put("group", group.toString()).set("graph", JSON.valueToTree(graph.encode())).toString();
+                .put("group", group.toString()).set("graph", JSON.valueToTree(graph.encode())).toString();
             require(request.length() <= 1048576, "Recovery graph is too large");
             long now = System.currentTimeMillis();
             for (var release : graph.releases()) {
                 validateRelease(c, release);
                 try (var p = c.prepareStatement(
-                        "SELECT revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
+                    "SELECT revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
                     p.setString(1, release.owner());
                     try (var r = p.executeQuery()) {
                         require(r.next(), "Original Mod is absent");
@@ -97,19 +102,19 @@ public final class ModRecoveryLedger {
                         require(!database.bootId().equals(oldBoot) && (actual == null
                                 ? Set.of("STOPPED", "FAILED").contains(state)
                                 : release.version().equals(actual) && oldBoot != null),
-                                "Original runtime identity conflicts with recovery");
+                            "Original runtime identity conflicts with recovery");
                         maintenance(c, release.owner(), null);
                         String evidence = JSON.createObjectNode().put("formatVersion", 1)
-                                .put("bootId", database.bootId().toString())
-                                .put("registryBootId", oldBoot == null ? "" : oldBoot.toString())
-                                .put("registryState", state).put("registryVersion", actual == null ? "" : actual)
-                                .toString();
+                            .put("bootId", database.bootId().toString())
+                            .put("registryBootId", oldBoot == null ? "" : oldBoot.toString())
+                            .put("registryState", state).put("registryVersion", actual == null ? "" : actual)
+                            .toString();
                         update(c,
-                                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'RECONCILE',?,?,?,?,'RUNNING','RECOVERING',?,?,?,?,?)",
-                                UUID.randomUUID(), release.owner(), release.version(),
-                                release.schema().map(SchemaIdentity::schemaVersion).orElse(null),
-                                release.schema().map(SchemaIdentity::generation).orElse(null), r.getLong(1), request,
-                                evidence, UUID.randomUUID().toString(), now, now);
+                            "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'RECONCILE',?,?,?,?,'RUNNING','RECOVERING',?,?,?,?,?)",
+                            UUID.randomUUID(), release.owner(), release.version(),
+                            release.schema().map(SchemaIdentity::schemaVersion).orElse(null),
+                            release.schema().map(SchemaIdentity::generation).orElse(null), r.getLong(1), request,
+                            evidence, UUID.randomUUID().toString(), now, now);
                     }
                 }
             }
@@ -128,13 +133,13 @@ public final class ModRecoveryLedger {
             for (var row : original.rows()) {
                 var evidence = object(row.evidence());
                 require(!database.bootId().toString().equals(evidence.path("bootId").textValue()),
-                        "Recovery already belongs to this boot");
+                    "Recovery already belongs to this boot");
                 validateRelease(c, original.graph().release(row.owner()));
                 registry(c, row);
                 maintenance(c, row.owner(), row.operation());
                 ((com.fasterxml.jackson.databind.node.ObjectNode) evidence).put("bootId", database.bootId().toString());
                 update(c, "UPDATE mod_operation SET state='RUNNING',recovery_json=?,updated_at=? WHERE operation_id=?",
-                        evidence.toString(), System.currentTimeMillis(), row.operation());
+                    evidence.toString(), System.currentTimeMillis(), row.operation());
             }
             return read(c).stream().filter(value -> value.id().equals(original.id())).findFirst().orElseThrow();
         });
@@ -153,12 +158,12 @@ public final class ModRecoveryLedger {
             require(!original.verified(), "Cleanup is already verified");
             for (var row : original.rows()) {
                 require(database.bootId().toString().equals(object(row.evidence()).path("bootId").textValue()),
-                        "Recovery belongs to another boot");
+                    "Recovery belongs to another boot");
                 drained(c, row);
                 registry(c, row);
                 update(c,
-                        "UPDATE mod_operation SET state='FINISHING',phase='VERIFIED',outcome='SUCCEEDED',updated_at=? WHERE operation_id=?",
-                        System.currentTimeMillis(), row.operation());
+                    "UPDATE mod_operation SET state='FINISHING',phase='VERIFIED',outcome='SUCCEEDED',updated_at=? WHERE operation_id=?",
+                    System.currentTimeMillis(), row.operation());
             }
             return read(c).stream().filter(value -> value.id().equals(original.id())).findFirst().orElseThrow();
         });
@@ -182,14 +187,14 @@ public final class ModRecoveryLedger {
                 registry(c, row);
                 var release = original.graph().release(row.owner());
                 logs.store(c, archive,
-                        List.of(new LogRecordCodec.Record(row.archive(), now, "app", "mod_operation", LogLevel.INFO,
-                                "MOD_RECOVERY_FINISHED",
-                                "Original recovery resources closed; restart is required for normal activation", null,
-                                row.owner(), release.version(), null, row.operation(), Outcome.SUCCEEDED, false)),
-                        100);
+                    List.of(new LogRecordCodec.Record(row.archive(), now, "app", "mod_operation", LogLevel.INFO,
+                        "MOD_RECOVERY_FINISHED",
+                        "Original recovery resources closed; restart is required for normal activation", null,
+                        row.owner(), release.version(), null, row.operation(), Outcome.SUCCEEDED, false)),
+                    100);
                 update(c,
-                        "UPDATE mod_registry SET actual_version=NULL,last_runtime_state='STOPPED',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE mod_id=?",
-                        now, row.owner());
+                    "UPDATE mod_registry SET actual_version=NULL,last_runtime_state='STOPPED',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE mod_id=?",
+                    now, row.owner());
                 update(c, "DELETE FROM mod_operation WHERE operation_id=?", row.operation());
             }
             return null;
@@ -202,13 +207,13 @@ public final class ModRecoveryLedger {
      * @throws SQLException if original registration changed / 原登记变化时 */
     private static void validateRelease(Connection c, TaskRecoveryGraph.Release release) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT content_sha256,schema_version,state FROM mod_version WHERE mod_id=? AND version=?")) {
+            "SELECT content_sha256,schema_version,state FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, release.owner());
             p.setString(2, release.version());
             try (var r = p.executeQuery()) {
                 require(r.next() && release.digest().equals(r.getString(1)) && "READY".equals(r.getString(3)) && Objects
                         .equals(release.schema().map(SchemaIdentity::schemaVersion).orElse(null), r.getString(2)),
-                        "Original release changed");
+                    "Original release changed");
             }
         }
         if (release.schema().isPresent())
@@ -222,16 +227,16 @@ public final class ModRecoveryLedger {
     private List<Recovery> read(Connection c) throws SQLException {
         var groups = new LinkedHashMap<UUID, Recovery>();
         try (var p = c.createStatement();
-                var r = p.executeQuery(
-                        "SELECT * FROM mod_operation WHERE operation_type='RECONCILE' AND phase IN ('RECOVERING','VERIFIED') ORDER BY mod_id")) {
+             var r = p.executeQuery(
+                 "SELECT * FROM mod_operation WHERE operation_type='RECONCILE' AND phase IN ('RECOVERING','VERIFIED') ORDER BY mod_id")) {
             while (r.next()) {
                 String request = r.getString("request_json"), evidence = r.getString("recovery_json"),
-                        owner = r.getString("mod_id");
+                    owner = r.getString("mod_id");
                 var document = object(request);
                 var proof = object(evidence);
                 require(document.size() == 4 && "MOD_SESSION".equals(document.path("mode").textValue())
-                        && proof.size() == 5 && proof.path("registryState").isTextual()
-                        && proof.path("registryVersion").isTextual(), "Invalid recovery receipt shape");
+                    && proof.size() == 5 && proof.path("registryState").isTextual()
+                    && proof.path("registryVersion").isTextual(), "Invalid recovery receipt shape");
                 UUID id = uuid(document, "group");
                 uuid(proof, "bootId");
                 if (!"".equals(proof.path("registryBootId").textValue()))
@@ -243,28 +248,28 @@ public final class ModRecoveryLedger {
                     throw new SQLException("Invalid original recovery graph", invalid);
                 }
                 require(graph.releases().stream().anyMatch(value -> value.owner().equals(owner)),
-                        "Unexpected recovery member");
+                    "Unexpected recovery member");
                 var release = graph.release(owner);
                 boolean verified = r.getString("phase").equals("VERIFIED");
                 require(release.version().equals(r.getString("target_version"))
                         && Objects.equals(release.schema().map(SchemaIdentity::schemaVersion).orElse(null),
-                                r.getString("target_schema_version"))
+                        r.getString("target_schema_version"))
                         && Objects.equals(release.schema().map(SchemaIdentity::generation).orElse(null),
-                                r.getObject("target_generation", UUID.class))
+                        r.getObject("target_generation", UUID.class))
                         && (verified
-                                ? "FINISHING".equals(r.getString("state")) && "SUCCEEDED".equals(r.getString("outcome"))
-                                : Set.of("RUNNING", "UNKNOWN").contains(r.getString("state"))
-                                        && r.getString("outcome") == null),
-                        "Recovery receipt identity changed");
+                        ? "FINISHING".equals(r.getString("state")) && "SUCCEEDED".equals(r.getString("outcome"))
+                        : Set.of("RUNNING", "UNKNOWN").contains(r.getString("state"))
+                        && r.getString("outcome") == null),
+                    "Recovery receipt identity changed");
                 var row = new Row(r.getObject("operation_id", UUID.class), owner,
-                        UUID.fromString(r.getString("archive_log_id")), r.getLong("accepted_revision"), request,
-                        evidence);
+                    UUID.fromString(r.getString("archive_log_id")), r.getLong("accepted_revision"), request,
+                    evidence);
                 var old = groups.get(id);
                 var rows = new ArrayList<Row>();
                 if (old != null) {
                     require(old.graph().equals(graph) && old.verified() == verified
                             && old.rows().stream().noneMatch(value -> value.owner().equals(owner)),
-                            "Recovery group conflicts");
+                        "Recovery group conflicts");
                     rows.addAll(old.rows());
                 }
                 rows.add(row);
@@ -291,15 +296,15 @@ public final class ModRecoveryLedger {
     private static void registry(Connection c, Row row) throws SQLException {
         var proof = object(row.evidence());
         try (var p = c.prepareStatement(
-                "SELECT revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
+            "SELECT revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
             p.setString(1, row.owner());
             try (var r = p.executeQuery()) {
                 require(r.next() && row.revision() == r.getLong(1)
                         && proof.path("registryBootId").textValue()
-                                .equals(Objects.toString(r.getObject(2, UUID.class), ""))
+                        .equals(Objects.toString(r.getObject(2, UUID.class), ""))
                         && proof.path("registryState").textValue().equals(r.getString(3))
                         && proof.path("registryVersion").textValue().equals(Objects.toString(r.getString(4), "")),
-                        "Original runtime receipt changed");
+                    "Original runtime receipt changed");
             }
         }
     }
@@ -310,8 +315,8 @@ public final class ModRecoveryLedger {
      * @throws SQLException if retained work or another operation remains / 保留工作或其他操作残留时 */
     private static void drained(Connection c, Row row) throws SQLException {
         require(count(c,
-                "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=?)+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))",
-                row.owner(), row.owner(), row.owner()) == 0, "Original recovery work remains");
+            "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=?)+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))",
+            row.owner(), row.owner(), row.owner()) == 0, "Original recovery work remains");
         maintenance(c, row.owner(), row.operation());
     }
 
@@ -322,8 +327,8 @@ public final class ModRecoveryLedger {
      * @throws SQLException if another executing or inconsistent operation remains / 其他执行中或不一致操作残留时 */
     private static void maintenance(Connection c, String owner, UUID operation) throws SQLException {
         require(count(c,
-                "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND (? IS NULL OR operation_id<>?) AND NOT COALESCE(operation_type IN ('ENABLE','DISABLE','SWITCH') AND state='WAITING' AND phase='WAIT_RESTART' AND outcome IS NULL AND accepted_revision=(SELECT revision FROM mod_registry WHERE mod_id=?),FALSE)",
-                owner, operation, operation, owner) == 0, "Another operation retains this Mod");
+            "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND (? IS NULL OR operation_id<>?) AND NOT COALESCE(operation_type IN ('ENABLE','DISABLE','SWITCH') AND state='WAITING' AND phase='WAIT_RESTART' AND outcome IS NULL AND accepted_revision=(SELECT revision FROM mod_registry WHERE mod_id=?),FALSE)",
+            owner, operation, operation, owner) == 0, "Another operation retains this Mod");
     }
 
     /** Decodes a bounded versioned object with strict JSON parsing. / 以严格 JSON 解析解码有界版本化对象。
@@ -335,7 +340,7 @@ public final class ModRecoveryLedger {
         try {
             var value = JSON.readTree(encoded);
             require(value != null && value.isObject() && value.path("formatVersion").isInt()
-                    && value.path("formatVersion").intValue() == 1, "Invalid recovery format");
+                && value.path("formatVersion").intValue() == 1, "Invalid recovery format");
             return value;
         } catch (java.io.IOException invalid) {
             throw new SQLException("Invalid recovery document", invalid);
@@ -408,8 +413,8 @@ public final class ModRecoveryLedger {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 require(count(c,
-                        "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
-                        database.bootId()) == 1, "Recovery no longer owns this boot");
+                    "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
+                    database.bootId()) == 1, "Recovery no longer owns this boot");
                 result.set(work.run(c));
             }
         });

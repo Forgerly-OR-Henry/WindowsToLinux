@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -10,13 +17,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.main.startup.LoopbackSshServer;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.apache.sshd.server.channel.ChannelSession;
@@ -58,7 +65,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
      * @throws Exception if the controlled host fails / 受控宿主失败时 */
     @ParameterizedTest
     @EnumSource(value = RecoveryModeType.class, names = {"NORMAL", "CONFLICT", "REFUSED_CLEANUP", "ORIGINAL_REFUSAL",
-            "PREPUBLISH_REFUSED", "SENT_CLEANUP_UNKNOWN"})
+        "PREPUBLISH_REFUSED", "SENT_CLEANUP_UNKNOWN"})
     void originalGraphReopensAndReconcilesWithoutBusinessReplay(RecoveryModeType mode) throws Exception {
         runMode(mode);
     }
@@ -83,20 +90,20 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
     private void runMode(RecoveryModeType mode) throws Exception {
         try (var ssh = new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
-                    (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
+                (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"),
-                    DeploymentMultiComponentPublicationExecutorTest.class.getName(), "--unknown", root.toString(),
-                    mode == RecoveryModeType.ORIGINAL_REFUSAL
-                            ? "ORIGINAL_CLEANUP_REFUSED"
-                            : mode == RecoveryModeType.PREPUBLISH_REFUSED
-                                    ? "STAGE_UNKNOWN"
-                                    : mode == RecoveryModeType.ROLLED_BACK
-                                            ? "ROLLBACK_CLEANUP_REFUSED"
-                                            : mode == RecoveryModeType.LOCAL_ONLY ? "CLOSE_UNKNOWN" : "PUBLISH_UNKNOWN",
-                    Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
+                "-cp", System.getProperty("java.class.path"),
+                DeploymentMultiComponentPublicationExecutorTest.class.getName(), "--unknown", root.toString(),
+                mode == RecoveryModeType.ORIGINAL_REFUSAL
+                    ? "ORIGINAL_CLEANUP_REFUSED"
+                    : mode == RecoveryModeType.PREPUBLISH_REFUSED
+                    ? "STAGE_UNKNOWN"
+                    : mode == RecoveryModeType.ROLLED_BACK
+                    ? "ROLLBACK_CLEANUP_REFUSED"
+                    : mode == RecoveryModeType.LOCAL_ONLY ? "CLOSE_UNKNOWN" : "PUBLISH_UNKNOWN",
+                Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
             try {
                 assertTrue(child.waitFor(70, TimeUnit.SECONDS), "Original graph child timed out");
                 String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -130,25 +137,25 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
             if (mode == RecoveryModeType.SENT_CLEANUP_UNKNOWN) {
                 probeSentCleanupUnknown(ssh.server().getPort());
                 assertEquals(1, commands.stream().filter(value -> value.contains("candidate-cleanup-task")).count(),
-                        commands.toString());
+                    commands.toString());
                 assertFalse(
-                        commands.stream().anyMatch(
-                                value -> value.contains("publish-deployment") || value.contains("rollback-deployment")),
-                        commands.toString());
+                    commands.stream().anyMatch(
+                        value -> value.contains("publish-deployment") || value.contains("rollback-deployment")),
+                    commands.toString());
                 return;
             }
             try (var runtime = open()) {
                 var report = runtime.startDevelopmentMods(workspace(), pages());
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
-                        report.problems().stream().map(Problem::eventCode).toList());
+                    report.problems().stream().map(Problem::eventCode).toList());
                 var unfinished = new TaskLedger(runtime.persistence().database()).queries().unfinished();
                 assertEquals(1, unfinished.size());
                 var original = unfinished.getFirst();
                 assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
-                        + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
+                    + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
                 if (mode == RecoveryModeType.CONFLICT || mode == RecoveryModeType.REFUSED_CLEANUP
-                        || mode == RecoveryModeType.PREPUBLISH_REFUSED) {
+                    || mode == RecoveryModeType.PREPUBLISH_REFUSED) {
                     var withheld = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
                     assertEquals(TaskState.UNKNOWN, withheld.state());
                     assertTrue(checkpointUnreleased(runtime, original));
@@ -158,15 +165,15 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                         assertEquals(0, countMod(runtime, "deployment_release"));
                         assertEquals(Map.of("api", false, "web", true), candidates);
                         assertEquals(1,
-                                commands.stream().filter(value -> value.contains("candidate-cleanup-task")).count());
+                            commands.stream().filter(value -> value.contains("candidate-cleanup-task")).count());
                         assertFalse(commands.stream().anyMatch(
                                 value -> value.contains("publish-deployment") || value.contains("rollback-deployment")),
-                                commands.toString());
+                            commands.toString());
                     } else
                         assertFalse(
-                                commands.stream()
-                                        .anyMatch(DeploymentMultiComponentPublicationRecoveryRestartTest::writes),
-                                commands.toString());
+                            commands.stream()
+                                .anyMatch(DeploymentMultiComponentPublicationRecoveryRestartTest::writes),
+                            commands.toString());
                     conflictingWeb.set(false);
                     assertFalse(refuseCleanup.get(), "The intended host approval must actually have been refused");
                     assertFalse(refuseWebCleanup.get(), "The second candidate review must have been refused");
@@ -178,17 +185,17 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                 assertEquals(failed ? 0 : 1, countMod(runtime, "deployment_release"));
                 assertEquals(failed ? 0 : 2, countMod(runtime, "deployment_unit_release_binding"));
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(mode != RecoveryModeType.LOCAL_ONLY,
-                        commands.stream().anyMatch(value -> value.contains("publication-original-status")),
-                        commands.toString());
+                    commands.stream().anyMatch(value -> value.contains("publication-original-status")),
+                    commands.toString());
                 if (mode == RecoveryModeType.LOCAL_ONLY)
                     assertTrue(commands.isEmpty(), commands.toString());
                 assertFalse(
-                        commands.stream().anyMatch(value -> value.contains("publish-deployment")
-                                || value.contains("rollback-deployment") || value.contains("candidate-create-task")
-                                || value.contains("prepare-toolchains") || value.contains("'retain'")),
-                        commands.toString());
+                    commands.stream().anyMatch(value -> value.contains("publish-deployment")
+                        || value.contains("rollback-deployment") || value.contains("candidate-create-task")
+                        || value.contains("prepare-toolchains") || value.contains("'retain'")),
+                    commands.toString());
                 if (mode != RecoveryModeType.LOCAL_ONLY)
                     assertEquals(Map.of("api", false, "web", false), candidates);
                 runtime.releaseModRecovery();
@@ -201,8 +208,8 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
      * @throws Exception if the child fails or remains running / 子进程失败或未退出时 */
     private void probeSentCleanupUnknown(int port) throws Exception {
         var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(), "-cp",
-                System.getProperty("java.class.path"), getClass().getName(), "--sent-cleanup-unknown", root.toString(),
-                Integer.toString(port)).redirectErrorStream(true).start();
+            System.getProperty("java.class.path"), getClass().getName(), "--sent-cleanup-unknown", root.toString(),
+            Integer.toString(port)).redirectErrorStream(true).start();
         try {
             assertTrue(child.waitFor(45, TimeUnit.SECONDS), "Recovered unknown task child timed out");
             String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -230,7 +237,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
             try (var runtime = probe.open()) {
                 var report = runtime.startDevelopmentMods(probe.workspace(), pages());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
-                        report.problems().stream().map(Problem::eventCode).toList());
+                    report.problems().stream().map(Problem::eventCode).toList());
                 var original = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 for (int attempt = 0; attempt < 2; attempt++) {
                     var result = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
@@ -254,12 +261,12 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
         runtime.security().unlock(PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError();
             }
 
@@ -267,21 +274,21 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                 throw new AssertionError();
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 assertEquals(List.of("server-publication"), intent.serverIds());
                 if (intent.semantics().map(ActionSemantics::operation)
-                        .filter("deployment.publication.candidate-cleanup.v1"::equals).isPresent()
-                        && refuseCleanup.compareAndSet(true, false))
+                    .filter("deployment.publication.candidate-cleanup.v1"::equals).isPresent()
+                    && refuseCleanup.compareAndSet(true, false))
                     return false;
                 if (intent.semantics().map(ActionSemantics::operation)
-                        .filter("deployment.publication.candidate-cleanup.v1"::equals).isPresent()
-                        && intent.exactAction().contains("'web'") && refuseWebCleanup.compareAndSet(true, false))
+                    .filter("deployment.publication.candidate-cleanup.v1"::equals).isPresent()
+                    && intent.exactAction().contains("'web'") && refuseWebCleanup.compareAndSet(true, false))
                     return false;
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError();
             }
         });
@@ -313,9 +320,9 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
     /** Reads one exact Mod-owned table. / 读取一张精确Mod所有表。 */
     private long countMod(PlatformRuntime runtime, String table) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }
@@ -324,8 +331,8 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
     /** Confirms the original graph checkpoint remains occupied after a conflicting read. / 冲突只读后确认原图检查点仍占用。 */
     private static boolean checkpointUnreleased(PlatformRuntime runtime, UUID task) throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
-                var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
-                        + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+             var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
+                 + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
             query.setObject(1, task);
             query.setString(2, "gold.debug.windowstolinux.mod.deployment/checkpoint/deployment-publication-graph");
             try (var rows = query.executeQuery()) {
@@ -337,8 +344,8 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
     /** Detects commands that would mutate remote publication state. / 识别会写远端发布状态的命令。 */
     private static boolean writes(String script) {
         return script.contains("application-maintenance") || script.contains("candidate-cleanup-task")
-                || script.contains("'retain'") || script.contains("publish-deployment")
-                || script.contains("rollback-deployment");
+            || script.contains("'retain'") || script.contains("publish-deployment")
+            || script.contains("rollback-deployment");
     }
 
     /** Returns complete read-only facts and fixed cleanup receipts for one exact component. / 对一个精确组件返回完整只读事实与固定收尾回执。 */
@@ -347,19 +354,19 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
         var id = script.contains("'api'") ? "api" : "web";
         if (script.contains("publication-original-status"))
             return "PUBLICATION_STATUS=1\nCURRENT="
-                    + (releases.isEmpty()
-                            ? "none"
-                            : conflictingWeb.get() && id.equals("web") ? "f".repeat(64) : releases.get(id))
-                    + "\nCURRENT_KIND=" + (releases.isEmpty() ? "none" : "deployment") + "\nCURRENT_MODE="
-                    + (releases.isEmpty() ? "none" : "DAEMON") + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\n"
-                    + "SNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
-                    + (candidates.get(id) ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
-                    + (releases.isEmpty() ? "no" : "yes") + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+                + (releases.isEmpty()
+                ? "none"
+                : conflictingWeb.get() && id.equals("web") ? "f".repeat(64) : releases.get(id))
+                + "\nCURRENT_KIND=" + (releases.isEmpty() ? "none" : "deployment") + "\nCURRENT_MODE="
+                + (releases.isEmpty() ? "none" : "DAEMON") + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\n"
+                + "SNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
+                + (candidates.get(id) ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
+                + (releases.isEmpty() ? "no" : "yes") + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
         if (script.contains("inspect-runtime"))
             return "KIND=deployment\nMODE=DAEMON\n";
         if (script.contains("observe-deployment"))
             return "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\n"
-                    + "Result=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n";
+                + "Result=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n";
         if (script.contains("application-health"))
             return "HEALTHY=1\n";
         if (script.contains("candidate-cleanup-task")) {
@@ -408,7 +415,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                 } catch (Throwable failure) {
                     try {
                         error.write((failure.getClass().getSimpleName() + ": " + failure.getMessage())
-                                .getBytes(StandardCharsets.UTF_8));
+                            .getBytes(StandardCharsets.UTF_8));
                         error.flush();
                     } catch (IOException ignored) {
                         // The original SSH channel may have closed. / 原SSH通道可能已关闭。
@@ -436,7 +443,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
     /** Reads exactly one bounded platform command frame. / 精确读取一份有界平台命令帧。 */
     private static String readFrame(InputStream input) throws IOException {
         var length = new ByteArrayOutputStream();
-        for (int next; (next = input.read()) != '\n';) {
+        for (int next; (next = input.read()) != '\n'; ) {
             if (next < '0' || next > '9' || length.size() >= 8)
                 throw new IOException("Malformed command frame length");
             length.write(next);

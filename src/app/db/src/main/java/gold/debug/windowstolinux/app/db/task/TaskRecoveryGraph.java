@@ -37,10 +37,10 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
     public void requireOwner(String taskOwner, String version, List<TaskResource> claims) {
         var original = release(owner);
         var schemas = claims.stream().filter(claim -> claim.kind().equals("SCHEMA") && claim.ownerId().equals(owner))
-                .map(TaskResource::id).toList();
+            .map(TaskResource::id).toList();
         if (!owner.equals(taskOwner) || !original.version().equals(version)
-                || !claims.contains(new TaskResource("MOD", owner, owner, false))
-                || !schemas.equals(original.schema().stream().map(value -> value.generation().toString()).toList()))
+            || !claims.contains(new TaskResource("MOD", owner, owner, false))
+            || !schemas.equals(original.schema().stream().map(value -> value.generation().toString()).toList()))
             throw new IllegalArgumentException("Recovery graph differs from original task identity");
     }
 
@@ -48,10 +48,10 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
      * @return fixed graph document / 固定图文档 */
     public Map<String, Object> encode() {
         return Map.of("owner", owner, "releases", releases.stream()
-                .map(value -> Map.of("owner", value.owner(), "version", value.version(), "digest", value.digest(),
-                        "schemaVersion", value.schema().map(SchemaIdentity::schemaVersion).orElse(""),
-                        "schemaGeneration", value.schema().map(schema -> schema.generation().toString()).orElse("")))
-                .toList());
+            .map(value -> Map.of("owner", value.owner(), "version", value.version(), "digest", value.digest(),
+                "schemaVersion", value.schema().map(SchemaIdentity::schemaVersion).orElse(""),
+                "schemaGeneration", value.schema().map(schema -> schema.generation().toString()).orElse("")))
+            .toList());
     }
 
     /** Decodes the exact supported shape without inferring missing versions or data. / 解码精确受支持形状，不推断缺失版本或数据。
@@ -59,7 +59,7 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
      * @return validated retained identities / 已校验保留身份 */
     public static TaskRecoveryGraph decode(JsonNode graph) {
         if (!graph.isObject() || graph.size() != 2 || !graph.path("owner").isTextual()
-                || !graph.path("releases").isArray())
+            || !graph.path("releases").isArray())
             throw new IllegalArgumentException("Invalid original task graph");
         var releases = new ArrayList<Release>();
         for (var value : graph.path("releases")) {
@@ -74,12 +74,12 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
             if (version.isEmpty() != generation.isEmpty())
                 throw new IllegalArgumentException("Incomplete original data identity");
             var schema = version.isEmpty()
-                    ? Optional.<SchemaIdentity>empty()
-                    : Optional.of(new SchemaIdentity(owner, version, UUID.fromString(generation)));
+                ? Optional.<SchemaIdentity>empty()
+                : Optional.of(new SchemaIdentity(owner, version, UUID.fromString(generation)));
             if (schema.isPresent() && !schema.get().generation().toString().equals(generation))
                 throw new IllegalArgumentException("Noncanonical original generation");
             releases.add(
-                    new Release(owner, value.path("version").textValue(), value.path("digest").textValue(), schema));
+                new Release(owner, value.path("version").textValue(), value.path("digest").textValue(), schema));
         }
         return new TaskRecoveryGraph(graph.path("owner").textValue(), releases);
     }
@@ -98,8 +98,8 @@ public record TaskRecoveryGraph(String owner, List<Release> releases) {
         public Release {
             Objects.requireNonNull(schema);
             if (owner == null || owner.isBlank() || owner.length() > 512 || version == null || version.isBlank()
-                    || version.length() > 512 || digest == null || !digest.matches("[0-9a-f]{64}")
-                    || schema.isPresent() && !schema.get().ownerId().equals(owner))
+                || version.length() > 512 || digest == null || !digest.matches("[0-9a-f]{64}")
+                || schema.isPresent() && !schema.get().ownerId().equals(owner))
                 throw new IllegalArgumentException("Invalid original Mod release");
         }
     }

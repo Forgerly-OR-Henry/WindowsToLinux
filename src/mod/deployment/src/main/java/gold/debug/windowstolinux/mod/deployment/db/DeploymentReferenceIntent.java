@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param purpose original purpose for a secret only / 仅秘密的原用途
  * @param businessKey exact business association key / 精确业务关联键 */
 public record DeploymentReferenceIntent(DeploymentReferenceKind kind, String resourceId, Optional<String> purpose,
-        String businessKey) {
+                                        String businessKey) {
     /** Validates original metadata without deriving or normalizing identities. / 校验原元数据，不派生或规范化身份。
      * @param kind platform reference kind / 平台引用类别
      * @param resourceId original opaque resource ID / 原不透明资源ID
@@ -24,7 +24,7 @@ public record DeploymentReferenceIntent(DeploymentReferenceKind kind, String res
             if (value.isBlank() || value.length() > 512 || value.indexOf(0) >= 0)
                 throw new IllegalArgumentException("Invalid reference metadata");
         if ((kind == DeploymentReferenceKind.SECRET) != purpose.isPresent()
-                || purpose.filter(p -> p.isBlank() || p.length() > 128 || p.indexOf(0) >= 0).isPresent())
+            || purpose.filter(p -> p.isBlank() || p.length() > 128 || p.indexOf(0) >= 0).isPresent())
             throw new IllegalArgumentException("Invalid reference purpose");
     }
 
@@ -34,7 +34,7 @@ public record DeploymentReferenceIntent(DeploymentReferenceKind kind, String res
      * @return exact persisted intent / 精确持久意图 */
     public static DeploymentReferenceIntent server(ServerRef server, String businessKey) {
         return new DeploymentReferenceIntent(DeploymentReferenceKind.SERVER, server.id(), Optional.empty(),
-                businessKey);
+            businessKey);
     }
 
     /** Captures an already-created secret identity and purpose. / 捕获已创建秘密的身份和用途。
@@ -43,7 +43,7 @@ public record DeploymentReferenceIntent(DeploymentReferenceKind kind, String res
      * @return exact persisted intent / 精确持久意图 */
     public static DeploymentReferenceIntent secret(SecretRef secret, String businessKey) {
         return new DeploymentReferenceIntent(DeploymentReferenceKind.SECRET, secret.id(), Optional.of(secret.purpose()),
-                businessKey);
+            businessKey);
     }
 
     /** Platform resources supported by the reference protocol. / 引用协议支持的平台资源。 */

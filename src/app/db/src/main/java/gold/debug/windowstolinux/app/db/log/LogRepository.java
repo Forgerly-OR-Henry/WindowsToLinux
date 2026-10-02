@@ -1,14 +1,18 @@
 package gold.debug.windowstolinux.app.db.log;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Owns registered standard log tables and atomic insertion/retention. / 持有登记标准日志表及原子写入和保留。 */
 public final class LogRepository {
@@ -20,18 +24,18 @@ public final class LogRepository {
 
     /** Required version-one SQL types, bounded identity widths and nullability. / 第一版必需 SQL 类型、有界身份宽度及可空性。 */
     private static final Map<String, String> STANDARD_COLUMNS = Map.ofEntries(Map.entry("log_id", "CHARACTER:36:NO"),
-            Map.entry("recorded_at", "BIGINT:null:NO"), Map.entry("owner_id", "CHARACTER VARYING:512:NO"),
-            Map.entry("category", "CHARACTER VARYING:64:NO"), Map.entry("level", "CHARACTER VARYING:8:NO"),
-            Map.entry("event_code", "CHARACTER VARYING:128:NO"), Map.entry("message", "CHARACTER VARYING:*:NO"),
-            Map.entry("details", "CHARACTER LARGE OBJECT:*:YES"),
-            Map.entry("subject_mod_id", "CHARACTER VARYING:512:YES"),
-            Map.entry("mod_version", "CHARACTER VARYING:512:YES"), Map.entry("task_id", "UUID:null:YES"),
-            Map.entry("operation_id", "UUID:null:YES"), Map.entry("outcome", "CHARACTER VARYING:16:YES"),
-            Map.entry("truncated", "BOOLEAN:null:NO"));
+        Map.entry("recorded_at", "BIGINT:null:NO"), Map.entry("owner_id", "CHARACTER VARYING:512:NO"),
+        Map.entry("category", "CHARACTER VARYING:64:NO"), Map.entry("level", "CHARACTER VARYING:8:NO"),
+        Map.entry("event_code", "CHARACTER VARYING:128:NO"), Map.entry("message", "CHARACTER VARYING:*:NO"),
+        Map.entry("details", "CHARACTER LARGE OBJECT:*:YES"),
+        Map.entry("subject_mod_id", "CHARACTER VARYING:512:YES"),
+        Map.entry("mod_version", "CHARACTER VARYING:512:YES"), Map.entry("task_id", "UUID:null:YES"),
+        Map.entry("operation_id", "UUID:null:YES"), Map.entry("outcome", "CHARACTER VARYING:16:YES"),
+        Map.entry("truncated", "BOOLEAN:null:NO"));
 
     /** Platform categories with deterministic early-startup identity. / 具有确定性早期启动身份的平台类别。 */
     public static final Set<String> PLATFORM_CATEGORIES = Set.of("runtime", "mod_operation", "platform_task",
-            "browser_recovery");
+        "browser_recovery");
 
     /** Binds the actual database without creating business tables. / 绑定实际数据库，不创建业务表。
      * @param database owned engine / 所属引擎 */
@@ -47,7 +51,7 @@ public final class LogRepository {
      * @throws SQLException if attribution, table shape or registration conflicts / 归属、表形状或登记冲突时 */
     public Target register(String owner, Optional<SchemaIdentity> schema, LogCategory category) throws SQLException {
         if (owner == null || owner.isBlank() || owner.length() > 512 || category.displayName().isBlank()
-                || category.displayName().length() > 256)
+            || category.displayName().length() > 256)
             throw new SQLException("Invalid diagnostic registration identity");
         boolean business = category.businessTable().isPresent();
         if (business && (schema.isEmpty() || !owner.equals(schema.get().ownerId()) || owner.equals("app")))
@@ -61,7 +65,7 @@ public final class LogRepository {
         String physical = business ? new SchemaCoordinates(schema.orElseThrow()).physicalName() : "app";
         UUID key = owner.equals("app") ? platformKey(database.generation(), category.category()) : UUID.randomUUID();
         var requested = new Target(key, owner, logical, generation, physical, category.category(),
-                category.businessTable().orElse("runtime_log"), category.displayName());
+            category.businessTable().orElse("runtime_log"), category.displayName());
         try (var c = database.openConnection()) {
             c.setAutoCommit(false);
             try {
@@ -69,7 +73,7 @@ public final class LogRepository {
                 requireSchema(c, requested);
                 validateTable(c, requested);
                 try (var p = c.prepareStatement(
-                        "SELECT * FROM log_category WHERE owner_id=? AND logical_schema=? AND category=?")) {
+                    "SELECT * FROM log_category WHERE owner_id=? AND logical_schema=? AND category=?")) {
                     p.setString(1, owner);
                     p.setString(2, logical);
                     p.setString(3, category.category());
@@ -77,8 +81,8 @@ public final class LogRepository {
                         if (rows.next()) {
                             var existing = target(rows);
                             if (!existing.equals(new Target(existing.key(), owner, logical, generation, physical,
-                                    category.category(), requested.table(), requested.displayName()))
-                                    || owner.equals("app") && !existing.key().equals(key))
+                                category.category(), requested.table(), requested.displayName()))
+                                || owner.equals("app") && !existing.key().equals(key))
                                 throw new SQLException("Log category registration differs from existing ownership");
                             c.commit();
                             return existing;
@@ -86,7 +90,7 @@ public final class LogRepository {
                     }
                 }
                 try (var p = c.prepareStatement(
-                        "INSERT INTO log_category(target_key,owner_id,logical_schema,schema_generation,physical_schema,category,target_table,display_name,format_version) VALUES(?,?,?,?,?,?,?,?,1)")) {
+                    "INSERT INTO log_category(target_key,owner_id,logical_schema,schema_generation,physical_schema,category,target_table,display_name,format_version) VALUES(?,?,?,?,?,?,?,?,1)")) {
                     p.setObject(1, requested.key());
                     p.setString(2, owner);
                     p.setString(3, logical);
@@ -128,8 +132,8 @@ public final class LogRepository {
      * @throws SQLException if registry data is invalid / 登记数据无效时 */
     public List<Target> targets() throws SQLException {
         try (var c = database.openConnection();
-                var p = c.prepareStatement("SELECT * FROM log_category ORDER BY owner_id,logical_schema,category");
-                var rows = p.executeQuery()) {
+             var p = c.prepareStatement("SELECT * FROM log_category ORDER BY owner_id,logical_schema,category");
+             var rows = p.executeQuery()) {
             var targets = new ArrayList<Target>();
             while (rows.next())
                 targets.add(target(rows));
@@ -142,9 +146,9 @@ public final class LogRepository {
      * @throws SQLException if deletion evidence cannot be read / 无法读取删除证据时 */
     public Set<String> deletingOwners() throws SQLException {
         try (var c = database.openConnection();
-                var p = c.prepareStatement(
-                        "SELECT DISTINCT mod_id FROM mod_operation WHERE operation_type IN ('DELETE_MOD','DELETE_VERSION')");
-                var rows = p.executeQuery()) {
+             var p = c.prepareStatement(
+                 "SELECT DISTINCT mod_id FROM mod_operation WHERE operation_type IN ('DELETE_MOD','DELETE_VERSION')");
+             var rows = p.executeQuery()) {
             var owners = new HashSet<String>();
             while (rows.next())
                 owners.add(rows.getString(1));
@@ -180,7 +184,7 @@ public final class LogRepository {
      * @return counts pending the caller's transaction commit / 等待调用方事务提交的计数
      * @throws SQLException if ownership, evidence or writes cannot be verified / 无法核验归属、证据或写入时 */
     public Retention store(Connection c, Target target, List<LogRecordCodec.Record> records, int keep)
-            throws SQLException {
+        throws SQLException {
         if (c.getAutoCommit())
             throw new SQLException("Log archive requires an owning platform transaction");
         if (keep != 10 && keep != 100 || records.size() > 100)
@@ -207,9 +211,9 @@ public final class LogRepository {
         }
         long removed;
         try (var p = c.prepareStatement("DELETE FROM " + qualified(target)
-                + " WHERE owner_id=? AND category=? AND log_id NOT IN (SELECT log_id FROM " + qualified(target)
-                + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST " + keep
-                + " ROWS ONLY)")) {
+            + " WHERE owner_id=? AND category=? AND log_id NOT IN (SELECT log_id FROM " + qualified(target)
+            + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST " + keep
+            + " ROWS ONLY)")) {
             p.setString(1, target.owner());
             p.setString(2, target.category());
             p.setString(3, target.owner());
@@ -218,7 +222,7 @@ public final class LogRepository {
         }
         long retained;
         try (var p = c
-                .prepareStatement("SELECT COUNT(*) FROM " + qualified(target) + " WHERE owner_id=? AND category=?")) {
+            .prepareStatement("SELECT COUNT(*) FROM " + qualified(target) + " WHERE owner_id=? AND category=?")) {
             p.setString(1, target.owner());
             p.setString(2, target.category());
             try (var rows = p.executeQuery()) {
@@ -240,7 +244,7 @@ public final class LogRepository {
                 requireTarget(c, target);
                 validateTable(c, target);
                 try (var p = c.prepareStatement("SELECT " + COLUMNS + " FROM " + qualified(target)
-                        + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST 101 ROWS ONLY")) {
+                    + " WHERE owner_id=? AND category=? ORDER BY recorded_at DESC,log_id DESC FETCH FIRST 101 ROWS ONLY")) {
                     p.setString(1, target.owner());
                     p.setString(2, target.category());
                     try (var rows = p.executeQuery()) {
@@ -251,7 +255,7 @@ public final class LogRepository {
                                 LogRecordCodec.decode(target, LogRecordCodec.encode(target.key(), record));
                             } catch (java.io.IOException | RuntimeException invalid) {
                                 throw new SQLException(
-                                        "Stored diagnostic does not match its bounded attribution contract");
+                                    "Stored diagnostic does not match its bounded attribution contract");
                             }
                             records.add(record);
                         }
@@ -275,7 +279,7 @@ public final class LogRepository {
      * @throws SQLException if insertion fails / 写入失败时 */
     private static void insert(Connection c, Target target, LogRecordCodec.Record r) throws SQLException {
         try (var p = c.prepareStatement(
-                "INSERT INTO " + qualified(target) + "(" + COLUMNS + ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+            "INSERT INTO " + qualified(target) + "(" + COLUMNS + ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
             p.setString(1, r.id().toString());
             p.setLong(2, r.recordedAt());
             p.setString(3, r.owner());
@@ -316,7 +320,7 @@ public final class LogRepository {
     private void requireSchema(Connection c, Target target) throws SQLException {
         if (target.logical().equals("app")) {
             if (!target.physical().equals("app") || !target.table().equals("runtime_log")
-                    || !target.generation().equals(database.generation()))
+                || !target.generation().equals(database.generation()))
                 throw new SQLException("Platform diagnostic generation differs");
         } else {
             var identity = new SchemaIdentity(target.owner(), target.logical().substring(1), target.generation());
@@ -352,7 +356,7 @@ public final class LogRepository {
     private static Map<String, String> columns(Connection c, String schema, String table) throws SQLException {
         var found = new TreeMap<String, String>();
         try (var p = c.prepareStatement(
-                "SELECT column_name,data_type,character_maximum_length,is_nullable FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position")) {
+            "SELECT column_name,data_type,character_maximum_length,is_nullable FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position")) {
             p.setString(1, schema);
             p.setString(2, table);
             try (var rows = p.executeQuery()) {
@@ -364,7 +368,7 @@ public final class LogRepository {
                         length = "*";
                     }
                     found.put(name,
-                            rows.getString(2).toUpperCase(Locale.ROOT) + ":" + length + ":" + rows.getString(4));
+                        rows.getString(2).toUpperCase(Locale.ROOT) + ":" + length + ":" + rows.getString(4));
                 }
             }
         }
@@ -382,9 +386,9 @@ public final class LogRepository {
             throw new SQLException("Unknown log record format");
         try {
             return new Target(rows.getObject("target_key", UUID.class), rows.getString("owner_id"),
-                    rows.getString("logical_schema"), rows.getObject("schema_generation", UUID.class),
-                    rows.getString("physical_schema"), rows.getString("category"), rows.getString("target_table"),
-                    rows.getString("display_name"));
+                rows.getString("logical_schema"), rows.getObject("schema_generation", UUID.class),
+                rows.getString("physical_schema"), rows.getString("category"), rows.getString("target_table"),
+                rows.getString("display_name"));
         } catch (RuntimeException invalid) {
             throw new SQLException("Invalid log registry identifiers");
         }
@@ -397,12 +401,12 @@ public final class LogRepository {
     private static LogRecordCodec.Record record(ResultSet rows) throws SQLException {
         try {
             return new LogRecordCodec.Record(UUID.fromString(rows.getString("log_id")), rows.getLong("recorded_at"),
-                    rows.getString("owner_id"), rows.getString("category"), LogLevel.valueOf(rows.getString("level")),
-                    rows.getString("event_code"), rows.getString("message"), rows.getString("details"),
-                    rows.getString("subject_mod_id"), rows.getString("mod_version"),
-                    rows.getObject("task_id", UUID.class), rows.getObject("operation_id", UUID.class),
-                    rows.getString("outcome") == null ? null : Outcome.valueOf(rows.getString("outcome")),
-                    rows.getBoolean("truncated"));
+                rows.getString("owner_id"), rows.getString("category"), LogLevel.valueOf(rows.getString("level")),
+                rows.getString("event_code"), rows.getString("message"), rows.getString("details"),
+                rows.getString("subject_mod_id"), rows.getString("mod_version"),
+                rows.getObject("task_id", UUID.class), rows.getObject("operation_id", UUID.class),
+                rows.getString("outcome") == null ? null : Outcome.valueOf(rows.getString("outcome")),
+                rows.getBoolean("truncated"));
         } catch (RuntimeException invalid) {
             throw new SQLException("Invalid stored log record");
         }
@@ -442,7 +446,7 @@ public final class LogRepository {
      * @param table registered standard table / 登记标准表
      * @param displayName category label / 类别标签 */
     public record Target(UUID key, String owner, String logical, UUID generation, String physical, String category,
-            String table, String displayName) {
+                         String table, String displayName) {
         /** Checks identifiers before any dynamic SQL or path construction. / 任一动态 SQL 或路径构造前校验标识。
          * @param key unique registration / 唯一登记
          * @param owner producer owner / 生产方所有者
@@ -457,10 +461,10 @@ public final class LogRepository {
             Objects.requireNonNull(generation);
             Objects.requireNonNull(displayName);
             if (owner == null || owner.isBlank() || owner.length() > 512
-                    || !logical.matches("app|v(?:0|[1-9][0-9]{0,63})")
-                    || !physical.matches("app|m_[0-9a-f]{64}_v(?:0|[1-9][0-9]{0,63})")
-                    || !category.matches("[a-z0-9_]{1,64}") || table.length() > 128
-                    || !table.matches("[a-z][a-z0-9_]*_log") || displayName.isBlank() || displayName.length() > 256)
+                || !logical.matches("app|v(?:0|[1-9][0-9]{0,63})")
+                || !physical.matches("app|m_[0-9a-f]{64}_v(?:0|[1-9][0-9]{0,63})")
+                || !category.matches("[a-z0-9_]{1,64}") || table.length() > 128
+                || !table.matches("[a-z][a-z0-9_]*_log") || displayName.isBlank() || displayName.length() > 256)
                 throw new IllegalArgumentException("Invalid diagnostic target");
         }
     }

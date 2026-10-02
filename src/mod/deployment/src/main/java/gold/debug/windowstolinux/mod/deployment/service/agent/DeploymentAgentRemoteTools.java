@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 
 import java.time.Duration;
@@ -11,7 +19,7 @@ import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.ai.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentManagedUnitResolver;
@@ -22,42 +30,58 @@ import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublicati
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 
 /** Adapts the original authenticated task to protected agent tools and shared publication. / 将原认证任务适配至受保护自主工具与共用发布。 */
 public final class DeploymentAgentRemoteTools implements DeploymentAgentDeliveryPort {
     /** Borrowed original capabilities and frozen source archive. / 借用的原能力与冻结源码归档。 */
     private final RemoteSession session;
+
     /** Actual original owner capabilities. / 实际原所有者能力。 */
     private final ModContext context;
+
     /** Exact admitted target server reference. / 精确已准入目标服务器引用。 */
     private final ServerRef server;
+
     /** Authentic original platform task context. / 真实原平台任务上下文。 */
     private final TaskContext task;
+
     /** Open frozen archive retained for the original task. / 为原任务保留的开放冻结归档。 */
     private final DeploymentSourceArchive archive;
+
     /** Reviewed fixed candidate operations on the same target. / 同一目标上经审阅固定候选操作。 */
     private DeploymentCandidateChannel candidates;
+
     /** Exact packaged helper installer and identity verifier. / 精确随附 helper 安装器及身份校验器。 */
     private DeploymentManagedHelper helper;
+
     /** Protected agent source and build channel on the original session. / 原会话上的受保护自主源码及构建频道。 */
     private final DeploymentAgentProjectChannel projects;
+
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
     private final DeploymentAgentJournal journal;
+
     /** Exact reviewed saved source, absent for a local directory. / 精确经审阅已存来源，本地目录时为空。 */
     private final Optional<DeploymentProjectRecord> project;
+
     /** Original frozen all-purpose model-routing identity. / 原冻结全用途模型路由身份。 */
     private String configurationRevision;
+
     /** Read-only live observer of the task-authorized AI revision. / 任务授权 AI 修订的只读实时观察器。 */
     private final Supplier<String> currentRevision;
+
     /** Frozen policy guard checked immediately before dispatch. / 发送紧前检查的冻结策略校验器。 */
     private final DeploymentSendGuard beforeSend;
+
     /** Original exact host review capability. / 原精确宿主审核能力。 */
     private final InteractionService interaction;
+
     /** One monotonic budget retained through explicit model replacement. / 明确模型替换中保留的一份单调预算。 */
     private final DeploymentBuildBudget budget = new DeploymentBuildBudget(7200);
+
     /** One confirmed helper identity and prepared component IDs. / 一份已确认 helper 身份与已准备组件标识。 */
     private boolean helperReady;
+
     /** Component IDs whose original preparation has already started. / 原准备已开始的组件标识。 */
     private final Set<String> prepared = new HashSet<>();
 
@@ -73,9 +97,9 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @param journal dedicated original ledger / 专有原账本
      * @param project reviewed persisted source association / 经审阅已存来源关联 */
     public DeploymentAgentRemoteTools(ModContext context, RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, DeploymentSourceArchive archive, String configurationRevision,
-            Supplier<String> currentRevision, DeploymentAgentJournal journal,
-            Optional<DeploymentProjectRecord> project) {
+                                      TaskContext task, DeploymentSourceArchive archive, String configurationRevision,
+                                      Supplier<String> currentRevision, DeploymentAgentJournal journal,
+                                      Optional<DeploymentProjectRecord> project) {
         this.context = Objects.requireNonNull(context);
         this.session = Objects.requireNonNull(session);
         this.server = Objects.requireNonNull(server);
@@ -89,15 +113,15 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         this.beforeSend = () -> {
             if (!this.configurationRevision.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
-                        "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
-                        Map.of(), Optional.empty()));
+                    "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
+                    Map.of(), Optional.empty()));
         };
         this.candidates = new DeploymentCandidateChannel(session, interaction, server, task, configurationRevision,
-                budget, beforeSend);
+            budget, beforeSend);
         this.helper = new DeploymentManagedHelper(session, interaction, server, task, configurationRevision,
-                beforeSend);
+            beforeSend);
         this.projects = new DeploymentAgentProjectChannel(session, interaction, server, task, configurationRevision,
-                currentRevision);
+            currentRevision);
     }
 
     /** Returns only authenticated, actually observed host facts. / 仅返回已认证且实际观察的主机事实。
@@ -129,7 +153,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         if (value(candidates.availableBytes()) < minimum)
             throw new IllegalStateException("Insufficient verified agent candidate space");
         var workspace = new DeploymentRemoteWorkspace(DeploymentManagedUnitResolver.managedId(applicationId,
-                component.id()), archive.sha256());
+            component.id()), archive.sha256());
         value(candidates.create(workspace, minimum));
         value(candidates.upload(archive, workspace));
         value(candidates.verify(workspace, archive));
@@ -151,7 +175,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @throws Exception if the original command receipt is unavailable / 原命令回执不可得时 */
     @Override
     public CommandFeedback command(TaskContext original, Prepared candidate, String revision, String script,
-            Duration timeout) throws Exception {
+                                   Duration timeout) throws Exception {
         sameTask(original);
         return projects.command(candidate, revision, script, timeout);
     }
@@ -167,7 +191,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @throws Exception if exact source cannot be read / 无法读取精确源码时 */
     @Override
     public String read(TaskContext original, Prepared candidate, String revision, String path, int offset, int limit)
-            throws Exception {
+        throws Exception {
         sameTask(original);
         return projects.read(candidate, revision, path, offset, limit);
     }
@@ -181,7 +205,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @throws Exception if approval, application or receipt fails / 审批、应用或回执失败时 */
     @Override
     public String patch(TaskContext original, Prepared candidate, String revision, DeploymentAgentPatch patch)
-            throws Exception {
+        throws Exception {
         sameTask(original);
         if (!revision.equals(patch.sourceRevision()))
             throw new IllegalArgumentException("Agent patch revision changed");
@@ -210,8 +234,8 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @throws Exception if evidence or business preparation fails / 依据或业务准备失败时 */
     @Override
     public OperationResult<Published> deliver(TaskContext original, DeploymentAgentPlan plan,
-            Map<String, Prepared> selected, Map<String, String> revisions, Map<String, String> artifacts)
-            throws Exception {
+                                              Map<String, Prepared> selected, Map<String, String> revisions, Map<String, String> artifacts)
+        throws Exception {
         sameTask(original);
         if (!selected.keySet().equals(artifacts.keySet()) || !selected.keySet().equals(revisions.keySet()))
             throw new IllegalArgumentException("Unsealed agent graph");
@@ -222,15 +246,15 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         for (var component : plan.components()) {
             String id = component.id();
             neutral.put(id, new DeploymentGraphPublisher.Candidate(selected.get(id).workspace().candidateId(),
-                    artifacts.get(id), revisions.get(id), "0".repeat(64), false, Map.of()));
+                artifacts.get(id), revisions.get(id), "0".repeat(64), false, Map.of()));
         }
         var originalCommit = new DeploymentOriginalPublicationCommit(context);
         String binding = sha256(plan.toString() + neutral);
         var intent = new DeploymentPublicationPlan(UUID.randomUUID(), project, plan.applicationId(), server,
-                DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, binding,
-                DeploymentOriginalPublicationCommit.references(server, proposal, Map.of()), Instant.now());
+            DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, binding,
+            DeploymentOriginalPublicationCommit.references(server, proposal, Map.of()), Instant.now());
         var publisher = new DeploymentGraphPublisher(context, session, server, original,
-                (type, action, detail) -> journal.event(original, type, action, detail), beforeSend);
+            (type, action, detail) -> journal.event(original, type, action, detail), beforeSend);
         var outcome = originalCommit.execute(intent, proposal, ignored -> {
             var published = publisher.publish(proposal, neutral);
             if (published.outcome() == Outcome.SUCCEEDED || published.outcome() == Outcome.FAILED) {
@@ -243,8 +267,8 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         if (outcome.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new Published(artifacts.keySet(), "Verified managed graph and whole-application health")),
-                Optional.empty());
+            Optional.of(new Published(artifacts.keySet(), "Verified managed graph and whole-application health")),
+            Optional.empty());
     }
 
     /** Maps Agent evidence into complete typed business graph records. / 将自主依据映射为完整类型化业务图记录。
@@ -255,7 +279,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @return complete formal publication proposal / 完整正式发布提案
      * @throws Exception on conflicting ownership or configuration / 归属或配置冲突时 */
     private DeploymentPublication proposal(DeploymentAgentPlan plan, Map<String, Prepared> selected,
-            Map<String, String> revisions, Map<String, String> artifacts) throws Exception {
+                                           Map<String, String> revisions, Map<String, String> artifacts) throws Exception {
         var resolver = new DeploymentManagedUnitResolver(context.db());
         var configs = new DeploymentConfigurationRepository(context.db());
         var graph = new ArrayList<DeploymentApplicationGraph.Component>();
@@ -269,19 +293,19 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
                 throw new IllegalArgumentException("Agent candidate unit identity changed");
             var runtime = component.runtime();
             var activation = new DeploymentUnitRuntimeConfiguration(runtime.healthCheck(), Optional.empty(),
-                    runtime.identityPolicy(), runtime.workload());
+                runtime.identityPolicy(), runtime.workload());
             var config = DeploymentConfigurationSnapshot.create(unit.id(), configs.nextRevision(task, unit.id()),
-                    "agent-v2", now, component.configuration());
+                "agent-v2", now, component.configuration());
             String release = sha256("agent-release-v2:" + artifacts.get(id) + ":" + revisions.get(id) + ":"
-                    + config.sha256() + ":" + runtime + ":" + component.resources());
+                + config.sha256() + ":" + runtime + ":" + component.resources());
             graph.add(new DeploymentApplicationGraph.Component(id, unit, activation, component.dependencies(), runtime,
-                    component.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
-                    component.resources()));
+                component.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
+                component.resources()));
             commits.add(new DeploymentUnitCommit(unit, activation, new DeploymentCurrentRelease(unit.id(), release,
-                    now), config, List.of()));
+                now), config, List.of()));
         }
         return new DeploymentPublication(new DeploymentApplicationGraph(plan.applicationId(),
-                plan.healthComponentId(), plan.health(), graph), commits);
+            plan.healthComponentId(), plan.health(), graph), commits);
     }
 
     /** Hashes the exact nonsecret publication binding. / 散列精确不含秘密发布绑定。
@@ -290,7 +314,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     private static String sha256(String value) {
         try {
             return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException unavailable) {
             throw new IllegalStateException("SHA-256 unavailable", unavailable);
         }
@@ -308,9 +332,9 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     @Override
     public void replaceConfiguration(String revision) throws ApiException {
         if (!revision.matches("[0-9a-f]{64}") || !revision.equals(currentRevision.get())
-                || !context.linux().pendingTransfers(task).isEmpty())
+            || !context.linux().pendingTransfers(task).isEmpty())
             throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_REFRESH_UNSETTLED",
-                    "Original model replacement boundary is unsettled", Map.of(), Optional.empty()));
+                "Original model replacement boundary is unsettled", Map.of(), Optional.empty()));
         configurationRevision = revision;
         candidates = new DeploymentCandidateChannel(session, interaction, server, task, revision, budget, beforeSend);
         helper = new DeploymentManagedHelper(session, interaction, server, task, revision, beforeSend);
@@ -330,10 +354,10 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @return original confirmed value / 原已确认值
      * @throws DeploymentAiJson.CapabilityOutcomeException on non-success / 非成功时 */
     private static <T> T value(OperationResult<T> result)
-            throws gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException {
+        throws gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException {
         if (result.outcome() != Outcome.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                    result.outcome(), result.problem());
+                result.outcome(), result.problem());
         return result.value().orElseThrow();
     }
 }

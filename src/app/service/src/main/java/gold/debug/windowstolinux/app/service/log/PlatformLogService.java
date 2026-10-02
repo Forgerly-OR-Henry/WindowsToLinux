@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.app.service.log;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogEvent;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.LogService;
+import gold.debug.windowstolinux.appapi.task.LogStorage;
+import gold.debug.windowstolinux.appapi.task.LogTarget;
+import gold.debug.windowstolinux.appapi.task.LogWriteResult;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
@@ -9,11 +20,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Coordinates real SQL and emergency diagnostics independently of business outcomes. / 独立于业务结果协调真实 SQL 及应急诊断。 */
 public final class PlatformLogService implements AutoCloseable {
@@ -88,7 +99,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @param tasks actual task attribution authority / 实际任务归属授权方
      * @return revocable caller logger / 可撤销调用方日志器 */
     public synchronized Binding bind(String owner, String version, Optional<SchemaIdentity> schema,
-            PlatformTaskRuntime tasks) {
+                                     PlatformTaskRuntime tasks) {
         if (closed || blockedOwners.contains(owner))
             throw new IllegalStateException("Platform logs are closed");
         var binding = new Binding(owner, version, schema, tasks);
@@ -167,8 +178,8 @@ public final class PlatformLogService implements AutoCloseable {
                     return;
             }
             var target = repository.targets().stream()
-                    .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
-                    .orElseThrow();
+                .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
+                .orElseThrow();
             access = lock(target);
             synchronized (LogRepository.class) {
                 var pending = emergency.read(source);
@@ -185,8 +196,8 @@ public final class PlatformLogService implements AutoCloseable {
             }
         } catch (Exception failure) {
             reported(new LogWriteResult(UUID.randomUUID(), LogStorage.NOT_SAVED, false,
-                    Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_REPLAY_PENDING",
-                            "Original startup diagnostics remain pending"))));
+                Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_REPLAY_PENDING",
+                    "Original startup diagnostics remain pending"))));
         } finally {
             if (access != null)
                 access.close();
@@ -205,16 +216,16 @@ public final class PlatformLogService implements AutoCloseable {
             begin();
             try {
                 var target = repository.targets().stream()
-                        .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
-                        .orElseThrow();
+                    .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
+                    .orElseThrow();
                 return reported(write(target, record));
             } finally {
                 end();
             }
         } catch (Exception failure) {
             return reported(new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(),
-                    Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_WRITE_FAILED",
-                            "Host diagnostic storage could not be confirmed"))));
+                Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_STARTUP_WRITE_FAILED",
+                    "Host diagnostic storage could not be confirmed"))));
         }
     }
 
@@ -238,7 +249,7 @@ public final class PlatformLogService implements AutoCloseable {
             try {
                 var results = clean ? cleanHistory() : replayAll();
                 var keys = repository.targets().stream().map(LogRepository.Target::key)
-                        .collect(java.util.stream.Collectors.toSet());
+                    .collect(java.util.stream.Collectors.toSet());
                 keys.add(LogRepository.startupTarget().key());
                 return new Inventory(results, emergency.unregistered(keys));
             } finally {
@@ -264,7 +275,7 @@ public final class PlatformLogService implements AutoCloseable {
                     records.addAll(repository.read(target));
                 } catch (SQLException unavailable) {
                     problem = problem(ProblemCode.IO_FAILURE, "LOG_VIEW_DATABASE",
-                            "Database diagnostics could not be read");
+                        "Database diagnostics could not be read");
                 }
                 try {
                     var merged = new ArrayList<>(records);
@@ -276,7 +287,7 @@ public final class PlatformLogService implements AutoCloseable {
                     records = new ArrayList<>(EmergencyLogs.merge(merged, 100));
                 } catch (Exception unavailable) {
                     problem = problem(ProblemCode.IO_FAILURE, "LOG_VIEW_EMERGENCY",
-                            "Emergency diagnostics could not be verified");
+                        "Emergency diagnostics could not be verified");
                 }
                 return new View(target, List.copyOf(records), Optional.ofNullable(problem));
             } finally {
@@ -301,7 +312,7 @@ public final class PlatformLogService implements AutoCloseable {
             var results = new ArrayList<Maintenance>();
             for (var target : repository.targets()) {
                 Long dbBefore = null, dbAfter = null, dbRemoved = null, fileBefore = null, fileAfter = null,
-                        fileRemoved = null;
+                    fileRemoved = null;
                 long confirmedRemoved = 0;
                 CategoryAccess lock = null;
                 Problem problem = null;
@@ -346,16 +357,16 @@ public final class PlatformLogService implements AutoCloseable {
                     dbRemoved = confirmedRemoved;
                 } catch (Exception failure) {
                     problem = failure instanceof ApiException api
-                            ? api.problem()
-                            : problem(ProblemCode.IO_FAILURE, "LOG_MAINTENANCE",
-                                    "Diagnostic category remains partly unconfirmed");
+                        ? api.problem()
+                        : problem(ProblemCode.IO_FAILURE, "LOG_MAINTENANCE",
+                        "Diagnostic category remains partly unconfirmed");
                 } finally {
                     if (lock != null)
                         lock.close();
                 }
                 results.add(new Maintenance(target, Optional.ofNullable(dbBefore), Optional.ofNullable(dbAfter),
-                        Optional.ofNullable(dbRemoved), Optional.ofNullable(fileBefore), Optional.ofNullable(fileAfter),
-                        Optional.ofNullable(fileRemoved), Optional.ofNullable(problem)));
+                    Optional.ofNullable(dbRemoved), Optional.ofNullable(fileBefore), Optional.ofNullable(fileAfter),
+                    Optional.ofNullable(fileRemoved), Optional.ofNullable(problem)));
             }
             recovery = List.copyOf(results);
             return recovery;
@@ -382,24 +393,24 @@ public final class PlatformLogService implements AutoCloseable {
                 }
             } catch (Exception pending) {
                 pendingProblem = problem(ProblemCode.IO_FAILURE, "LOG_REPLAY_PENDING",
-                        "Older emergency diagnostics remain pending");
+                    "Older emergency diagnostics remain pending");
             }
             try {
                 repository.store(target, List.of(record), 100);
                 return new LogWriteResult(record.id(), LogStorage.DATABASE, record.truncated(),
-                        Optional.ofNullable(pendingProblem));
+                    Optional.ofNullable(pendingProblem));
             } catch (SQLException databaseFailure) {
                 emergency.append(target, record);
                 return new LogWriteResult(record.id(), LogStorage.EMERGENCY_FILE, record.truncated(),
-                        Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_DATABASE_UNCONFIRMED",
-                                "Diagnostic saved only to its emergency file")));
+                    Optional.of(problem(ProblemCode.IO_FAILURE, "LOG_DATABASE_UNCONFIRMED",
+                        "Diagnostic saved only to its emergency file")));
             }
         } catch (Exception failure) {
             return new LogWriteResult(record.id(), LogStorage.NOT_SAVED, record.truncated(),
-                    Optional.of(failure instanceof ApiException api
-                            ? api.problem()
-                            : problem(ProblemCode.IO_FAILURE, "LOG_NOT_SAVED",
-                                    "Diagnostic persistence could not be confirmed")));
+                Optional.of(failure instanceof ApiException api
+                    ? api.problem()
+                    : problem(ProblemCode.IO_FAILURE, "LOG_NOT_SAVED",
+                    "Diagnostic persistence could not be confirmed")));
         } finally {
             if (lock != null)
                 lock.close();
@@ -420,7 +431,7 @@ public final class PlatformLogService implements AutoCloseable {
             synchronized (this) {
                 if (blockedOwners.contains(target.owner()) || retiredKeys.contains(target.key()))
                     throw new ApiException(problem(ProblemCode.BUSY, "LOG_OWNER_DELETING",
-                            "Diagnostic owner or original category is retained for deletion"));
+                        "Diagnostic owner or original category is retained for deletion"));
             }
             var category = categoryLocks.computeIfAbsent(target.key(), ignored -> new ReentrantLock());
             if (!category.tryLock(5, TimeUnit.SECONDS))
@@ -463,7 +474,7 @@ public final class PlatformLogService implements AutoCloseable {
             acquired = true;
             synchronized (this) {
                 if (deleting.contains(owner)
-                        || bindings.stream().anyMatch(b -> b.logOwner.equals(owner) && (!b.closed || b.active != 0)))
+                    || bindings.stream().anyMatch(b -> b.logOwner.equals(owner) && (!b.closed || b.active != 0)))
                     throw new IllegalStateException("Original diagnostic bindings must finish closing first");
                 previous = blockedOwners.contains(owner);
                 blockedOwners.add(owner);
@@ -471,7 +482,7 @@ public final class PlatformLogService implements AutoCloseable {
                 sealed = true;
             }
             var keys = repository.targets().stream().filter(t -> t.owner().equals(owner)).map(LogRepository.Target::key)
-                    .toList();
+                .toList();
             synchronized (this) {
                 deletionKeys.computeIfAbsent(owner, ignored -> new HashSet<>()).addAll(keys);
             }
@@ -523,7 +534,7 @@ public final class PlatformLogService implements AutoCloseable {
             try {
                 if (!repository.deletingOwners().contains(owner)) {
                     var remaining = repository.targets().stream().map(LogRepository.Target::key)
-                            .collect(java.util.stream.Collectors.toSet());
+                        .collect(java.util.stream.Collectors.toSet());
                     synchronized (PlatformLogService.this) {
                         var known = deletionKeys.remove(owner);
                         if (known != null)
@@ -623,7 +634,7 @@ public final class PlatformLogService implements AutoCloseable {
                 }
             } catch (Exception invalid) {
                 throw new ApiException(problem(ProblemCode.CONTRACT_VIOLATION, "LOG_CATEGORY",
-                        "Diagnostic category could not be registered"));
+                    "Diagnostic category could not be registered"));
             } finally {
                 leave();
             }
@@ -649,7 +660,7 @@ public final class PlatformLogService implements AutoCloseable {
                 enter();
             } catch (ApiException unavailable) {
                 return reported(new LogWriteResult(rejectedId, LogStorage.NOT_SAVED, false,
-                        Optional.of(unavailable.problem())));
+                    Optional.of(unavailable.problem())));
             }
             try {
                 LogRepository.Target target;
@@ -668,8 +679,8 @@ public final class PlatformLogService implements AutoCloseable {
                 return reported(PlatformLogService.this.write(target, record));
             } catch (Exception invalid) {
                 return reported(new LogWriteResult(rejectedId, LogStorage.NOT_SAVED, false,
-                        Optional.of(problem(ProblemCode.CONTRACT_VIOLATION, "LOG_RECORD",
-                                "Diagnostic record or original target is invalid"))));
+                    Optional.of(problem(ProblemCode.CONTRACT_VIOLATION, "LOG_RECORD",
+                        "Diagnostic record or original target is invalid"))));
             } finally {
                 leave();
             }
@@ -686,7 +697,7 @@ public final class PlatformLogService implements AutoCloseable {
                     active++;
                 } catch (RuntimeException invalid) {
                     throw new ApiException(problem(ProblemCode.CONTRACT_VIOLATION, "LOG_WORKER",
-                            "Diagnostic storage requires an active worker"));
+                        "Diagnostic storage requires an active worker"));
                 }
             }
         }
@@ -723,8 +734,8 @@ public final class PlatformLogService implements AutoCloseable {
      * @param fileRemoved confirmed removed emergency records / 已确认移除应急记录数
      * @param problem any unconfirmed part / 任一未确认部分 */
     public record Maintenance(LogRepository.Target target, Optional<Long> databaseBefore, Optional<Long> databaseAfter,
-            Optional<Long> databaseRemoved, Optional<Long> fileBefore, Optional<Long> fileAfter,
-            Optional<Long> fileRemoved, Optional<Problem> problem) {
+                              Optional<Long> databaseRemoved, Optional<Long> fileBefore, Optional<Long> fileAfter,
+                              Optional<Long> fileRemoved, Optional<Problem> problem) {
     }
 
     /** Complete host inventory retaining unknown files as explicit unresolved evidence. / 完整宿主清单，将未知文件保留为明确未解决证据。

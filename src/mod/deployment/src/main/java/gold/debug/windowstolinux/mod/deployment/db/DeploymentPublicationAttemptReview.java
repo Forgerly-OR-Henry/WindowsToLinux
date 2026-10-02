@@ -5,6 +5,7 @@ import static gold.debug.windowstolinux.mod.deployment.db.DeploymentJsonDocument
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 
@@ -27,10 +28,13 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.Dep
  * @param recoveryAction prior typed environment consent SHA / 原类型化环境同意SHA
  * @param modelRevision authentic frozen model route / 真实冻结模型路由
  * @param approvedAt actual explicit final review time / 实际明确最终审阅时刻 */
-public record DeploymentPublicationAttemptReview(int retry, String previousRoot, String nextRoot, UUID previousOperation,
-        UUID nextOperation, String originalGraph, String unitId, String previousPlan, String nextPlan, String previousScript,
-        String nextScript, String previousTools, String nextTools, String proofSha256, String approvalAction, String recoveryAction,
-        String modelRevision, Instant approvedAt) {
+public record DeploymentPublicationAttemptReview(int retry, String previousRoot, String nextRoot,
+                                                 UUID previousOperation,
+                                                 UUID nextOperation, String originalGraph, String unitId,
+                                                 String previousPlan, String nextPlan, String previousScript,
+                                                 String nextScript, String previousTools, String nextTools,
+                                                 String proofSha256, String approvalAction, String recoveryAction,
+                                                 String modelRevision, Instant approvedAt) {
     /** Two original sixteen-MiB descriptions, one bounded observed tool binding and fixed review framing. / 两份原十六MiB描述、一份有界已观察工具绑定及固定审阅分界。 */
     static final int LIMIT = 36 * 1_048_576;
 
@@ -54,11 +58,14 @@ public record DeploymentPublicationAttemptReview(int retry, String previousRoot,
      * @param modelRevision frozen route / 冻结路由
      * @param approvedAt actual final review time / 实际最终审阅时刻 */
     public DeploymentPublicationAttemptReview {
-        Objects.requireNonNull(previousOperation); Objects.requireNonNull(nextOperation); Objects.requireNonNull(approvedAt);
+        Objects.requireNonNull(previousOperation);
+        Objects.requireNonNull(nextOperation);
+        Objects.requireNonNull(approvedAt);
         if (retry < 1 || retry > 2 || previousOperation.equals(nextOperation) || !unitId.matches("[a-z0-9][a-z0-9-]{0,62}"))
             throw new IllegalArgumentException("Invalid original publication retry identity");
         for (var hash : List.of(previousRoot, nextRoot, previousScript, nextScript, previousTools, proofSha256, approvalAction, recoveryAction, modelRevision))
-            if (!hash.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Incomplete fixed publication review binding");
+            if (!hash.matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("Incomplete fixed publication review binding");
         try {
             var before = DeploymentAssistedBuildReviewCodec.decodeDescription(previousPlan);
             var after = DeploymentAssistedBuildReviewCodec.decodeDescription(nextPlan);
@@ -69,7 +76,9 @@ public record DeploymentPublicationAttemptReview(int retry, String previousRoot,
             boolean toolsChanged = !previousTools.equals(DeploymentPublicationAttemptProof.digest(nextTools));
             if ((!corrected && !toolsChanged) || previousScript.equals(nextScript) && !toolsChanged)
                 throw new IllegalArgumentException("Publication retry has no actual corrected input or changed environment");
-        } catch (SQLException invalid) { throw new IllegalArgumentException("Incomplete durable publication review", invalid); }
+        } catch (SQLException invalid) {
+            throw new IllegalArgumentException("Incomplete durable publication review", invalid);
+        }
     }
 
     /** Requires the old complete author proof and actual original template to match this review. / 要求旧完整作者证明及实际原模板匹配此次审阅。
@@ -79,26 +88,26 @@ public record DeploymentPublicationAttemptReview(int retry, String previousRoot,
     void requirePrevious(DeploymentPublicationAttemptProof proof, DeploymentPublicationProposal original) throws SQLException {
         String encoded = DeploymentPublicationTemplateCodec.encodeTemplate(original);
         var child = proof.children().stream().filter(value -> value.unitId().equals(unitId)).findFirst()
-                .orElseThrow(() -> new SQLException("Corrected unit is absent from the restored original operation"));
+            .orElseThrow(() -> new SQLException("Corrected unit is absent from the restored original operation"));
         var before = DeploymentAssistedBuildReviewCodec.decodeDescription(previousPlan);
         var component = original.graph().components().stream().filter(value -> value.unit().id().equals(unitId)).findFirst().orElseThrow();
         var commit = original.units().stream().filter(value -> value.unit().id().equals(unitId)).findFirst().orElseThrow();
         var after = DeploymentAssistedBuildReviewCodec.decodeDescription(nextPlan);
         var oldSelections = DeploymentToolchainBindingCodec.decode(child.tools()).selections().stream().map(value -> List.of(value.requirement().ecosystem().name(),
-                value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList();
+            value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList();
         var nextSelections = DeploymentToolchainBindingCodec.decode(nextTools).selections().stream().map(value -> List.of(value.requirement().ecosystem().name(),
-                value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList();
+            value.requirement().purpose().name(), value.version().text(), value.directory(), value.origin().name(), value.source(), value.sha256())).toList();
         if (!(!before.inputs().equals(after.inputs()) && !before.runtime().equals(after.runtime())) && oldSelections.equals(nextSelections))
             throw new SQLException("Incidental evidence or free space change cannot authorize publication replay");
         if (!previousOperation.equals(proof.operation()) || !previousRoot.equals(proof.reviewedRevision())
-                || !proofSha256.equals(DeploymentPublicationAttemptProof.digest(proof.encode()))
-                || !proof.templateSha256().equals(DeploymentPublicationAttemptProof.digest(encoded))
-                || !before.reviewedRevision().equals(string(child.checkpoint(), "planSha256"))
-                || !before.source().get("archive").equals(string(child.checkpoint(), "archiveSha256"))
-                || !previousScript.equals(string(child.checkpoint(), "buildScript")) || !previousTools.equals(string(child.checkpoint(), "buildTools"))
-                || !component.reviewedRuntime().equals(before.runtime()) || !component.resources().equals(before.resources())
-                || !component.unit().server().id().equals(before.serverId()) || !commit.configuration().equals(before.configuration())
-                || !new HashSet<>(commit.secrets()).equals(new HashSet<>(before.secrets())))
+            || !proofSha256.equals(DeploymentPublicationAttemptProof.digest(proof.encode()))
+            || !proof.templateSha256().equals(DeploymentPublicationAttemptProof.digest(encoded))
+            || !before.reviewedRevision().equals(string(child.checkpoint(), "planSha256"))
+            || !before.source().get("archive").equals(string(child.checkpoint(), "archiveSha256"))
+            || !previousScript.equals(string(child.checkpoint(), "buildScript")) || !previousTools.equals(string(child.checkpoint(), "buildTools"))
+            || !component.reviewedRuntime().equals(before.runtime()) || !component.resources().equals(before.resources())
+            || !component.unit().server().id().equals(before.serverId()) || !commit.configuration().equals(before.configuration())
+            || !new HashSet<>(commit.secrets()).equals(new HashSet<>(before.secrets())))
             throw new SQLException("Publication retry replaced its actual previous execution or complete configuration");
     }
 
@@ -107,10 +116,10 @@ public record DeploymentPublicationAttemptReview(int retry, String previousRoot,
      * @throws SQLException if original description or envelope bounds reject / 原描述或信封边界拒绝时 */
     public String encode() throws SQLException {
         var node = object().put("formatVersion", 1).put("retry", retry).put("previousRoot", previousRoot).put("nextRoot", nextRoot)
-                .put("previousOperation", previousOperation.toString()).put("nextOperation", nextOperation.toString()).put("originalGraph", originalGraph)
-                .put("unitId", unitId).put("previousScript", previousScript).put("nextScript", nextScript).put("previousTools", previousTools)
-                .put("nextTools", nextTools).put("proofSha256", proofSha256).put("approvalAction", approvalAction)
-                .put("recoveryAction", recoveryAction).put("modelRevision", modelRevision).put("approvedAt", approvedAt.toString());
+            .put("previousOperation", previousOperation.toString()).put("nextOperation", nextOperation.toString()).put("originalGraph", originalGraph)
+            .put("unitId", unitId).put("previousScript", previousScript).put("nextScript", nextScript).put("previousTools", previousTools)
+            .put("nextTools", nextTools).put("proofSha256", proofSha256).put("approvalAction", approvalAction)
+            .put("recoveryAction", recoveryAction).put("modelRevision", modelRevision).put("approvedAt", approvedAt.toString());
         node.set("previousPlan", parse(previousPlan, DeploymentAssistedBuildReviewCodec.LIMIT));
         node.set("nextPlan", parse(nextPlan, DeploymentAssistedBuildReviewCodec.LIMIT));
         return DeploymentJsonDocument.encode(node, LIMIT);
@@ -122,16 +131,20 @@ public record DeploymentPublicationAttemptReview(int retry, String previousRoot,
      * @throws SQLException if identity, types or canonical bytes conflict / 身份、类型或规范字节冲突时 */
     static DeploymentPublicationAttemptReview decode(JsonNode node) throws SQLException {
         fields(node, Set.of("formatVersion", "retry", "previousRoot", "nextRoot", "previousOperation", "nextOperation", "originalGraph", "unitId",
-                "previousPlan", "nextPlan", "previousScript", "nextScript", "previousTools", "nextTools", "proofSha256", "approvalAction", "recoveryAction", "modelRevision", "approvedAt"));
+            "previousPlan", "nextPlan", "previousScript", "nextScript", "previousTools", "nextTools", "proofSha256", "approvalAction", "recoveryAction", "modelRevision", "approvedAt"));
         if (!node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1 || !node.path("retry").isInt()
-                || !node.path("previousPlan").isObject() || !node.path("nextPlan").isObject()) throw new SQLException("Unsupported original publication review");
+            || !node.path("previousPlan").isObject() || !node.path("nextPlan").isObject())
+            throw new SQLException("Unsupported original publication review");
         try {
             var review = new DeploymentPublicationAttemptReview(node.path("retry").intValue(), string(node, "previousRoot"), string(node, "nextRoot"),
-                    uuid(node, "previousOperation"), uuid(node, "nextOperation"), string(node, "originalGraph"), string(node, "unitId"), node.path("previousPlan").toString(), node.path("nextPlan").toString(),
-                    string(node, "previousScript"), string(node, "nextScript"), string(node, "previousTools"), string(node, "nextTools"), string(node, "proofSha256"),
-                    string(node, "approvalAction"), string(node, "recoveryAction"), string(node, "modelRevision"), Instant.parse(string(node, "approvedAt")));
-            if (!review.encode().equals(node.toString())) throw new SQLException("Noncanonical original publication review");
+                uuid(node, "previousOperation"), uuid(node, "nextOperation"), string(node, "originalGraph"), string(node, "unitId"), node.path("previousPlan").toString(), node.path("nextPlan").toString(),
+                string(node, "previousScript"), string(node, "nextScript"), string(node, "previousTools"), string(node, "nextTools"), string(node, "proofSha256"),
+                string(node, "approvalAction"), string(node, "recoveryAction"), string(node, "modelRevision"), Instant.parse(string(node, "approvedAt")));
+            if (!review.encode().equals(node.toString()))
+                throw new SQLException("Noncanonical original publication review");
             return review;
-        } catch (IllegalArgumentException invalid) { throw new SQLException("Incomplete original publication review", invalid); }
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Incomplete original publication review", invalid);
+        }
     }
 }

@@ -19,9 +19,11 @@ import java.util.Set;
  * @param containerPresent whether the application container exists, if applicable / 应用容器是否存在；若适用
  * @param retainedCount exact owned release count after optional retention / 可选裁剪后的精确所属发布数量 */
 public record DeploymentOriginalPublicationStatus(Optional<String> current, String currentKind, String currentMode,
-        boolean snapshot, Optional<String> previousDigest, String previousKind, Optional<Boolean> previousRunning,
-        boolean maintenance, boolean candidate, boolean buildActive, boolean unitPresent,
-        Optional<Boolean> containerPresent, int retainedCount) {
+                                                  boolean snapshot, Optional<String> previousDigest,
+                                                  String previousKind, Optional<Boolean> previousRunning,
+                                                  boolean maintenance, boolean candidate, boolean buildActive,
+                                                  boolean unitPresent,
+                                                  Optional<Boolean> containerPresent, int retainedCount) {
     /** Rejects internally inconsistent or unbounded remote facts. / 拒绝自相矛盾或无界的远端事实。
      * @param current owned release / 所属发布
      * @param currentKind release kind / 发布类别
@@ -45,15 +47,15 @@ public record DeploymentOriginalPublicationStatus(Optional<String> current, Stri
         previousRunning = Objects.requireNonNull(previousRunning);
         containerPresent = Objects.requireNonNull(containerPresent);
         if (current.isPresent() && !current.orElseThrow().matches("[0-9a-f]{64}")
-                || previousDigest.isPresent() && !previousDigest.orElseThrow().matches("[0-9a-f]{64}")
-                || current.isEmpty() && (!currentKind.equals("none") || !currentMode.equals("none"))
-                || current.isPresent() && (!Set.of("ordinary", "deployment", "container").contains(currentKind)
-                        || !Set.of("unknown", "DAEMON", "ON_DEMAND").contains(currentMode))
-                || !snapshot
-                        && (previousDigest.isPresent() || previousRunning.isPresent() || !previousKind.equals("none"))
-                || snapshot && (previousDigest.isEmpty() || previousRunning.isEmpty()
-                        || !Set.of("ordinary", "deployment", "container").contains(previousKind))
-                || retainedCount < 0 || retainedCount > 1000 || current.isPresent() && retainedCount == 0)
+            || previousDigest.isPresent() && !previousDigest.orElseThrow().matches("[0-9a-f]{64}")
+            || current.isEmpty() && (!currentKind.equals("none") || !currentMode.equals("none"))
+            || current.isPresent() && (!Set.of("ordinary", "deployment", "container").contains(currentKind)
+            || !Set.of("unknown", "DAEMON", "ON_DEMAND").contains(currentMode))
+            || !snapshot
+            && (previousDigest.isPresent() || previousRunning.isPresent() || !previousKind.equals("none"))
+            || snapshot && (previousDigest.isEmpty() || previousRunning.isEmpty()
+            || !Set.of("ordinary", "deployment", "container").contains(previousKind))
+            || retainedCount < 0 || retainedCount > 1000 || current.isPresent() && retainedCount == 0)
             throw new IllegalArgumentException("Invalid original publication observation");
     }
 }

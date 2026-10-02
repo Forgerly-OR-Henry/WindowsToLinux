@@ -14,6 +14,7 @@ public final class DeploymentToolchainSelectionPolicy {
      * <p>目录。
      */
     private final DeploymentToolchainCatalog catalog;
+
     /**
      * Validates and binds the inputs required by toolchain selection policy.
      * <p>校验并绑定工具链选择策略所需输入。
@@ -36,15 +37,15 @@ public final class DeploymentToolchainSelectionPolicy {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DeploymentToolchainVersion resolve(ToolchainRequirement requirement,
-            DeploymentToolchainCatalog.Branch branch, List<DeploymentToolchainVersion> releases) {
+                                              DeploymentToolchainCatalog.Branch branch, List<DeploymentToolchainVersion> releases) {
         if (!catalog.candidates(requirement).contains(branch))
             throw new IllegalArgumentException("branch is outside reviewed candidates");
         boolean direct = requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
-                && requirement.version().orElseThrow().branch().equals(branch.version());
+            && requirement.version().orElseThrow().branch().equals(branch.version());
         return releases.stream().filter(catalog::permits)
-                .filter(v -> v.ecosystem() == branch.ecosystem() && v.branch().equals(branch.version()))
-                .filter(v -> !direct || requirement.accepts(v)).max(DeploymentToolchainVersion::compareTo)
-                .orElseThrow(() -> new IllegalArgumentException("no official release satisfies this candidate"));
+            .filter(v -> v.ecosystem() == branch.ecosystem() && v.branch().equals(branch.version()))
+            .filter(v -> !direct || requirement.accepts(v)).max(DeploymentToolchainVersion::compareTo)
+            .orElseThrow(() -> new IllegalArgumentException("no official release satisfies this candidate"));
     }
 
 }

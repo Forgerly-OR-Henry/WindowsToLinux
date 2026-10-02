@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.db.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -7,11 +11,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Reconciles original unknown data without running migration or changing user choices. / 核对原未知数据，不运行迁移或改变用户选择。 */
 public final class ModSchemaReconciliation {
@@ -29,7 +35,7 @@ public final class ModSchemaReconciliation {
 
     /** Strict bounded recovery parser. / 严格有界恢复解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds host-only reconciliation to the current engine. / 将仅供宿主的核对绑定到当前引擎。
      * @param database actual engine / 实际引擎
@@ -39,7 +45,7 @@ public final class ModSchemaReconciliation {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
 
     /** Immutable original operation evidence; only this ledger can construct it. / 不可变原操作证据，仅此账本可构造。 */
@@ -58,6 +64,7 @@ public final class ModSchemaReconciliation {
 
         /** Original preparation boot. / 原准备启动身份。 */
         private final UUID boot;
+
         /** Constructs a validated original review. / 构造已验证的原审阅。
          * @param plan original identities / 原身份
          * @param version original version / 原版本
@@ -68,7 +75,7 @@ public final class ModSchemaReconciliation {
          * @param revision original accepted revision / 原接纳修订
          * @param boot original boot / 原启动 */
         private Review(ModRestartLedger.Preparation plan, String version, String manifest, String digest,
-                String recovery, String request, long revision, UUID boot) {
+                       String recovery, String request, long revision, UUID boot) {
             this.plan = plan;
             this.version = version;
             this.manifest = manifest;
@@ -117,7 +124,7 @@ public final class ModSchemaReconciliation {
         public boolean beforeRetryExecution() throws SQLException {
             var facts = object(recovery).path("facts");
             return plan.intent().equals(plan.operation()) && !facts.path("retryResetComplete").asBoolean()
-                    && !facts.has("created");
+                && !facts.has("created");
         }
     }
 
@@ -145,19 +152,19 @@ public final class ModSchemaReconciliation {
         return locked(c -> {
             unchanged(c, review);
             require(!database.bootId().equals(review.boot),
-                    "Original preparation must be closed by a later engine boot");
+                "Original preparation must be closed by a later engine boot");
             drained(c, review, null);
             UUID id = UUID.randomUUID(), reader = UUID.randomUUID(), log = UUID.randomUUID();
             long created = System.currentTimeMillis();
             try (var p = c.prepareStatement(
-                    "SELECT operation_id,recovery_json,archive_log_id,state,created_at FROM mod_operation WHERE mod_id=? AND operation_type='RECONCILE'")) {
+                "SELECT operation_id,recovery_json,archive_log_id,state,created_at FROM mod_operation WHERE mod_id=? AND operation_type='RECONCILE'")) {
                 p.setString(1, review.plan.target().ownerId());
                 try (var r = p.executeQuery()) {
                     if (r.next()) {
                         require("UNKNOWN".equals(r.getString(4)), "Original reconciliation is still active");
                         var old = object(r.getString(2));
                         require(review.plan.operation().toString().equals(old.path("preparation").asText()),
-                                "Another reconciliation owns this Mod");
+                            "Another reconciliation owns this Mod");
                         id = r.getObject(1, UUID.class);
                         reader = uuid(old, "reader");
                         log = UUID.fromString(r.getString(3));
@@ -169,10 +176,10 @@ public final class ModSchemaReconciliation {
             require(database.openConnections(reader.toString()) == 0, "Original reconciliation connections remain");
             long now = System.currentTimeMillis();
             String recovery = JSON.createObjectNode().put("formatVersion", 1)
-                    .put("preparation", review.plan.operation().toString()).put("reader", reader.toString())
-                    .put("bootId", database.bootId().toString()).toString();
+                .put("preparation", review.plan.operation().toString()).put("reader", reader.toString())
+                .put("bootId", database.bootId().toString()).toString();
             try (var p = c.prepareStatement(
-                    "MERGE INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) KEY(operation_id) VALUES(?,?,'RECONCILE',?,?,?,?,'RUNNING','VALIDATING',?,?,?, ?,?)")) {
+                "MERGE INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) KEY(operation_id) VALUES(?,?,'RECONCILE',?,?,?,?,'RUNNING','VALIDATING',?,?,?, ?,?)")) {
                 p.setObject(1, id);
                 p.setString(2, review.plan.target().ownerId());
                 p.setString(3, review.version);
@@ -215,7 +222,7 @@ public final class ModSchemaReconciliation {
             for (var step : plan.steps().subList(0, Math.max(0, plan.steps().size() - 1))) {
                 var target = ModRestartLedger.targetCoordinates(plan, step);
                 new SchemaProvisioner(database).dropReconciledIntermediate(target,
-                        step.target().generation().toString().equals(created.path(target.physicalName()).asText()));
+                    step.target().generation().toString().equals(created.path(target.physicalName()).asText()));
             }
         }
     }
@@ -229,7 +236,7 @@ public final class ModSchemaReconciliation {
             active(c, attempt);
             var target = new SchemaCoordinates(attempt.review.plan.target());
             try (var p = c.prepareStatement(
-                    "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?),(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?),(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
                 p.setString(1, target.physicalName());
                 p.setString(2, target.databaseUser());
                 try (var r = p.executeQuery()) {
@@ -240,7 +247,7 @@ public final class ModSchemaReconciliation {
                         if (r.getLong(1) != 0)
                             target.requirePhysicalOwnership(c);
                         try (var q = c.prepareStatement(
-                                "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=? AND schema_name<>?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?)")) {
+                            "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=? AND schema_name<>?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?)")) {
                             q.setString(1, target.databaseUser());
                             q.setString(2, target.databaseUser());
                             q.setString(3, target.physicalName());
@@ -253,12 +260,12 @@ public final class ModSchemaReconciliation {
                         return false;
                     }
                     require(r.getLong(1) == 1 && r.getLong(2) == 1,
-                            "Original target has uncertain partial physical objects");
+                        "Original target has uncertain partial physical objects");
                 }
             }
             var created = object(attempt.review.recovery).path("facts").path("created");
             require(target.identity().generation().toString().equals(created.path(target.physicalName()).asText()),
-                    "Physical target lacks original creation acknowledgement");
+                "Physical target lacks original creation acknowledgement");
             target.requirePhysicalOwnership(c);
             return true;
         });
@@ -271,9 +278,9 @@ public final class ModSchemaReconciliation {
      * @throws SQLException if cleanup, identity or archive remains unconfirmed / 清理、身份或归档仍未确认时 */
     public void finish(Attempt attempt, Outcome outcome, String digest) throws SQLException {
         require(Set.of(Outcome.SUCCEEDED, Outcome.FAILED, Outcome.UNKNOWN).contains(outcome),
-                "Invalid reconciliation result");
+            "Invalid reconciliation result");
         require(outcome != Outcome.SUCCEEDED || digest != null && digest.matches("[0-9a-f]{64}"),
-                "Successful validation receipt missing");
+            "Successful validation receipt missing");
         locked(c -> {
             if (finished(c, attempt, outcome, digest))
                 return null;
@@ -294,7 +301,7 @@ public final class ModSchemaReconciliation {
             }
             if (outcome == Outcome.UNKNOWN) {
                 try (var p = c.prepareStatement(
-                        "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_RECONCILIATION_UNKNOWN',updated_at=? WHERE operation_id=?")) {
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_RECONCILIATION_UNKNOWN',updated_at=? WHERE operation_id=?")) {
                     p.setLong(1, System.currentTimeMillis());
                     p.setObject(2, attempt.operation);
                     p.executeUpdate();
@@ -304,7 +311,7 @@ public final class ModSchemaReconciliation {
             for (var step : plan.steps().subList(0, Math.max(0, plan.steps().size() - 1))) {
                 var target = ModRestartLedger.targetCoordinates(plan, step);
                 try (var p = c.prepareStatement(
-                        "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                    "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
                     p.setString(1, target.physicalName());
                     p.setString(2, target.databaseUser());
                     try (var r = p.executeQuery()) {
@@ -315,7 +322,7 @@ public final class ModSchemaReconciliation {
             }
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
-                    "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='UNKNOWN' AND NOT ever_used")) {
+                "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='UNKNOWN' AND NOT ever_used")) {
                 p.setString(1, outcome == Outcome.SUCCEEDED ? "READY" : "FAILED");
                 p.setObject(2, outcome == Outcome.SUCCEEDED ? now : null);
                 p.setString(3, digest);
@@ -323,16 +330,16 @@ public final class ModSchemaReconciliation {
                 require(p.executeUpdate() == 1, "Original target changed");
             }
             String event = outcome == Outcome.SUCCEEDED
-                    ? "MOD_SCHEMA_RECONCILED_READY"
-                    : "MOD_SCHEMA_RECONCILED_FAILED";
+                ? "MOD_SCHEMA_RECONCILED_READY"
+                : "MOD_SCHEMA_RECONCILED_FAILED";
             logs.store(c, archive,
-                    List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation", LogLevel.INFO, event,
-                            "Original data preparation was explicitly reconciled", null, plan.target().ownerId(),
-                            review.version, null, plan.operation(), outcome, false),
-                            new LogRecordCodec.Record(attempt.archive, now, "app", "mod_operation", LogLevel.INFO,
-                                    event, "Read-only reconciliation and original cleanup completed", null,
-                                    plan.target().ownerId(), review.version, null, attempt.operation, outcome, false)),
-                    100);
+                List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation", LogLevel.INFO, event,
+                        "Original data preparation was explicitly reconciled", null, plan.target().ownerId(),
+                        review.version, null, plan.operation(), outcome, false),
+                    new LogRecordCodec.Record(attempt.archive, now, "app", "mod_operation", LogLevel.INFO,
+                        event, "Read-only reconciliation and original cleanup completed", null,
+                        plan.target().ownerId(), review.version, null, attempt.operation, outcome, false)),
+                100);
             if (!plan.intent().equals(plan.operation()))
                 try (var p = c.prepareStatement("SELECT archive_log_id FROM mod_operation WHERE operation_id=?")) {
                     p.setObject(1, plan.intent());
@@ -342,16 +349,16 @@ public final class ModSchemaReconciliation {
                                 "app", "mod_operation", LogLevel.WARN, "MOD_ACTIVATION_INTERRUPTED",
                                 "Original startup was interrupted; data reconciliation does not start business", null,
                                 plan.target().ownerId(), review.version, null, plan.intent(), Outcome.FAILED, false)),
-                                100);
+                            100);
                     }
                 }
             try (var p = c.prepareStatement(
-                    "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=? AND revision=?")) {
+                "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=? AND revision=?")) {
                 p.setObject(1, database.bootId());
                 p.setString(2,
-                        outcome == Outcome.SUCCEEDED
-                                ? "MOD_DATA_READY_RESTART_REQUIRED"
-                                : "MOD_SCHEMA_MIGRATION_FAILED");
+                    outcome == Outcome.SUCCEEDED
+                        ? "MOD_DATA_READY_RESTART_REQUIRED"
+                        : "MOD_SCHEMA_MIGRATION_FAILED");
                 p.setString(3, plan.target().ownerId());
                 p.setLong(4, review.revision);
                 require(p.executeUpdate() == 1, "Original selection changed");
@@ -365,7 +372,7 @@ public final class ModSchemaReconciliation {
                 p.setObject(2, plan.intent());
                 p.setObject(3, attempt.operation);
                 require(p.executeUpdate() == (plan.intent().equals(plan.operation()) ? 2 : 3),
-                        "Original operation ownership changed");
+                    "Original operation ownership changed");
             }
             return null;
         });
@@ -378,79 +385,79 @@ public final class ModSchemaReconciliation {
      * @throws SQLException if recovery cannot be trusted / 无法信任恢复记录时 */
     private Review read(Connection c, UUID operation) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT o.mod_id,o.target_version,o.target_schema_version,o.target_generation,o.accepted_revision,o.recovery_json,o.archive_log_id,v.manifest_json,v.content_sha256,o.phase FROM mod_operation o JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.operation_type='MIGRATE' AND o.state='UNKNOWN' AND o.outcome IS NULL AND v.state='READY'")) {
+            "SELECT o.mod_id,o.target_version,o.target_schema_version,o.target_generation,o.accepted_revision,o.recovery_json,o.archive_log_id,v.manifest_json,v.content_sha256,o.phase FROM mod_operation o JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.operation_type='MIGRATE' AND o.state='UNKNOWN' AND o.outcome IS NULL AND v.state='READY'")) {
             p.setObject(1, operation);
             try (var r = p.executeQuery()) {
                 require(r.next(), "Original unknown preparation is unavailable");
                 String owner = r.getString(1), version = r.getString(2), recovery = r.getString(6);
                 var node = object(recovery);
                 require(node.path("formatVersion").asInt() == 1 && node.path("facts").isObject()
-                        && node.path("steps").isArray(), "Unknown preparation inventory format");
+                    && node.path("steps").isArray(), "Unknown preparation inventory format");
                 require(fields(node).equals(node.has("source")
                         ? Set.of("formatVersion", "bootId", "intent", "writer", "reader", "physicalSchema",
-                                "databaseUser", "facts", "source", "steps")
+                        "databaseUser", "facts", "source", "steps")
                         : Set.of("formatVersion", "bootId", "intent", "writer", "reader", "physicalSchema",
-                                "databaseUser", "facts", "steps")),
-                        "Unknown preparation inventory fields");
+                        "databaseUser", "facts", "steps")),
+                    "Unknown preparation inventory fields");
                 var target = new SchemaIdentity(owner, r.getString(3), r.getObject(4, UUID.class));
                 var coords = new SchemaCoordinates(target);
                 var manifest = object(r.getString(8));
                 require(owner.equals(manifest.path("id").textValue())
                         && version.equals(manifest.path("version").textValue())
                         && target.schemaVersion().equals(manifest.path("schemaVersion").textValue()),
-                        "Original program and target disagree");
+                    "Original program and target disagree");
                 require(coords.physicalName().equals(node.path("physicalSchema").asText())
                         && coords.databaseUser().equals(node.path("databaseUser").asText()),
-                        "Original final coordinates changed");
+                    "Original final coordinates changed");
                 coords.requireRegistered(c, Set.of("UNKNOWN"));
                 try (var q = c.prepareStatement(
-                        "SELECT ever_used,validated_at,validation_digest FROM mod_schema WHERE generation=?")) {
+                    "SELECT ever_used,validated_at,validation_digest FROM mod_schema WHERE generation=?")) {
                     q.setObject(1, target.generation());
                     try (var data = q.executeQuery()) {
                         require(data.next() && !data.getBoolean(1) && data.getObject(2) == null
                                 && data.getObject(3) == null,
-                                "Previously usable data cannot be reconciled as first preparation");
+                            "Previously usable data cannot be reconciled as first preparation");
                     }
                 }
                 Optional<SchemaIdentity> source = node.has("source")
-                        ? Optional.of(new SchemaIdentity(owner, node.path("source").path("schemaVersion").asText(),
-                                uuid(node.path("source"), "generation")))
-                        : Optional.empty();
+                    ? Optional.of(new SchemaIdentity(owner, node.path("source").path("schemaVersion").asText(),
+                    uuid(node.path("source"), "generation")))
+                    : Optional.empty();
                 if (source.isPresent())
                     new SchemaCoordinates(source.get()).requireRegistered(c, Set.of("READY"));
                 var steps = new ArrayList<ModRestartLedger.MigrationStep>();
                 for (var step : node.path("steps")) {
                     require(fields(step).equals(Set.of("from", "to", "className", "generation", "physicalSchema",
-                            "databaseUser", "sourceReader", "writer", "reader")), "Unknown migration inventory fields");
+                        "databaseUser", "sourceReader", "writer", "reader")), "Unknown migration inventory fields");
                     var identity = new SchemaIdentity(owner, step.path("to").asText(), uuid(step, "generation"));
                     steps.add(new ModRestartLedger.MigrationStep(steps.size(), step.path("from").asText(),
-                            step.path("to").asText(), step.path("className").asText(), identity,
-                            uuid(step, "sourceReader"), uuid(step, "writer"), uuid(step, "reader")));
+                        step.path("to").asText(), step.path("className").asText(), identity,
+                        uuid(step, "sourceReader"), uuid(step, "writer"), uuid(step, "reader")));
                 }
                 require(source.isPresent() == !steps.isEmpty() && steps.size() <= 256,
-                        "Original chain inventory changed");
+                    "Original chain inventory changed");
                 var plan = new ModRestartLedger.Preparation(uuid(node, "intent"), operation, target,
-                        uuid(node, "writer"), uuid(node, "reader"), UUID.fromString(r.getString(7)), source, steps);
+                    uuid(node, "writer"), uuid(node, "reader"), UUID.fromString(r.getString(7)), source, steps);
                 verifyMigrationInventory(c, plan, node);
                 String request = originalRequest(c, plan, r.getLong(5));
                 var parent = object(request);
                 if (plan.intent().equals(plan.operation())) {
                     require(fields(parent)
                             .equals(Set.of("formatVersion", "mode", "ownerId", "previousGeneration", "manifest",
-                                    "contentDigest", "target", "data"))
+                                "contentDigest", "target", "data"))
                             && "RETRY".equals(parent.path("mode").asText())
                             && !target.generation().equals(uuid(parent, "previousGeneration"))
                             && r.getString(8).equals(parent.path("manifest").asText())
                             && r.getString(9).equals(parent.path("contentDigest").asText()),
-                            "Original retry evidence changed");
+                        "Original retry evidence changed");
                     require(!node.path("facts").has("created")
                             || node.path("facts").path("retryResetComplete").asBoolean(),
-                            "Retry created data before proving reset");
+                        "Retry created data before proving reset");
                     if (!node.path("facts").path("retryResetComplete").asBoolean()) {
                         require(Set.of("SOURCE_CHECKED", "MIGRATING").contains(r.getString(10)),
-                                "Retry reset evidence contradicts its original phase");
+                            "Retry reset evidence contradicts its original phase");
                         try (var q = c.prepareStatement(
-                                "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND state<>'PENDING'")) {
+                            "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND state<>'PENDING'")) {
                             q.setObject(1, operation);
                             try (var pending = q.executeQuery()) {
                                 pending.next();
@@ -461,7 +468,7 @@ public final class ModSchemaReconciliation {
                 }
                 verifyOriginalChain(plan, parent, version, manifest.path("migrations"));
                 return new Review(plan, version, r.getString(8), r.getString(9), recovery, request, r.getLong(5),
-                        uuid(node, "bootId"));
+                    uuid(node, "bootId"));
             }
         } catch (IllegalArgumentException invalid) {
             throw new SQLException("Invalid original reconciliation identity");
@@ -478,7 +485,7 @@ public final class ModSchemaReconciliation {
                 && current.manifest.equals(review.manifest) && current.digest.equals(review.digest)
                 && current.recovery.equals(review.recovery) && current.request.equals(review.request)
                 && current.revision == review.revision && current.boot.equals(review.boot),
-                "Reconciliation review is stale");
+            "Reconciliation review is stale");
     }
 
     /** Checks retained own work, cross-owner occupancy and other maintenance. / 检查保留自有工作、跨所有者占用及其他维护。
@@ -489,7 +496,7 @@ public final class ModSchemaReconciliation {
     private void drained(Connection c, Review review, UUID attempt) throws SQLException {
         String owner = review.plan.target().ownerId();
         try (var p = c.prepareStatement(
-                "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_id NOT IN (?,?) AND operation_type<>'RECONCILE' AND state<>'ENDED')")) {
+            "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_id NOT IN (?,?) AND operation_type<>'RECONCILE' AND state<>'ENDED')")) {
             p.setString(1, owner);
             p.setString(2, owner);
             p.setString(3, owner);
@@ -503,7 +510,7 @@ public final class ModSchemaReconciliation {
         }
         if (attempt != null)
             try (var p = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='RECONCILE' AND operation_id<>?")) {
+                "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='RECONCILE' AND operation_id<>?")) {
                 p.setString(1, owner);
                 p.setObject(2, attempt);
                 try (var r = p.executeQuery()) {
@@ -525,7 +532,7 @@ public final class ModSchemaReconciliation {
         unchanged(c, attempt.review);
         drained(c, attempt.review, attempt.operation);
         try (var p = c.prepareStatement(
-                "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND operation_type='RECONCILE' AND state='RUNNING' AND phase='VALIDATING' AND target_generation=? AND archive_log_id=?")) {
+            "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND operation_type='RECONCILE' AND state='RUNNING' AND phase='VALIDATING' AND target_generation=? AND archive_log_id=?")) {
             p.setObject(1, attempt.operation);
             p.setObject(2, attempt.review.plan.target().generation());
             p.setString(3, attempt.archive.toString());
@@ -534,7 +541,7 @@ public final class ModSchemaReconciliation {
                 var node = object(r.getString(1));
                 require(database.bootId().equals(uuid(node, "bootId")) && attempt.reader.equals(uuid(node, "reader"))
                         && attempt.review.plan.operation().equals(uuid(node, "preparation")),
-                        "Original reconciliation ownership changed");
+                    "Original reconciliation ownership changed");
             }
         }
     }
@@ -549,7 +556,7 @@ public final class ModSchemaReconciliation {
     private boolean finished(Connection c, Attempt attempt, Outcome outcome, String digest) throws SQLException {
         if (outcome == Outcome.UNKNOWN) {
             try (var p = c.prepareStatement(
-                    "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND state='UNKNOWN' AND archive_log_id=? AND target_generation=?")) {
+                "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND state='UNKNOWN' AND archive_log_id=? AND target_generation=?")) {
                 p.setObject(1, attempt.operation);
                 p.setString(2, attempt.archive.toString());
                 p.setObject(3, attempt.review.plan.target().generation());
@@ -558,19 +565,19 @@ public final class ModSchemaReconciliation {
                         return false;
                     var node = object(r.getString(1));
                     return database.bootId().equals(uuid(node, "bootId")) && attempt.reader.equals(uuid(node, "reader"))
-                            && attempt.review.plan.operation().equals(uuid(node, "preparation"));
+                        && attempt.review.plan.operation().equals(uuid(node, "preparation"));
                 }
             }
         }
         try (var p = c.prepareStatement(
-                "SELECT s.state,s.validation_digest,(SELECT COUNT(*) FROM mod_operation WHERE operation_id IN (?,?,?)) FROM mod_schema s WHERE s.generation=?")) {
+            "SELECT s.state,s.validation_digest,(SELECT COUNT(*) FROM mod_operation WHERE operation_id IN (?,?,?)) FROM mod_schema s WHERE s.generation=?")) {
             p.setObject(1, attempt.operation);
             p.setObject(2, attempt.review.plan.operation());
             p.setObject(3, attempt.review.plan.intent());
             p.setObject(4, attempt.review.plan.target().generation());
             try (var r = p.executeQuery()) {
                 return r.next() && (outcome == Outcome.SUCCEEDED ? "READY" : "FAILED").equals(r.getString(1))
-                        && Objects.equals(digest, r.getString(2)) && r.getLong(3) == 0;
+                    && Objects.equals(digest, r.getString(2)) && r.getLong(3) == 0;
             }
         }
     }
@@ -582,7 +589,7 @@ public final class ModSchemaReconciliation {
     private static JsonNode object(String text) throws SQLException {
         try {
             require(text != null && text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 1048576,
-                    "Recovery envelope exceeds its bound");
+                "Recovery envelope exceeds its bound");
             var node = JSON.readTree(text);
             require(node != null && node.isObject(), "Recovery object required");
             return node;
@@ -636,16 +643,17 @@ public final class ModSchemaReconciliation {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
-                        var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+                     var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     require(r.next() && database.bootId().equals(r.getObject(1, UUID.class))
                             && Set.of("STARTING", "RUNNING").contains(r.getString(2)),
-                            "Reconciliation no longer owns the active boot");
+                        "Reconciliation no longer owns the active boot");
                 }
                 result.set(work.run(c));
             }
         });
         return result.get();
     }
+
     /** Internal transaction callback without author code. / 不含作者代码的内部事务回调。
      * @param <T> result type / 结果类型 */
     @FunctionalInterface
@@ -663,12 +671,12 @@ public final class ModSchemaReconciliation {
      * @param node original recovery inventory / 原恢复清单
      * @throws SQLException if an edge or coordinate changed / 边或坐标变化时 */
     private void verifyMigrationInventory(Connection c, ModRestartLedger.Preparation plan, JsonNode node)
-            throws SQLException {
+        throws SQLException {
         var steps = plan.steps();
         UUID operation = plan.operation();
         int index = 0;
         try (var q = c.prepareStatement(
-                "SELECT step_number,from_version,to_version,migration_class,source_schema,target_schema FROM mod_migration_step WHERE operation_id=? ORDER BY step_number")) {
+            "SELECT step_number,from_version,to_version,migration_class,source_schema,target_schema FROM mod_migration_step WHERE operation_id=? ORDER BY step_number")) {
             q.setObject(1, operation);
             try (var data = q.executeQuery()) {
                 while (data.next()) {
@@ -682,7 +690,7 @@ public final class ModSchemaReconciliation {
                             && data.getString(6).equals(physical.physicalName())
                             && physical.physicalName().equals(declared.path("physicalSchema").asText())
                             && physical.databaseUser().equals(declared.path("databaseUser").asText()),
-                            "Migration inventory changed");
+                        "Migration inventory changed");
                 }
             }
         }
@@ -700,7 +708,7 @@ public final class ModSchemaReconciliation {
         UUID operation = plan.operation();
         var target = plan.target();
         try (var q = c.prepareStatement(
-                "SELECT o.request_json FROM mod_operation o JOIN mod_registry m ON m.mod_id=o.mod_id WHERE o.operation_id=? AND o.mod_id=? AND o.state='UNKNOWN' AND (o.operation_type IN ('ENABLE','SWITCH') OR o.operation_type='MIGRATE' AND o.operation_id=?) AND o.target_generation=? AND o.accepted_revision=? AND m.revision=o.accepted_revision AND m.enabled AND m.selected_version=o.target_version AND m.actual_version IS NULL AND m.last_runtime_state IN ('STOPPED','FAILED')")) {
+            "SELECT o.request_json FROM mod_operation o JOIN mod_registry m ON m.mod_id=o.mod_id WHERE o.operation_id=? AND o.mod_id=? AND o.state='UNKNOWN' AND (o.operation_type IN ('ENABLE','SWITCH') OR o.operation_type='MIGRATE' AND o.operation_id=?) AND o.target_generation=? AND o.accepted_revision=? AND m.revision=o.accepted_revision AND m.enabled AND m.selected_version=o.target_version AND m.actual_version IS NULL AND m.last_runtime_state IN ('STOPPED','FAILED')")) {
             q.setObject(1, plan.intent());
             q.setString(2, owner);
             q.setObject(3, operation);
@@ -720,41 +728,41 @@ public final class ModSchemaReconciliation {
      * @param declarations original manifest migration edges / 原清单迁移边
      * @throws SQLException if the confirmed source or chain changed / 确认来源或链变化时 */
     private void verifyOriginalChain(ModRestartLedger.Preparation plan, JsonNode parent, String version,
-            JsonNode declarations) throws SQLException {
+                                     JsonNode declarations) throws SQLException {
         var target = plan.target();
         String owner = target.ownerId();
         var source = plan.source();
         var steps = plan.steps();
         var data = parent.path("data");
         require(parent.path("formatVersion").asInt() == 1 && owner.equals(parent.path("ownerId").textValue())
-                && parent.path("target").path("enabled").asBoolean()
-                && version.equals(parent.path("target").path("version").textValue())
-                && target.schemaVersion().equals(data.path("target").textValue()), "Original request identity changed");
+            && parent.path("target").path("enabled").asBoolean()
+            && version.equals(parent.path("target").path("version").textValue())
+            && target.schemaVersion().equals(data.path("target").textValue()), "Original request identity changed");
         if (source.isPresent()) {
             require("MIGRATE".equals(data.path("mode").textValue())
-                    && source.get().schemaVersion().equals(data.path("source").textValue())
-                    && source.get().generation().equals(uuid(data, "generation"))
-                    && data.path("steps").size() == steps.size(), "Original confirmed source changed");
+                && source.get().schemaVersion().equals(data.path("source").textValue())
+                && source.get().generation().equals(uuid(data, "generation"))
+                && data.path("steps").size() == steps.size(), "Original confirmed source changed");
             String previous = source.get().schemaVersion();
             for (var step : steps) {
                 var edge = data.path("steps").path(step.index());
                 boolean declared = false;
                 for (var declaration : declarations)
                     if (step.from().equals(declaration.path("from").asText())
-                            && step.to().equals(declaration.path("to").asText())
-                            && step.className().equals(declaration.path("class").asText()))
+                        && step.to().equals(declaration.path("to").asText())
+                        && step.className().equals(declaration.path("class").asText()))
                         declared = true;
                 require(previous.equals(step.from())
                         && new java.math.BigInteger(step.from()).compareTo(new java.math.BigInteger(step.to())) < 0
                         && step.from().equals(edge.path("from").textValue())
                         && step.to().equals(edge.path("to").textValue())
                         && step.className().equals(edge.path("className").textValue()) && declared,
-                        "Original confirmed chain changed");
+                    "Original confirmed chain changed");
                 previous = step.to();
             }
             require(previous.equals(target.schemaVersion()) && steps.getLast().target().equals(target)
                     && steps.getLast().writer().equals(plan.writer()) && steps.getLast().reader().equals(plan.reader()),
-                    "Original final migration identities changed");
+                "Original final migration identities changed");
         } else
             require("INITIALIZE".equals(data.path("mode").textValue()), "Original initialization mode changed");
     }

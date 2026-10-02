@@ -48,21 +48,21 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
      * <p>用于识别Java名称的匹配模式。
      */
     private static final Pattern JAVA_NAME = Pattern
-            .compile("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+        .compile("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
 
     /**
      * Pattern recognizing MAIN METHOD.
      * <p>用于识别主METHOD的匹配模式。
      */
     private static final Pattern MAIN_METHOD = Pattern.compile(
-            "\\bpublic\\s+static\\s+void\\s+main\\s*\\(\\s*String\\s*(?:\\[\\]|\\.\\.\\.)\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)");
+        "\\bpublic\\s+static\\s+void\\s+main\\s*\\(\\s*String\\s*(?:\\[\\]|\\.\\.\\.)\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)");
 
     /**
      * Pattern recognizing IMPORT.
      * <p>用于识别导入的匹配模式。
      */
     private static final Pattern IMPORT = Pattern
-            .compile("(?m)^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][A-Za-z0-9_$.]*)(?:\\.\\*)?\\s*;");
+        .compile("(?m)^\\s*import\\s+(?:static\\s+)?([A-Za-z_$][A-Za-z0-9_$.]*)(?:\\.\\*)?\\s*;");
 
     /**
      * Pattern recognizing PACKAGE.
@@ -92,7 +92,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = new ArrayList<>();
         List<String> conflicts = new ArrayList<>();
         Path metadata = root.resolve(METADATA);
@@ -104,10 +104,10 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         String sourceRoot = safePath(values.get("sourceRoot"));
         String mainClass = javaName(values.get("mainClass"));
         String javaVersion = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion
-                .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
-                        values.get("javaVersion"))
-                .map(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion::branch)
-                .orElse(null);
+            .parse(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
+                values.get("javaVersion"))
+            .map(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion::branch)
+            .orElse(null);
         if (sourceRoot == null)
             missing.add("sourceRoot=...");
         if (mainClass == null)
@@ -116,7 +116,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             missing.add("javaVersion=...");
 
         List<String> javaFiles = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
-                .filter(path -> path.endsWith(".java")).sorted().toList();
+            .filter(path -> path.endsWith(".java")).sorted().toList();
         if (javaFiles.isEmpty()) {
             missing.add("Java source files");
         }
@@ -133,8 +133,8 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             }
         }
         if (source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).anyMatch(
-                path -> path.equals("pom.xml") || path.equals("build.gradle") || path.equals("build.gradle.kts")
-                        || path.equals("module-info.java") || path.endsWith(".jar"))) {
+            path -> path.equals("pom.xml") || path.equals("build.gradle") || path.equals("build.gradle.kts")
+                || path.equals("module-info.java") || path.endsWith(".jar"))) {
             conflicts.add("java-external-build-or-module");
         }
         Set<String> localTypes = new HashSet<>();
@@ -156,11 +156,11 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             while (imports.find()) {
                 String imported = imports.group(1);
                 if (!(imported.startsWith("java.") || imported.startsWith("javax.") || imported.startsWith("jdk.")
-                        || imported.startsWith("com.sun.net.httpserver.")
-                        || localTypes.stream()
-                                .anyMatch(type -> imported.equals(type) || imported.startsWith(type + ".")
-                                        || imported.endsWith(".") && type.startsWith(imported)
-                                                && type.lastIndexOf('.') == imported.length() - 1))) {
+                    || imported.startsWith("com.sun.net.httpserver.")
+                    || localTypes.stream()
+                    .anyMatch(type -> imported.equals(type) || imported.startsWith(type + ".")
+                        || imported.endsWith(".") && type.startsWith(imported)
+                        && type.lastIndexOf('.') == imported.length() - 1))) {
                     conflicts.add("java-external-import:" + imported);
                 }
             }
@@ -169,17 +169,17 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             conflicts.add("java-main-count:" + mainMethods);
         }
         JavaJdkFacts architecture = new JavaJdkFacts(value(sourceRoot), value(mainClass), value(javaVersion), javaFiles,
-                missing, conflicts);
+            missing, conflicts);
         List<DeploymentLocalizedMessage> localizedMissing = architecture.missingItems().stream()
-                .map(item -> DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
+            .map(item -> DeploymentLocalizedMessage.of("analysis.service.missingFile", "file", item)).toList();
         List<DeploymentLocalizedMessage> localizedConflicts = architecture.conflicts().stream()
-                .map(item -> DeploymentLocalizedMessage.of("analysis.java.jdk.conflict", "detail", item)).toList();
+            .map(item -> DeploymentLocalizedMessage.of("analysis.java.jdk.conflict", "detail", item)).toList();
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
-                ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
-                DeploymentBuildToolType.JDK, languageFacts, List.of(evidence(METADATA)), localizedConflicts,
-                localizedMissing);
+            ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
+            DeploymentBuildToolType.JDK, languageFacts, List.of(evidence(METADATA)), localizedConflicts,
+            localizedMissing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> runtimeValues = new EnumMap<>(
-                DeploymentRuntimeAssessment.RuntimeInputType.class);
+            DeploymentRuntimeAssessment.RuntimeInputType.class);
         if (sourceRoot != null)
             runtimeValues.put(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_SOURCE_ROOT, sourceRoot);
         if (mainClass != null)
@@ -187,13 +187,13 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         if (javaVersion != null)
             runtimeValues.put(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION, javaVersion);
         List<DeploymentLocalizedMessage> required = new ArrayList<>(
-                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
+            List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (sourceRoot == null)
             required.add(DeploymentLocalizedMessage.of("analysis.java.jdk.sourceRoot"));
         if (mainClass == null)
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.javaMainClass"));
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), runtimeValues,
-                Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
+            Optional.empty(), Map.of(), List.of(), facts.evidence(), required));
     }
 
     /**
@@ -209,7 +209,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
         Matcher matcher = PROPERTY.matcher(text);
         while (matcher.find()) {
             if (!List.of("sourceRoot", "mainClass", "javaVersion").contains(matcher.group(1))
-                    || values.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
+                || values.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
                 conflicts.add("java-metadata-property:" + matcher.group(1));
             }
         }
@@ -228,7 +228,7 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
             return null;
         value = value.trim().replace('\\', '/');
         return value.matches("[A-Za-z0-9._/-]{1,255}") && !value.startsWith("/") && !value.contains("..")
-                && !value.contains("//") ? value : null;
+            && !value.contains("//") ? value : null;
     }
 
     /**
@@ -262,6 +262,6 @@ public final class JavaJdkDeploymentInspector implements DeploymentTypeInspector
      */
     private static AnalysisEvidence evidence(String source) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of("analysis.java.jdk.metadata"), source,
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

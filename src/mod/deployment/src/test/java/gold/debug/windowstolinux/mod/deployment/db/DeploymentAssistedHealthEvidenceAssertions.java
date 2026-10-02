@@ -21,14 +21,14 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
      * @param candidateArchives actual uploaded candidate bytes / 实际上传候选字节
      * @throws Exception if retained chain or evidence rejects / 留存链或证据拒绝时 */
     public static void verify(JsonNode request, UUID taskId, int count, int retries, Map<String, String> archives,
-            Map<String, String> candidateArchives) throws Exception {
+                              Map<String, String> candidateArchives) throws Exception {
         UUID previousOperation = taskId;
         var candidates = new HashSet<String>();
         for (int index = 0; index < retries; index++) {
             var review = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptReview
-                    .decode(request.path("attemptReviews").get(index));
+                .decode(request.path("attemptReviews").get(index));
             var proof = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptProof
-                    .decode(request.path("attemptProofs").get(index));
+                .decode(request.path("attemptProofs").get(index));
             assertEquals(index + 1, review.retry());
             assertEquals(previousOperation, review.previousOperation());
             assertNotEquals(previousOperation, review.nextOperation());
@@ -51,10 +51,10 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
                 assertTrue(child.remainingSeconds() <= child.limitSeconds());
                 assertTrue(candidates.add(child.checkpoint().path("candidate").asText()));
                 String archive = archives.values().stream()
-                        .filter(sha -> candidateArchives.get(child.checkpoint().path("candidate").asText()).equals(sha))
-                        .findFirst().orElseThrow();
+                    .filter(sha -> candidateArchives.get(child.checkpoint().path("candidate").asText()).equals(sha))
+                    .findFirst().orElseThrow();
                 var oldWorkspace = new DeploymentRemoteWorkspace(child.unitId(), archive,
-                        index == 0 ? Optional.empty() : Optional.of(previousOperation));
+                    index == 0 ? Optional.empty() : Optional.of(previousOperation));
                 assertEquals(oldWorkspace.candidateId(), child.checkpoint().path("candidate").asText());
             }
             previousOperation = review.nextOperation();
@@ -68,7 +68,7 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
     public static void verifyConfigurationPrecision(java.sql.Connection connection) throws Exception {
         final DeploymentExecutionRecord original;
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
+             var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
             original = DeploymentExecutionRepository.row(rows);
             assertFalse(rows.next());
@@ -79,44 +79,44 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
         assertFalse(request.path("attemptTemplate").isNull());
         request.putNull("attemptTemplate");
         var beforeTemplate = new DeploymentExecutionRecord(original.identity(), original.phase(), original.outcome(),
-                request.toString(), original.recoveryJson(), original.resultJson(), original.businessCommitted(),
-                original.cleanupComplete(), original.createdAt(), original.updatedAt());
+            request.toString(), original.recoveryJson(), original.resultJson(), original.businessCommitted(),
+            original.cleanupComplete(), original.createdAt(), original.updatedAt());
         var unit = proposal.units().getFirst();
         var configuration = unit.configuration();
         var nanoTime = java.time.Instant.ofEpochMilli(configuration.createdAt().toEpochMilli()).plusNanos(123456);
         assertNotEquals(configuration.createdAt(), nanoTime);
         var equivalent = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
-                .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
-                        nanoTime, configuration.entries());
+            .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
+                nanoTime, configuration.entries());
         assertEquals(configuration.sha256(), equivalent.sha256());
         assertNotEquals(configuration, equivalent);
         assertEquals(DeploymentPublicationAttemptCodec.withTemplate(beforeTemplate, proposal),
-                DeploymentPublicationAttemptCodec.withTemplate(beforeTemplate,
-                        replaceConfiguration(proposal, equivalent)));
+            DeploymentPublicationAttemptCodec.withTemplate(beforeTemplate,
+                replaceConfiguration(proposal, equivalent)));
         var revision = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
-                .create(configuration.applicationId(), configuration.revision() + 1, configuration.schemaVersion(),
-                        configuration.createdAt(), configuration.entries());
+            .create(configuration.applicationId(), configuration.revision() + 1, configuration.schemaVersion(),
+                configuration.createdAt(), configuration.entries());
         var entries = new ArrayList<>(configuration.entries());
         entries.add(new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationEntry(
-                "CODEC_SENTINEL",
-                gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType.RUNTIME,
-                new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationValue.Text(
-                        "changed")));
+            "CODEC_SENTINEL",
+            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType.RUNTIME,
+            new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationValue.Text(
+                "changed")));
         var content = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
-                .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
-                        configuration.createdAt(), entries);
+            .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
+                configuration.createdAt(), entries);
         assertNotEquals(configuration.sha256(), revision.sha256());
         assertNotEquals(configuration.sha256(), content.sha256());
         var time = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot.create(
-                configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
-                configuration.createdAt().plusMillis(1), configuration.entries());
+            configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
+            configuration.createdAt().plusMillis(1), configuration.entries());
         for (var changed : List.of(revision, content, time)) {
             var rejected = assertThrows(java.sql.SQLException.class, () -> DeploymentPublicationAttemptCodec
-                    .withTemplate(beforeTemplate, replaceConfiguration(proposal, changed)));
+                .withTemplate(beforeTemplate, replaceConfiguration(proposal, changed)));
             assertEquals("Attempt changed original complete configuration", rejected.getMessage());
         }
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
+             var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
             assertEquals(original, DeploymentExecutionRepository.row(rows));
             assertFalse(rows.next());
@@ -124,11 +124,11 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
     }
 
     private static DeploymentPublicationProposal replaceConfiguration(DeploymentPublicationProposal proposal,
-            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot configuration) {
+                                                                      gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot configuration) {
         var units = new ArrayList<>(proposal.units());
         var original = units.getFirst();
         units.set(0, new DeploymentUnitCommit(original.unit(), original.runtime(), original.release(), configuration,
-                original.secrets()));
+            original.secrets()));
         return new DeploymentPublicationProposal(proposal.graph(), units);
     }
 }

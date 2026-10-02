@@ -39,11 +39,11 @@ public final class SecretStoreException extends ApiException {
      * @param cause original internal cause / 原内部原因
      * @return typed failure with immutable evidence / 带不可变证据的类型化失败 */
     public static SecretStoreException create(SecretStoreFailureType type, Map<String, ?> arguments, String diagnostic,
-            Throwable cause) {
+                                              Throwable cause) {
         var context = new TreeMap<String, String>();
         arguments.forEach((key, value) -> context.put(key, Objects.toString(value, "")));
         return new SecretStoreException(
-                new Problem(type.problemCode(), type.eventCode(), diagnostic, context, Optional.of(UUID.randomUUID())),
-                cause);
+            new Problem(type.problemCode(), type.eventCode(), diagnostic, context, Optional.of(UUID.randomUUID())),
+            cause);
     }
 }

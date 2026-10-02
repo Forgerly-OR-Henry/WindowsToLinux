@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -11,7 +18,7 @@ import java.util.concurrent.atomic.*;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 
@@ -53,29 +60,29 @@ final class DeploymentAgentTestPeer {
         connections.incrementAndGet();
         var lease = task.retain("controlled_ssh", "controlled-ssh-" + UUID.randomUUID(), "Controlled SSH session");
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("facts"))
-                        return new RemoteFacts("linux", "x86_64", fingerprint);
-                    if (method.getName().equals("close")) {
-                        lease.close();
-                        return null;
-                    }
-                    if (method.getName().equals("upload")) {
-                        var request = (TransferRequest) args[0];
-                        assertNotNull(args[1]);
-                        byte[] bytes = Files.readAllBytes(request.localPath());
-                        archive = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-                        archiveBytes = bytes.length;
-                        Arrays.fill(bytes, (byte) 0);
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(archiveBytes,
-                                archive, request.localPath(), request.remoteAbsolutePath())), Optional.empty());
-                    }
-                    if (method.getName().equals("execute")) {
-                        assertNotNull(args[1], "Every actual helper send needs the platform's exact grant");
-                        return command((CommandRequest) args[0], task);
-                    }
-                    throw new AssertionError(method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("facts"))
+                    return new RemoteFacts("linux", "x86_64", fingerprint);
+                if (method.getName().equals("close")) {
+                    lease.close();
+                    return null;
+                }
+                if (method.getName().equals("upload")) {
+                    var request = (TransferRequest) args[0];
+                    assertNotNull(args[1]);
+                    byte[] bytes = Files.readAllBytes(request.localPath());
+                    archive = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+                    archiveBytes = bytes.length;
+                    Arrays.fill(bytes, (byte) 0);
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(archiveBytes,
+                        archive, request.localPath(), request.remoteAbsolutePath())), Optional.empty());
+                }
+                if (method.getName().equals("execute")) {
+                    assertNotNull(args[1], "Every actual helper send needs the platform's exact grant");
+                    return command((CommandRequest) args[0], task);
+                }
+                throw new AssertionError(method.getName());
+            });
     }
 
     private OperationResult<CommandResult> command(CommandRequest request, TaskContext task) {
@@ -83,13 +90,13 @@ final class DeploymentAgentTestPeer {
         String id = script.contains("'demo-api'") ? "demo-api" : "demo-web";
         if (script.startsWith("exec /bin/bash --noprofile --norc -s"))
             return reply("HELPER_INSTALL=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
         if (script.contains("/usr/bin/sha256sum --check --status"))
             return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
         if (script.contains("/etc/os-release"))
             return reply(
-                    "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
+                "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
         if (script.contains("stat -f -c"))
             return reply("1000000000 4096\n");
         if (script.contains("candidate-create-task")) {
@@ -104,7 +111,7 @@ final class DeploymentAgentTestPeer {
         }
         if (script.contains("stat -c '%s'"))
             return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archiveBytes + "\nSHA256=" + archive
-                    + "\nOWNER=0\n");
+                + "\nOWNER=0\n");
         if (script.contains("candidate-query-task")) {
             var values = scalars(script);
             int at = values.indexOf(id);
@@ -112,16 +119,16 @@ final class DeploymentAgentTestPeer {
             assertEquals(id, values.get(at));
             assertEquals(candidates.get(id), values.get(at + 1));
             assertEquals(originalOwners.get(id).toString(), values.get(at + 2),
-                    "Readonly query must preserve original ownership UUID");
+                "Readonly query must preserve original ownership UUID");
             return reply("CANDIDATE_STATE=" + (present.getOrDefault(id, false) ? "owned" : "absent") + "\nBUILD_ACTIVE="
-                    + (active ? "yes" : "no") + "\n");
+                + (active ? "yes" : "no") + "\n");
         }
         if (script.contains("'agent-open'"))
             return reply("SOURCE_REVISION=" + "c".repeat(64) + "\n");
         if (script.contains("'agent-run'")) {
             int attempt = commands.incrementAndGet();
             if (scenario == DeploymentAgentWorkflowTest.ScenarioType.COMMAND_UNKNOWN
-                    || scenario == DeploymentAgentWorkflowTest.ScenarioType.HISTORY_INSPECT) {
+                || scenario == DeploymentAgentWorkflowTest.ScenarioType.HISTORY_INSPECT) {
                 active = true;
                 return unknown("CONTROLLED_BUILD_RECEIPT_LOST");
             }
@@ -144,13 +151,13 @@ final class DeploymentAgentTestPeer {
         }
         if (script.contains("'application-health'")) {
             if (scenario == DeploymentAgentWorkflowTest.ScenarioType.WHOLE_HEALTH_FAILURE
-                    && health.incrementAndGet() == 5)
+                && health.incrementAndGet() == 5)
                 return reply(1, "HEALTH=failed\n");
             return reply("HEALTHY=1\n");
         }
         if (script.contains("'observe-deployment'"))
             return reply(
-                    "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
+                "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
         if (script.contains("'rollback-deployment'") || script.contains("'rollback-deployment-first'")) {
             current.remove(id);
             rollbacks.add(id);
@@ -161,11 +168,11 @@ final class DeploymentAgentTestPeer {
                 return unknown("CONTROLLED_STATUS_NOT_YET_AVAILABLE");
             String value = current.get(id);
             return reply("PUBLICATION_STATUS=1\nCURRENT=" + (value == null ? "none" : value) + "\nCURRENT_KIND="
-                    + (value == null ? "none" : "deployment") + "\nCURRENT_MODE=" + (value == null ? "none" : "DAEMON")
-                    + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
-                    + (present.getOrDefault(id, false) ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
-                    + (value == null ? "no" : "yes") + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT="
-                    + (value == null ? 0 : 1) + "\n");
+                + (value == null ? "none" : "deployment") + "\nCURRENT_MODE=" + (value == null ? "none" : "DAEMON")
+                + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="
+                + (present.getOrDefault(id, false) ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
+                + (value == null ? "no" : "yes") + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT="
+                + (value == null ? 0 : 1) + "\n");
         }
         if (script.contains("candidate-cleanup-task")) {
             present.put(id, false);
@@ -192,11 +199,11 @@ final class DeploymentAgentTestPeer {
 
     private static OperationResult<CommandResult> reply(int exit, String output) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
     }
 
     private static OperationResult<CommandResult> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Controlled original receipt is unavailable", Map.of(), Optional.empty())));
+            event, "Controlled original receipt is unavailable", Map.of(), Optional.empty())));
     }
 }

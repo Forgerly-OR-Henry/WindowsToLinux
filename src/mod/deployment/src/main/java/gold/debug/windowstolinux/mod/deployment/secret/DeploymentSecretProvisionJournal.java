@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.secret;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+
 import java.time.Instant;
 import java.util.*;
 
@@ -7,7 +14,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReferenceKey;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 
@@ -18,8 +25,8 @@ final class DeploymentSecretProvisionJournal {
 
     /** Strict parser rejecting duplicate fields and trailing input. / 拒绝重复字段与尾随输入的严格解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
-            .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Exact host checkpoint. / 精确宿主检查点。 */
     private final TaskCheckpoint checkpoint;
@@ -61,7 +68,8 @@ final class DeploymentSecretProvisionJournal {
      * @param referenceId original platform reference UUID / 原平台引用 UUID
      * @param failure definite bounded failure / 确定的有界失败 */
     record Facts(UUID task, ServerRef server, DeploymentSecretReference revision, String purpose, Instant createdAt,
-            PhaseType phase, Optional<String> credentialId, Optional<UUID> referenceId, Optional<Problem> failure) {
+                 PhaseType phase, Optional<String> credentialId, Optional<UUID> referenceId,
+                 Optional<Problem> failure) {
         /** Validates one immutable, possible phase. / 校验一个不可变且可能的阶段。
          * @param task original platform task / 原平台任务
          * @param server original admitted server / 原准入服务器
@@ -82,14 +90,14 @@ final class DeploymentSecretProvisionJournal {
             Objects.requireNonNull(referenceId);
             Objects.requireNonNull(failure);
             if (server.id() == null || server.id().isBlank() || server.id().length() > 512
-                    || server.id().indexOf(0) >= 0 || purpose == null || purpose.isBlank() || purpose.length() > 128
-                    || purpose.indexOf(0) >= 0 || createdAt.getNano() % 1_000_000 != 0
-                    || revision.revision() > Integer.MAX_VALUE
-                    || credentialId.filter(id -> id.isBlank() || id.length() > 512 || id.indexOf(0) >= 0).isPresent()
-                    || referenceId.isPresent() && credentialId.isEmpty()
-                    || failure.filter(p -> p.code() == ProblemCode.UNKNOWN
-                            || !p.eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")).isPresent()
-                    || !valid(phase, credentialId.isPresent(), referenceId.isPresent(), failure.isPresent()))
+                || server.id().indexOf(0) >= 0 || purpose == null || purpose.isBlank() || purpose.length() > 128
+                || purpose.indexOf(0) >= 0 || createdAt.getNano() % 1_000_000 != 0
+                || revision.revision() > Integer.MAX_VALUE
+                || credentialId.filter(id -> id.isBlank() || id.length() > 512 || id.indexOf(0) >= 0).isPresent()
+                || referenceId.isPresent() && credentialId.isEmpty()
+                || failure.filter(p -> p.code() == ProblemCode.UNKNOWN
+                || !p.eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")).isPresent()
+                || !valid(phase, credentialId.isPresent(), referenceId.isPresent(), failure.isPresent()))
                 throw new IllegalArgumentException("Original secret facts are invalid");
         }
     }
@@ -111,7 +119,7 @@ final class DeploymentSecretProvisionJournal {
      * @param createdAt reviewed time / 已审阅时间 */
     static void validateInput(ServerRef server, DeploymentSecretReference revision, String purpose, Instant createdAt) {
         new Facts(new UUID(0, 0), server, revision, purpose, createdAt, PhaseType.PLANNED, Optional.empty(),
-                Optional.empty(), Optional.empty());
+            Optional.empty(), Optional.empty());
     }
 
     /** Persists the original non-secret intent before creation. / 创建前持久化原不含秘密的意图。
@@ -124,7 +132,7 @@ final class DeploymentSecretProvisionJournal {
      * @return original journal / 原日志
      * @throws ApiException if persistence is unconfirmed / 持久化未确认时 */
     static DeploymentSecretProvisionJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            DeploymentSecretReference revision, String purpose, Instant createdAt) throws ApiException {
+                                                  DeploymentSecretReference revision, String purpose, Instant createdAt) throws ApiException {
         return begin(tasks, task, server, revision, purpose, createdAt, KEY);
     }
 
@@ -139,10 +147,10 @@ final class DeploymentSecretProvisionJournal {
      * @return durable child journal / 持久子日志
      * @throws ApiException if original persistence fails / 原持久化失败时 */
     static DeploymentSecretProvisionJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            DeploymentSecretReference revision, String purpose, Instant createdAt, String key) throws ApiException {
+                                                  DeploymentSecretReference revision, String purpose, Instant createdAt, String key) throws ApiException {
         checkedKey(key);
         var initial = new Facts(task.id(), server, revision, purpose, createdAt, PhaseType.PLANNED, Optional.empty(),
-                Optional.empty(), Optional.empty());
+            Optional.empty(), Optional.empty());
         var handle = tasks.beginCheckpoint(task, key, encode(initial));
         return new DeploymentSecretProvisionJournal(handle, handle.snapshot(), task.id());
     }
@@ -163,7 +171,7 @@ final class DeploymentSecretProvisionJournal {
      * @return original child or genuine absence / 原子项或真实不存在
      * @throws ApiException if lookup fails / 查找失败时 */
     static Optional<DeploymentSecretProvisionJournal> find(TaskService tasks, TaskContext task, String key)
-            throws ApiException {
+        throws ApiException {
         checkedKey(key);
         var original = tasks.findCheckpoint(task, key);
         if (original.isEmpty())
@@ -238,7 +246,7 @@ final class DeploymentSecretProvisionJournal {
         if (facts.phase() == PhaseType.SAVED || facts.phase() == PhaseType.KNOWN_FAILURE)
             throw invalid();
         var safe = new Problem(problem.code(), problem.eventCode(), "Original secret provision failed", Map.of(),
-                Optional.empty());
+            Optional.empty());
         advance(PhaseType.KNOWN_FAILURE, facts.credentialId(), facts.referenceId(), Optional.of(safe));
     }
 
@@ -264,9 +272,9 @@ final class DeploymentSecretProvisionJournal {
      * @param failure known failure / 已知失败
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     private void advance(PhaseType phase, Optional<String> credentialId, Optional<UUID> referenceId,
-            Optional<Problem> failure) throws ApiException {
+                         Optional<Problem> failure) throws ApiException {
         var next = new Facts(facts.task(), facts.server(), facts.revision(), facts.purpose(), facts.createdAt(), phase,
-                credentialId, referenceId, failure);
+            credentialId, referenceId, failure);
         snapshot = checkpoint.advance(snapshot, encode(next));
         facts = decode(snapshot.payload(), facts.task());
     }
@@ -299,14 +307,14 @@ final class DeploymentSecretProvisionJournal {
      * @return canonical JSON / 规范 JSON */
     private static String encode(Facts value) {
         var node = JSON.createObjectNode().put("formatVersion", 1).put("taskId", value.task().toString())
-                .put("serverId", value.server().id()).put("secretId", value.revision().identifier())
-                .put("revision", value.revision().revision()).put("purpose", value.purpose())
-                .put("createdAt", value.createdAt().toEpochMilli()).put("phase", value.phase().name());
+            .put("serverId", value.server().id()).put("secretId", value.revision().identifier())
+            .put("revision", value.revision().revision()).put("purpose", value.purpose())
+            .put("createdAt", value.createdAt().toEpochMilli()).put("phase", value.phase().name());
         value.credentialId().ifPresentOrElse(id -> node.put("credentialId", id), () -> node.putNull("credentialId"));
         value.referenceId().ifPresentOrElse(id -> node.put("referenceId", id.toString()),
-                () -> node.putNull("referenceId"));
+            () -> node.putNull("referenceId"));
         value.failure().ifPresentOrElse(problem -> node.putObject("failure").put("code", problem.code().name())
-                .put("event", problem.eventCode()), () -> node.putNull("failure"));
+            .put("event", problem.eventCode()), () -> node.putNull("failure"));
         return node.toString();
     }
 
@@ -320,21 +328,21 @@ final class DeploymentSecretProvisionJournal {
             var fields = new HashSet<String>();
             node.fieldNames().forEachRemaining(fields::add);
             if (!node.isObject()
-                    || !fields.equals(Set.of("formatVersion", "taskId", "serverId", "secretId", "revision", "purpose",
-                            "createdAt", "phase", "credentialId", "referenceId", "failure"))
-                    || !node.get("formatVersion").isInt() || node.get("formatVersion").intValue() != 1
-                    || !node.get("revision").isIntegralNumber() || !node.get("revision").canConvertToLong()
-                    || !node.get("createdAt").isIntegralNumber() || !node.get("createdAt").canConvertToLong())
+                || !fields.equals(Set.of("formatVersion", "taskId", "serverId", "secretId", "revision", "purpose",
+                "createdAt", "phase", "credentialId", "referenceId", "failure"))
+                || !node.get("formatVersion").isInt() || node.get("formatVersion").intValue() != 1
+                || !node.get("revision").isIntegralNumber() || !node.get("revision").canConvertToLong()
+                || !node.get("createdAt").isIntegralNumber() || !node.get("createdAt").canConvertToLong())
                 throw new IllegalArgumentException();
             var failure = node.get("failure").isNull()
-                    ? Optional.<Problem>empty()
-                    : Optional.of(problem(node.get("failure")));
+                ? Optional.<Problem>empty()
+                : Optional.of(problem(node.get("failure")));
             var facts = new Facts(uuid(node, "taskId"), new ServerRef(text(node, "serverId")),
-                    new DeploymentSecretReference(text(node, "secretId"), node.get("revision").longValue()),
-                    text(node, "purpose"), Instant.ofEpochMilli(node.get("createdAt").longValue()),
-                    PhaseType.valueOf(text(node, "phase")), nullableText(node, "credentialId"),
-                    node.get("referenceId").isNull() ? Optional.empty() : Optional.of(uuid(node, "referenceId")),
-                    failure);
+                new DeploymentSecretReference(text(node, "secretId"), node.get("revision").longValue()),
+                text(node, "purpose"), Instant.ofEpochMilli(node.get("createdAt").longValue()),
+                PhaseType.valueOf(text(node, "phase")), nullableText(node, "credentialId"),
+                node.get("referenceId").isNull() ? Optional.empty() : Optional.of(uuid(node, "referenceId")),
+                failure);
             if (!facts.task().equals(task) || !encode(facts).equals(node.toString()))
                 throw new IllegalArgumentException();
             return facts;
@@ -352,7 +360,7 @@ final class DeploymentSecretProvisionJournal {
         if (!node.isObject() || !fields.equals(Set.of("code", "event")))
             throw new IllegalArgumentException();
         return new Problem(ProblemCode.valueOf(text(node, "code")), text(node, "event"),
-                "Original secret provision failed", Map.of(), Optional.empty());
+            "Original secret provision failed", Map.of(), Optional.empty());
     }
 
     /** Reads exact persisted text. / 读取精确持久文本。
@@ -389,13 +397,13 @@ final class DeploymentSecretProvisionJournal {
      * @return safe API exception / 安全 API 异常 */
     private static ApiException invalid() {
         return new ApiException(new Problem(ProblemCode.CONTRACT_VIOLATION, "DEPLOYMENT_SECRET_CHECKPOINT",
-                "Original secret checkpoint differs", Map.of(), Optional.empty()));
+            "Original secret checkpoint differs", Map.of(), Optional.empty()));
     }
 
     /** Provides the exact reference key for this durable original ID. / 为原持久 ID 提供精确引用键。
      * @return original reference intent / 原引用意图 */
     gold.debug.windowstolinux.mod.deployment.db.DeploymentReferenceIntent intent() {
         return DeploymentReferenceKey.secretRevision(facts.server(),
-                new SecretRef(facts.credentialId().orElseThrow(), facts.purpose()), facts.revision());
+            new SecretRef(facts.credentialId().orElseThrow(), facts.purpose()), facts.revision());
     }
 }

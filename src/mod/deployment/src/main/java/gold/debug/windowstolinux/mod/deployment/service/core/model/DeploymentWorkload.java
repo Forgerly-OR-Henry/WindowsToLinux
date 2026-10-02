@@ -21,9 +21,12 @@ import java.util.Optional;
  * @param workers workers / 工作线程集合
  */
 public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, DeploymentCommand command,
-        String workingDirectory, List<DeploymentEndpoint> endpoints, Optional<DeploymentCommand> verification,
-        String expectedOutput, Optional<DeploymentCommand> client, List<DeploymentInputField> inputs,
-        List<DeploymentCompanion> companions, String buildDirectory, List<DeploymentWorker> workers) {
+                                 String workingDirectory, List<DeploymentEndpoint> endpoints,
+                                 Optional<DeploymentCommand> verification,
+                                 String expectedOutput, Optional<DeploymentCommand> client,
+                                 List<DeploymentInputField> inputs,
+                                 List<DeploymentCompanion> companions, String buildDirectory,
+                                 List<DeploymentWorker> workers) {
     /**
      * Initializes application workload through its shared constructor contract.
      * <p>通过共享构造契约初始化应用工作负载。
@@ -41,11 +44,11 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
      * @param buildDirectory build directory / 构建目录
      */
     public DeploymentWorkload(ExecutionMode mode, boolean reviewed, DeploymentCommand command, String workingDirectory,
-            List<DeploymentEndpoint> endpoints, Optional<DeploymentCommand> verification, String expectedOutput,
-            Optional<DeploymentCommand> client, List<DeploymentInputField> inputs, List<DeploymentCompanion> companions,
-            String buildDirectory) {
+                              List<DeploymentEndpoint> endpoints, Optional<DeploymentCommand> verification, String expectedOutput,
+                              Optional<DeploymentCommand> client, List<DeploymentInputField> inputs, List<DeploymentCompanion> companions,
+                              String buildDirectory) {
         this(mode, reviewed, command, workingDirectory, endpoints, verification, expectedOutput, client, inputs,
-                companions, buildDirectory, List.of());
+            companions, buildDirectory, List.of());
     }
 
     /**
@@ -64,12 +67,13 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
      * @param companions companions / 配套单元集合
      */
     public DeploymentWorkload(ExecutionMode mode, boolean reviewed, DeploymentCommand command, String workingDirectory,
-            List<DeploymentEndpoint> endpoints, Optional<DeploymentCommand> verification, String expectedOutput,
-            Optional<DeploymentCommand> client, List<DeploymentInputField> inputs,
-            List<DeploymentCompanion> companions) {
+                              List<DeploymentEndpoint> endpoints, Optional<DeploymentCommand> verification, String expectedOutput,
+                              Optional<DeploymentCommand> client, List<DeploymentInputField> inputs,
+                              List<DeploymentCompanion> companions) {
         this(mode, reviewed, command, workingDirectory, endpoints, verification, expectedOutput, client, inputs,
-                companions, "");
+            companions, "");
     }
+
     /**
      * Distinguishes long-running services from bounded application jobs.
      * <p>区分常驻服务及有界应用任务。
@@ -86,6 +90,7 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
          */
         ON_DEMAND
     }
+
     /**
      * Classifies the reviewed application workload for deployment and presentation.
      * <p>对已审阅应用工作负载进行部署及展示分类。
@@ -132,29 +137,29 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
         companions = List.copyOf(companions);
         workers = List.copyOf(workers);
         if (workers.size() > 8 || workers.stream().map(DeploymentWorker::id).distinct().count() != workers.size()
-                || !workers.isEmpty() && mode != ExecutionMode.DAEMON)
+            || !workers.isEmpty() && mode != ExecutionMode.DAEMON)
             throw new IllegalArgumentException("workers require a daemon and at most eight unique identities");
         Objects.requireNonNull(verification);
         Objects.requireNonNull(client);
         Objects.requireNonNull(expectedOutput);
         if (endpoints.size() > 32 || inputs.size() > 32 || companions.size() > 32 || expectedOutput.length() > 4096
-                || expectedOutput.indexOf('\0') >= 0 || expectedOutput.indexOf('\n') >= 0
-                || expectedOutput.indexOf('\r') >= 0)
+            || expectedOutput.indexOf('\0') >= 0 || expectedOutput.indexOf('\n') >= 0
+            || expectedOutput.indexOf('\r') >= 0)
             throw new IllegalArgumentException("application declaration exceeds its bounds");
         if (mode == ExecutionMode.ON_DEMAND && verification.isEmpty())
             throw new IllegalArgumentException("on-demand applications require installation verification");
         if (mode == ExecutionMode.ON_DEMAND && !endpoints.isEmpty())
             throw new IllegalArgumentException("on-demand applications cannot publish persistent service endpoints");
         if (endpoints.stream().map(DeploymentEndpoint::id).distinct().count() != endpoints.size()
-                || endpoints.stream().map(DeploymentEndpoint::portKey).distinct().count() != endpoints.size()
-                || inputs.stream().map(DeploymentInputField::id).distinct().count() != inputs.size()
-                || companions.stream().map(DeploymentCompanion::id).distinct().count() != companions.size()
-                || companions.stream().map(DeploymentCompanion::environment).distinct().count() != companions.size())
+            || endpoints.stream().map(DeploymentEndpoint::portKey).distinct().count() != endpoints.size()
+            || inputs.stream().map(DeploymentInputField::id).distinct().count() != inputs.size()
+            || companions.stream().map(DeploymentCompanion::id).distinct().count() != companions.size()
+            || companions.stream().map(DeploymentCompanion::environment).distinct().count() != companions.size())
             throw new IllegalArgumentException("application resource identifiers or port bindings conflict");
         for (var input : inputs)
             for (var other : inputs) {
                 if (input != other && (input.accessPath().equals(other.accessPath())
-                        || input.accessPath().startsWith(other.accessPath() + "/")))
+                    || input.accessPath().startsWith(other.accessPath() + "/")))
                     throw new IllegalArgumentException("external input mappings overlap");
             }
     }
@@ -167,8 +172,8 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
      */
     public CategoryType category() {
         return endpoints.stream().anyMatch(value -> value.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL)
-                ? CategoryType.WEBSITE
-                : CategoryType.APP;
+            ? CategoryType.WEBSITE
+            : CategoryType.APP;
     }
 
     /**
@@ -189,6 +194,6 @@ public record DeploymentWorkload(ExecutionMode mode, boolean reviewed, Deploymen
      */
     public static DeploymentWorkload unspecified() {
         return new DeploymentWorkload(ExecutionMode.DAEMON, false, DeploymentCommand.primary(), "", List.of(),
-                Optional.empty(), "", Optional.empty(), List.of(), List.of());
+            Optional.empty(), "", Optional.empty(), List.of(), List.of());
     }
 }

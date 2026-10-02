@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 
-import gold.debug.windowstolinux.appapi.task.CancellationToken;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.ComponentIssue;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.MultiComponentProjectAssessment;
@@ -61,7 +61,7 @@ public final class MixedProjectInspector {
      * @return constructed or resolved multi component project assessment / 构造或解析得到的多组件项目评估
      */
     public MultiComponentProjectAssessment analyze(Path selectedApplicationRoot, String applicationId,
-            List<ComponentAnalysisRequest> requests) {
+                                                   List<ComponentAnalysisRequest> requests) {
         return analyze(selectedApplicationRoot, applicationId, requests, Map.of(), false, () -> false);
     }
 
@@ -74,7 +74,7 @@ public final class MixedProjectInspector {
      * @return constructed or resolved multi component project assessment / 构造或解析得到的多组件项目评估
      */
     public MultiComponentProjectAssessment analyzeAutomatic(Path root, String applicationId,
-            List<ComponentAnalysisRequest> requests) {
+                                                            List<ComponentAnalysisRequest> requests) {
         return analyze(root, applicationId, requests, Map.of(), true, () -> false);
     }
 
@@ -89,8 +89,8 @@ public final class MixedProjectInspector {
      * @return constructed or resolved multi component project assessment / 构造或解析得到的多组件项目评估
      */
     public MultiComponentProjectAssessment analyze(Path root, String applicationId,
-            List<ComponentAnalysisRequest> requests,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews) {
+                                                   List<ComponentAnalysisRequest> requests,
+                                                   Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews) {
         return analyze(root, applicationId, requests, reviews, false, () -> false);
     }
 
@@ -110,12 +110,12 @@ public final class MixedProjectInspector {
      * @throws CancellationException if original cancellation is requested / 原任务请求取消时
      */
     public MultiComponentProjectAssessment analyze(Path selectedApplicationRoot, String applicationId,
-            List<ComponentAnalysisRequest> requests,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews,
-            boolean deferDatabase, CancellationToken cancellation) {
+                                                   List<ComponentAnalysisRequest> requests,
+                                                   Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews,
+                                                   boolean deferDatabase, CancelToken cancellation) {
         return analyze(selectedApplicationRoot, applicationId, requests, reviews, deferDatabase, cancellation,
-                gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                        .rootName(selectedApplicationRoot));
+            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                .rootName(selectedApplicationRoot));
     }
 
     /** Analyzes a component graph with the original reviewed root name. / 使用原审阅根名称分析组件图。
@@ -128,9 +128,9 @@ public final class MixedProjectInspector {
      * @param logicalRootName original reviewed source name / 原审阅源码名称
      * @return complete typed component assessment / 完整类型化组件评估 */
     public MultiComponentProjectAssessment analyze(Path selectedApplicationRoot, String applicationId,
-            List<ComponentAnalysisRequest> requests,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews,
-            boolean deferDatabase, CancellationToken cancellation, String logicalRootName) {
+                                                   List<ComponentAnalysisRequest> requests,
+                                                   Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> reviews,
+                                                   boolean deferDatabase, CancelToken cancellation, String logicalRootName) {
         if (logicalRootName == null || logicalRootName.isBlank())
             throw new IllegalArgumentException("logicalRootName is required");
         requireActive(cancellation);
@@ -143,10 +143,10 @@ public final class MixedProjectInspector {
         List<ComponentIssue> issues = new ArrayList<>();
         Map<String, ComponentAnalysisRequest> unique = new LinkedHashMap<>();
         for (ComponentAnalysisRequest request : requests.stream()
-                .sorted(Comparator.comparing(ComponentAnalysisRequest::componentId)).toList()) {
+            .sorted(Comparator.comparing(ComponentAnalysisRequest::componentId)).toList()) {
             if (unique.putIfAbsent(request.componentId(), request) != null) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "DUPLICATE_COMPONENT_ID",
-                        List.of(request.componentId()), "analysis.component.duplicateId"));
+                    List.of(request.componentId()), "analysis.component.duplicateId"));
             }
         }
         List<DeploymentComponent> components = new ArrayList<>();
@@ -154,42 +154,42 @@ public final class MixedProjectInspector {
             requireActive(cancellation);
             Path componentRoot = root.resolve(request.relativeSourceRoot()).normalize();
             if (!componentRoot.startsWith(root) || Files.isSymbolicLink(componentRoot)
-                    || !Files.isDirectory(componentRoot, LinkOption.NOFOLLOW_LINKS)) {
+                || !Files.isDirectory(componentRoot, LinkOption.NOFOLLOW_LINKS)) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_SOURCE_INVALID",
-                        List.of(request.componentId()), "analysis.component.sourceInvalid"));
+                    List.of(request.componentId()), "analysis.component.sourceInvalid"));
                 continue;
             }
             String componentName = componentRoot.equals(root)
-                    ? logicalRootName
-                    : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                            .rootName(componentRoot);
+                ? logicalRootName
+                : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                .rootName(componentRoot);
             var assessment = deferDatabase
-                    ? coordinator.analyze(componentRoot, request.projectType(), Optional.empty(), true, cancellation,
-                            componentName)
-                    : reviews.containsKey(request.componentId())
-                            ? coordinator.analyze(componentRoot, request.projectType(),
-                                    Optional.of(reviews.get(request.componentId())), false, cancellation, componentName)
-                            : coordinator.analyze(componentRoot, request.projectType(), Optional.empty(), false,
-                                    cancellation, componentName);
+                ? coordinator.analyze(componentRoot, request.projectType(), Optional.empty(), true, cancellation,
+                componentName)
+                : reviews.containsKey(request.componentId())
+                ? coordinator.analyze(componentRoot, request.projectType(),
+                Optional.of(reviews.get(request.componentId())), false, cancellation, componentName)
+                : coordinator.analyze(componentRoot, request.projectType(), Optional.empty(), false,
+                cancellation, componentName);
             if (assessment.admission() == DeploymentAdmissionStatus.REJECTED) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ANALYSIS_REJECTED",
-                        List.of(request.componentId()), "analysis.component.analysisRejected"));
+                    List.of(request.componentId()), "analysis.component.analysisRejected"));
                 continue;
             }
             var facts = namespacedFacts(assessment.facts().orElseThrow(), applicationId, request.componentId());
             try {
                 components.add(new DeploymentComponent(request.componentId(), componentRoot, facts, request.runtime(),
-                        request.artifactPaths(), request.ports(), request.configurationKeys(),
-                        request.secretIdentifiers(), request.dataPaths(), request.dependencies(), request.required(),
-                        request.isolation()));
+                    request.artifactPaths(), request.ports(), request.configurationKeys(),
+                    request.secretIdentifiers(), request.dataPaths(), request.dependencies(), request.required(),
+                    request.isolation()));
             } catch (IllegalArgumentException exception) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_DECLARATION_INVALID",
-                        List.of(request.componentId()), "analysis.component.declarationInvalid"));
+                    List.of(request.componentId()), "analysis.component.declarationInvalid"));
                 continue;
             }
             if (assessment.admission() == DeploymentAdmissionStatus.REQUIRES_INPUT) {
                 issues.add(issue(ComponentIssue.SeverityLevel.REQUIRES_INPUT, "COMPONENT_REQUIRES_INPUT",
-                        List.of(request.componentId()), "analysis.component.requiresInput"));
+                    List.of(request.componentId()), "analysis.component.requiresInput"));
             }
         }
         ComponentGraphValidator.validate(components, issues);
@@ -201,7 +201,7 @@ public final class MixedProjectInspector {
     /** Checks cancellation between independent components. / 在独立组件之间检查取消。
      * @param cancellation original task token / 原任务令牌
      * @throws CancellationException if requested / 请求取消时 */
-    private static void requireActive(CancellationToken cancellation) {
+    private static void requireActive(CancelToken cancellation) {
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
             throw new CancellationException("Original component analysis was cancelled");
     }
@@ -215,7 +215,7 @@ public final class MixedProjectInspector {
      * @return constructed or resolved deployment admission status / 构造或解析得到的部署准入状态
      */
     private static DeploymentAdmissionStatus admission(List<DeploymentComponent> components,
-            List<ComponentIssue> issues) {
+                                                       List<ComponentIssue> issues) {
         if (issues.stream().anyMatch(issue -> issue.severity() == ComponentIssue.SeverityLevel.SAFETY_REJECTION)) {
             return DeploymentAdmissionStatus.REJECTED;
         }
@@ -223,8 +223,8 @@ public final class MixedProjectInspector {
             return DeploymentAdmissionStatus.REQUIRES_INPUT;
         }
         return components.stream().anyMatch(component -> component.runtime().isPresent())
-                ? DeploymentAdmissionStatus.READY_FOR_PLANNING
-                : DeploymentAdmissionStatus.RECOGNITION_PREVIEW;
+            ? DeploymentAdmissionStatus.READY_FOR_PLANNING
+            : DeploymentAdmissionStatus.RECOGNITION_PREVIEW;
     }
 
     /**
@@ -238,9 +238,9 @@ public final class MixedProjectInspector {
      * @return component issue from the supplied issue inputs / 根据所提供问题输入构建组件问题
      */
     private static ComponentIssue issue(ComponentIssue.SeverityLevel severity, String code, List<String> components,
-            String key) {
+                                        String key) {
         return new ComponentIssue(severity, code, components,
-                DeploymentLocalizedMessage.of(key, "components", String.join(", ", components.stream().sorted().toList())));
+            DeploymentLocalizedMessage.of(key, "components", String.join(", ", components.stream().sorted().toList())));
     }
 
     /**
@@ -288,11 +288,11 @@ public final class MixedProjectInspector {
      * @return deployment project facts from the supplied namespaced facts inputs / 根据所提供命名空间内事实输入构建部署项目事实
      */
     private static DeploymentProjectFacts namespacedFacts(DeploymentProjectFacts facts, String applicationId,
-            String componentId) {
+                                                          String componentId) {
         String managedId = managedComponentId(applicationId, componentId);
         return new DeploymentProjectFacts(facts.sourceRoot(), managedId, facts.projectType(), facts.buildTool(),
-                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation(),
-                facts.toolchainRequirements(), facts.buildDirectory());
+            facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), facts.missingInformation(),
+            facts.toolchainRequirements(), facts.buildDirectory());
     }
 
     /**
@@ -310,7 +310,7 @@ public final class MixedProjectInspector {
             return value;
         try {
             String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0, 8);
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0, 8);
             return value.substring(0, 54).replaceAll("-+$", "") + "-" + digest;
         } catch (java.security.NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is required by the Java platform", exception);

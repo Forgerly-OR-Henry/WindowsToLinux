@@ -27,9 +27,9 @@ public final class DeploymentStaticRuntimeResolver {
     public Map<String, String> defaults(DeploymentProjectKind type, DeploymentRuntimeAssessment suggested, Path root) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("healthMode",
-                type == DeploymentProjectKind.STATIC_SITE || type == DeploymentProjectKind.SPRING_BOOT
-                        ? "HTTP"
-                        : "TCP");
+            type == DeploymentProjectKind.STATIC_SITE || type == DeploymentProjectKind.SPRING_BOOT
+                ? "HTTP"
+                : "TCP");
         values.put("expectedStatus", "200");
         values.put("timeout", "10");
         values.put("stability", "5");
@@ -39,8 +39,7 @@ public final class DeploymentStaticRuntimeResolver {
         if (suggested != null) {
             suggested.values().forEach((key, value) -> values.put(switch (key) {
                 case JAVA_JAR_PATH, JAVA_SOURCE_ROOT, PYTHON_VERSION, STATIC_OUTPUT_DIRECTORY, SERVICE_ARTIFACT,
-                        CMAKE_ARTIFACT ->
-                    "primary";
+                     CMAKE_ARTIFACT -> "primary";
                 case JAVA_MAIN_CLASS, PYTHON_ENTRYPOINT, SERVICE_ENTRYPOINT, CMAKE_TARGET -> "secondary";
                 case JAVA_VERSION, NODE_MAJOR_VERSION, SERVICE_VERSION, CMAKE_PRESET -> "version";
                 case KOTLIN_JVM_TARGET -> "jvmTarget";
@@ -49,23 +48,23 @@ public final class DeploymentStaticRuntimeResolver {
             suggested.suggestedHealthPort().ifPresent(port -> values.put("port", port.toString()));
             if (!suggested.suggestedContainerPorts().isEmpty())
                 values.put("ports",
-                        suggested.suggestedContainerPorts().entrySet().stream()
-                                .map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b)
-                                .orElseThrow());
+                    suggested.suggestedContainerPorts().entrySet().stream()
+                        .map(entry -> entry.getKey() + ":" + entry.getValue()).reduce((a, b) -> a + ";" + b)
+                        .orElseThrow());
             if (!suggested.suggestedManagedVolumes().isEmpty())
                 values.put("volumes",
-                        suggested.suggestedManagedVolumes().stream()
-                                .map(volume -> volume.name() + ":" + volume.containerPath()
-                                        + (volume.readOnly() ? ":ro" : ":rw"))
-                                .reduce((a, b) -> a + ";" + b).orElseThrow());
+                    suggested.suggestedManagedVolumes().stream()
+                        .map(volume -> volume.name() + ":" + volume.containerPath()
+                            + (volume.readOnly() ? ":ro" : ":rw"))
+                        .reduce((a, b) -> a + ";" + b).orElseThrow());
         }
         if (type == DeploymentProjectKind.STATIC_SITE && Files.isRegularFile(root.resolve("index.html"))
-                && !Files.exists(root.resolve("package.json")))
+            && !Files.exists(root.resolve("package.json")))
             if (Files.isDirectory(root.resolve("public")))
                 values.put("primary", "public");
         values.put("executionMode", "DAEMON");
         if (type != DeploymentProjectKind.STATIC_SITE && type != DeploymentProjectKind.SPRING_BOOT
-                && !values.containsKey("port"))
+            && !values.containsKey("port"))
             values.put("healthMode", "PROCESS");
         if (type == DeploymentProjectKind.STATIC_SITE)
             values.put("exposure", "EXTERNAL");
@@ -82,7 +81,7 @@ public final class DeploymentStaticRuntimeResolver {
      * @return all missing fields together so a single dialog can collect them / 集中返回所有缺失字段，便于一个对话框统一收集
      */
     public List<DeploymentReviewField> missing(String component, DeploymentProjectKind type,
-            Map<String, String> values) {
+                                               Map<String, String> values) {
         var completed = ApplicationDeclaration.completed(values);
         return missingCompleted(component, type, completed);
     }
@@ -97,7 +96,7 @@ public final class DeploymentStaticRuntimeResolver {
      * @return constructed or resolved list / 构造或解析得到的列表
      */
     private List<DeploymentReviewField> missingCompleted(String component, DeploymentProjectKind type,
-            Map<String, String> values) {
+                                                         Map<String, String> values) {
         List<String> required = new ArrayList<>();
         if (!values.containsKey("application.mode") && !values.containsKey("application.endpoints"))
             required.add("exposure");
@@ -107,8 +106,7 @@ public final class DeploymentStaticRuntimeResolver {
         switch (type) {
             case SPRING_BOOT -> required.add("version");
             case JAVA_JAR, JAVA_SOURCE, GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE,
-                    RUBY_SERVICE, CMAKE_SERVICE ->
-                required.addAll(List.of("primary", "secondary", "version"));
+                 RUBY_SERVICE, CMAKE_SERVICE -> required.addAll(List.of("primary", "secondary", "version"));
             case NODE_SERVICE -> required.add("version");
             case PYTHON_SERVICE -> required.addAll(List.of("primary", "secondary"));
             case STATIC_SITE -> {
@@ -126,11 +124,11 @@ public final class DeploymentStaticRuntimeResolver {
         if (type == DeploymentProjectKind.KOTLIN_SERVICE)
             required.add("jvmTarget");
         return required.stream().filter(key -> values.getOrDefault(key, "").isBlank())
-                .map(key -> field(component, key,
-                        key.equals("exposure") && !values.containsKey("port")
-                                && values.getOrDefault("healthMode", "PROCESS").equals("PROCESS") ? "INTERNAL" : "",
-                        List.of()))
-                .toList();
+            .map(key -> field(component, key,
+                key.equals("exposure") && !values.containsKey("port")
+                    && values.getOrDefault("healthMode", "PROCESS").equals("PROCESS") ? "INTERNAL" : "",
+                List.of()))
+            .toList();
     }
 
     /**
@@ -148,7 +146,7 @@ public final class DeploymentStaticRuntimeResolver {
         if (key.equals("exposure"))
             choices = List.of("EXTERNAL", "INTERNAL");
         return new DeploymentReviewField(component + "/" + key, "auto.field." + key, "auto.help." + key, value,
-                choices);
+            choices);
     }
 
     /**
@@ -160,21 +158,21 @@ public final class DeploymentStaticRuntimeResolver {
      */
     public List<DeploymentReviewField> corrections(String component, Map<String, String> values) {
         Map<String, String> labels = Map.ofEntries(Map.entry("healthMode", "field.healthMode"),
-                Map.entry("healthEndpoint", "field.healthEndpoint"),
-                Map.entry("expectedStatus", "field.expectedStatus"), Map.entry("timeout", "field.timeout"),
-                Map.entry("stability", "field.tcpStability"), Map.entry("accessUrl", "field.userAccessUrl"),
-                Map.entry("configuration", "field.configurationEntries"),
-                Map.entry("secrets", "field.secretReferences"), Map.entry("databaseMode", "field.databaseReviewMode"),
-                Map.entry("databaseDetails", "field.databaseDetails"),
-                Map.entry("containerEngine", "field.containerEngine"), Map.entry("volumes", "field.containerVolumes"),
-                Map.entry("jvmArguments", "field.jvmArguments"), Map.entry("arguments", "field.applicationArguments"));
+            Map.entry("healthEndpoint", "field.healthEndpoint"),
+            Map.entry("expectedStatus", "field.expectedStatus"), Map.entry("timeout", "field.timeout"),
+            Map.entry("stability", "field.tcpStability"), Map.entry("accessUrl", "field.userAccessUrl"),
+            Map.entry("configuration", "field.configurationEntries"),
+            Map.entry("secrets", "field.secretReferences"), Map.entry("databaseMode", "field.databaseReviewMode"),
+            Map.entry("databaseDetails", "field.databaseDetails"),
+            Map.entry("containerEngine", "field.containerEngine"), Map.entry("volumes", "field.containerVolumes"),
+            Map.entry("jvmArguments", "field.jvmArguments"), Map.entry("arguments", "field.applicationArguments"));
         List<DeploymentReviewField> fields = new ArrayList<>();
         for (String key : List.of("applicationDeclaration", "executionMode", "exposure", "port", "primary", "secondary",
-                "version", "ports", "healthMode", "healthEndpoint", "expectedStatus", "timeout", "stability",
-                "accessUrl", "configuration", "secrets", "databaseMode", "databaseDetails", "containerEngine",
-                "volumes", "jvmArguments", "arguments", "jvmTarget")) {
+            "version", "ports", "healthMode", "healthEndpoint", "expectedStatus", "timeout", "stability",
+            "accessUrl", "configuration", "secrets", "databaseMode", "databaseDetails", "containerEngine",
+            "volumes", "jvmArguments", "arguments", "jvmTarget")) {
             boolean missingDatabaseDetails = key.equals("databaseDetails") && values.containsKey("databaseMode")
-                    && !Set.of("NONE", "UNREVIEWED").contains(values.get("databaseMode"));
+                && !Set.of("NONE", "UNREVIEWED").contains(values.get("databaseMode"));
             if (!values.containsKey(key) && !missingDatabaseDetails && !key.equals("applicationDeclaration"))
                 continue;
             List<String> choices = switch (key) {
@@ -185,9 +183,9 @@ public final class DeploymentStaticRuntimeResolver {
                 default -> List.of();
             };
             fields.add(labels.containsKey(key)
-                    ? new DeploymentReviewField(component + "/" + key, labels.get(key), "help." + labels.get(key),
-                            values.getOrDefault(key, ""), choices)
-                    : field(component, key, values.getOrDefault(key, ""), choices));
+                ? new DeploymentReviewField(component + "/" + key, labels.get(key), "help." + labels.get(key),
+                values.getOrDefault(key, ""), choices)
+                : field(component, key, values.getOrDefault(key, ""), choices));
         }
         return List.copyOf(fields);
     }
@@ -206,28 +204,28 @@ public final class DeploymentStaticRuntimeResolver {
         if (type == DeploymentProjectKind.STATIC_SITE && !(health instanceof DeploymentHealthCheck.Http))
             throw new IllegalArgumentException("static sites require HTTP health checks");
         String primary = v.getOrDefault("primary", ""), secondary = v.getOrDefault("secondary", ""),
-                version = v.getOrDefault("version", "");
+            version = v.getOrDefault("version", "");
         DeploymentRuntimeDefinition result = switch (type) {
             case SPRING_BOOT -> new DeploymentRuntimeDefinition.SpringBoot(version, health);
             case JAVA_JAR -> new DeploymentRuntimeDefinition.JavaJar(primary, secondary, version,
-                    DeploymentStaticInputParser.arguments(v.getOrDefault("jvmArguments", "")),
-                    DeploymentStaticInputParser.arguments(v.getOrDefault("arguments", "")), health);
+                DeploymentStaticInputParser.arguments(v.getOrDefault("jvmArguments", "")),
+                DeploymentStaticInputParser.arguments(v.getOrDefault("arguments", "")), health);
             case JAVA_SOURCE -> new DeploymentRuntimeDefinition.JavaSource(primary, secondary, version,
-                    DeploymentStaticInputParser.arguments(v.getOrDefault("jvmArguments", "")),
-                    DeploymentStaticInputParser.arguments(v.getOrDefault("arguments", "")), health);
+                DeploymentStaticInputParser.arguments(v.getOrDefault("jvmArguments", "")),
+                DeploymentStaticInputParser.arguments(v.getOrDefault("arguments", "")), health);
             case NODE_SERVICE -> new DeploymentRuntimeDefinition.NodeService(Integer.parseInt(version), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeDefinition.PythonService(primary, secondary, health);
             case STATIC_SITE -> new DeploymentRuntimeDefinition.StaticSite(primary,
-                    version.isBlank() ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(version)),
-                    (DeploymentHealthCheck.Http) health);
+                version.isBlank() ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(version)),
+                (DeploymentHealthCheck.Http) health);
             case DOCKERFILE_CONTAINER -> new DeploymentRuntimeDefinition.Container(
-                    DeploymentRuntimeDefinition.ContainerEngineType
-                            .valueOf(v.getOrDefault("containerEngine", "PODMAN")),
-                    DeploymentStaticInputParser.ports(v.getOrDefault("ports", "")),
-                    DeploymentStaticInputParser.volumes(v.getOrDefault("volumes", "")), health);
+                DeploymentRuntimeDefinition.ContainerEngineType
+                    .valueOf(v.getOrDefault("containerEngine", "PODMAN")),
+                DeploymentStaticInputParser.ports(v.getOrDefault("ports", "")),
+                DeploymentStaticInputParser.volumes(v.getOrDefault("volumes", "")), health);
             case CMAKE_SERVICE -> new DeploymentRuntimeDefinition.CmakeService(version, secondary, primary, health);
             case KOTLIN_SERVICE -> new DeploymentRuntimeDefinition.KotlinService(version, primary, secondary,
-                    v.getOrDefault("jvmTarget", ""), health);
+                v.getOrDefault("jvmTarget", ""), health);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, PHP_SERVICE, RUBY_SERVICE ->
                 DeploymentStaticInputParser.service(type, version, primary, secondary, health);
             case MANAGED_PROCESS ->
@@ -251,10 +249,9 @@ public final class DeploymentStaticRuntimeResolver {
             case NODE_SERVICE -> "package.json";
             case PYTHON_SERVICE -> ".venv";
             case SPRING_BOOT -> (facts.buildTool() == DeploymentBuildToolType.MAVEN
-                    || facts.buildTool() == DeploymentBuildToolType.MAVEN_WRAPPER) ? "target" : "build/libs";
+                || facts.buildTool() == DeploymentBuildToolType.MAVEN_WRAPPER) ? "target" : "build/libs";
             case STATIC_SITE, JAVA_JAR, GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE, KOTLIN_SERVICE, PHP_SERVICE,
-                    RUBY_SERVICE, CMAKE_SERVICE ->
-                values.get("primary");
+                 RUBY_SERVICE, CMAKE_SERVICE -> values.get("primary");
             case JAVA_SOURCE -> ".w2l/java/app.jar";
             case DOCKERFILE_CONTAINER -> "Dockerfile";
             case MANAGED_PROCESS ->
@@ -277,21 +274,21 @@ public final class DeploymentStaticRuntimeResolver {
         String mode = v.getOrDefault("healthMode", "TCP");
         if (v.getOrDefault("executionMode", "DAEMON").equals("ON_DEMAND") || mode.equals("COMMAND"))
             return new DeploymentHealthCheck.Command(ApplicationDeclaration.command(v, "verification"),
-                    v.getOrDefault("application.expectedOutput", ""), timeout);
+                v.getOrDefault("application.expectedOutput", ""), timeout);
         if (mode.equals("PROCESS"))
             return new DeploymentHealthCheck.Process(timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
         int port = Integer.parseInt(v.get("port"));
         if (mode.equals("UDP"))
             return new DeploymentHealthCheck.Udp(port, v.getOrDefault("requestHex", ""),
-                    v.getOrDefault("responseHex", ""),
-                    v.keySet().stream().anyMatch(key -> key.startsWith("application.verification."))
-                            ? Optional.of(ApplicationDeclaration.command(v, "verification"))
-                            : Optional.empty(),
-                    timeout);
+                v.getOrDefault("responseHex", ""),
+                v.keySet().stream().anyMatch(key -> key.startsWith("application.verification."))
+                    ? Optional.of(ApplicationDeclaration.command(v, "verification"))
+                    : Optional.empty(),
+                timeout);
         if (mode.equals("HTTP"))
             return new DeploymentHealthCheck.Http(
-                    URI.create(v.getOrDefault("healthEndpoint", "http://127.0.0.1:" + port + "/")),
-                    Integer.parseInt(v.getOrDefault("expectedStatus", "200")), timeout);
+                URI.create(v.getOrDefault("healthEndpoint", "http://127.0.0.1:" + port + "/")),
+                Integer.parseInt(v.getOrDefault("expectedStatus", "200")), timeout);
         if (!mode.equals("TCP"))
             throw new IllegalArgumentException("unsupported health mode");
         return new DeploymentHealthCheck.Tcp(port, timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
@@ -308,10 +305,10 @@ public final class DeploymentStaticRuntimeResolver {
     public Optional<DeploymentAccessUrl> access(Map<String, String> v, String host) {
         v = ApplicationDeclaration.completed(v);
         var external = ApplicationDeclaration.resolve(v).endpoints().stream()
-                .filter(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL)
-                .filter(endpoint -> endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTP
-                        || endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTPS)
-                .findFirst();
+            .filter(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL)
+            .filter(endpoint -> endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTP
+                || endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTPS)
+            .findFirst();
         if (external.isEmpty()) {
             if (!v.getOrDefault("accessUrl", "").isBlank())
                 throw new IllegalArgumentException("An access URL requires a declared external HTTP endpoint");
@@ -320,9 +317,9 @@ public final class DeploymentStaticRuntimeResolver {
         var endpoint = external.orElseThrow();
         String address = host.contains(":") ? "[" + host + "]" : host;
         String url = endpoint.accessUrl().isEmpty()
-                ? endpoint.protocol().name().toLowerCase(java.util.Locale.ROOT) + "://" + address + ":"
-                        + endpoint.hostPort() + "/"
-                : endpoint.accessUrl();
+            ? endpoint.protocol().name().toLowerCase(java.util.Locale.ROOT) + "://" + address + ":"
+            + endpoint.hostPort() + "/"
+            : endpoint.accessUrl();
         return Optional.of(new DeploymentAccessUrl(URI.create(url)));
     }
 }

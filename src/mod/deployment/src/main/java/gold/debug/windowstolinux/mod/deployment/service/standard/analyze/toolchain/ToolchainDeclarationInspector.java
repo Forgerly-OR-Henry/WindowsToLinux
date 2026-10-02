@@ -29,14 +29,14 @@ public final class ToolchainDeclarationInspector {
         List<ToolchainRequirement> result = new ArrayList<>();
         read(result, root, "windowstolinux-java.properties", JAVA, LANGUAGE_TARGET, "(?m)^javaVersion=([^\\r\\n]+)$");
         read(result, root, "pom.xml", JAVA, LANGUAGE_TARGET,
-                "<(?:java.version|maven.compiler.release|maven.compiler.target)>\\s*([^<]+?)\\s*</");
+            "<(?:java.version|maven.compiler.release|maven.compiler.target)>\\s*([^<]+?)\\s*</");
         for (String build : List.of("build.gradle", "build.gradle.kts")) {
             read(result, root, build, JAVA, LANGUAGE_TARGET,
-                    "(?:JavaLanguageVersion[.]of|jvmToolchain)\\s*\\(\\s*([^)]*)\\s*\\)");
+                "(?:JavaLanguageVersion[.]of|jvmToolchain)\\s*\\(\\s*([^)]*)\\s*\\)");
             read(result, root, build, JAVA, LANGUAGE_TARGET,
-                    "(?:sourceCompatibility|targetCompatibility)\\s*=\\s*(?:JavaVersion[.]VERSION_)?[\"']?([A-Za-z0-9_.-]+)");
+                "(?:sourceCompatibility|targetCompatibility)\\s*=\\s*(?:JavaVersion[.]VERSION_)?[\"']?([A-Za-z0-9_.-]+)");
             read(result, root, build, KOTLIN, BUILD,
-                    "(?:kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\)|id\\s*\\(?\\s*[\"']org[.]jetbrains[.]kotlin[.]jvm[\"']\\s*\\)?)\\s*version\\s*[\"']([^\"']+)[\"']");
+                "(?:kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\)|id\\s*\\(?\\s*[\"']org[.]jetbrains[.]kotlin[.]jvm[\"']\\s*\\)?)\\s*version\\s*[\"']([^\"']+)[\"']");
         }
         read(result, root, "windowstolinux-kotlin.properties", KOTLIN, BUILD, "(?m)^compilerVersion=([^\\r\\n]+)$");
         read(result, root, "windowstolinux-kotlin.properties", JAVA, LANGUAGE_TARGET, "(?m)^jvmTarget=([^\\r\\n]+)$");
@@ -52,13 +52,13 @@ public final class ToolchainDeclarationInspector {
         read(result, root, "windowstolinux-php.properties", PHP, RUNTIME, "(?m)^(?:phpVersion|version)=([^\\r\\n]+)$");
         read(result, root, ".ruby-version", RUBY, RUNTIME, "(?m)^([^\\r\\n]+)$");
         read(result, root, "windowstolinux-ruby.properties", RUBY, RUNTIME,
-                "(?m)^(?:rubyVersion|version)=([^\\r\\n]+)$");
+            "(?m)^(?:rubyVersion|version)=([^\\r\\n]+)$");
         read(result, root, "CMakeLists.txt", C, LANGUAGE_TARGET, "\\bc_std_([0-9]+)\\b");
         read(result, root, "CMakeLists.txt", CPP, LANGUAGE_TARGET, "\\bcxx_std_([0-9]+)\\b");
         read(result, root, "CMakeLists.txt", C, LANGUAGE_TARGET,
-                "(?i)set\\s*\\(\\s*CMAKE_C_STANDARD\\s+([0-9]+)\\s*\\)");
+            "(?i)set\\s*\\(\\s*CMAKE_C_STANDARD\\s+([0-9]+)\\s*\\)");
         read(result, root, "CMakeLists.txt", CPP, LANGUAGE_TARGET,
-                "(?i)set\\s*\\(\\s*CMAKE_CXX_STANDARD\\s+([0-9]+)\\s*\\)");
+            "(?i)set\\s*\\(\\s*CMAKE_CXX_STANDARD\\s+([0-9]+)\\s*\\)");
         return List.copyOf(result);
     }
 
@@ -75,8 +75,8 @@ public final class ToolchainDeclarationInspector {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void read(List<ToolchainRequirement> target, Path root, String file,
-            DeploymentToolchainType ecosystem, ToolchainRequirement.PurposeType purpose, String pattern)
-            throws IOException {
+                             DeploymentToolchainType ecosystem, ToolchainRequirement.PurposeType purpose, String pattern)
+        throws IOException {
         Path path = root.resolve(file);
         if (!BoundedMetadataInspector.regular(path))
             return;
@@ -90,9 +90,9 @@ public final class ToolchainDeclarationInspector {
                 continue;
             var requirement = ToolchainRequirement.declared(ecosystem, value, file, purpose);
             if ((ecosystem == GO || ecosystem == RUST) && purpose == LANGUAGE_TARGET
-                    && requirement.version().isPresent())
+                && requirement.version().isPresent())
                 requirement = new ToolchainRequirement(ecosystem, value, file, purpose,
-                        ToolchainRequirement.ConstraintType.MINIMUM, requirement.version());
+                    ToolchainRequirement.ConstraintType.MINIMUM, requirement.version());
             target.add(requirement);
         }
     }

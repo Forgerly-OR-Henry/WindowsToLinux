@@ -24,15 +24,15 @@ public final class DeploymentPlatformCapabilityParser {
         String variant = normalized(values.getOrDefault("DISTRO_VARIANT", ""));
         String version = normalized(values.getOrDefault("VERSION", "unknown"));
         Set<String> flags = Arrays.stream(values.getOrDefault("CPU_FLAGS", "").split(","))
-                .map(value -> value.trim().toLowerCase(Locale.ROOT)).filter(value -> value.matches("[a-z0-9_.-]{1,64}"))
-                .collect(Collectors.toUnmodifiableSet());
+            .map(value -> value.trim().toLowerCase(Locale.ROOT)).filter(value -> value.matches("[a-z0-9_.-]{1,64}"))
+            .collect(Collectors.toUnmodifiableSet());
         Set<Integer> javaMajors = integerVersions(values.getOrDefault("JAVA_MAJORS", ""));
         Set<Integer> nodeMajors = integerVersions(values.getOrDefault("NODE_MAJORS", ""));
         Set<String> pythonVersions = Arrays.stream(values.getOrDefault("PYTHON_VERSIONS", "").split(","))
-                .map(String::trim).filter(value -> value.matches("[0-9]{1,3}\\.[0-9]{1,3}"))
-                .collect(Collectors.toUnmodifiableSet());
+            .map(String::trim).filter(value -> value.matches("[0-9]{1,3}\\.[0-9]{1,3}"))
+            .collect(Collectors.toUnmodifiableSet());
         java.util.EnumMap<DeploymentProjectKind, Set<String>> serviceVersions = new java.util.EnumMap<>(
-                DeploymentProjectKind.class);
+            DeploymentProjectKind.class);
         for (DeploymentProjectKind projectType : serviceProjectTypes()) {
             String observed = values.getOrDefault("SERVICE_" + projectType.name().replace("_SERVICE", ""), "").trim();
             if (validServiceVersion(projectType, observed)) {
@@ -40,11 +40,11 @@ public final class DeploymentPlatformCapabilityParser {
             }
         }
         java.util.EnumMap<DeploymentEcosystemToolType, Set<String>> ecosystemTools = new java.util.EnumMap<>(
-                DeploymentEcosystemToolType.class);
+            DeploymentEcosystemToolType.class);
         for (DeploymentEcosystemToolType tool : DeploymentEcosystemToolType.values()) {
             Set<String> observed = Arrays.stream(values.getOrDefault("TOOL_" + tool.name(), "").split(","))
-                    .map(String::trim).filter(candidate -> candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))
-                    .collect(Collectors.toUnmodifiableSet());
+                .map(String::trim).filter(candidate -> candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))
+                .collect(Collectors.toUnmodifiableSet());
             if (!observed.isEmpty())
                 ecosystemTools.put(tool, observed);
         }
@@ -54,22 +54,22 @@ public final class DeploymentPlatformCapabilityParser {
         DeploymentCpuMicroarchitectureLevel cpuLevel = cpuLevel(values.getOrDefault("CPU_LEVEL", "unknown"));
         DeploymentLinuxSecurityPosture security = security(values);
         String evidence = "SSH host fingerprint verified: " + Objects.requireNonNull(hostFingerprint, "hostFingerprint")
-                + "; distro=" + id + "; version=" + version + "; arch=" + architecture + "; package-manager="
-                + packageManager + "; package-arch=" + packageArchitecture + "; cpu-level="
-                + cpuLevel.name().toLowerCase(Locale.ROOT) + "; security="
-                + security.module().name().toLowerCase(Locale.ROOT) + "/"
-                + security.state().name().toLowerCase(Locale.ROOT) + "; firewall="
-                + security.firewall().name().toLowerCase(Locale.ROOT) + "/"
-                + security.firewallState().name().toLowerCase(Locale.ROOT) + "; docker="
-                + values.getOrDefault("DOCKER_OPERATIONAL", "0") + "; podman="
-                + values.getOrDefault("PODMAN_OPERATIONAL", "0");
+            + "; distro=" + id + "; version=" + version + "; arch=" + architecture + "; package-manager="
+            + packageManager + "; package-arch=" + packageArchitecture + "; cpu-level="
+            + cpuLevel.name().toLowerCase(Locale.ROOT) + "; security="
+            + security.module().name().toLowerCase(Locale.ROOT) + "/"
+            + security.state().name().toLowerCase(Locale.ROOT) + "; firewall="
+            + security.firewall().name().toLowerCase(Locale.ROOT) + "/"
+            + security.firewallState().name().toLowerCase(Locale.ROOT) + "; docker="
+            + values.getOrDefault("DOCKER_OPERATIONAL", "0") + "; podman="
+            + values.getOrDefault("PODMAN_OPERATIONAL", "0");
         return new DeploymentLinuxCapabilityFacts(classify(id, variant, version), version, architecture, packageManager,
-                packageArchitecture, "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
-                "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")), javaMajors,
-                nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
-                "1".equals(values.get("PYTHON3")), serviceVersions, ecosystemTools,
-                "1".equals(values.get("DOCKER_OPERATIONAL")), "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel,
-                flags, security, evidence);
+            packageArchitecture, "1".equals(values.get("SYSTEMD")), "1".equals(values.get("DOCKER_CLIENT")),
+            "1".equals(values.get("PODMAN_CLIENT")), "1".equals(values.get("PODMAN_QUADLET")), javaMajors,
+            nodeMajors, "1".equals(values.get("NPM")), "1".equals(values.get("MAVEN")), pythonVersions,
+            "1".equals(values.get("PYTHON3")), serviceVersions, ecosystemTools,
+            "1".equals(values.get("DOCKER_OPERATIONAL")), "1".equals(values.get("PODMAN_OPERATIONAL")), cpuLevel,
+            flags, security, evidence);
     }
 
     /**
@@ -82,8 +82,8 @@ public final class DeploymentPlatformCapabilityParser {
      */
     private static Set<Integer> integerVersions(String value) {
         return Arrays.stream(Objects.requireNonNull(value, "value").split(",")).map(String::trim)
-                .filter(item -> item.matches("[0-9]{1,2}")).map(Integer::valueOf)
-                .collect(Collectors.toUnmodifiableSet());
+            .filter(item -> item.matches("[0-9]{1,2}")).map(Integer::valueOf)
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -150,7 +150,7 @@ public final class DeploymentPlatformCapabilityParser {
      */
     private static DeploymentLinuxSecurityPosture security(Map<String, String> values) {
         DeploymentLinuxSecurityModuleType module = switch (normalized(
-                values.getOrDefault("SECURITY_MODULE", "unknown"))) {
+            values.getOrDefault("SECURITY_MODULE", "unknown"))) {
             case "apparmor" -> DeploymentLinuxSecurityModuleType.APPARMOR;
             case "selinux" -> DeploymentLinuxSecurityModuleType.SELINUX;
             case "none" -> DeploymentLinuxSecurityModuleType.NONE;
@@ -171,7 +171,7 @@ public final class DeploymentPlatformCapabilityParser {
             default -> DeploymentLinuxFirewallKind.UNKNOWN;
         };
         DeploymentLinuxFirewallState firewallState = switch (normalized(
-                values.getOrDefault("FIREWALL_STATE", "unknown"))) {
+            values.getOrDefault("FIREWALL_STATE", "unknown"))) {
             case "active" -> DeploymentLinuxFirewallState.ACTIVE;
             case "inactive" -> DeploymentLinuxFirewallState.INACTIVE;
             default -> DeploymentLinuxFirewallState.UNKNOWN;
@@ -200,8 +200,8 @@ public final class DeploymentPlatformCapabilityParser {
      */
     private static java.util.Set<DeploymentProjectKind> serviceProjectTypes() {
         return java.util.EnumSet.of(DeploymentProjectKind.GO_SERVICE, DeploymentProjectKind.RUST_SERVICE,
-                DeploymentProjectKind.DOTNET_SERVICE, DeploymentProjectKind.KOTLIN_SERVICE,
-                DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.RUBY_SERVICE);
+            DeploymentProjectKind.DOTNET_SERVICE, DeploymentProjectKind.KOTLIN_SERVICE,
+            DeploymentProjectKind.PHP_SERVICE, DeploymentProjectKind.RUBY_SERVICE);
     }
 
     /**

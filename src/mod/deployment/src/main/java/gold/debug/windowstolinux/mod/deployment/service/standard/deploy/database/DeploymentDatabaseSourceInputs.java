@@ -30,7 +30,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param supplied previously supplied non-secret answers / 已提供的非秘密答案
      * @return fields to display before any database effect / 任何数据库效果前应显示的字段 */
     public static List<DeploymentReviewField> questions(DatabaseProjectInspector.Assessment assessment,
-            String applicationId, Map<String, String> supplied) {
+                                                        String applicationId, Map<String, String> supplied) {
         return questions(assessment, applicationId, supplied, !supplied.isEmpty());
     }
 
@@ -41,16 +41,16 @@ public final class DeploymentDatabaseSourceInputs {
      * @param correction whether every declaration field must be editable / 是否允许更正全部声明字段
      * @return bounded non-secret questions / 有界非秘密问题 */
     public static List<DeploymentReviewField> questions(DatabaseProjectInspector.Assessment assessment,
-            String applicationId, Map<String, String> supplied, boolean correction) {
+                                                        String applicationId, Map<String, String> supplied, boolean correction) {
         var fields = new ArrayList<DeploymentReviewField>();
         if (assessment.unknownDatabase() && !supplied.containsKey("database.main.engine")) {
             fields.add(field("main", "engine", "",
-                    Arrays.stream(DeploymentDatabaseEngineType.values()).map(Enum::name).toList()));
+                Arrays.stream(DeploymentDatabaseEngineType.values()).map(Enum::name).toList()));
             return List.copyOf(fields);
         }
         if (assessment.unknownDatabase())
             fields.add(field("main", "engine", supplied.get("database.main.engine"),
-                    Arrays.stream(DeploymentDatabaseEngineType.values()).map(Enum::name).toList()));
+                Arrays.stream(DeploymentDatabaseEngineType.values()).map(Enum::name).toList()));
         for (var requirement : basis(assessment, supplied)) {
             String id = requirement.id();
             if (requirement.engine() == DeploymentDatabaseEngineType.SQLITE) {
@@ -58,32 +58,32 @@ public final class DeploymentDatabaseSourceInputs {
                 if (correction || sqlite.location().type() == StorageLocationType.UNRESOLVED)
                     fields.add(field(id, "path", value(supplied, id, "path",
                             sqlite.location().type() == StorageLocationType.DEFAULT ? "DEFAULT" : sqlite.accessPath()),
-                            List.of()));
+                        List.of()));
                 if (correction || sqlite.pathEnvironment().isEmpty() && !requirement.springDatasource()
-                        && sqlite.accessPath().isEmpty())
+                    && sqlite.accessPath().isEmpty())
                     fields.add(field(id, "pathEnvironment",
-                            value(supplied, id, "pathEnvironment", sqlite.pathEnvironment()), List.of()));
+                        value(supplied, id, "pathEnvironment", sqlite.pathEnvironment()), List.of()));
             } else {
                 if (correction || requirement.database().isEmpty())
                     fields.add(field(id, "database", value(supplied, id, "database",
                             requirement.database().isEmpty() ? name(applicationId, id) : requirement.database()),
-                            List.of()));
+                        List.of()));
                 if (correction || requirement.username().isEmpty())
                     fields.add(field(id, "username", value(supplied, id, "username",
                             requirement.username().isEmpty() ? name(applicationId, id) : requirement.username()),
-                            List.of()));
+                        List.of()));
                 if (correction || requirement.environmentPrefix().isEmpty())
                     fields.add(field(id, "environmentPrefix",
-                            value(supplied, id, "environmentPrefix", requirement.environmentPrefix()), List.of()));
+                        value(supplied, id, "environmentPrefix", requirement.environmentPrefix()), List.of()));
                 if (correction || requirement.passwordEnvironment().isEmpty())
                     fields.add(field(id, "passwordEnvironment",
-                            value(supplied, id, "passwordEnvironment", requirement.passwordEnvironment()), List.of()));
+                        value(supplied, id, "passwordEnvironment", requirement.passwordEnvironment()), List.of()));
             }
             if (assessment.schemaReviewRequired() && requirement.engine() != DeploymentDatabaseEngineType.REDIS
-                    && (correction || requirement.initializationFiles().isEmpty()))
+                && (correction || requirement.initializationFiles().isEmpty()))
                 fields.add(field(id, "initialize",
-                        value(supplied, id, "initialize", String.join(",", requirement.initializationFiles())),
-                        assessment.sqlCandidates()));
+                    value(supplied, id, "initialize", String.join(",", requirement.initializationFiles())),
+                    assessment.sqlCandidates()));
         }
         return List.copyOf(fields);
     }
@@ -96,36 +96,36 @@ public final class DeploymentDatabaseSourceInputs {
      * @return resolved assessment without schema-effect approval / 不含结构效果批准的已解析评估
      * @throws IOException if a reviewed source file cannot be checked / 无法核验经审阅源码文件时 */
     public static DatabaseProjectInspector.Assessment complete(Path root, String applicationId,
-            DatabaseProjectInspector.Assessment assessment, Map<String, String> supplied) throws IOException {
+                                                               DatabaseProjectInspector.Assessment assessment, Map<String, String> supplied) throws IOException {
         var complete = new ArrayList<DatabaseRequirement>();
         for (var requirement : basis(assessment, supplied)) {
             String id = requirement.id();
             var sqlite = sqlite(requirement, supplied);
             String initialization = value(supplied, id, "initialize", "");
             var paths = initialization.isBlank()
-                    ? requirement.initializationFiles()
-                    : Arrays.stream(initialization.split(",", -1)).map(String::trim).toList();
+                ? requirement.initializationFiles()
+                : Arrays.stream(initialization.split(",", -1)).map(String::trim).toList();
             var resolved = new DatabaseRequirement(id, requirement.engine(), requirement.version(),
-                    value(supplied, id, "database", requirement.database()),
-                    value(supplied, id, "username", requirement.username()),
-                    value(supplied, id, "environmentPrefix", requirement.environmentPrefix()),
-                    value(supplied, id, "passwordEnvironment", requirement.passwordEnvironment()), paths,
-                    requirement.springDatasource(), requirement.evidence(), sqlite);
+                value(supplied, id, "database", requirement.database()),
+                value(supplied, id, "username", requirement.username()),
+                value(supplied, id, "environmentPrefix", requirement.environmentPrefix()),
+                value(supplied, id, "passwordEnvironment", requirement.passwordEnvironment()), paths,
+                requirement.springDatasource(), requirement.evidence(), sqlite);
             validate(root, applicationId, resolved);
             complete.add(resolved);
         }
         if (complete.size() > 16
-                || complete.stream().map(DatabaseRequirement::id).distinct().count() != complete.size())
+            || complete.stream().map(DatabaseRequirement::id).distinct().count() != complete.size())
             throw new IllegalArgumentException("Database declarations must be bounded and unique");
         var server = complete.stream().filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
         if (server.stream().map(DatabaseRequirement::environmentPrefix).distinct().count() != server.size()
-                || server.stream().map(DatabaseRequirement::passwordEnvironment).distinct().count() != server.size())
+            || server.stream().map(DatabaseRequirement::passwordEnvironment).distinct().count() != server.size())
             throw new IllegalArgumentException("Database environment variables must be unique");
         if (assessment.schemaReviewRequired()
-                && complete.stream().allMatch(value -> value.initializationFiles().isEmpty()))
+            && complete.stream().allMatch(value -> value.initializationFiles().isEmpty()))
             throw new IllegalArgumentException("Schema changes require explicit reviewed initialization files");
         return new DatabaseProjectInspector.Assessment(complete, assessment.sqlCandidates(),
-                assessment.schemaReviewRequired(), false, assessment.endpointConfirmationRequired());
+            assessment.schemaReviewRequired(), false, assessment.endpointConfirmationRequired());
     }
 
     /** Constructs only a user-selected missing database family. / 仅构造由用户选择的缺失数据库族。
@@ -133,7 +133,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param supplied exact answers / 精确答案
      * @return declared and selected requirements / 声明及已选择要求 */
     private static List<DatabaseRequirement> basis(DatabaseProjectInspector.Assessment assessment,
-            Map<String, String> supplied) {
+                                                   Map<String, String> supplied) {
         var values = new ArrayList<>(assessment.databases());
         if (assessment.unknownDatabase()) {
             String name = supplied.get("database.main.engine");
@@ -141,8 +141,8 @@ public final class DeploymentDatabaseSourceInputs {
                 throw new IllegalArgumentException("Database family requires explicit review");
             var engine = DeploymentDatabaseEngineType.valueOf(name);
             values.add(
-                    new DatabaseRequirement("main", engine, engine == DeploymentDatabaseEngineType.REDIS ? ">=6.2" : "",
-                            "", "", "", "", List.of(), false, "User-selected database family"));
+                new DatabaseRequirement("main", engine, engine == DeploymentDatabaseEngineType.REDIS ? ">=6.2" : "",
+                    "", "", "", "", List.of(), false, "User-selected database family"));
         }
         return List.copyOf(values);
     }
@@ -152,7 +152,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param supplied reviewed answers / 经审阅答案
      * @return original or corrected SQLite requirement / 原始或已修正 SQLite 要求 */
     private static Optional<DeploymentSqliteRequirement> sqlite(DatabaseRequirement requirement,
-            Map<String, String> supplied) {
+                                                                Map<String, String> supplied) {
         if (requirement.sqlite().isEmpty())
             return Optional.empty();
         var original = requirement.sqlite().orElseThrow();
@@ -162,9 +162,9 @@ public final class DeploymentDatabaseSourceInputs {
             return Optional.of(original);
         var corrected = DeploymentSqliteRequirement.fromPath(path, environment, original.seedFile());
         return Optional.of(original.hostLocationExplicit()
-                ? new DeploymentSqliteRequirement(original.location(), corrected.fileName(), corrected.accessPath(),
-                        corrected.pathEnvironment(), corrected.seedFile(), true)
-                : corrected);
+            ? new DeploymentSqliteRequirement(original.location(), corrected.fileName(), corrected.accessPath(),
+            corrected.pathEnvironment(), corrected.seedFile(), true)
+            : corrected);
     }
 
     /** Checks exact reviewed file and connection inputs before remote mutation. / 远端修改前核验精确已审阅文件与连接输入。
@@ -181,7 +181,7 @@ public final class DeploymentDatabaseSourceInputs {
             if (!sqlite.seedFile().isEmpty())
                 checkedSourceFile(root, sqlite.seedFile());
         } else if (requirement.database().isBlank() || requirement.username().isBlank()
-                || requirement.environmentPrefix().isBlank() || requirement.passwordEnvironment().isBlank())
+            || requirement.environmentPrefix().isBlank() || requirement.passwordEnvironment().isBlank())
             throw new IllegalArgumentException("Server database connection inputs must be complete");
         var sql = new StringBuilder();
         for (String path : requirement.initializationFiles()) {
@@ -203,7 +203,7 @@ public final class DeploymentDatabaseSourceInputs {
         Path base = root.toRealPath();
         Path file = root.resolve(relative).normalize();
         if (!file.startsWith(root) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
-                || !file.toRealPath().startsWith(base))
+            || !file.toRealPath().startsWith(base))
             throw new IllegalArgumentException("Database file must belong to the frozen source");
         return file;
     }
@@ -229,7 +229,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @return bounded field / 有界字段 */
     private static DeploymentReviewField field(String id, String key, String value, List<String> choices) {
         return new DeploymentReviewField("database." + id + "." + key, "database." + key, "database.help." + key, value,
-                choices);
+            choices);
     }
 
     /** Derives the old bounded managed SQL name without guessing a workspace display name. / 派生旧有界受管 SQL 名称，不猜测工作区显示名。

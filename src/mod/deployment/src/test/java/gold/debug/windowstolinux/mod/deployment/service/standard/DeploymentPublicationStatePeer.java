@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -7,7 +12,7 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Tracks actual old content, process activity and task-owned snapshots for boundary acceptance. / 为边界验收跟踪实际旧内容、进程活动及任务所属快照。 */
 final class DeploymentPublicationStatePeer {
@@ -20,47 +25,49 @@ final class DeploymentPublicationStatePeer {
     final Map<String, String> maintenance = new HashMap<>();
 
     int rollbacks, observations;
+
     DeploymentPublicationStatePeer() {
         builds.publicationAttempts = true;
     }
+
     record Snapshot(String owner, UUID operation, Optional<String> current, boolean running) {
     }
 
     RemoteSession session(TaskContext task) throws ApiException {
         var original = builds.session(task);
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    List<String> values = method.getName().equals("execute")
-                            ? quoted(((CommandRequest) args[0]).script())
-                            : List.of();
-                    if (values.size() > 2) {
-                        var intercepted = command(values, task);
-                        if (intercepted.isPresent()) {
-                            assertNotNull(args[1]);
-                            builds.commands.add(((CommandRequest) args[0]).script());
-                            return intercepted.orElseThrow();
-                        }
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                List<String> values = method.getName().equals("execute")
+                    ? quoted(((CommandRequest) args[0]).script())
+                    : List.of();
+                if (values.size() > 2) {
+                    var intercepted = command(values, task);
+                    if (intercepted.isPresent()) {
+                        assertNotNull(args[1]);
+                        builds.commands.add(((CommandRequest) args[0]).script());
+                        return intercepted.orElseThrow();
                     }
-                    Object result;
-                    try {
-                        result = method.invoke(original, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                    if (values.size() > 2 && values.get(1).equals("publish-deployment")) {
-                        assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) result).outcome());
-                        running.add(values.get(2));
-                        maintenance.put(values.get(2), values.get(4));
-                    }
-                    if (values.size() > 3 && values.get(1).equals("application-maintenance")
-                            && values.get(2).equals("end")) {
-                        maintenance.remove(values.get(3));
-                        var saved = snapshots.get(values.get(3));
-                        if (saved != null && saved.current().isEmpty())
-                            snapshots.remove(values.get(3));
-                    }
-                    return result;
-                });
+                }
+                Object result;
+                try {
+                    result = method.invoke(original, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+                if (values.size() > 2 && values.get(1).equals("publish-deployment")) {
+                    assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) result).outcome());
+                    running.add(values.get(2));
+                    maintenance.put(values.get(2), values.get(4));
+                }
+                if (values.size() > 3 && values.get(1).equals("application-maintenance")
+                    && values.get(2).equals("end")) {
+                    maintenance.remove(values.get(3));
+                    var saved = snapshots.get(values.get(3));
+                    if (saved != null && saved.current().isEmpty())
+                        snapshots.remove(values.get(3));
+                }
+                return result;
+            });
     }
 
     private Optional<OperationResult<CommandResult>> command(List<String> values, TaskContext task) {
@@ -81,10 +88,10 @@ final class DeploymentPublicationStatePeer {
                 assertEquals(5, values.size());
             snapshots.put(unit, new Snapshot(values.get(3), operation, current, running.contains(unit)));
             return Optional.of(reply(current.isEmpty()
-                    ? "PREVIOUS=0\n"
-                    : "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING="
-                            + (running.contains(unit) ? "1" : "0") + "\nPREVIOUS_DIGEST=" + current.orElseThrow()
-                            + "\nPREVIOUS_KIND=deployment\n"));
+                ? "PREVIOUS=0\n"
+                : "SNAPSHOT_TOKEN=" + operation + "\nPREVIOUS=1\nPREVIOUS_RUNNING="
+                + (running.contains(unit) ? "1" : "0") + "\nPREVIOUS_DIGEST=" + current.orElseThrow()
+                + "\nPREVIOUS_KIND=deployment\n"));
         }
         if (verb.equals("lifecycle-deployment")) {
             assertEquals("stop", values.get(3));
@@ -130,9 +137,9 @@ final class DeploymentPublicationStatePeer {
             observations++;
             boolean active = running.contains(unit);
             return Optional.of(reply("OWNER=1\nRUNNING=" + (active ? "1" : "0")
-                    + "\nENABLED=enabled\nQUERY_OK=1\nActiveState=" + (active ? "active" : "inactive") + "\nSubState="
-                    + (active ? "running" : "dead") + "\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID="
-                    + (active ? "123" : "0") + "\n"));
+                + "\nENABLED=enabled\nQUERY_OK=1\nActiveState=" + (active ? "active" : "inactive") + "\nSubState="
+                + (active ? "running" : "dead") + "\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID="
+                + (active ? "123" : "0") + "\n"));
         }
         if (Set.of("publication-original-status", "publication-original-status-attempt").contains(verb))
             return Optional.of(status(values, task));
@@ -154,22 +161,22 @@ final class DeploymentPublicationStatePeer {
         builds.statusReads++;
         var current = Optional.ofNullable(builds.current.get(unit));
         if (saved != null && saved.current().isEmpty() && current.isEmpty() && !builds.present.contains(candidate)
-                && !maintenance.containsKey(unit) && !builds.active) {
+            && !maintenance.containsKey(unit) && !builds.active) {
             assertEquals(operation, saved.operation());
             assertEquals(values.get(3), saved.owner());
             assertFalse(saved.running());
             snapshots.remove(unit);
         }
         return reply("PUBLICATION_STATUS=1\nCURRENT=" + current.orElse("none") + "\nCURRENT_KIND="
-                + (current.isPresent() ? "deployment" : "none") + "\nCURRENT_MODE="
-                + (current.isPresent() ? "DAEMON" : "none") + "\nSNAPSHOT=" + (snapshot ? operation : "none")
-                + "\nSNAPSHOT_OLD=" + (snapshot ? saved.current().orElseThrow() : "none") + "\nSNAPSHOT_KIND="
-                + (snapshot ? "deployment" : "none") + "\nSNAPSHOT_RUNNING="
-                + (snapshot ? saved.running() ? "1" : "0" : "none") + "\nMAINTENANCE="
-                + (maintenance.containsKey(unit) ? "deployment-" + maintenance.get(unit) : "none") + "\nCANDIDATE="
-                + (builds.present.contains(candidate) ? "owned" : "absent") + "\nBUILD_ACTIVE="
-                + (builds.active ? "yes" : "no") + "\nUNIT_PRESENT=" + (current.isPresent() ? "yes" : "no")
-                + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=" + (current.isPresent() ? "1" : "0") + "\n");
+            + (current.isPresent() ? "deployment" : "none") + "\nCURRENT_MODE="
+            + (current.isPresent() ? "DAEMON" : "none") + "\nSNAPSHOT=" + (snapshot ? operation : "none")
+            + "\nSNAPSHOT_OLD=" + (snapshot ? saved.current().orElseThrow() : "none") + "\nSNAPSHOT_KIND="
+            + (snapshot ? "deployment" : "none") + "\nSNAPSHOT_RUNNING="
+            + (snapshot ? saved.running() ? "1" : "0" : "none") + "\nMAINTENANCE="
+            + (maintenance.containsKey(unit) ? "deployment-" + maintenance.get(unit) : "none") + "\nCANDIDATE="
+            + (builds.present.contains(candidate) ? "owned" : "absent") + "\nBUILD_ACTIVE="
+            + (builds.active ? "yes" : "no") + "\nUNIT_PRESENT=" + (current.isPresent() ? "yes" : "no")
+            + "\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=" + (current.isPresent() ? "1" : "0") + "\n");
     }
 
     private static List<String> quoted(String script) {
@@ -182,6 +189,6 @@ final class DeploymentPublicationStatePeer {
 
     private static OperationResult<CommandResult> reply(String value) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(0), value, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(0), value, "", false)), Optional.empty());
     }
 }

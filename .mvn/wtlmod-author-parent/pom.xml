@@ -10,8 +10,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <wtl.workspace>${maven.multiModuleProjectDirectory}</wtl.workspace>
     <wtl.tool.version>0.1.0-SNAPSHOT</wtl.tool.version>
-    <wtl.authorArtifacts />
-    <wtl.buildInputs />
+    <wtl.authorArtifacts/>
+    <wtl.buildInputs/>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -47,7 +47,9 @@
           <execution>
             <id>wtlmod-resolved-inputs</id>
             <phase>initialize</phase>
-            <goals><goal>development-inputs</goal></goals>
+            <goals>
+              <goal>development-inputs</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>
@@ -66,20 +68,24 @@
           <execution>
             <id>wtlmod-development-description</id>
             <phase>process-classes</phase>
-            <goals><goal>exec</goal></goals>
+            <goals>
+              <goal>exec</goal>
+            </goals>
             <configuration>
               <executable>${java.home}/bin/java</executable>
               <includeProjectDependencies>false</includeProjectDependencies>
               <includePluginDependencies>true</includePluginDependencies>
               <arguments>
                 <argument>-classpath</argument>
-                <classpath />
+                <classpath/>
                 <argument
-                >gold.debug.windowstolinux.app.mod.installation.ModPackageTool</argument>
+                >gold.debug.windowstolinux.app.mod.installation.ModPackageTool
+                </argument>
                 <argument>describe</argument>
                 <argument>--input</argument>
                 <argument
-                >${project.build.directory}/wtlmod-build-input.json</argument>
+                >${project.build.directory}/wtlmod-build-input.json
+                </argument>
               </arguments>
             </configuration>
           </execution>

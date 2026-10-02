@@ -47,26 +47,26 @@ public final class RubyCliBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.RubyService ruby)
-                || facts.buildTool() != DeploymentBuildToolType.RUBY_CLI) {
+            || facts.buildTool() != DeploymentBuildToolType.RUBY_CLI) {
             throw new IllegalArgumentException("Ruby CLI renderer requires reviewed dependency-free inputs");
         }
         String version = ruby.version();
         String entrypoint = SafeBuildScriptEnvelope.shellQuote("./" + ruby.entrypoint());
         String command = """
-                command -v ruby >/dev/null
-                ruby -e 'print RUBY_VERSION' | grep -Fx "${WTL_RUBY_VERSION:-%s}"
-                test -f ./windowstolinux-ruby.properties
-                test ! -e ./Gemfile
-                test ! -e ./Gemfile.lock
-                entrypoint=%s
-                test -f "$entrypoint"
-                mapfile -d '' -t sources < <(find -P . -type f -name '*.rb' -print0 | LC_ALL=C sort -z)
-                test "${#sources[@]}" -ge 1
-                for source_file in "${sources[@]}"; do run ruby -c "$source_file"; done
-                printf 'ARTIFACT=%%s\n' "$entrypoint"
-                """.formatted(version, entrypoint);
+            command -v ruby >/dev/null
+            ruby -e 'print RUBY_VERSION' | grep -Fx "${WTL_RUBY_VERSION:-%s}"
+            test -f ./windowstolinux-ruby.properties
+            test ! -e ./Gemfile
+            test ! -e ./Gemfile.lock
+            entrypoint=%s
+            test -f "$entrypoint"
+            mapfile -d '' -t sources < <(find -P . -type f -name '*.rb' -print0 | LC_ALL=C sort -z)
+            test "${#sources[@]}" -ge 1
+            for source_file in "${sources[@]}"; do run ruby -c "$source_file"; done
+            printf 'ARTIFACT=%%s\n' "$entrypoint"
+            """.formatted(version, entrypoint);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

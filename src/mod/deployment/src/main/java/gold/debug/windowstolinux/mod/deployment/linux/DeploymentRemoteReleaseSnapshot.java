@@ -9,7 +9,7 @@ import java.util.Optional;
  * @param previousDigest exact prior release bytes identity / 精确旧发布字节身份
  * @param previousKind native, ordinary, or container owner kind / 原生、普通或容器归属类别 */
 public record DeploymentRemoteReleaseSnapshot(Optional<String> token, boolean previousRunning,
-        Optional<String> previousDigest, String previousKind) {
+                                              Optional<String> previousDigest, String previousKind) {
     /** Validates the exact helper token. / 校验精确 helper 令牌。
      * @param token actual token / 实际令牌
      * @param previousRunning previous activity / 旧运行状态
@@ -22,9 +22,9 @@ public record DeploymentRemoteReleaseSnapshot(Optional<String> token, boolean pr
         if (token.isPresent() && !token.orElseThrow().matches("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"))
             throw new IllegalArgumentException("Invalid original remote snapshot token");
         if (token.isEmpty() != previousDigest.isEmpty()
-                || token.isEmpty() && (previousRunning || !previousKind.equals("none"))
-                || token.isPresent() && (!previousDigest.orElseThrow().matches("[0-9a-f]{64}")
-                        || !java.util.Set.of("ordinary", "deployment", "container").contains(previousKind)))
+            || token.isEmpty() && (previousRunning || !previousKind.equals("none"))
+            || token.isPresent() && (!previousDigest.orElseThrow().matches("[0-9a-f]{64}")
+            || !java.util.Set.of("ordinary", "deployment", "container").contains(previousKind)))
             throw new IllegalArgumentException("Invalid original remote snapshot identity");
     }
 }

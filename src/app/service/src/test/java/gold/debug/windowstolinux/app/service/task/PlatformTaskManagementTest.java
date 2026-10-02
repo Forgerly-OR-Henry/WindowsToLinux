@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static gold.debug.windowstolinux.app.service.task.PlatformTaskRuntimeTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -8,10 +17,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement;
-import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement.RecoveryState;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
+import gold.debug.windowstolinux.app.service.task.TaskManagement.RecoveryState;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,7 +34,7 @@ class PlatformTaskManagementTest {
 
     static OperationResult<Void> unknown() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNAVAILABLE,
-                "FIXTURE_UNCONFIRMED", "Original result is unconfirmed", Map.of(), Optional.empty())));
+            "FIXTURE_UNCONFIRMED", "Original result is unconfirmed", Map.of(), Optional.empty())));
     }
 
     static TaskManagement.Entry entry(TaskManagement service, UUID id) throws Exception {
@@ -35,8 +44,8 @@ class PlatformTaskManagementTest {
     @Test
     void queuedCancellationNeverRunsWorkAndRunningCancellationWaitsForActualReturn() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {
@@ -47,7 +56,7 @@ class PlatformTaskManagementTest {
             var running = tasks.submit(request("fixture", true, "server"), task -> {
                 entered.countDown();
                 assertTrue(release.await(8, TimeUnit.SECONDS));
-                assertTrue(task.cancellation().requested());
+                assertTrue(task.cancelToken().requested());
                 return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
             });
             try {
@@ -77,8 +86,8 @@ class PlatformTaskManagementTest {
     @Test
     void nonCancellableAndFinishedTasksCannotBeCancelledThroughHostControls() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {
@@ -103,8 +112,8 @@ class PlatformTaskManagementTest {
     @Test
     void onlyExactOriginalRecoveryCanCloseTheRetainedTaskAndItsResource() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {
@@ -117,25 +126,25 @@ class PlatformTaskManagementTest {
             state(task, TaskState.UNKNOWN);
             assertEquals(RecoveryState.UNAVAILABLE, entry(service, task.id()).recovery());
             assertTrue(entry(service, task.id()).snapshot().blockers().stream()
-                    .anyMatch(s -> s.contains("original-file")));
+                .anyMatch(s -> s.contains("original-file")));
             assertThrows(ApiException.class, () -> service.requestCancel(task.id()));
             try (var wrong = runtime.bind("example.owner", "2.0.0", true).registerRecovery("fixture",
-                    (before, context) -> {
-                        throw new AssertionError();
-                    })) {
+                (before, context) -> {
+                    throw new AssertionError();
+                })) {
                 assertEquals(RecoveryState.UNAVAILABLE, entry(service, task.id()).recovery());
                 assertThrows(ApiException.class, () -> service.reconcile(task.id(), false));
                 var calls = new AtomicInteger();
                 try (var original = runtime.bind("example.owner", "1.0.0", true).registerRecovery("fixture",
-                        (before, context) -> {
-                            calls.incrementAndGet();
-                            assertEquals(task.id(), context.id());
-                            resource.get().close();
-                            return success(null);
-                        })) {
+                    (before, context) -> {
+                        calls.incrementAndGet();
+                        assertEquals(task.id(), context.id());
+                        resource.get().close();
+                        return success(null);
+                    })) {
                     assertEquals(RecoveryState.RECONCILE, entry(service, task.id()).recovery());
                     assertEquals(TaskState.ENDED,
-                            service.reconcile(task.id(), false).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                        service.reconcile(task.id(), false).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
                     assertEquals(1, calls.get());
                     assertEquals(Outcome.SUCCEEDED, result(task).outcome());
                     assertTrue(result(task).value().isEmpty());
@@ -149,8 +158,8 @@ class PlatformTaskManagementTest {
     @Test
     void metadataOnlyRescueFinalizationRequiresNoCommandConfirmationOrRecoveryCallback() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {
@@ -158,16 +167,16 @@ class PlatformTaskManagementTest {
             PlatformTaskArchivalTest.trap(db);
             var calls = new AtomicInteger();
             var task = runtime.bind(PlatformTaskAdmission.PLATFORM_OWNER, "1.0.0", false)
-                    .submit(request(PlatformTaskAdmission.RESCUE_TYPE, true), context -> {
-                        calls.incrementAndGet();
-                        return success("original");
-                    });
+                .submit(request(PlatformTaskAdmission.RESCUE_TYPE, true), context -> {
+                    calls.incrementAndGet();
+                    return success("original");
+                });
             state(task, TaskState.FINISHING);
             assertEquals(RecoveryState.ARCHIVE_ONLY, entry(service, task.id()).recovery());
             assertFalse(entry(service, task.id()).cancellable());
             PlatformTaskArchivalTest.untrap(db);
             assertEquals(Outcome.SUCCEEDED, service.reconcile(task.id(), false).toCompletableFuture()
-                    .get(8, TimeUnit.SECONDS).outcome().orElseThrow());
+                .get(8, TimeUnit.SECONDS).outcome().orElseThrow());
             assertEquals(1, calls.get());
             assertTrue(service.list().isEmpty());
         }
@@ -176,8 +185,8 @@ class PlatformTaskManagementTest {
     @Test
     void rescueRequiresConfirmationButAnotherOwnersSameTaskTypeUsesItsOriginalRecovery() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var routed = new ArrayList<UUID>();
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 routed.add(id);
@@ -189,20 +198,20 @@ class PlatformTaskManagementTest {
                 var task = tasks.submit(request(PlatformTaskAdmission.RESCUE_TYPE, true), context -> unknown());
                 state(task, TaskState.UNKNOWN);
                 try (var registration = tasks.registerRecovery(PlatformTaskAdmission.RESCUE_TYPE,
-                        (previous, context) -> new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNAVAILABLE, "FIXTURE_RECOVERED",
-                                        "Original operation was interrupted", Map.of(), Optional.empty()))))) {
+                    (previous, context) -> new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.UNAVAILABLE, "FIXTURE_RECOVERED",
+                            "Original operation was interrupted", Map.of(), Optional.empty()))))) {
                     if (owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)) {
                         assertEquals(RecoveryState.CONFIRM_RESCUE, entry(service, task.id()).recovery());
                         assertThrows(ApiException.class, () -> service.reconcile(task.id(), false));
                         assertTrue(routed.isEmpty());
                         assertEquals(TaskState.ENDED, service.reconcile(task.id(), true).toCompletableFuture()
-                                .get(8, TimeUnit.SECONDS).state());
+                            .get(8, TimeUnit.SECONDS).state());
                         assertEquals(List.of(task.id()), routed);
                     } else {
                         assertEquals(RecoveryState.RECONCILE, entry(service, task.id()).recovery());
                         assertEquals(TaskState.ENDED, service.reconcile(task.id(), false).toCompletableFuture()
-                                .get(8, TimeUnit.SECONDS).state());
+                            .get(8, TimeUnit.SECONDS).state());
                         assertEquals(1, routed.size());
                     }
                 }
@@ -213,8 +222,8 @@ class PlatformTaskManagementTest {
     @Test
     void lockedDesktopRejectsInventoryAndActionsWhileOriginalWorkCanFinish() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {
@@ -242,8 +251,8 @@ class PlatformTaskManagementTest {
     @Test
     void concurrentReconciliationKeepsControlsBusyUntilOriginalAttemptReturns() throws Exception {
         try (var db = PlatformDatabase.open(root, PROTECTION);
-                var security = security(db);
-                var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
             var service = new PlatformTaskManagement(runtime, security, id -> {
                 throw new AssertionError();
             }, () -> {

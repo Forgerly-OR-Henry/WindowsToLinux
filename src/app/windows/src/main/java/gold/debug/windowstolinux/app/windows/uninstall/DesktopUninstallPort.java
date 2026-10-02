@@ -81,7 +81,7 @@ public interface DesktopUninstallPort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record HandoffEvidence(boolean independentWorkerVerified, boolean mainProcessExited, boolean handoffAuthenticated,
-            List<String> evidence) {
+                           List<String> evidence) {
         /**
          * Validates evidence. / 校验证据。
          *
@@ -104,7 +104,7 @@ public interface DesktopUninstallPort {
      * @param evidence observations supporting the reported result / 支持所报告结果的观测证据
      */
     record BoundaryEvidence(boolean jpackageLayoutVerified, boolean installMarkerVerified, boolean dataMarkerVerified,
-            List<String> evidence) {
+                            List<String> evidence) {
         /**
          * Validates evidence. / 校验证据。
          *

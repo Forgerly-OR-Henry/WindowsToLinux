@@ -60,11 +60,11 @@ public final class DeploymentDistributionCompatibilityEvaluator {
      * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
      */
     public static DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities,
-            List<String> evidence) {
+                                                          List<String> evidence) {
         evidence.add("package-architecture=" + capabilities.packageArchitecture() + "; cpu="
-                + capabilities.cpuMicroarchitecture() + "; security=" + capabilities.securityPosture().module() + "/"
-                + capabilities.securityPosture().state() + "; firewall=" + capabilities.securityPosture().firewall()
-                + "/" + capabilities.securityPosture().firewallState());
+            + capabilities.cpuMicroarchitecture() + "; security=" + capabilities.securityPosture().module() + "/"
+            + capabilities.securityPosture().state() + "; firewall=" + capabilities.securityPosture().firewall()
+            + "/" + capabilities.securityPosture().firewallState());
         return switch (capabilities.distro()) {
             case UBUNTU -> UBUNTU.evaluate(capabilities, evidence);
             case DEBIAN -> DEBIAN.evaluate(capabilities, evidence);
@@ -77,7 +77,7 @@ public final class DeploymentDistributionCompatibilityEvaluator {
                 yield DeploymentHostCapabilityStatus.LEGACY_RISK_CONFIRMATION_REQUIRED;
             }
             case OTHER -> DeploymentDistributionCompatibilityRules
-                    .unsupported("distribution is outside the typed deployment matrix", evidence);
+                .unsupported("distribution is outside the typed deployment matrix", evidence);
         };
     }
 }

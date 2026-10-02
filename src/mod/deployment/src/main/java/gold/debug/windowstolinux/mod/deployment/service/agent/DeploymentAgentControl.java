@@ -58,6 +58,7 @@ public final class DeploymentAgentControl {
             initCause(cause);
         }
     }
+
     /** Actual process-local boundary state. / 实际进程内部边界状态。 */
     private State state = State.RUNNING;
 
@@ -144,7 +145,7 @@ public final class DeploymentAgentControl {
     /** Preserves actual cooperative cancellation and thread interruption. / 保留实际协作取消及线程中断。
      * @param task authentic original task / 真实原任务 */
     private static void cancelled(TaskContext task) {
-        if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
             throw new CancellationException("Agent cancelled at its safe boundary");
     }
 }

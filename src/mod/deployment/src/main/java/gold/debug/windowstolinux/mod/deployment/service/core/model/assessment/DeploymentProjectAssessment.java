@@ -20,7 +20,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
  * @param rejections the hard rejection reasons / 硬性拒绝原因
  */
 public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, Optional<DeploymentProjectFacts> facts,
-        Optional<DeploymentRuntimeAssessment> runtimeSuggestion, List<RejectionReason> rejections) {
+                                          Optional<DeploymentRuntimeAssessment> runtimeSuggestion,
+                                          List<RejectionReason> rejections) {
     /**
      * Validates and binds the inputs required by deployment project assessment.
      * <p>校验并绑定部署项目评估所需输入。
@@ -47,14 +48,14 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
             throw new IllegalArgumentException("rejected assessments must not expose runtime suggestions");
         }
         if (runtimeSuggestion.isPresent() && facts.isPresent()
-                && runtimeSuggestion.orElseThrow().projectType() != facts.orElseThrow().projectType()) {
+            && runtimeSuggestion.orElseThrow().projectType() != facts.orElseThrow().projectType()) {
             throw new IllegalArgumentException("runtime suggestion must match the analyzed project type");
         }
         if (admission == DeploymentAdmissionStatus.READY_FOR_PLANNING && !facts.orElseThrow().readyForPlanning()) {
             throw new IllegalArgumentException("ready assessments must not have conflicts or missing information");
         }
         if (admission == DeploymentAdmissionStatus.RECOGNITION_PREVIEW
-                && facts.orElseThrow().support().level().deployable()) {
+            && facts.orElseThrow().support().level().deployable()) {
             throw new IllegalArgumentException("recognition preview must not expose a deployable support level");
         }
     }
@@ -69,7 +70,7 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      */
     public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts),
-                Optional.empty(), List.of());
+            Optional.empty(), List.of());
     }
 
     /**
@@ -80,9 +81,9 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      * @return a ready assessment with source-backed runtime suggestions / 带有源码依据运行时建议的可计划评估
      */
     public static DeploymentProjectAssessment ready(DeploymentProjectFacts facts,
-            DeploymentRuntimeAssessment runtimeSuggestion) {
+                                                    DeploymentRuntimeAssessment runtimeSuggestion) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, Optional.of(facts),
-                Optional.of(runtimeSuggestion), List.of());
+            Optional.of(runtimeSuggestion), List.of());
     }
 
     /**
@@ -95,7 +96,7 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts),
-                Optional.empty(), List.of());
+            Optional.empty(), List.of());
     }
 
     /**
@@ -106,9 +107,9 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      * @return an input-required assessment with source-backed runtime suggestions / 带有源码依据运行时建议的需要输入评估
      */
     public static DeploymentProjectAssessment requiresInput(DeploymentProjectFacts facts,
-            DeploymentRuntimeAssessment runtimeSuggestion) {
+                                                            DeploymentRuntimeAssessment runtimeSuggestion) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REQUIRES_INPUT, Optional.of(facts),
-                Optional.of(runtimeSuggestion), List.of());
+            Optional.of(runtimeSuggestion), List.of());
     }
 
     /**
@@ -119,7 +120,7 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      */
     public static DeploymentProjectAssessment recognitionPreview(DeploymentProjectFacts facts) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.RECOGNITION_PREVIEW, Optional.of(facts),
-                Optional.empty(), List.of());
+            Optional.empty(), List.of());
     }
 
     /**
@@ -132,6 +133,6 @@ public record DeploymentProjectAssessment(DeploymentAdmissionStatus admission, O
      */
     public static DeploymentProjectAssessment rejected(List<RejectionReason> rejections) {
         return new DeploymentProjectAssessment(DeploymentAdmissionStatus.REJECTED, Optional.empty(), Optional.empty(),
-                rejections);
+            rejections);
     }
 }

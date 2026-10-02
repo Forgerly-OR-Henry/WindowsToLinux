@@ -32,7 +32,7 @@ public final class DeploymentSqlitePreparation {
      * @param bindings exact managed database resources / 精确受管数据库资源
      * @param schemaReview source-bound planned first initialization, when needed / 必要时绑定源码的首次初始化计划 */
     public record Prepared(List<DeploymentConfigurationEntry> configuration, List<DeploymentDatabaseBinding> bindings,
-            Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
+                           Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
         /** Copies every published value. / 复制全部输出值。
          * @param configuration generated runtime configuration / 生成的运行配置
          * @param bindings managed bindings / 受管绑定
@@ -59,9 +59,9 @@ public final class DeploymentSqlitePreparation {
      * @param task original admitted publication task / 原已准入发布任务
      * @return non-secret bindings and source-bound review / 非秘密绑定及源码绑定批准 */
     public static Prepared prepare(Path root, String applicationId, DatabaseProjectInspector.Assessment assessment,
-            boolean initializationConfirmed, TaskContext task) {
+                                   boolean initializationConfirmed, TaskContext task) {
         if (assessment.unknownDatabase() || assessment.databases().stream()
-                .anyMatch(database -> database.engine() != DeploymentDatabaseEngineType.SQLITE))
+            .anyMatch(database -> database.engine() != DeploymentDatabaseEngineType.SQLITE))
             throw new IllegalArgumentException("SQLite preparation requires complete SQLite declarations");
         if (assessment.schemaReviewRequired() && !initializationConfirmed)
             throw new IllegalArgumentException("SQLite initialization needs independent consent");
@@ -71,10 +71,10 @@ public final class DeploymentSqlitePreparation {
         for (var requirement : assessment.databases()) {
             var sqlite = requirement.sqlite().orElseThrow();
             var connection = new DeploymentDatabaseConnection.Sqlite(sqlite.fileName(), sqlite.location(),
-                    sqlite.accessPath(), sqlite.seedFile(), requirement.initializationFiles());
+                sqlite.accessPath(), sqlite.seedFile(), requirement.initializationFiles());
             String path = connection.accessPath().isEmpty()
-                    ? connection.physicalPath(applicationId, requirement.id())
-                    : connection.accessPath();
+                ? connection.physicalPath(applicationId, requirement.id())
+                : connection.accessPath();
             connection.physicalPath(applicationId, requirement.id());
             bindings.add(new DeploymentDatabaseBinding(requirement.id(), connection));
             if (!sqlite.pathEnvironment().isEmpty() || requirement.springDatasource()) {
@@ -84,7 +84,7 @@ public final class DeploymentSqlitePreparation {
             initialized.addAll(requirement.initializationFiles());
         }
         boolean spring = assessment.databases().stream().filter(value -> !value.initializationFiles().isEmpty())
-                .allMatch(value -> value.springDatasource());
+            .allMatch(value -> value.springDatasource());
         if (assessment.schemaReviewRequired() && spring) {
             configuration.add(text("SPRING_SQL_INIT_MODE", "never"));
             configuration.add(flag("SPRING_FLYWAY_ENABLED", false));
@@ -95,15 +95,15 @@ public final class DeploymentSqlitePreparation {
         Optional<DatabaseSchemaReview> review = Optional.empty();
         if (assessment.schemaReviewRequired()) {
             var rejections = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason>();
-            var source = new BoundedSourceInspector().inspect(root, rejections, task.cancellation());
-            if (task.cancellation().requested())
+            var source = new BoundedSourceInspector().inspect(root, rejections, task.cancelToken());
+            if (task.cancelToken().requested())
                 throw new CancellationException("Original SQLite source inspection was cancelled");
             if (!rejections.isEmpty())
                 throw new IllegalArgumentException("Frozen SQLite source could not be verified");
             review = Optional.of(new DatabaseSchemaReview(
-                    SourceMutationPolicy.inspectionDigest(source), bindings.stream()
-                            .map(DeploymentDatabaseBinding::databaseId).collect(java.util.stream.Collectors.toSet()),
-                    Set.copyOf(initialized), false, false, spring, true));
+                SourceMutationPolicy.inspectionDigest(source), bindings.stream()
+                .map(DeploymentDatabaseBinding::databaseId).collect(java.util.stream.Collectors.toSet()),
+                Set.copyOf(initialized), false, false, spring, true));
         }
         return new Prepared(configuration, bindings, review);
     }
@@ -114,7 +114,7 @@ public final class DeploymentSqlitePreparation {
      * @return typed entry / 类型化条目 */
     private static DeploymentConfigurationEntry text(String key, String value) {
         return new DeploymentConfigurationEntry(key, DeploymentConfigurationScopeType.RUNTIME,
-                new DeploymentConfigurationValue.Text(value));
+            new DeploymentConfigurationValue.Text(value));
     }
 
     /** Creates one runtime safety flag. / 创建一项运行安全标志。
@@ -123,6 +123,6 @@ public final class DeploymentSqlitePreparation {
      * @return typed entry / 类型化条目 */
     private static DeploymentConfigurationEntry flag(String key, boolean value) {
         return new DeploymentConfigurationEntry(key, DeploymentConfigurationScopeType.RUNTIME,
-                new DeploymentConfigurationValue.Flag(value));
+            new DeploymentConfigurationValue.Flag(value));
     }
 }

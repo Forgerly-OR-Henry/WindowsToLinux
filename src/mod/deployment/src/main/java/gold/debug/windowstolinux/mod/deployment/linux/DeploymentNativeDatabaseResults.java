@@ -33,9 +33,9 @@ public final class DeploymentNativeDatabaseResults {
             warnings.add(required(fields, prefix + "conflict." + index));
         Optional<Candidate> candidate = Optional.empty();
         if (fields.containsKey(prefix + "package") || fields.containsKey(prefix + "packageVersion")
-                || fields.containsKey(prefix + "engineVersion"))
+            || fields.containsKey(prefix + "engineVersion"))
             candidate = Optional.of(new Candidate(required(fields, prefix + "package"),
-                    required(fields, prefix + "packageVersion"), required(fields, prefix + "engineVersion")));
+                required(fields, prefix + "packageVersion"), required(fields, prefix + "engineVersion")));
         return new Inventory(engine, instances, candidate, warnings);
     }
 
@@ -51,9 +51,9 @@ public final class DeploymentNativeDatabaseResults {
             throw new IllegalArgumentException("Invalid native database port", invalid);
         }
         return new Instance(engine(required(fields, prefix + "engine")), required(fields, prefix + "id"),
-                required(fields, prefix + "version"), port, required(fields, prefix + "service"),
-                required(fields, prefix + "dataDirectory"), required(fields, prefix + "fingerprint"),
-                bool(fields, prefix + "running"));
+            required(fields, prefix + "version"), port, required(fields, prefix + "service"),
+            required(fields, prefix + "dataDirectory"), required(fields, prefix + "fingerprint"),
+            bool(fields, prefix + "running"));
     }
 
     /** Decodes exact target ownership and initialization facts. / 解码精确目标归属与初始化事实。
@@ -62,10 +62,10 @@ public final class DeploymentNativeDatabaseResults {
      * @return observed target / 已观察目标 */
     public static Target target(Map<String, String> fields, String prefix) {
         return new Target(instance(fields, prefix + "instance."), required(fields, prefix + "applicationId"),
-                required(fields, prefix + "database"), required(fields, prefix + "username"),
-                bool(fields, prefix + "exists"), bool(fields, prefix + "empty"),
-                required(fields, prefix + "ownershipToken"), required(fields, prefix + "initialization"),
-                required(fields, prefix + "initializedSourceSha256"));
+            required(fields, prefix + "database"), required(fields, prefix + "username"),
+            bool(fields, prefix + "exists"), bool(fields, prefix + "empty"),
+            required(fields, prefix + "ownershipToken"), required(fields, prefix + "initialization"),
+            required(fields, prefix + "initializedSourceSha256"));
     }
 
     /** Reads a required wire field, including permitted empty values. / 读取必有线字段，允许约定为空的值。

@@ -61,9 +61,9 @@ public final class DesktopThemeService {
         ColorUIResource buttonBackground = new ColorUIResource(palette.secondaryButtonBackground());
         ColorUIResource buttonForeground = new ColorUIResource(palette.secondaryButtonForeground());
         ColorUIResource disabledButtonBackground = new ColorUIResource(
-                effectiveTheme == ThemeMode.DARK ? new Color(38, 45, 56) : new Color(239, 241, 245));
+            effectiveTheme == ThemeMode.DARK ? new Color(38, 45, 56) : new Color(239, 241, 245));
         ColorUIResource disabledButtonText = new ColorUIResource(
-                effectiveTheme == ThemeMode.DARK ? new Color(125, 134, 149) : new Color(143, 149, 159));
+            effectiveTheme == ThemeMode.DARK ? new Color(125, 134, 149) : new Color(143, 149, 159));
         UIManager.put("Button.background", buttonBackground);
         UIManager.put("Button.foreground", buttonForeground);
         UIManager.put("Button.focusedBackground", buttonBackground);
@@ -74,30 +74,38 @@ public final class DesktopThemeService {
         UIManager.put("Button.disabledSelectedBackground", disabledButtonBackground);
         UIManager.put("Button.disabledText", disabledButtonText);
         UIManager.put("Button.disabledSelectedForeground", disabledButtonText);
-        UIManager.put("Label.foreground", palette.sidebarForeground());
-        UIManager.put("Component.borderColor", palette.inputBorder());
-        UIManager.put("Component.focusColor", palette.accent());
+        for (String surface : java.util.List.of("Panel", "Viewport", "ScrollPane", "TabbedPane"))
+            UIManager.put(surface + ".background", new ColorUIResource(palette.pageBackground()));
+        for (String surface : java.util.List.of("List", "Table")) {
+            UIManager.put(surface + ".background", new ColorUIResource(palette.cardBackground()));
+            UIManager.put(surface + ".foreground", new ColorUIResource(palette.sidebarForeground()));
+            UIManager.put(surface + ".selectionBackground", new ColorUIResource(palette.navigationActive()));
+            UIManager.put(surface + ".selectionForeground", new ColorUIResource(palette.sidebarForeground()));
+        }
+        UIManager.put("Label.foreground", new ColorUIResource(palette.sidebarForeground()));
+        UIManager.put("Component.borderColor", new ColorUIResource(palette.inputBorder()));
+        UIManager.put("Component.focusColor", new ColorUIResource(palette.accent()));
         for (String type : java.util.List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox",
-                "Spinner")) {
-            UIManager.put(type + ".background", palette.cardBackground());
-            UIManager.put(type + ".foreground", palette.sidebarForeground());
+            "Spinner")) {
+            UIManager.put(type + ".background", new ColorUIResource(palette.cardBackground()));
+            UIManager.put(type + ".foreground", new ColorUIResource(palette.sidebarForeground()));
         }
         UIManager.put("ComboBox.padding", new InsetsUIResource(5, 10, 5, 8));
         UIManager.put("ComboBox.buttonStyle", "none");
-        UIManager.put("ComboBox.buttonBackground", palette.cardBackground());
-        UIManager.put("ComboBox.buttonFocusedBackground", palette.cardBackground());
-        UIManager.put("ComboBox.buttonArrowColor", palette.subduedText());
-        UIManager.put("ComboBox.buttonHoverArrowColor", palette.accent());
-        UIManager.put("ComboBox.buttonPressedArrowColor", palette.accentDark());
-        UIManager.put("ComboBox.popupBackground", palette.cardBackground());
+        UIManager.put("ComboBox.buttonBackground", new ColorUIResource(palette.cardBackground()));
+        UIManager.put("ComboBox.buttonFocusedBackground", new ColorUIResource(palette.cardBackground()));
+        UIManager.put("ComboBox.buttonArrowColor", new ColorUIResource(palette.subduedText()));
+        UIManager.put("ComboBox.buttonHoverArrowColor", new ColorUIResource(palette.accent()));
+        UIManager.put("ComboBox.buttonPressedArrowColor", new ColorUIResource(palette.accentDark()));
+        UIManager.put("ComboBox.popupBackground", new ColorUIResource(palette.cardBackground()));
         UIManager.put("ComboBox.popupInsets", new InsetsUIResource(5, 4, 5, 4));
         UIManager.put("ComboBox.selectionInsets", new InsetsUIResource(1, 2, 1, 2));
         UIManager.put("ComboBox.selectionArc", 10);
-        UIManager.put("ComboBox.selectionBackground", palette.navigationActive());
-        UIManager.put("ComboBox.selectionForeground", palette.sidebarForeground());
+        UIManager.put("ComboBox.selectionBackground", new ColorUIResource(palette.navigationActive()));
+        UIManager.put("ComboBox.selectionForeground", new ColorUIResource(palette.sidebarForeground()));
         UIManager.put("ComboBox.borderCornerRadius", 10);
-        UIManager.put("ComboBox.disabledBackground", palette.secondaryButtonBackground());
-        UIManager.put("ComboBox.disabledForeground", palette.subduedText());
+        UIManager.put("ComboBox.disabledBackground", new ColorUIResource(palette.secondaryButtonBackground()));
+        UIManager.put("ComboBox.disabledForeground", new ColorUIResource(palette.subduedText()));
 
         Font defaultFont = UIManager.getFont("defaultFont");
         if (defaultFont != null) {

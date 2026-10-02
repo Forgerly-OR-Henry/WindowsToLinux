@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,7 +17,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildOutputProtocol;
@@ -83,10 +91,10 @@ final class DeploymentStandardBuildExecutor {
          * @param session original session / 原会话
          * @param task original task / 原任务 */
         Prepared(ReviewedDeploymentPlan plan, DeploymentStandardPlanner.RenderedPlan rendered,
-                DeploymentRemoteWorkspace workspace, DeploymentBuildEnvironment environment,
-                DeploymentBuildBudget budget, DeploymentBuildCommandChannel commands,
-                List<ToolchainRequirement> requirements, DeploymentResolvedToolchains tools, String engine, int attempt,
-                RemoteSession session, TaskContext task) {
+                 DeploymentRemoteWorkspace workspace, DeploymentBuildEnvironment environment,
+                 DeploymentBuildBudget budget, DeploymentBuildCommandChannel commands,
+                 List<ToolchainRequirement> requirements, DeploymentResolvedToolchains tools, String engine, int attempt,
+                 RemoteSession session, TaskContext task) {
             this.plan = plan;
             this.rendered = rendered;
             this.workspace = workspace;
@@ -111,6 +119,7 @@ final class DeploymentStandardBuildExecutor {
             consumed = true;
         }
     }
+
     /** The same reviewed catalog used by planning and remote identity checks. / 规划与远端身份核对共用的已审阅目录。 */
     private final DeploymentToolchainCatalog catalog;
 
@@ -139,10 +148,10 @@ final class DeploymentStandardBuildExecutor {
      * @return exact archive and installed tool identities only after a confirmed build / 仅确认构建后返回精确归档及已安装工具身份
      * @throws ApiException if the host rejects admission before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<DeploymentVerifiedBuildResult> build(ReviewedDeploymentPlan plan,
-            DeploymentRemoteWorkspace uploaded, RemoteSession session, InteractionService interaction, TaskContext task)
-            throws ApiException {
+                                                         DeploymentRemoteWorkspace uploaded, RemoteSession session, InteractionService interaction, TaskContext task)
+        throws ApiException {
         if (!Objects.requireNonNull(uploaded).equals(new DeploymentRemoteWorkspace(
-                plan.request().facts().applicationId(), plan.request().archive().sha256())))
+            plan.request().facts().applicationId(), plan.request().archive().sha256())))
             throw new IllegalArgumentException("Build candidate differs from reviewed source");
         var prepared = prepareForUpload(plan, session, interaction, task);
         if (prepared.outcome() != Outcome.SUCCEEDED)
@@ -158,9 +167,9 @@ final class DeploymentStandardBuildExecutor {
      * @return one prepared selection without a candidate / 未创建候选的一次已准备选择
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task) throws ApiException {
+                                               InteractionService interaction, TaskContext task) throws ApiException {
         return prepareForUpload(plan, session, interaction, task,
-                new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()));
+            new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()));
     }
 
     /** Shares one cumulative execution budget with the preceding candidate preflight. / 与先前候选预检共用一份累计执行预算。
@@ -172,7 +181,7 @@ final class DeploymentStandardBuildExecutor {
      * @return exact installed selection / 精确已安装选择
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget) throws ApiException {
+                                               InteractionService interaction, TaskContext task, DeploymentBuildBudget budget) throws ApiException {
         return prepareForUpload(plan, session, interaction, task, budget, 0, true);
     }
 
@@ -187,9 +196,9 @@ final class DeploymentStandardBuildExecutor {
      * @return confirmed installed selection / 已确认安装选择
      * @throws ApiException if original approval or transport rejects / 原审批或传输拒绝时 */
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback) throws ApiException {
+                                               InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback) throws ApiException {
         return prepareForUpload(plan, session, interaction, task, budget, branch, fallback,
-                new DeploymentRemoteWorkspace(plan.request().facts().applicationId(), plan.request().archive().sha256()));
+            new DeploymentRemoteWorkspace(plan.request().facts().applicationId(), plan.request().archive().sha256()));
     }
 
     /** Prepares an explicitly named later candidate under the unchanged task and cumulative budget. / 在不变任务及累计预算下准备明确命名的后续候选。
@@ -204,8 +213,8 @@ final class DeploymentStandardBuildExecutor {
      * @return confirmed actual installed selection / 已确认实际安装选择
      * @throws ApiException if original authority rejects / 原权限拒绝时 */
     OperationResult<Prepared> prepareForUpload(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback,
-            DeploymentRemoteWorkspace workspace) throws ApiException {
+                                               InteractionService interaction, TaskContext task, DeploymentBuildBudget budget, int branch, boolean fallback,
+                                               DeploymentRemoteWorkspace workspace) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
@@ -215,7 +224,7 @@ final class DeploymentStandardBuildExecutor {
         var runtime = request.runtime();
         var limits = request.limits();
         if (!Objects.requireNonNull(workspace).applicationId().equals(facts.applicationId())
-                || !workspace.archiveSha256().equals(request.archive().sha256()))
+            || !workspace.archiveSha256().equals(request.archive().sha256()))
             throw new IllegalArgumentException("Prepared operation changed original source or unit");
         var buildValues = new LinkedHashMap<String, String>();
         for (var entry : request.configuration().entries()) {
@@ -226,15 +235,15 @@ final class DeploymentStandardBuildExecutor {
         var rendered = planner.render(plan, task);
         if (rendered.outcome() != Outcome.SUCCEEDED)
             return withoutValuePrepared(rendered);
-        if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
             return cancelledPrepared();
         String revision = rendered.value().orElseThrow().reviewedPlanSha256();
         String engine = runtime instanceof DeploymentRuntimeDefinition.Container container
-                ? container.engine().name().toLowerCase(java.util.Locale.ROOT)
-                : "ordinary";
+            ? container.engine().name().toLowerCase(java.util.Locale.ROOT)
+            : "ordinary";
         Objects.requireNonNull(budget);
         var commands = new DeploymentBuildCommandChannel(session, interaction, request.server(), task, revision,
-                budget);
+            budget);
         var preflight = commands.preflight(engine);
         if (preflight.outcome() == Outcome.UNKNOWN || preflight.outcome() == Outcome.CANCELLED)
             return withoutValuePrepared(preflight);
@@ -242,16 +251,16 @@ final class DeploymentStandardBuildExecutor {
             return withoutValuePrepared(preflight);
         if (!knownSuccess(preflight))
             return preflight.outcome() == Outcome.FAILED && knownExit(preflight)
-                    ? failedPrepared(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_ISOLATION_UNAVAILABLE")
-                    : unknownPrepared("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
+                ? failedPrepared(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_ISOLATION_UNAVAILABLE")
+                : unknownPrepared("DEPLOYMENT_BUILD_PREFLIGHT_UNCONFIRMED");
         List<ToolchainRequirement> requirements = DeploymentProjectToolchainRequirements.from(facts, runtime);
         var preparer = new DeploymentToolchainPreparer(commands, catalog);
         int attempt = branch;
         OperationResult<DeploymentResolvedToolchains> prepared = preparer.prepare(requirements, attempt,
-                (int) budget.remainingSeconds());
+            (int) budget.remainingSeconds());
         if (fallback && prepared.outcome() == Outcome.FAILED
-                && prepared.problem().orElseThrow().eventCode().equals("DEPLOYMENT_TOOLCHAIN_MINIMUM")
-                && hasAlternative(requirements)) {
+            && prepared.problem().orElseThrow().eventCode().equals("DEPLOYMENT_TOOLCHAIN_MINIMUM")
+            && hasAlternative(requirements)) {
             attempt = 1;
             prepared = preparer.prepare(requirements, attempt, (int) budget.remainingSeconds());
         }
@@ -259,9 +268,9 @@ final class DeploymentStandardBuildExecutor {
             return withoutValuePrepared(prepared);
         var tools = prepared.value().orElseThrow();
         return new OperationResult<>(
-                Outcome.SUCCEEDED, Optional.of(new Prepared(plan, rendered.value().orElseThrow(), workspace,
-                        environment, budget, commands, requirements, tools, engine, attempt, session, task)),
-                Optional.empty());
+            Outcome.SUCCEEDED, Optional.of(new Prepared(plan, rendered.value().orElseThrow(), workspace,
+            environment, budget, commands, requirements, tools, engine, attempt, session, task)),
+            Optional.empty());
     }
 
     /** Builds the exact uploaded candidate using the pre-upload selection and budget. / 使用上传前的选择与预算构建精确候选。
@@ -272,7 +281,7 @@ final class DeploymentStandardBuildExecutor {
      * @return confirmed build or retained uncertainty / 已确认构建或保留的不确定性
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<DeploymentVerifiedBuildResult> buildPrepared(Prepared prepared, DeploymentRemoteWorkspace uploaded,
-            RemoteSession session, TaskContext task) throws ApiException {
+                                                                 RemoteSession session, TaskContext task) throws ApiException {
         return buildPrepared(prepared, uploaded, session, task, true);
     }
 
@@ -285,12 +294,12 @@ final class DeploymentStandardBuildExecutor {
      * @return confirmed original build outcome / 已确认原构建结果
      * @throws ApiException if original authority refuses / 原权限拒绝时 */
     OperationResult<DeploymentVerifiedBuildResult> buildPrepared(Prepared prepared, DeploymentRemoteWorkspace uploaded,
-            RemoteSession session, TaskContext task, boolean fallback) throws ApiException {
+                                                                 RemoteSession session, TaskContext task, boolean fallback) throws ApiException {
         Objects.requireNonNull(prepared);
         if (!prepared.workspace.equals(uploaded))
             throw new IllegalArgumentException("Uploaded candidate differs from prepared source");
         prepared.consume(session, task);
-        if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
             return cancelled();
         var rerendered = planner.render(prepared.plan, task);
         if (rerendered.outcome() != Outcome.SUCCEEDED)
@@ -305,23 +314,23 @@ final class DeploymentStandardBuildExecutor {
         int attempt = prepared.attempt;
         var preparer = new DeploymentToolchainPreparer(commands, catalog);
         var built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
-                engine, prepared.tools);
+            engine, prepared.tools);
         if (fallback && built.outcome() == Outcome.FAILED
-                && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")
-                && attempt == 0 && hasAlternative(requirements) && budget.remainingSeconds() > 60) {
+            && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")
+            && attempt == 0 && hasAlternative(requirements) && budget.remainingSeconds() > 60) {
             var second = preparer.prepare(requirements, 1, (int) budget.remainingSeconds());
             if (second.outcome() != Outcome.SUCCEEDED)
                 return withoutValue(second);
             prepared.executedTools = second.value().orElseThrow();
             built = execute(prepared.rendered.buildScript(), request, uploaded, prepared.environment, commands, budget,
-                    engine, second.value().orElseThrow());
+                engine, second.value().orElseThrow());
         }
         if (fallback && built.outcome() == Outcome.FAILED
-                && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")) {
+            && built.problem().orElseThrow().eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE")) {
             var original = built.problem().orElseThrow();
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_CANDIDATES_EXHAUSTED",
-                            original.message(), original.context(), original.diagnosticId())));
+                Optional.of(new Problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_BUILD_CANDIDATES_EXHAUSTED",
+                    original.message(), original.context(), original.diagnosticId())));
         }
         return built;
     }
@@ -338,24 +347,24 @@ final class DeploymentStandardBuildExecutor {
      * @return confirmed result, known failure or retained uncertainty / 已确认结果、已知失败或保留未知
      * @throws ApiException if the host rejects admission before dispatch / 宿主发送前拒绝准入时 */
     private static OperationResult<DeploymentVerifiedBuildResult> execute(String base,
-            gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentRequest request,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildEnvironment environment,
-            DeploymentBuildCommandChannel commands, DeploymentBuildBudget budget, String engine,
-            DeploymentResolvedToolchains tools) throws ApiException {
+                                                                          gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentRequest request,
+                                                                          DeploymentRemoteWorkspace workspace, DeploymentBuildEnvironment environment,
+                                                                          DeploymentBuildCommandChannel commands, DeploymentBuildBudget budget, String engine,
+                                                                          DeploymentResolvedToolchains tools) throws ApiException {
         long remaining = budget.remainingSeconds();
         if (remaining <= 15)
             return failed(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED");
         String script = script(base, request, environment, tools);
         var observed = commands.build(workspace, request.limits(), remaining - 15, engine, script,
-                BuildCompatibilityPolicy.groups());
+            BuildCompatibilityPolicy.groups());
         if (observed.outcome() == Outcome.UNKNOWN || observed.outcome() == Outcome.CANCELLED)
             return withoutValue(observed);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (!knownSuccess(observed))
             return observed.outcome() == Outcome.FAILED && knownExit(observed)
-                    ? unknown("DEPLOYMENT_BUILD_WRAPPER_FAILED")
-                    : unknown("DEPLOYMENT_BUILD_RESULT_UNCONFIRMED");
+                ? unknown("DEPLOYMENT_BUILD_WRAPPER_FAILED")
+                : unknown("DEPLOYMENT_BUILD_RESULT_UNCONFIRMED");
         DeploymentBuildOutputProtocol.Receipt receipt;
         try {
             receipt = DeploymentBuildOutputProtocol.parse(observed.value().orElseThrow().stdout());
@@ -365,17 +374,17 @@ final class DeploymentStandardBuildExecutor {
         if (receipt.conflicting() || receipt.exit() < 0 || receipt.bytes() > request.limits().maxOutputBytes() + 65536L)
             return unknown("DEPLOYMENT_BUILD_EVIDENCE_CONFLICT");
         if (!receipt.uid().matches("[1-9][0-9]{0,9}") || !engine.equals(receipt.engine())
-                || !request.facts().buildTool().name().equals(receipt.tool()))
+            || !request.facts().buildTool().name().equals(receipt.tool()))
             return unknown("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED");
         if (receipt.exit() != 0)
             return failedBuild(receipt,
-                    receipt.compatible() && receipt.limit().equals("-")
-                            ? "DEPLOYMENT_BUILD_COMPATIBLE_FAILURE"
-                            : receipt.limit().equals("-") ? "DEPLOYMENT_BUILD_FAILED" : "DEPLOYMENT_BUILD_LIMIT");
+                receipt.compatible() && receipt.limit().equals("-")
+                    ? "DEPLOYMENT_BUILD_COMPATIBLE_FAILURE"
+                    : receipt.limit().equals("-") ? "DEPLOYMENT_BUILD_FAILED" : "DEPLOYMENT_BUILD_LIMIT");
         if (!receipt.limit().equals("-"))
             return unknown("DEPLOYMENT_BUILD_IDENTITY_UNCONFIRMED");
         var result = new DeploymentVerifiedBuildResult(workspace.archiveSha256(), workspace.candidateId(), tools,
-                DeploymentToolchainBindingCodec.identity(tools), workspace.operation());
+            DeploymentToolchainBindingCodec.identity(tools), workspace.operation());
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(result), Optional.empty());
     }
 
@@ -386,10 +395,10 @@ final class DeploymentStandardBuildExecutor {
      * @param tools actual installed tools / 实际安装工具
      * @return complete fixed build input / 完整固定构建输入 */
     static String script(String base, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentRequest request,
-            DeploymentBuildEnvironment environment, DeploymentResolvedToolchains tools) {
+                         DeploymentBuildEnvironment environment, DeploymentResolvedToolchains tools) {
         return DeploymentBuildEnvironmentRenderer.render(environment) + ToolchainBuildEnvironment.render(tools) + base
-                + CompanionBuildScript.render(request.runtime().workload()) + (request.runtime().workload().companions().isEmpty()
-                        ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n");
+            + CompanionBuildScript.render(request.runtime().workload()) + (request.runtime().workload().companions().isEmpty()
+            ? "" : "\ntest \"$(du -sb \"$mutable\" | cut -f1)\" -le " + request.limits().maxWorkspaceBytes() + "\n");
     }
 
     /** Reports a complete successful host command without interpreting author text. / 不解释作者文本，仅报告完整成功的宿主命令。
@@ -397,8 +406,8 @@ final class DeploymentStandardBuildExecutor {
      * @return true only for known exit zero and no truncation / 仅已知退出零且未截断时为真 */
     private static boolean knownSuccess(OperationResult<CommandResult> result) {
         return result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
-                && result.value().orElseThrow().exitCode().equals(Optional.of(0))
-                && !result.value().orElseThrow().truncated();
+            && result.value().orElseThrow().exitCode().equals(Optional.of(0))
+            && !result.value().orElseThrow().truncated();
     }
 
     /** Finds an actual second catalog candidate before retry. / 重试前确认确有第二目录候选。
@@ -413,8 +422,8 @@ final class DeploymentStandardBuildExecutor {
      * @return true only for a known nonzero exit / 仅已知非零退出时为真 */
     private static boolean knownExit(OperationResult<CommandResult> result) {
         return result.value().isPresent() && !result.value().orElseThrow().truncated()
-                && result.value().orElseThrow().exitCode().isPresent()
-                && result.value().orElseThrow().exitCode().orElseThrow() != 0;
+            && result.value().orElseThrow().exitCode().isPresent()
+            && result.value().orElseThrow().exitCode().orElseThrow() != 0;
     }
 
     /** Propagates a public non-success without inventing a build value. / 不虚构构建值地传播公开非成功结果。
@@ -444,14 +453,14 @@ final class DeploymentStandardBuildExecutor {
      * @return uncertain preparation / 未知准备 */
     private static OperationResult<Prepared> unknownPrepared(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Stops before further remote work on cancellation. / 取消时停止后续远端操作。
      * @return cancelled preparation / 已取消准备 */
     private static OperationResult<Prepared> cancelledPrepared() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_BUILD_CANCELLED")));
+            Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_BUILD_CANCELLED")));
     }
 
     /** Returns a known failure. / 返回已知失败。
@@ -467,14 +476,14 @@ final class DeploymentStandardBuildExecutor {
      * @param event stable build failure / 稳定构建失败事件
      * @return known failure with safe compiler diagnostics / 含安全编译诊断的已知失败 */
     private static OperationResult<DeploymentVerifiedBuildResult> failedBuild(
-            DeploymentBuildOutputProtocol.Receipt receipt, String event) {
+        DeploymentBuildOutputProtocol.Receipt receipt, String event) {
         String head = receipt.head();
         String tail = receipt.tail();
         String diagnostic = head.equals(tail) ? head : head + "\n[... output omitted ...]\n" + tail;
         var context = Map.of("exit", Integer.toString(receipt.exit()), "outputBytes", Long.toString(receipt.bytes()),
-                "outputSha256", receipt.digest(), "diagnostic", diagnostic, "uid", receipt.uid(), "engine", receipt.engine(), "tool", receipt.tool());
+            "outputSha256", receipt.digest(), "diagnostic", diagnostic, "uid", receipt.uid(), "engine", receipt.engine(), "tool", receipt.tool());
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
-                event, "Reviewed build failed: " + diagnostic, context, Optional.empty())));
+            event, "Reviewed build failed: " + diagnostic, context, Optional.empty())));
     }
 
     /** Retains uncertain remote effects. / 保留未知远端副作用。
@@ -482,14 +491,14 @@ final class DeploymentStandardBuildExecutor {
      * @return unknown operation / 未知操作 */
     private static OperationResult<DeploymentVerifiedBuildResult> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Returns a confirmed cancellation before remote dispatch. / 返回远端发送前已确认取消。
      * @return cancelled build / 已取消构建 */
     private static OperationResult<DeploymentVerifiedBuildResult> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_BUILD_CANCELLED")));
+            Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_BUILD_CANCELLED")));
     }
 
     /** Builds only a stable safe diagnostic. / 仅构造稳定安全诊断。

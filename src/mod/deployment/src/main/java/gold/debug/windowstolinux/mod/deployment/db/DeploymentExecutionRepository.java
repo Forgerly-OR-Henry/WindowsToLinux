@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
@@ -8,7 +13,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
 
 /** Stores original execution evidence before effects and commits publication with its formal outcome. / 副作用前保存原执行证据，并将发布与正式结果同事务提交。 */
@@ -32,15 +37,15 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if identity conflicts or persistence fails / 身份冲突或持久化失败时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
     public void begin(TaskContext task, DeploymentExecutionIdentity identity, String operationType,
-            List<DeploymentReferenceIntent> references, Optional<DeploymentProjectRecord> reviewedProject,
-            Instant createdAt) throws SQLException, ApiException {
+                      List<DeploymentReferenceIntent> references, Optional<DeploymentProjectRecord> reviewedProject,
+                      Instant createdAt) throws SQLException, ApiException {
         requireTask(task, identity);
         Objects.requireNonNull(reviewedProject);
         var request = DeploymentExecutionCodec.request(identity, operationType, references, reviewedProject);
         var initial = new DeploymentExecutionRecord(
-                identity, "PREPARED", Optional.empty(), request, DeploymentExecutionCodec.recovery(identity,
-                        DeploymentExecutionCodec.requestVersion(request), "PREPARED", Map.of()),
-                Optional.empty(), false, false, millis(createdAt), millis(createdAt));
+            identity, "PREPARED", Optional.empty(), request, DeploymentExecutionCodec.recovery(identity,
+            DeploymentExecutionCodec.requestVersion(request), "PREPARED", Map.of()),
+            Optional.empty(), false, false, millis(createdAt), millis(createdAt));
         DeploymentExecutionCodec.known(initial);
         var connection = connection(task);
         DeploymentStorageTransaction.execute(connection, () -> {
@@ -49,18 +54,18 @@ public final class DeploymentExecutionRepository {
                 var original = existing.get();
                 DeploymentExecutionCodec.known(original);
                 if (!original.identity().equals(identity) || !original.requestJson().equals(request)
-                        || !original.createdAt().equals(initial.createdAt()))
+                    || !original.createdAt().equals(initial.createdAt()))
                     throw new SQLException("Execution identity or request is immutable");
                 return;
             }
             if (reviewedProject.isPresent()) {
                 var current = DeploymentProjectRepository.read(connection, reviewedProject.get().id(), true)
-                        .orElseThrow(() -> new SQLException("Reviewed project is absent"));
+                    .orElseThrow(() -> new SQLException("Reviewed project is absent"));
                 if (!current.equals(reviewedProject.get()))
                     throw new SQLException("Project changed after source review");
             }
             try (var statement = connection.prepareStatement(
-                    "INSERT INTO deployment_execution(execution_id,platform_task_id,project_id,application_id,server_profile_id,mode,phase,reviewed_revision,request_payload,recovery_payload,created_at,updated_at) VALUES(?,?,?,?,?,?,'PREPARED',?,?,?,?,?)")) {
+                "INSERT INTO deployment_execution(execution_id,platform_task_id,project_id,application_id,server_profile_id,mode,phase,reviewed_revision,request_payload,recovery_payload,created_at,updated_at) VALUES(?,?,?,?,?,?,'PREPARED',?,?,?,?,?)")) {
                 statement.setObject(1, identity.executionId());
                 statement.setObject(2, identity.taskId());
                 statement.setObject(3, identity.projectId().orElse(null));
@@ -84,7 +89,7 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if stored data is malformed / 存储数据无效时
      * @throws ApiException if task access fails / 任务访问失败时 */
     public Optional<DeploymentExecutionRecord> find(TaskContext task, UUID executionId)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         try (var connection = connection(task)) {
             return read(connection, Objects.requireNonNull(executionId), false);
         }
@@ -97,8 +102,8 @@ public final class DeploymentExecutionRepository {
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public Optional<DeploymentExecutionRecord> findForTask(TaskContext task) throws SQLException, ApiException {
         try (var connection = connection(task);
-                var statement = connection
-                        .prepareStatement("SELECT * FROM deployment_execution WHERE platform_task_id=?")) {
+             var statement = connection
+                 .prepareStatement("SELECT * FROM deployment_execution WHERE platform_task_id=?")) {
             statement.setObject(1, task.id());
             try (var rows = statement.executeQuery()) {
                 return rows.next() ? Optional.of(row(rows)) : Optional.empty();
@@ -119,7 +124,7 @@ public final class DeploymentExecutionRepository {
      * @return original proposal or explicit absence / 原提案或明确缺失
      * @throws SQLException if retained evidence is invalid / 留存依据无效时 */
     public Optional<DeploymentPublicationProposal> publicationTemplate(DeploymentExecutionRecord record)
-            throws SQLException {
+        throws SQLException {
         return DeploymentExecutionCodec.publicationTemplate(Objects.requireNonNull(record));
     }
 
@@ -131,24 +136,24 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if original facts conflict or SQL fails / 原事实冲突或SQL失败时
      * @throws ApiException if original task access or durability is unavailable / 原任务访问或持久性不可用时 */
     public void recordPublicationTemplate(TaskContext task, UUID executionId, DeploymentPublicationProposal publication,
-            Instant observedAt) throws SQLException, ApiException {
+                                          Instant observedAt) throws SQLException, ApiException {
         Objects.requireNonNull(publication);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("EXECUTING") || record.outcome().isPresent()
-                    || !record.identity().applicationId().equals(publication.graph().applicationId())
-                    || publication.graph().components().stream()
-                            .anyMatch(component -> !component.unit().server().equals(record.identity().server())))
+                || !record.identity().applicationId().equals(publication.graph().applicationId())
+                || publication.graph().components().stream()
+                .anyMatch(component -> !component.unit().server().equals(record.identity().server())))
                 throw new SQLException("Publication proposal differs from original executing task");
             String request = DeploymentExecutionCodec.withPublicationTemplate(record, publication);
             if (request.equals(record.requestJson()))
                 return;
             var next = new DeploymentExecutionRecord(record.identity(), record.phase(), record.outcome(), request,
-                    record.recoveryJson(), record.resultJson(), record.businessCommitted(), record.cleanupComplete(),
-                    record.createdAt(), millis(observedAt));
+                record.recoveryJson(), record.resultJson(), record.businessCommitted(), record.cleanupComplete(),
+                record.createdAt(), millis(observedAt));
             if (!DeploymentExecutionCodec.known(next).intents().equals(checkpoint.intents()))
                 throw new SQLException("Publication proposal changed original references");
             try (var statement = connection.prepareStatement(
-                    "UPDATE deployment_execution SET request_payload=?,updated_at=? WHERE execution_id=?")) {
+                "UPDATE deployment_execution SET request_payload=?,updated_at=? WHERE execution_id=?")) {
                 statement.setBytes(1, bytes(request));
                 statement.setLong(2, next.updatedAt().toEpochMilli());
                 statement.setObject(3, executionId);
@@ -166,25 +171,25 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if original phase or full consent conflicts / 原阶段或完整同意冲突时
      * @throws ApiException if original persistence is uncertain / 原持久确认不明时 */
     public void recordBuildIntent(TaskContext task, UUID executionId, DeploymentAssistedBuildIntent intent,
-            Instant observedAt) throws SQLException, ApiException {
+                                  Instant observedAt) throws SQLException, ApiException {
         Objects.requireNonNull(intent);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("EXECUTING") || record.outcome().isPresent() || record.businessCommitted()
-                    || record.cleanupComplete()
-                    || checkpoint.intents().stream()
-                            .noneMatch(value -> value.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
-                                    && value.businessKey().equals(DeploymentReferenceKey
-                                            .unit(record.identity().server(), intent.unitId()).businessKey())))
+                || record.cleanupComplete()
+                || checkpoint.intents().stream()
+                .noneMatch(value -> value.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
+                    && value.businessKey().equals(DeploymentReferenceKey
+                    .unit(record.identity().server(), intent.unitId()).businessKey())))
                 throw new SQLException("Original environment recovery boundary is unavailable");
             String request = DeploymentExecutionCodec.withBuildIntent(record, intent);
             String recovery = DeploymentExecutionCodec.recovery(record.identity(),
-                    DeploymentExecutionCodec.requestVersion(request), record.phase(), checkpoint.ids());
+                DeploymentExecutionCodec.requestVersion(request), record.phase(), checkpoint.ids());
             var next = new DeploymentExecutionRecord(record.identity(), record.phase(), record.outcome(), request,
-                    recovery, record.resultJson(), false, false, record.createdAt(), millis(observedAt));
+                recovery, record.resultJson(), false, false, record.createdAt(), millis(observedAt));
             if (!DeploymentExecutionCodec.known(next).equals(checkpoint))
                 throw new SQLException("Recovery intent changed original reservations");
             try (var update = connection.prepareStatement(
-                    "UPDATE deployment_execution SET request_payload=?,recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
+                "UPDATE deployment_execution SET request_payload=?,recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
                 update.setBytes(1, bytes(request));
                 update.setBytes(2, bytes(recovery));
                 update.setLong(3, next.updatedAt().toEpochMilli());
@@ -212,29 +217,29 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if original identity, immutable stage or CAS conflicts / 原身份、不可变阶段或CAS冲突时
      * @throws ApiException if original persistence is unavailable / 原持久性不可用时 */
     public void adoptBuildReview(TaskContext task, UUID executionId, DeploymentAssistedBuildReview review,
-            Instant observedAt) throws SQLException, ApiException {
+                                 Instant observedAt) throws SQLException, ApiException {
         Objects.requireNonNull(review);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("EXECUTING") || record.outcome().isPresent() || record.businessCommitted()
-                    || record.cleanupComplete() || !record.identity().reviewedRevision().equals(review.previousRoot())
-                    || checkpoint.intents().stream().noneMatch(
-                            intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
-                                    && intent.businessKey().equals(DeploymentReferenceKey
-                                            .unit(record.identity().server(), review.unitId()).businessKey())))
+                || record.cleanupComplete() || !record.identity().reviewedRevision().equals(review.previousRoot())
+                || checkpoint.intents().stream().noneMatch(
+                intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
+                    && intent.businessKey().equals(DeploymentReferenceKey
+                    .unit(record.identity().server(), review.unitId()).businessKey())))
                 throw new SQLException("Original build review boundary is no longer available");
             String request = DeploymentExecutionCodec.withBuildReview(record, review);
             var old = record.identity();
             var identity = new DeploymentExecutionIdentity(old.executionId(), old.taskId(), old.projectId(),
-                    old.applicationId(), old.server(), old.mode(), review.nextRoot());
+                old.applicationId(), old.server(), old.mode(), review.nextRoot());
             var recovery = DeploymentExecutionCodec.recovery(identity, DeploymentExecutionCodec.requestVersion(request),
-                    record.phase(), checkpoint.ids());
+                record.phase(), checkpoint.ids());
             var next = new DeploymentExecutionRecord(identity, record.phase(), record.outcome(), request, recovery,
-                    record.resultJson(), false, false, record.createdAt(), millis(observedAt));
+                record.resultJson(), false, false, record.createdAt(), millis(observedAt));
             if (!DeploymentExecutionCodec.known(next).equals(checkpoint))
                 throw new SQLException("Build review changed original reserved resources");
             try (var update = connection
-                    .prepareStatement("UPDATE deployment_execution SET reviewed_revision=?,request_payload=?,"
-                            + "recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
+                .prepareStatement("UPDATE deployment_execution SET reviewed_revision=?,request_payload=?,"
+                    + "recovery_payload=?,updated_at=? WHERE execution_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL")) {
                 update.setString(1, review.nextRoot());
                 update.setBytes(2, bytes(request));
                 update.setBytes(3, bytes(recovery));
@@ -260,7 +265,7 @@ public final class DeploymentExecutionRepository {
      * @return ordered immutable intent-to-optional-UUID map / 有序不可变意图到可选UUID映射
      * @throws SQLException if the format is unsupported or malformed / 格式不支持或无效时 */
     public Map<DeploymentReferenceIntent, Optional<UUID>> references(DeploymentExecutionRecord record)
-            throws SQLException {
+        throws SQLException {
         var checkpoint = DeploymentExecutionCodec.known(record);
         var result = new LinkedHashMap<DeploymentReferenceIntent, Optional<UUID>>();
         for (int i = 0; i < checkpoint.intents().size(); i++)
@@ -277,7 +282,7 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if identity or stage conflicts / 身份或阶段冲突时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
     public void recordReference(TaskContext task, UUID executionId, DeploymentReferenceIntent intent, UUID referenceId,
-            Instant observedAt) throws SQLException, ApiException {
+                                Instant observedAt) throws SQLException, ApiException {
         Objects.requireNonNull(referenceId);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("PREPARED") || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
@@ -293,7 +298,7 @@ public final class DeploymentExecutionRepository {
                 return;
             }
             update(connection, record, checkpoint, ids, record.phase(), record.outcome(), record.resultJson(), false,
-                    false, observedAt);
+                false, observedAt);
         });
     }
 
@@ -306,10 +311,10 @@ public final class DeploymentExecutionRepository {
     public void startEffects(TaskContext task, UUID executionId, Instant observedAt) throws SQLException, ApiException {
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("PREPARED") || record.outcome().isPresent()
-                    || checkpoint.ids().size() != checkpoint.intents().size())
+                || checkpoint.ids().size() != checkpoint.intents().size())
                 throw new SQLException("Execution cannot start or replay effects");
             update(connection, record, checkpoint, checkpoint.ids(), "EXECUTING", Optional.empty(), Optional.empty(),
-                    false, false, observedAt);
+                false, false, observedAt);
         });
     }
 
@@ -322,24 +327,24 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if facts conflict or any business write fails / 事实冲突或任一业务写入失败时
      * @throws ApiException if task access or transaction acknowledgement is uncertain / 任务访问或事务确认不确定时 */
     public void commitApplication(TaskContext task, UUID executionId, DeploymentApplicationGraph graph,
-            List<DeploymentUnitCommit> publications, Instant observedAt) throws SQLException, ApiException {
+                                  List<DeploymentUnitCommit> publications, Instant observedAt) throws SQLException, ApiException {
         var records = List.copyOf(publications);
         Objects.requireNonNull(graph);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (!record.phase().equals("EXECUTING") || record.businessCommitted()
-                    || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent()
-                    || !record.identity().applicationId().equals(graph.applicationId())
-                    || graph.components().stream().anyMatch(c -> !c.unit().server().equals(record.identity().server())))
+                || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent()
+                || !record.identity().applicationId().equals(graph.applicationId())
+                || graph.components().stream().anyMatch(c -> !c.unit().server().equals(record.identity().server())))
                 throw new SQLException("Publication differs from the original unfinished operation");
             requireSecretIntents(connection, record.identity(), records, checkpoint);
             DeploymentPublicationRepository.save(connection, graph, records, observedAt);
             var release = DeploymentReleaseRepository.activate(connection, record.identity(),
-                    DeploymentReleaseSnapshot.capture(graph, records), observedAt);
+                DeploymentReleaseSnapshot.capture(graph, records), observedAt);
             var result = DeploymentExecutionCodec.result(record.identity(), DeploymentExecutionCodec.version(record),
-                    Outcome.SUCCEEDED, Optional.empty(), "DEPLOYMENT_PUBLICATION_COMMITTED", records,
-                    Optional.of(release));
+                Outcome.SUCCEEDED, Optional.empty(), "DEPLOYMENT_PUBLICATION_COMMITTED", records,
+                Optional.of(release));
             update(connection, record, checkpoint, checkpoint.ids(), "COMMITTED", Optional.of(Outcome.SUCCEEDED),
-                    Optional.of(result), true, false, observedAt);
+                Optional.of(result), true, false, observedAt);
         });
     }
 
@@ -350,20 +355,20 @@ public final class DeploymentExecutionRepository {
      * @param checkpoint original reserved associations / 原预留关联
      * @throws SQLException if a secret lacks original reservation evidence / 秘密缺少原预留证据时 */
     private static void requireSecretIntents(Connection connection, DeploymentExecutionIdentity identity,
-            List<DeploymentUnitCommit> records, DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException {
+                                             List<DeploymentUnitCommit> records, DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException {
         for (var record : records)
             for (var reference : record.secrets()) {
                 var revision = DeploymentSecretRepository.readRevision(connection, reference)
-                        .orElseThrow(() -> new SQLException("Publication secret revision is absent"));
+                    .orElseThrow(() -> new SQLException("Publication secret revision is absent"));
                 if (checkpoint.intents().stream()
-                        .noneMatch(intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET
-                                && intent.resourceId().equals(revision.credentialId())
-                                && intent.businessKey().equals(DeploymentReferenceKey
-                                        .secretRevision(identity.server(),
-                                                new gold.debug.windowstolinux.appapi.secret.SecretRef(
-                                                        intent.resourceId(), intent.purpose().orElseThrow()),
-                                                reference)
-                                        .businessKey())))
+                    .noneMatch(intent -> intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET
+                        && intent.resourceId().equals(revision.credentialId())
+                        && intent.businessKey().equals(DeploymentReferenceKey
+                        .secretRevision(identity.server(),
+                            new gold.debug.windowstolinux.appapi.secret.SecretRef(
+                                intent.resourceId(), intent.purpose().orElseThrow()),
+                            reference)
+                        .businessKey())))
                     throw new SQLException("Publication secret was not in the original reserved intent");
             }
     }
@@ -377,18 +382,18 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if a known result would be overwritten / 将覆盖已知结果时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
     public void recordUncommittedOutcome(TaskContext task, UUID executionId, Outcome outcome, Problem problem,
-            Instant observedAt) throws SQLException, ApiException {
+                                         Instant observedAt) throws SQLException, ApiException {
         if (outcome == null || outcome == Outcome.SUCCEEDED)
             throw new IllegalArgumentException("Success requires atomic publication");
         Objects.requireNonNull(problem);
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (record.businessCommitted() || record.cleanupComplete()
-                    || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
+                || record.outcome().filter(o -> o != Outcome.UNKNOWN).isPresent())
                 throw new SQLException("Known business outcome is immutable");
             var result = DeploymentExecutionCodec.result(record.identity(), DeploymentExecutionCodec.version(record),
-                    outcome, Optional.of(problem.code()), problem.eventCode(), List.of(), Optional.empty());
+                outcome, Optional.of(problem.code()), problem.eventCode(), List.of(), Optional.empty());
             update(connection, record, checkpoint, checkpoint.ids(), record.phase(), Optional.of(outcome),
-                    Optional.of(result), false, false, observedAt);
+                Optional.of(result), false, false, observedAt);
         });
     }
 
@@ -407,13 +412,13 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if the business result remains unknown / 业务结果仍未知时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性不确定时 */
     public void finishCleanup(TaskContext task, UUID executionId, Instant observedAt)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             if (record.outcome().isEmpty() || record.outcome().get() == Outcome.UNKNOWN)
                 throw new SQLException("Unknown business outcome cannot finish");
             if (!record.cleanupComplete())
                 update(connection, record, checkpoint, checkpoint.ids(), "FINISHED", record.outcome(),
-                        record.resultJson(), record.businessCommitted(), true, observedAt);
+                    record.resultJson(), record.businessCommitted(), true, observedAt);
         });
     }
 
@@ -430,7 +435,7 @@ public final class DeploymentExecutionRepository {
         var connection = connection(task);
         DeploymentStorageTransaction.execute(connection, () -> {
             var record = read(connection, executionId, true)
-                    .orElseThrow(() -> new SQLException("Original execution is absent"));
+                .orElseThrow(() -> new SQLException("Original execution is absent"));
             requireTask(task, record.identity());
             if (millis(time).isBefore(record.updatedAt()))
                 throw new SQLException("Execution evidence time cannot move backwards");
@@ -451,17 +456,17 @@ public final class DeploymentExecutionRepository {
      * @param time actual evidence time / 实际证据时间
      * @throws SQLException if new evidence or SQL is invalid / 新证据或SQL无效时 */
     private static void update(Connection connection, DeploymentExecutionRecord record,
-            DeploymentExecutionCodec.Checkpoint checkpoint, Map<Integer, UUID> ids, String phase,
-            Optional<Outcome> outcome, Optional<String> result, boolean committed, boolean cleaned, Instant time)
-            throws SQLException {
+                               DeploymentExecutionCodec.Checkpoint checkpoint, Map<Integer, UUID> ids, String phase,
+                               Optional<Outcome> outcome, Optional<String> result, boolean committed, boolean cleaned, Instant time)
+        throws SQLException {
         var recovery = DeploymentExecutionCodec.recovery(record.identity(), DeploymentExecutionCodec.version(record),
-                phase, ids);
+            phase, ids);
         var next = new DeploymentExecutionRecord(record.identity(), phase, outcome, record.requestJson(), recovery,
-                result, committed, cleaned, record.createdAt(), millis(time));
+            result, committed, cleaned, record.createdAt(), millis(time));
         if (!DeploymentExecutionCodec.known(next).intents().equals(checkpoint.intents()))
             throw new SQLException("Execution intents changed");
         try (var statement = connection.prepareStatement(
-                "UPDATE deployment_execution SET phase=?,outcome=?,recovery_payload=?,result_payload=?,business_committed=?,cleanup_complete=?,updated_at=? WHERE execution_id=?")) {
+            "UPDATE deployment_execution SET phase=?,outcome=?,recovery_payload=?,result_payload=?,business_committed=?,cleanup_complete=?,updated_at=? WHERE execution_id=?")) {
             statement.setString(1, phase);
             statement.setString(2, outcome.map(Enum::name).orElse(null));
             statement.setBytes(3, bytes(recovery));
@@ -482,9 +487,9 @@ public final class DeploymentExecutionRepository {
      * @return validated row or absence / 已校验行或不存在
      * @throws SQLException if data or JSON cannot be read / 数据或JSON无法读取时 */
     static Optional<DeploymentExecutionRecord> read(Connection connection, UUID executionId, boolean lock)
-            throws SQLException {
+        throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT * FROM deployment_execution WHERE execution_id=?" + (lock ? " FOR UPDATE" : ""))) {
+            "SELECT * FROM deployment_execution WHERE execution_id=?" + (lock ? " FOR UPDATE" : ""))) {
             statement.setObject(1, executionId);
             try (var rows = statement.executeQuery()) {
                 return rows.next() ? Optional.of(row(rows)) : Optional.empty();
@@ -499,21 +504,21 @@ public final class DeploymentExecutionRepository {
     static DeploymentExecutionRecord row(ResultSet row) throws SQLException {
         try {
             var identity = new DeploymentExecutionIdentity(row.getObject("execution_id", UUID.class),
-                    row.getObject("platform_task_id", UUID.class),
-                    Optional.ofNullable(row.getObject("project_id", UUID.class)), row.getString("application_id"),
-                    new ServerRef(row.getString("server_profile_id")),
-                    DeploymentExecutionIdentity.DeploymentExecutionMode.valueOf(row.getString("mode")),
-                    row.getString("reviewed_revision"));
+                row.getObject("platform_task_id", UUID.class),
+                Optional.ofNullable(row.getObject("project_id", UUID.class)), row.getString("application_id"),
+                new ServerRef(row.getString("server_profile_id")),
+                DeploymentExecutionIdentity.DeploymentExecutionMode.valueOf(row.getString("mode")),
+                row.getString("reviewed_revision"));
             byte[] result = DeploymentPayloadReader.read(row, "result_payload");
             var record = new DeploymentExecutionRecord(identity, row.getString("phase"),
-                    Optional.ofNullable(row.getString("outcome")).map(Outcome::valueOf),
-                    DeploymentJsonDocument.text(
-                            DeploymentPayloadReader.read(row, "request_payload", DeploymentExecutionCodec.READ_LIMIT),
-                            DeploymentExecutionCodec.READ_LIMIT),
-                    DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "recovery_payload")),
-                    result == null ? Optional.empty() : Optional.of(DeploymentJsonDocument.text(result)),
-                    row.getBoolean("business_committed"), row.getBoolean("cleanup_complete"),
-                    Instant.ofEpochMilli(row.getLong("created_at")), Instant.ofEpochMilli(row.getLong("updated_at")));
+                Optional.ofNullable(row.getString("outcome")).map(Outcome::valueOf),
+                DeploymentJsonDocument.text(
+                    DeploymentPayloadReader.read(row, "request_payload", DeploymentExecutionCodec.READ_LIMIT),
+                    DeploymentExecutionCodec.READ_LIMIT),
+                DeploymentJsonDocument.text(DeploymentPayloadReader.read(row, "recovery_payload")),
+                result == null ? Optional.empty() : Optional.of(DeploymentJsonDocument.text(result)),
+                row.getBoolean("business_committed"), row.getBoolean("cleanup_complete"),
+                Instant.ofEpochMilli(row.getLong("created_at")), Instant.ofEpochMilli(row.getLong("updated_at")));
             if (DeploymentExecutionCodec.supported(record))
                 DeploymentExecutionCodec.known(record);
             return record;
@@ -527,7 +532,7 @@ public final class DeploymentExecutionRepository {
      * @throws SQLException if any retained evidence is malformed / 任一保留证据无效时 */
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
+             var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             while (rows.next())
                 row(rows);
         }
@@ -575,6 +580,6 @@ public final class DeploymentExecutionRepository {
          * @param checkpoint validated original facts / 已校验原事实
          * @throws SQLException if persistence or facts fail / 持久化或事实失败时 */
         void apply(Connection connection, DeploymentExecutionRecord record,
-                DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException;
+                   DeploymentExecutionCodec.Checkpoint checkpoint) throws SQLException;
     }
 }

@@ -23,7 +23,7 @@ public final class DeploymentAgentPlanProtocol {
         for (JsonNode item : array(node.get("components"), 16))
             components.add(component(item));
         return new DeploymentAgentPlan(DeploymentAiJson.text(node, "applicationId", 63),
-                DeploymentAiJson.text(gate, "component", 63), health(gate.get("health")), components);
+            DeploymentAiJson.text(gate, "component", 63), health(gate.get("health")), components);
     }
 
     /** Parses one declared component and its exact runtime. / 解析一个声明组件及其精确运行定义。
@@ -31,13 +31,13 @@ public final class DeploymentAgentPlanProtocol {
      * @return typed component / 类型化组件 */
     private static DeploymentAgentPlan.Component component(JsonNode node) {
         DeploymentAgentProtocol.exact(node, Set.of("id", "dependencies", "evidence", "backend", "mode", "entrypoint",
-                "arguments", "workingDirectory", "health", "ports", "resources", "configuration"));
+            "arguments", "workingDirectory", "health", "ports", "resources", "configuration"));
         String id = DeploymentAiJson.text(node, "id", 63);
         var dependencies = strings(node.get("dependencies"), 15, 63);
         var evidence = strings(node.get("evidence"), 32, 500);
         var health = health(node.get("health"));
         var command = new DeploymentCommand(DeploymentAiJson.text(node, "entrypoint", 512),
-                strings(node.get("arguments"), 64, 4000));
+            strings(node.get("arguments"), 64, 4000));
         var mode = DeploymentWorkload.ExecutionMode.valueOf(DeploymentAiJson.text(node, "mode", 32));
         var endpoints = new ArrayList<DeploymentEndpoint>();
         var published = new LinkedHashMap<Integer, Integer>();
@@ -47,31 +47,30 @@ public final class DeploymentAgentPlanProtocol {
             int host = DeploymentAgentProtocol.number(port, "host", 1, 65535);
             int target = DeploymentAgentProtocol.number(port, "target", 1, 65535);
             endpoints.add(
-                    new DeploymentEndpoint(DeploymentAiJson.text(port, "id", 63), DeploymentEndpoint.ProtocolType.TCP,
-                            exposure == DeploymentEndpoint.ExposureType.EXTERNAL ? "0.0.0.0" : "127.0.0.1", host,
-                            target, exposure, ""));
+                new DeploymentEndpoint(DeploymentAiJson.text(port, "id", 63), DeploymentEndpoint.ProtocolType.TCP,
+                    exposure == DeploymentEndpoint.ExposureType.EXTERNAL ? "0.0.0.0" : "127.0.0.1", host,
+                    target, exposure, ""));
             if (published.put(host, target) != null)
                 throw new IllegalArgumentException("Duplicate agent host port");
         }
         Optional<DeploymentCommand> verification = health instanceof DeploymentHealthCheck.Command probe
-                ? Optional.of(probe.command())
-                : Optional.empty();
+            ? Optional.of(probe.command())
+            : Optional.empty();
         String expected = health instanceof DeploymentHealthCheck.Command probe ? probe.expectedOutput() : "";
         var workload = new DeploymentWorkload(mode, true, command, boundedText(node, "workingDirectory", 512),
-                endpoints, verification, expected, Optional.empty(), List.of(), List.of());
+            endpoints, verification, expected, Optional.empty(), List.of(), List.of());
         DeploymentRuntimeDefinition runtime = switch (DeploymentAiJson.text(node, "backend", 16)) {
             case "PROCESS" ->
                 new DeploymentRuntimeDefinition.ManagedProcess(health, DeploymentIdentityMode.SYSTEMD_STATIC, workload);
             case "DOCKER",
-                    "PODMAN" ->
-                new DeploymentRuntimeDefinition.Container(
-                        DeploymentRuntimeDefinition.ContainerEngineType
-                                .valueOf(DeploymentAiJson.text(node, "backend", 16)),
-                        published, List.of(), health, DeploymentIdentityMode.CONTAINER_NON_ROOT, workload);
+                 "PODMAN" -> new DeploymentRuntimeDefinition.Container(
+                DeploymentRuntimeDefinition.ContainerEngineType
+                    .valueOf(DeploymentAiJson.text(node, "backend", 16)),
+                published, List.of(), health, DeploymentIdentityMode.CONTAINER_NON_ROOT, workload);
             default -> throw new IllegalArgumentException("Unsupported agent backend");
         };
         return new DeploymentAgentPlan.Component(id, dependencies, evidence, runtime, resources(node.get("resources")),
-                configuration(node.get("configuration")));
+            configuration(node.get("configuration")));
     }
 
     /** Parses only supported explicit health checks. / 仅解析受支持的明确健康检查。
@@ -83,27 +82,27 @@ public final class DeploymentAgentPlanProtocol {
             case "PROCESS" -> {
                 DeploymentAgentProtocol.exact(node, Set.of("type", "timeout", "stability"));
                 yield new DeploymentHealthCheck.Process(DeploymentAgentProtocol.number(node, "timeout", 1, 3600),
-                        DeploymentAgentProtocol.number(node, "stability", 1, 3600));
+                    DeploymentAgentProtocol.number(node, "stability", 1, 3600));
             }
             case "TCP" -> {
                 DeploymentAgentProtocol.exact(node, Set.of("type", "port", "timeout", "stability"));
                 yield new DeploymentHealthCheck.Tcp(DeploymentAgentProtocol.number(node, "port", 1, 65535),
-                        DeploymentAgentProtocol.number(node, "timeout", 1, 3600),
-                        DeploymentAgentProtocol.number(node, "stability", 1, 3600));
+                    DeploymentAgentProtocol.number(node, "timeout", 1, 3600),
+                    DeploymentAgentProtocol.number(node, "stability", 1, 3600));
             }
             case "HTTP" -> {
                 DeploymentAgentProtocol.exact(node, Set.of("type", "url", "status", "timeout"));
                 yield new DeploymentHealthCheck.Http(URI.create(DeploymentAiJson.text(node, "url", 2048)),
-                        DeploymentAgentProtocol.number(node, "status", 200, 399),
-                        DeploymentAgentProtocol.number(node, "timeout", 1, 3600));
+                    DeploymentAgentProtocol.number(node, "status", 200, 399),
+                    DeploymentAgentProtocol.number(node, "timeout", 1, 3600));
             }
             case "COMMAND" -> {
                 DeploymentAgentProtocol.exact(node, Set.of("type", "entrypoint", "arguments", "expected", "timeout"));
                 yield new DeploymentHealthCheck.Command(
-                        new DeploymentCommand(DeploymentAiJson.text(node, "entrypoint", 512),
-                                strings(node.get("arguments"), 64, 4000)),
-                        DeploymentAiJson.text(node, "expected", 4096),
-                        DeploymentAgentProtocol.number(node, "timeout", 1, 3600));
+                    new DeploymentCommand(DeploymentAiJson.text(node, "entrypoint", 512),
+                        strings(node.get("arguments"), 64, 4000)),
+                    DeploymentAiJson.text(node, "expected", 4096),
+                    DeploymentAgentProtocol.number(node, "timeout", 1, 3600));
             }
             default -> throw new IllegalArgumentException("Unsupported agent health check");
         };
@@ -116,17 +115,17 @@ public final class DeploymentAgentPlanProtocol {
         var files = new ArrayList<DeploymentFileBinding>();
         for (JsonNode item : array(node, 32)) {
             DeploymentAgentProtocol.exact(item,
-                    Set.of("id", "path", "access", "schema", "reversible", "type", "seedFile", "digest"));
+                Set.of("id", "path", "access", "schema", "reversible", "type", "seedFile", "digest"));
             JsonNode reversible = item.get("reversible");
             if (!reversible.isBoolean())
                 throw new IllegalArgumentException("Agent resource reversibility must be boolean");
             var path = new DeploymentStoragePath(DeploymentAiJson.text(item, "path", 500),
-                    DeploymentStoragePath.AccessMode.valueOf(DeploymentAiJson.text(item, "access", 16)),
-                    DeploymentAiJson.text(item, "schema", 64), reversible.booleanValue());
+                DeploymentStoragePath.AccessMode.valueOf(DeploymentAiJson.text(item, "access", 16)),
+                DeploymentAiJson.text(item, "schema", 64), reversible.booleanValue());
             files.add(new DeploymentFileBinding(DeploymentAiJson.text(item, "id", 63), path,
-                    DeploymentStorageLocation.defaults(),
-                    DeploymentStorageLocation.StorageResourceType.valueOf(DeploymentAiJson.text(item, "type", 32)),
-                    boundedText(item, "seedFile", 500), boundedText(item, "digest", 64)));
+                DeploymentStorageLocation.defaults(),
+                DeploymentStorageLocation.StorageResourceType.valueOf(DeploymentAiJson.text(item, "type", 32)),
+                boundedText(item, "seedFile", 500), boundedText(item, "digest", 64)));
         }
         return new DeploymentResourceBindings(files, Optional.of(List.of()));
     }
@@ -189,7 +188,7 @@ public final class DeploymentAgentPlanProtocol {
     private static String boundedText(JsonNode node, String key, int limit) {
         JsonNode value = node.get(key);
         if (value == null || !value.isTextual() || value.textValue().length() > limit
-                || value.textValue().indexOf('\0') >= 0)
+            || value.textValue().indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid agent string: " + key);
         return value.textValue();
     }

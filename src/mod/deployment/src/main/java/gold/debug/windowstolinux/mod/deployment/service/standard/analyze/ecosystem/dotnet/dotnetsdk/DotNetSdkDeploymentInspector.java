@@ -27,14 +27,14 @@ public final class DotNetSdkDeploymentInspector implements DeploymentTypeInspect
      * <p>用于识别DOTNET版本的匹配模式。
      */
     private static final Pattern DOTNET_VERSION = Pattern
-            .compile("[\"']version[\"']\\s*:\\s*[\"']([0-9]+(?:\\.[0-9]+){0,2}(?:[-+][A-Za-z0-9._-]+)?)[\"']");
+        .compile("[\"']version[\"']\\s*:\\s*[\"']([0-9]+(?:\\.[0-9]+){0,2}(?:[-+][A-Za-z0-9._-]+)?)[\"']");
 
     /**
      * Pattern recognizing .NET Web SDK declaration.
      * <p>用于识别.NET Web SDK 声明的匹配模式。
      */
     private static final Pattern DOTNET_WEB_SDK = Pattern
-            .compile("<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk\\.Web[\"']", Pattern.CASE_INSENSITIVE);
+        .compile("<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk\\.Web[\"']", Pattern.CASE_INSENSITIVE);
 
     /**
      * Returns the supported project category handled by this strategy.
@@ -60,46 +60,46 @@ public final class DotNetSdkDeploymentInspector implements DeploymentTypeInspect
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = ServiceMetadataInspector.missing(root, "global.json", "packages.lock.json");
         List<Path> projects;
         try (var stream = Files.list(root)) {
             projects = stream.filter(path -> path.getFileName().toString().endsWith(".csproj"))
-                    .filter(BoundedMetadataInspector::regular).limit(2).toList();
+                .filter(BoundedMetadataInspector::regular).limit(2).toList();
         }
         if (projects.size() != 1) {
             missing = ServiceMetadataInspector.append(missing, "exactly-one-root-csproj");
         }
         String artifact = projects.size() == 1
-                ? projects.getFirst().getFileName().toString().replaceFirst("\\.csproj$", "")
-                : null;
+            ? projects.getFirst().getFileName().toString().replaceFirst("\\.csproj$", "")
+            : null;
         if (projects.size() == 1) {
             String project = ServiceMetadataInspector.readIfPresent(projects.getFirst());
             boolean console = Pattern
-                    .compile("<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk[\"']", Pattern.CASE_INSENSITIVE)
-                    .matcher(project).find()
-                    && Pattern.compile("<OutputType>\\s*Exe\\s*</OutputType>", Pattern.CASE_INSENSITIVE)
-                            .matcher(project).find();
+                .compile("<Project\\s+Sdk\\s*=\\s*[\"']Microsoft\\.NET\\.Sdk[\"']", Pattern.CASE_INSENSITIVE)
+                .matcher(project).find()
+                && Pattern.compile("<OutputType>\\s*Exe\\s*</OutputType>", Pattern.CASE_INSENSITIVE)
+                .matcher(project).find();
             boolean worker = project.contains("Microsoft.NET.Sdk.Worker");
             if (!DOTNET_WEB_SDK.matcher(project).find() && !console && !worker)
                 missing = ServiceMetadataInspector.append(missing,
-                        "executable Microsoft.NET.Sdk, Web or Worker project");
+                    "executable Microsoft.NET.Sdk, Web or Worker project");
             if (Pattern.compile("(?i)(?:net[0-9.]+-windows|<(?:UseWPF|UseWindowsForms)>\\s*true)").matcher(project)
-                    .find())
+                .find())
                 missing = ServiceMetadataInspector.append(missing, "Linux-compatible non-GUI project");
         }
         if (!ServiceMetadataInspector.present(root, "Program.cs")) {
             missing = ServiceMetadataInspector.append(missing, "Program.cs");
         }
         DotNetSdkFacts facts = new DotNetSdkFacts(
-                ServiceMetadataInspector.match(ServiceMetadataInspector.readIfPresent(root.resolve("global.json")),
-                        DOTNET_VERSION),
-                artifact,
-                artifact == null || !ServiceMetadataInspector.present(root, "Program.cs") ? null : artifact + ".dll",
-                missing);
+            ServiceMetadataInspector.match(ServiceMetadataInspector.readIfPresent(root.resolve("global.json")),
+                DOTNET_VERSION),
+            artifact,
+            artifact == null || !ServiceMetadataInspector.present(root, "Program.cs") ? null : artifact + ".dll",
+            missing);
         ServiceProjectFacts shape = new ServiceProjectFacts("global.json", facts.version(), facts.artifactName(),
-                facts.entrypoint(), facts.missingFiles());
+            facts.entrypoint(), facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.DOTNET_LOCKED, languageFacts, shape, false);
+            DeploymentBuildToolType.DOTNET_LOCKED, languageFacts, shape, false);
     }
 }

@@ -1,10 +1,22 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
 
@@ -41,7 +53,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return owned query / 所属查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<List<DeploymentApplicationSnapshot>> list() throws ApiException {
-        return query(List.of(), "应用清单", task -> {
+        return query(List.of(), "Application list", task -> {
             var result = new ArrayList<DeploymentApplicationSnapshot>();
             Optional<String> cursor = Optional.empty();
             do {
@@ -59,14 +71,15 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original local inventory query / 原本地清单查询
      * @throws ApiException if original task admission fails / 原任务准入失败时 */
     public TaskHandle<List<DeploymentApplicationInventory.Entry>> inventory() throws ApiException {
-        return query(List.of(), "应用统一清单", task -> success(new DeploymentApplicationInventory(context).list(task)));
+        return query(List.of(), "Application inventory",
+            task -> success(new DeploymentApplicationInventory(context).list(task)));
     }
 
     /** Loads configured scan targets. / 加载已配置扫描目标。
      * @return target query / 目标查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<List<ServerInfo>> servers() throws ApiException {
-        return query(List.of(), "扫描目标", task -> {
+        return query(List.of(), "Scan targets", task -> {
             var result = new ArrayList<ServerInfo>();
             Optional<String> cursor = Optional.empty();
             do {
@@ -85,7 +98,8 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original query / 原查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application) throws ApiException {
-        return query(List.of(application.server().id()), "检查应用", task -> manager.inspect(application, task));
+        return query(List.of(application.server().id()), "Inspect application",
+            task -> manager.inspect(application, task));
     }
 
     /** Submits one exact reviewed lifecycle action. / 提交一个精确已审阅生命周期动作。
@@ -94,9 +108,9 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original action / 原动作
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentLifecycleResult> lifecycle(DeploymentApplicationSnapshot snapshot,
-            DeploymentLifecycleAction action) throws ApiException {
-        return action(snapshot.application().server(), "应用" + action,
-                task -> manager.lifecycle(snapshot.application(), snapshot.revisionSha256(), action, task));
+                                                           DeploymentLifecycleAction action) throws ApiException {
+        return action(snapshot.application().server(), "Application " + action,
+            task -> manager.lifecycle(snapshot.application(), snapshot.revisionSha256(), action, task));
     }
 
     /** Lists selected application's immutable histories. / 列出所选应用不可变历史。
@@ -104,7 +118,8 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return history query / 历史查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<List<DeploymentReleaseRecord>> history(DeploymentApplicationRef application) throws ApiException {
-        return query(List.of(application.server().id()), "发布历史", task -> success(releases.list(application, task)));
+        return query(List.of(application.server().id()), "Release history",
+            task -> success(releases.list(application, task)));
     }
 
     /** Switches or rolls back to the selected exact history. / 切换或回滚至所选精确历史。
@@ -113,9 +128,9 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original action / 原动作
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<String> switchRelease(DeploymentApplicationSnapshot snapshot, UUID selectedId)
-            throws ApiException {
-        return action(snapshot.application().server(), "切换保留发布",
-                task -> releases.switchRelease(snapshot.application(), snapshot.revisionSha256(), selectedId, task));
+        throws ApiException {
+        return action(snapshot.application().server(), "Switch retained release",
+            task -> releases.switchRelease(snapshot.application(), snapshot.revisionSha256(), selectedId, task));
     }
 
     /** Scans only the selected authorized target. / 仅扫描所选授权目标。
@@ -123,7 +138,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return scan query / 扫描查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentExternalApplications.Scan> scan(ServerRef server) throws ApiException {
-        return query(List.of(server.id()), "扫描外部应用", task -> external.scan(server, task));
+        return query(List.of(server.id()), "Scan external applications", task -> external.scan(server, task));
     }
 
     /** Adopts a freshly rechecked external row. / 接管刚复核的外部行。
@@ -132,8 +147,8 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original registration / 原登记
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<String> adopt(ServerRef server, DeploymentExternalApplications.Discovered candidate)
-            throws ApiException {
-        return action(server, "接管外部应用", task -> external.adopt(server, candidate, task));
+        throws ApiException {
+        return action(server, "Adopt external application", task -> external.adopt(server, candidate, task));
     }
 
     /** Reviews the exact original registration and a same-host replacement without changing local rows. / 不改本地行地审阅精确原登记及同主机替换。
@@ -142,10 +157,10 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return owned immutable review query / 所属不可变审阅查询
      * @throws ApiException if query admission fails / 查询准入失败时 */
     public TaskHandle<DeploymentExternalApplications.Reattachment> reviewReattachment(
-            DeploymentExternalApplications.Registered original, DeploymentExternalApplications.Discovered candidate)
-            throws ApiException {
-        return query(List.of(original.server().id()), "审阅外部应用重新绑定",
-                task -> external.reviewReattachment(original, candidate, task));
+        DeploymentExternalApplications.Registered original, DeploymentExternalApplications.Discovered candidate)
+        throws ApiException {
+        return query(List.of(original.server().id()), "Review external reattachment",
+            task -> external.reviewReattachment(original, candidate, task));
     }
 
     /** Admits explicit reattachment under the original durable management recovery type. / 在原持久管理恢复类型下接纳明确重新绑定。
@@ -153,14 +168,15 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original recoverable action / 原可恢复动作
      * @throws ApiException if action admission fails / 动作准入失败时 */
     public TaskHandle<String> reattach(DeploymentExternalApplications.Reattachment review) throws ApiException {
-        return action(review.original().server(), "重新绑定外部应用", task -> external.reattach(review, task));
+        return action(review.original().server(), "Reattach external application",
+            task -> external.reattach(review, task));
     }
 
     /** Lists adopted external rows. / 列出已接管外部行。
      * @return original local query / 原本地查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<List<DeploymentExternalApplications.Registered>> externalApplications() throws ApiException {
-        return query(List.of(), "已接管应用", task -> success(external.list(task)));
+        return query(List.of(), "Adopted applications", task -> success(external.list(task)));
     }
 
     /** Acts on one original adopted runtime. / 操作一个原接管运行身份。
@@ -169,11 +185,12 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original operation / 原操作
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentExternalApplications.Discovered> externalAction(
-            DeploymentExternalApplications.Registered selected, String action) throws ApiException {
+        DeploymentExternalApplications.Registered selected, String action) throws ApiException {
         return action.equals("REFRESH_STATUS")
-                ? query(List.of(selected.server().id()), "检查接管应用",
-                        task -> external.execute(selected.id(), action, task))
-                : action(selected.server(), "接管应用" + action, task -> external.execute(selected.id(), action, task));
+            ? query(List.of(selected.server().id()), "Inspect adopted application",
+            task -> external.execute(selected.id(), action, task))
+            : action(selected.server(), "Adopted application " + action,
+            task -> external.execute(selected.id(), action, task));
     }
 
     /** Saves local presentation for an adopted row. / 保存接管行的本地展示。
@@ -184,9 +201,9 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original local operation / 原本地操作
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<String> editExternal(DeploymentExternalApplications.Registered selected, String name,
-            String category, Optional<String> url) throws ApiException {
-        return query(List.of(selected.server().id()), "编辑接管应用展示",
-                task -> external.edit(selected, name, category, url, task));
+                                           String category, Optional<String> url) throws ApiException {
+        return query(List.of(selected.server().id()), "Edit adopted presentation",
+            task -> external.edit(selected, name, category, url, task));
     }
 
     /** Loads current managed editor values. / 加载当前受管编辑器值。
@@ -194,10 +211,10 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return original query / 原查询
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentApplicationPresentation.Values> presentation(DeploymentApplicationSnapshot selected)
-            throws ApiException {
-        return query(List.of(selected.application().server().id()), "展示信息",
-                task -> success(new DeploymentApplicationPresentation(context).values(selected.application(),
-                        selected.revisionSha256(), task)));
+        throws ApiException {
+        return query(List.of(selected.application().server().id()), "Presentation information",
+            task -> success(new DeploymentApplicationPresentation(context).values(selected.application(),
+                selected.revisionSha256(), task)));
     }
 
     /** Edits only local presentation under the visible revision. / 在可见修订下仅编辑本地展示。
@@ -208,10 +225,10 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return saved presentation / 已保存展示
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<String> edit(DeploymentApplicationSnapshot snapshot, String name, String taskCategory,
-            Optional<String> url) throws ApiException {
-        return query(List.of(snapshot.application().server().id()), "编辑展示",
-                task -> new DeploymentApplicationPresentation(context).edit(snapshot.application(),
-                        snapshot.revisionSha256(), name, taskCategory, url, task));
+                                   Optional<String> url) throws ApiException {
+        return query(List.of(snapshot.application().server().id()), "Edit presentation",
+            task -> new DeploymentApplicationPresentation(context).edit(snapshot.application(),
+                snapshot.revisionSha256(), name, taskCategory, url, task));
     }
 
     /** Changes only the selected display name, retaining category and access link. / 仅更改所选展示名称，保留类别及访问链接。
@@ -220,9 +237,9 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return saved name / 已保存名称
      * @throws ApiException if task admission fails / 任务准入失败时 */
     public TaskHandle<String> editName(DeploymentApplicationSnapshot snapshot, String name) throws ApiException {
-        return query(List.of(snapshot.application().server().id()), "编辑名称",
-                task -> new DeploymentApplicationPresentation(context).editName(snapshot.application(),
-                        snapshot.revisionSha256(), name, task));
+        return query(List.of(snapshot.application().server().id()), "Edit name",
+            task -> new DeploymentApplicationPresentation(context).editName(snapshot.application(),
+                snapshot.revisionSha256(), name, task));
     }
 
     /** Returns retained page tasks so unknown work remains visible after reopening. / 返回留存页面任务，使未知工作在重开后仍可见。
@@ -269,17 +286,17 @@ public final class DeploymentApplicationsService implements TaskRecovery {
         if (entry.action().startsWith("LIFECYCLE_")) {
             var application = new DeploymentApplicationRef(entry.applicationId(), entry.server());
             result = manager.lifecycle(application, entry.currentRevision(),
-                    DeploymentLifecycleAction.valueOf(entry.action().substring("LIFECYCLE_".length())), task);
+                DeploymentLifecycleAction.valueOf(entry.action().substring("LIFECYCLE_".length())), task);
         } else if (entry.action().equals("HISTORY_SWITCH")) {
             var application = new DeploymentApplicationRef(entry.applicationId(), entry.server());
             result = releases.switchRelease(application, entry.currentRevision(),
-                    UUID.fromString(entry.facts().path("selectedId").asText()), task);
+                UUID.fromString(entry.facts().path("selectedId").asText()), task);
         } else if (entry.action().equals("EXTERNAL_ADOPT")) {
             result = external.adopt(entry.server(),
-                    new DeploymentExternalApplications.Discovered(entry.facts().path("kind").asText(),
-                            entry.facts().path("identity").asText(), entry.currentRevision(), "", "UNKNOWN", false,
-                            false, false),
-                    task);
+                new DeploymentExternalApplications.Discovered(entry.facts().path("kind").asText(),
+                    entry.facts().path("identity").asText(), entry.currentRevision(), "", "UNKNOWN", false,
+                    false, false),
+                task);
         } else if (entry.action().startsWith("EXTERNAL_")) {
             result = external.execute(entry.applicationId(), entry.action().substring("EXTERNAL_".length()), task);
         } else
@@ -323,7 +340,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return known original failure / 已知原失败 */
     private static <T> OperationResult<T> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
-                event, "Application operation did not complete", Map.of(), Optional.empty())));
+            event, "Application operation did not complete", Map.of(), Optional.empty())));
     }
 
     /** Retains the original action for authenticated recovery. / 留存原动作供认证恢复。
@@ -332,6 +349,6 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @return retained original uncertainty / 留存原未知 */
     private static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Original application operation requires reconciliation", Map.of(), Optional.empty())));
+            event, "Original application operation requires reconciliation", Map.of(), Optional.empty())));
     }
 }

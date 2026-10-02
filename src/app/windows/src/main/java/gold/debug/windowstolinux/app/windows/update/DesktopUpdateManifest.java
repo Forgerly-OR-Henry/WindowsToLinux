@@ -21,8 +21,10 @@ import java.util.Objects;
  * @param signatureBase64 signature base 64 / 签名基础64
  */
 public record DesktopUpdateManifest(String releaseId, DesktopReleaseVersion version,
-        DesktopArchitectureType architecture, long packageBytes, String packageSha256, Instant issuedAt,
-        Instant expiresAt, String keyId, boolean emergencyRollback, String signatureBase64) {
+                                    DesktopArchitectureType architecture, long packageBytes, String packageSha256,
+                                    Instant issuedAt,
+                                    Instant expiresAt, String keyId, boolean emergencyRollback,
+                                    String signatureBase64) {
     /**
      * Current signed metadata schema. / 当前签名元数据 schema。
      */
@@ -82,10 +84,10 @@ public record DesktopUpdateManifest(String releaseId, DesktopReleaseVersion vers
      */
     byte[] signedPayload() {
         String canonical = "schema=" + SCHEMA_VERSION + '\n' + "releaseId=" + releaseId + '\n' + "version=" + version
-                + '\n' + "architecture=" + architecture + '\n' + "packageBytes=" + packageBytes + '\n'
-                + "packageSha256=" + packageSha256 + '\n' + "issuedAt=" + issuedAt.getEpochSecond() + '\n'
-                + "expiresAt=" + expiresAt.getEpochSecond() + '\n' + "keyId=" + keyId + '\n' + "emergencyRollback="
-                + emergencyRollback + '\n';
+            + '\n' + "architecture=" + architecture + '\n' + "packageBytes=" + packageBytes + '\n'
+            + "packageSha256=" + packageSha256 + '\n' + "issuedAt=" + issuedAt.getEpochSecond() + '\n'
+            + "expiresAt=" + expiresAt.getEpochSecond() + '\n' + "keyId=" + keyId + '\n' + "emergencyRollback="
+            + emergencyRollback + '\n';
         return canonical.getBytes(StandardCharsets.UTF_8);
     }
 

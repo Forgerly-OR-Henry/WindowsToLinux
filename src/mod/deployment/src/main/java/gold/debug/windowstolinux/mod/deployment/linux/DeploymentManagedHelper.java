@@ -42,7 +42,7 @@ public final class DeploymentManagedHelper {
          * @param sha256 observed helper byte digest / 已观察 helper 字节摘要 */
         public Identity {
             if (protocol != DeploymentManagedHelperBundle.PROTOCOL_VERSION
-                    || !DeploymentManagedHelperBundle.EXPECTED_SHA256.equals(sha256))
+                || !DeploymentManagedHelperBundle.EXPECTED_SHA256.equals(sha256))
                 throw new IllegalArgumentException("Helper identity differs from the packaged contract");
         }
     }
@@ -72,7 +72,7 @@ public final class DeploymentManagedHelper {
      * @param task original accepted task / 原已接纳任务
      * @param revision reviewed business revision / 已审阅业务修订 */
     public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String revision) {
+                                   TaskContext task, String revision) {
         this(session, interaction, server, task, revision, DeploymentSendGuard.NONE);
     }
 
@@ -84,7 +84,7 @@ public final class DeploymentManagedHelper {
      * @param revision reviewed business revision / 已审阅业务修订
      * @param beforeSend caller-owned check / 调用方持有的核对 */
     public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String revision, DeploymentSendGuard beforeSend) {
+                                   TaskContext task, String revision, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -101,7 +101,7 @@ public final class DeploymentManagedHelper {
     public OperationResult<Identity> install() throws ApiException {
         byte[] body = DeploymentHelperInstallerScript.render().getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2),
-                131072)) {
+            131072)) {
             java.util.Arrays.fill(body, (byte) 0);
             var grant = interaction.approve(intent("deployment.helper.install.v1", request), task);
             if (grant.outcome() != Outcome.SUCCEEDED)
@@ -112,7 +112,7 @@ public final class DeploymentManagedHelper {
                 response = session.execute(request, grant.value().orElseThrow());
             } catch (ApiException uncertain) {
                 if (uncertain.problem().code() == ProblemCode.ACCESS_DENIED
-                        || uncertain.problem().code() == ProblemCode.INVALID_INPUT)
+                    || uncertain.problem().code() == ProblemCode.INVALID_INPUT)
                     throw uncertain;
                 return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
             }
@@ -123,8 +123,8 @@ public final class DeploymentManagedHelper {
             try {
                 var observed = probe();
                 return observed.outcome() == Outcome.SUCCEEDED
-                        ? observed
-                        : unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
+                    ? observed
+                    : unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
             } catch (ApiException uncertain) {
                 return unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
             }
@@ -139,17 +139,17 @@ public final class DeploymentManagedHelper {
      * @return original platform command observation / 原平台命令观察
      * @throws ApiException if review, transition or transport fails / 审核、阶段转换或传输失败时 */
     public OperationResult<CommandResult> installTracked(byte[] script, BeforeExecute beforeExecute)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(script);
         Objects.requireNonNull(beforeExecute);
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
-                131072)) {
+            131072)) {
             var grant = interaction.approve(intent("deployment.helper.install.tracked.v1", request), task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
-            if (task.cancellation().requested())
+            if (task.cancelToken().requested())
                 return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                        Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_HELPER_INSTALL_UNSENT")));
+                    Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_HELPER_INSTALL_UNSENT")));
             beforeExecute.run();
             beforeSend.verify();
             return session.execute(request, grant.value().orElseThrow());
@@ -163,7 +163,7 @@ public final class DeploymentManagedHelper {
     public OperationResult<CommandResult> installationStatus(UUID operationId) throws ApiException {
         byte[] script = DeploymentHelperInstallerScript.renderStatus(operationId).getBytes(StandardCharsets.UTF_8);
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofSeconds(30),
-                2048)) {
+            2048)) {
             java.util.Arrays.fill(script, (byte) 0);
             var grant = interaction.approve(intent("deployment.helper.install.status.v1", request), task);
             if (grant.outcome() != Outcome.SUCCEEDED)
@@ -189,11 +189,11 @@ public final class DeploymentManagedHelper {
                 return withoutValue(response);
             if (complete(response, probeOutput(), true))
                 return new OperationResult<>(Outcome.SUCCEEDED,
-                        Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
-                                DeploymentManagedHelperBundle.EXPECTED_SHA256)),
-                        Optional.empty());
+                    Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
+                        DeploymentManagedHelperBundle.EXPECTED_SHA256)),
+                    Optional.empty());
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
+                Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
         }
     }
 
@@ -203,7 +203,7 @@ public final class DeploymentManagedHelper {
      * @return classified exact review intent / 已分类的精确审核意图 */
     private gold.debug.windowstolinux.appapi.task.ActionIntent intent(String operation, CommandRequest request) {
         return RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(operation,
-                Set.of(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH))));
+            Set.of(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH))));
     }
 
     /** Requires a known exit, untruncated clean output and an exact terminal protocol. / 要求已知退出、未截断的干净输出及精确末尾协议。
@@ -216,7 +216,7 @@ public final class DeploymentManagedHelper {
             return false;
         CommandResult value = response.value().orElseThrow();
         return value.exitCode().equals(Optional.of(0)) && !value.truncated() && (!exact || value.stderr().isEmpty())
-                && (exact ? value.stdout().equals(expected) : value.stdout().endsWith(expected));
+            && (exact ? value.stdout().equals(expected) : value.stdout().endsWith(expected));
     }
 
     /** Converts a rejected review or uncertain command without inventing a payload. / 转换被拒审核或未知命令，不虚构载荷。
@@ -231,7 +231,7 @@ public final class DeploymentManagedHelper {
      * @return retained uncertainty / 保留的不确定性 */
     private static OperationResult<Identity> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Builds a non-secret diagnostic. / 构造不含秘密的诊断。
@@ -240,29 +240,29 @@ public final class DeploymentManagedHelper {
      * @return bounded public problem / 有界公开问题 */
     private static Problem problem(ProblemCode code, String event) {
         return new Problem(code, event, "Managed helper evidence did not match the packaged contract", Map.of(),
-                Optional.empty());
+            Optional.empty());
     }
 
     /** Returns the fixed install receipt suffix. / 返回固定安装回执尾部。
      * @return exact receipt suffix / 精确回执尾部 */
     private static String installTail() {
         return "HELPER_INSTALL=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
     }
 
     /** Returns the exact read-only probe output. / 返回精确只读探测输出。
      * @return expected probe bytes as text / 文本形式的预期探测字节 */
     private static String probeOutput() {
         return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
     }
 
     /** Renders a fixed read-only probe with a shell-verified byte digest. / 渲染以 shell 核验字节摘要的固定只读探测。
      * @return exact Bash script / 精确 Bash 脚本 */
     private static String probeScript() {
         return "set -euo pipefail\n" + "printf '%s  %s\\n' '" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "' '"
-                + DeploymentManagedHelperBundle.PATH + "' | /usr/bin/sha256sum --check --status\n" + "'"
-                + DeploymentManagedHelperBundle.PATH + "' probe\n" + "printf 'SHA256="
-                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n";
+            + DeploymentManagedHelperBundle.PATH + "' | /usr/bin/sha256sum --check --status\n" + "'"
+            + DeploymentManagedHelperBundle.PATH + "' probe\n" + "printf 'SHA256="
+            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n";
     }
 }

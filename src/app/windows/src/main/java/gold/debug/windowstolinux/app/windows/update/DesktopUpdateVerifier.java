@@ -38,52 +38,52 @@ public final class DesktopUpdateVerifier {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public DesktopUpdateVerification verify(Path packageFile, DesktopUpdateManifest manifest,
-            DesktopUpdateTrustPolicy policy) throws DesktopUpdateException {
+                                            DesktopUpdateTrustPolicy policy) throws DesktopUpdateException {
         Path normalized = Objects.requireNonNull(packageFile, "packageFile").toAbsolutePath().normalize();
         Objects.requireNonNull(manifest, "manifest");
         Objects.requireNonNull(policy, "policy");
         if (!Files.isRegularFile(normalized, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(normalized)) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.PACKAGE_INVALID,
-                    "staged update package is not a regular non-link file");
+                "staged update package is not a regular non-link file");
         }
         if (!manifest.keyId().equals(policy.trustedKeyId())) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.SIGNATURE_INVALID,
-                    "update metadata key identifier differs from the pinned trust root");
+                "update metadata key identifier differs from the pinned trust root");
         }
         if (policy.revokedReleaseIds().contains(manifest.releaseId())) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.VERSION_REJECTED,
-                    "the signed desktop release has been revoked by local release policy");
+                "the signed desktop release has been revoked by local release policy");
         }
         if (manifest.issuedAt().isAfter(policy.verificationTime())
-                || !manifest.expiresAt().isAfter(policy.verificationTime())) {
+            || !manifest.expiresAt().isAfter(policy.verificationTime())) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.MANIFEST_INVALID,
-                    "signed update metadata is not currently valid");
+                "signed update metadata is not currently valid");
         }
         if (manifest.architecture() != policy.currentArchitecture()) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.ARCHITECTURE_REJECTED,
-                    "desktop update package architecture differs from the running application");
+                "desktop update package architecture differs from the running application");
         }
         int comparison = manifest.version().compareTo(policy.currentVersion());
         boolean approvedEmergencyRollback = comparison < 0 && manifest.emergencyRollback()
-                && policy.emergencyRollbackApproved();
+            && policy.emergencyRollbackApproved();
         if (comparison == 0 || comparison < 0 && !approvedEmergencyRollback) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.VERSION_REJECTED,
-                    "desktop update is equal to or older than the running version without approved signed rollback");
+                "desktop update is equal to or older than the running version without approved signed rollback");
         }
         PackageIdentity identity = packageIdentity(normalized);
         if (identity.bytes() != manifest.packageBytes() || !identity.sha256().equals(manifest.packageSha256())) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.PACKAGE_INVALID,
-                    "staged package size or SHA-256 differs from signed metadata");
+                "staged package size or SHA-256 differs from signed metadata");
         }
         verifySignature(manifest, policy);
         return new DesktopUpdateVerification(normalized, manifest.releaseId(), manifest.version(),
-                manifest.architecture(), identity.bytes(), identity.sha256(), policy.verificationTime(),
-                List.of("staged package size and SHA-256 match signed metadata",
-                        "Ed25519 signature matches the pinned release trust root",
-                        approvedEmergencyRollback
-                                ? "signed emergency rollback was explicitly approved"
-                                : "release version is newer than the running application",
-                        "package architecture matches the running application"));
+            manifest.architecture(), identity.bytes(), identity.sha256(), policy.verificationTime(),
+            List.of("staged package size and SHA-256 match signed metadata",
+                "Ed25519 signature matches the pinned release trust root",
+                approvedEmergencyRollback
+                    ? "signed emergency rollback was explicitly approved"
+                    : "release version is newer than the running application",
+                "package architecture matches the running application"));
     }
 
     /**
@@ -111,7 +111,7 @@ public final class DesktopUpdateVerifier {
             return new PackageIdentity(count, HexFormat.of().formatHex(digest.digest()));
         } catch (IOException | GeneralSecurityException | ArithmeticException exception) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.PACKAGE_INVALID,
-                    "staged update package could not be hashed safely", exception);
+                "staged update package could not be hashed safely", exception);
         }
     }
 
@@ -124,20 +124,20 @@ public final class DesktopUpdateVerifier {
      * @throws DesktopUpdateException if the desktop update boundary rejects the operation / Desktop更新边界拒绝当前操作时
      */
     private static void verifySignature(DesktopUpdateManifest manifest, DesktopUpdateTrustPolicy policy)
-            throws DesktopUpdateException {
+        throws DesktopUpdateException {
         try {
             Signature verifier = Signature.getInstance("Ed25519");
             verifier.initVerify(policy.trustedPublicKey());
             verifier.update(manifest.signedPayload());
             if (!verifier.verify(Base64.getDecoder().decode(manifest.signatureBase64()))) {
                 throw DesktopUpdateException.create(DesktopUpdateFailureType.SIGNATURE_INVALID,
-                        "desktop update metadata signature is invalid");
+                    "desktop update metadata signature is invalid");
             }
         } catch (DesktopUpdateException exception) {
             throw exception;
         } catch (GeneralSecurityException | IllegalArgumentException exception) {
             throw DesktopUpdateException.create(DesktopUpdateFailureType.SIGNATURE_INVALID,
-                    "desktop update signature could not be verified", exception);
+                "desktop update signature could not be verified", exception);
         }
     }
 

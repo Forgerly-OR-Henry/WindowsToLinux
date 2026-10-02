@@ -5,7 +5,7 @@ import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.source.SourceService;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.task.InteractionService;
 import gold.debug.windowstolinux.appapi.task.LogService;
 import gold.debug.windowstolinux.appapi.task.ProcessService;
@@ -81,7 +81,7 @@ public interface ModContext {
      * Returns authorized source reads and snapshots. / 返回经授权的来源读取与快照能力。
      * @return the owned result described by this capability / 此能力约定的所属结果
      */
-    SourceService source();
+    FileService file();
 
     /**
      * Returns structured diagnostic storage for this owner. / 返回此所有者的结构化诊断存储能力。

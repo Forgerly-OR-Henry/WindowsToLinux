@@ -16,7 +16,7 @@ public final class PnpmBuildInspector {
      * <p>用于识别管理器的匹配模式。
      */
     private static final Pattern MANAGER = Pattern
-            .compile("\\\"packageManager\\\"\\s*:\\s*\\\"pnpm@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
+        .compile("\\\"packageManager\\\"\\s*:\\s*\\\"pnpm@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?\\\"");
 
     /**
      * Returns pnpm facts when pnpm-lock.yaml exists. / 在 pnpm-lock.yaml 存在时返回 pnpm 事实。
@@ -33,6 +33,6 @@ public final class PnpmBuildInspector {
         String lock = BoundedMetadataInspector.read(path);
         String manifest = BoundedMetadataInspector.read(root.resolve("package.json"));
         return lock.matches("(?s).*lockfileVersion:\\s*['\\\"]?[69](?:\\.0)?['\\\"]?.*")
-                && MANAGER.matcher(manifest).find() ? Optional.of(lockFile) : Optional.empty();
+            && MANAGER.matcher(manifest).find() ? Optional.of(lockFile) : Optional.empty();
     }
 }

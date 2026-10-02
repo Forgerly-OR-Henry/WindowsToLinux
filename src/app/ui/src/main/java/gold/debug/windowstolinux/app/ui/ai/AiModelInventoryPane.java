@@ -8,11 +8,14 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
-import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ai.catalog.*;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.ai.AiInventoryAccess;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Keeps the original inventory visible while editing a purpose inline. / 内联编辑用途时保持原模型清单可见。 */
 final class AiModelInventoryPane extends JPanel {
@@ -98,7 +101,7 @@ final class AiModelInventoryPane extends JPanel {
      * @param edit model editing callback / 模型编辑回调
      */
     AiModelInventoryPane(AiInventoryAccess service, DesktopComponentFactory c, PageMessagePresenter messages,
-            Consumer<AiProviderSummary> edit) {
+                         Consumer<AiProviderSummary> edit) {
         super(new BorderLayout(8, 8));
         this.service = service;
         this.messages = messages;
@@ -112,8 +115,8 @@ final class AiModelInventoryPane extends JPanel {
         selected.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         inventory.setCellRenderer(renderer(false));
         selected.setCellRenderer(renderer(true));
-        inventory.setFixedCellHeight(56);
-        selected.setFixedCellHeight(56);
+        inventory.setFixedCellHeight(90);
+        selected.setFixedCellHeight(90);
         installOrder(inventory, false);
         installOrder(selected, true);
         inventory.addListSelectionListener(event -> updateControls());
@@ -129,9 +132,9 @@ final class AiModelInventoryPane extends JPanel {
      * @param c component factory / 控件工厂
      */
     private void toolbar(DesktopComponentFactory c) {
-        JPanel toolbar = c.transparent(new BorderLayout(8, 0));
-        toolbar.add(c.sectionHeading(messages, "ai.models.title", "ai.models.description"));
-        JPanel roles = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JPanel toolbar = c.transparent(new BorderLayout(8, 8));
+        toolbar.add(c.sectionHeading(messages, "ai.models.title", "ai.models.description"), BorderLayout.NORTH);
+        JPanel roles = c.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
         for (var value : AiPurposeType.values()) {
             JButton button = c.secondaryButton(messages.text("ai.purpose." + value.name()));
             button.setName("ai.open." + value.name());
@@ -139,7 +142,7 @@ final class AiModelInventoryPane extends JPanel {
             buttons.put(value, button);
             roles.add(button);
         }
-        toolbar.add(roles, BorderLayout.EAST);
+        toolbar.add(roles, BorderLayout.SOUTH);
         add(toolbar, BorderLayout.NORTH);
     }
 
@@ -167,7 +170,7 @@ final class AiModelInventoryPane extends JPanel {
         controls.add(up);
         controls.add(down);
         JButton cancel = messages.bind(c.secondaryButton(""), "button.cancel"),
-                save = messages.bind(c.primaryButton(""), "button.save");
+            save = messages.bind(c.primaryButton(""), "button.save");
         cancel.setName("ai.purpose.cancel");
         save.setName("ai.purpose.save");
         cancel.addActionListener(event -> {
@@ -189,7 +192,7 @@ final class AiModelInventoryPane extends JPanel {
         footer.add(status);
         JPanel modelActions = c.transparent(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         JButton newModel = messages.bind(c.primaryButton(""), "ai.models.add"),
-                editModel = messages.bind(c.secondaryButton(""), "ai.models.edit");
+            editModel = messages.bind(c.secondaryButton(""), "ai.models.edit");
         newModel.setName("ai.models.add");
         editModel.setName("ai.models.edit");
         newModel.addActionListener(event -> {
@@ -264,13 +267,15 @@ final class AiModelInventoryPane extends JPanel {
             updateControls();
         });
     }
+
     /** Combined inventory read. / 合并清单读取。
      * @param models all models / 全部模型
      * @param memberships saved purpose lists / 已保存用途列表
      */
     private record InventorySnapshot(List<AiProviderSummary> models,
-            Map<AiPurposeType, List<AiPurposeAssignment>> memberships) {
+                                     Map<AiPurposeType, List<AiPurposeAssignment>> memberships) {
     }
+
     /** Opens a selected purpose while retaining the original list. / 保留原列表并打开所选用途。
      * @param value selected purpose / 所选用途
      */
@@ -339,9 +344,10 @@ final class AiModelInventoryPane extends JPanel {
         inventory.setSelectedValue(state.selected(), false);
         selected.setSelectedValue(state.selectedPurpose(), false);
         for (var type : AiPurposeType.values())
-            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(buttons.get(type),
-                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("ai.purpose.count." + type.name(),
-                            "count", memberships.getOrDefault(type, List.of()).size()), messages.catalog());
+            gold.debug.windowstolinux.app.ui.language.LocaleBinding.bind(buttons.get(type),
+                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("ai.purpose.count." + type.name(),
+                    "count", memberships.getOrDefault(type, List.of()).size()),
+                messages.catalog());
         status.setText(messages.text(models.isEmpty() ? "ai.models.empty" : "ai.models.orderHint"));
         updateControls();
         SwingUtilities.invokeLater(() -> {
@@ -353,9 +359,10 @@ final class AiModelInventoryPane extends JPanel {
     /** Refreshes display keys and renderers while keeping membership drafts and selection. / 刷新显示键和渲染器，保留成员草稿及选择。 */
     void localize() {
         for (var type : AiPurposeType.values())
-            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.bind(buttons.get(type),
-                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("ai.purpose.count." + type.name(),
-                            "count", memberships.getOrDefault(type, List.of()).size()), messages.catalog());
+            gold.debug.windowstolinux.app.ui.language.LocaleBinding.bind(buttons.get(type),
+                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("ai.purpose.count." + type.name(),
+                    "count", memberships.getOrDefault(type, List.of()).size()),
+                messages.catalog());
         if (purpose != null)
             messages.bind(title, "ai.purpose." + purpose.name());
         messages.bind(enabled, "ai.models.enabled");
@@ -372,7 +379,7 @@ final class AiModelInventoryPane extends JPanel {
         enabled.setSelected(member.map(AiPurposeAssignment::enabled).orElse(false));
         var chosen = find(selected.getSelectedValue());
         enabled.setEnabled(!blocked() && member.isPresent() && chosen != null
-                && (member.get().enabled() || chosen.verified(purpose)));
+            && (member.get().enabled() || chosen.verified(purpose)));
         buttons.values().forEach(v -> v.setEnabled(!blocked()));
         inventory.setEnabled(!blocked());
         selected.setEnabled(!blocked());
@@ -438,7 +445,7 @@ final class AiModelInventoryPane extends JPanel {
         if (role) {
             var prior = draft;
             draft = ids.stream()
-                    .map(id -> prior.stream().filter(v -> v.profileId().equals(id)).findFirst().orElseThrow()).toList();
+                .map(id -> prior.stream().filter(v -> v.profileId().equals(id)).findFirst().orElseThrow()).toList();
             render();
         } else {
             busy = true;
@@ -450,8 +457,8 @@ final class AiModelInventoryPane extends JPanel {
                 busy = false;
                 var prior = models;
                 models = ids.stream()
-                        .map(id -> prior.stream().filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow())
-                        .toList();
+                    .map(id -> prior.stream().filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow())
+                    .toList();
                 render();
             }, failure -> {
                 busy = false;
@@ -508,7 +515,7 @@ final class AiModelInventoryPane extends JPanel {
     private ListCellRenderer<? super String> renderer(boolean role) {
         return (list, id, index, isSelected, focus) -> {
             JLabel label = (JLabel) new DefaultListCellRenderer().getListCellRendererComponent(list, id, index,
-                    isSelected, focus);
+                isSelected, focus);
             var model = find(id);
             String suffix = "";
             if (role) {
@@ -517,12 +524,45 @@ final class AiModelInventoryPane extends JPanel {
             } else if (purpose != null && draft.stream().anyMatch(v -> v.profileId().equals(id)))
                 suffix = " · " + messages.text("ai.purpose.joined");
             if (model != null) {
-                label.setText((index + 1) + "  " + model.name() + " · " + model.profile().model() + suffix);
-                label.setToolTipText(model.profile().chatCompletionsEndpoint().toString());
+                label.setText("<html>" + escape((index + 1) + "  " + model.name() + " · " + model.profile().model() + suffix)
+                    + "<br>" + capabilityLabel(model, AiCapabilityType.TEXT) + " · " + capabilityLabel(model, AiCapabilityType.VISION)
+                    + "<br>" + capabilityLabel(model, AiCapabilityType.VOICE_FILE) + " · " + capabilityLabel(model, AiCapabilityType.VOICE_REALTIME)
+                    + "</html>");
+                label.setToolTipText(checkDetails(model));
             }
             label.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
             return label;
         };
+    }
+
+    /** Builds one independently localized capability state. / 构造一个独立本地化能力状态。
+     * @param model actual inventory row / 实际清单行
+     * @param capability independently checked capability / 独立检查能力
+     * @return escaped label / 转义标签 */
+    private String capabilityLabel(AiProviderSummary model, AiCapabilityType capability) {
+        return escape(messages.text("ai.capability." + capability.name().toLowerCase(Locale.ROOT)) + ": "
+            + messages.text("ai.check." + model.checks().get(capability).state().name()));
+    }
+
+    /** Shows safe fixed reasons for all capabilities without assuming a chat address. / 展示全部能力的安全固定原因，不假设聊天地址存在。
+     * @param model actual configuration / 实际配置
+     * @return safe localized tooltip / 安全本地化提示 */
+    private String checkDetails(AiProviderSummary model) {
+        var details = new StringBuilder("<html>");
+        for (var capability : AiCapabilityType.values()) {
+            details.append(capabilityLabel(model, capability));
+            var check = model.checks().get(capability);
+            if (!check.reason().isEmpty()) details.append(" · ").append(escape(messages.text("ai.check.reason." + check.reason())));
+            details.append("<br>");
+        }
+        return details.append("</html>").toString();
+    }
+
+    /** Escapes provider-controlled display values before Swing HTML rendering. / Swing HTML渲染前转义提供方可控显示值。
+     * @param value plain label / 纯标签
+     * @return escaped text / 转义文字 */
+    private static String escape(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     /** Captures nonsecret editor state. / 捕获非秘密编辑状态。
@@ -532,8 +572,8 @@ final class AiModelInventoryPane extends JPanel {
         if (restored != null)
             return restored;
         return new AiInventoryState(Optional.ofNullable(purpose), draft, original,
-                Objects.toString(inventory.getSelectedValue(), ""), Objects.toString(selected.getSelectedValue(), ""),
-                inventoryScroll.getVerticalScrollBar().getValue(), purposeScroll.getVerticalScrollBar().getValue());
+            Objects.toString(inventory.getSelectedValue(), ""), Objects.toString(selected.getSelectedValue(), ""),
+            inventoryScroll.getVerticalScrollBar().getValue(), purposeScroll.getVerticalScrollBar().getValue());
     }
 
     /** Restores editor state after theme or language rebuild. / 主题或语言重建后恢复编辑状态。

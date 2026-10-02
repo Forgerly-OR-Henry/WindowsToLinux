@@ -50,7 +50,7 @@ public final class ApplicationBundleInspector {
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS))
             return properties;
         if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(file)
-                || Files.size(file) > 65536)
+            || Files.size(file) > 65536)
             throw new IOException("invalid application declaration");
         try (var reader = Files.newBufferedReader(file)) {
             properties.load(reader);
@@ -73,7 +73,7 @@ public final class ApplicationBundleInspector {
         String directory = DeploymentCommand.relative(properties.getProperty("buildDirectory", ""), true);
         Path target = root.resolve(directory).normalize();
         if (!target.startsWith(root) || !target.toRealPath().equals(root.toRealPath().resolve(directory).normalize())
-                || !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS))
+            || !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS))
             throw new IOException("application build directory escapes the source bundle");
         return target;
     }

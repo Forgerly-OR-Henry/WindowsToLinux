@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSto
  * @param hostLocationExplicit host location explicit / 主机位置显式
  */
 public record DeploymentSqliteRequirement(DeploymentStorageLocation location, String fileName, String accessPath,
-        String pathEnvironment, String seedFile, boolean hostLocationExplicit) {
+                                          String pathEnvironment, String seedFile, boolean hostLocationExplicit) {
     /**
      * Initializes sqlite file requirement through its shared constructor contract.
      * <p>通过共享构造契约初始化Sqlite文件要求。
@@ -27,7 +27,7 @@ public record DeploymentSqliteRequirement(DeploymentStorageLocation location, St
      * @param seedFile seed file / 初始种子文件
      */
     public DeploymentSqliteRequirement(DeploymentStorageLocation location, String fileName, String accessPath,
-            String pathEnvironment, String seedFile) {
+                                       String pathEnvironment, String seedFile) {
         this(location, fileName, accessPath, pathEnvironment, seedFile, false);
     }
 
@@ -69,19 +69,19 @@ public record DeploymentSqliteRequirement(DeploymentStorageLocation location, St
     public static DeploymentSqliteRequirement fromPath(String path, String environment, String seed) {
         if (path == null || path.equals("DEFAULT"))
             return new DeploymentSqliteRequirement(DeploymentStorageLocation.defaults(), "application.db", "",
-                    environment, seed);
+                environment, seed);
         if (path.isBlank() || path.contains("$") || path.contains("{{"))
             return new DeploymentSqliteRequirement(DeploymentStorageLocation.unresolved(), "application.db", "",
-                    environment, seed);
+                environment, seed);
         if (path.equals(":memory:") || path.startsWith("file:"))
             throw new IllegalArgumentException(
-                    "in-memory databases and SQLite URI options are not persistent file declarations");
+                "in-memory databases and SQLite URI options are not persistent file declarations");
         path = DeploymentStorageLocation.validatedPath(path);
         int separator = path.lastIndexOf('/');
         String file = path.substring(separator + 1);
         String directory = path.startsWith("/") ? path.substring(0, separator) : path;
         return new DeploymentSqliteRequirement(DeploymentStorageLocation.custom(directory), file, path, environment,
-                seed);
+            seed);
     }
 
     /**

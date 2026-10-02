@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static gold.debug.windowstolinux.app.db.ModActivationLedgerTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -7,12 +13,12 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,13 +36,13 @@ class ModRecoveryLedgerTest {
         register(db, null);
         sql(db, "INSERT INTO mod_registry(mod_id,updated_at) VALUES(?,1)", PROVIDER);
         sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,manifest_json,origin_kind,installed_at,state) VALUES(?,?,'fixture',?,'{}','CLASS',1,'READY')",
-                PROVIDER, VERSION, "1".repeat(64));
+            PROVIDER, VERSION, "1".repeat(64));
         sql(db, "UPDATE mod_registry SET last_runtime_state='UNKNOWN',actual_version=?,last_boot_id=?", VERSION,
-                UUID.randomUUID());
+            UUID.randomUUID());
         sql(db, "UPDATE mod_registry SET enabled=FALSE,selected_version='2.0.0' WHERE mod_id=?", OWNER);
         return new TaskRecoveryGraph(OWNER,
-                List.of(new TaskRecoveryGraph.Release(OWNER, VERSION, "0".repeat(64), Optional.empty()),
-                        new TaskRecoveryGraph.Release(PROVIDER, VERSION, "1".repeat(64), Optional.empty())));
+            List.of(new TaskRecoveryGraph.Release(OWNER, VERSION, "0".repeat(64), Optional.empty()),
+                new TaskRecoveryGraph.Release(PROVIDER, VERSION, "1".repeat(64), Optional.empty())));
     }
 
     long count(PlatformDatabase db, String table) throws Exception {
@@ -52,7 +58,7 @@ class ModRecoveryLedgerTest {
             assertEquals(2, count(db, "mod_operation"));
             assertEquals(List.of(retained), ledger.pending());
             assertEquals("UNKNOWN",
-                    value(db, "SELECT last_runtime_state FROM mod_registry WHERE mod_id='" + OWNER + "'"));
+                value(db, "SELECT last_runtime_state FROM mod_registry WHERE mod_id='" + OWNER + "'"));
             assertThrows(SQLException.class, () -> ledger.retain(graph));
             assertThrows(SQLException.class, () -> ledger.resume(retained));
             assertThrows(SQLException.class, () -> ledger.archive(retained));
@@ -84,9 +90,9 @@ class ModRecoveryLedgerTest {
             assertEquals(retained.id(), resumed.id());
             assertEquals(retained.graph(), resumed.graph());
             assertEquals(retained.rows().stream().map(ModRecoveryLedger.Row::operation).toList(),
-                    resumed.rows().stream().map(ModRecoveryLedger.Row::operation).toList());
+                resumed.rows().stream().map(ModRecoveryLedger.Row::operation).toList());
             assertEquals(retained.rows().stream().map(ModRecoveryLedger.Row::archive).toList(),
-                    resumed.rows().stream().map(ModRecoveryLedger.Row::archive).toList());
+                resumed.rows().stream().map(ModRecoveryLedger.Row::archive).toList());
             assertNotEquals(retained, resumed);
             assertThrows(SQLException.class, () -> ledger.released(retained));
             ledger.archive(ledger.released(resumed));
@@ -116,13 +122,13 @@ class ModRecoveryLedgerTest {
         try (var db = open()) {
             var initial = graph(db);
             var graph = new TaskRecoveryGraph(OWNER, List.of(initial.release(OWNER),
-                    new TaskRecoveryGraph.Release(PROVIDER, VERSION, "1".repeat(64), Optional.of(schema))));
+                new TaskRecoveryGraph.Release(PROVIDER, VERSION, "1".repeat(64), Optional.of(schema))));
             sql(db, "UPDATE mod_version SET schema_version='1' WHERE mod_id=?", PROVIDER);
             var ledger = new ModRecoveryLedger(db);
             assertThrows(SQLException.class, () -> ledger.retain(graph));
             assertEquals(0, count(db, "mod_operation"));
             sql(db, "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES(?,'1',?,?,?,'READY',1,1)",
-                    PROVIDER, schema.generation(), coordinates.physicalName(), coordinates.databaseUser());
+                PROVIDER, schema.generation(), coordinates.physicalName(), coordinates.databaseUser());
             retained = ledger.retain(graph);
         }
         try (var db = open()) {
@@ -142,7 +148,7 @@ class ModRecoveryLedgerTest {
             var tasks = new TaskLedger(db);
             UUID task = UUID.randomUUID();
             tasks.enqueue(task, OWNER, VERSION, new TaskRequest("fixture", "Fixture", List.of(), false),
-                    List.of(new TaskResource("MOD", OWNER, OWNER, false)));
+                List.of(new TaskResource("MOD", OWNER, OWNER, false)));
             assertThrows(SQLException.class, () -> ledger.released(retained));
             assertTrue(tasks.tryStart(task));
             var dependency = tasks.retain(task, new TaskResource("MOD", PROVIDER, PROVIDER, false));
@@ -166,12 +172,13 @@ class ModRecoveryLedgerTest {
             assertEquals(0, count(db, "runtime_log"));
             assertEquals(2, count(db, "mod_operation WHERE phase='VERIFIED' AND outcome='SUCCEEDED'"));
             assertEquals(2, count(db, "mod_registry WHERE last_runtime_state='UNKNOWN'"));
+            // Retain the original proof, without retaining a nonformal fixture constraint. / 保留原证明，不保留非正式夹具约束。
+            sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT fixture_archive");
         }
         try (var db = open()) {
             var ledger = new ModRecoveryLedger(db);
             assertEquals(verified, ledger.pending().getFirst());
             assertThrows(SQLException.class, () -> ledger.resume(verified));
-            sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT fixture_archive");
             ledger.archive(verified);
             assertEquals(2, count(db, "runtime_log WHERE event_code='MOD_RECOVERY_FINISHED'"));
         }
@@ -192,7 +199,7 @@ class ModRecoveryLedgerTest {
             assertEquals(0, count(db, "runtime_log"));
             assertEquals(2, count(db, "mod_operation"));
             assertEquals("unrelated",
-                    value(db, "SELECT actual_version FROM mod_registry WHERE mod_id='" + PROVIDER + "'"));
+                value(db, "SELECT actual_version FROM mod_registry WHERE mod_id='" + PROVIDER + "'"));
         }
     }
 
@@ -203,8 +210,8 @@ class ModRecoveryLedgerTest {
             var retained = ledger.retain(graph(db));
             var row = retained.rows().getFirst();
             for (var malformed : List.of("{}", row.request() + " {}",
-                    row.request().replace("\"formatVersion\":1", "\"formatVersion\":1,\"formatVersion\":1"),
-                    row.request().replace("MOD_SESSION", "SCHEMA"))) {
+                row.request().replace("\"formatVersion\":1", "\"formatVersion\":1,\"formatVersion\":1"),
+                row.request().replace("MOD_SESSION", "SCHEMA"))) {
                 sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?", malformed, row.operation());
                 assertThrows(SQLException.class, ledger::pending);
                 assertThrows(SQLException.class, () -> ledger.released(retained));

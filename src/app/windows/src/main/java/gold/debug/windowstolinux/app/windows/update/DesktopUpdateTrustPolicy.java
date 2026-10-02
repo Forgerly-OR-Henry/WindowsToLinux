@@ -17,8 +17,10 @@ import java.util.Set;
  * @param emergencyRollbackApproved emergency rollback approved / 紧急回滚已批准
  */
 public record DesktopUpdateTrustPolicy(DesktopReleaseVersion currentVersion,
-        DesktopArchitectureType currentArchitecture, String trustedKeyId, PublicKey trustedPublicKey,
-        Set<String> revokedReleaseIds, Instant verificationTime, boolean emergencyRollbackApproved) {
+                                       DesktopArchitectureType currentArchitecture, String trustedKeyId,
+                                       PublicKey trustedPublicKey,
+                                       Set<String> revokedReleaseIds, Instant verificationTime,
+                                       boolean emergencyRollbackApproved) {
     /**
      * Validates a pinned Ed25519 key and immutable revocation set. / 校验固定 Ed25519 密钥及不可变撤销集合。
      *
@@ -38,7 +40,7 @@ public record DesktopUpdateTrustPolicy(DesktopReleaseVersion currentVersion,
         trustedKeyId = identifier(trustedKeyId, "trustedKeyId");
         trustedPublicKey = Objects.requireNonNull(trustedPublicKey, "trustedPublicKey");
         if (!trustedPublicKey.getAlgorithm().equalsIgnoreCase("EdDSA")
-                && !trustedPublicKey.getAlgorithm().equalsIgnoreCase("Ed25519")) {
+            && !trustedPublicKey.getAlgorithm().equalsIgnoreCase("Ed25519")) {
             throw new IllegalArgumentException("desktop update trust root must be Ed25519");
         }
         revokedReleaseIds = Set.copyOf(Objects.requireNonNull(revokedReleaseIds, "revokedReleaseIds"));

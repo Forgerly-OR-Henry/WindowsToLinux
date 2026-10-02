@@ -32,10 +32,10 @@ public final class RemoteActions {
             Arrays.fill(input, (byte) 0);
         }
         String action = "WTL-SSH-COMMAND-1\ntimeout=" + request.timeout() + "\noutputLimitBytes="
-                + request.outputLimitBytes() + "\nstdinBytes=" + input.length + "\nstdinSha256=" + digest
-                + "\nscript:\n" + request.script();
+            + request.outputLimitBytes() + "\nstdinBytes=" + input.length + "\nstdinSha256=" + digest
+            + "\nscript:\n" + request.script();
         return new ActionIntent("platform.ssh.execute", List.of(server.id()), server.id(), revision, action,
-                "Execute the exact reviewed script on the selected server.");
+            "Execute the exact reviewed script on the selected server.");
     }
 
     /**
@@ -48,20 +48,38 @@ public final class RemoteActions {
      * @return intent accepted by the public remote session / 公开远端会话接受的意图
      */
     public static ActionIntent transfer(ServerRef server, String revision, TransferRequest request, String sha256,
-            boolean upload) {
+                                        boolean upload) {
         if (!Objects.requireNonNull(sha256).matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Transfer approval requires a lowercase SHA-256");
         var local = request.localPath();
         if (!local.isAbsolute() || !local.normalize().equals(local))
             throw new IllegalArgumentException("Transfer approval requires an absolute normalized local path");
         String action = "WTL-SFTP-1\nsha256=" + sha256 + "\nmaxBytes=" + request.maxBytes() + "\nlocalPathCharacters="
-                + local.toString().length() + "\n" + local + "\nremotePathCharacters="
-                + request.remoteAbsolutePath().length() + "\n" + request.remoteAbsolutePath();
+            + local.toString().length() + "\n" + local + "\nremotePathCharacters="
+            + request.remoteAbsolutePath().length() + "\n" + request.remoteAbsolutePath();
         return new ActionIntent(upload ? "platform.sftp.upload" : "platform.sftp.download", List.of(server.id()),
-                server.id(), revision, action,
-                upload
-                        ? "Upload through a verified temporary file; ask separately before replacing an existing target."
-                        : "Download through a verified temporary file; ask separately before replacing an existing target.");
+            server.id(), revision, action,
+            upload
+                ? "Upload through a verified temporary file; ask separately before replacing an existing target."
+                : "Download through a verified temporary file; ask separately before replacing an existing target.");
+    }
+
+    /** Binds the explicit conflict choice independently of operation permission. / 独立于操作权限绑定显式冲突选择。
+     * @param server admitted server / 已准入服务器
+     * @param revision original business revision / 原业务修订
+     * @param request exact transfer request / 精确传输请求
+     * @param sha256 reviewed source digest / 已审核源摘要
+     * @param upload transfer direction / 传输方向
+     * @param choice explicit collision decision / 明确冲突决定
+     * @return exact intent including the selected behavior / 含所选行为的精确意图
+     */
+    public static ActionIntent transfer(ServerRef server, String revision, TransferRequest request, String sha256,
+                                        boolean upload, TransferConflictChoice choice) {
+        java.util.Objects.requireNonNull(choice, "choice");
+        var original = transfer(server, revision, request, sha256, upload);
+        return new ActionIntent(original.type(), original.serverIds(), original.target(), original.revision(),
+            original.exactAction() + "\nconflict=" + choice.name(),
+            "Transfer verified content with explicit same-name policy: " + choice.name());
     }
 
     /** Binds recovery approval to one original transfer and its complete public facts. / 将恢复审批绑定到一次原传输及其完整公开事实。
@@ -71,14 +89,14 @@ public final class RemoteActions {
      * @return exact task-scoped recovery intent / 精确任务范围恢复意图 */
     public static ActionIntent recoverTransfer(TransferCheckpoint checkpoint, String revision, boolean resume) {
         var original = transfer(checkpoint.server(), revision, checkpoint.request(), checkpoint.sha256(),
-                checkpoint.upload());
+            checkpoint.upload());
         String action = "WTL-SFTP-RECOVERY-1\ntransferId=" + checkpoint.id() + "\nresume=" + resume + "\nupload="
-                + checkpoint.upload() + "\nsize=" + checkpoint.size() + "\noverwrite=" + checkpoint.overwrite() + "\n"
-                + original.exactAction();
+            + checkpoint.upload() + "\nsize=" + checkpoint.size() + "\noverwrite=" + checkpoint.overwrite() + "\n"
+            + original.exactAction();
         return new ActionIntent(resume ? "platform.sftp.resume" : "platform.sftp.discard", original.serverIds(),
-                checkpoint.server().id(), revision, action,
-                resume
-                        ? "Verify the original source and staging prefix, then resume or reconcile publication."
-                        : "Remove only the original transfer's verified staging file; preserve the final target.");
+            checkpoint.server().id(), revision, action,
+            resume
+                ? "Verify the original source and staging prefix, then resume or reconcile publication."
+                : "Remove only the original transfer's verified staging file; preserve the final target.");
     }
 }

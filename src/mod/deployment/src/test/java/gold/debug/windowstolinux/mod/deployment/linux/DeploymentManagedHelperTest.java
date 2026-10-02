@@ -39,7 +39,7 @@ class DeploymentManagedHelperTest {
     void packagedBundlePreservesTheCompleteOldByteContractAndBashSyntax() throws Exception {
         byte[] bytes = DeploymentManagedHelperBundle.renderScript().getBytes(StandardCharsets.UTF_8);
         assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256,
-                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
         String script = new String(bytes, StandardCharsets.UTF_8);
         assertFalse(script.contains("# @compat:"));
         assertTrue(script.contains("prepare-toolchains)"));
@@ -74,7 +74,7 @@ class DeploymentManagedHelperTest {
         assertFalse(status.contains("install -d"));
         assertFalse(status.contains("managed-helper'"));
         assertTrue(DeploymentHelperInstallerScript.receipt(task, operation, serverDigest, bodyDigest, "SUCCEEDED")
-                .contains("HELPER_SHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256));
+            .contains("HELPER_SHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256));
         Path installer = temporary.resolve("tracked-installer");
         Path query = temporary.resolve("tracked-status");
         Files.writeString(installer, script);
@@ -88,7 +88,7 @@ class DeploymentManagedHelperTest {
         try {
             assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS));
             assertEquals(0, process.exitValue(),
-                    new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
+                new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();
@@ -105,20 +105,20 @@ class DeploymentManagedHelperTest {
         var requests = new ArrayList<CommandRequest>();
         var intents = new ArrayList<ActionIntent>();
         var helper = new DeploymentManagedHelper(session(replies, requests), reviews(intents),
-                new ServerRef("Server-Exact"), task(), "reviewed-plan-1");
+            new ServerRef("Server-Exact"), task(), "reviewed-plan-1");
         var result = helper.install();
         assertEquals(Outcome.SUCCEEDED, result.outcome());
         assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, result.value().orElseThrow().sha256());
         assertEquals(2, requests.size());
         assertEquals(List.of("deployment.helper.install.v1", "deployment.helper.probe.v1"),
-                intents.stream().map(i -> i.semantics().orElseThrow().operation()).toList());
+            intents.stream().map(i -> i.semantics().orElseThrow().operation()).toList());
         assertEquals("Server-Exact", intents.getFirst().serverIds().getFirst());
         String installer = new String(requests.getFirst().stdin(), StandardCharsets.UTF_8);
         assertTrue(installer.contains("[ \"$(id -u)\" -eq 0 ] || exit 64"));
         assertTrue(installer.contains("/usr/bin/sha256sum --check --status"));
         assertTrue(installer.contains("PREPARE_REJECT=recovery-unit-conflict"));
         assertTrue(installer.endsWith("printf 'HELPER_INSTALL=1\\nPROTOCOL=14\\nSHA256="
-                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n"));
+            + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n"));
     }
 
     @Test
@@ -127,13 +127,13 @@ class DeploymentManagedHelperTest {
         replies.add(ok("FORGED=1\n" + probeOutput(), ""));
         var requests = new ArrayList<CommandRequest>();
         var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                new ServerRef("exact"), task(), "revision");
+            new ServerRef("exact"), task(), "revision");
         assertEquals(Outcome.FAILED, helper.probe().outcome());
         assertEquals(1, requests.size());
 
         replies.add(
-                new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                        "SSH_COMMAND_EXIT_UNKNOWN", "Unconfirmed", Map.of(), Optional.empty()))));
+            new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+                "SSH_COMMAND_EXIT_UNKNOWN", "Unconfirmed", Map.of(), Optional.empty()))));
         assertEquals(Outcome.UNKNOWN, helper.install().outcome());
         assertEquals(2, requests.size());
     }
@@ -153,14 +153,14 @@ class DeploymentManagedHelperTest {
             }
         };
         var helper = new DeploymentManagedHelper(session(new ArrayDeque<>(), requests), denied, new ServerRef("exact"),
-                task(), "revision");
+            task(), "revision");
         assertEquals(Outcome.CANCELLED, helper.install().outcome());
         assertTrue(requests.isEmpty());
 
         var replies = new ArrayDeque<OperationResult<CommandResult>>();
         replies.add(new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty()));
         helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                new ServerRef("exact"), task(), "revision");
+            new ServerRef("exact"), task(), "revision");
         assertEquals(Outcome.CANCELLED, helper.install().outcome());
         assertEquals(1, requests.size());
     }
@@ -168,26 +168,26 @@ class DeploymentManagedHelperTest {
     @Test
     void incompleteInstallAndPostInstallProbeNeverCauseASecondInstall() throws Exception {
         var badInstall = List.of(new CommandResult(Optional.of(0), installTail(), "", true),
-                new CommandResult(Optional.empty(), installTail(), "", false),
-                new CommandResult(Optional.of(0), "incomplete", "", false));
+            new CommandResult(Optional.empty(), installTail(), "", false),
+            new CommandResult(Optional.of(0), "incomplete", "", false));
         for (var result : badInstall) {
             var replies = new ArrayDeque<OperationResult<CommandResult>>();
             replies.add(new OperationResult<>(Outcome.SUCCEEDED, Optional.of(result), Optional.empty()));
             var requests = new ArrayList<CommandRequest>();
             var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                    new ServerRef("exact"), task(), "revision");
+                new ServerRef("exact"), task(), "revision");
             assertEquals(Outcome.UNKNOWN, helper.install().outcome());
             assertEquals(1, requests.size());
         }
         for (var later : List.of(
-                new OperationResult<CommandResult>(Outcome.CANCELLED, Optional.empty(), Optional.empty()),
-                ok("PROTOCOL=9\n", ""))) {
+            new OperationResult<CommandResult>(Outcome.CANCELLED, Optional.empty(), Optional.empty()),
+            ok("PROTOCOL=9\n", ""))) {
             var replies = new ArrayDeque<OperationResult<CommandResult>>();
             replies.add(ok(installTail(), "Package warning\n"));
             replies.add(later);
             var requests = new ArrayList<CommandRequest>();
             var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                    new ServerRef("exact"), task(), "revision");
+                new ServerRef("exact"), task(), "revision");
             assertEquals(Outcome.UNKNOWN, helper.install().outcome());
             assertEquals(2, requests.size());
         }
@@ -196,18 +196,18 @@ class DeploymentManagedHelperTest {
     @Test
     void hostAdmissionDenialKeepsItsOriginalProblemAndNeverProbes() {
         var denied = new Problem(ProblemCode.ACCESS_DENIED, "REMOTE_GRANT_REJECTED", "Grant rejected", Map.of(),
-                Optional.empty());
+            Optional.empty());
         var calls = new java.util.concurrent.atomic.AtomicInteger();
         RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute")) {
-                        calls.incrementAndGet();
-                        throw new ApiException(denied);
-                    }
-                    throw new AssertionError(method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute")) {
+                    calls.incrementAndGet();
+                    throw new ApiException(denied);
+                }
+                throw new AssertionError(method.getName());
+            });
         var helper = new DeploymentManagedHelper(session, reviews(new ArrayList<>()), new ServerRef("exact"), task(),
-                "revision");
+            "revision");
         ApiException failure = assertThrows(ApiException.class, helper::install);
         assertSame(denied, failure.problem());
         assertEquals(1, calls.get());
@@ -215,11 +215,11 @@ class DeploymentManagedHelperTest {
 
     private static TaskContext task() {
         return (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
-                new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("id"))
-                        return UUID.fromString("12345678-1234-1234-1234-123456789012");
-                    throw new AssertionError(method.getName());
-                });
+            new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
+                if (method.getName().equals("id"))
+                    return UUID.fromString("12345678-1234-1234-1234-123456789012");
+                throw new AssertionError(method.getName());
+            });
     }
 
     private static InteractionService reviews(List<ActionIntent> intents) {
@@ -228,7 +228,7 @@ class DeploymentManagedHelperTest {
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) {
                 intents.add(intent);
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
-                        Optional.empty());
+                    Optional.empty());
             }
 
             @Override
@@ -239,22 +239,22 @@ class DeploymentManagedHelperTest {
     }
 
     private static RemoteSession session(ArrayDeque<OperationResult<CommandResult>> replies,
-            List<CommandRequest> requests) {
+                                         List<CommandRequest> requests) {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute")) {
-                        requests.add(((CommandRequest) args[0]).snapshot());
-                        return replies.removeFirst();
-                    }
-                    if (method.getName().equals("close"))
-                        throw new AssertionError("Borrowed session must remain caller-owned");
-                    throw new AssertionError(method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute")) {
+                    requests.add(((CommandRequest) args[0]).snapshot());
+                    return replies.removeFirst();
+                }
+                if (method.getName().equals("close"))
+                    throw new AssertionError("Borrowed session must remain caller-owned");
+                throw new AssertionError(method.getName());
+            });
     }
 
     private static OperationResult<CommandResult> ok(String out, String err) {
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), out, err, false)),
-                Optional.empty());
+            Optional.empty());
     }
 
     private static String installTail() {

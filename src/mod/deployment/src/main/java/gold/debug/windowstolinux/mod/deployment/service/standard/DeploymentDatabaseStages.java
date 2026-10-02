@@ -42,14 +42,14 @@ final class DeploymentDatabaseStages {
      * @param sqlite verified local SQLite output / 已验证本机 SQLite 输出
      * @param nativeSource optional fully checked native input / 可选已完整校验原生输入 */
     record Local(DeploymentSqlitePreparation.Prepared sqlite,
-            Optional<DeploymentNativeDatabasePreparation.Local> nativeSource) {
+                 Optional<DeploymentNativeDatabasePreparation.Local> nativeSource) {
         /** Lists actual native child addresses before any effect. / 任何效果前列出真实原生子项地址。
          * @return exact child addresses / 精确子项地址 */
         List<DeploymentDatabasePlanJournal.Entry> entries() {
             return nativeSource.stream()
-                    .flatMap(source -> source.nativeDatabases().stream().map(
-                            database -> new DeploymentDatabasePlanJournal.Entry(source.componentId(), database.id())))
-                    .toList();
+                .flatMap(source -> source.nativeDatabases().stream().map(
+                    database -> new DeploymentDatabasePlanJournal.Entry(source.componentId(), database.id())))
+                .toList();
         }
 
         /** Whether generated DB bindings will replace manual runtime DB fields. / 生成绑定是否替代手填运行数据库字段。
@@ -65,8 +65,8 @@ final class DeploymentDatabaseStages {
      * @param secrets immutable secret revisions / 不可变秘密修订
      * @param schemaReview one actual component source-bound review / 同组件真实源码绑定审阅 */
     record Prepared(List<DeploymentConfigurationEntry> configuration, List<DeploymentDatabaseBinding> bindings,
-            List<DeploymentSecretReference> secrets,
-            Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
+                    List<DeploymentSecretReference> secrets,
+                    Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
         /** Copies exact immutable output. / 复制精确不可变输出。
          * @param configuration runtime entries / 运行条目
          * @param bindings DB targets / 数据库目标
@@ -91,12 +91,12 @@ final class DeploymentDatabaseStages {
      * @return fully checked local stage or classified refusal / 完整本机阶段或分类拒绝
      * @throws Exception if original source or review fails / 原来源或审阅失败时 */
     OperationResult<Local> local(ServerRef server, String componentId, String applicationId, String manifestSha256,
-            Path root, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
+                                 Path root, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
         var observed = new DatabaseProjectInspector().inspect(root);
         Map<String, String> answers = Map.of();
         if (!observed.databases().isEmpty() || observed.unknownDatabase()) {
             var supplied = review.databaseInputs(server, componentId, manifestSha256, root, applicationId, observed,
-                    task);
+                task);
             if (supplied.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(supplied.outcome(), Optional.empty(), supplied.problem());
             answers = supplied.value().orElseThrow();
@@ -104,11 +104,11 @@ final class DeploymentDatabaseStages {
         var completed = DeploymentDatabaseSourceInputs.complete(root, applicationId, observed, answers);
         var sqlite = subset(completed, DeploymentDatabaseEngineType.SQLITE);
         var nativeDatabases = completed.databases().stream()
-                .filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
+            .filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
         var nativeAssessment = new DatabaseProjectInspector.Assessment(nativeDatabases, completed.sqlCandidates(),
-                completed.schemaReviewRequired()
-                        && nativeDatabases.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
-                false, completed.endpointConfirmationRequired());
+            completed.schemaReviewRequired()
+                && nativeDatabases.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
+            false, completed.endpointConfirmationRequired());
         var sqlitePaths = paths(sqlite.databases());
         var nativePaths = paths(nativeDatabases);
         sqlitePaths.addAll(nativePaths);
@@ -133,15 +133,15 @@ final class DeploymentDatabaseStages {
                 if (!reserved.add(key))
                     throw new IllegalArgumentException("Database runtime configuration conflicts across engines");
         if (nativeAssessment.schemaReviewRequired()
-                && nativeDatabases.stream().filter(value -> !value.initializationFiles().isEmpty())
-                        .allMatch(DatabaseRequirement::springDatasource))
+            && nativeDatabases.stream().filter(value -> !value.initializationFiles().isEmpty())
+            .allMatch(DatabaseRequirement::springDatasource))
             reserved.addAll(frameworkKeys());
         var localNative = nativeDatabases.isEmpty()
-                ? Optional.<DeploymentNativeDatabasePreparation.Local>empty()
-                : Optional.of(DeploymentNativeDatabasePreparation.local(componentId, applicationId, manifestSha256,
-                        root, nativeAssessment, task));
+            ? Optional.<DeploymentNativeDatabasePreparation.Local>empty()
+            : Optional.of(DeploymentNativeDatabasePreparation.local(componentId, applicationId, manifestSha256,
+            root, nativeAssessment, task));
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new Local(localSqlite, localNative)),
-                Optional.empty());
+            Optional.empty());
     }
 
     /** Rejects runtime entries conflicting with source-derived DB entries before remote effects. / 远端效果前拒绝与源码派生数据库条目冲突的运行配置。
@@ -151,12 +151,12 @@ final class DeploymentDatabaseStages {
         var keys = new HashSet<String>();
         local.sqlite().configuration().forEach(value -> keys.add(value.key()));
         local.nativeSource()
-                .ifPresent(source -> source.nativeDatabases().forEach(database -> keys.addAll(nativeKeys(database))));
+            .ifPresent(source -> source.nativeDatabases().forEach(database -> keys.addAll(nativeKeys(database))));
         local.nativeSource()
-                .filter(source -> source.assessment().schemaReviewRequired()
-                        && source.nativeDatabases().stream().filter(value -> !value.initializationFiles().isEmpty())
-                                .allMatch(DatabaseRequirement::springDatasource))
-                .ifPresent(source -> keys.addAll(frameworkKeys()));
+            .filter(source -> source.assessment().schemaReviewRequired()
+                && source.nativeDatabases().stream().filter(value -> !value.initializationFiles().isEmpty())
+                .allMatch(DatabaseRequirement::springDatasource))
+            .ifPresent(source -> keys.addAll(frameworkKeys()));
         for (var value : DeploymentConfigurationInput.parse(answer.values().getOrDefault("configuration", "")))
             if (keys.contains(value.key()))
                 throw new IllegalArgumentException("Runtime configuration conflicts with source database");
@@ -170,12 +170,12 @@ final class DeploymentDatabaseStages {
      * @return optional original plan / 可选原计划
      * @throws gold.debug.windowstolinux.appapi.task.ApiException if persistence fails / 持久化失败时 */
     Optional<DeploymentDatabasePlanJournal> begin(ServerRef server, String manifestSha256, List<Local> local,
-            TaskContext task) throws gold.debug.windowstolinux.appapi.task.ApiException {
+                                                  TaskContext task) throws gold.debug.windowstolinux.appapi.task.ApiException {
         var entries = local.stream().flatMap(value -> value.entries().stream()).toList();
         return entries.isEmpty()
-                ? Optional.empty()
-                : Optional.of(
-                        DeploymentDatabasePlanJournal.begin(context.tasks(), task, server, manifestSha256, entries));
+            ? Optional.empty()
+            : Optional.of(
+            DeploymentDatabasePlanJournal.begin(context.tasks(), task, server, manifestSha256, entries));
     }
 
     /** Releases only original children with confirmed terminal or unsent intent facts. / 只释放原子项已确认终态或未发送意图的依据。
@@ -186,7 +186,7 @@ final class DeploymentDatabaseStages {
     boolean releaseKnown(TaskContext task, DeploymentDatabasePlanJournal plan) throws ApiException {
         for (String key : plan.facts().keys()) {
             var child = DeploymentNativeDatabaseJournal.find(context.tasks(), task,
-                    DeploymentNativeDatabaseJournal.KEY + "." + key);
+                DeploymentNativeDatabaseJournal.KEY + "." + key);
             if (child.isPresent()) {
                 var facts = child.orElseThrow().facts();
                 if (!plan.facts().serverId().equals(facts.serverId()) || "DISPATCHED".equals(facts.phase()))
@@ -195,9 +195,9 @@ final class DeploymentDatabaseStages {
             }
             var secretKey = "deployment-secret-revision." + key;
             if (context.tasks().findCheckpoint(task, secretKey).isPresent()
-                    && new DeploymentSecretProvisionFlow(context)
-                            .reconcileChild(task, secretKey, new ServerRef(plan.facts().serverId()))
-                            .outcome() == Outcome.UNKNOWN)
+                && new DeploymentSecretProvisionFlow(context)
+                .reconcileChild(task, secretKey, new ServerRef(plan.facts().serverId()))
+                .outcome() == Outcome.UNKNOWN)
                 return false;
         }
         plan.close();
@@ -215,15 +215,15 @@ final class DeploymentDatabaseStages {
         String firstTarget = "";
         for (String key : plan.facts().keys()) {
             var child = DeploymentNativeDatabaseJournal.find(context.tasks(), task,
-                    DeploymentNativeDatabaseJournal.KEY + "." + key);
+                DeploymentNativeDatabaseJournal.KEY + "." + key);
             if (child.isPresent() && child.orElseThrow().facts().effectsObserved()) {
                 affected++;
                 if (firstTarget.isEmpty())
                     firstTarget = child.orElseThrow().facts().target();
             }
             if (new DeploymentSecretProvisionFlow(context)
-                    .savedChild(task, "deployment-secret-revision." + key, new ServerRef(plan.facts().serverId()))
-                    .isPresent())
+                .savedChild(task, "deployment-secret-revision." + key, new ServerRef(plan.facts().serverId()))
+                .isPresent())
                 savedSecrets++;
         }
         if (affected == 0 && savedSecrets == 0)
@@ -246,15 +246,15 @@ final class DeploymentDatabaseStages {
      * @return merged publication facts or classified refusal / 合并发布事实或分类拒绝
      * @throws Exception if original access fails / 原访问失败时 */
     OperationResult<DeploymentPreparedDatabase> prepare(ServerRef server, Optional<DeploymentDatabasePlanJournal> plan,
-            Local local, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
+                                                        Local local, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
         if (local.nativeSource().isEmpty())
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(local.sqlite()), Optional.empty());
         var nativeResult = new DeploymentNativeDatabasePreparation(context).prepare(server, plan.orElseThrow(),
-                local.nativeSource().orElseThrow(), review, task);
+            local.nativeSource().orElseThrow(), review, task);
         if (nativeResult.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(nativeResult.outcome(), Optional.empty(), nativeResult.problem());
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(merge(local.sqlite(), nativeResult.value().orElseThrow())), Optional.empty());
+            Optional.of(merge(local.sqlite(), nativeResult.value().orElseThrow())), Optional.empty());
     }
 
     /** Unions exact SQLite/native facts for the same component and source digest. / 合并同组件同源码摘要的 SQLite 与原生事实。
@@ -262,7 +262,7 @@ final class DeploymentDatabaseStages {
      * @param nativeOutput verified native facts / 已核原生事实
      * @return one publishable result / 一份可发布结果 */
     private static Prepared merge(DeploymentSqlitePreparation.Prepared sqlite,
-            DeploymentNativeDatabasePreparation.Prepared nativeOutput) {
+                                  DeploymentNativeDatabasePreparation.Prepared nativeOutput) {
         var configuration = new HashMap<String, DeploymentConfigurationEntry>();
         for (var value : sqlite.configuration())
             configuration.put(value.key(), value);
@@ -274,10 +274,10 @@ final class DeploymentDatabaseStages {
         var bindings = new ArrayList<>(sqlite.bindings());
         bindings.addAll(nativeOutput.bindings());
         if (new HashSet<>(bindings.stream().map(DeploymentDatabaseBinding::databaseId).toList()).size() != bindings
-                .size())
+            .size())
             throw new IllegalArgumentException("Database ID is duplicated across engines");
         return new Prepared(List.copyOf(configuration.values()), bindings, nativeOutput.secrets(),
-                combine(sqlite.schemaReview(), nativeOutput.schemaReview()));
+            combine(sqlite.schemaReview(), nativeOutput.schemaReview()));
     }
 
     /** Combines independent decisions only when both bind the same component digest. / 仅在两种独立决定绑定同一组件摘要时合并。
@@ -285,7 +285,7 @@ final class DeploymentDatabaseStages {
      * @param nativeReview native verified work / 已核原生效果
      * @return one source-bound review / 一份来源绑定审阅 */
     private static Optional<DatabaseSchemaReview> combine(Optional<DatabaseSchemaReview> sqlite,
-            Optional<DatabaseSchemaReview> nativeReview) {
+                                                          Optional<DatabaseSchemaReview> nativeReview) {
         if (sqlite.isEmpty())
             return nativeReview;
         if (nativeReview.isEmpty())
@@ -299,10 +299,10 @@ final class DeploymentDatabaseStages {
         var sql = new HashSet<>(first.initializedSqlPaths());
         sql.addAll(second.initializedSqlPaths());
         return Optional.of(new DatabaseSchemaReview(first.inspectionSha256(), ids, sql,
-                first.newOwnedDatabaseInitialized() || second.newOwnedDatabaseInitialized(),
-                first.existingSchemaChangeApproved() || second.existingSchemaChangeApproved(),
-                first.frameworkMigrationsDisabled() || second.frameworkMigrationsDisabled(),
-                first.firstDeploymentInitializationPlanned() || second.firstDeploymentInitializationPlanned()));
+            first.newOwnedDatabaseInitialized() || second.newOwnedDatabaseInitialized(),
+            first.existingSchemaChangeApproved() || second.existingSchemaChangeApproved(),
+            first.frameworkMigrationsDisabled() || second.frameworkMigrationsDisabled(),
+            first.firstDeploymentInitializationPlanned() || second.firstDeploymentInitializationPlanned()));
     }
 
     /** Filters one engine without changing the original component source observation. / 按引擎筛选且不改原组件来源观测。
@@ -310,12 +310,12 @@ final class DeploymentDatabaseStages {
      * @param engine selected engine / 选中引擎
      * @return filtered assessment / 筛选后评估 */
     private static DatabaseProjectInspector.Assessment subset(DatabaseProjectInspector.Assessment original,
-            DeploymentDatabaseEngineType engine) {
+                                                              DeploymentDatabaseEngineType engine) {
         var values = original.databases().stream().filter(value -> value.engine() == engine).toList();
         return new DatabaseProjectInspector.Assessment(values, original.sqlCandidates(),
-                original.schemaReviewRequired()
-                        && values.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
-                false, original.endpointConfirmationRequired());
+            original.schemaReviewRequired()
+                && values.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
+            false, original.endpointConfirmationRequired());
     }
 
     /** Collects exact source SQL paths for the existing component review limit. / 为既有组件审阅上限收集精确源码 SQL 路径。
@@ -350,6 +350,6 @@ final class DeploymentDatabaseStages {
      * @return immutable generated keys / 不可变生成键 */
     private static List<String> frameworkKeys() {
         return List.of("SPRING_SQL_INIT_MODE", "SPRING_FLYWAY_ENABLED", "SPRING_LIQUIBASE_ENABLED",
-                "SPRING_JPA_HIBERNATE_DDL_AUTO", "SPRING_JPA_GENERATE_DDL");
+            "SPRING_JPA_HIBERNATE_DDL_AUTO", "SPRING_JPA_GENERATE_DDL");
     }
 }

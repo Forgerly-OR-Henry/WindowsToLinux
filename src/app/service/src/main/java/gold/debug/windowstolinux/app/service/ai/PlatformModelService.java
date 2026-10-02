@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.app.service.ai;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
@@ -7,16 +20,23 @@ import java.util.concurrent.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.ai.execution.protocol.ModelCapabilityProbe;
+import gold.debug.windowstolinux.app.ai.model.ModelCapabilityProbe;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
-import gold.debug.windowstolinux.app.db.entity.StoredAiProviderConfiguration;
-import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
-import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
+import gold.debug.windowstolinux.app.db.ai.StoredAiProviderConfiguration;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.service.ai.AiInventoryAccess;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.app.ai.catalog.*;
+
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityCheck;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityStateType;
+import gold.debug.windowstolinux.appapi.ai.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.VoiceResponse;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
 
 /** Owns verified model configuration and explicit purpose selection. / 持有已验证模型配置及明确用途选择。 */
 public final class PlatformModelService implements AiInventoryAccess, AutoCloseable {
@@ -55,7 +75,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param ai host-owned transport / 宿主持有的传输
      * @throws ApiException if recovery registration fails / 恢复登记失败时 */
     public PlatformModelService(PlatformPersistence persistence, DesktopSecurityService security,
-            PlatformTaskRuntime runtime, String version, PlatformAiService ai) throws ApiException {
+                                PlatformTaskRuntime runtime, String version, PlatformAiService ai) throws ApiException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
         this.runtime = Objects.requireNonNull(runtime);
@@ -67,15 +87,15 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
         try {
             for (var original : versions)
                 recoveries.add(runtime.bind(PlatformTaskAdmission.PLATFORM_OWNER, original, true)
-                        .registerRecovery(PROBE_TYPE, (previous, task) -> {
-                            if (!HostTaskRecovery.releasePreviousProcess(persistence.database(), previous,
-                                    Map.of("CONNECTION", "ai-http-", "CUSTOM", "ai-access-")))
-                                ai.closeTaskResources(task);
-                            return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
-                                    ProblemCode.UNKNOWN, "MODEL_PROBE_INTERRUPTED",
-                                    "The interrupted probe is closed without replay; reload saved configuration before a new probe",
-                                    Map.of(), Optional.empty())));
-                        }));
+                    .registerRecovery(PROBE_TYPE, (previous, task) -> {
+                        if (!HostTaskRecovery.releasePreviousProcess(persistence.database(), previous,
+                            Map.of("CONNECTION", "ai-", "CUSTOM", "ai-access-")))
+                            ai.closeTaskResources(task);
+                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.UNKNOWN, "MODEL_PROBE_INTERRUPTED",
+                            "The interrupted probe is closed without replay; reload saved configuration before a new probe",
+                            Map.of(), Optional.empty())));
+                    }));
         } catch (ApiException failure) {
             try {
                 close();
@@ -93,9 +113,10 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
     public List<AiProviderSummary> listAiConfigurations() throws SQLException {
         settings();
         return persistence.aiProfiles().listConfigured().stream()
-                .map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()), value.name(),
-                        value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt()))
-                .toList();
+            .map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()), value.name(),
+                value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt(),
+                value.fileVoiceVerifiedAt(), value.realtimeVoiceVerifiedAt(), value.checks()))
+            .toList();
     }
 
     /** Reads the exact configured output ceiling. / 读取精确已配置输出上限。
@@ -140,103 +161,152 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
         }
     }
 
-    /** Submits a fresh probe and saves only its unchanged, verified configuration. / 提交全新探测，仅保存未变化且已验证的配置。
-     * @param profile edited model metadata / 已编辑模型元数据
+    /** Saves explicit configuration without contacting a model or choosing a purpose. / 保存明确配置，不联系模型或选择用途。
+     * @param profile reviewed protocol settings / 已审阅协议设置
      * @param name display label / 显示名称
-     * @param suppliedKey replacement or empty to retain the existing key; always cleared / 替换凭据或空以保留原凭据；始终清零
-     * @param capability independent capability to verify / 要验证的独立能力
-     * @param outputLimit explicit positive ceiling / 明确的正上限
-     * @return original probe task / 原探测任务
-     * @throws Exception if admission, configuration or credential capture fails / 准入、配置或凭据捕获失败时 */
-    public TaskHandle<Void> verifyAndSave(AiProviderProfile profile, String name, char[] suppliedKey,
-            AiCapabilityType capability, int outputLimit) throws Exception {
+     * @param suppliedKey replacement key or empty to retain, always cleared / 替换密钥或空以保留，始终清零
+     * @param outputLimit positive text output ceiling / 正的文字输出上限
+     * @throws Exception if validation or atomic protected storage fails / 校验或受保护原子存储失败时 */
+    public void save(AiProviderProfile profile, String name, char[] suppliedKey, int outputLimit) throws Exception {
         Objects.requireNonNull(suppliedKey);
-        char[][] captured = new char[1][];
-        boolean submitted = false;
         try {
             settings();
-            Objects.requireNonNull(capability);
             if (name == null || name.isBlank() || name.length() > 120 || name.chars().anyMatch(Character::isISOControl)
-                    || outputLimit < 1)
-                throw new IllegalArgumentException("Invalid model settings");
-            var prior = new java.util.concurrent.atomic.AtomicReference<Optional<StoredAiProviderConfiguration>>(
-                    Optional.empty());
-            var priorLimit = new java.util.concurrent.atomic.AtomicReference<OptionalInt>(OptionalInt.empty());
+                || outputLimit < 1) throw new IllegalArgumentException("Invalid model settings");
             try (var operation = security.enterOperation(); var store = security.openCredentials()) {
                 store.transaction(() -> {
-                    prior.set(current(profile.id()));
-                    priorLimit.set(persistence.aiProfiles().outputLimit(profile.id()));
-                    if (prior.get().isPresent()
-                            && !prior.get().orElseThrow().profile().credentialKey().equals(profile.credentialKey()))
-                        throw new IllegalArgumentException("The existing credential reference cannot be replaced");
-                    captured[0] = suppliedKey.length == 0
-                            ? store.read(prior.get()
-                                    .orElseThrow(() -> new IllegalArgumentException("An API key is required")).profile()
-                                    .credentialKey())
-                                    .orElseThrow(() -> new IllegalArgumentException("The saved API key is unavailable"))
-                            : suppliedKey.clone();
+                    var previous = current(profile.id());
+                    if (previous.isPresent() && !previous.orElseThrow().profile().credentialKey().equals(profile.credentialKey()))
+                        throw new SQLException("The credential reference changed; reload settings", "40001");
+                    if (previous.isEmpty() && suppliedKey.length == 0)
+                        throw new IllegalArgumentException("An API key is required");
+                    String credential = previous.map(v -> v.profile().credentialKey())
+                        .orElseGet(() -> "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID());
+                    if (suppliedKey.length != 0) store.save(credential, suppliedKey);
+                    var candidate = new AiProviderProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
+                        credential, profile.fileTranscriptionEndpoint(), profile.realtimeTranscriptionEndpoint());
+                    persistence.aiProfiles().saveConfiguration(candidate.stored(), name);
+                    persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
                 });
             }
-            String credential = prior.get().map(value -> value.profile().credentialKey())
-                    .orElseGet(() -> "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID());
-            var candidate = new AiProviderProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
-                    credential);
-            boolean replaceKey = suppliedKey.length != 0;
-            char[] key = captured[0];
-            var handle = tasks.<Void>submit(new TaskRequest(PROBE_TYPE, "Model: " + name.strip(), List.of(), true),
-                    task -> {
-                        try {
-                            var challenge = ModelCapabilityProbe.create(capability == AiCapabilityType.VISION,
-                                    outputLimit);
-                            var result = ai.probe(candidate.stored(), key, challenge.request(), task);
-                            if (result.outcome() != Outcome.SUCCEEDED)
-                                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-                            if (!challenge.accepts(result.value().orElseThrow()))
-                                return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER",
-                                        "The model did not answer the generated capability challenge");
-                            if (task.cancellation().requested())
-                                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
-                            try (var store = security.openCredentials()) {
-                                store.transaction(() -> {
-                                    var now = current(profile.id());
-                                    if (!sameRevision(prior.get(), now) || !priorLimit.get()
-                                            .equals(persistence.aiProfiles().outputLimit(profile.id())))
-                                        throw new SQLException("Model changed during probe", "40001");
-                                    if (replaceKey || now.isEmpty())
-                                        store.save(candidate.credentialKey(), key);
-                                    persistence.aiProfiles().saveVerified(candidate.stored(), name, Instant.now(),
-                                            capability);
-                                    persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
-                                });
-                            } catch (SQLException conflict) {
-                                if ("40001".equals(conflict.getSQLState()))
-                                    return failed(ProblemCode.BUSY, "MODEL_PROBE_STALE",
-                                            "Model settings changed during verification; reload before editing");
-                                runtime.reportUncertainEffect(task);
-                                return failed(ProblemCode.UNKNOWN, "MODEL_SAVE_UNKNOWN",
-                                        "The verified model commit must be reconciled before continuing");
-                            } catch (gold.debug.windowstolinux.app.secret.SecretStoreException uncertain) {
-                                runtime.reportUncertainEffect(task);
-                                return failed(ProblemCode.UNKNOWN, "MODEL_SAVE_UNKNOWN",
-                                        "The protected model commit could not be confirmed");
-                            }
-                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                        } finally {
-                            Arrays.fill(key, '\0');
-                        }
-                    });
-            submitted = true;
-            handles.put(handle.id(), handle);
-            handle.completion().whenComplete((result, failure) -> {
-                Arrays.fill(key, '\0');
-                handles.remove(handle.id());
-            });
-            return handle;
-        } finally {
-            Arrays.fill(suppliedKey, '\0');
-            if (!submitted && captured[0] != null)
-                Arrays.fill(captured[0], '\0');
+        } finally { Arrays.fill(suppliedKey, '\0'); }
+    }
+
+    /** Verifies one saved capability using its exact configuration revision. / 使用精确配置修订验证一项已保存能力。
+     * @param id saved model identity / 已存模型身份
+     * @param capability independently selected capability / 独立所选能力
+     * @param audio actual WAV input for voice or null for text / 语音实际WAV输入，文字为空
+     * @param expected reviewed expected transcript for voice / 已审阅语音预期文字
+     * @return centrally owned original check / 中央持有的原检查
+     * @throws Exception if admission or credential capture fails / 准入或凭据捕获失败时 */
+    public TaskHandle<Void> verify(String id, AiCapabilityType capability, VoiceRequest audio, String expected)
+        throws Exception {
+        settings(); Objects.requireNonNull(capability);
+        var observed = current(id).orElseThrow(() -> new IllegalArgumentException("Save the model before verification"));
+        boolean voice = capability == AiCapabilityType.VOICE_FILE || capability == AiCapabilityType.VOICE_REALTIME;
+        if (voice && (audio == null || expected == null || expected.isBlank() || expected.length() > 4096))
+            throw new IllegalArgumentException("Voice verification requires audio and expected text");
+        var profile = observed.profile();
+        String endpoint = switch (capability) {
+            case TEXT, VISION -> profile.endpoint();
+            case VOICE_FILE -> profile.fileEndpoint();
+            case VOICE_REALTIME -> profile.realtimeEndpoint();
+        };
+        if (endpoint.isEmpty()) throw new IllegalArgumentException("This protocol address is not configured");
+        int ceiling = persistence.aiProfiles().outputLimit(id).orElseThrow();
+        char[] key;
+        try (var operation = security.enterOperation(); var store = security.openCredentials()) {
+            key = store.read(profile.credentialKey())
+                .orElseThrow(() -> new IllegalArgumentException("The saved API key is unavailable"));
         }
+        boolean submitted = false;
+        try {
+            var handle = tasks.<Void>submit(new TaskRequest(PROBE_TYPE, "Model: " + observed.name(), List.of(), true),
+                task -> {
+                    try {
+                        OperationResult<Void> result = probe(observed, capability, audio, expected, ceiling, key, task);
+                        if (result.outcome() == Outcome.CANCELLED) return result;
+                        var check = classify(result);
+                        try {
+                            persistence.aiProfiles().recordVerification(profile, observed.revision(), capability, check);
+                        } catch (SQLException conflict) {
+                            if ("40001".equals(conflict.getSQLState()))
+                                return failed(ProblemCode.BUSY, "MODEL_PROBE_STALE", "Model settings changed during verification; reload before editing");
+                            runtime.reportUncertainEffect(task);
+                            return failed(ProblemCode.UNKNOWN, "MODEL_SAVE_UNKNOWN", "The verification commit must be reconciled before continuing");
+                        }
+                        return result;
+                    } finally { Arrays.fill(key, '\0'); }
+                });
+            submitted = true; handles.put(handle.id(), handle);
+            handle.completion().whenComplete((result, failure) -> { Arrays.fill(key, '\0'); handles.remove(handle.id()); });
+            return handle;
+        } finally { if (!submitted) Arrays.fill(key, '\0'); }
+    }
+
+    /** Sends only the explicitly selected protocol and checks its actual output. / 仅发送明确所选协议并核对实际输出。
+     * @param observed frozen configuration / 冻结配置
+     * @param capability selected protocol / 所选协议
+     * @param audio reviewed WAV input / 已审阅WAV输入
+     * @param expected expected transcript / 预期文字
+     * @param ceiling text output bound / 文字输出上限
+     * @param key captured protected key / 已捕获受保护密钥
+     * @param task original executing task / 原执行任务
+     * @return actual classified outcome / 实际分类结果 */
+    private OperationResult<Void> probe(StoredAiProviderConfiguration observed, AiCapabilityType capability,
+        VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
+        try {
+            if (capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION) {
+                var challenge = ModelCapabilityProbe.create(capability == AiCapabilityType.VISION, ceiling);
+                var result = ai.probe(observed.profile(), key, challenge.request(), task);
+                if (result.outcome() != Outcome.SUCCEEDED)
+                    return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                if (!challenge.accepts(result.value().orElseThrow()))
+                    return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
+            } else {
+                OperationResult<VoiceResponse> result;
+                if (capability == AiCapabilityType.VOICE_FILE) result = ai.probeVoice(observed.profile(), key, audio, task);
+                else {
+                    byte[] pcm = audio.pcm();
+                    try { result = ai.probeRealtime(observed.profile(), key,
+                        new VoiceOptions(audio.timeout(), 1_048_576), pcm, task); }
+                    finally { Arrays.fill(pcm, (byte) 0); }
+                }
+                if (result.outcome() != Outcome.SUCCEEDED)
+                    return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                if (!normalized(expected).equalsIgnoreCase(normalized(result.value().orElseThrow().text())))
+                    return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The transcript did not match the reviewed expected text");
+            }
+            return task.cancelToken().requested() ? new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty())
+                : new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        } catch (ApiException failure) {
+            return new OperationResult<>(failure.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                Optional.empty(), Optional.of(failure.problem()));
+        }
+    }
+
+    /** Normalizes harmless transcript whitespace. / 规范化无害的转写空白。
+     * @param value transcript text / 转写文字
+     * @return normalized text / 规范文字 */
+    private static String normalized(String value) { return value.strip().replaceAll("\\s+", " "); }
+
+    /** Stores fixed safe reason keys, never provider bodies or transcripts. / 保存固定安全原因键，不保存提供方正文或转写。
+     * @param result actual probe outcome / 实际验证结果
+     * @return independent safe evidence / 独立安全证据 */
+    private static AiCapabilityCheck classify(OperationResult<Void> result) {
+        if (result.outcome() == Outcome.SUCCEEDED)
+            return new AiCapabilityCheck(AiCapabilityStateType.AVAILABLE, "", Optional.of(Instant.now()));
+        var problem = result.problem().orElseThrow();
+        boolean unsupported = problem.code() == ProblemCode.INCOMPATIBLE || problem.eventCode().equals("VOICE_UNSUPPORTED");
+        String reason = unsupported ? "MODEL_PROBE_UNSUPPORTED" : switch (problem.code()) {
+            case ACCESS_DENIED -> "MODEL_PROBE_AUTH";
+            case CONTRACT_VIOLATION, INVALID_INPUT -> "MODEL_PROBE_PROTOCOL";
+            case UNKNOWN -> "MODEL_PROBE_UNKNOWN";
+            default -> "MODEL_PROBE_NETWORK";
+        };
+        if (problem.eventCode().equals("MODEL_PROBE_ANSWER")) reason = "MODEL_PROBE_ANSWER";
+        return new AiCapabilityCheck(unsupported ? AiCapabilityStateType.UNSUPPORTED : AiCapabilityStateType.FAILED,
+            reason, Optional.of(Instant.now()));
     }
 
     /** Reads one authoritative revision. / 读取一个权威修订。
@@ -245,23 +315,14 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @throws SQLException if storage fails / 存储失败时 */
     private Optional<StoredAiProviderConfiguration> current(String id) throws SQLException {
         return persistence.aiProfiles().listConfigured().stream().filter(value -> value.profile().id().equals(id))
-                .findFirst();
-    }
-
-    /** Rejects concurrent configuration changes before saving evidence. / 保存证据前拒绝并发配置变化。
-     * @param expected observed revision / 已观察修订
-     * @param actual current revision / 当前修订
-     * @return whether connection identity still matches / 连接身份是否仍匹配 */
-    private static boolean sameRevision(Optional<StoredAiProviderConfiguration> expected,
-            Optional<StoredAiProviderConfiguration> actual) {
-        return expected.equals(actual);
+            .findFirst();
     }
 
     /** Lists unfinished tasks owned by this stable probe protocol. / 列出此稳定探测协议的未结束任务。
      * @return retained checks / 保留检查 */
     public List<TaskSnapshot> checks() {
         return runtime.snapshots().stream().filter(task -> task.ownerId().equals(PlatformTaskAdmission.PLATFORM_OWNER)
-                && task.type().equals(PROBE_TYPE) && task.state() != TaskState.ENDED).toList();
+            && task.type().equals(PROBE_TYPE) && task.state() != TaskState.ENDED).toList();
     }
 
     /** Requests cancellation of the exact current-process probe. / 请求取消精确的当前进程探测。
@@ -271,7 +332,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
         var handle = handles.get(id);
         if (handle == null)
             throw new ApiException(new Problem(ProblemCode.NOT_FOUND, "MODEL_PROBE_HANDLE",
-                    "No active probe handle exists", Map.of(), Optional.empty()));
+                "No active probe handle exists", Map.of(), Optional.empty()));
         handle.requestCancel();
     }
 
@@ -282,7 +343,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
     public CompletionStage<TaskSnapshot> reconcile(UUID id) throws ApiException {
         if (checks().stream().noneMatch(task -> task.id().equals(id)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "MODEL_PROBE_IDENTITY",
-                    "Not a retained model probe", Map.of(), Optional.empty()));
+                "Not a retained model probe", Map.of(), Optional.empty()));
         return runtime.reconcile(id);
     }
 
@@ -311,6 +372,6 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @return failed operation / 失败操作 */
     private static OperationResult<Void> failed(ProblemCode code, String event, String message) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(code, event, message, Map.of(), Optional.empty())));
+            Optional.of(new Problem(code, event, message, Map.of(), Optional.empty())));
     }
 }

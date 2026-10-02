@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -13,12 +18,12 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
@@ -47,16 +52,16 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
         Files.writeString(selectedSourceDirectory().resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
         Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
         Files.writeString(selectedSourceDirectory().resolve("windowstolinux-application.properties"),
-                "version=1\nhealth.mode=TCP\n");
+            "version=1\nhealth.mode=TCP\n");
         enable();
         var owner = new AtomicReference<JFrame>();
         var page = new AtomicReference<DeploymentStaticPage>();
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var actual = runtime.modContexts().get(OWNER).context();
             var connections = new AtomicInteger();
             LinuxService linux = new LinuxService() {
@@ -70,15 +75,15 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 }
             };
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        try {
-                            return method.invoke(actual, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    try {
+                        return method.invoke(actual, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             SwingUtilities.invokeAndWait(() -> {
                 var view = new DeploymentStaticPage(new DeploymentStaticPageService(bound, workflow));
@@ -96,36 +101,36 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
             var delegate = new DeploymentStaticPageReviewer(page.get(), page.get().viewGeneration());
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                        List<DiscoveredProjectComponent> components, TaskContext task) {
+                                                                                  List<DiscoveredProjectComponent> components, TaskContext task) {
                     assertEquals(1, components.size());
                     originalTask.set(task);
                     String id = components.getFirst().id();
                     return success(new DeploymentStaticWorkflow.Selection(id,
-                            Map.of(id, new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
-                            Optional.empty()));
+                        Map.of(id, new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
+                        Optional.empty()));
                 }
 
                 public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
-                        String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                             String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertSame(originalTask.get(), task);
                     assertEquals(1, prompts.size());
                     var current = prompts.getFirst();
                     prompt.set(current);
                     var values = new LinkedHashMap<>(current.defaults());
                     current.fields().forEach(
-                            field -> values.put(field.id().substring(field.id().indexOf('/') + 1), field.value()));
+                        field -> values.put(field.id().substring(field.id().indexOf('/') + 1), field.value()));
                     values.putAll(Map.of("primary", "app", "secondary", "main.go", "version", "1.24", "port", "8080",
-                            "healthMode", "TCP", "exposure", "INTERNAL", "configuration", "SENTINEL=retained"));
+                        "healthMode", "TCP", "exposure", "INTERNAL", "configuration", "SENTINEL=retained"));
                     workflow.validateReview(current,
-                            new DeploymentStaticWorkflow.Answers(values, List.of(), limits(), false, true));
+                        new DeploymentStaticWorkflow.Answers(values, List.of(), limits(), false, true));
                     expected.set(Map.copyOf(values));
                     return delegate.review(server, sha, prompts, task);
                 }
 
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentPreparedDatabase> databases,
-                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentPreparedDatabase> databases,
+                                                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     assertSame(originalTask.get(), task);
                     assertEquals(0, connections.get());
                     assertEquals(1, archives.size());
@@ -140,7 +145,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 }
             };
             var handle = workflow.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer);
+                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer);
             var first = awaitModal(owner.get(), "Review runtime and bindings");
             var fields = new AtomicReference<Map<String, JComponent>>();
             var form = new AtomicReference<JPanel>();
@@ -153,8 +158,8 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 fields.set(inputs);
                 expected.get().forEach((key, value) -> {
                     if (inputs.containsKey(key) && Set
-                            .of("primary", "secondary", "version", "port", "healthMode", "exposure", "configuration")
-                            .contains(key))
+                        .of("primary", "secondary", "version", "port", "healthMode", "exposure", "configuration")
+                        .contains(key))
                         set(inputs.get(key), value);
                 });
                 int limitOffset = 2 + inputs.size() * 2;
@@ -164,7 +169,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 if (invalid.equals("malformed-configuration"))
                     set(inputs.get("configuration"), "missing-equals");
                 var risks = Arrays.stream(current.getComponents()).filter(JCheckBox.class::isInstance)
-                        .map(JCheckBox.class::cast).toList();
+                    .map(JCheckBox.class::cast).toList();
                 assertEquals(2, risks.size());
                 risks.getLast().setSelected(true);
                 decide(first, JOptionPane.OK_OPTION);
@@ -176,10 +181,10 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 assertEquals(invalid.equals("malformed-configuration") ? "600" : invalid, timeout.get().getText());
                 for (String key : List.of("primary", "secondary", "version", "port", "configuration"))
                     assertEquals(key.equals("configuration") && invalid.equals("malformed-configuration")
-                            ? "missing-equals"
-                            : expected.get().get(key), value(fields.get().get(key)));
+                        ? "missing-equals"
+                        : expected.get().get(key), value(fields.get().get(key)));
                 assertTrue(descendants(repeated).stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
-                        .anyMatch(label -> page.get().text("invalidForm").equals(label.getText())));
+                    .anyMatch(label -> page.get().text("invalidForm").equals(label.getText())));
                 assertEquals(0, connections.get());
                 assertEquals(handle.id(), originalTask.get().id());
                 assertFalse(handle.completion().toCompletableFuture().isDone());
@@ -206,9 +211,9 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
             });
             long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
             while (actual.tasks().list(Optional.empty(), 200).items().stream()
-                    .filter(task -> task.type().equals("deployment-server-list")
-                            || task.type().equals("deployment-secret-list"))
-                    .anyMatch(task -> task.state() != TaskState.ENDED) && System.nanoTime() < until)
+                .filter(task -> task.type().equals("deployment-server-list")
+                    || task.type().equals("deployment-secret-list"))
+                .anyMatch(task -> task.state() != TaskState.ENDED) && System.nanoTime() < until)
                 Thread.sleep(20);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         } finally {
@@ -231,7 +236,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
 
     private static JPanel componentForm(JDialog dialog) {
         var tabs = (JTabbedPane) descendants(dialog).stream().filter(JTabbedPane.class::isInstance).findFirst()
-                .orElseThrow();
+            .orElseThrow();
         assertEquals(1, tabs.getTabCount());
         return (JPanel) ((JScrollPane) tabs.getComponentAt(0)).getViewport().getView();
     }
@@ -257,13 +262,13 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
 
     private static String value(JComponent control) {
         return control instanceof JTextField field
-                ? field.getText()
-                : String.valueOf(((JComboBox<?>) control).getSelectedItem());
+            ? field.getText()
+            : String.valueOf(((JComboBox<?>) control).getSelectedItem());
     }
 
     private static void decide(JDialog dialog, int choice) {
         var pane = (JOptionPane) descendants(dialog).stream().filter(JOptionPane.class::isInstance).findFirst()
-                .orElseThrow();
+            .orElseThrow();
         pane.setValue(choice);
         dialog.dispose();
     }

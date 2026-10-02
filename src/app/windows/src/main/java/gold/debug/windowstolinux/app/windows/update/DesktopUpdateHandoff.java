@@ -13,7 +13,8 @@ import java.util.UUID;
  * @param preparationEvents preparation events / 准备事件集合
  */
 public record DesktopUpdateHandoff(UUID operationIdentity, DesktopUpdateVerification update,
-        DesktopUpdatePort.BackupEvidence backup, List<DesktopUpdateEvent> preparationEvents) {
+                                   DesktopUpdatePort.BackupEvidence backup,
+                                   List<DesktopUpdateEvent> preparationEvents) {
     /**
      * Validates that replacement has not begun before the independent handoff. / 校验独立交接前尚未开始替换。
      *
@@ -30,10 +31,10 @@ public record DesktopUpdateHandoff(UUID operationIdentity, DesktopUpdateVerifica
         backup = Objects.requireNonNull(backup, "backup");
         preparationEvents = List.copyOf(Objects.requireNonNull(preparationEvents, "preparationEvents"));
         if (!backup.programBackedUp() || !backup.databaseBackedUp() || !backup.dataLocationPreserved()
-                || !backup.securityProfilePreserved() || preparationEvents.size() != 2
-                || preparationEvents.get(0).state() != DesktopUpdateState.TASKS_QUIESCED
-                || preparationEvents.get(1).state() != DesktopUpdateState.BACKUP_CREATED
-                || preparationEvents.stream().anyMatch(event -> !event.succeeded())) {
+            || !backup.securityProfilePreserved() || preparationEvents.size() != 2
+            || preparationEvents.get(0).state() != DesktopUpdateState.TASKS_QUIESCED
+            || preparationEvents.get(1).state() != DesktopUpdateState.BACKUP_CREATED
+            || preparationEvents.stream().anyMatch(event -> !event.succeeded())) {
             throw new IllegalArgumentException("update handoff requires successful quiesce and paired backup evidence");
         }
     }

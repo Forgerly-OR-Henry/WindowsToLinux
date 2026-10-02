@@ -30,10 +30,10 @@ final class DeploymentDistributionCompatibilityRules {
      * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
      */
     public static DeploymentHostCapabilityStatus requireCpu(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentCpuMicroarchitectureLevel required, String distribution, List<String> evidence) {
+                                                            DeploymentCpuMicroarchitectureLevel required, String distribution, List<String> evidence) {
         if (!capabilities.cpuMicroarchitecture().supports(required)) {
             evidence.add(distribution + " requires " + cpuName(required) + "; observed "
-                    + cpuName(capabilities.cpuMicroarchitecture()));
+                + cpuName(capabilities.cpuMicroarchitecture()));
             return DeploymentHostCapabilityStatus.REQUIRES_CPU_REVIEW;
         }
         evidence.add(distribution + " CPU baseline satisfied: " + cpuName(capabilities.cpuMicroarchitecture()));
@@ -50,9 +50,9 @@ final class DeploymentDistributionCompatibilityRules {
      * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
      */
     public static DeploymentHostCapabilityStatus requireEnforcingSelinux(DeploymentLinuxCapabilityFacts capabilities,
-            String distribution, List<String> evidence) {
+                                                                         String distribution, List<String> evidence) {
         if (capabilities.securityPosture().module() != DeploymentLinuxSecurityModuleType.SELINUX
-                || capabilities.securityPosture().state() != DeploymentLinuxSecurityState.ENFORCING) {
+            || capabilities.securityPosture().state() != DeploymentLinuxSecurityState.ENFORCING) {
             evidence.add(distribution + " requires SELinux enforcing evidence before target mutation");
             return DeploymentHostCapabilityStatus.REQUIRES_SECURITY_REVIEW;
         }

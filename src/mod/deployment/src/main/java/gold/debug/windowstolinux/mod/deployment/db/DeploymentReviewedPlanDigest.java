@@ -12,8 +12,10 @@ import java.util.HexFormat;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentHealthCodec;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentRuntimeCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+
 import java.time.Instant;
 import java.util.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
 
@@ -39,10 +41,14 @@ public final class DeploymentReviewedPlanDigest {
      * @param containerRisk original container choice / 原容器选择
      * @param adapterRisk original adapter choice / 原适配器选择 */
     public record Values(String serverId, UUID snapshotId, String manifestSha256, String archiveSha256,
-            long byteCount, long uncompressedByteCount, Map<String, String> facts, List<ToolchainRequirement> requirements,
-            DeploymentConfigurationSnapshot configuration, List<DeploymentSecretReference> secretReferences,
-            DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime, Optional<DeploymentAccessUrl> userAccessUrl,
-            DeploymentBuildLimits limits, Instant confirmedAt, boolean containerRisk, boolean adapterRisk) {
+                         long byteCount, long uncompressedByteCount, Map<String, String> facts,
+                         List<ToolchainRequirement> requirements,
+                         DeploymentConfigurationSnapshot configuration,
+                         List<DeploymentSecretReference> secretReferences,
+                         DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime,
+                         Optional<DeploymentAccessUrl> userAccessUrl,
+                         DeploymentBuildLimits limits, Instant confirmedAt, boolean containerRisk,
+                         boolean adapterRisk) {
         /** Copies complete exact hash inputs without creating source authority. / 复制完整精确哈希输入，不创建来源权限。
          * @param serverId original server / 原服务器
          * @param snapshotId original snapshot / 原快照
@@ -62,9 +68,16 @@ public final class DeploymentReviewedPlanDigest {
          * @param containerRisk container choice / 容器选择
          * @param adapterRisk adapter choice / 适配器选择 */
         public Values {
-            facts = Map.copyOf(facts); requirements = List.copyOf(requirements); secretReferences = List.copyOf(secretReferences);
-            Objects.requireNonNull(snapshotId); Objects.requireNonNull(configuration); Objects.requireNonNull(resources);
-            Objects.requireNonNull(runtime); Objects.requireNonNull(userAccessUrl); Objects.requireNonNull(limits); Objects.requireNonNull(confirmedAt);
+            facts = Map.copyOf(facts);
+            requirements = List.copyOf(requirements);
+            secretReferences = List.copyOf(secretReferences);
+            Objects.requireNonNull(snapshotId);
+            Objects.requireNonNull(configuration);
+            Objects.requireNonNull(resources);
+            Objects.requireNonNull(runtime);
+            Objects.requireNonNull(userAccessUrl);
+            Objects.requireNonNull(limits);
+            Objects.requireNonNull(confirmedAt);
             if (!facts.keySet().equals(Set.of("applicationId", "projectType", "buildTool", "buildDirectory", "support", "language", "architecture", "framework")))
                 throw new IllegalArgumentException("Incomplete reviewed hash facts");
         }
@@ -83,8 +96,9 @@ public final class DeploymentReviewedPlanDigest {
      * @param dependencies exact ordered predecessor lists / 精确有序前驱列表
      * @param identities complete child review digests / 完整子审阅摘要 */
     public record GraphValues(String applicationId, String healthOwner, DeploymentHealthCheck health,
-            List<String> order, Map<String, String> namespaces, Map<String, List<String>> dependencies,
-            Map<String, String> identities) {
+                              List<String> order, Map<String, String> namespaces,
+                              Map<String, List<String>> dependencies,
+                              Map<String, String> identities) {
         /** Copies and checks one whole original graph. / 复制并核对一个完整原图。
          * @param applicationId original application / 原应用
          * @param healthOwner original health owner / 原健康归属
@@ -94,22 +108,26 @@ public final class DeploymentReviewedPlanDigest {
          * @param dependencies original dependencies / 原依赖
          * @param identities original child digests / 原子摘要 */
         public GraphValues {
-            Objects.requireNonNull(health); order = List.copyOf(order); namespaces = Map.copyOf(namespaces);
+            Objects.requireNonNull(health);
+            order = List.copyOf(order);
+            namespaces = Map.copyOf(namespaces);
             identities = Map.copyOf(identities);
             var copied = new LinkedHashMap<String, List<String>>();
-            dependencies.forEach((key, value) -> copied.put(key, List.copyOf(value))); dependencies = Map.copyOf(copied);
+            dependencies.forEach((key, value) -> copied.put(key, List.copyOf(value)));
+            dependencies = Map.copyOf(copied);
             var ids = new HashSet<>(order);
             if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}") || order.size() < 2 || order.size() > 16
-                    || ids.size() != order.size() || !ids.contains(healthOwner) || !ids.equals(namespaces.keySet())
-                    || !ids.equals(dependencies.keySet()) || !ids.equals(identities.keySet())
-                    || new HashSet<>(namespaces.values()).size() != order.size())
+                || ids.size() != order.size() || !ids.contains(healthOwner) || !ids.equals(namespaces.keySet())
+                || !ids.equals(dependencies.keySet()) || !ids.equals(identities.keySet())
+                || new HashSet<>(namespaces.values()).size() != order.size())
                 throw new IllegalArgumentException("Incomplete reviewed graph identity");
             var visited = new HashSet<String>();
             for (var id : order) {
                 var prior = dependencies.get(id);
                 if (!id.matches("[a-z0-9][a-z0-9-]{0,62}") || !namespaces.get(id).matches("[a-z0-9][a-z0-9-]{0,62}")
-                        || !identities.get(id).matches("[0-9a-f]{64}") || new HashSet<>(prior).size() != prior.size()
-                        || !visited.containsAll(prior)) throw new IllegalArgumentException("Invalid reviewed graph child binding");
+                    || !identities.get(id).matches("[0-9a-f]{64}") || new HashSet<>(prior).size() != prior.size()
+                    || !visited.containsAll(prior))
+                    throw new IllegalArgumentException("Invalid reviewed graph child binding");
                 visited.add(id);
             }
         }
@@ -122,12 +140,19 @@ public final class DeploymentReviewedPlanDigest {
         try {
             var bytes = new ByteArrayOutputStream();
             try (var output = new DataOutputStream(bytes)) {
-                output.writeUTF("deployment-reviewed-graph-v1"); output.writeUTF(value.applicationId()); output.writeUTF(value.healthOwner());
-                var probe = new DeploymentHealthCodec().write(value.health()); output.writeInt(probe.length); output.write(probe);
+                output.writeUTF("deployment-reviewed-graph-v1");
+                output.writeUTF(value.applicationId());
+                output.writeUTF(value.healthOwner());
+                var probe = new DeploymentHealthCodec().write(value.health());
+                output.writeInt(probe.length);
+                output.write(probe);
                 output.writeInt(value.order().size());
                 for (var id : value.order()) {
-                    output.writeUTF(id); output.writeUTF(value.namespaces().get(id)); output.writeUTF(value.identities().get(id));
-                    var prior = value.dependencies().get(id); output.writeInt(prior.size());
+                    output.writeUTF(id);
+                    output.writeUTF(value.namespaces().get(id));
+                    output.writeUTF(value.identities().get(id));
+                    var prior = value.dependencies().get(id);
+                    output.writeInt(prior.size());
                     for (var dependency : prior) output.writeUTF(dependency);
                 }
             }
@@ -157,9 +182,9 @@ public final class DeploymentReviewedPlanDigest {
                 text(out, value.configuration().schemaVersion());
                 text(out, value.configuration().sha256());
                 var secrets = value.secretReferences().stream()
-                        .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                                .thenComparingLong(DeploymentSecretReference::revision))
-                        .toList();
+                    .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
+                        .thenComparingLong(DeploymentSecretReference::revision))
+                    .toList();
                 out.writeInt(secrets.size());
                 for (var secret : secrets) {
                     text(out, secret.identifier());

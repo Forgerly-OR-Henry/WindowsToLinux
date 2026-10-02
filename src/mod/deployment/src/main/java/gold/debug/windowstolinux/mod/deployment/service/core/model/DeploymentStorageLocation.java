@@ -125,8 +125,8 @@ public record DeploymentStorageLocation(StorageLocationType type, String path) {
         };
         if (type == StorageLocationType.DEFAULT) {
             return resource == StorageResourceType.CONFIGURATION
-                    ? configurationRoot(applicationId) + "/files/" + bindingId
-                    : dataRoot(applicationId) + "/" + category + "/" + bindingId;
+                ? configurationRoot(applicationId) + "/files/" + bindingId
+                : dataRoot(applicationId) + "/" + category + "/" + bindingId;
         }
         if (!path.startsWith("/"))
             return root + "/persistent/" + category + "/" + bindingId;
@@ -134,7 +134,7 @@ public record DeploymentStorageLocation(StorageLocationType type, String path) {
             throw new IllegalArgumentException("custom storage must remain inside " + root);
         String first = path.substring(root.length() + 1).split("/", 2)[0];
         if (first.equals("releases") || first.equals("current") || first.equals("persistent")
-                || first.startsWith(".")) {
+            || first.startsWith(".")) {
             throw new IllegalArgumentException("custom storage overlaps a managed publication directory");
         }
         return resource == StorageResourceType.CONFIGURATION ? root + "/persistent/configuration/" + bindingId : path;
@@ -189,7 +189,7 @@ public record DeploymentStorageLocation(StorageLocationType type, String path) {
         if (path.endsWith("/"))
             path = path.substring(0, path.length() - 1);
         if (path.isEmpty() || path.equals("-") || path.length() > 512
-                || !path.matches("/?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"))
+            || !path.matches("/?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"))
             throw new IllegalArgumentException("storage path must be a bounded literal Linux path");
         for (String part : path.split("/"))
             if (part.equals(".") || part.equals(".."))

@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.db.DeploymentJsonDocument.*;
 
 import java.nio.charset.StandardCharsets;
@@ -8,8 +11,9 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Advances bounded operation consent through the same original row lock and reserved formal execution. / 经同一原行锁及已预留正式执行推进有界操作同意。 */
 public final class DeploymentPublicationAttemptRepository {
@@ -18,7 +22,9 @@ public final class DeploymentPublicationAttemptRepository {
 
     /** Reuses the existing exact transaction and task authorization. / 复用既有精确事务及任务权限。
      * @param database original Mod generation / 原Mod代次 */
-    public DeploymentPublicationAttemptRepository(ModDatabase database) { executions = new DeploymentExecutionRepository(database); }
+    public DeploymentPublicationAttemptRepository(ModDatabase database) {
+        executions = new DeploymentExecutionRepository(database);
+    }
 
     /** Stores complete original restoration and human consent before any new fixed environment action. / 任一新固定环境动作前存储完整原恢复及人工同意。
      * @param task authentic unchanged original task / 真实不变原任务
@@ -29,8 +35,9 @@ public final class DeploymentPublicationAttemptRepository {
      * @throws SQLException if original phase, unit, source or CAS differs / 原阶段、单元、来源或CAS不符时
      * @throws ApiException if original task access or durability is unavailable / 原任务访问或持久性不可用时 */
     public void recordIntent(TaskContext task, UUID executionId, DeploymentPublicationAttemptIntent intent,
-            DeploymentPublicationAttemptProof proof, Instant observedAt) throws SQLException, ApiException {
-        Objects.requireNonNull(intent); Objects.requireNonNull(proof);
+                             DeploymentPublicationAttemptProof proof, Instant observedAt) throws SQLException, ApiException {
+        Objects.requireNonNull(intent);
+        Objects.requireNonNull(proof);
         executions.mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             requireExecuting(record, checkpoint, intent.unitId());
             if (!proof.task().equals(task.id()) || !intent.previousRoot().equals(record.identity().reviewedRevision()))
@@ -48,11 +55,12 @@ public final class DeploymentPublicationAttemptRepository {
      * @throws SQLException if pending intent, original resources or CAS conflict / 待定意图、原资源或CAS冲突时
      * @throws ApiException if original durability or access is uncertain / 原持久性或访问不明时 */
     public void adoptReview(TaskContext task, UUID executionId, DeploymentPublicationAttemptReview review,
-            Instant observedAt) throws SQLException, ApiException {
+                            Instant observedAt) throws SQLException, ApiException {
         Objects.requireNonNull(review);
         executions.mutate(task, executionId, observedAt, (connection, record, checkpoint) -> {
             requireExecuting(record, checkpoint, review.unitId());
-            if (!record.identity().reviewedRevision().equals(review.previousRoot())) throw new SQLException("Original publication root changed before final review");
+            if (!record.identity().reviewedRevision().equals(review.previousRoot()))
+                throw new SQLException("Original publication root changed before final review");
             var old = record.identity();
             var identity = new DeploymentExecutionIdentity(old.executionId(), old.taskId(), old.projectId(), old.applicationId(), old.server(), old.mode(), review.nextRoot());
             store(connection, record, checkpoint, DeploymentPublicationAttemptCodec.withReview(record, review), identity, observedAt);
@@ -107,7 +115,7 @@ public final class DeploymentPublicationAttemptRepository {
         DeploymentExecutionCodec.known(record);
         var request = parse(record.requestJson(), DeploymentExecutionCodec.READ_LIMIT);
         return DeploymentPublicationAttemptCodec.version(request.path("formatVersion").intValue()) && !request.path("attemptIntent").isNull()
-                ? Optional.of(DeploymentPublicationAttemptIntent.decode(request.path("attemptIntent"))) : Optional.empty();
+            ? Optional.of(DeploymentPublicationAttemptIntent.decode(request.path("attemptIntent"))) : Optional.empty();
     }
 
     /** Reads exact final review pointers for original task recovery without continuing a new build. / 为原任务恢复读取精确最终审阅指针，不继续新构建。
@@ -115,10 +123,12 @@ public final class DeploymentPublicationAttemptRepository {
      * @return immutable bounded reviews / 不可变有界审阅
      * @throws SQLException if original full request conflicts / 原完整请求冲突时 */
     public List<DeploymentPublicationAttemptReview> reviews(DeploymentExecutionRecord record) throws SQLException {
-        DeploymentExecutionCodec.known(record); var request = parse(record.requestJson(), DeploymentExecutionCodec.READ_LIMIT);
+        DeploymentExecutionCodec.known(record);
+        var request = parse(record.requestJson(), DeploymentExecutionCodec.READ_LIMIT);
         if (!DeploymentPublicationAttemptCodec.version(request.path("formatVersion").intValue())) return List.of();
         var reviews = new ArrayList<DeploymentPublicationAttemptReview>();
-        for (var entry : array(request, "attemptReviews", 2)) reviews.add(DeploymentPublicationAttemptReview.decode(entry));
+        for (var entry : array(request, "attemptReviews", 2))
+            reviews.add(DeploymentPublicationAttemptReview.decode(entry));
         return List.copyOf(reviews);
     }
 
@@ -129,9 +139,9 @@ public final class DeploymentPublicationAttemptRepository {
      * @throws SQLException if a final outcome or original unit differs / 最终结果或原单元不符时 */
     private static void requireExecuting(DeploymentExecutionRecord record, DeploymentExecutionCodec.Checkpoint checkpoint, String unit) throws SQLException {
         if (!record.phase().equals("EXECUTING") || record.outcome().isPresent() || record.businessCommitted() || record.cleanupComplete()
-                || record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
-                || checkpoint.intents().stream().noneMatch(value -> value.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
-                        && value.businessKey().equals(DeploymentReferenceKey.unit(record.identity().server(), unit).businessKey())))
+            || record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
+            || checkpoint.intents().stream().noneMatch(value -> value.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER
+            && value.businessKey().equals(DeploymentReferenceKey.unit(record.identity().server(), unit).businessKey())))
             throw new SQLException("Original publication cannot revive a completed execution or replace its unit reservation");
     }
 
@@ -144,17 +154,23 @@ public final class DeploymentPublicationAttemptRepository {
      * @param observedAt original nondecreasing time / 原非递减时刻
      * @throws SQLException if full validation or row CAS is unconfirmed / 完整校验或行CAS不明时 */
     private static void store(Connection connection, DeploymentExecutionRecord record, DeploymentExecutionCodec.Checkpoint checkpoint,
-            String request, DeploymentExecutionIdentity identity, Instant observedAt) throws SQLException {
+                              String request, DeploymentExecutionIdentity identity, Instant observedAt) throws SQLException {
         var time = observedAt.truncatedTo(ChronoUnit.MILLIS);
         String recovery = DeploymentExecutionCodec.recovery(identity, DeploymentExecutionCodec.requestVersion(request), record.phase(), checkpoint.ids());
         var next = new DeploymentExecutionRecord(identity, record.phase(), record.outcome(), request, recovery, record.resultJson(), false, false, record.createdAt(), time);
-        if (!DeploymentExecutionCodec.known(next).equals(checkpoint)) throw new SQLException("New operation changed original exact reserved references");
+        if (!DeploymentExecutionCodec.known(next).equals(checkpoint))
+            throw new SQLException("New operation changed original exact reserved references");
         try (var update = connection.prepareStatement("UPDATE deployment_execution SET reviewed_revision=?,request_payload=?,recovery_payload=?,updated_at=? "
-                + "WHERE execution_id=? AND platform_task_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL AND business_committed=FALSE AND cleanup_complete=FALSE")) {
-            update.setString(1, identity.reviewedRevision()); update.setBytes(2, request.getBytes(StandardCharsets.UTF_8));
-            update.setBytes(3, recovery.getBytes(StandardCharsets.UTF_8)); update.setLong(4, time.toEpochMilli());
-            update.setObject(5, identity.executionId()); update.setObject(6, identity.taskId()); update.setString(7, record.identity().reviewedRevision());
-            if (update.executeUpdate() != 1) throw new SQLException("Original publication operation CAS was not confirmed");
+            + "WHERE execution_id=? AND platform_task_id=? AND reviewed_revision=? AND phase='EXECUTING' AND outcome IS NULL AND business_committed=FALSE AND cleanup_complete=FALSE")) {
+            update.setString(1, identity.reviewedRevision());
+            update.setBytes(2, request.getBytes(StandardCharsets.UTF_8));
+            update.setBytes(3, recovery.getBytes(StandardCharsets.UTF_8));
+            update.setLong(4, time.toEpochMilli());
+            update.setObject(5, identity.executionId());
+            update.setObject(6, identity.taskId());
+            update.setString(7, record.identity().reviewedRevision());
+            if (update.executeUpdate() != 1)
+                throw new SQLException("Original publication operation CAS was not confirmed");
         }
     }
 }

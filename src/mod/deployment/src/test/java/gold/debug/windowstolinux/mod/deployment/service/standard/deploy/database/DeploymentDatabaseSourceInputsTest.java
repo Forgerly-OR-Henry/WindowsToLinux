@@ -25,11 +25,11 @@ class DeploymentDatabaseSourceInputsTest {
     @ValueSource(booleans = {false, true})
     void redisCannotBeMisclassifiedAsASqlDatasourceOrInitializer(boolean initializer) {
         var valid = new DatabaseRequirement("cache", DeploymentDatabaseEngineType.REDIS, "", "cache", "cache",
-                "CACHE", "CACHE_PASSWORD", List.of(), false, "fixture");
+            "CACHE", "CACHE_PASSWORD", List.of(), false, "fixture");
         assertEquals(DeploymentDatabaseEngineType.REDIS, valid.engine());
         assertThrows(IllegalArgumentException.class, () -> new DatabaseRequirement("cache",
-                DeploymentDatabaseEngineType.REDIS, "", "cache", "cache", "CACHE", "CACHE_PASSWORD",
-                initializer ? List.of("schema.sql") : List.of(), !initializer, "fixture"));
+            DeploymentDatabaseEngineType.REDIS, "", "cache", "cache", "CACHE", "CACHE_PASSWORD",
+            initializer ? List.of("schema.sql") : List.of(), !initializer, "fixture"));
     }
 
     /** Keeps one component database's SQL files separate from the global candidate list and other databases. / 将一个组件数据库的SQL文件与全局候选清单及其它数据库隔离。
@@ -38,19 +38,19 @@ class DeploymentDatabaseSourceInputsTest {
     void declaredInitializationForOneDatabaseDoesNotInitializeEveryOtherDatabase() throws Exception {
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.writeString(root.resolve("windowstolinux-db.properties"), """
-                db=main,audit
-                db.main.engine=POSTGRESQL
-                db.main.database=main
-                db.main.username=main
-                db.main.environmentPrefix=MAIN
-                db.main.passwordEnvironment=MAIN_PASSWORD
-                db.main.initialize=schema.sql
-                db.audit.engine=POSTGRESQL
-                db.audit.database=audit
-                db.audit.username=audit
-                db.audit.environmentPrefix=AUDIT
-                db.audit.passwordEnvironment=AUDIT_PASSWORD
-                """);
+            db=main,audit
+            db.main.engine=POSTGRESQL
+            db.main.database=main
+            db.main.username=main
+            db.main.environmentPrefix=MAIN
+            db.main.passwordEnvironment=MAIN_PASSWORD
+            db.main.initialize=schema.sql
+            db.audit.engine=POSTGRESQL
+            db.audit.database=audit
+            db.audit.username=audit
+            db.audit.environmentPrefix=AUDIT
+            db.audit.passwordEnvironment=AUDIT_PASSWORD
+            """);
         var assessment = new DatabaseProjectInspector().inspect(root);
         assertEquals(List.of("schema.sql"), assessment.sqlCandidates());
         assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
@@ -67,25 +67,26 @@ class DeploymentDatabaseSourceInputsTest {
     @Test
     void initializationFilesAreValidatedBeforeAnyRemoteDependenciesAreNeeded() throws Exception {
         Files.writeString(root.resolve("windowstolinux-db.properties"), """
-                db=main
-                db.main.engine=POSTGRESQL
-                db.main.database=main
-                db.main.username=main
-                db.main.environmentPrefix=MAIN
-                db.main.passwordEnvironment=MAIN_PASSWORD
-                db.main.initialize=missing.sql
-                """);
+            db=main
+            db.main.engine=POSTGRESQL
+            db.main.database=main
+            db.main.username=main
+            db.main.environmentPrefix=MAIN
+            db.main.passwordEnvironment=MAIN_PASSWORD
+            db.main.initialize=missing.sql
+            """);
         var assessment = new DatabaseProjectInspector().inspect(root);
         assertEquals(List.of("missing.sql"), assessment.databases().getFirst().initializationFiles());
-        assertEquals(List.of(), assessment.sqlCandidates()); assertFalse(Files.exists(root.resolve("missing.sql")));
+        assertEquals(List.of(), assessment.sqlCandidates());
+        assertFalse(Files.exists(root.resolve("missing.sql")));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of()));
+            () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of()));
     }
 
     @Test
     void explicitSqliteSourceRetainsSeedAndSourceBoundInitialization() throws Exception {
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.write(root.resolve("seed.db"), new byte[]{1, 2, 3});
         var assessment = new DatabaseProjectInspector().inspect(root);
@@ -96,7 +97,7 @@ class DeploymentDatabaseSourceInputsTest {
         assertEquals("schema.sql", completed.databases().getFirst().initializationFiles().getFirst());
         Files.delete(root.resolve("seed.db"));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of()));
+            () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of()));
     }
 
     @Test
@@ -105,17 +106,17 @@ class DeploymentDatabaseSourceInputsTest {
         var assessment = new DatabaseProjectInspector().inspect(root);
         assertTrue(assessment.unknownDatabase());
         assertEquals("database.main.engine",
-                DeploymentDatabaseSourceInputs.questions(assessment, "demo", Map.of()).getFirst().id());
+            DeploymentDatabaseSourceInputs.questions(assessment, "demo", Map.of()).getFirst().id());
         var engine = Map.of("database.main.engine", "POSTGRESQL");
         assertTrue(DeploymentDatabaseSourceInputs.questions(assessment, "demo", engine).stream()
-                .anyMatch(field -> field.id().equals("database.main.username")));
+            .anyMatch(field -> field.id().equals("database.main.username")));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, engine));
+            () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, engine));
         var complete = DeploymentDatabaseSourceInputs.complete(root, "demo", assessment,
-                Map.of("database.main.engine", "POSTGRESQL", "database.main.database", "demo_main",
-                        "database.main.username", "demo_main", "database.main.environmentPrefix", "APP_DB",
-                        "database.main.passwordEnvironment", "APP_DB_PASSWORD", "database.main.initialize",
-                        "schema.sql"));
+            Map.of("database.main.engine", "POSTGRESQL", "database.main.database", "demo_main",
+                "database.main.username", "demo_main", "database.main.environmentPrefix", "APP_DB",
+                "database.main.passwordEnvironment", "APP_DB_PASSWORD", "database.main.initialize",
+                "schema.sql"));
         assertEquals(DeploymentDatabaseEngineType.POSTGRESQL, complete.databases().getFirst().engine());
         assertEquals("schema.sql", complete.databases().getFirst().initializationFiles().getFirst());
     }
@@ -125,8 +126,8 @@ class DeploymentDatabaseSourceInputsTest {
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         var assessment = new DatabaseProjectInspector().inspect(root);
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of("database.main.engine",
-                        "SQLITE", "database.main.path", "DEFAULT", "database.main.pathEnvironment", "DATABASE_PATH")));
+            () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of("database.main.engine",
+                "SQLITE", "database.main.path", "DEFAULT", "database.main.pathEnvironment", "DATABASE_PATH")));
     }
 
     /** Keeps the old seed-file scope while bounding the combined UTF-8 SQL, including separator bytes. / 保留旧种子文件范围并限制含分隔字节的组合 UTF-8 SQL。
@@ -136,18 +137,18 @@ class DeploymentDatabaseSourceInputsTest {
         Files.write(root.resolve("seed.db"), new byte[2 * 1024 * 1024 + 1]);
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
-                        + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
+                + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
         var valid = new DatabaseProjectInspector().inspect(root);
         assertEquals("seed.db", DeploymentDatabaseSourceInputs.complete(root, "demo", valid, Map.of()).databases()
-                .getFirst().sqlite().orElseThrow().seedFile());
+            .getFirst().sqlite().orElseThrow().seedFile());
         Files.writeString(root.resolve("first.sql"), "x".repeat(1_100_000));
         Files.writeString(root.resolve("second.sql"), "y".repeat(1_100_000));
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
-                        + "db.main.initialize=first.sql,second.sql\ndb.main.seed=seed.db\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
+                + "db.main.initialize=first.sql,second.sql\ndb.main.seed=seed.db\n");
         var oversized = new DatabaseProjectInspector().inspect(root);
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentDatabaseSourceInputs.complete(root, "demo", oversized, Map.of()));
+            () -> DeploymentDatabaseSourceInputs.complete(root, "demo", oversized, Map.of()));
     }
 }

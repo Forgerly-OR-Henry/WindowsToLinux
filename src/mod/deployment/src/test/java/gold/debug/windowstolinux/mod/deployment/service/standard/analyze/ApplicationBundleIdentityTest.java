@@ -21,7 +21,7 @@ class ApplicationBundleIdentityTest {
             Path cli = Files.createDirectory(root.resolve("cli"));
             python(cli);
             Files.writeString(root.resolve("windowstolinux-application.properties"),
-                    "version=1\nprojectType=PYTHON_SERVICE\nbuildDirectory=cli\nmode=ON_DEMAND\n");
+                "version=1\nprojectType=PYTHON_SERVICE\nbuildDirectory=cli\nmode=ON_DEMAND\n");
             var assessed = new DeploymentAnalysisCoordinator().analyze(root, DeploymentProjectKind.PYTHON_SERVICE);
             var facts = assessed.facts().orElseThrow(() -> new AssertionError(assessed));
             assertEquals(name, facts.applicationId());
@@ -34,14 +34,14 @@ class ApplicationBundleIdentityTest {
     void ordinaryProjectsKeepTheirDeclaredIdentity() throws Exception {
         python(directory);
         var facts = new DeploymentAnalysisCoordinator().analyze(directory, DeploymentProjectKind.PYTHON_SERVICE).facts()
-                .orElseThrow();
+            .orElseThrow();
         assertEquals("shared-package", facts.applicationId());
         assertEquals("", facts.buildDirectory());
     }
 
     private void python(Path root) throws Exception {
         Files.writeString(root.resolve("pyproject.toml"),
-                "[project]\nname = \"shared-package\"\nversion = \"1.0.0\"\nrequires-python = \"==3.12.*\"\ndependencies = []\n");
+            "[project]\nname = \"shared-package\"\nversion = \"1.0.0\"\nrequires-python = \"==3.12.*\"\ndependencies = []\n");
         Files.writeString(root.resolve("main.py"), "print('fixture')\n");
     }
 }

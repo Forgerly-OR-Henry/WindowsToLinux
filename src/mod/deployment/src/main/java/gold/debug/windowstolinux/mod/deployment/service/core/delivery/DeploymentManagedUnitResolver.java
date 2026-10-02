@@ -1,11 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.delivery;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.security.SecureRandom;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationRepository;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitIdentity;
 
@@ -31,9 +36,9 @@ public final class DeploymentManagedUnitResolver {
         if (saved.isPresent()) {
             var existing = saved.orElseThrow();
             if (!existing.server().equals(server) || !existing
-                    .equals(DeploymentUnitIdentity.forManaged(unitId, server, existing.ownershipManifestSha256())))
+                .equals(DeploymentUnitIdentity.forManaged(unitId, server, existing.ownershipManifestSha256())))
                 throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_OWNER_CONFLICT",
-                        "Managed unit belongs to another target or has invalid ownership", Map.of(), Optional.empty()));
+                    "Managed unit belongs to another target or has invalid ownership", Map.of(), Optional.empty()));
             return existing;
         }
         byte[] random = new byte[32];
@@ -55,7 +60,7 @@ public final class DeploymentManagedUnitResolver {
             return value;
         try {
             String digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0, 8);
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0, 8);
             return value.substring(0, 54).replaceAll("-+$", "") + "-" + digest;
         } catch (java.security.NoSuchAlgorithmException unavailable) {
             throw new IllegalStateException("SHA-256 unavailable", unavailable);

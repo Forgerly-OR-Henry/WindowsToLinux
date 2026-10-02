@@ -24,5 +24,5 @@ public interface InteractionService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 }

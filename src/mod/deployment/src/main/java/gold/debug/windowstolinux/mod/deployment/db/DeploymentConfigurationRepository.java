@@ -42,7 +42,7 @@ public final class DeploymentConfigurationRepository {
      * @param snapshot immutable observation or configuration revision used by the operation / 操作使用的不可变观测或配置修订
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
-      * @param task original active author task / 原活动作者任务
+     * @param task original active author task / 原活动作者任务
      * @throws ApiException if the original task or capability is unavailable / 原任务或能力不可用时
      */
     public void save(TaskContext task, DeploymentConfigurationSnapshot snapshot) throws SQLException, ApiException {
@@ -58,26 +58,26 @@ public final class DeploymentConfigurationRepository {
      * @param releaseIdentity digest identifying the exact published release / 标识精确已发布版本的摘要
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
-      * @param task original active author task / 原活动作者任务
+     * @param task original active author task / 原活动作者任务
      * @throws ApiException if the original task or capability is unavailable / 原任务或能力不可用时
      */
     public Optional<DeploymentConfigurationSnapshot> findRelease(TaskContext task, String applicationId,
-            String releaseIdentity) throws SQLException, ApiException {
+                                                                 String releaseIdentity) throws SQLException, ApiException {
         applicationId = boundedIdentity(applicationId, "applicationId");
         releaseIdentity = boundedIdentity(releaseIdentity, "releaseIdentity");
         try (Connection connection = connection(task); PreparedStatement statement = connection.prepareStatement("""
-                SELECT configuration_revision, configuration_sha256
-                FROM deployment_unit_release_binding
-                WHERE deployment_unit_id=? AND release_sha256=?
-                """)) {
+            SELECT configuration_revision, configuration_sha256
+            FROM deployment_unit_release_binding
+            WHERE deployment_unit_id=? AND release_sha256=?
+            """)) {
             statement.setString(1, applicationId);
             statement.setString(2, releaseIdentity);
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next() || result.getObject("configuration_revision") == null)
                     return Optional.empty();
                 DeploymentConfigurationSnapshot snapshot = find(connection, applicationId,
-                        result.getLong("configuration_revision")).orElseThrow(
-                                () -> new SQLException("release configuration binding references a missing snapshot"));
+                    result.getLong("configuration_revision")).orElseThrow(
+                    () -> new SQLException("release configuration binding references a missing snapshot"));
                 if (!snapshot.sha256().equals(result.getString("configuration_sha256"))) {
                     throw new SQLException("release configuration binding digest is inconsistent");
                 }
@@ -94,11 +94,11 @@ public final class DeploymentConfigurationRepository {
      * @param revision immutable configuration or secret revision number / 不可变配置或秘密修订号
      * @return matching result, or empty when no admitted value exists / 匹配结果；不存在已准入内容时为空
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
-      * @param task original active author task / 原活动作者任务
+     * @param task original active author task / 原活动作者任务
      * @throws ApiException if the original task or capability is unavailable / 原任务或能力不可用时
      */
     public Optional<DeploymentConfigurationSnapshot> find(TaskContext task, String applicationId, long revision)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         try (Connection connection = connection(task)) {
             return find(connection, applicationId, revision);
         }
@@ -113,10 +113,10 @@ public final class DeploymentConfigurationRepository {
     public long nextRevision(TaskContext task, String applicationId) throws SQLException, ApiException {
         applicationId = boundedIdentity(applicationId, "applicationId");
         try (Connection connection = connection(task); PreparedStatement statement = connection.prepareStatement("""
-                SELECT COALESCE(MAX(configuration_revision),0)
-                FROM deployment_unit_configuration_snapshot
-                WHERE deployment_unit_id=?
-                """)) {
+            SELECT COALESCE(MAX(configuration_revision),0)
+            FROM deployment_unit_configuration_snapshot
+            WHERE deployment_unit_id=?
+            """)) {
             statement.setString(1, applicationId);
             try (ResultSet rows = statement.executeQuery()) {
                 rows.next();
@@ -136,11 +136,11 @@ public final class DeploymentConfigurationRepository {
      * @throws SQLException if the database cannot complete the requested read or transaction / 数据库无法完成请求的读取或事务时
      */
     private static Optional<DeploymentConfigurationSnapshot> find(Connection connection, String applicationId,
-            long revision) throws SQLException {
+                                                                  long revision) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT schema_version, created_at, configuration_sha256 FROM deployment_unit_configuration_snapshot
-                WHERE deployment_unit_id=? AND configuration_revision=?
-                """)) {
+            SELECT schema_version, created_at, configuration_sha256 FROM deployment_unit_configuration_snapshot
+            WHERE deployment_unit_id=? AND configuration_revision=?
+            """)) {
             statement.setString(1, applicationId);
             statement.setLong(2, revision);
             try (ResultSet result = statement.executeQuery()) {
@@ -153,26 +153,26 @@ public final class DeploymentConfigurationRepository {
                 try {
                     List<DeploymentConfigurationEntry> entries = new ArrayList<>();
                     try (PreparedStatement entriesStatement = connection.prepareStatement(
-                            """
-                                    SELECT configuration_key, value_type, configuration_scope, value_text FROM deployment_unit_configuration_entry
-                                    WHERE deployment_unit_id=? AND configuration_revision=? ORDER BY configuration_key, configuration_scope
-                                    """)) {
+                        """
+                            SELECT configuration_key, value_type, configuration_scope, value_text FROM deployment_unit_configuration_entry
+                            WHERE deployment_unit_id=? AND configuration_revision=? ORDER BY configuration_key, configuration_scope
+                            """)) {
                         entriesStatement.setString(1, applicationId);
                         entriesStatement.setLong(2, revision);
                         try (ResultSet entry = entriesStatement.executeQuery()) {
                             while (entry.next()) {
                                 entries.add(new DeploymentConfigurationEntry(entry.getString("configuration_key"),
-                                        DeploymentConfigurationScopeType
-                                                .valueOf(entry.getString("configuration_scope")),
-                                        value(entry.getString("value_type"), entry.getString("value_text"))));
+                                    DeploymentConfigurationScopeType
+                                        .valueOf(entry.getString("configuration_scope")),
+                                    value(entry.getString("value_type"), entry.getString("value_text"))));
                             }
                         }
                     }
                     return Optional.of(new DeploymentConfigurationSnapshot(applicationId, revision, schemaVersion,
-                            createdAt, entries, sha256));
+                        createdAt, entries, sha256));
                 } catch (IllegalArgumentException exception) {
                     throw new SQLException("saved application configuration snapshot violates current validation rules",
-                            exception);
+                        exception);
                 }
             }
         }
@@ -189,23 +189,23 @@ public final class DeploymentConfigurationRepository {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     static void saveAndBindRelease(Connection connection, DeploymentConfigurationSnapshot snapshot,
-            String releaseIdentity) throws SQLException {
+                                   String releaseIdentity) throws SQLException {
         Objects.requireNonNull(connection, "connection");
         Objects.requireNonNull(snapshot, "snapshot");
         String application = boundedIdentity(snapshot.applicationId(), "applicationId");
         String release = boundedIdentity(releaseIdentity, "releaseIdentity");
         save(connection, snapshot);
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT configuration_revision, configuration_sha256
-                FROM deployment_unit_release_binding
-                WHERE deployment_unit_id=? AND release_sha256=? FOR UPDATE
-                """)) {
+            SELECT configuration_revision, configuration_sha256
+            FROM deployment_unit_release_binding
+            WHERE deployment_unit_id=? AND release_sha256=? FOR UPDATE
+            """)) {
             statement.setString(1, application);
             statement.setString(2, release);
             try (ResultSet result = statement.executeQuery()) {
                 if (result.next() && result.getObject("configuration_revision") != null) {
                     if (result.getLong("configuration_revision") != snapshot.revision()
-                            || !result.getString("configuration_sha256").equals(snapshot.sha256())) {
+                        || !result.getString("configuration_sha256").equals(snapshot.sha256())) {
                         throw new SQLException("release configuration bindings are immutable");
                     }
                     return;
@@ -213,9 +213,9 @@ public final class DeploymentConfigurationRepository {
             }
         }
         try (PreparedStatement update = connection.prepareStatement("""
-                UPDATE deployment_unit_release_binding SET configuration_revision=?,configuration_sha256=?
-                WHERE deployment_unit_id=? AND release_sha256=? AND configuration_revision IS NULL
-                """)) {
+            UPDATE deployment_unit_release_binding SET configuration_revision=?,configuration_sha256=?
+            WHERE deployment_unit_id=? AND release_sha256=? AND configuration_revision IS NULL
+            """)) {
             update.setLong(1, snapshot.revision());
             update.setString(2, snapshot.sha256());
             update.setString(3, application);
@@ -224,9 +224,9 @@ public final class DeploymentConfigurationRepository {
                 return;
         }
         try (PreparedStatement insert = connection.prepareStatement("""
-                INSERT INTO deployment_unit_release_binding
-                (deployment_unit_id,release_sha256,configuration_revision,configuration_sha256) VALUES(?,?,?,?)
-                """)) {
+            INSERT INTO deployment_unit_release_binding
+            (deployment_unit_id,release_sha256,configuration_revision,configuration_sha256) VALUES(?,?,?,?)
+            """)) {
             insert.setString(1, application);
             insert.setString(2, release);
             insert.setLong(3, snapshot.revision());
@@ -245,21 +245,21 @@ public final class DeploymentConfigurationRepository {
      */
     private static void save(Connection connection, DeploymentConfigurationSnapshot snapshot) throws SQLException {
         Optional<DeploymentConfigurationSnapshot> existing = find(connection, snapshot.applicationId(),
-                snapshot.revision());
+            snapshot.revision());
         if (existing.isPresent()) {
             DeploymentConfigurationSnapshot stored = existing.orElseThrow();
             // Stored milliseconds and canonical ordering define equality across reads. / 存储毫秒和规范排序定义跨读取相等性。
             if (!stored.sha256().equals(snapshot.sha256())
-                    || stored.createdAt().toEpochMilli() != snapshot.createdAt().toEpochMilli()) {
+                || stored.createdAt().toEpochMilli() != snapshot.createdAt().toEpochMilli()) {
                 throw new SQLException("application configuration revisions are immutable");
             }
             return;
         }
         try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO deployment_unit_configuration_snapshot (
-                    deployment_unit_id, configuration_revision, schema_version, created_at, configuration_sha256
-                ) VALUES (?, ?, ?, ?, ?)
-                """)) {
+            INSERT INTO deployment_unit_configuration_snapshot (
+                deployment_unit_id, configuration_revision, schema_version, created_at, configuration_sha256
+            ) VALUES (?, ?, ?, ?, ?)
+            """)) {
             statement.setString(1, snapshot.applicationId());
             statement.setLong(2, snapshot.revision());
             statement.setString(3, snapshot.schemaVersion());
@@ -268,11 +268,11 @@ public final class DeploymentConfigurationRepository {
             statement.executeUpdate();
         }
         try (PreparedStatement statement = connection.prepareStatement(
-                """
-                        INSERT INTO deployment_unit_configuration_entry (
-                            deployment_unit_id, configuration_revision, configuration_key, value_type, configuration_scope, value_text
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                        """)) {
+            """
+                INSERT INTO deployment_unit_configuration_entry (
+                    deployment_unit_id, configuration_revision, configuration_key, value_type, configuration_scope, value_text
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """)) {
             for (DeploymentConfigurationEntry entry : snapshot.entries()) {
                 statement.setString(1, snapshot.applicationId());
                 statement.setLong(2, snapshot.revision());
@@ -344,7 +344,7 @@ public final class DeploymentConfigurationRepository {
             };
         } catch (IllegalArgumentException exception) {
             throw new SQLException("saved application configuration entry violates current validation rules",
-                    exception);
+                exception);
         }
     }
 
@@ -355,10 +355,10 @@ public final class DeploymentConfigurationRepository {
      * @throws SQLException if a known read or write fails / 已知读取或写入失败时
      * @throws ApiException if access fails or commit cannot be established / 访问失败或无法确定提交时 */
     public void saveAndBindRelease(TaskContext task, DeploymentConfigurationSnapshot snapshot, String releaseIdentity)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         var connection = connection(task);
         DeploymentStorageTransaction.execute(connection,
-                () -> saveAndBindRelease(connection, snapshot, releaseIdentity));
+            () -> saveAndBindRelease(connection, snapshot, releaseIdentity));
     }
 
     /** Opens only the bound deployment generation through the original task. / 仅经原任务打开绑定的部署代次。
@@ -376,11 +376,11 @@ public final class DeploymentConfigurationRepository {
      * @throws SQLException if any stored snapshot is unreadable or invalid / 任一存储快照不可读或无效时 */
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        "SELECT deployment_unit_id,configuration_revision FROM deployment_unit_configuration_snapshot")) {
+             var rows = statement.executeQuery(
+                 "SELECT deployment_unit_id,configuration_revision FROM deployment_unit_configuration_snapshot")) {
             while (rows.next())
                 find(connection, rows.getString(1), rows.getLong(2))
-                        .orElseThrow(() -> new SQLException("Configuration snapshot disappeared during validation"));
+                    .orElseThrow(() -> new SQLException("Configuration snapshot disappeared during validation"));
         }
     }
 }

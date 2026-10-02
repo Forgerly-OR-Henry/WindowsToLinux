@@ -21,10 +21,10 @@ public record DeploymentAgentPatch(String path, String beforeDigest, String sour
             removed = List.copyOf(removed);
             added = List.copyOf(added);
             if (line < 1 || line > 1000000 || removed.size() + added.size() > 200
-                    || removed.isEmpty() && added.isEmpty())
+                || removed.isEmpty() && added.isEmpty())
                 throw new IllegalArgumentException("Invalid patch edit range");
             if (removed.stream().anyMatch(v -> v.length() > 4000 || v.indexOf('\0') >= 0)
-                    || added.stream().anyMatch(v -> v.length() > 4000 || v.indexOf('\0') >= 0))
+                || added.stream().anyMatch(v -> v.length() > 4000 || v.indexOf('\0') >= 0))
                 throw new IllegalArgumentException("Patch line exceeds budget");
         }
     }
@@ -36,7 +36,7 @@ public record DeploymentAgentPatch(String path, String beforeDigest, String sour
      * @param edits bounded structured edits / 有界结构化编辑 */
     public DeploymentAgentPatch {
         if (!Objects.requireNonNull(path).matches("[\\p{L}\\p{N}_. /-]{1,500}") || path.startsWith("/")
-                || path.contains("..") || path.contains("//"))
+            || path.contains("..") || path.contains("//"))
             throw new IllegalArgumentException("Invalid patch path");
         if (!beforeDigest.matches("[0-9a-f]{64}") || !sourceRevision.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid patch revision");

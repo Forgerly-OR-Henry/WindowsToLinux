@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -13,7 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.MultiComponentDeploymentPlan;
 
 /** Occupies one original graph while its indexed component journals retain exact remote facts. / 各索引组件账本保留精确远端依据期间占用同一原图。 */
@@ -23,12 +29,12 @@ final class DeploymentGraphPublicationJournal {
 
     /** Exact JSON parser for the bounded author checkpoint. / 有界作者检查点的精确JSON解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Durable graph stages used by actual execution and original recovery. / 实际执行及原恢复使用的持久图阶段。 */
     private static final Set<String> PHASES = Set.of("PREPARING", "ALL_PREPARED", "ALL_BUILT", "INPUTS_STAGED",
-            "SNAPSHOTS_VERIFIED", "PUBLISHING", "ROLLING_BACK", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED",
-            "CLEANUP_VERIFIED");
+        "SNAPSHOTS_VERIFIED", "PUBLISHING", "ROLLING_BACK", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED",
+        "CLEANUP_VERIFIED");
 
     /** Original root occupation. / 原根占用。 */
     private final TaskCheckpoint checkpoint;
@@ -62,23 +68,23 @@ final class DeploymentGraphPublicationJournal {
      * @return occupied root / 已占用根
      * @throws ApiException if original persistence is unconfirmed / 原持久确认不明时 */
     static DeploymentGraphPublicationJournal begin(ModContext context, TaskContext task, String server,
-            MultiComponentDeploymentPlan ordering, String planSha256, List<ComponentIndex> components)
-            throws ApiException {
+                                                   MultiComponentDeploymentPlan ordering, String planSha256, List<ComponentIndex> components)
+        throws ApiException {
         Objects.requireNonNull(context);
         Objects.requireNonNull(task);
         Objects.requireNonNull(ordering);
         if (components.size() < 2 || components.size() > 16
-                || !components.stream().map(ComponentIndex::componentId).toList().equals(ordering.startOrder()))
+            || !components.stream().map(ComponentIndex::componentId).toList().equals(ordering.startOrder()))
             throw new IllegalArgumentException("Original graph index differs from execution order");
         var facts = JSON.createObjectNode().put("version", 1).put("task", task.id().toString()).put("server", server)
-                .put("application", ordering.applicationId()).put("planSha256", planSha256).put("phase", "PREPARING");
+            .put("application", ordering.applicationId()).put("planSha256", planSha256).put("phase", "PREPARING");
         var indexed = facts.putArray("components");
         for (var component : components)
             indexed.addObject().put("componentId", component.componentId()).put("unitId", component.unitId())
-                    .put("key", component.key()).put("planSha256", component.planSha256());
+                .put("key", component.key()).put("planSha256", component.planSha256());
         indexes(facts);
         return new DeploymentGraphPublicationJournal(context.tasks().beginCheckpoint(task, KEY, facts.toString()),
-                facts);
+            facts);
     }
 
     /** Reopens only this original graph root, without creating resources. / 仅重开原图根，不创建资源。
@@ -87,7 +93,7 @@ final class DeploymentGraphPublicationJournal {
      * @return original graph root or absence / 原图根或不存在
      * @throws ApiException if the task cannot be observed / 原任务无法观察时 */
     static Optional<DeploymentGraphPublicationJournal> reopen(ModContext context, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var found = context.tasks().findCheckpoint(task, KEY);
         if (found.isEmpty())
             return Optional.empty();
@@ -95,26 +101,26 @@ final class DeploymentGraphPublicationJournal {
         try {
             JsonNode parsed = JSON.readTree(checkpoint.snapshot().payload());
             if (!(parsed instanceof ObjectNode facts) || !validFields(facts) || !facts.path("version").isInt()
-                    || !Set.of(1, 2, 3).contains(facts.path("version").intValue())
-                    || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("server").isTextual()
-                    || facts.path("server").textValue().isBlank() || facts.path("server").textValue().length() > 512
-                    || !facts.path("application").isTextual()
-                    || !facts.path("application").textValue().matches("[a-z0-9][a-z0-9-]{0,62}")
-                    || !facts.path("planSha256").isTextual()
-                    || !facts.path("planSha256").textValue().matches("[0-9a-f]{64}")
-                    || !PHASES.contains(facts.path("phase").textValue()))
+                || !Set.of(1, 2, 3).contains(facts.path("version").intValue())
+                || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("server").isTextual()
+                || facts.path("server").textValue().isBlank() || facts.path("server").textValue().length() > 512
+                || !facts.path("application").isTextual()
+                || !facts.path("application").textValue().matches("[a-z0-9][a-z0-9-]{0,62}")
+                || !facts.path("planSha256").isTextual()
+                || !facts.path("planSha256").textValue().matches("[0-9a-f]{64}")
+                || !PHASES.contains(facts.path("phase").textValue()))
                 throw new IllegalArgumentException("Original graph checkpoint is incomplete");
             indexes(facts);
             requireReviewFacts(facts, checkpoint.snapshot().payload());
             DeploymentPublicationAttemptPointers.requireRoot(facts);
             if (facts.has("verifiedOutcome")) {
                 if (!Set.of("SUCCEEDED", "FAILED", "CANCELLED").contains(facts.path("verifiedOutcome").textValue())
-                        || facts.path("verifiedOutcome").textValue()
-                                .equals("SUCCEEDED") == (facts.has("failureCode") || facts.has("failureEvent")))
+                    || facts.path("verifiedOutcome").textValue()
+                    .equals("SUCCEEDED") == (facts.has("failureCode") || facts.has("failureEvent")))
                     throw new IllegalArgumentException("Original graph result conflicts");
                 if (facts.has("failureCode")
-                        && (!facts.path("failureCode").isTextual() || !facts.path("failureEvent").isTextual()
-                                || !facts.path("failureEvent").textValue().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")))
+                    && (!facts.path("failureCode").isTextual() || !facts.path("failureEvent").isTextual()
+                    || !facts.path("failureEvent").textValue().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")))
                     throw new IllegalArgumentException("Original graph failure is invalid");
             } else if (facts.has("failureCode") || facts.has("failureEvent"))
                 throw new IllegalArgumentException("Unverified graph cannot contain failure metadata");
@@ -129,13 +135,14 @@ final class DeploymentGraphPublicationJournal {
      * @return whether every field belongs to this version / 全部字段是否属于此版本 */
     private static boolean validFields(ObjectNode facts) {
         var allowed = facts.path("version").asInt() >= 2
-                ? Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent",
-                        "buildReviewState", "buildReviewAttempt", "buildReviewUnit", "buildReviewPrevious", "buildReviewNext", "buildReviewIntent")
-                : Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent");
+            ? Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent",
+            "buildReviewState", "buildReviewAttempt", "buildReviewUnit", "buildReviewPrevious", "buildReviewNext", "buildReviewIntent")
+            : Set.of("version", "task", "server", "application", "planSha256", "phase", "components", "verifiedOutcome", "failureCode", "failureEvent");
         if (facts.path("version").asInt() == 3) {
             var fields = new HashSet<>(allowed);
             fields.addAll(Set.of("operation", "attemptState", "attemptRetry", "attemptUnit", "attemptPreviousOperation", "attemptNextOperation",
-                    "attemptRootPrevious", "attemptRootNext", "attemptIntent", "attemptReview")); allowed = fields;
+                "attemptRootPrevious", "attemptRootNext", "attemptIntent", "attemptReview"));
+            allowed = fields;
         }
         var fields = facts.fieldNames();
         while (fields.hasNext())
@@ -153,8 +160,8 @@ final class DeploymentGraphPublicationJournal {
             throw new IllegalArgumentException("Original graph checkpoint exceeds its admitted bound");
         if (facts.path("version").intValue() != 2 && !facts.has("buildReviewState")) return;
         if (!facts.path("buildReviewState").isTextual() || !Set.of("PENDING", "CONFIRMED").contains(facts.path("buildReviewState").textValue())
-                || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
-                || !facts.path("buildReviewUnit").isTextual() || indexes(facts).stream().noneMatch(index -> index.unitId().equals(facts.path("buildReviewUnit").textValue())))
+            || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
+            || !facts.path("buildReviewUnit").isTextual() || indexes(facts).stream().noneMatch(index -> index.unitId().equals(facts.path("buildReviewUnit").textValue())))
             throw new IllegalArgumentException("Original graph review pointer is incomplete");
         for (String field : List.of("buildReviewPrevious", "buildReviewNext", "buildReviewIntent"))
             if (!facts.path(field).isTextual() || !facts.path(field).textValue().matches("[0-9a-f]{64}"))
@@ -174,9 +181,9 @@ final class DeploymentGraphPublicationJournal {
          * @param planSha256 exact review / 精确审阅摘要 */
         ComponentIndex {
             if (componentId == null || !componentId.matches("[a-z0-9][a-z0-9-]{0,62}") || unitId == null
-                    || !unitId.matches("[a-z0-9][a-z0-9-]{0,62}") || key == null
-                    || !key.matches("deployment-publication-unit-[0-9]{2}") || planSha256 == null
-                    || !planSha256.matches("[0-9a-f]{64}"))
+                || !unitId.matches("[a-z0-9][a-z0-9-]{0,62}") || key == null
+                || !key.matches("deployment-publication-unit-[0-9]{2}") || planSha256 == null
+                || !planSha256.matches("[0-9a-f]{64}"))
                 throw new IllegalArgumentException("Invalid original graph component index");
         }
     }
@@ -191,18 +198,22 @@ final class DeploymentGraphPublicationJournal {
      * @param intent complete original recovery consent / 完整原恢复同意
      * @return whether this exact root pointer was confirmed / 此精确根指针是否获确认 */
     boolean reviewPending(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
-        if (!facts.path("phase").asText().equals("ALL_PREPARED") || !facts.path("planSha256").asText().equals(intent.previousRoot()) || intent.originalGraph().isEmpty()) return false;
+        if (!facts.path("phase").asText().equals("ALL_PREPARED") || !facts.path("planSha256").asText().equals(intent.previousRoot()) || intent.originalGraph().isEmpty())
+            return false;
         try {
             var original = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeGraph(intent.originalGraph());
             var before = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan());
             if (!original.applicationId().equals(facts.path("application").asText()) || indexes().stream().anyMatch(index ->
-                    !original.namespaces().get(index.componentId()).equals(index.unitId()) || !original.identities().get(index.componentId()).equals(index.planSha256()))
-                    || indexes().stream().noneMatch(index -> index.unitId().equals(intent.unitId()) && index.planSha256().equals(before.reviewedRevision()))) return false;
+                !original.namespaces().get(index.componentId()).equals(index.unitId()) || !original.identities().get(index.componentId()).equals(index.planSha256()))
+                || indexes().stream().noneMatch(index -> index.unitId().equals(intent.unitId()) && index.planSha256().equals(before.reviewedRevision())))
+                return false;
             facts.put("version", Math.max(2, facts.path("version").intValue())).put("buildReviewState", "PENDING").put("buildReviewAttempt", intent.attempt()).put("buildReviewUnit", intent.unitId())
-                    .put("buildReviewPrevious", intent.previousRoot()).put("buildReviewNext", intent.nextRoot())
-                    .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
+                .put("buildReviewPrevious", intent.previousRoot()).put("buildReviewNext", intent.nextRoot())
+                .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
             return mark("ALL_PREPARED");
-        } catch (java.sql.SQLException invalid) { return false; }
+        } catch (java.sql.SQLException invalid) {
+            return false;
+        }
     }
 
     /** Confirms a formally consumed single-child transition before building it again. / 再构建前确认正式已消费的单子节点转换。
@@ -210,14 +221,19 @@ final class DeploymentGraphPublicationJournal {
      * @return whether root and exact child pointers were confirmed / 根与精确子指针是否获确认 */
     boolean reviewConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview review) {
         if (!facts.path("buildReviewState").asText().equals("PENDING") || facts.path("buildReviewAttempt").asInt() != review.attempt()
-                || !facts.path("buildReviewUnit").asText().equals(review.unitId()) || !facts.path("buildReviewPrevious").asText().equals(review.previousRoot())
-                || !facts.path("buildReviewNext").asText().equals(review.nextRoot()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())) return false;
+            || !facts.path("buildReviewUnit").asText().equals(review.unitId()) || !facts.path("buildReviewPrevious").asText().equals(review.previousRoot())
+            || !facts.path("buildReviewNext").asText().equals(review.nextRoot()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding()))
+            return false;
         try {
             var child = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan());
-            for (var index : facts.withArray("components")) if (index.path("unitId").asText().equals(review.unitId())) ((ObjectNode) index).put("planSha256", child.reviewedRevision());
+            for (var index : facts.withArray("components"))
+                if (index.path("unitId").asText().equals(review.unitId()))
+                    ((ObjectNode) index).put("planSha256", child.reviewedRevision());
             facts.put("planSha256", review.nextRoot()).put("buildReviewState", "CONFIRMED");
             return mark("ALL_PREPARED");
-        } catch (java.sql.SQLException invalid) { return false; }
+        } catch (java.sql.SQLException invalid) {
+            return false;
+        }
     }
 
     /** Persists the next complete graph pointer after all old remote and session cleanup. / 所有旧远端及会话清理后持久化下一完整图指针。
@@ -255,14 +271,14 @@ final class DeploymentGraphPublicationJournal {
         for (int offset = 0; offset < values.size(); offset++) {
             var value = values.get(offset);
             if (!value.isObject() || value.size() != 4 || !value.path("componentId").isTextual()
-                    || !value.path("unitId").isTextual() || !value.path("key").isTextual()
-                    || !value.path("planSha256").isTextual())
+                || !value.path("unitId").isTextual() || !value.path("key").isTextual()
+                || !value.path("planSha256").isTextual())
                 throw new IllegalArgumentException("Original component index is malformed");
             var component = new ComponentIndex(value.path("componentId").textValue(), value.path("unitId").textValue(),
-                    value.path("key").textValue(), value.path("planSha256").textValue());
+                value.path("key").textValue(), value.path("planSha256").textValue());
             if (!component.key()
-                    .equals("deployment-publication-unit-" + String.format(java.util.Locale.ROOT, "%02d", offset))
-                    || !ids.add(component.componentId()) || !units.add(component.unitId()))
+                .equals("deployment-publication-unit-" + String.format(java.util.Locale.ROOT, "%02d", offset))
+                || !ids.add(component.componentId()) || !units.add(component.unitId()))
                 throw new IllegalArgumentException("Original component index conflicts");
             result.add(component);
         }
@@ -299,7 +315,7 @@ final class DeploymentGraphPublicationJournal {
      * @return whether persistence was confirmed / 是否确认持久 */
     boolean verified(Outcome outcome, Optional<Problem> failure) {
         if (outcome != Outcome.SUCCEEDED && outcome != Outcome.FAILED && outcome != Outcome.CANCELLED
-                || (outcome != Outcome.SUCCEEDED) != failure.isPresent())
+            || (outcome != Outcome.SUCCEEDED) != failure.isPresent())
             throw new IllegalArgumentException("Only known graph outcomes can be frozen");
         facts.put("verifiedOutcome", outcome.name());
         failure.ifPresent(problem -> {

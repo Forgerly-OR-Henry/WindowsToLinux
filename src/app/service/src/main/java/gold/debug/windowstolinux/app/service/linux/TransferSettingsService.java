@@ -41,7 +41,7 @@ public final class TransferSettingsService implements AutoCloseable {
         try (var operation = security.enterOperation()) {
             try {
                 return new TransferConfiguration(seconds(CONNECT, TransferConfiguration.DEFAULTS.connectSeconds()),
-                        seconds(IDLE, TransferConfiguration.DEFAULTS.idleSeconds()));
+                    seconds(IDLE, TransferConfiguration.DEFAULTS.idleSeconds()));
             } catch (IllegalArgumentException invalid) {
                 throw new SQLException("Stored transfer thresholds are invalid", invalid);
             }
@@ -57,7 +57,7 @@ public final class TransferSettingsService implements AutoCloseable {
         Objects.requireNonNull(settings);
         try (var operation = security.enterOperation()) {
             persistence.preferences().saveAll(Map.of(CONNECT, Integer.toString(settings.connectSeconds()), IDLE,
-                    Integer.toString(settings.idleSeconds())));
+                Integer.toString(settings.idleSeconds())));
             return settings;
         }
     }

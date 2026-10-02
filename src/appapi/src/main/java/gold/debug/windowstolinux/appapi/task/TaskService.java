@@ -26,6 +26,15 @@ public interface TaskService {
      */
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
 
+    /** Reads the first bounded caller-owned page. / 读取绑定调用方的第一页有界任务。
+     * @param limit existing bounded page capacity / 现有有界页容量
+     * @return first page under the original access rules / 原访问规则下的第一页
+     * @throws ApiException if input or access is invalid / 输入或访问无效时
+     */
+    default PageSlice<TaskSnapshot> list(int limit) throws ApiException {
+        return list(Optional.empty(), limit);
+    }
+
     /** Reads the authenticated original task identity during its current callback or delegated service call. / 在原回调或被委托服务调用期间读取已认证原任务身份。
      * @param task authentic original context, not a copied identifier / 真实原上下文，而非复制的标识
      * @return the original root owner's task snapshot / 原根所有者任务快照

@@ -13,7 +13,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
  * @param runAsRoot run as root / 运行As根目录
  */
 public record DeploymentBuildLimits(int timeoutSeconds, int maxProcesses, int maxMemoryMiB, long maxOutputBytes,
-        long maxWorkspaceBytes, boolean runAsRoot) {
+                                    long maxWorkspaceBytes, boolean runAsRoot) {
     /**
      * Validates and binds the inputs required by build limit configuration.
      * <p>校验并绑定构建限制配置所需输入。

@@ -15,37 +15,37 @@ class DeploymentManagedHelperBundleTest {
     @Test
     void extendsTheSameCatalogIntoHelperAndBuildScriptsWithoutVersionSpecificCode() {
         var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog
-                .defaults();
+            .defaults();
         var branches = new java.util.ArrayList<>(catalog.branches());
         branches.add(
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.Branch(
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA, "29",
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.ReleaseType.LTS,
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.MaintenanceStatus.MAINTAINED,
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.TEMURIN));
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.Branch(
+                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA, "29",
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.ReleaseType.LTS,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.MaintenanceStatus.MAINTAINED,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.InstallationType.TEMURIN));
         var future = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog(
-                "TEST_ONLY", branches);
+            "TEST_ONLY", branches);
         String helper = new String(DeploymentManagedHelperBundle.assemble(future),
-                java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(helper.contains("'JAVA': ['8', '11', '17', '21', '25', '29']"));
         var requirement = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement
-                .declared(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
-                        "28", "fixture",
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.PurposeType.BUILD);
+            .declared(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
+                "28", "fixture",
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.PurposeType.BUILD);
         var version = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainSelectionPolicy(
-                future)
-                .resolve(requirement, future.candidates(requirement).getFirst(),
-                        java.util.List.of(
-                                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion
-                                        .parse(requirement.ecosystem(), "29.0.1").orElseThrow()));
-        var set = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains(
-                future.revision(),
+            future)
+            .resolve(requirement, future.candidates(requirement).getFirst(),
                 java.util.List.of(
-                        new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.Selection(
-                                requirement, version,
-                                "/usr/local/lib/windowstolinux/toolchains/versions/java-" + "a".repeat(64),
-                                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.OriginType.MANAGED,
-                                "https://api.adoptium.net/test-fixture", "a".repeat(64))));
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion
+                        .parse(requirement.ecosystem(), "29.0.1").orElseThrow()));
+        var set = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains(
+            future.revision(),
+            java.util.List.of(
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.Selection(
+                    requirement, version,
+                    "/usr/local/lib/windowstolinux/toolchains/versions/java-" + "a".repeat(64),
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.OriginType.MANAGED,
+                    "https://api.adoptium.net/test-fixture", "a".repeat(64))));
         assertEquals("28", set.selections().getFirst().requirement().declaration());
         assertFalse(catalog.permits(version));
     }
@@ -92,7 +92,7 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("database-recover-candidate) database_recover_candidate \"$@\""));
         assertTrue(helper.contains("database-discard-candidate) database_discard_candidate \"$@\""));
         assertTrue(helper.contains(
-                "assert_root_owned_regular \"$(restore_activation_root \"$database_activation_candidate\")/.application-quiesced\""));
+            "assert_root_owned_regular \"$(restore_activation_root \"$database_activation_candidate\")/.application-quiesced\""));
         assertTrue(helper.contains("database_commit_sqlite()"));
         assertTrue(helper.contains("database_recover_sqlite()"));
         assertTrue(helper.contains("--lock-all-tables --routines --events --triggers"));
@@ -119,14 +119,14 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("PNPM) command=\"/usr/bin/env PATH=${node_manager_path:-$toolchain_path} pnpm"));
         assertTrue(helper.contains("YARN) command=\"/usr/bin/env $node_yarn_environment yarn"));
         assertTrue(helper
-                .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path $toolchain_php -S"));
+            .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path $toolchain_php -S"));
         assertTrue(helper
-                .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path $toolchain_php -n -S"));
+            .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path $toolchain_php -n -S"));
         assertTrue(helper
-                .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path bundle exec rackup"));
+            .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path bundle exec rackup"));
         assertTrue(helper.contains("GEM_PATH=$root/current/source/.w2l/bundler: bundle exec rackup"));
         assertTrue(helper.contains(
-                "ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path PORT=$rubycli_port $toolchain_ruby"));
+            "ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path PORT=$rubycli_port $toolchain_ruby"));
         assertTrue(helper.contains("restore-preflight) restore_preflight \"$@\""));
         assertTrue(helper.contains("restore-start-candidate) restore_start_candidate \"$@\""));
         assertTrue(helper.contains("restore-start-formal) restore_start_formal \"$@\""));
@@ -138,9 +138,9 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" >\"$snapshot/kind\""));
         assertTrue(helper.contains("tr -d '\\r' <\"$manifest/META-INF/MANIFEST.MF\" | grep -Eq"));
         assertTrue(helper.contains(
-                "if [ ! -e \"$candidate/.windowstolinux-owner\" ] && [ ! -L \"$candidate/.windowstolinux-owner\" ]; then"));
+            "if [ ! -e \"$candidate/.windowstolinux-owner\" ] && [ ! -L \"$candidate/.windowstolinux-owner\" ]; then"));
         assertTrue(helper.contains(
-                "[ ! -e \"$release/.windowstolinux-owner\" ] && [ ! -L \"$release/.windowstolinux-owner\" ] || reject release-exists"));
+            "[ ! -e \"$release/.windowstolinux-owner\" ] && [ ! -L \"$release/.windowstolinux-owner\" ] || reject release-exists"));
         assertTrue(helper.contains("[ \"$previous_path\" = \"$release\" ]; then"));
         assertTrue(helper.contains("reject release-parameters-changed"));
         assertTrue(helper.contains("ln -sfnT -- \"$previous\" \"$root/current\""));
@@ -152,12 +152,13 @@ class DeploymentManagedHelperBundleTest {
         assertFalse(helper.contains("  install-unit)"));
         assertFalse(helper.contains("  daemon-reload)"));
     }
+
     @org.junit.jupiter.api.io.TempDir
     java.nio.file.Path temporaryDirectory;
 
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"valid", "podman", "podman-unqualified",
-            "podman-extra-tags", "root", "tag", "link", "oversized", "foreign"})
+        "podman-extra-tags", "root", "tag", "link", "oversized", "foreign"})
     void validatesRootlessImageInputWithoutExecutingItsContents(String scenario) throws Exception {
         String helper = DeploymentManagedHelperBundle.renderScript();
         String marker = "<<'WTL_IMAGE_INPUT'\n";
@@ -167,35 +168,35 @@ class DeploymentManagedHelperBundleTest {
         var validation = temporaryDirectory.resolve("validate.py");
         java.nio.file.Files.writeString(validation, validator);
         java.nio.file.Files.writeString(temporaryDirectory.resolve("json.py"),
-                "raise RuntimeError('untrusted import')");
+            "raise RuntimeError('untrusted import')");
         String fixture = """
-                import hashlib, io, json, sys, tarfile
-                scenario, archive, repository = sys.argv[1:]
-                config = {'config': {'User': '0' if scenario == 'root' else '65532:65532',
-                    'Labels': {'io.windowstolinux.application': 'other' if scenario == 'foreign' else 'demo',
-                               'io.windowstolinux.candidate': 'demo-0123456789abcdef'}}}
-                raw = json.dumps(config).encode()
-                name = hashlib.sha256(raw).hexdigest() + '.json'
-                tags = ['foreign:latest' if scenario == 'tag' else
-                    ('windowstolinux-candidate' if scenario == 'podman-unqualified' else repository) + ':demo-0123456789abcdef']
-                if scenario == 'podman-extra-tags': tags.append('foreign:latest')
-                manifest = [{'Config': name, 'RepoTags': tags, 'Layers': []}]
-                repositories = json.dumps({repository: {'demo-0123456789abcdef': 'legacy-layer'}}).encode()
-                with tarfile.open(archive, 'w') as output:
-                    for path, data in [(name, raw), ('manifest.json', b'x' * 524289 if scenario == 'oversized' else json.dumps(manifest).encode()),
-                                       ('repositories', repositories)]:
-                        info = tarfile.TarInfo(path); info.size = len(data)
-                        output.addfile(info, io.BytesIO(data))
-                    if scenario == 'link':
-                        info = tarfile.TarInfo('escape'); info.type = tarfile.SYMTYPE; info.linkname = '/etc/passwd'
-                        output.addfile(info)
-                """;
+            import hashlib, io, json, sys, tarfile
+            scenario, archive, repository = sys.argv[1:]
+            config = {'config': {'User': '0' if scenario == 'root' else '65532:65532',
+                'Labels': {'io.windowstolinux.application': 'other' if scenario == 'foreign' else 'demo',
+                           'io.windowstolinux.candidate': 'demo-0123456789abcdef'}}}
+            raw = json.dumps(config).encode()
+            name = hashlib.sha256(raw).hexdigest() + '.json'
+            tags = ['foreign:latest' if scenario == 'tag' else
+                ('windowstolinux-candidate' if scenario == 'podman-unqualified' else repository) + ':demo-0123456789abcdef']
+            if scenario == 'podman-extra-tags': tags.append('foreign:latest')
+            manifest = [{'Config': name, 'RepoTags': tags, 'Layers': []}]
+            repositories = json.dumps({repository: {'demo-0123456789abcdef': 'legacy-layer'}}).encode()
+            with tarfile.open(archive, 'w') as output:
+                for path, data in [(name, raw), ('manifest.json', b'x' * 524289 if scenario == 'oversized' else json.dumps(manifest).encode()),
+                                   ('repositories', repositories)]:
+                    info = tarfile.TarInfo(path); info.size = len(data)
+                    output.addfile(info, io.BytesIO(data))
+                if scenario == 'link':
+                    info = tarfile.TarInfo('escape'); info.type = tarfile.SYMTYPE; info.linkname = '/etc/passwd'
+                    output.addfile(info)
+            """;
         String repository = scenario.startsWith("podman")
-                ? "localhost/windowstolinux-candidate"
-                : "windowstolinux-candidate";
+            ? "localhost/windowstolinux-candidate"
+            : "windowstolinux-candidate";
         assertEquals(0, python("-c", fixture, scenario, archive.toString(), repository));
         int exit = python(validation.toString(), archive.toString(), "demo", "demo-0123456789abcdef",
-                repository + ":demo-0123456789abcdef");
+            repository + ":demo-0123456789abcdef");
         if (scenario.equals("valid") || scenario.equals("podman"))
             assertEquals(0, exit);
         else
@@ -209,7 +210,7 @@ class DeploymentManagedHelperBundleTest {
         command.addAll(java.util.List.of(arguments));
         var log = temporaryDirectory.resolve("python-output");
         Process process = new ProcessBuilder(command).directory(temporaryDirectory.toFile()).redirectErrorStream(true)
-                .redirectOutput(log.toFile()).start();
+            .redirectOutput(log.toFile()).start();
         try {
             assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS), "Python validation timed out");
             return process.exitValue();
@@ -227,25 +228,25 @@ class DeploymentManagedHelperBundleTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
         String fragment;
         try (var input = DeploymentManagedHelperBundle.class.getResourceAsStream(
-                "/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/64-database-client.sh")) {
+            "/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/database/64-database-client.sh")) {
             fragment = new String(java.util.Objects.requireNonNull(input).readAllBytes(), StandardCharsets.UTF_8);
         }
         var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
         try {
             try (var input = process.getOutputStream()) {
                 input.write(("set -eu\nbase_root=/controlled\n"
-                        + "assert_root_owned_regular() { test \"$1\" = /controlled/client; }\n"
-                        + "cat() { printf '01234567-89ab-cdef-0123-456789abcdef'; }\n"
-                        + "systemd-run() { printf '%s\\n' \"$@\"; }\n" + fragment
-                        + "\nrun_mysql_client /usr/bin/mysql /controlled/client --database=fixture\n")
-                        .getBytes(StandardCharsets.UTF_8));
+                    + "assert_root_owned_regular() { test \"$1\" = /controlled/client; }\n"
+                    + "cat() { printf '01234567-89ab-cdef-0123-456789abcdef'; }\n"
+                    + "systemd-run() { printf '%s\\n' \"$@\"; }\n" + fragment
+                    + "\nrun_mysql_client /usr/bin/mysql /controlled/client --database=fixture\n")
+                    .getBytes(StandardCharsets.UTF_8));
             }
             assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
             String arguments = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             assertEquals(0, process.exitValue(), arguments);
             for (String flag : java.util.List.of("--batch", "--binary-mode", "--local-infile=0",
-                    "--defaults-file=/run/credentials/windowstolinux-database-01234567-89ab-cdef-0123-456789abcdef.service/client",
-                    "--property=DynamicUser=yes", "--property=LoadCredential=client:/controlled/client"))
+                "--defaults-file=/run/credentials/windowstolinux-database-01234567-89ab-cdef-0123-456789abcdef.service/client",
+                "--property=DynamicUser=yes", "--property=LoadCredential=client:/controlled/client"))
                 assertTrue(arguments.lines().anyMatch(flag::equals), arguments);
             assertFalse(arguments.contains("--password"));
         } finally {
@@ -263,30 +264,30 @@ class DeploymentManagedHelperBundleTest {
         String foundation;
         String observation;
         try (var input = java.util.Objects.requireNonNull(
-                DeploymentManagedHelperBundle.class.getResourceAsStream(prefix + "00-protocol-foundation.sh"))) {
+            DeploymentManagedHelperBundle.class.getResourceAsStream(prefix + "00-protocol-foundation.sh"))) {
             foundation = new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
         try (var input = java.util.Objects.requireNonNull(DeploymentManagedHelperBundle.class
-                .getResourceAsStream(prefix + "release/53-publication-observation.sh"))) {
+            .getResourceAsStream(prefix + "release/53-publication-observation.sh"))) {
             observation = new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
         String setup = "\nbase_root='" + temporaryDirectory.toString().replace('\\', '/')
-                + "/controlled'\napplications_root=\"$base_root/apps\"\nwork_root=\"$base_root/work\"\n"
-                + "snapshots_root=\"$base_root/snapshots\"\n" + "unit_path() { printf '%s/unit' \"$base_root\"; }\n"
-                + "podman_quadlet_path() { printf '%s/quadlet' \"$base_root\"; }\n"
-                + "build_unit_name() { printf 'windowstolinux-build-%s.service' \"$1\"; }\n"
-                + "assert_root_owned_directory() { test -d \"$1\"; }\n"
-                + "assert_root_owned_regular() { test -f \"$1\" && test ! -L \"$1\"; }\n";
+            + "/controlled'\napplications_root=\"$base_root/apps\"\nwork_root=\"$base_root/work\"\n"
+            + "snapshots_root=\"$base_root/snapshots\"\n" + "unit_path() { printf '%s/unit' \"$base_root\"; }\n"
+            + "podman_quadlet_path() { printf '%s/quadlet' \"$base_root\"; }\n"
+            + "build_unit_name() { printf 'windowstolinux-build-%s.service' \"$1\"; }\n"
+            + "assert_root_owned_directory() { test -d \"$1\"; }\n"
+            + "assert_root_owned_regular() { test -f \"$1\" && test ! -L \"$1\"; }\n";
         String call = "publication_original_status demo " + "b".repeat(64)
-                + " 11111111-1111-4111-8111-111111111111 demo-" + "a".repeat(16) + " none native none\n";
+            + " 11111111-1111-4111-8111-111111111111 demo-" + "a".repeat(16) + " none native none\n";
         String inactive = "systemctl() { case \"$*\" in *LoadState*) printf 'not-found\\n';; *ActiveState*) printf 'inactive\\n';; *) printf 'inactive\\n';; esac; }\n";
         var first = publicationScript(foundation + setup + inactive + observation + "\n" + call);
         assertEquals(0, first.exit(), first.output());
         assertTrue(first.output().startsWith(
                 "PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\n" + "CURRENT_MODE=none\nSNAPSHOT=none\n"),
-                first.output());
+            first.output());
         assertTrue(first.output().contains("BUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\n"),
-                first.output());
+            first.output());
         String loaded = "systemctl() { case \"$*\" in *LoadState*) printf 'loaded\\n';; *ActiveState*) printf 'active\\n';; *) printf 'inactive\\n';; esac; }\n";
         var active = publicationScript(foundation + setup + loaded + observation + "\n" + call);
         assertEquals(0, active.exit(), active.output());
@@ -309,9 +310,9 @@ class DeploymentManagedHelperBundleTest {
         var original = publicationScript(foundation + setup + inactive + observation + "\n" + call);
         assertEquals(0, original.exit(), original.output());
         assertTrue(
-                original.output().contains(
-                        "SNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD=" + "d".repeat(64) + "\n"),
-                original.output());
+            original.output().contains(
+                "SNAPSHOT=11111111-1111-4111-8111-111111111111\nSNAPSHOT_OLD=" + "d".repeat(64) + "\n"),
+            original.output());
         java.nio.file.Files.delete(snapshot.resolve(".deployment-old-owner"));
         var missingOwner = publicationScript(foundation + setup + inactive + observation + "\n" + call);
         assertNotEquals(0, missingOwner.exit(), missingOwner.output());
@@ -322,8 +323,8 @@ class DeploymentManagedHelperBundleTest {
         assertEquals(0, retained.exit(), retained.output());
         assertTrue(retained.output().contains("SNAPSHOT_OLD=" + "d".repeat(64) + "\n"), retained.output());
         var discard = publicationScript(foundation + setup + inactive + observation
-                + "\napplication_maintenance() { :; }\n" + "discard_original_snapshot demo " + "b".repeat(64)
-                + " 11111111-1111-4111-8111-111111111111\n");
+            + "\napplication_maintenance() { :; }\n" + "discard_original_snapshot demo " + "b".repeat(64)
+            + " 11111111-1111-4111-8111-111111111111\n");
         assertNotEquals(0, discard.exit(), discard.output());
         java.nio.file.Files.writeString(snapshot.resolve(".deployment-old-owner"), "c".repeat(64));
         var wrongOwner = publicationScript(foundation + setup + inactive + observation + "\n" + call);
@@ -350,7 +351,7 @@ class DeploymentManagedHelperBundleTest {
             }
             assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
             return new PublicationScriptResult(process.exitValue(),
-                    new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
+                new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();

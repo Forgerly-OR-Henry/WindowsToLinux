@@ -20,7 +20,7 @@ class ProjectComponentDiscoveryTest {
         Files.writeString(script, "plugins { application; kotlin(\"jvm\") version \"2.0.21\" }");
         assertType(DeploymentProjectKind.KOTLIN_SERVICE);
         Files.writeString(script,
-                "plugins { kotlin(\"jvm\") version \"2.0.21\"; id(\"org.springframework.boot\") version \"3.4.0\" }");
+            "plugins { kotlin(\"jvm\") version \"2.0.21\"; id(\"org.springframework.boot\") version \"3.4.0\" }");
         assertType(DeploymentProjectKind.SPRING_BOOT);
         Files.writeString(script, "plugins { application; java }");
         assertType(DeploymentProjectKind.JAVA_JAR);

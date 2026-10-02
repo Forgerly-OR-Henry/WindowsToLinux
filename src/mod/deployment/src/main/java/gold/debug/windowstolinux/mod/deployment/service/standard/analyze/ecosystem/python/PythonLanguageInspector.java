@@ -38,14 +38,14 @@ public final class PythonLanguageInspector {
      * <p>用于识别PYTHON版本的匹配模式。
      */
     private static final Pattern PYTHON_VERSION = Pattern
-            .compile("(?m)^\\s*requires-python\\s*=\\s*\\\"([^\\\"\\r\\n]+)\\\"\\s*$");
+        .compile("(?m)^\\s*requires-python\\s*=\\s*\\\"([^\\\"\\r\\n]+)\\\"\\s*$");
 
     /**
      * Pattern recognizing exact Python version constraint.
      * <p>用于识别精确 Python 版本约束的匹配模式。
      */
     private static final Pattern EXACT_PYTHON = Pattern
-            .compile("^\\s*(?:==?)?([0-9]{1,9}\\.[0-9]{1,9})(?:\\.[0-9*]+)?(?:[-+][A-Za-z0-9._-]+)?\\s*$");
+        .compile("^\\s*(?:==?)?([0-9]{1,9}\\.[0-9]{1,9})(?:\\.[0-9*]+)?(?:[-+][A-Za-z0-9._-]+)?\\s*$");
 
     /**
      * Returns deterministic Python ecosystem and source facts. / 返回确定性的 Python 生态与源码事实。
@@ -61,7 +61,7 @@ public final class PythonLanguageInspector {
         EnumMap<LanguageFactKind, String> values = new EnumMap<>(LanguageFactKind.class);
         List<AnalysisEvidence> evidence = new ArrayList<>();
         Optional<Path> pythonSource = source.relativeFiles().stream()
-                .filter(path -> path.getFileName().toString().endsWith(".py")).findFirst();
+            .filter(path -> path.getFileName().toString().endsWith(".py")).findFirst();
         if (pythonSource.isPresent()) {
             ecosystems.add(LanguageEcosystemType.PYTHON);
             languages.add(SourceLanguageType.PYTHON);
@@ -80,17 +80,17 @@ public final class PythonLanguageInspector {
                 if (exact.matches()) {
                     values.put(LanguageFactKind.PYTHON_VERSION, exact.group(1));
                     evidence.add(evidence("analysis.deployment.runtime.evidence.pythonVersion",
-                            "pyproject.toml#requires-python"));
+                        "pyproject.toml#requires-python"));
                 }
             }
         }
         List<String> modules = source.relativeFiles().stream()
-                .filter(path -> path.getFileName().toString().equals("__main__.py"))
-                .map(PythonLanguageInspector::moduleName).flatMap(Optional::stream).distinct().toList();
+            .filter(path -> path.getFileName().toString().equals("__main__.py"))
+            .map(PythonLanguageInspector::moduleName).flatMap(Optional::stream).distinct().toList();
         if (modules.size() == 1) {
             values.put(LanguageFactKind.PYTHON_ENTRYPOINT, modules.getFirst());
             evidence.add(evidence("analysis.deployment.runtime.evidence.pythonEntrypoint",
-                    modules.getFirst() + ".__main__"));
+                modules.getFirst() + ".__main__"));
         }
         return new ProjectLanguageFacts(ecosystems, languages, values, evidence);
     }
@@ -127,6 +127,6 @@ public final class PythonLanguageInspector {
      */
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), source,
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

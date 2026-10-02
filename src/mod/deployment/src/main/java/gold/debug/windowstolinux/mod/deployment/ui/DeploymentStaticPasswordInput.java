@@ -34,7 +34,7 @@ final class DeploymentStaticPasswordInput {
      * @return newly owned UTF-8 bytes / 新所属 UTF-8 字节
      * @throws Exception if the view or input is unavailable / 视图或输入不可用时 */
     static byte[] request(DeploymentStaticPage page, long view, TaskContext task, String title, String label,
-            boolean allowEmpty, Runnable onAccepted) throws Exception {
+                          boolean allowEmpty, Runnable onAccepted) throws Exception {
         var field = page.onEdt(JPasswordField::new);
         var form = page.onEdt(() -> {
             var value = new JPanel(new GridLayout(0, 1));

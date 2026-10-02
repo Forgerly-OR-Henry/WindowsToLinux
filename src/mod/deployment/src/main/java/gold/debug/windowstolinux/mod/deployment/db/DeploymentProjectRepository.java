@@ -1,12 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.net.URI;
 import java.sql.*;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
 
 /** Saves complete project source revisions through the original task and managed H2 generation. / 经原任务及受管H2代次保存完整项目来源修订。 */
@@ -36,9 +39,9 @@ public final class DeploymentProjectRepository {
                 return;
             }
             try (var statement = connection.prepareStatement("""
-                    INSERT INTO deployment_project(project_id,display_name,source_kind,source_location,git_ref,
-                    git_commit,source_sha256,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
-                    """)) {
+                INSERT INTO deployment_project(project_id,display_name,source_kind,source_location,git_ref,
+                git_commit,source_sha256,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
+                """)) {
                 bind(statement, project);
                 if (statement.executeUpdate() != 1)
                     throw new SQLException("Project creation was not confirmed");
@@ -53,24 +56,24 @@ public final class DeploymentProjectRepository {
      * @throws SQLException if ownership, time, comparison or SQL fails / 身份、时间、比较或SQL失败时
      * @throws ApiException if task access or durability is uncertain / 任务访问或持久性未知时 */
     public void update(TaskContext task, DeploymentProjectRecord expected, DeploymentProjectRecord next)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         Objects.requireNonNull(expected);
         Objects.requireNonNull(next);
         if (!expected.id().equals(next.id()) || !expected.createdAt().equals(next.createdAt())
-                || !next.updatedAt().isAfter(expected.updatedAt()))
+            || !next.updatedAt().isAfter(expected.updatedAt()))
             throw new SQLException("Project update requires original identity and a later observation");
         var connection = connection(task);
         DeploymentStorageTransaction.execute(connection, () -> {
             var current = read(connection, expected.id(), true)
-                    .orElseThrow(() -> new SQLException("Original project is absent"));
+                .orElseThrow(() -> new SQLException("Original project is absent"));
             if (current.equals(next))
                 return;
             if (!current.equals(expected))
                 throw new SQLException("Project changed since the reviewed revision");
             try (var statement = connection.prepareStatement("""
-                    UPDATE deployment_project SET display_name=?,source_kind=?,source_location=?,git_ref=?,
-                    git_commit=?,source_sha256=?,updated_at=? WHERE project_id=?
-                    """)) {
+                UPDATE deployment_project SET display_name=?,source_kind=?,source_location=?,git_ref=?,
+                git_commit=?,source_sha256=?,updated_at=? WHERE project_id=?
+                """)) {
                 bindUpdate(statement, next);
                 if (statement.executeUpdate() != 1)
                     throw new SQLException("Project update was not confirmed");
@@ -100,8 +103,8 @@ public final class DeploymentProjectRepository {
         if (maximum < 1 || maximum > 1000)
             throw new SQLException("Project list limit is invalid");
         try (var connection = connection(task);
-                var statement = connection
-                        .prepareStatement("SELECT * FROM deployment_project ORDER BY created_at,project_id LIMIT ?")) {
+             var statement = connection
+                 .prepareStatement("SELECT * FROM deployment_project ORDER BY created_at,project_id LIMIT ?")) {
             statement.setInt(1, maximum);
             try (var rows = statement.executeQuery()) {
                 var result = new ArrayList<DeploymentProjectRecord>();
@@ -120,7 +123,7 @@ public final class DeploymentProjectRepository {
      * @throws SQLException if SQL or row is invalid / SQL或记录无效时 */
     static Optional<DeploymentProjectRecord> read(Connection connection, UUID id, boolean lock) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT * FROM deployment_project WHERE project_id=?" + (lock ? " FOR UPDATE" : ""))) {
+            "SELECT * FROM deployment_project WHERE project_id=?" + (lock ? " FOR UPDATE" : ""))) {
             statement.setObject(1, id);
             try (var rows = statement.executeQuery()) {
                 return rows.next() ? Optional.of(row(rows)) : Optional.empty();
@@ -133,7 +136,7 @@ public final class DeploymentProjectRepository {
      * @throws SQLException if a record is invalid / 记录无效时 */
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT * FROM deployment_project")) {
+             var rows = statement.executeQuery("SELECT * FROM deployment_project")) {
             while (rows.next())
                 row(rows);
         }
@@ -146,12 +149,12 @@ public final class DeploymentProjectRepository {
     private static DeploymentProjectRecord row(ResultSet rows) throws SQLException {
         try {
             var source = new DeploymentProjectSource(
-                    DeploymentProjectSource.KindType.valueOf(rows.getString("source_kind")),
-                    URI.create(rows.getString("source_location")), Optional.ofNullable(rows.getString("git_ref")),
-                    Optional.ofNullable(rows.getString("git_commit")), rows.getString("source_sha256"));
+                DeploymentProjectSource.KindType.valueOf(rows.getString("source_kind")),
+                URI.create(rows.getString("source_location")), Optional.ofNullable(rows.getString("git_ref")),
+                Optional.ofNullable(rows.getString("git_commit")), rows.getString("source_sha256"));
             return new DeploymentProjectRecord(rows.getObject("project_id", UUID.class), rows.getString("display_name"),
-                    source, Instant.ofEpochMilli(rows.getLong("created_at")),
-                    Instant.ofEpochMilli(rows.getLong("updated_at")));
+                source, Instant.ofEpochMilli(rows.getLong("created_at")),
+                Instant.ofEpochMilli(rows.getLong("updated_at")));
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new SQLException("Stored project source facts are invalid", invalid);
         }

@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database;
 
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
@@ -8,7 +11,7 @@ import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.policy.SourceMutationPolicy;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
@@ -25,13 +28,13 @@ class DeploymentSqlitePreparationTest {
     @Test
     void plannedFirstInitializationNeedsSeparateConsentAndExactInspectedSource() throws Exception {
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.write(root.resolve("seed.db"), new byte[]{1, 2, 3});
         var source = new DatabaseProjectInspector().inspect(root);
         var completed = DeploymentDatabaseSourceInputs.complete(root, "demo", source, java.util.Map.of());
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentSqlitePreparation.prepare(root, "demo", completed, false, task()));
+            () -> DeploymentSqlitePreparation.prepare(root, "demo", completed, false, task()));
         var prepared = DeploymentSqlitePreparation.prepare(root, "demo", completed, true, task());
         var sqlite = (DeploymentDatabaseConnection.Sqlite) prepared.bindings().getFirst().connection();
         assertEquals("seed.db", sqlite.seedFile());
@@ -39,12 +42,12 @@ class DeploymentSqlitePreparationTest {
         assertEquals("state/store.db", sqlite.accessPath());
         assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
         assertEquals(
-                SourceMutationPolicy.inspectionDigest(new BoundedSourceInspector().inspect(root, new ArrayList<>())),
-                prepared.schemaReview().orElseThrow().inspectionSha256());
+            SourceMutationPolicy.inspectionDigest(new BoundedSourceInspector().inspect(root, new ArrayList<>())),
+            prepared.schemaReview().orElseThrow().inspectionSha256());
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE other(id integer);");
         assertNotEquals(
-                SourceMutationPolicy.inspectionDigest(new BoundedSourceInspector().inspect(root, new ArrayList<>())),
-                prepared.schemaReview().orElseThrow().inspectionSha256());
+            SourceMutationPolicy.inspectionDigest(new BoundedSourceInspector().inspect(root, new ArrayList<>())),
+            prepared.schemaReview().orElseThrow().inspectionSha256());
     }
 
     /** Provides only the cancellation signal required by deterministic source inspection. / 仅提供确定性源码检查所需取消信号。
@@ -55,7 +58,7 @@ class DeploymentSqlitePreparationTest {
                 return UUID.randomUUID();
             }
 
-            public CancellationToken cancellation() {
+            public CancelToken cancelToken() {
                 return () -> false;
             }
 

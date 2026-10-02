@@ -19,10 +19,10 @@ public record ResourceRecovery(String protocol, Map<String, String> fields) {
 
     /** Strict decoder rejecting duplicate keys and trailing documents. / 拒绝重复键及尾随文档的严格解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
-            .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder().maxNestingDepth(3)
-                    .maxStringLength(65536).build())
-            .build()).enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder().maxNestingDepth(3)
+            .maxStringLength(65536).build())
+        .build()).enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Validates bounded flat facts before any database write. / 在任何数据库写入前校验有界扁平事实。
      * @param protocol versioned host protocol / 带版本宿主协议
@@ -67,9 +67,9 @@ public record ResourceRecovery(String protocol, Map<String, String> fields) {
         try {
             var root = JSON.readTree(value);
             if (root == null || !root.isObject() || root.size() != 4 || !root.path("release").isTextual()
-                    || !root.path("release").textValue().equals("EXPLICIT") || !root.path("version").isInt()
-                    || root.path("version").intValue() != 1 || !root.path("protocol").isTextual()
-                    || !root.path("fields").isObject())
+                || !root.path("release").textValue().equals("EXPLICIT") || !root.path("version").isInt()
+                || root.path("version").intValue() != 1 || !root.path("protocol").isTextual()
+                || !root.path("fields").isObject())
                 throw new IllegalArgumentException("Unknown recovery envelope");
             var fields = new TreeMap<String, String>();
             var entries = root.path("fields").fields();

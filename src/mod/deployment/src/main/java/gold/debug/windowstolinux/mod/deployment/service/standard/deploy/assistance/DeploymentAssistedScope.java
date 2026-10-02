@@ -1,5 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.LogService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessService;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.ai.*;
@@ -8,22 +20,27 @@ import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.source.SourceService;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.FileService;
+
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
 /** Freezes one original assisted task and its language-call budget without replacing platform authority. / 冻结一项原辅助任务及语言调用预算，不替换平台权限。 */
 public final class DeploymentAssistedScope implements ModContext {
     /** Actual owner capabilities. / 实际所属能力。 */
     private final ModContext original;
+
     /** Authentic original task. / 真实原任务。 */
     private final TaskContext task;
+
     /** Frozen complete model routing revision. / 冻结完整模型路由修订。 */
     private final String revision;
+
     /** Explicit independent-review policy. / 明确独立审核策略。 */
     private final String approvalMode;
+
     /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
     private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
+
     /** Validates the task-local route and policy without replacing host authority. / 验证任务内部路由及策略，不替换宿主权限。
      * @param original actual owner capabilities / 实际所属能力
      * @param task original task / 原任务
@@ -40,7 +57,9 @@ public final class DeploymentAssistedScope implements ModContext {
 
     /** Returns the selected policy without changing it. / 返回所选策略，不改变其值。
      * @return original exact policy / 原精确策略 */
-    public String approvalMode() { return approvalMode; }
+    public String approvalMode() {
+        return approvalMode;
+    }
 
     /** Counts one logical language send; provider HTTP fallback is outside this counter. / 计算一次逻辑语言发送；提供方 HTTP 回退不属于该计数。
      * @param purpose actual model purpose / 实际模型用途
@@ -48,8 +67,9 @@ public final class DeploymentAssistedScope implements ModContext {
     private void consume(AiPurpose purpose) throws ApiException {
         if (purpose == AiPurpose.LANGUAGE && languageCalls.updateAndGet(value -> Math.min(31, value + 1)) > 30)
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_DECISION_BUDGET",
-                    "Original assisted language-call budget is exhausted", Map.of("task", task.id().toString()), Optional.of(task.id())));
+                "Original assisted language-call budget is exhausted", Map.of("task", task.id().toString()), Optional.of(task.id())));
     }
+
     /** Captures the usable language route once before any assisted work. / 辅助工作前一次捕获可用语言路由。
      * @param original actual capabilities / 实际能力
      * @param task original task / 原任务
@@ -69,7 +89,7 @@ public final class DeploymentAssistedScope implements ModContext {
         String revision = original.ai().configurationRevision(AiPurpose.LANGUAGE, task);
         if (!approvalMode.equals("MANUAL_REVIEW") && !revision.equals(original.ai().configurationRevision(AiPurpose.APPROVAL, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
-                    "Independent assisted review route differs", Map.of("task", task.id().toString()), Optional.of(task.id())));
+                "Independent assisted review route differs", Map.of("task", task.id().toString()), Optional.of(task.id())));
         return new DeploymentAssistedScope(original, task, revision, approvalMode);
     }
 
@@ -78,10 +98,10 @@ public final class DeploymentAssistedScope implements ModContext {
     private void verify() throws ApiException {
         if (!revision.equals(original.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
-                    "Assisted configuration changed", Map.of(), Optional.empty()));
+                "Assisted configuration changed", Map.of(), Optional.empty()));
         if (!approvalMode.equals("MANUAL_REVIEW") && !revision.equals(original.ai().configurationRevision(AiPurpose.APPROVAL, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED",
-                    "Independent assisted review configuration changed", Map.of("task", task.id().toString()), Optional.of(task.id())));
+                "Independent assisted review configuration changed", Map.of("task", task.id().toString()), Optional.of(task.id())));
     }
 
     /** Preserves the exact task at every scoped capability call. / 每次限定能力调用均保留精确任务。
@@ -105,7 +125,7 @@ public final class DeploymentAssistedScope implements ModContext {
                 sameTask(supplied);
                 verify();
                 return new DeploymentAssistedSession(original.linux().connect(server, supplied),
-                        DeploymentAssistedScope.this::verify);
+                    DeploymentAssistedScope.this::verify);
             }
 
             /** Reads only original pending transfers. / 仅读取原待结传输。
@@ -153,7 +173,7 @@ public final class DeploymentAssistedScope implements ModContext {
              * @return actual provider feedback / 实际提供方反馈
              * @throws ApiException on drift or failed invocation / 漂移或调用失败时 */
             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext supplied)
-                    throws ApiException {
+                throws ApiException {
                 sameTask(supplied);
                 verify();
                 if (!revision.equals(expected))
@@ -203,10 +223,13 @@ public final class DeploymentAssistedScope implements ModContext {
              * @return original host grant or refusal / 原宿主授权或拒绝
              * @throws ApiException if routing or fixed review rejects / 路由或固定审阅拒绝时 */
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
-                sameTask(supplied); verify();
+                sameTask(supplied);
+                verify();
                 var actual = DeploymentAssistedApproval.approve(DeploymentAssistedScope.this, original.interaction(), intent, supplied, revision, approvalMode);
-                verify(); return actual;
+                verify();
+                return actual;
             }
+
             /** Preserves original human input authority. / 保留原人工输入权限。
              * @param title original title / 原标题
              * @param prompt original question / 原问题
@@ -215,7 +238,9 @@ public final class DeploymentAssistedScope implements ModContext {
              * @return original classified answer / 原分类答案
              * @throws ApiException if the frozen task is no longer admitted / 冻结任务不再准入时 */
             public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext supplied) throws ApiException {
-                sameTask(supplied); verify(); return original.interaction().requestText(title, prompt, secret, supplied);
+                sameTask(supplied);
+                verify();
+                return original.interaction().requestText(title, prompt, secret, supplied);
             }
         };
     }
@@ -244,8 +269,8 @@ public final class DeploymentAssistedScope implements ModContext {
     /** Returns original source ownership. / 返回原来源归属。
      * @return original source ownership / 原来源归属 */
     @Override
-    public SourceService source() {
-        return original.source();
+    public FileService file() {
+        return original.file();
     }
 
     /** Returns original structured diagnostics. / 返回原结构化诊断。

@@ -5,9 +5,9 @@ import java.util.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.Problem;
 
@@ -36,8 +36,8 @@ public final class ModActivationLedger {
 
     /** Safe diagnostic encoding, independent of author exception messages. / 独立于作者异常消息的安全诊断编码。 */
     private static final ObjectMapper JSON = new ObjectMapper()
-            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds one original activation before any lifecycle callback. / 在任一生命周期回调前绑定一次原启用。
      * @param database current platform engine / 当前平台引擎
@@ -45,7 +45,7 @@ public final class ModActivationLedger {
      * @param version loaded release / 加载版本
      * @param schema selected data generation / 选定数据代次 */
     public ModActivationLedger(PlatformDatabase database, String owner, String version,
-            Optional<SchemaIdentity> schema) {
+                               Optional<SchemaIdentity> schema) {
         connections = new RepositoryConnections(database::openConnection);
         boot = database.bootId();
         this.owner = Objects.requireNonNull(owner);
@@ -75,21 +75,21 @@ public final class ModActivationLedger {
         attempted = true;
         locked(connection -> {
             try (var query = connection.prepareStatement(
-                    "SELECT r.enabled,r.selected_version,r.last_boot_id,v.state,v.schema_version,r.last_runtime_state,r.actual_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                "SELECT r.enabled,r.selected_version,r.last_boot_id,v.state,v.schema_version,r.last_runtime_state,r.actual_version FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
                 query.setString(1, version);
                 query.setString(2, owner);
                 try (var row = query.executeQuery()) {
                     if (!row.next() || !row.getBoolean(1) || !version.equals(row.getString(2))
-                            || boot.equals(row.getObject(3, UUID.class)) || !"READY".equals(row.getString(4))
-                            || !Set.of("STOPPED", "FAILED").contains(row.getString(6)) || row.getString(7) != null
-                            || rejection == null && !Objects
-                                    .equals(schema.map(SchemaIdentity::schemaVersion).orElse(null), row.getString(5)))
+                        || boot.equals(row.getObject(3, UUID.class)) || !"READY".equals(row.getString(4))
+                        || !Set.of("STOPPED", "FAILED").contains(row.getString(6)) || row.getString(7) != null
+                        || rejection == null && !Objects
+                        .equals(schema.map(SchemaIdentity::schemaVersion).orElse(null), row.getString(5)))
                         throw denied("Selected Mod is not eligible for a new boot activation");
                 }
             }
             requireDrained(connection);
             try (var query = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED' AND NOT COALESCE(operation_type IN ('ENABLE','SWITCH') AND state='RUNNING' AND outcome IS NULL AND phase='APPLYING' AND target_version=? AND accepted_revision=(SELECT revision FROM mod_registry WHERE mod_id=mod_operation.mod_id),FALSE)")) {
+                "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED' AND NOT COALESCE(operation_type IN ('ENABLE','SWITCH') AND state='RUNNING' AND outcome IS NULL AND phase='APPLYING' AND target_version=? AND accepted_revision=(SELECT revision FROM mod_registry WHERE mod_id=mod_operation.mod_id),FALSE)")) {
                 query.setString(1, owner);
                 query.setString(2, version);
                 try (var row = query.executeQuery()) {
@@ -103,7 +103,7 @@ public final class ModActivationLedger {
                 var identity = schema.get();
                 var coordinates = new SchemaCoordinates(identity);
                 try (var update = connection.prepareStatement(
-                        "UPDATE mod_schema SET ever_used=TRUE WHERE mod_id=? AND schema_version=? AND generation=? AND physical_name=? AND database_user=? AND state='READY'")) {
+                    "UPDATE mod_schema SET ever_used=TRUE WHERE mod_id=? AND schema_version=? AND generation=? AND physical_name=? AND database_user=? AND state='READY'")) {
                     update.setString(1, owner);
                     update.setString(2, identity.schemaVersion());
                     update.setObject(3, identity.generation());
@@ -123,7 +123,7 @@ public final class ModActivationLedger {
      * @throws SQLException if retained application ownership is absent, duplicated or stale / 保留应用归属缺失、重复或过期时 */
     private void requireApplicationBoot(Connection connection) throws SQLException {
         try (var query = connection
-                .prepareStatement("SELECT recovery_json FROM mod_operation WHERE mod_id=? AND state<>'ENDED'")) {
+            .prepareStatement("SELECT recovery_json FROM mod_operation WHERE mod_id=? AND state<>'ENDED'")) {
             query.setString(1, owner);
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
@@ -134,8 +134,8 @@ public final class ModActivationLedger {
                 try {
                     var evidence = JSON.readTree(encoded);
                     if (evidence == null || !evidence.isObject() || evidence.size() != 2
-                            || !evidence.path("formatVersion").isInt() || evidence.path("formatVersion").intValue() != 1
-                            || !boot.toString().equals(evidence.path("applicationBootId").textValue()) || rows.next())
+                        || !evidence.path("formatVersion").isInt() || evidence.path("formatVersion").intValue() != 1
+                        || !boot.toString().equals(evidence.path("applicationBootId").textValue()) || rows.next())
                         throw new SQLException("Restart application does not belong to this boot");
                 } catch (JsonProcessingException invalid) {
                     throw new SQLException("Invalid restart application evidence", invalid);
@@ -201,7 +201,7 @@ public final class ModActivationLedger {
      * @throws SQLException if original ownership cannot be proven / 无法证明原归属时 */
     private String ownedState(Connection connection) throws SQLException {
         try (var query = connection.prepareStatement(
-                "SELECT last_runtime_state FROM mod_registry WHERE mod_id=? AND last_boot_id=? AND actual_version=?")) {
+            "SELECT last_runtime_state FROM mod_registry WHERE mod_id=? AND last_boot_id=? AND actual_version=?")) {
             query.setString(1, owner);
             query.setObject(2, boot);
             query.setString(3, version);
@@ -221,12 +221,12 @@ public final class ModActivationLedger {
         if (!claimed)
             return false;
         try (var query = connection.prepareStatement(
-                "SELECT actual_version,last_runtime_state FROM mod_registry WHERE mod_id=? AND last_boot_id=?")) {
+            "SELECT actual_version,last_runtime_state FROM mod_registry WHERE mod_id=? AND last_boot_id=?")) {
             query.setString(1, owner);
             query.setObject(2, boot);
             try (var row = query.executeQuery()) {
                 return row.next() && (version.equals(row.getString(1))
-                        || row.getString(1) == null && Set.of("STOPPED", "FAILED").contains(row.getString(2)));
+                    || row.getString(1) == null && Set.of("STOPPED", "FAILED").contains(row.getString(2)));
             }
         }
     }
@@ -236,7 +236,7 @@ public final class ModActivationLedger {
      * @throws SQLException if unresolved work still owns this Mod / 未解决工作仍持有此 Mod 时 */
     private void requireDrained(Connection connection) throws SQLException {
         try (var query = connection.prepareStatement(
-                "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
+            "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
             query.setString(1, owner);
             query.setString(2, owner);
             query.setString(3, owner);
@@ -253,9 +253,9 @@ public final class ModActivationLedger {
      * @return transactional refusal with public evidence / 携带公开证据的事务拒绝 */
     private SQLException denied(String message) {
         return new SQLException(message,
-                new gold.debug.windowstolinux.appapi.task.ApiException(
-                        new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.BUSY, "MOD_ACTIVATION_BLOCKED",
-                                message, Map.of("ownerId", owner), Optional.empty())));
+            new gold.debug.windowstolinux.appapi.task.ApiException(
+                new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.BUSY, "MOD_ACTIVATION_BLOCKED",
+                    message, Map.of("ownerId", owner), Optional.empty())));
     }
 
     /** Updates only actual state, never intent or restart-disable acknowledgement. / 仅更新实际状态，不更新意图或重启停用确认。
@@ -269,7 +269,7 @@ public final class ModActivationLedger {
         if (problem != null) {
             try {
                 var evidence = JSON.createObjectNode().put("formatVersion", 1).put("code", problem.code().name())
-                        .put("eventCode", problem.eventCode()).put("message", problem.message());
+                    .put("eventCode", problem.eventCode()).put("message", problem.message());
                 problem.diagnosticId().ifPresent(id -> evidence.put("diagnosticId", id.toString()));
                 evidence.set("context", JSON.valueToTree(problem.context()));
                 detail = JSON.writeValueAsString(evidence);
@@ -278,7 +278,7 @@ public final class ModActivationLedger {
             }
         }
         try (var update = connection.prepareStatement(
-                "UPDATE mod_registry SET last_boot_id=?,last_runtime_state=?,actual_version=?,failure_code=?,failure_detail=?,updated_at=? WHERE mod_id=?")) {
+            "UPDATE mod_registry SET last_boot_id=?,last_runtime_state=?,actual_version=?,failure_code=?,failure_detail=?,updated_at=? WHERE mod_id=?")) {
             update.setObject(1, boot);
             update.setString(2, state);
             update.setString(3, actual);
@@ -299,7 +299,7 @@ public final class ModActivationLedger {
             try (var connection = connections.open()) {
                 RepositoryConnections.lockPlatformState(connection);
                 try (var query = connection.prepareStatement("SELECT boot_id FROM app_state WHERE singleton_id=1");
-                        var row = query.executeQuery()) {
+                     var row = query.executeQuery()) {
                     if (!row.next() || !boot.equals(row.getObject(1, UUID.class)))
                         throw new SQLException("Mod journal belongs to another platform boot");
                 }

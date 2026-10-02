@@ -22,6 +22,7 @@ final class DeploymentRestorePlan {
      * @param member fixed candidate member / 固定候选成员 */
     record FileInput(RestoreFile file, DeploymentCollectionPlan.ArtifactPlan artifact, String member) {
     }
+
     /** Complete immutable caller request. / 完整不可变调用方请求。 */
     final DeploymentRestoreRequest request;
 
@@ -45,28 +46,28 @@ final class DeploymentRestorePlan {
         archive = DeploymentArchivedRuntimeCodec.restore(request.archivedApplication(), releases);
         var original = archive.publication();
         var components = original.graph().components().stream()
-                .map(value -> new DeploymentApplicationGraph.Component(value.componentId(),
-                        target(value.unit(), request.target()), value.runtime(), value.dependencies(),
-                        value.reviewedRuntime(), value.dataPaths(), value.resources()))
-                .toList();
+            .map(value -> new DeploymentApplicationGraph.Component(value.componentId(),
+                target(value.unit(), request.target()), value.runtime(), value.dependencies(),
+                value.reviewedRuntime(), value.dataPaths(), value.resources()))
+            .toList();
         var graph = new DeploymentApplicationGraph(original.graph().applicationId(),
-                original.graph().healthComponentId(), original.graph().healthCheck(), components);
+            original.graph().healthComponentId(), original.graph().healthCheck(), components);
         var commits = original.units().stream()
-                .map(value -> new DeploymentUnitCommit(target(value.unit(), request.target()), value.runtime(),
-                        value.release(), value.configuration(), value.secrets()))
-                .toList();
+            .map(value -> new DeploymentUnitCommit(target(value.unit(), request.target()), value.runtime(),
+                value.release(), value.configuration(), value.secrets()))
+            .toList();
         proposal = new DeploymentPublicationProposal(graph, commits);
         var release = DeploymentReleaseSnapshot.capture(original.graph(), original.units());
         var data = new DeploymentApplicationReader.ApplicationFacts(request.archivedApplication(), original.graph(),
-                release);
+            release);
         // Typed environment configuration is in the opaque publication. CONFIG file bindings retain their original PAX contract.
         var selected = request.files().stream().map(RestoreFile::bindingId)
-                .filter(value -> !value.startsWith("release:") && !value.startsWith("image:")).toList();
+            .filter(value -> !value.startsWith("release:") && !value.startsWith("image:")).toList();
         var plans = new DeploymentCollectionPlan().build(data, selected);
         for (var component : graph.components())
             if (plans.stream()
-                    .filter(value -> value.componentId().equals(component.componentId()) && value.kind().equals("file"))
-                    .count() > 48)
+                .filter(value -> value.componentId().equals(component.componentId()) && value.kind().equals("file"))
+                .count() > 48)
                 throw new IOException("Restore component exceeds fixed helper argument bound");
         if (request.files().size() != plans.size() || selected.stream().distinct().count() != selected.size())
             throw new IOException("Restore files must exactly cover the reviewed artifact selection");
@@ -87,10 +88,10 @@ final class DeploymentRestorePlan {
             if (file.byteCount() < 1 || file.byteCount() > Long.parseLong(artifact.maximum()))
                 throw new IOException("Restore file exceeds the original artifact bound");
             String member = artifact.kind().equals("file")
-                    ? artifact.resource() + ".pax"
-                    : artifact.kind().equals("database")
-                            ? "__database-" + artifact.resource() + ".sql"
-                            : artifact.kind().equals("oci") ? "__image.oci" : "__release.pax";
+                ? artifact.resource() + ".pax"
+                : artifact.kind().equals("database")
+                ? "__database-" + artifact.resource() + ".sql"
+                : artifact.kind().equals("oci") ? "__image.oci" : "__release.pax";
             inputs.add(new FileInput(file, artifact, member));
         }
         files = List.copyOf(inputs);
@@ -103,15 +104,15 @@ final class DeploymentRestorePlan {
      * @param facts authenticated remote facts / 已认证远端事实
      * @return canonical target review base / 规范目标审阅基值 */
     static String review(DeploymentApplicationSnapshot archived, String archiveSha, ServerInfo server,
-            RemoteFacts facts) {
+                         RemoteFacts facts) {
         requireDigest(archiveSha);
         if (facts.fingerprint().isBlank() || server.trustedFingerprint().isEmpty()
-                || !server.trustedFingerprint().orElseThrow().equals(facts.fingerprint()))
+            || !server.trustedFingerprint().orElseThrow().equals(facts.fingerprint()))
             throw new IllegalArgumentException("Target authenticated fingerprint must match current trust");
         var values = List.of("deployment-restore-target-v1", archived.application().id(), archived.revisionSha256(),
-                archived.ownershipSha256(), archiveSha, server.ref().id(), server.host(),
-                Integer.toString(server.port()), server.username(), facts.fingerprint(), facts.operatingSystem(),
-                facts.architecture());
+            archived.ownershipSha256(), archiveSha, server.ref().id(), server.host(),
+            Integer.toString(server.port()), server.username(), facts.fingerprint(), facts.operatingSystem(),
+            facts.architecture());
         StringBuilder canonical = new StringBuilder();
         for (String value : values)
             canonical.append(value.getBytes(StandardCharsets.UTF_8).length).append(':').append(value).append('\n');
@@ -124,8 +125,8 @@ final class DeploymentRestorePlan {
     static void verifyLocal(RestoreFile file) throws Exception {
         Path path = file.verifiedLocalFile();
         if (!path.isAbsolute() || !path.normalize().equals(path) || Files.isSymbolicLink(path)
-                || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || !path.toRealPath().equals(path)
-                || Files.size(path) != file.byteCount())
+            || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || !path.toRealPath().equals(path)
+            || Files.size(path) != file.byteCount())
             throw new IOException("Restore local file identity differs");
         var digest = MessageDigest.getInstance("SHA-256");
         long size = 0;
@@ -151,24 +152,24 @@ final class DeploymentRestorePlan {
         var bindings = new ArrayList<DeploymentBinding>();
         for (var binding : archived.path("bindings"))
             bindings.add(new DeploymentBinding(binding.path("id").asText(), binding.path("componentId").asText(),
-                    binding.path("kind").asText(), binding.path("path").asText(), binding.path("engine").asText(),
-                    binding.path("needsQuiescence").asBoolean(),
-                    binding.path("secretReferenceId").isNull()
-                            ? Optional.empty()
-                            : Optional.of(binding.path("secretReferenceId").asText())));
+                binding.path("kind").asText(), binding.path("path").asText(), binding.path("engine").asText(),
+                binding.path("needsQuiescence").asBoolean(),
+                binding.path("secretReferenceId").isNull()
+                    ? Optional.empty()
+                    : Optional.of(binding.path("secretReferenceId").asText())));
         var snapshot = new DeploymentApplicationSnapshot(entry.publicValue().application(),
-                archived.path("displayName").asText(), archived.path("revisionSha256").asText(),
-                archived.path("ownershipSha256").asText(), ApplicationRunState.valueOf(archived.path("state").asText()),
-                Instant.parse(archived.path("observedAt").asText()),
-                new VersionedRuntime(archived.path("runtimeVersion").asInt(),
-                        Base64.getDecoder().decode(archived.path("runtimeBase64").asText())),
-                bindings, archived.path("healthPolicySha256").asText());
+            archived.path("displayName").asText(), archived.path("revisionSha256").asText(),
+            archived.path("ownershipSha256").asText(), ApplicationRunState.valueOf(archived.path("state").asText()),
+            Instant.parse(archived.path("observedAt").asText()),
+            new VersionedRuntime(archived.path("runtimeVersion").asInt(),
+                Base64.getDecoder().decode(archived.path("runtimeBase64").asText())),
+            bindings, archived.path("healthPolicySha256").asText());
         var files = new ArrayList<RestoreFile>();
         for (var file : request.path("files"))
             files.add(new RestoreFile(file.path("bindingId").asText(), Path.of(file.path("path").asText()),
-                    file.path("size").asLong(), file.path("sha256").asText()));
+                file.path("size").asLong(), file.path("sha256").asText()));
         return new DeploymentRestoreRequest(snapshot, entry.target().orElseThrow(), files,
-                request.path("archiveSha256").asText(), request.path("targetReviewSha256").asText());
+            request.path("archiveSha256").asText(), request.path("targetReviewSha256").asText());
     }
 
     /** Derives the stable main candidate of one original handoff component. / 推导原交接单组件的稳定主候选。
@@ -177,9 +178,9 @@ final class DeploymentRestorePlan {
      * @return stable original main candidate / 稳定原主候选 */
     String candidate(UUID handoff, String component) {
         String unit = proposal.graph().components().stream().filter(value -> value.componentId().equals(component))
-                .findFirst().orElseThrow().unit().id();
+            .findFirst().orElseThrow().unit().id();
         return unit + "-" + UUID.nameUUIDFromBytes((handoff + ":" + component).getBytes(StandardCharsets.UTF_8))
-                .toString().replace("-", "").substring(0, 16);
+            .toString().replace("-", "").substring(0, 16);
     }
 
     /** Selects the exact original unit commit by validated component mapping. / 通过已校验组件映射选择精确原单元提交。
@@ -187,7 +188,7 @@ final class DeploymentRestorePlan {
      * @return exact immutable original unit commit / 精确不可变原单元提交 */
     DeploymentUnitCommit commit(String component) {
         String unit = proposal.graph().components().stream().filter(value -> value.componentId().equals(component))
-                .findFirst().orElseThrow().unit().id();
+            .findFirst().orElseThrow().unit().id();
         return proposal.units().stream().filter(value -> value.unit().id().equals(unit)).findFirst().orElseThrow();
     }
 
@@ -197,7 +198,7 @@ final class DeploymentRestorePlan {
      * @return target-bound original identity / 绑定目标的原身份 */
     private static DeploymentUnitIdentity target(DeploymentUnitIdentity original, ServerRef target) {
         return new DeploymentUnitIdentity(original.id(), target, original.systemdUnit(), original.releaseRoot(),
-                original.ownershipManifestSha256());
+            original.ownershipManifestSha256());
     }
 
     /** Rejects absent or noncanonical reviewed digests before effects. / 副作用前拒绝缺失或非规范已审阅摘要。

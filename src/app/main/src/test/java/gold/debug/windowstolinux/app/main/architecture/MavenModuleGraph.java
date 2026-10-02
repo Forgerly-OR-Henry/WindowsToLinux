@@ -11,18 +11,19 @@ import org.w3c.dom.Element;
 final class MavenModuleGraph {
     record Module(Path pom, String path, String artifact, boolean aggregate, Set<String> artifacts) {
     }
+
     private MavenModuleGraph() {
     }
 
     static List<Module> read(Path root) throws Exception {
         var result = new ArrayList<Module>();
         visit(root.toAbsolutePath().normalize(), root.toAbsolutePath().normalize().resolve("pom.xml"), new HashSet<>(),
-                new HashSet<>(), result);
+            new HashSet<>(), result);
         return List.copyOf(result);
     }
 
     private static void visit(Path root, Path pom, Set<Path> visited, Set<String> artifacts, List<Module> result)
-            throws Exception {
+        throws Exception {
         pom = pom.toAbsolutePath().normalize();
         if (!pom.startsWith(root) || !Files.isRegularFile(pom) || !visited.add(pom))
             throw new IllegalStateException("invalid or cyclic Maven aggregation: " + pom);
@@ -38,18 +39,18 @@ final class MavenModuleGraph {
             for (var node = dep.getFirstChild(); node != null; node = node.getNextSibling())
                 if (node instanceof Element item && item.getTagName().equals("dependency")) {
                     if (value(item, "groupId").equals("gold.debug.windowstolinux")
-                            && !value(item, "scope").equals("test"))
+                        && !value(item, "scope").equals("test"))
                         dependencies.add(value(item, "artifactId"));
                 }
         String path = root.relativize(pom.getParent()).toString().replace('\\', '/').replaceFirst("^src/", "");
         result.add(
-                new Module(pom, path, artifact, value(project, "packaging").equals("pom"), Set.copyOf(dependencies)));
+            new Module(pom, path, artifact, value(project, "packaging").equals("pom"), Set.copyOf(dependencies)));
         var modules = child(project, "modules");
         if (modules != null)
             for (var node = modules.getFirstChild(); node != null; node = node.getNextSibling())
                 if (node instanceof Element item && item.getTagName().equals("module"))
                     visit(root, pom.getParent().resolve(item.getTextContent().strip()).resolve("pom.xml"), visited,
-                            artifacts, result);
+                        artifacts, result);
     }
 
     private static Element child(Element element, String name) {

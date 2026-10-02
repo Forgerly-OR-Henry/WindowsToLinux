@@ -15,24 +15,49 @@ import org.junit.jupiter.api.Test;
 
 /** Keeps implemented packages and planned document nodes distinct. / 区分已实现包与文档中的规划节点。 */
 class DocumentStructureArchitectureTest {
+    private static final String CURRENT_TREE_ANCHOR = "<a id=\"current-source-tree\"></a>";
+
     @Test
-    void everyProductionPackageHasADocumentedTargetNode() throws Exception {
+    void everyProductionPackageHasADocumentedCurrentNode() throws Exception {
         var violations = structureViolations(document(), productionPackages(),
-                ModuleDependencyArchitectureTest.declaredDependencies().keySet());
+            ModuleDependencyArchitectureTest.declaredDependencies().keySet());
         assertTrue(violations.isEmpty(), () -> "document structure violations: " + violations);
     }
 
     @Test
     void missingNodesFailAndExplicitPlansDoNotRequireEmptyPackages() {
         String fence = String.valueOf((char) 96).repeat(3);
-        String tree = "## 1. 完整目标结构\n" + fence + "text\nWindowsToLinux/\n"
-                + "└─ src/\n   └─ shared/\n      └─ deploy/\n         ├─ error/\n" + "         └─ future/ [PLANNED]\n"
-                + fence + "\n";
+        String tree = "## 1. 当前活动源码结构\n" + CURRENT_TREE_ANCHOR + "\n" + fence + "text\nWindowsToLinux/\n"
+            + "└─ src/\n   └─ shared/\n      └─ deploy/\n         ├─ error/\n" + "         └─ future/ [PLANNED]\n"
+            + fence + "\n";
         Set<String> actual = Set.of("src/shared/deploy/error");
         Set<String> modules = Set.of("shared/deploy");
         assertEquals(List.of(), structureViolations(tree, actual, modules));
         assertFalse(structureViolations(tree.replace("         ├─ error/\n", ""), actual, modules).isEmpty());
         assertFalse(structureViolations(tree.replace(" [PLANNED]", ""), actual, modules).isEmpty());
+    }
+
+    @Test
+    void currentTreeUsesStableAnchorRegardlessOfHeadingOrEarlierExamples() {
+        String fence = String.valueOf((char) 96).repeat(3);
+        String document = "## Earlier example\n" + fence + "text\n└─ candidate/\n" + fence
+            + "\n## Renamed current section\n" + CURRENT_TREE_ANCHOR + "\n" + fence
+            + "text\n└─ src/\n" + fence + "\n## Future design\n" + fence + "text\n└─ future/\n" + fence;
+        assertEquals(Map.of("src", false), targetNodes(document));
+        assertEquals(Map.of("src", false), targetNodes(document.replace("\n", "\r\n")));
+    }
+
+    @Test
+    void missingAmbiguousOrMalformedCurrentTreeFailsInsteadOfReadingAnotherSection() {
+        String fence = String.valueOf((char) 96).repeat(3);
+        String tree = fence + "text\n└─ src/\n" + fence;
+        assertThrows(AssertionError.class, () -> targetNodes("## 1. 完整目标结构\n" + tree));
+        assertThrows(AssertionError.class,
+            () -> targetNodes(CURRENT_TREE_ANCHOR + "\n" + tree + "\n" + CURRENT_TREE_ANCHOR));
+        assertThrows(AssertionError.class,
+            () -> targetNodes(CURRENT_TREE_ANCHOR + "\n## Future design\n" + tree));
+        assertThrows(AssertionError.class,
+            () -> targetNodes(CURRENT_TREE_ANCHOR + "\n" + fence + "text\n└─ src/\n"));
     }
 
     private static String document() throws Exception {
@@ -56,10 +81,10 @@ class DocumentStructureArchitectureTest {
         Map<String, Boolean> nodes = targetNodes(document);
         List<String> violations = new ArrayList<>();
         actual.stream().filter(path -> !nodes.containsKey(path)).sorted()
-                .forEach(path -> violations.add("Missing production package " + path));
+            .forEach(path -> violations.add("Missing production package " + path));
         nodes.forEach((path, planned) -> {
             if (planned || modules.stream()
-                    .noneMatch(module -> path.equals("src/" + module) || path.startsWith("src/" + module + "/")))
+                .noneMatch(module -> path.equals("src/" + module) || path.startsWith("src/" + module + "/")))
                 return;
             if (actual.stream().noneMatch(value -> value.equals(path) || value.startsWith(path + "/")))
                 violations.add("Unimplemented node requires [PLANNED]: " + path);
@@ -68,10 +93,18 @@ class DocumentStructureArchitectureTest {
     }
 
     private static Map<String, Boolean> targetNodes(String document) {
+        document = document.replace("\r\n", "\n");
         String fence = String.valueOf((char) 96).repeat(3);
-        int start = document.indexOf(fence + "text", document.indexOf("## 1. 完整目标结构"));
-        assertTrue(start >= 0, "Target tree must exist");
-        String tree = document.substring(start + fence.length() + 4, document.indexOf(fence, start + fence.length()));
+        int anchor = document.indexOf(CURRENT_TREE_ANCHOR);
+        assertTrue(anchor >= 0, "Current source tree anchor must exist");
+        assertEquals(anchor, document.lastIndexOf(CURRENT_TREE_ANCHOR), "Current source tree anchor must be unique");
+        int nextSection = document.indexOf("\n## ", anchor);
+        String section = document.substring(anchor, nextSection < 0 ? document.length() : nextSection);
+        int start = section.indexOf(fence + "text\n");
+        assertTrue(start >= 0, "Current source tree must exist in the anchored section");
+        int end = section.indexOf(fence, start + fence.length());
+        assertTrue(end >= 0, "Current source tree fence must close in the anchored section");
+        String tree = section.substring(start + fence.length() + 5, end);
         var pattern = Pattern.compile("^([│ ]*)(?:├─|└─) ([^\\s]+)(.*)$");
         List<String> stack = new ArrayList<>();
         List<Boolean> plans = new ArrayList<>();

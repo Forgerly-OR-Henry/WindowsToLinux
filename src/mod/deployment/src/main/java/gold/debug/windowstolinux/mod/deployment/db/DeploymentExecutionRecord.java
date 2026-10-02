@@ -17,8 +17,9 @@ import gold.debug.windowstolinux.appapi.task.Outcome;
  * @param createdAt original creation time / 原创建时间
  * @param updatedAt latest persisted evidence time / 最新持久证据时间 */
 public record DeploymentExecutionRecord(DeploymentExecutionIdentity identity, String phase, Optional<Outcome> outcome,
-        String requestJson, String recoveryJson, Optional<String> resultJson, boolean businessCommitted,
-        boolean cleanupComplete, Instant createdAt, Instant updatedAt) {
+                                        String requestJson, String recoveryJson, Optional<String> resultJson,
+                                        boolean businessCommitted,
+                                        boolean cleanupComplete, Instant createdAt, Instant updatedAt) {
     /** Retains original immutable evidence rather than projecting an assumed final result. / 保留原不可变证据，不投射假定终态。
      * @param identity original immutable identity / 原不可变身份
      * @param phase last persisted operation stage / 最近持久操作阶段
@@ -40,7 +41,7 @@ public record DeploymentExecutionRecord(DeploymentExecutionIdentity identity, St
         Objects.requireNonNull(createdAt);
         Objects.requireNonNull(updatedAt);
         if (updatedAt.isBefore(createdAt) || businessCommitted && resultJson.isEmpty()
-                || cleanupComplete && (outcome.isEmpty() || outcome.get() == Outcome.UNKNOWN))
+            || cleanupComplete && (outcome.isEmpty() || outcome.get() == Outcome.UNKNOWN))
             throw new IllegalArgumentException("Inconsistent execution evidence");
     }
 }

@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -8,13 +14,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,9 +36,9 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             runtime.tasks().revokeOwnerServices(OWNER, VERSION);
             var tasks = runtime.tasks().bind(OWNER, VERSION, false);
@@ -50,7 +56,7 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                 }
 
                 public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
-                        throws ApiException {
+                    throws ApiException {
                     assertEquals("a".repeat(64), expected);
                     String response;
                     if (request.purpose() == AiPurpose.APPROVAL)
@@ -65,14 +71,14 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                                 throw new AssertionError("Unknown health must never authorize diagnosis");
                             }
                             response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
-                                    + facts.path("sourceRevision").asText()
-                                    + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
+                                + facts.path("sourceRevision").asText()
+                                + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Retain human inputs\",\"unresolved\":[]}}";
                         } catch (java.io.IOException failure) {
                             throw new AssertionError(failure);
                         }
                     }
                     return success(new AiResponse(response, "controlled-purpose", "stop",
-                            new AiUsage(Optional.empty(), Optional.empty())));
+                        new AiUsage(Optional.empty(), Optional.empty())));
                 }
             };
             LinuxService linux = new LinuxService() {
@@ -85,27 +91,27 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                 }
             };
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("tasks"))
-                            return tasks;
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        if (method.getName().equals("ai"))
-                            return models;
-                        try {
-                            return method.invoke(original, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("tasks"))
+                        return tasks;
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    if (method.getName().equals("ai"))
+                        return models;
+                    try {
+                        return method.invoke(original, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var flow = new DeploymentReferenceFlow(bound, new DeploymentStandardPublicationRecovery(bound));
             try (var registration = tasks.registerRecovery(DeploymentReferenceFlow.TASK_TYPE, new DeploymentStaticTaskRecovery(bound, flow))) {
                 var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerRef("server"),
-                        new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count),
-                        true, "MANUAL_REVIEW");
+                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count),
+                    true, "MANUAL_REVIEW");
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED
-                        && System.nanoTime() < until)
+                    && System.nanoTime() < until)
                     Thread.sleep(20);
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
                 assertTrue(peer.builds.healthChecks > 0);
@@ -114,14 +120,14 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                 assertEquals(0, diagnosis.get());
                 assertEquals(0, corrections);
                 assertTrue(scalar(runtime,
-                        "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
                 var builds = Map.copyOf(peer.builds.builds);
                 var creates = Map.copyOf(peer.builds.creates);
                 var uploads = Map.copyOf(peer.builds.uploads);
                 var publications = List.copyOf(peer.builds.sentPublications);
                 int calls = language.get();
                 assertEquals(TaskState.UNKNOWN,
-                        reconcileReady(runtime, handle).state());
+                    reconcileReady(runtime, handle).state());
                 assertEquals(builds, peer.builds.builds);
                 assertEquals(creates, peer.builds.creates);
                 assertEquals(uploads, peer.builds.uploads);
@@ -132,8 +138,8 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                 peer.builds.unknownHealth = false;
                 var ended = reconcileReady(runtime, handle);
                 assertEquals(TaskState.ENDED, ended.state(), () -> "Actual retained original task=" + ended
-                        + "; remote commands=" + peer.builds.commands + "; current=" + peer.builds.current
-                        + "; snapshots=" + peer.snapshots + "; maintenance=" + peer.maintenance);
+                    + "; remote commands=" + peer.builds.commands + "; current=" + peer.builds.current
+                    + "; snapshots=" + peer.snapshots + "; maintenance=" + peer.maintenance);
                 assertEquals(Optional.of(count == 1 ? Outcome.SUCCEEDED : Outcome.FAILED), ended.outcome());
                 assertEquals(builds, peer.builds.builds);
                 assertEquals(creates, peer.builds.creates);
@@ -151,18 +157,27 @@ class DeploymentUnknownHealthPublicationTest extends DeploymentPublicationAccept
                 }
                 try (var access = scope(runtime, true); var connection = access.openConnection(); var statement = connection.createStatement()) {
                     try (var rows = statement.executeQuery("SELECT outcome,business_committed,cleanup_complete FROM deployment_execution")) {
-                        assertTrue(rows.next()); assertEquals(count == 1 ? "SUCCEEDED" : "FAILED", rows.getString(1));
-                        assertEquals(count == 1, rows.getBoolean(2)); assertTrue(rows.getBoolean(3)); assertFalse(rows.next());
+                        assertTrue(rows.next());
+                        assertEquals(count == 1 ? "SUCCEEDED" : "FAILED", rows.getString(1));
+                        assertEquals(count == 1, rows.getBoolean(2));
+                        assertTrue(rows.getBoolean(3));
+                        assertFalse(rows.next());
                     }
-                    try (var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_unit WHERE current_release_sha256 IS NOT NULL")) { assertTrue(rows.next()); assertEquals(count == 1 ? 1 : 0, rows.getInt(1)); }
-                    try (var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release WHERE state='ACTIVE'")) { assertTrue(rows.next()); assertEquals(count == 1 ? 1 : 0, rows.getInt(1)); }
+                    try (var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_unit WHERE current_release_sha256 IS NOT NULL")) {
+                        assertTrue(rows.next());
+                        assertEquals(count == 1 ? 1 : 0, rows.getInt(1));
+                    }
+                    try (var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release WHERE state='ACTIVE'")) {
+                        assertTrue(rows.next());
+                        assertEquals(count == 1 ? 1 : 0, rows.getInt(1));
+                    }
                 }
                 assertTrue(peer.builds.present.isEmpty());
                 assertTrue(peer.maintenance.isEmpty());
                 assertTrue(peer.snapshots.isEmpty());
                 assertEquals(peer.builds.sessionsOpened, peer.builds.sessionsClosed);
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             }
         }
     }

@@ -1,18 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import java.awt.GridLayout;
 import java.nio.file.Path;
 import java.util.Set;
 
 import javax.swing.*;
 
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 
 /** Holds visible Git-only inputs and constructs one credential-free reviewed request. / 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求。 */
 final class DeploymentGitSourceForm {
     /** Git-only rows. / 仅 Git 行。 */
-    private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+    private final JPanel panel = DeploymentPageStyle.form();
 
     /** Credential-free original URL. / 不含凭据的原 URL。 */
     private final JTextField url = new JTextField(24);
@@ -31,7 +30,7 @@ final class DeploymentGitSourceForm {
 
     /** Localized field labels. / 本地化字段标签。 */
     private final JLabel urlLabel = new JLabel(), kindLabel = new JLabel(), refLabel = new JLabel(),
-            executableLabel = new JLabel();
+        executableLabel = new JLabel();
 
     /** Owner page used only for current messages. / 仅用于当前消息的所属页。 */
     private final DeploymentStaticPage page;
@@ -40,16 +39,14 @@ final class DeploymentGitSourceForm {
      * @param page original owner page / 原所属页 */
     DeploymentGitSourceForm(DeploymentStaticPage page) {
         this.page = page;
-        panel.add(urlLabel);
-        panel.add(url);
-        panel.add(kindLabel);
-        panel.add(kind);
-        panel.add(refLabel);
-        panel.add(ref);
-        panel.add(executableLabel);
-        panel.add(executable);
+        panel.setName("deployment.git");
+        url.setName("deployment.git.url");
+        executable.setName("deployment.git.executable");
+        DeploymentPageStyle.field(panel, urlLabel, url);
+        DeploymentPageStyle.field(panel, kindLabel, kind);
+        DeploymentPageStyle.field(panel, refLabel, ref);
+        DeploymentPageStyle.field(panel, executableLabel, executable);
         panel.add(permitLocal);
-        panel.add(new JLabel());
         kind.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : page.text("gitKind." + value));
             label.setOpaque(true);
@@ -98,7 +95,7 @@ final class DeploymentGitSourceForm {
         };
         var hosts = remote.host().map(Set::of).orElseGet(Set::of);
         var request = new DeploymentGitRequest(remote, reference, hosts, 2L * 1024 * 1024 * 1024,
-                permitLocal.isSelected());
+            permitLocal.isSelected());
         var path = Path.of(executable.getText().trim());
         if (!path.isAbsolute())
             throw new IllegalArgumentException("Native Git executable path must be absolute");

@@ -48,9 +48,9 @@ public final class UvBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         return PythonArchitectureBuildRenderer.render(DeploymentBuildToolType.UV_LOCKED, facts, runtime, workspace,
-                limits, "uv",
-                "test -f ./uv.lock\nUV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=.venv run uv sync --active --locked --no-dev");
+            limits, "uv",
+            "test -f ./uv.lock\nUV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=.venv run uv sync --active --locked --no-dev");
     }
 }

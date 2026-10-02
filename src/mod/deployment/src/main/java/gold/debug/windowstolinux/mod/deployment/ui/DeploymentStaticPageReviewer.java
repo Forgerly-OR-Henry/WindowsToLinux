@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,7 +19,7 @@ import java.util.concurrent.CancellationException;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
@@ -54,11 +60,11 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @throws Exception if the owner view cannot complete the interaction / 所属视图无法完成交互时 */
     @Override
     public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
-            String sourceSha256, java.nio.file.Path root, String applicationId,
-            DatabaseProjectInspector.Assessment assessment, TaskContext task) throws Exception {
+                                                               String sourceSha256, java.nio.file.Path root, String applicationId,
+                                                               DatabaseProjectInspector.Assessment assessment, TaskContext task) throws Exception {
         Map<String, String> supplied = Map.of();
         var form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
-                DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of())));
+            DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of())));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("databaseSourceReview"), task))
                 return cancelled();
@@ -72,7 +78,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             } catch (IllegalArgumentException | java.io.IOException invalid) {
                 var answers = supplied;
                 form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
-                        DeploymentDatabaseSourceInputs.questions(assessment, applicationId, answers, true)));
+                    DeploymentDatabaseSourceInputs.questions(assessment, applicationId, answers, true)));
                 var current = form;
                 page.onEdt(() -> {
                     current.error.setText(page.text("invalidForm"));
@@ -92,7 +98,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicit consent or cancellation / 明确同意或取消 */
     @Override
     public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
-            String sourceSha256, DatabaseProjectInspector.Assessment assessment, TaskContext task) {
+                                                                String sourceSha256, DatabaseProjectInspector.Assessment assessment, TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
             rows.add(new JLabel(page.text("sqliteFirstInitialization")));
@@ -103,7 +109,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 rows.add(new JLabel(page.text("database.path") + ": " + sqlite.accessPath()));
                 rows.add(new JLabel(page.text("database.seed") + ": " + sqlite.seedFile()));
                 rows.add(new JLabel(
-                        page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
+                    page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
             }
             return rows;
         });
@@ -121,7 +127,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return selected exact ID or refusal / 选中精确 ID 或拒绝 */
     @Override
     public OperationResult<String> choose(ServerRef server, String componentId, DatabaseRequirement database,
-            Inventory inventory, TaskContext task) {
+                                          Inventory inventory, TaskContext task) {
         var selected = page.onEdt(() -> {
             var values = inventory.instances().stream().map(Instance::id).toArray(String[]::new);
             var box = new JComboBox<>(values);
@@ -129,9 +135,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             panel.add(new JLabel(componentId + " / " + database.id() + " / " + database.engine()));
             for (var instance : inventory.instances())
                 panel.add(new JLabel(instance.id() + " / " + instance.version() + " / " + instance.service() + " / "
-                        + (instance.running()
-                                ? page.text("database.nativeRunning")
-                                : page.text("database.nativeStopped"))));
+                    + (instance.running()
+                    ? page.text("database.nativeRunning")
+                    : page.text("database.nativeStopped"))));
             panel.add(box);
             return new java.util.AbstractMap.SimpleImmutableEntry<>(panel, box);
         });
@@ -148,18 +154,18 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicit decision / 明确决定 */
     @Override
     public OperationResult<Boolean> install(ServerRef server, DatabaseRequirement database, Candidate candidate,
-            TaskContext task) {
+                                            TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
             rows.add(new JLabel(page.text("database.nativeInstallWarning")));
             rows.add(new JLabel(server.id() + " / " + database.engine() + " / " + database.id()));
             rows.add(new JLabel(
-                    candidate.name() + " / " + candidate.packageVersion() + " / " + candidate.engineVersion()));
+                candidate.name() + " / " + candidate.packageVersion() + " / " + candidate.engineVersion()));
             return rows;
         });
         return page.approve(view, panel, page.text("database.nativeInstallTitle"), task)
-                ? success(Boolean.TRUE)
-                : cancelled();
+            ? success(Boolean.TRUE)
+            : cancelled();
     }
 
     /** Confirms backup and downtime before exact package replacement. / 精确替换软件包前确认自行备份与停机。
@@ -170,7 +176,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicit decision / 明确决定 */
     @Override
     public OperationResult<Boolean> replacement(ServerRef server, Instance previous, Candidate candidate,
-            TaskContext task) {
+                                                TaskContext task) {
         var form = page.onEdt(() -> new NativeReplacementForm(page, server, previous, candidate));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("database.nativeReplacementTitle"), task))
@@ -202,7 +208,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param previous exact original instance / 精确原实例
          * @param candidate selected replacement / 选定替换 */
         private NativeReplacementForm(DeploymentStaticPage page, ServerRef server, Instance previous,
-                Candidate candidate) {
+                                      Candidate candidate) {
             panel.add(new JLabel(page.text("database.nativeReplacementWarning")));
             panel.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
             panel.add(new JLabel(previous.version() + " → " + candidate.engineVersion()));
@@ -238,8 +244,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             return rows;
         });
         return page.approve(view, panel, page.text("database.nativeRestoreTitle"), task)
-                ? success(Boolean.TRUE)
-                : cancelled();
+            ? success(Boolean.TRUE)
+            : cancelled();
     }
 
     /** Requests a short-lived administrator password after the helper actually reports AUTH_REQUIRED. / helper 实际报告 AUTH_REQUIRED 后请求短期管理员密码。
@@ -250,12 +256,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @throws Exception if the current view fails / 当前视图失败时 */
     @Override
     public OperationResult<byte[]> administratorPassword(ServerRef server, Instance instance, TaskContext task)
-            throws Exception {
+        throws Exception {
         try {
             return success(
-                    DeploymentStaticPasswordInput.request(page, view, task, page.text("database.nativeAdminTitle"),
-                            instance.id() + " / " + page.text("database.nativeAdminPassword"), true, () -> {
-                            }));
+                DeploymentStaticPasswordInput.request(page, view, task, page.text("database.nativeAdminTitle"),
+                    instance.id() + " / " + page.text("database.nativeAdminPassword"), true, () -> {
+                    }));
         } catch (CancellationException declined) {
             return cancelled();
         }
@@ -269,12 +275,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @throws Exception if the current view fails / 当前视图失败时 */
     @Override
     public OperationResult<byte[]> applicationPassword(ServerRef server, DatabaseRequirement database, TaskContext task)
-            throws Exception {
+        throws Exception {
         try {
             return success(DeploymentStaticPasswordInput.request(page, view, task,
-                    page.text("database.nativeApplicationTitle"),
-                    database.id() + " / " + page.text("database.nativeApplicationPassword"), false, () -> {
-                    }));
+                page.text("database.nativeApplicationTitle"),
+                database.id() + " / " + page.text("database.nativeApplicationPassword"), false, () -> {
+                }));
         } catch (CancellationException declined) {
             return cancelled();
         }
@@ -289,20 +295,20 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicit affirmative decision or cancellation / 显式肯定决定或取消 */
     @Override
     public OperationResult<Boolean> existingSchema(ServerRef server, String componentId, DatabaseRequirement database,
-            String sourceDigest, TaskContext task) {
+                                                   String sourceDigest, TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
             rows.add(new JLabel(page.text("database.nativeExistingSchema")));
             rows.add(new JLabel(server.id() + " / " + componentId + " / " + database.id() + " / " + database.engine()
-                    + " / " + database.database()));
+                + " / " + database.database()));
             rows.add(new JLabel(page.text("database.inspectionDigest") + ": " + sourceDigest));
             rows.add(new JLabel(
-                    page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
+                page.text("database.initialize") + ": " + String.join(", ", database.initializationFiles())));
             return rows;
         });
         return page.approve(view, panel, page.text("database.nativeExistingSchema"), task)
-                ? success(Boolean.TRUE)
-                : cancelled();
+            ? success(Boolean.TRUE)
+            : cancelled();
     }
 
     /** Bounded non-secret database fields on the EDT. / EDT 上有界非秘密数据库字段。 */
@@ -323,20 +329,20 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param assessment source-derived declarations / 源码派生声明
          * @param questions actual missing inputs / 实际缺失输入 */
         private DatabaseInputForm(DeploymentStaticPage page, String componentId, String sourceSha256,
-                DatabaseProjectInspector.Assessment assessment, List<DeploymentReviewField> questions) {
+                                  DatabaseProjectInspector.Assessment assessment, List<DeploymentReviewField> questions) {
             panel.add(new JLabel(componentId + " / " + page.text("sourceDigest")));
             panel.add(new JLabel(sourceSha256));
             for (var database : assessment.databases()) {
                 panel.add(new JLabel(database.id() + " / " + database.engine()));
                 panel.add(new JLabel(database.sqlite().map(value -> value.accessPath() + " / " + value.seedFile())
-                        .orElse(database.database())));
+                    .orElse(database.database())));
                 panel.add(new JLabel(page.text("database.initialize")));
                 panel.add(new JLabel(String.join(", ", database.initializationFiles())));
             }
             for (var question : questions) {
                 JComponent input = question.choices().isEmpty() || question.id().endsWith(".initialize")
-                        ? new JTextField(question.value())
-                        : new JComboBox<>(question.choices().toArray(String[]::new));
+                    ? new JTextField(question.value())
+                    : new JComboBox<>(question.choices().toArray(String[]::new));
                 if (input instanceof JTextField field && question.id().endsWith(".initialize"))
                     field.setToolTipText(String.join(", ", question.choices()));
                 if (input instanceof JComboBox<?> combo && !question.value().isBlank())
@@ -354,9 +360,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         private Map<String, String> answers() {
             var values = new LinkedHashMap<String, String>();
             fields.forEach((id, input) -> values.put(id,
-                    input instanceof JTextField field
-                            ? field.getText().trim()
-                            : String.valueOf(((JComboBox<?>) input).getSelectedItem())));
+                input instanceof JTextField field
+                    ? field.getText().trim()
+                    : String.valueOf(((JComboBox<?>) input).getSelectedItem())));
             return Map.copyOf(values);
         }
     }
@@ -369,7 +375,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return reviewed graph selection / 经审阅图选择 */
     @Override
     public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sourceSha256,
-            List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                                                                      List<DiscoveredProjectComponent> discovered, TaskContext task) {
         var form = page.onEdt(() -> new SelectionForm(page, discovered));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("componentReview"), task))
@@ -424,7 +430,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             }
             for (var component : discovered) {
                 var type = new JComboBox<>(component.types().stream().filter(DeploymentProjectKind::deployable)
-                        .toArray(DeploymentProjectKind[]::new));
+                    .toArray(DeploymentProjectKind[]::new));
                 type.setRenderer((list, value, index, selected, focus) -> {
                     var label = new JLabel(value == null ? "" : page.text("type." + value.name()));
                     label.setOpaque(true);
@@ -443,8 +449,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 }
             }
             healthOwner = application == null
-                    ? null
-                    : new JComboBox<>(discovered.stream().map(DiscoveredProjectComponent::id).toArray(String[]::new));
+                ? null
+                : new JComboBox<>(discovered.stream().map(DiscoveredProjectComponent::id).toArray(String[]::new));
             if (healthOwner != null) {
                 panel.add(new JLabel(page.text("healthOwner")));
                 panel.add(healthOwner);
@@ -462,15 +468,15 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 if (type == null)
                     throw new IllegalArgumentException("Component type is required");
                 var edges = dependencies.containsKey(component.id())
-                        ? Set.copyOf(java.util.Arrays
-                                .stream(dependencies.get(component.id()).getText().trim().split("[,;\\s]+"))
-                                .filter(value -> !value.isBlank()).toList())
-                        : Set.<String>of();
+                    ? Set.copyOf(java.util.Arrays
+                    .stream(dependencies.get(component.id()).getText().trim().split("[,;\\s]+"))
+                    .filter(value -> !value.isBlank()).toList())
+                    : Set.<String>of();
                 choices.put(component.id(), new DeploymentStaticWorkflow.Choice(type, edges));
             }
             return new DeploymentStaticWorkflow.Selection(
-                    application == null ? discovered.getFirst().id() : application.getText().trim(), choices,
-                    healthOwner == null ? Optional.empty() : Optional.of((String) healthOwner.getSelectedItem()));
+                application == null ? discovered.getFirst().id() : application.getText().trim(), choices,
+                healthOwner == null ? Optional.empty() : Optional.of((String) healthOwner.getSelectedItem()));
         }
     }
 
@@ -482,7 +488,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return reviewed values / 经审阅值 */
     @Override
     public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server, String sourceSha256,
-            List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                 List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
         var form = page.onEdt(() -> new ReviewForm(page, sourceSha256, prompts));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("runtimeReview"), task))
@@ -511,8 +517,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicitly reviewed correction or cancellation / 明确审阅的纠正或取消 */
     @Override
     public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerRef server,
-            String sourceSha256, DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
-            TaskContext task) {
+                                                                                   String sourceSha256, DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
+                                                                                   TaskContext task) {
         var form = page.onEdt(() -> new BuildCorrectionForm(page, sourceSha256, prompt, original));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("runtimeReview"), task))
@@ -551,7 +557,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param prompt typed correction prompt / 类型化纠正问题
          * @param original complete original answers / 完整原答案 */
         private BuildCorrectionForm(DeploymentStaticPage page, String sourceSha256,
-                DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original) {
+                                    DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original) {
             this.original = original;
             panel.add(new JLabel(page.text("sourceDigest")));
             panel.add(new JLabel(sourceSha256));
@@ -565,8 +571,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 if (!Set.of("primary", "secondary", "version", "jvmTarget").contains(key) || fields.containsKey(key))
                     throw new IllegalArgumentException("Build correction field differs from the original scope");
                 JComponent input = field.choices().isEmpty()
-                        ? new JTextField(field.value())
-                        : new JComboBox<>(field.choices().toArray(String[]::new));
+                    ? new JTextField(field.value())
+                    : new JComboBox<>(field.choices().toArray(String[]::new));
                 if (input instanceof JComboBox<?> choices)
                     choices.setSelectedItem(field.value());
                 input.setName(key);
@@ -585,11 +591,11 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         private DeploymentStaticWorkflow.Answers answer() {
             var values = new LinkedHashMap<>(original.values());
             fields.forEach((key, control) -> values.put(key,
-                    control instanceof JTextField text
-                            ? text.getText().trim()
-                            : String.valueOf(((JComboBox<?>) control).getSelectedItem())));
+                control instanceof JTextField text
+                    ? text.getText().trim()
+                    : String.valueOf(((JComboBox<?>) control).getSelectedItem())));
             return new DeploymentStaticWorkflow.Answers(values, original.files(), original.limits(),
-                    original.containerRisk(), original.adapterRisk());
+                original.containerRisk(), original.adapterRisk());
         }
     }
 
@@ -609,7 +615,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param sourceSha256 source manifest digest / 来源清单摘要
          * @param prompts actual review prompts / 实际审阅问题 */
         private ReviewForm(DeploymentStaticPage page, String sourceSha256,
-                List<DeploymentStaticWorkflow.Prompt> prompts) {
+                           List<DeploymentStaticWorkflow.Prompt> prompts) {
             var tabs = new JTabbedPane();
             for (var prompt : prompts) {
                 var form = new ComponentForm(page, prompt);
@@ -641,8 +647,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return current explicit confirmation / 当前明确确认 */
     @Override
     public OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
-            Map<String, DeploymentStaticWorkflow.Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
-            Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                            Map<String, DeploymentStaticWorkflow.Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
+                                            Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
         var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, databases, git));
         if (!page.approve(view, panel, page.text("finalConfirm"), task, true))
             return cancelled();
@@ -659,22 +665,22 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param git original and pinned Git identity / 原及固定 Git 身份
      * @return confirmation rows / 确认行 */
     private static JPanel confirmation(DeploymentStaticPage page, ServerRef server, String sourceSha256,
-            Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
-            Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git) {
+                                       Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                       Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git) {
         var panel = new JPanel(new GridLayout(0, 1));
         panel.add(new JLabel(page.text("server") + ": " + server.id()));
         git.ifPresent(identity -> panel.add(new JLabel(page.text("gitSource") + ": " + identity.remote() + " / "
-                + identity.reference() + " / " + identity.commit())));
+            + identity.reference() + " / " + identity.commit())));
         if (git.isPresent())
             panel.add(new JLabel(page.text("gitSaveNotice")));
         panel.add(new JLabel(page.text("sourceDigest") + ": " + sourceSha256));
         archiveSha256.entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> panel.add(new JLabel(entry.getKey() + " tar SHA-256: " + entry.getValue())));
+            .forEach(entry -> panel.add(new JLabel(entry.getKey() + " tar SHA-256: " + entry.getValue())));
         answers.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
             panel.add(new JLabel(entry.getKey()));
             entry.getValue().values().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(value -> {
                 if (!databases.containsKey(entry.getKey()) || databases.get(entry.getKey()).bindings().isEmpty()
-                        || !Set.of("databaseMode", "databaseDetails").contains(value.getKey()))
+                    || !Set.of("databaseMode", "databaseDetails").contains(value.getKey()))
                     panel.add(new JLabel("  " + label(page, value.getKey()) + ": " + value.getValue()));
             });
             var database = databases.get(entry.getKey());
@@ -682,30 +688,30 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 database.bindings().forEach(binding -> {
                     if (binding.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
                         panel.add(new JLabel("  " + page.text("database.sqliteBinding") + ": " + binding.databaseId()
-                                + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
+                            + " / " + sqlite.fileName() + " / " + sqlite.accessPath()));
                         panel.add(new JLabel("  " + page.text("database.seed") + ": " + sqlite.seedFile()));
                         panel.add(new JLabel("  " + page.text("database.initialize") + ": "
-                                + String.join(", ", sqlite.initializationFiles())));
+                            + String.join(", ", sqlite.initializationFiles())));
                     } else if (binding.connection() instanceof DeploymentDatabaseConnection.Server nativeDatabase) {
                         panel.add(new JLabel("  " + binding.databaseId() + ": " + nativeDatabase.engine() + " / "
-                                + nativeDatabase.host() + ":" + nativeDatabase.port() + " / "
-                                + nativeDatabase.database() + " / " + nativeDatabase.username()));
+                            + nativeDatabase.host() + ":" + nativeDatabase.port() + " / "
+                            + nativeDatabase.database() + " / " + nativeDatabase.username()));
                         panel.add(new JLabel("  " + nativeDatabase.passwordReference().identifier() + ":"
-                                + nativeDatabase.passwordReference().revision()));
+                            + nativeDatabase.passwordReference().revision()));
                     }
                     panel.add(new JLabel(
-                            "  " + page.text("database.planned") + ": " + database.schemaReview().isPresent()));
+                        "  " + page.text("database.planned") + ": " + database.schemaReview().isPresent()));
                 });
             if (database != null) {
                 database.configuration().forEach(
-                        config -> panel.add(new JLabel("  " + config.key() + " = " + config.value().canonicalValue())));
+                    config -> panel.add(new JLabel("  " + config.key() + " = " + config.value().canonicalValue())));
                 database.schemaReview().ifPresent(review -> panel.add(
-                        new JLabel("  " + page.text("database.inspectionDigest") + ": " + review.inspectionSha256())));
+                    new JLabel("  " + page.text("database.inspectionDigest") + ": " + review.inspectionSha256())));
             }
             entry.getValue().files().forEach(file -> panel.add(
-                    new JLabel("  " + page.text("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
+                new JLabel("  " + page.text("files") + ": " + file.bindingId() + " → " + file.dataPath().path())));
             panel.add(
-                    new JLabel("  " + page.text("timeoutSeconds") + ": " + entry.getValue().limits().timeoutSeconds()));
+                new JLabel("  " + page.text("timeoutSeconds") + ": " + entry.getValue().limits().timeoutSeconds()));
             panel.add(new JLabel("  " + page.text("containerRisk") + ": " + entry.getValue().containerRisk()));
             panel.add(new JLabel("  " + page.text("adapterRisk") + ": " + entry.getValue().adapterRisk()));
         });
@@ -725,7 +731,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return cancelled result / 已取消结果 */
     private static <T> OperationResult<T> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
-                "DEPLOYMENT_STATIC_VIEW_REVOKED", "Review was closed or locked", Map.of(), Optional.empty())));
+            "DEPLOYMENT_STATIC_VIEW_REVOKED", "Review was closed or locked", Map.of(), Optional.empty())));
     }
 
     /** Returns one safe invalid-form result. / 返回安全的无效表单结果。
@@ -733,8 +739,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return invalid form / 无效表单 */
     private static <T> OperationResult<T> invalid() {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_STATIC_FORM_INVALID",
-                        "Review fields need correction", Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_STATIC_FORM_INVALID",
+                "Review fields need correction", Map.of(), Optional.empty())));
     }
 
     /** Creates the actual runtime controls for a capability-free fixed-data preview. / 为不持有能力的固定数据预览创建真实运行控件。
@@ -742,10 +748,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param environment current display only / 仅当前显示
      * @return same ordinary runtime form controls / 同一普通运行表单控件 */
     static JPanel runtimePreview(DeploymentStaticWorkflow.Prompt prompt,
-            gold.debug.windowstolinux.appapi.ui.UiEnvironment environment) {
+                                 gold.debug.windowstolinux.appapi.ui.UiEnvironment environment) {
         var messages = java.util.ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-                environment.locale());
-        return new ComponentForm(messages::getString, List.of(), prompt).panel();
+            environment.locale());
+        var content = DeploymentPageStyle.card(null, new ComponentForm(messages::getString, List.of(), prompt).panel());
+        DeploymentPageStyle.refresh(content, messages);
+        return content;
     }
 
     /** One typed component form with bounded resource rows. / 一份带有界资源行的类型化组件表单。 */
@@ -767,8 +775,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
 
         /** Build limits. / 构建限额。 */
         private final JTextField timeout = new JTextField("1800"), processes = new JTextField("1024"),
-                memory = new JTextField("4096"), output = new JTextField("4194304"),
-                workspace = new JTextField("4294967296");
+            memory = new JTextField("4096"), output = new JTextField("4194304"),
+            workspace = new JTextField("4294967296");
 
         /** Explicit risk decisions. / 明确风险决定。 */
         private final JCheckBox containerRisk = new JCheckBox(), adapterRisk = new JCheckBox();
@@ -785,7 +793,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param choices exact non-secret revisions / 精确非秘密修订
          * @param prompt bounded original values / 有界原值 */
         private ComponentForm(java.util.function.Function<String, String> texts,
-                List<DeploymentSecretSelection> choices, DeploymentStaticWorkflow.Prompt prompt) {
+                              List<DeploymentSecretSelection> choices, DeploymentStaticWorkflow.Prompt prompt) {
             this.texts = texts;
             this.prompt = prompt;
             panel.add(new JLabel(texts.apply("application") + ": " + prompt.applicationId()));
@@ -795,10 +803,10 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 if (fields.containsKey(key))
                     continue;
                 JComponent input = key.equals("secrets")
-                        ? new DeploymentSecretReferenceField(texts, field.value(), choices)
-                        : field.choices().isEmpty()
-                                ? new JTextField(field.value())
-                                : new JComboBox<>(field.choices().toArray(String[]::new));
+                    ? new DeploymentSecretReferenceField(texts, field.value(), choices)
+                    : field.choices().isEmpty()
+                    ? new JTextField(field.value())
+                    : new JComboBox<>(field.choices().toArray(String[]::new));
                 if (input instanceof JComboBox<?> box && !field.value().isBlank())
                     box.setSelectedItem(field.value());
                 fields.put(key, input);
@@ -846,17 +854,17 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             var values = new LinkedHashMap<String, String>();
             fields.forEach((key, control) -> {
                 String value = control instanceof JTextField field
-                        ? field.getText().trim()
-                        : control instanceof DeploymentSecretReferenceField secret
-                                ? secret.value()
-                                : String.valueOf(((JComboBox<?>) control).getSelectedItem());
+                    ? field.getText().trim()
+                    : control instanceof DeploymentSecretReferenceField secret
+                    ? secret.value()
+                    : String.valueOf(((JComboBox<?>) control).getSelectedItem());
                 values.put(key, value);
             });
             return new DeploymentStaticWorkflow.Answers(values, files.stream().map(FileRow::binding).toList(),
-                    new DeploymentBuildLimits(Integer.parseInt(timeout.getText().trim()),
-                            Integer.parseInt(processes.getText().trim()), Integer.parseInt(memory.getText().trim()),
-                            Long.parseLong(output.getText().trim()), Long.parseLong(workspace.getText().trim()), false),
-                    containerRisk.isSelected(), adapterRisk.isSelected());
+                new DeploymentBuildLimits(Integer.parseInt(timeout.getText().trim()),
+                    Integer.parseInt(processes.getText().trim()), Integer.parseInt(memory.getText().trim()),
+                    Long.parseLong(output.getText().trim()), Long.parseLong(workspace.getText().trim()), false),
+                containerRisk.isSelected(), adapterRisk.isSelected());
         }
     }
 
@@ -882,8 +890,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param texts pure localized labels / 纯本地化标签 */
         private FileRow(JPanel panel, java.util.function.Function<String, String> texts) {
             for (var entry : List.<Map.Entry<String, JComponent>>of(Map.entry(texts.apply("fileId"), id),
-                    Map.entry(texts.apply("filePath"), path), Map.entry(texts.apply("fileSchema"), schema),
-                    Map.entry(texts.apply("fileLocation"), location), Map.entry(texts.apply("fileAccess"), access))) {
+                Map.entry(texts.apply("filePath"), path), Map.entry(texts.apply("fileSchema"), schema),
+                Map.entry(texts.apply("fileLocation"), location), Map.entry(texts.apply("fileAccess"), access))) {
                 panel.add(new JLabel(entry.getKey()));
                 panel.add(entry.getValue());
             }
@@ -895,8 +903,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             var mode = DeploymentStoragePath.AccessMode.valueOf((String) access.getSelectedItem());
             var data = new DeploymentStoragePath(path.getText().trim(), mode, schema.getText().trim(), true);
             var storage = location.getText().isBlank()
-                    ? DeploymentStorageLocation.defaults()
-                    : DeploymentStorageLocation.custom(location.getText().trim());
+                ? DeploymentStorageLocation.defaults()
+                : DeploymentStorageLocation.custom(location.getText().trim());
             return new DeploymentFileBinding(id.getText().trim(), data, storage);
         }
     }

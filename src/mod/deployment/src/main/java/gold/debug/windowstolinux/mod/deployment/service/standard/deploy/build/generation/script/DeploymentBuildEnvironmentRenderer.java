@@ -17,7 +17,7 @@ public final class DeploymentBuildEnvironmentRenderer {
         Objects.requireNonNull(environment);
         StringBuilder script = new StringBuilder();
         environment.entries().forEach((key, value) -> script.append("export ").append(key).append('=')
-                .append(SafeBuildScriptEnvelope.shellQuote(value)).append('\n'));
+            .append(SafeBuildScriptEnvelope.shellQuote(value)).append('\n'));
         return script.toString();
     }
 }

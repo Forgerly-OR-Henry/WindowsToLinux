@@ -28,19 +28,19 @@ class MavenDownloadRetryTest {
         Path directory = Files.createDirectory(root.resolve(mode));
         Path log = directory.resolve("output.txt");
         String script = "set -euo pipefail\nexport PATH=/usr/bin:/bin:$PATH\nmutable=\"$PWD\"\n"
-                + MavenBuildRenderer.downloadRetry()
-                + """
-                        fake_maven() {
-                          printf 'attempt\\n' >> attempts
-                          if [ "$MODE" = compile ]; then printf '[ERROR] Compilation failure\\n'; return 23; fi
-                          if [ "$MODE" = transient ] && [ "$(wc -l < attempts)" -eq 2 ]; then printf 'BUILD SUCCESS\\n'; return 0; fi
-                          printf '[ERROR] Could not transfer artifact sqlite-jdbc: Premature end of Content-Length delimited message body\\n'
-                          return 17
-                        }
-                        maven_package fake_maven
-                        """;
+            + MavenBuildRenderer.downloadRetry()
+            + """
+            fake_maven() {
+              printf 'attempt\\n' >> attempts
+              if [ "$MODE" = compile ]; then printf '[ERROR] Compilation failure\\n'; return 23; fi
+              if [ "$MODE" = transient ] && [ "$(wc -l < attempts)" -eq 2 ]; then printf 'BUILD SUCCESS\\n'; return 0; fi
+              printf '[ERROR] Could not transfer artifact sqlite-jdbc: Premature end of Content-Length delimited message body\\n'
+              return 17
+            }
+            maven_package fake_maven
+            """;
         var builder = new ProcessBuilder(bash, "-s").directory(directory.toFile()).redirectErrorStream(true)
-                .redirectOutput(log.toFile());
+            .redirectOutput(log.toFile());
         builder.environment().put("MODE", mode);
         Process process = builder.start();
         try {

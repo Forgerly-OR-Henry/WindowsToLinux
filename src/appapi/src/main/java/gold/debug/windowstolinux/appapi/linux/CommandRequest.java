@@ -10,7 +10,7 @@ import java.time.Duration;
  * @param outputLimitBytes nonnegative captured-output byte limit / 非负的捕获输出字节上限
  */
 public record CommandRequest(String script, byte[] stdin, Duration timeout,
-        long outputLimitBytes) implements AutoCloseable {
+                             long outputLimitBytes) implements AutoCloseable {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param script exact remote script covered by the request / 请求覆盖的精确远端脚本

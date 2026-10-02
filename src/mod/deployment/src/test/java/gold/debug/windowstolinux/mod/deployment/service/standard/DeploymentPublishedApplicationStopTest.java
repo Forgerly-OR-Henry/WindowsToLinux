@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -9,17 +16,17 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -41,9 +48,9 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var identity = original.db().identity();
             var peer = new DeploymentAssistedBuildPeer(false);
@@ -52,10 +59,10 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             var bound = bind(original, peer, running);
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             var handle = workflow.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
-                    "MANUAL_REVIEW");
+                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
+                "MANUAL_REVIEW");
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(count, running.size());
             assertEquals(running, peer.current.keySet());
@@ -71,11 +78,11 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             assertEquals(ModRuntimeSession.SessionState.STOPPED, session.state());
             assertTrue(session.resourcesClosed(), "The actual context and CLASS loader must close successfully");
             assertThrows(ApiException.class,
-                    () -> original.tasks().submit(new TaskRequest("after_stop", "After stop", List.of(), true),
-                            task -> success("unexpected")));
+                () -> original.tasks().submit(new TaskRequest("after_stop", "After stop", List.of(), true),
+                    task -> success("unexpected")));
             assertEquals(before, business(runtime, identity, count));
             assertEquals(commands, peer.commands,
-                    "Normal Mod.stop must send no application stop, rollback or other remote operation");
+                "Normal Mod.stop must send no application stop, rollback or other remote operation");
             assertEquals(remote, peer.current);
             assertEquals(remote.keySet(), running);
             assertEquals(TaskState.ENDED, handle.snapshot().state());
@@ -99,26 +106,26 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
                 var session = peer.session(task);
                 return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                        new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                            String script = method.getName().equals("execute")
-                                    ? ((CommandRequest) args[0]).script()
-                                    : "";
-                            var arguments = quoted(script);
-                            if (arguments.size() > 2 && arguments.get(1).equals("observe-deployment"))
-                                assertTrue(running.contains(arguments.get(2)),
-                                        "Remote observation must refer to a physically running published unit");
-                            Object result;
-                            try {
-                                result = method.invoke(session, args);
-                            } catch (InvocationTargetException failure) {
-                                throw failure.getCause();
-                            }
-                            if (arguments.size() > 2 && arguments.get(1).equals("publish-deployment")) {
-                                assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) result).outcome());
-                                assertTrue(running.add(arguments.get(2)));
-                            }
-                            return result;
-                        });
+                    new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                        String script = method.getName().equals("execute")
+                            ? ((CommandRequest) args[0]).script()
+                            : "";
+                        var arguments = quoted(script);
+                        if (arguments.size() > 2 && arguments.get(1).equals("observe-deployment"))
+                            assertTrue(running.contains(arguments.get(2)),
+                                "Remote observation must refer to a physically running published unit");
+                        Object result;
+                        try {
+                            result = method.invoke(session, args);
+                        } catch (InvocationTargetException failure) {
+                            throw failure.getCause();
+                        }
+                        if (arguments.size() > 2 && arguments.get(1).equals("publish-deployment")) {
+                            assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) result).outcome());
+                            assertTrue(running.add(arguments.get(2)));
+                        }
+                        return result;
+                    });
             }
 
             public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -126,15 +133,15 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             }
         };
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("linux"))
-                        return linux;
-                    try {
-                        return method.invoke(original, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
+            (proxy, method, args) -> {
+                if (method.getName().equals("linux"))
+                    return linux;
+                try {
+                    return method.invoke(original, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
     }
 
     /** Reads complete persisted rows through a separate read-only scope, also after author capability closure. / 经独立只读作用域读取完整持久行，亦可在作者能力关闭后读取。
@@ -144,25 +151,25 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
      * @return canonical original business row bytes / 规范原业务行字节
      * @throws Exception if retained data differs or is unavailable / 留存数据不符或不可用时 */
     private Map<String, List<List<String>>> business(PlatformRuntime runtime, SchemaIdentity identity, int count)
-            throws Exception {
+        throws Exception {
         var result = new LinkedHashMap<String, List<List<String>>>();
         try (var access = new SchemaAccessScope(runtime.persistence().database(), identity, UUID.randomUUID(), true);
-                var connection = access.openConnection()) {
+             var connection = access.openConnection()) {
             for (String table : List.of("managed_application", "managed_application_component", "deployment_unit",
-                    "deployment_release", "deployment_execution", "deployment_unit_configuration_snapshot",
-                    "deployment_unit_release_binding")) {
+                "deployment_release", "deployment_execution", "deployment_unit_configuration_snapshot",
+                "deployment_unit_release_binding")) {
                 var rows = new ArrayList<List<String>>();
                 try (var statement = connection.createStatement();
-                        var query = statement.executeQuery("SELECT * FROM " + table)) {
+                     var query = statement.executeQuery("SELECT * FROM " + table)) {
                     var metadata = query.getMetaData();
                     while (query.next()) {
                         var row = new ArrayList<String>();
                         for (int column = 1; column <= metadata.getColumnCount(); column++) {
                             Object value = query.getObject(column);
                             row.add(value instanceof Blob blob
-                                    ? Base64.getEncoder()
-                                            .encodeToString(blob.getBytes(1, Math.toIntExact(blob.length())))
-                                    : String.valueOf(value));
+                                ? Base64.getEncoder()
+                                .encodeToString(blob.getBytes(1, Math.toIntExact(blob.length())))
+                                : String.valueOf(value));
                         }
                         rows.add(List.copyOf(row));
                     }
@@ -173,8 +180,8 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             assertEquals(1, result.get("managed_application").size());
             assertEquals(count, result.get("deployment_unit").size());
             try (var statement = connection.createStatement();
-                    var query = statement
-                            .executeQuery("SELECT current_release_sha256,runtime_payload FROM deployment_unit")) {
+                 var query = statement
+                     .executeQuery("SELECT current_release_sha256,runtime_payload FROM deployment_unit")) {
                 int units = 0;
                 while (query.next()) {
                     assertTrue(query.getString(1).matches("[0-9a-f]{64}"));
@@ -184,8 +191,8 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
                 assertEquals(count, units);
             }
             try (var statement = connection.createStatement();
-                    var query = statement.executeQuery(
-                            "SELECT phase,outcome,business_committed,cleanup_complete FROM deployment_execution")) {
+                 var query = statement.executeQuery(
+                     "SELECT phase,outcome,business_committed,cleanup_complete FROM deployment_execution")) {
                 assertTrue(query.next());
                 assertEquals("FINISHED", query.getString(1));
                 assertEquals("SUCCEEDED", query.getString(2));

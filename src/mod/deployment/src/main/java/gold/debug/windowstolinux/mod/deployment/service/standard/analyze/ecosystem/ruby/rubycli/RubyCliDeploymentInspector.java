@@ -51,7 +51,7 @@ public final class RubyCliDeploymentInspector {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = new ArrayList<>();
         List<String> conflicts = new ArrayList<>();
         String metadata = ServiceMetadataInspector.readIfPresent(root.resolve(METADATA));
@@ -71,11 +71,11 @@ public final class RubyCliDeploymentInspector {
         if (entrypoint != null && !ServiceMetadataInspector.present(root, entrypoint))
             missing.add(entrypoint);
         List<String> rubyFiles = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/'))
-                .filter(path -> path.endsWith(".rb")).toList();
+            .filter(path -> path.endsWith(".rb")).toList();
         if (rubyFiles.isEmpty())
             missing.add("Ruby source files");
         if (source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).anyMatch(
-                path -> path.equals("Gemfile") || path.equals("Gemfile.lock") || path.startsWith("vendor/bundle/"))) {
+            path -> path.equals("Gemfile") || path.equals("Gemfile.lock") || path.startsWith("vendor/bundle/"))) {
             conflicts.add("ruby-bundler-dependency");
         }
         for (String relative : rubyFiles) {
@@ -84,17 +84,17 @@ public final class RubyCliDeploymentInspector {
             while (matcher.find()) {
                 String required = matcher.group(1);
                 if (!(required.equals("socket") || required.equals("webrick") || required.equals("json")
-                        || required.equals("uri") || required.equals("net/http"))) {
+                    || required.equals("uri") || required.equals("net/http"))) {
                     conflicts.add("ruby-external-require:" + required);
                 }
             }
         }
         RubyCliFacts facts = new RubyCliFacts(version, entrypoint,
-                java.util.stream.Stream.concat(missing.stream(), conflicts.stream()).toList());
+            java.util.stream.Stream.concat(missing.stream(), conflicts.stream()).toList());
         ServiceProjectFacts shape = new ServiceProjectFacts(METADATA, facts.version(), "source", facts.entrypoint(),
-                facts.missingItems());
+            facts.missingItems());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root),
-                DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI, languageFacts, shape, true);
+            DeploymentProjectKind.RUBY_SERVICE, DeploymentBuildToolType.RUBY_CLI, languageFacts, shape, true);
     }
 
     /**
@@ -110,7 +110,7 @@ public final class RubyCliDeploymentInspector {
         Matcher matcher = PROPERTY.matcher(text);
         while (matcher.find()) {
             if (!List.of("rubyVersion", "entrypoint").contains(matcher.group(1))
-                    || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
+                || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
                 conflicts.add("ruby-metadata-property:" + matcher.group(1));
             }
         }
@@ -129,6 +129,6 @@ public final class RubyCliDeploymentInspector {
             return null;
         value = value.replace('\\', '/');
         return value.matches("[A-Za-z0-9._/-]{1,255}") && !value.startsWith("/") && !value.contains("..")
-                && !value.contains("//") ? value : null;
+            && !value.contains("//") ? value : null;
     }
 }

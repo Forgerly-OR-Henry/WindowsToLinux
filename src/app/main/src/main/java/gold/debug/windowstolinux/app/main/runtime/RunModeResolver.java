@@ -9,7 +9,7 @@ import java.security.ProtectionDomain;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 
 /**
  * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
@@ -120,8 +120,8 @@ public final class RunModeResolver {
      */
     public static RuntimeLayout resolve() {
         return resolveKnown().orElseThrow(() -> new IllegalStateException(
-                "Application runtime layout could not be recognized; ensure app/db is loaded from "
-                        + "Maven output, its module JAR, or a jpackage application"));
+            "Application runtime layout could not be recognized; ensure app/db is loaded from "
+                + "Maven output, its module JAR, or a jpackage application"));
     }
 
     /**
@@ -142,7 +142,7 @@ public final class RunModeResolver {
      */
     private static Optional<RuntimeLayout> resolveKnown() {
         return resolveStartupFromEvidence(currentProcessCommand(), codeSourcePath(PlatformDatabase.class),
-                codeSourcePath(RunModeResolver.class), currentWorkingDirectory());
+            codeSourcePath(RunModeResolver.class), currentWorkingDirectory());
     }
 
     /**
@@ -155,7 +155,7 @@ public final class RunModeResolver {
      * @return recognized layout or no result / 已识别布局或无结果
      */
     static Optional<RuntimeLayout> resolveStartupFromEvidence(Optional<Path> processCommand,
-            Optional<Path> databaseSource, Optional<Path> mainSource, Optional<Path> workingDirectory) {
+                                                              Optional<Path> databaseSource, Optional<Path> mainSource, Optional<Path> workingDirectory) {
         var data = resolveFromEvidence(processCommand, databaseSource, workingDirectory);
         if (data.isEmpty())
             return Optional.empty();
@@ -164,18 +164,18 @@ public final class RunModeResolver {
             return data;
         if (layout.mode() == RunMode.RUN_JAR)
             return mainSource.filter(java.nio.file.Files::isRegularFile)
-                    .flatMap(RuntimePathResolver::layoutFromCodeSource).filter(main -> main.mode() == RunMode.RUN_JAR)
-                    .map(main -> new RuntimeLayout(layout.mode(), main.applicationHome(), layout.dataDirectory()));
+                .flatMap(RuntimePathResolver::layoutFromCodeSource).filter(main -> main.mode() == RunMode.RUN_JAR)
+                .map(main -> new RuntimeLayout(layout.mode(), main.applicationHome(), layout.dataDirectory()));
         Path dbModule = layout.dataDirectory().getParent();
         Path root = dbModule == null || dbModule.getParent() == null || dbModule.getParent().getParent() == null
-                ? null
-                : dbModule.getParent().getParent().getParent();
+            ? null
+            : dbModule.getParent().getParent().getParent();
         if (root == null || !dbModule.equals(root.resolve("src/app/db"))
-                || mainSource.filter(java.nio.file.Files::isDirectory).isEmpty()
-                || !mainSource.orElseThrow().toAbsolutePath().normalize().startsWith(root)
-                || RuntimePathResolver.findValidatedDevelopmentModuleHome(root).filter(dbModule::equals).isEmpty()
-                || !java.nio.file.Files.isRegularFile(root.resolve("src/app/main/pom.xml"))
-                || !java.nio.file.Files.isRegularFile(root.resolve("pom.xml")))
+            || mainSource.filter(java.nio.file.Files::isDirectory).isEmpty()
+            || !mainSource.orElseThrow().toAbsolutePath().normalize().startsWith(root)
+            || RuntimePathResolver.findValidatedDevelopmentModuleHome(root).filter(dbModule::equals).isEmpty()
+            || !java.nio.file.Files.isRegularFile(root.resolve("src/app/main/pom.xml"))
+            || !java.nio.file.Files.isRegularFile(root.resolve("pom.xml")))
             return Optional.empty();
         return Optional.of(new RuntimeLayout(layout.mode(), root, layout.dataDirectory()));
     }
@@ -205,13 +205,13 @@ public final class RunModeResolver {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     static Optional<RuntimeLayout> resolveFromEvidence(Optional<Path> processCommand, Optional<Path> codeSource,
-            Optional<Path> workingDirectory) {
+                                                       Optional<Path> workingDirectory) {
         Objects.requireNonNull(processCommand, "processCommand");
         Objects.requireNonNull(codeSource, "codeSource");
         Objects.requireNonNull(workingDirectory, "workingDirectory");
 
         Optional<RuntimeLayout> launcherLayout = processCommand
-                .flatMap(RuntimePathResolver::layoutFromJPackageExecutable);
+            .flatMap(RuntimePathResolver::layoutFromJPackageExecutable);
         if (launcherLayout.isPresent()) {
             return launcherLayout;
         }
@@ -227,7 +227,7 @@ public final class RunModeResolver {
         }
 
         return workingDirectory.flatMap(RuntimePathResolver::findValidatedDevelopmentModuleHome)
-                .map(home -> RuntimePathResolver.layout(RunMode.RUN_CLASS, home));
+            .map(home -> RuntimePathResolver.layout(RunMode.RUN_CLASS, home));
     }
 
     /**

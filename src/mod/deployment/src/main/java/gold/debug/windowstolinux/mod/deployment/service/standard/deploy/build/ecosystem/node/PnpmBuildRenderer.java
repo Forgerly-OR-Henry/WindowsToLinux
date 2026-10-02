@@ -48,7 +48,7 @@ public final class PnpmBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         return NodeArchitectureBuildRenderer.render(DeploymentBuildToolType.PNPM, facts, runtime, workspace, limits);
     }
 }

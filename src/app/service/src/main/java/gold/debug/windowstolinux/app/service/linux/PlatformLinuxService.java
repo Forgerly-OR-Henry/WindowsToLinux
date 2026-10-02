@@ -1,20 +1,35 @@
 package gold.debug.windowstolinux.app.service.linux;
 
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.ServerProfileRepository;
-import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.app.linux.ssh.*;
+import gold.debug.windowstolinux.app.db.server.ServerProfileRepository;
+
+import gold.debug.windowstolinux.app.linux.sftp.TransferJournal;
+import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshEndpoint;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
+
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
 
 /** Adapts saved servers and reviewed effects to actual task-owned SSH resources. / 将已保存服务器及已审核副作用接入真实任务所属 SSH 资源。 */
 public final class PlatformLinuxService implements LinuxService, AutoCloseable {
@@ -42,6 +57,138 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     /** Includes failed connections whose physical cleanup has not completed. / 包含尚未完成物理清理的失败连接。 */
     private final Set<Session> retained = Collections.newSetFromMap(new IdentityHashMap<>());
 
+    /** Current host file scope; never inferred from a copied task id. / 当前宿主文件作用域，不从复制任务标识推导。 */
+    private final ThreadLocal<Session> fileSession = new ThreadLocal<>();
+
+    /** Exact preplanned target checked inside the existing transfer admission. / 在既有传输准入中核对的精确预计划目标。 */
+    private final ThreadLocal<FileTarget> fileTarget = new ThreadLocal<>();
+
+    /** Runs file work on one managed original server session. / 在一个原服务器受管会话上执行文件工作。
+     * @param <T> result / 结果
+     * @param server admitted server / 准入服务器
+     * @param task authentic task / 真实任务
+     * @param work platform backend callback / 平台后端回调
+     * @return actual result / 实际结果
+     * @throws java.io.IOException if file I/O fails / 文件 I/O 失败时
+     * @throws ApiException if task, connection or cleanup fails / 任务、连接或清理失败时 */
+    public <T> T withFiles(ServerRef server, TaskContext task,
+                          gold.debug.windowstolinux.app.service.file.FileBackendAccess.Work<T> work)
+        throws java.io.IOException, ApiException {
+        worker();
+        if (fileSession.get() != null)
+            throw error(ProblemCode.BUSY, "FILE_SCOPE_NESTED", "File scopes cannot be nested");
+        try (var session = (Session) connect(server, task)) {
+            if (!session.busy.compareAndSet(false, true))
+                throw error(ProblemCode.BUSY, "SSH_SESSION_BUSY", "The session is busy");
+            session.fileOwner = Thread.currentThread();
+            fileSession.set(session);
+            try {
+                session.fileScope = session.connection.openFileScope(tasks.operationCancellation(task));
+                return work.run(new gold.debug.windowstolinux.app.linux.sftp.SftpFileBackend(server, () -> {
+                    try {
+                        return session.fileScope.channel();
+                    } catch (ApiException failure) {
+                        throw new java.io.IOException("Managed file channel is unavailable", failure);
+                    }
+                }));
+            } finally {
+                try {
+                    if (session.fileScope != null) session.fileScope.close();
+                } finally {
+                    fileSession.remove();
+                    session.fileOwner = null;
+                    session.busy.set(false);
+                }
+            }
+        }
+    }
+
+    /** Transfers one preplanned leaf through the original journal and conflict policy. / 经原记录及冲突策略传输一个预计划叶文件。
+     * @param source exact observed source / 精确观测源
+     * @param target actual selected target / 实际选定目标
+     * @param expectedTarget prior target or required absence / 原目标或要求不存在
+     * @param task original task / 原任务
+     * @return actual transfer mapping / 实际传输映射
+     * @throws ApiException if facts, approval or transfer fail / 事实、审批或传输失败时 */
+    public gold.debug.windowstolinux.appapi.file.FileReport.Item transferFile(
+        gold.debug.windowstolinux.appapi.file.FileInfo source, gold.debug.windowstolinux.appapi.file.FilePath target,
+        Optional<gold.debug.windowstolinux.appapi.file.FileInfo> expectedTarget, TaskContext task) throws ApiException {
+        var session = fileSession.get();
+        if (session == null || session.task != task || session.fileOwner != Thread.currentThread())
+            throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SCOPE", "Transfer requires its original file scope");
+        boolean upload = target.server().isPresent();
+        var remote = upload ? target : source.actual();
+        if (!remote.server().equals(Optional.of(session.server)) || source.actual().server().equals(target.server()))
+            throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SERVER", "Transfer endpoints differ from their admitted server");
+        var local = upload ? source.actual() : target;
+        var request = new TransferRequest(java.nio.file.Path.of(local.path()), remote.path(), 1L << 40);
+        var choice = expectedTarget.isPresent() ? TransferConflictChoice.OVERWRITE : TransferConflictChoice.SKIP;
+        try {
+            var backend = new gold.debug.windowstolinux.app.linux.sftp.SftpFileBackend(session.connection.fileChannel(), session.server);
+            var sourceBackend = upload ? new gold.debug.windowstolinux.app.file.LocalFileBackend() : backend;
+            var current = new gold.debug.windowstolinux.app.file.FileEngine(sourceBackend)
+                .inspect(source.actual(), false, tasks.operationCancellation(task));
+            if (!gold.debug.windowstolinux.appapi.file.FileActions.stamp(current).equals(gold.debug.windowstolinux.appapi.file.FileActions.stamp(source)))
+                throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SOURCE_CHANGED", "Source changed after planning");
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (var input = sourceBackend.read(source.actual())) {
+                byte[] bytes = new byte[65536];
+                long count = 0;
+                for (int read; (read = input.read(bytes)) >= 0;) {
+                    if (tasks.operationCancellation(task).requested())
+                        throw error(ProblemCode.CANCELLED, "FILE_TRANSFER_CANCELLED", "Transfer was cancelled");
+                    count += read;
+                    if (count > request.maxBytes())
+                        throw new java.io.IOException("Transfer limit exceeded");
+                    digest.update(bytes, 0, read);
+                }
+            }
+            String sha = java.util.HexFormat.of().formatHex(digest.digest());
+            fileTarget.set(new FileTarget(target, expectedTarget));
+            verifyFileTarget(session);
+            var intent = RemoteActions.transfer(session.server, "file-v1", request, sha, upload, choice);
+            var approval = interaction.approve(intent, task);
+            if (approval.outcome() != Outcome.SUCCEEDED || approval.value().isEmpty())
+                return new gold.debug.windowstolinux.appapi.file.FileReport.Item(source.actual(), Optional.of(target), Outcome.FAILED, "Transfer was not approved");
+            var result = upload ? session.upload(request, approval.value().orElseThrow(), choice)
+                : session.download(request, approval.value().orElseThrow(), choice);
+            Optional<gold.debug.windowstolinux.appapi.file.FilePath> actual = result.value().map(value -> upload
+                ? gold.debug.windowstolinux.appapi.file.FilePath.remote(session.server, value.remoteAbsolutePath())
+                : gold.debug.windowstolinux.appapi.file.FilePath.local(value.localPath()));
+            return new gold.debug.windowstolinux.appapi.file.FileReport.Item(source.actual(), actual.or(() -> Optional.of(target)),
+                result.outcome(), result.problem().map(Problem::eventCode).orElse("Verified and published"));
+        } catch (java.io.IOException | java.security.NoSuchAlgorithmException failure) {
+            throw error(ProblemCode.IO_FAILURE, "FILE_TRANSFER_FACTS", "Transfer facts could not be verified");
+        } finally {
+            fileTarget.remove();
+        }
+    }
+
+    /** Rechecks destination facts immediately before the old transfer stages bytes. / 既有传输暂存字节前立即复核目标事实。
+     * @param session original managed scope / 原受管作用域
+     * @throws ApiException if target facts changed / 目标事实改变时 */
+    private void verifyFileTarget(Session session) throws ApiException {
+        var expected = fileTarget.get();
+        if (expected == null) return;
+        try {
+            gold.debug.windowstolinux.app.file.FileBackend backend = expected.path().server().isPresent()
+                ? new gold.debug.windowstolinux.app.linux.sftp.SftpFileBackend(session.connection.fileChannel(), session.server)
+                : new gold.debug.windowstolinux.app.file.LocalFileBackend();
+            var actual = backend.stat(expected.path());
+            if (!actual.map(gold.debug.windowstolinux.appapi.file.FileActions::stamp)
+                .equals(expected.observation().map(gold.debug.windowstolinux.appapi.file.FileActions::stamp)))
+                throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_TARGET_CHANGED", "Selected target changed after planning");
+        } catch (java.io.IOException failure) {
+            throw error(ProblemCode.IO_FAILURE, "FILE_TRANSFER_TARGET", "Target facts could not be read");
+        }
+    }
+
+    /** Frozen collision observation. / 冻结冲突观测。
+     * @param path actual target / 实际目标
+     * @param observation prior object or absence / 原对象或不存在 */
+    private record FileTarget(gold.debug.windowstolinux.appapi.file.FilePath path,
+                              Optional<gold.debug.windowstolinux.appapi.file.FileInfo> observation) { }
+
     /** Rejects new work after host shutdown begins. / 宿主开始关闭后拒绝新工作。 */
     private boolean closed;
 
@@ -56,8 +203,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param settings shared persisted threshold owner / 共用持久阈值所有者
      */
     public PlatformLinuxService(PlatformTaskRuntime tasks, DesktopSecurityService security,
-            ServerProfileRepository servers, PlatformInteractionService interaction, String owner, String version,
-            TransferSettingsService settings) {
+                                ServerProfileRepository servers, PlatformInteractionService interaction, String owner, String version,
+                                TransferSettingsService settings) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.servers = Objects.requireNonNull(servers);
@@ -94,11 +241,11 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         } catch (Exception failure) {
             session.opening.set(false);
             ApiException reported = failure instanceof gold.debug.windowstolinux.app.secret.SecretStoreException secret
-                    ? new ApiException(secret.problem())
-                    : failure instanceof ApiException known
-                            ? known
-                            : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
-                                    "SSH connection or authenticated trust could not be established");
+                ? new ApiException(secret.problem())
+                : failure instanceof ApiException known
+                ? known
+                : error(ProblemCode.IO_FAILURE, "SSH_PLATFORM_CONNECT",
+                "SSH connection or authenticated trust could not be established");
             try {
                 session.close();
             } catch (ApiException cleanup) {
@@ -117,22 +264,22 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         worker();
         var identity = tasks.requireExecuting(task, owner, version);
         if (!owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)
-                || !identity.type().equals(PlatformTaskAdmission.RESCUE_TYPE))
+            || !identity.type().equals(PlatformTaskAdmission.RESCUE_TYPE))
             throw error(ProblemCode.ACCESS_DENIED, "RESCUE_TASK_REQUIRED",
-                    "Fixed rescue verification requires its original host task");
+                "Fixed rescue verification requires its original host task");
         try (var session = (Session) connect(server, task)) {
             var request = new CommandRequest("printf '%s\\n' WTL_SSH_RESCUE_OK", new byte[0], Duration.ofSeconds(15),
-                    1024);
+                1024);
             var result = session.operate(() -> session.connection.execute(request, tasks.operationCancellation(task)));
             if (result.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
             var output = result.value().orElseThrow();
             if (!output.exitCode().equals(Optional.of(0)) || output.truncated()
-                    || !output.stdout().equals("WTL_SSH_RESCUE_OK\n"))
+                || !output.stdout().equals("WTL_SSH_RESCUE_OK\n"))
                 return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "RESCUE_VERIFICATION_OUTPUT",
-                                "The fixed SSH verification did not produce its expected result", Map.of(),
-                                Optional.empty())));
+                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "RESCUE_VERIFICATION_OUTPUT",
+                        "The fixed SSH verification did not produce its expected result", Map.of(),
+                        Optional.empty())));
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         }
     }
@@ -147,42 +294,42 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         char[] password = null;
         try {
             var profile = servers.findServerProfile(server.id()).orElseThrow(
-                    () -> error(ProblemCode.NOT_FOUND, "SERVER_MISSING", "The saved server is unavailable"));
+                () -> error(ProblemCode.NOT_FOUND, "SERVER_MISSING", "The saved server is unavailable"));
             var expected = servers.findServer(server.id());
             var endpoint = new SshEndpoint(server.id(), profile.host(), profile.sshPort(), profile.username());
             password = tasks.authorized(task, owner, version, () -> {
                 try (var credentials = security.openCredentials()) {
                     return credentials.read(profile.credentialKey()).orElseThrow(() -> error(ProblemCode.NOT_FOUND,
-                            "SERVER_CREDENTIAL_MISSING", "The saved server credential is unavailable"));
+                        "SERVER_CREDENTIAL_MISSING", "The saved server credential is unavailable"));
                 }
             });
             var trust = tasks.<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
-                    (target, fingerprint) -> {
-                        if (expected.isPresent()) {
-                            var trusted = expected.orElseThrow();
-                            return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
-                                    && trusted.hostKeySha256().equals(fingerprint);
-                        }
-                        var intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(),
-                                "first-use",
-                                "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
-                                        + "\nSSH wire-key fingerprint=" + fingerprint,
-                                "Trust this exact SSH host key for the selected saved server after successful authentication.");
-                        var decision = interaction.approve(intent, task);
-                        if (decision.outcome() == Outcome.CANCELLED)
-                            throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED",
-                                    "SSH host trust review was cancelled");
-                        if (decision.outcome() != Outcome.SUCCEEDED)
-                            return false;
-                        interaction.consume(decision.value().orElseThrow(), intent, task);
-                        return true;
-                    });
+                (target, fingerprint) -> {
+                    if (expected.isPresent()) {
+                        var trusted = expected.orElseThrow();
+                        return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
+                            && trusted.hostKeySha256().equals(fingerprint);
+                    }
+                    var intent = new ActionIntent("platform.ssh.trust", List.of(server.id()), server.id(),
+                        "first-use",
+                        "host=" + target.host() + "\nport=" + target.port() + "\nusername=" + target.username()
+                            + "\nSSH wire-key fingerprint=" + fingerprint,
+                        "Trust this exact SSH host key for the selected saved server after successful authentication.");
+                    var decision = interaction.approve(intent, task);
+                    if (decision.outcome() == Outcome.CANCELLED)
+                        throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED",
+                            "SSH host trust review was cancelled");
+                    if (decision.outcome() != Outcome.SUCCEEDED)
+                        return false;
+                    interaction.consume(decision.value().orElseThrow(), intent, task);
+                    return true;
+                });
             session.connection = session.connector.connect(endpoint, password, trust::apply, connectTimeout,
-                    tasks.operationCancellation(task));
+                tasks.operationCancellation(task));
             tasks.requireServer(task, owner, version, server.id());
             servers.saveAuthenticatedServer(
-                    new StoredServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
-                    expected);
+                new StoredServerIdentity(server.id(), endpoint.host(), endpoint.port(), session.connection.fingerprint()),
+                expected);
         } finally {
             if (password != null)
                 Arrays.fill(password, '\0');
@@ -197,7 +344,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     public List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException {
         worker();
         return recoveryRecords(task).stream().map(RecoveredTransfer::checkpoint)
-                .sorted(Comparator.comparing(TransferCheckpoint::id)).toList();
+            .sorted(Comparator.comparing(TransferCheckpoint::id)).toList();
     }
 
     /** Loads strict transport facts separately from their task and server binding. / 严格加载传输事实，单独核对任务及服务器绑定。
@@ -238,13 +385,13 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param fingerprint original authenticated host key / 原已认证主机密钥
      * @param plan exact transport facts / 精确传输事实 */
     private record RecoveredTransfer(TaskResource resource, ResourceRecovery metadata, ServerRef server,
-            String fingerprint, TransferPlan plan) {
+                                     String fingerprint, TransferPlan plan) {
         /** Exposes only facts needed to review the recovery operation. / 仅公开审核恢复操作所需事实。
          * @return public review description / 公开审核描述 */
         TransferCheckpoint checkpoint() {
             return new TransferCheckpoint(plan.id(), server, plan.upload(),
-                    new TransferRequest(plan.localPath(), plan.remotePath(), plan.request().maxBytes()),
-                    plan.source().sha256(), plan.source().size(), plan.target() != null);
+                new TransferRequest(plan.localPath(), plan.remotePath(), plan.request().maxBytes()),
+                plan.source().sha256(), plan.source().size(), plan.target() != null);
         }
     }
 
@@ -318,6 +465,12 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         /** Serializes commands, transfers and actual release. / 串行化命令、传输及实际释放。 */
         private final AtomicBoolean busy = new AtomicBoolean();
 
+        /** Exact file worker admitted by the host. / 宿主准入的精确文件线程。 */
+        private volatile Thread fileOwner;
+
+        /** Current primitive channel replaced only by the old transfer retry owner. / 仅由既有传输重试所有者替换的当前原语通道。 */
+        private SshConnector.Connection.FileScope fileScope;
+
         /** Physical authenticated connection, absent during failed or pending authentication. / 物理已认证连接，认证失败或等待期间不存在。 */
         private volatile SshConnector.Connection connection;
 
@@ -373,8 +526,20 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          */
         @Override
         public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant)
-                throws ApiException {
+            throws ApiException {
             return transfer(request, grant, true);
+        }
+
+        /** Applies the exact pre-reviewed upload conflict choice. / 应用精确预审核的上传冲突选择。
+         * @param request original request / 原请求
+         * @param grant original approval / 原审批
+         * @param choice explicit decision / 明确决定
+         * @return transfer observation / 传输观察
+         * @throws ApiException if validation or transfer fails / 校验或传输失败时
+         */
+        @Override
+        public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+            return transfer(request, grant, true, Optional.of(Objects.requireNonNull(choice)));
         }
 
         /**
@@ -386,8 +551,20 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          */
         @Override
         public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant)
-                throws ApiException {
+            throws ApiException {
             return transfer(request, grant, false);
+        }
+
+        /** Applies the exact pre-reviewed download conflict choice. / 应用精确预审核的下载冲突选择。
+         * @param request original request / 原请求
+         * @param grant original approval / 原审批
+         * @param choice explicit decision / 明确决定
+         * @return transfer observation / 传输观察
+         * @throws ApiException if validation or transfer fails / 校验或传输失败时
+         */
+        @Override
+        public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+            return transfer(request, grant, false, Optional.of(Objects.requireNonNull(choice)));
         }
 
         /** Resumes only a verified original transfer owned by this task and server. / 仅续传此任务及服务器所属的经核验原传输。
@@ -397,7 +574,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @throws ApiException if authorization or ownership fails / 授权或归属失败时 */
         @Override
         public OperationResult<TransferResult> resumeTransfer(UUID transferId, ApprovalGrant grant)
-                throws ApiException {
+            throws ApiException {
             return recoverTransfer(transferId, grant, true);
         }
 
@@ -419,23 +596,23 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @return observed recovery result / 已观察恢复结果
          * @throws ApiException if original identity, grant or physical ownership differs / 原身份、授权或物理归属不符时 */
         private OperationResult<TransferResult> recoverTransfer(UUID transferId, ApprovalGrant grant, boolean resume)
-                throws ApiException {
+            throws ApiException {
             return operate(() -> {
                 tasks.releasePreviousSshConnections(task, owner, version);
                 tasks.requireSoleSshConnection(task, owner, version, lease.id());
                 var record = recoveryRecords(task).stream()
-                        .filter(value -> value.plan().id().equals(transferId) && value.server().equals(server))
-                        .findFirst().orElseThrow(() -> error(ProblemCode.NOT_FOUND, "SFTP_CHECKPOINT_MISSING",
-                                "Original transfer checkpoint is unavailable"));
+                    .filter(value -> value.plan().id().equals(transferId) && value.server().equals(server))
+                    .findFirst().orElseThrow(() -> error(ProblemCode.NOT_FOUND, "SFTP_CHECKPOINT_MISSING",
+                        "Original transfer checkpoint is unavailable"));
                 if (!record.fingerprint().equals(connection.fingerprint()))
                     throw error(ProblemCode.ACCESS_DENIED, "SFTP_RECOVERY_SERVER",
-                            "The authenticated server differs from the original transfer");
+                        "The authenticated server differs from the original transfer");
                 var reviewed = interaction.reviewed(grant, task);
                 interaction.consumeRemote(grant,
-                        RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
+                    RemoteActions.recoverTransfer(record.checkpoint(), reviewed.revision(), resume), task);
                 return new TransferRun(record.plan(),
-                        plan -> tasks.retain(task, record.resource(), record.metadata(), false))
-                        .run(record.plan().request(), record.plan().source().sha256(), record.plan().upload(), !resume);
+                    plan -> tasks.retain(task, record.resource(), record.metadata(), false))
+                    .run(record.plan().request(), record.plan().source().sha256(), record.plan().upload(), !resume);
             });
         }
 
@@ -448,26 +625,40 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @throws ApiException if action matching or transport fails / 动作匹配或传输失败时
          */
         private OperationResult<TransferResult> transfer(TransferRequest request, ApprovalGrant grant, boolean upload)
-                throws ApiException {
+            throws ApiException {
+            return transfer(request, grant, upload, Optional.empty());
+        }
+
+        /** Keeps explicit collision behavior in the exact approval and existing journal. / 在精确审批及既有记录中保留明确冲突行为。
+         * @param request original request / 原请求
+         * @param grant original approval / 原审批
+         * @param upload direction / 方向
+         * @param choice explicit choice or actual human interaction / 明确选择或实际人工交互
+         * @return actual observation / 实际观察
+         * @throws ApiException if validation or execution fails / 校验或执行失败时
+         */
+        private OperationResult<TransferResult> transfer(TransferRequest request, ApprovalGrant grant, boolean upload,
+                                                         Optional<TransferConflictChoice> choice) throws ApiException {
             return operate(() -> {
                 var reviewed = interaction.reviewed(grant, task);
                 var digest = java.util.regex.Pattern.compile("\\AWTL-SFTP-1\\nsha256=([0-9a-f]{64})\\n")
-                        .matcher(reviewed.exactAction());
+                    .matcher(reviewed.exactAction());
                 if (!digest.find())
                     throw error(ProblemCode.ACCESS_DENIED, "SFTP_APPROVAL",
-                            "Transfer approval has no exact source digest");
+                        "Transfer approval has no exact source digest");
                 String sha256 = digest.group(1);
                 interaction.consumeRemote(grant,
-                        RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload), task);
+                    choice.map(value -> RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload, value))
+                        .orElseGet(() -> RemoteActions.transfer(server, reviewed.revision(), request, sha256, upload)), task);
                 return new TransferRun(null, plan -> {
                     tasks.requireServer(task, owner, version, server.id());
                     var facts = new TreeMap<>(plan.recoveryFields());
                     facts.put("serverId", server.id());
                     facts.put("fingerprint", connection.fingerprint());
                     return tasks.retain(task, new TaskResource("FILE", "sftp:" + plan.id(), owner, true),
-                            new ResourceRecovery("sftp.v1", facts), false);
-                }).run(request, sha256, upload, false);
-            });
+                        new ResourceRecovery("sftp.v1", facts), false);
+                }).run(request, sha256, upload, false, choice);
+            }, true);
         }
 
         /** Owns repeated physical attempts of one reviewed file operation. / 持有一个已审核文件操作的多次物理尝试。 */
@@ -500,7 +691,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             public synchronized ResourceLease prepare(TransferPlan prepared) throws Exception {
                 if (plan != null && !plan.equals(prepared))
                     throw error(ProblemCode.ACCESS_DENIED, "SFTP_RETRY_FACTS",
-                            "Retry facts differ from the original transfer");
+                        "Retry facts differ from the original transfer");
                 if (file == null) {
                     var retainedFile = journal.prepare(prepared);
                     plan = prepared;
@@ -543,67 +734,90 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
              * @return final observed result with unresolved effects preserved / 保留未解决副作用的最终观测结果
              * @throws ApiException if original ownership or explicit retry cannot continue / 原归属或明确重试无法继续时 */
             private OperationResult<TransferResult> run(TransferRequest request, String digest, boolean upload,
-                    boolean discard) throws ApiException {
+                                                        boolean discard) throws ApiException {
+                return run(request, digest, upload, discard, Optional.empty());
+            }
+
+            /** Reuses the original journal with the reviewed explicit conflict policy. / 复用原记录及已审核显式冲突策略。
+             * @param request original request / 原请求
+             * @param digest original digest / 原摘要
+             * @param upload direction / 方向
+             * @param discard explicit discard / 明确丢弃
+             * @param choice explicit choice, otherwise actual human interaction / 明确选择，否则实际人工交互
+             * @return actual result / 实际结果
+             * @throws ApiException if validation or transfer fails / 校验或传输失败时
+             */
+            private OperationResult<TransferResult> run(TransferRequest request, String digest, boolean upload,
+                                                        boolean discard, Optional<TransferConflictChoice> choice) throws ApiException {
                 var thresholds = thresholds(task);
                 var transferTimeout = thresholds.idleTimeout();
                 var cancellation = tasks.operationCancellation(task);
                 String fingerprint = connection.fingerprint();
                 var prepare = tasks.<TransferPlan, Void, ResourceLease>hostCallback(task, owner, version,
-                        (prepared, ignored) -> {
-                            try {
-                                return prepare(prepared);
-                            } catch (ApiException failure) {
-                                throw failure;
-                            } catch (Exception failure) {
-                                tasks.reportUncertainEffect(task);
-                                throw error(ProblemCode.IO_FAILURE, "SFTP_JOURNAL_CALLBACK",
-                                        "Original transfer ownership could not be recorded");
-                            }
-                        });
+                    (prepared, ignored) -> {
+                        try {
+                            return prepare(prepared);
+                        } catch (ApiException failure) {
+                            throw failure;
+                        } catch (Exception failure) {
+                            tasks.reportUncertainEffect(task);
+                            throw error(ProblemCode.IO_FAILURE, "SFTP_JOURNAL_CALLBACK",
+                                "Original transfer ownership could not be recorded");
+                        }
+                    });
                 var choose = tasks.<TransferConflict, Void, TransferConflictChoice>hostCallback(task, owner, version,
-                        (conflict, ignored) -> interaction.transferConflict(conflict, server, task));
+                    (conflict, ignored) -> choice.isPresent() ? choice.orElseThrow() : interaction.transferConflict(conflict, server, task));
                 var observe = tasks.<TransferProgress, Void, Void>hostCallback(task, owner, version,
-                        (progress, ignored) -> {
-                            progress(progress);
-                            return null;
-                        });
+                    (progress, ignored) -> {
+                        progress(progress);
+                        return null;
+                    });
                 TransferJournal ownedJournal = prepared -> prepare.apply(prepared, null);
+                gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver resolver = new gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver() {
+                    /** Preserves the actual preplanned collision facts. / 保留实际预计划冲突事实。 */
+                    @Override public void validateTarget() throws ApiException { verifyFileTarget(Session.this); }
+                    /** Keeps the existing explicit choice callback. / 保留既有明确选择回调。 */
+                    @Override public TransferConflictChoice resolve(TransferConflict conflict) throws ApiException { return choose.apply(conflict, null); }
+                };
                 while (true) {
                     var result = plan == null
-                            ? connection.transfer(request, digest, upload, transferTimeout, cancellation,
-                                    progress -> observe.apply(progress, null), conflict -> choose.apply(conflict, null),
-                                    ownedJournal)
-                            : connection.recoverTransfer(plan, discard, transferTimeout, cancellation,
-                                    progress -> observe.apply(progress, null), ownedJournal);
+                        ? connection.transfer(request, digest, upload, transferTimeout, cancellation,
+                        progress -> observe.apply(progress, null), resolver,
+                        ownedJournal)
+                        : connection.recoverTransfer(plan, discard, transferTimeout, cancellation,
+                        progress -> observe.apply(progress, null), ownedJournal);
                     if (result.problem().isEmpty()
-                            || !result.problem().orElseThrow().eventCode().equals("SFTP_STALLED"))
+                        || !result.problem().orElseThrow().eventCode().equals("SFTP_STALLED"))
                         return result;
                     try {
+                        if (fileScope != null) fileScope.close();
                         connection.close();
                         var actual = plan == null
-                                ? request
-                                : new TransferRequest(plan.localPath(), plan.remotePath(), request.maxBytes());
+                            ? request
+                            : new TransferRequest(plan.localPath(), plan.remotePath(), request.maxBytes());
                         var choice = interaction.transferStalled(
-                                new TransferStall(latest, actual, upload, transferTimeout), server, task);
+                            new TransferStall(latest, actual, upload, transferTimeout), server, task);
                         if (choice != TransferStallChoice.RETRY || cancellation.requested() || closing)
                             return result.outcome() == Outcome.UNKNOWN
-                                    ? result
-                                    : new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                                            Optional.of(error(ProblemCode.CANCELLED, "SFTP_TERMINATED",
-                                                    "Transfer was terminated before file effects").problem()));
+                                ? result
+                                : new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                                Optional.of(error(ProblemCode.CANCELLED, "SFTP_TERMINATED",
+                                    "Transfer was terminated before file effects").problem()));
                         tasks.requireServer(task, owner, version, server.id());
                         tasks.requireSoleSshConnection(task, owner, version, lease.id());
                         authenticate(Session.this, thresholds.connectTimeout());
                         if (!fingerprint.equals(connection.fingerprint()))
                             throw error(ProblemCode.ACCESS_DENIED, "SFTP_RETRY_SERVER",
-                                    "Retry server differs from the original transfer");
+                                "Retry server differs from the original transfer");
+                        if (fileOwner == Thread.currentThread())
+                            fileScope = connection.openFileScope(cancellation);
                     } catch (Exception failure) {
                         if (result.outcome() == Outcome.UNKNOWN)
                             tasks.reportUncertainEffect(task);
                         if (failure instanceof ApiException known)
                             throw known;
                         throw error(ProblemCode.IO_FAILURE, "SFTP_RETRY_UNAVAILABLE",
-                                "Original transfer retry could not proceed");
+                            "Original transfer retry could not proceed");
                     }
                 }
             }
@@ -617,8 +831,19 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @throws ApiException if ownership, dispatch or result tracking fails / 归属、发送或结果跟踪失败时
          */
         private <T> OperationResult<T> operate(TransportWork<T> work) throws ApiException {
+            return operate(work, false);
+        }
+
+        /** Keeps nested file transfers restricted to the exact host worker. / 将嵌套文件传输限制在精确宿主线程。
+         * @param <T> result type / 结果类型
+         * @param work admitted work / 准入工作
+         * @param allowFileTransfer whether this is the host transfer adapter / 是否为宿主传输适配
+         * @return observation / 观测
+         * @throws ApiException if admission or work fails / 准入或工作失败时 */
+        private <T> OperationResult<T> operate(TransportWork<T> work, boolean allowFileTransfer) throws ApiException {
             worker();
-            if (!busy.compareAndSet(false, true))
+            boolean nested = allowFileTransfer && fileOwner == Thread.currentThread();
+            if (!nested && !busy.compareAndSet(false, true))
                 throw error(ProblemCode.BUSY, "SSH_SESSION_BUSY", "The previous session operation has not returned");
             try {
                 if (closing || released || opening.get())
@@ -632,7 +857,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 tasks.reportUncertainEffect(task);
                 throw error(ProblemCode.UNKNOWN, "SSH_ADAPTER_UNCERTAIN", "The transport did not establish an outcome");
             } finally {
-                busy.set(false);
+                if (!nested) busy.set(false);
             }
         }
 
@@ -686,7 +911,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             throw failure;
         } catch (Exception failure) {
             throw error(ProblemCode.UNAVAILABLE, "TRANSFER_SETTINGS_UNAVAILABLE",
-                    "Transfer settings could not be read");
+                "Transfer settings could not be read");
         }
     }
 
@@ -697,7 +922,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     private static void worker() throws ApiException {
         if (SwingUtilities.isEventDispatchThread())
             throw error(ProblemCode.CONTRACT_VIOLATION, "SSH_REQUIRES_BACKGROUND",
-                    "SSH work requires a background task");
+                "SSH work requires a background task");
     }
 
     /**

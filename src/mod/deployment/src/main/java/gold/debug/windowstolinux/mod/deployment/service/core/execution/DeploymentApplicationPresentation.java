@@ -1,11 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.net.URI;
 import java.sql.SQLException;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentAccessUrl;
@@ -43,18 +50,18 @@ public final class DeploymentApplicationPresentation {
         if (!data.snapshot().revisionSha256().equals(revision))
             throw unknown();
         var health = data.graph().components().stream()
-                .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement(
-                        "SELECT access_url FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
+             var query = connection.prepareStatement(
+                 "SELECT access_url FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
             query.setString(1, health.unit().id());
             query.setString(2, application.server().id());
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     throw unknown();
                 return new Values(health.runtime().workload().category().name(),
-                        Optional.ofNullable(rows.getString(1)));
+                    Optional.ofNullable(rows.getString(1)));
             }
         } catch (SQLException invalid) {
             throw unknown();
@@ -69,15 +76,15 @@ public final class DeploymentApplicationPresentation {
      * @return saved name / 已存名称
      * @throws ApiException if evidence is unavailable / 依据不可用时 */
     public OperationResult<String> editName(DeploymentApplicationRef application, String revision, String name,
-            TaskContext task) throws ApiException {
+                                            TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         var owner = data.graph().components().stream()
-                .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         Optional<String> url;
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement(
-                        "SELECT access_url FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
+             var query = connection.prepareStatement(
+                 "SELECT access_url FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
             query.setString(1, owner.unit().id());
             query.setString(2, application.server().id());
             try (var rows = query.executeQuery()) {
@@ -101,16 +108,16 @@ public final class DeploymentApplicationPresentation {
      * @return saved display name / 已保存展示名称
      * @throws ApiException if identity or transaction cannot be confirmed / 身份或事务无法确认时 */
     public OperationResult<String> edit(DeploymentApplicationRef application, String expectedRevisionSha256,
-            String name, String category, Optional<String> accessUrl, TaskContext task) throws ApiException {
+                                        String name, String category, Optional<String> accessUrl, TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         if (!data.snapshot().revisionSha256().equals(expectedRevisionSha256))
             return failure("DEPLOYMENT_PRESENTATION_REVISION_CHANGED");
         if (name == null || name.isBlank() || name.length() > 160 || name.indexOf('\0') >= 0 || name.indexOf('\n') >= 0
-                || name.indexOf('\r') >= 0)
+            || name.indexOf('\r') >= 0)
             return failure("DEPLOYMENT_PRESENTATION_NAME_INVALID");
         var health = data.graph().components().stream()
-                .filter(component -> component.componentId().equals(data.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(component -> component.componentId().equals(data.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         String actualCategory = health.runtime().workload().category().name();
         if (!actualCategory.equals(category))
             return failure("DEPLOYMENT_PRESENTATION_CATEGORY_CHANGED");
@@ -129,7 +136,7 @@ public final class DeploymentApplicationPresentation {
             connection.setAutoCommit(false);
             try {
                 try (var query = connection.prepareStatement(
-                        "SELECT release_sha256 FROM deployment_release WHERE application_id=? AND state='ACTIVE' FOR UPDATE")) {
+                    "SELECT release_sha256 FROM deployment_release WHERE application_id=? AND state='ACTIVE' FOR UPDATE")) {
                     query.setString(1, application.id());
                     try (var rows = query.executeQuery()) {
                         if (!rows.next() || !expectedRevisionSha256.equals(rows.getString(1)) || rows.next()) {
@@ -139,7 +146,7 @@ public final class DeploymentApplicationPresentation {
                     }
                 }
                 try (var update = connection.prepareStatement(
-                        "UPDATE deployment_unit SET has_display_override=1,display_name=?,application_category=?,access_url=? WHERE deployment_unit_id=? AND server_profile_id=?")) {
+                    "UPDATE deployment_unit SET has_display_override=1,display_name=?,application_category=?,access_url=? WHERE deployment_unit_id=? AND server_profile_id=?")) {
                     update.setString(1, name.trim());
                     update.setString(2, category);
                     update.setString(3, url.isEmpty() ? null : url);
@@ -168,13 +175,13 @@ public final class DeploymentApplicationPresentation {
      * @return known local failure / 已知本地失败 */
     private static OperationResult<String> failure(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
-                event, "Presentation differs from the reviewed application", java.util.Map.of(), Optional.empty())));
+            event, "Presentation differs from the reviewed application", java.util.Map.of(), Optional.empty())));
     }
 
     /** Retains commit uncertainty without claiming the edit failed. / 保留提交未知而不声称编辑失败。
      * @return bounded original commit uncertainty / 有界原提交未知 */
     private static ApiException unknown() {
         return new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_PRESENTATION_COMMIT_UNKNOWN",
-                "Display transaction requires reconciliation", java.util.Map.of(), Optional.empty()));
+            "Display transaction requires reconciliation", java.util.Map.of(), Optional.empty()));
     }
 }

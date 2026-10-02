@@ -17,7 +17,7 @@ final class DeploymentSecretReferenceField extends JPanel {
      * @param initial source-backed default / 来源依据默认值
      * @param choices existing revisions with original purposes / 带原用途的既有修订 */
     DeploymentSecretReferenceField(java.util.function.Function<String, String> texts, String initial,
-            List<DeploymentSecretSelection> choices) {
+                                   List<DeploymentSecretSelection> choices) {
         super(new BorderLayout(4, 4));
         value = new JTextField(initial);
         add(value, BorderLayout.CENTER);
@@ -25,8 +25,8 @@ final class DeploymentSecretReferenceField extends JPanel {
         choices.forEach(selector::addItem);
         selector.setRenderer((list, selected, index, highlighted, focus) -> {
             var label = new JLabel(selected == null
-                    ? ""
-                    : DeploymentStaticSecretControls.format(selected) + " (" + selected.purpose() + ")");
+                ? ""
+                : DeploymentStaticSecretControls.format(selected) + " (" + selected.purpose() + ")");
             label.setOpaque(true);
             label.setBackground(highlighted ? list.getSelectionBackground() : list.getBackground());
             label.setForeground(highlighted ? list.getSelectionForeground() : list.getForeground());

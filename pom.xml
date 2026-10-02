@@ -107,52 +107,6 @@
     </pluginManagement>
     <plugins>
       <plugin>
-        <groupId>com.diffplug.spotless</groupId>
-        <artifactId>spotless-maven-plugin</artifactId>
-        <version>2.44.3</version>
-        <configuration>
-          <encoding>UTF-8</encoding>
-          <lineEndings>UNIX</lineEndings>
-          <java>
-            <includes>
-              <include>src/main/java/**/*.java</include>
-              <include>src/test/java/**/*.java</include>
-              <include>test/**/*.java</include>
-            </includes>
-            <eclipse>
-              <version>4.32</version>
-              <file
-              >${maven.multiModuleProjectDirectory}/.mvn/formatting/eclipse.xml</file>
-            </eclipse>
-            <importOrder>
-              <order>java,javax,,#</order>
-            </importOrder>
-            <trimTrailingWhitespace />
-            <endWithNewline />
-          </java>
-          <groovy>
-            <includes>
-              <include>test/**/*.gradle</include>
-            </includes>
-            <greclipse>
-              <version>4.26</version>
-              <file
-              >${maven.multiModuleProjectDirectory}/.mvn/formatting/greclipse.properties</file>
-            </greclipse>
-            <endWithNewline />
-          </groovy>
-        </configuration>
-        <executions>
-          <execution>
-            <id>java-format-check</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>check</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
         <version>${maven.enforcer.version}</version>
@@ -222,4 +176,39 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>idea-check</id>
+      <properties>
+        <format.python>python</format.python>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.6.3</version>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>idea-format-check</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${format.python}</executable>
+                  <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                  <arguments>
+                    <argument>${maven.multiModuleProjectDirectory}/.mvn/formatting/format.py</argument>
+                    <argument>--check</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

@@ -27,16 +27,16 @@ class DesktopHandoffEnvelopeCodecTest {
     @Test
     void rejectsTamperingWrongKeysTruncationAndWeakKeysUniformly() throws Exception {
         byte[] document = codec.write(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL,
-                "bounded-uninstall-handoff".getBytes(StandardCharsets.UTF_8), key(2));
+            "bounded-uninstall-handoff".getBytes(StandardCharsets.UTF_8), key(2));
         byte[] tampered = document.clone();
         tampered[15] ^= 1;
 
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, tampered, key(2)));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, document, key(3)));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, Arrays.copyOf(document, 31),
-                key(2)));
+            key(2)));
         assertFailure(() -> codec.write(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE, new byte[]{1},
-                new SecretKeySpec(new byte[16], "HmacSHA256")));
+            new SecretKeySpec(new byte[16], "HmacSHA256")));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, document, null));
         assertFailure(() -> codec.read(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL, null, key(2)));
     }

@@ -57,28 +57,28 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         Optional<PythonBuildFacts> inspected = python.inspect(root, source.logicalRootName(root));
         if (inspected.isEmpty()) {
             rejections.add(new RejectionReason("PYTHON_PYPROJECT_MISSING",
-                    DeploymentLocalizedMessage.of("analysis.deployment.rejection.pythonPyprojectMissing"), "deployment"));
+                DeploymentLocalizedMessage.of("analysis.deployment.rejection.pythonPyprojectMissing"), "deployment"));
             return null;
         }
         PythonBuildFacts project = inspected.orElseThrow();
         List<DeploymentLocalizedMessage> missing = new ArrayList<>();
         List<DeploymentLocalizedMessage> conflicts = new ArrayList<>();
         if (project.lockFiles().isEmpty() && project
-                .buildTool() != gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.PYTHON_STDLIB) {
+            .buildTool() != gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.PYTHON_STDLIB) {
             missing.add(DeploymentLocalizedMessage.of("analysis.deployment.missing.pythonLockfile"));
         } else if (project.lockFiles().size() > 1) {
             conflicts.add(DeploymentLocalizedMessage.of("analysis.deployment.conflict.multiplePythonLockfiles"));
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, project.applicationId(), projectType(),
-                project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.pythonProject",
-                        "pyproject.toml", "analysis.deployment.evidence.detected")),
-                conflicts, missing);
+            project.buildTool(), languageFacts, List.of(evidence("analysis.deployment.evidence.pythonProject",
+            "pyproject.toml", "analysis.deployment.evidence.detected")),
+            conflicts, missing);
         Map<DeploymentRuntimeAssessment.RuntimeInputType, String> values = DeploymentRuntimeAssessment
-                .valuesFor(projectType());
+            .valuesFor(projectType());
         String version = languageFacts.values().get(LanguageFactKind.PYTHON_VERSION);
         String entrypoint = languageFacts.values().get(LanguageFactKind.PYTHON_ENTRYPOINT);
         if (version != null) {
@@ -88,7 +88,7 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
             values.put(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT, entrypoint);
         }
         List<DeploymentLocalizedMessage> required = new ArrayList<>(
-                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
+            List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (version == null) {
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.pythonVersion"));
         }
@@ -96,11 +96,11 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.pythonEntrypoint"));
         }
         Set<String> runtimeKeys = Set.of("analysis.deployment.runtime.evidence.pythonVersion",
-                "analysis.deployment.runtime.evidence.pythonEntrypoint");
+            "analysis.deployment.runtime.evidence.pythonEntrypoint");
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), values,
-                Optional.empty(), Map.of(), List.of(),
-                languageFacts.evidence().stream().filter(item -> runtimeKeys.contains(item.subject().key())).toList(),
-                required);
+            Optional.empty(), Map.of(), List.of(),
+            languageFacts.evidence().stream().filter(item -> runtimeKeys.contains(item.subject().key())).toList(),
+            required);
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -114,11 +114,11 @@ public final class PythonServiceDeploymentInspector implements DeploymentTypeIns
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
-            String subject, String source, String conclusion) {
+        String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
-                source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
+            source,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
+            gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

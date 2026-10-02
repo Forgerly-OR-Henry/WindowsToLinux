@@ -23,7 +23,7 @@ public record DeploymentCommand(String entrypoint, List<String> arguments) {
         entrypoint = relative(entrypoint, true);
         arguments = List.copyOf(Objects.requireNonNull(arguments));
         if (arguments.size() > 64 || arguments.stream().anyMatch(value -> value == null || value.length() > 4096
-                || value.chars().anyMatch(character -> character == 0 || character == '\n' || character == '\r')))
+            || value.chars().anyMatch(character -> character == 0 || character == '\n' || character == '\r')))
             throw new IllegalArgumentException("application arguments exceed their bounds");
     }
 
@@ -42,8 +42,8 @@ public record DeploymentCommand(String entrypoint, List<String> arguments) {
         if (value.isEmpty() && emptyAllowed)
             return value;
         if (value.length() > 512 || !value.matches("[\\p{L}\\p{N}_. /-]+") || value.startsWith("/")
-                || value.contains("//")
-                || java.util.Arrays.stream(value.split("/", -1)).anyMatch(part -> part.equals("..") || part.isEmpty()))
+            || value.contains("//")
+            || java.util.Arrays.stream(value.split("/", -1)).anyMatch(part -> part.equals("..") || part.isEmpty()))
             throw new IllegalArgumentException("application path must be a literal relative path");
         return value;
     }

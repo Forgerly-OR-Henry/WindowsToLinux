@@ -40,15 +40,15 @@ class NativeArchitectureInspectionTest {
     void cmakeUsesOnlyTargetSourcesToSelectItsLanguages() throws Exception {
         Fixture fixture = cmake();
         Files.writeString(fixture.root().resolve("CMakeLists.txt"), """
-                cmake_minimum_required(VERSION 3.25)
-                project(demo LANGUAGES C)
-                add_executable(demo src/main.c)
-                target_compile_features(demo PRIVATE c_std_17)
-                """);
+            cmake_minimum_required(VERSION 3.25)
+            project(demo LANGUAGES C)
+            add_executable(demo src/main.c)
+            target_compile_features(demo PRIVATE c_std_17)
+            """);
         var assessment = analyze(fixture);
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals(java.util.Set.of(SourceLanguageType.C),
-                assessment.facts().orElseThrow().languageFacts().sourceLanguages());
+            assessment.facts().orElseThrow().languageFacts().sourceLanguages());
     }
 
     @Test
@@ -57,7 +57,7 @@ class NativeArchitectureInspectionTest {
         write(java.root(), "pom.xml", "<project/>\n");
         Fixture kotlin = kotlin();
         Files.writeString(kotlin.root().resolve("windowstolinux-kotlin.properties"),
-                "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
+            "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
         write(kotlin.root(), "build.gradle.kts", "plugins { kotlin(\"jvm\") version \"2.0.21\" }\n");
         Fixture php = php();
         write(php.root(), "composer.json", "{}\n");
@@ -65,9 +65,9 @@ class NativeArchitectureInspectionTest {
         write(ruby.root(), "Gemfile", "source \"https://example.test\"\n");
         Fixture cmake = cmake();
         Files.writeString(cmake.root().resolve("CMakeLists.txt"),
-                Files.readString(cmake.root().resolve("CMakeLists.txt"))
-                        + "\nFetchContent_Declare(remote URL https://example.test/archive.tar.gz)\n"
-                        + "add_executable(second src/main.c)\n");
+            Files.readString(cmake.root().resolve("CMakeLists.txt"))
+                + "\nFetchContent_Declare(remote URL https://example.test/archive.tar.gz)\n"
+                + "add_executable(second src/main.c)\n");
 
         for (Fixture fixture : List.of(java, kotlin, php, ruby, cmake)) {
             DeploymentProjectAssessment assessment = analyze(fixture);
@@ -80,21 +80,21 @@ class NativeArchitectureInspectionTest {
         Fixture cmake = cmake();
         write(cmake.root(), "src/not-built.cpp", "int not_built() { return 0; }\n");
         String lists = Files.readString(cmake.root().resolve("CMakeLists.txt")).replace(" src/helper.cpp", "")
-                .replace(" CXX", "").replace(" cxx_std_20", "");
+            .replace(" CXX", "").replace(" cxx_std_20", "");
         Files.writeString(cmake.root().resolve("CMakeLists.txt"), lists);
 
         DeploymentProjectAssessment assessment = analyze(cmake);
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals(java.util.Set.of(SourceLanguageType.C),
-                assessment.facts().orElseThrow().languageFacts().sourceLanguages());
+            assessment.facts().orElseThrow().languageFacts().sourceLanguages());
     }
 
     @Test
     void stopsNativeKotlinWhenTheDeclaredGeneratedMainClassDoesNotExist() throws Exception {
         Fixture kotlin = kotlin();
         Files.writeString(kotlin.root().resolve("windowstolinux-kotlin.properties"),
-                "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
+            "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.WrongKt\njvmTarget=21\n");
 
         assertFalse(analyze(kotlin).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
     }
@@ -103,11 +103,11 @@ class NativeArchitectureInspectionTest {
     void acceptsNewCmakeMinimumWhileRejectingUnreviewedPresetHooks() throws Exception {
         Fixture version = cmake();
         Files.writeString(version.root().resolve("CMakeLists.txt"),
-                Files.readString(version.root().resolve("CMakeLists.txt")).replace("VERSION 3.25", "VERSION 3.26"));
+            Files.readString(version.root().resolve("CMakeLists.txt")).replace("VERSION 3.25", "VERSION 3.26"));
         Fixture preset = cmake();
         Files.writeString(preset.root().resolve("CMakePresets.json"),
-                Files.readString(preset.root().resolve("CMakePresets.json")).replace("\"cacheVariables\"",
-                        "\"environment\": {\"CMAKE_PROJECT_INCLUDE\": \"hook.cmake\"}, \"cacheVariables\""));
+            Files.readString(preset.root().resolve("CMakePresets.json")).replace("\"cacheVariables\"",
+                "\"environment\": {\"CMAKE_PROJECT_INCLUDE\": \"hook.cmake\"}, \"cacheVariables\""));
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(version).admission());
         assertFalse(analyze(preset).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
@@ -121,27 +121,27 @@ class NativeArchitectureInspectionTest {
     void admitsLocalCrossPackageImportsButRejectsMissingAndExternalDeclarations() throws Exception {
         Fixture javaFixture = javaSource();
         write(javaFixture.root(), "src/demo/Main.java", """
-                package demo;
-                import demo.business.Calculator;
-                import static demo.business.Calculator.sum;
-                public final class Main { public static void main(String[] args) { System.out.println(sum()); } }
-                """);
+            package demo;
+            import demo.business.Calculator;
+            import static demo.business.Calculator.sum;
+            public final class Main { public static void main(String[] args) { System.out.println(sum()); } }
+            """);
         write(javaFixture.root(), "src/demo/business/Calculator.java", """
-                package demo.business;
-                public final class Calculator { public static int sum() { return 6; } }
-                """);
+            package demo.business;
+            public final class Calculator { public static int sum() { return 6; } }
+            """);
         Fixture kotlinFixture = kotlin();
         write(kotlinFixture.root(), "src/demo/Main.kt", """
-                package demo
-                import demo.business.Calculator as Service
-                import demo.business.sum
-                fun main() { println(Service().value() + sum()) }
-                """);
+            package demo
+            import demo.business.Calculator as Service
+            import demo.business.sum
+            fun main() { println(Service().value() + sum()) }
+            """);
         write(kotlinFixture.root(), "src/demo/business/Calculator.kt", """
-                package demo.business
-                class Calculator { fun value() = 3 }
-                fun sum() = 6
-                """);
+            package demo.business
+            class Calculator { fun value() = 3 }
+            fun sum() = 6
+            """);
         for (Fixture fixture : List.of(javaFixture, kotlinFixture)) {
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(fixture).admission());
         }
@@ -151,11 +151,11 @@ class NativeArchitectureInspectionTest {
             assertFalse(analyze(fixture).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
         }
         write(javaFixture.root(), "src/demo/business/Unrelated.java",
-                "package demo.business; public class Unrelated {}\n");
+            "package demo.business; public class Unrelated {}\n");
         write(kotlinFixture.root(), "src/demo/business/Unrelated.kt", "package demo.business\nclass Unrelated\n");
         for (Fixture fixture : List.of(javaFixture, kotlinFixture)) {
             assertFalse(analyze(fixture).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                    "an existing local package must not admit undeclared imports");
+                "an existing local package must not admit undeclared imports");
         }
     }
 
@@ -163,14 +163,14 @@ class NativeArchitectureInspectionTest {
         Path root = root("java-native");
         write(root, "windowstolinux-java.properties", "sourceRoot=src\nmainClass=demo.Main\njavaVersion=21\n");
         write(root, "src/demo/Main.java",
-                "package demo;\npublic final class Main { public static void main(String[] args) {} }\n");
+            "package demo;\npublic final class Main { public static void main(String[] args) {} }\n");
         return new Fixture(root, DeploymentProjectKind.JAVA_SOURCE, DeploymentBuildToolType.JDK);
     }
 
     private Fixture kotlin() throws Exception {
         Path root = root("kotlin-native");
         write(root, "windowstolinux-kotlin.properties",
-                "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.MainKt\njvmTarget=21\n");
+            "compilerVersion=2.0.21\nsourceRoot=src\nmainClass=demo.MainKt\njvmTarget=21\n");
         write(root, "src/demo/Main.kt", "package demo\nfun main() {}\n");
         return new Fixture(root, DeploymentProjectKind.KOTLIN_SERVICE, DeploymentBuildToolType.KOTLINC);
     }
@@ -178,7 +178,7 @@ class NativeArchitectureInspectionTest {
     private Fixture php() throws Exception {
         Path root = root("php-native");
         write(root, "windowstolinux-php.properties",
-                "phpVersion=8.3\ndocumentRoot=public\nentrypoint=public/index.php\n");
+            "phpVersion=8.3\ndocumentRoot=public\nentrypoint=public/index.php\n");
         write(root, "public/index.php", "<?php echo 'ok';\n");
         return new Fixture(root, DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI);
     }
@@ -193,23 +193,23 @@ class NativeArchitectureInspectionTest {
     private Fixture cmake() throws Exception {
         Path root = root("cmake-native");
         write(root, "CMakeLists.txt", """
-                cmake_minimum_required(VERSION 3.25)
-                project(demo LANGUAGES C CXX)
-                add_executable(demo src/main.c src/helper.cpp)
-                target_compile_features(demo PRIVATE c_std_17 cxx_std_20)
-                """);
+            cmake_minimum_required(VERSION 3.25)
+            project(demo LANGUAGES C CXX)
+            add_executable(demo src/main.c src/helper.cpp)
+            target_compile_features(demo PRIVATE c_std_17 cxx_std_20)
+            """);
         write(root, "CMakePresets.json", """
-                {
-                  "version": 3,
-                  "configurePresets": [{
-                    "name": "w2l-release",
-                    "generator": "Ninja",
-                    "binaryDir": "${sourceDir}/.w2l/cmake-build",
-                    "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
-                  }],
-                  "buildPresets": [{"name": "w2l-release-build", "configurePreset": "w2l-release"}]
-                }
-                """);
+            {
+              "version": 3,
+              "configurePresets": [{
+                "name": "w2l-release",
+                "generator": "Ninja",
+                "binaryDir": "${sourceDir}/.w2l/cmake-build",
+                "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+              }],
+              "buildPresets": [{"name": "w2l-release-build", "configurePreset": "w2l-release"}]
+            }
+            """);
         write(root, "src/main.c", "int helper(void); int main(void) { return helper(); }\n");
         write(root, "src/helper.cpp", "extern \"C\" int helper(void) { return 0; }\n");
         return new Fixture(root, DeploymentProjectKind.CMAKE_SERVICE, DeploymentBuildToolType.CMAKE);

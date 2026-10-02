@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.time.Instant;
 import java.util.*;
 
@@ -7,7 +14,7 @@ import gold.debug.windowstolinux.appapi.ai.AiPurpose;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentOriginalPublicationStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
@@ -46,8 +53,8 @@ public final class DeploymentAgentRecovery {
             return beforePublication(task, saved, events);
         var record = retained.orElseThrow();
         if (record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT
-                || !record.identity().server().id().equals(saved.identity().server())
-                || !record.identity().taskId().equals(task.id()))
+            || !record.identity().server().id().equals(saved.identity().server())
+            || !record.identity().taskId().equals(task.id()))
             return unknown("DEPLOYMENT_AGENT_IDENTITY_CHANGED");
         var template = executions.publicationTemplate(record);
         if (template.isEmpty())
@@ -62,32 +69,32 @@ public final class DeploymentAgentRecovery {
             if (!saved.identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                 return unknown("DEPLOYMENT_AGENT_TARGET_CHANGED");
             if (new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                    context.interaction(), server, task, saved.identity().configurationDigest()).probe()
-                    .outcome() != Outcome.SUCCEEDED)
+                context.interaction(), server, task, saved.identity().configurationDigest()).probe()
+                .outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_AGENT_HELPER_CHANGED");
             var publisher = new DeploymentGraphPublisher(context, session, server, task,
-                    (type, action, detail) -> journal.event(task, type, action, detail));
+                (type, action, detail) -> journal.event(task, type, action, detail));
             var observed = publisher.observeOriginal(proposal, candidates.orElseThrow());
             if (observed.outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_AGENT_REMOTE_STATUS_UNCONFIRMED");
             Outcome proven = classify(record, proposal, candidates.orElseThrow(), events, publisher,
-                    observed.value().orElseThrow());
+                observed.value().orElseThrow());
             if (proven == Outcome.UNKNOWN)
                 return unknown("DEPLOYMENT_AGENT_REMOTE_RESULT_UNCONFIRMED");
             if (record.outcome().isPresent() && record.outcome().orElseThrow() != Outcome.UNKNOWN
-                    && record.outcome().orElseThrow() != proven)
+                && record.outcome().orElseThrow() != proven)
                 return unknown("DEPLOYMENT_AGENT_FORMAL_REMOTE_CONFLICT");
             if (record.outcome().isEmpty() || record.outcome().orElseThrow() == Outcome.UNKNOWN) {
                 if (proven == Outcome.SUCCEEDED)
                     executions.commitApplication(task, record.identity().executionId(), proposal.graph(),
-                            proposal.units(), Instant.now());
+                        proposal.units(), Instant.now());
                 else
                     executions.recordUncommittedOutcome(task, record.identity().executionId(), Outcome.FAILED,
-                            problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_AGENT_ORIGINAL_ROLLBACK_CONFIRMED"),
-                            Instant.now());
+                        problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_AGENT_ORIGINAL_ROLLBACK_CONFIRMED"),
+                        Instant.now());
             }
             if (publisher.cleanup(proposal, candidates.orElseThrow(), proven == Outcome.SUCCEEDED)
-                    .outcome() != Outcome.SUCCEEDED)
+                .outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_AGENT_REMOTE_CLEANUP_UNCONFIRMED");
         }
         var latest = executions.findForTask(task).orElseThrow();
@@ -104,7 +111,7 @@ public final class DeploymentAgentRecovery {
      * @return known no-effect result or uncertainty / 已知无影响结果或未知
      * @throws Exception if exact original evidence cannot be read or released / 无法读取或释放精确原依据时 */
     private OperationResult<Void> beforePublication(TaskContext task, DeploymentAgentJournal.Snapshot saved,
-            List<DeploymentAgentJournal.Event> events) throws Exception {
+                                                    List<DeploymentAgentJournal.Event> events) throws Exception {
         if (saved.state().equals("SUCCEEDED"))
             return unknown("DEPLOYMENT_AGENT_FORMAL_SUCCESS_MISSING");
         var workspaces = originalWorkspaces(events);
@@ -116,17 +123,17 @@ public final class DeploymentAgentRecovery {
                 if (!saved.identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                     return unknown("DEPLOYMENT_AGENT_TARGET_CHANGED");
                 if (new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                        context.interaction(), server, task, saved.identity().configurationDigest()).probe()
-                        .outcome() != Outcome.SUCCEEDED)
+                    context.interaction(), server, task, saved.identity().configurationDigest()).probe()
+                    .outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_AGENT_HELPER_CHANGED");
                 var channel = new DeploymentAgentProjectChannel(session, context.interaction(), server, task,
-                        saved.identity().configurationDigest(), () -> {
-                            try {
-                                return context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-                            } catch (ApiException unavailable) {
-                                throw new IllegalStateException("Original AI configuration unavailable", unavailable);
-                            }
-                        });
+                    saved.identity().configurationDigest(), () -> {
+                    try {
+                        return context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+                    } catch (ApiException unavailable) {
+                        throw new IllegalStateException("Original AI configuration unavailable", unavailable);
+                    }
+                });
                 for (var workspace : workspaces.orElseThrow()) {
                     var status = channel.candidateStatus(workspace);
                     if (status.buildActive())
@@ -141,21 +148,21 @@ public final class DeploymentAgentRecovery {
                 return unknown("DEPLOYMENT_AGENT_CANDIDATE_CLEANUP_UNCONFIRMED");
             }
         }
-        context.source().closeTaskResources(task);
+        context.file().closeTaskResources(task);
         if (!context.tasks().resourcesReleased(task))
             return unknown("DEPLOYMENT_AGENT_SOURCE_RETAINED");
         Outcome outcome = saved.state().equals("CANCELLED") ? Outcome.CANCELLED : Outcome.FAILED;
         journal.state(task, outcome.name());
         return new OperationResult<>(outcome, Optional.empty(),
-                Optional.of(problem(outcome == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
-                        "DEPLOYMENT_AGENT_PREFORMAL_RECONCILED")));
+            Optional.of(problem(outcome == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
+                "DEPLOYMENT_AGENT_PREFORMAL_RECONCILED")));
     }
 
     /** Reconstructs only task-bound candidate identities from original archived bytes and plan evidence. / 仅从原归档字节与计划依据重建任务绑定候选身份。
      * @param events original ordered evidence / 原有序依据
      * @return all possibly prepared original candidates or missing identity / 所有可能准备的原候选或身份缺失 */
     static Optional<List<DeploymentRemoteWorkspace>> originalWorkspaces(
-            List<DeploymentAgentJournal.Event> events) {
+        List<DeploymentAgentJournal.Event> events) {
         String archive = null;
         String application = null;
         var components = new LinkedHashSet<String>();
@@ -197,7 +204,7 @@ public final class DeploymentAgentRecovery {
      * @param events original events / 原事件
      * @return complete candidate set or absence / 完整候选集合或缺失 */
     private static Optional<Map<String, DeploymentGraphPublisher.Candidate>> candidates(DeploymentPublication proposal,
-            List<DeploymentAgentJournal.Event> events) {
+                                                                                        List<DeploymentAgentJournal.Event> events) {
         var ids = new HashMap<String, String>();
         var sources = new HashMap<String, String>();
         var artifacts = new HashMap<String, String>();
@@ -216,7 +223,7 @@ public final class DeploymentAgentRecovery {
             for (var component : proposal.graph().components()) {
                 String id = component.componentId();
                 result.put(id, new DeploymentGraphPublisher.Candidate(ids.get(id), artifacts.get(id), sources.get(id),
-                        "0".repeat(64), false, Map.of()));
+                    "0".repeat(64), false, Map.of()));
             }
             return Optional.of(Map.copyOf(result));
         } catch (IllegalArgumentException invalid) {
@@ -233,14 +240,14 @@ public final class DeploymentAgentRecovery {
      * @param statuses actual remote statuses / 真实远端状态
      * @return proven success, failure or uncertainty / 已证实成功、失败或未知 */
     private static Outcome classify(DeploymentExecutionRecord record, DeploymentPublication proposal,
-            Map<String, DeploymentGraphPublisher.Candidate> candidates, List<DeploymentAgentJournal.Event> events,
-            DeploymentGraphPublisher publisher, Map<String, DeploymentOriginalPublicationStatus> statuses) {
+                                    Map<String, DeploymentGraphPublisher.Candidate> candidates, List<DeploymentAgentJournal.Event> events,
+                                    DeploymentGraphPublisher publisher, Map<String, DeploymentOriginalPublicationStatus> statuses) {
         if (publisher.verifyPublished(proposal, candidates).outcome() == Outcome.SUCCEEDED)
             return Outcome.SUCCEEDED;
         if (record.businessCommitted())
             return Outcome.UNKNOWN;
         boolean rolledBack = events.stream()
-                .anyMatch(event -> event.type().equals("GRAPH_ROLLBACK_RESULT") && event.detail().equals("RESTORED"));
+            .anyMatch(event -> event.type().equals("GRAPH_ROLLBACK_RESULT") && event.detail().equals("RESTORED"));
         if (!rolledBack && record.outcome().filter(value -> value == Outcome.FAILED).isEmpty())
             return Outcome.UNKNOWN;
         var running = new HashMap<String, Boolean>();
@@ -249,7 +256,7 @@ public final class DeploymentAgentRecovery {
             var status = statuses.get(id);
             var old = previous(events, id);
             if (old.isEmpty() || status == null || !status.current().equals(old.orElseThrow()) || status.buildActive()
-                    || status.maintenance())
+                || status.maintenance())
                 return Outcome.UNKNOWN;
             if (old.orElseThrow().isPresent()) {
                 var activity = previousRunning(events, id);
@@ -259,8 +266,8 @@ public final class DeploymentAgentRecovery {
             }
         }
         return publisher.verifyRestoredState(proposal, running).outcome() == Outcome.SUCCEEDED
-                ? Outcome.FAILED
-                : Outcome.UNKNOWN;
+            ? Outcome.FAILED
+            : Outcome.UNKNOWN;
     }
 
     /** Reads exact old digest from a completed original snapshot. / 从已完成原快照读取精确旧摘要。
@@ -318,6 +325,6 @@ public final class DeploymentAgentRecovery {
      * @return unknown result / 未知结果 */
     private static OperationResult<Void> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 }

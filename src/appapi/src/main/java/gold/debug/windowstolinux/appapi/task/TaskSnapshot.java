@@ -19,8 +19,8 @@ import java.util.UUID;
  * @param blockers copied reasons preventing terminal completion / 阻止任务结束的原因列表副本
  */
 public record TaskSnapshot(UUID id, String ownerId, String ownerVersion, String type, TaskState state,
-        Optional<Outcome> outcome, String progressText, Instant startedAt, Optional<Instant> endedAt,
-        List<String> blockers) {
+                           Optional<Outcome> outcome, String progressText, Instant startedAt, Optional<Instant> endedAt,
+                           List<String> blockers) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param id stable identity within the owning capability / 所属能力内的稳定身份

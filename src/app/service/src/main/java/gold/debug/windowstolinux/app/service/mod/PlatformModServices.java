@@ -1,18 +1,27 @@
 package gold.debug.windowstolinux.app.service.mod;
 
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import java.lang.reflect.*;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.service.ServiceSnapshot;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Shared actual service registry, with activation publication and per-call task ownership. / 具有启用发布及逐调用任务归属的共用实际服务登记器。 */
 public final class PlatformModServices implements AutoCloseable {
@@ -105,7 +114,7 @@ public final class PlatformModServices implements AutoCloseable {
             this.schema = Objects.requireNonNull(schema);
             this.mode = Objects.requireNonNull(mode);
             if (!loader.manifest().schemaVersion().equals(schema.map(SchemaIdentity::schemaVersion))
-                    || schema.isPresent() && !schema.get().ownerId().equals(owner()))
+                || schema.isPresent() && !schema.get().ownerId().equals(owner()))
                 throw new IllegalArgumentException("Service generation differs from its loaded manifest");
         }
 
@@ -143,10 +152,10 @@ public final class PlatformModServices implements AutoCloseable {
             synchronized (PlatformModServices.this) {
                 open();
                 if (contract == null || !contract.isInterface() || !Modifier.isPublic(contract.getModifiers())
-                        || !exported(contract) || implementation == null || !contract.isInstance(implementation)
-                        || implementation.getClass().getClassLoader() != loader)
+                    || !exported(contract) || implementation == null || !contract.isInstance(implementation)
+                    || implementation.getClass().getClassLoader() != loader)
                     throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CONTRACT",
-                            "Service registration requires this Mod's exported public interface and implementation");
+                        "Service registration requires this Mod's exported public interface and implementation");
                 if (registrations.containsKey(contract))
                     throw error(ProblemCode.BUSY, "SERVICE_DUPLICATE", "This interface is already registered");
                 var value = new Registration<>(this, contract, implementation);
@@ -167,26 +176,26 @@ public final class PlatformModServices implements AutoCloseable {
                 open();
                 var provider = bindings.get(new Key(providerModId, mode));
                 if (provider == null || !provider.published || provider.stopping || provider.detached
-                        || provider.loader.isClosed())
+                    || provider.loader.isClosed())
                     throw error(ProblemCode.UNAVAILABLE, "SERVICE_PROVIDER",
-                            "The declared provider has not published its services");
+                        "The declared provider has not published its services");
                 boolean declared = loader.manifest().dependencies().stream()
-                        .anyMatch(dependency -> dependency.id().equals(providerModId)
-                                && dependency.versionRange().contains(provider.loader.manifest().version()));
+                    .anyMatch(dependency -> dependency.id().equals(providerModId)
+                        && dependency.versionRange().contains(provider.loader.manifest().version()));
                 try {
                     if (!declared || contract == null || loader.loadClass(contract.getName()) != contract
-                            || !provider.exported(contract))
+                        || !provider.exported(contract))
                         throw error(ProblemCode.INCOMPATIBLE, "SERVICE_IDENTITY",
-                                "Dependency version, export or shared Class identity differs");
+                            "Dependency version, export or shared Class identity differs");
                 } catch (ClassNotFoundException invalid) {
                     throw error(ProblemCode.INCOMPATIBLE, "SERVICE_CLASS",
-                            "The actual dependency Class is unavailable");
+                        "The actual dependency Class is unavailable");
                 }
                 @SuppressWarnings("unchecked")
                 var registered = (Registration<T>) provider.registrations.get(contract);
                 if (registered == null || registered.closing)
                     throw error(ProblemCode.UNAVAILABLE, "SERVICE_MISSING",
-                            "The provider has no active registration for this interface");
+                        "The provider has no active registration for this interface");
                 var handle = new Handle<>(this, registered);
                 handles.add(handle);
                 return handle;
@@ -232,8 +241,8 @@ public final class PlatformModServices implements AutoCloseable {
          * @return whether this activation exports it / 此启用是否导出该类型 */
         private boolean exported(Class<?> type) {
             return type.getClassLoader() == loader && Modifier.isPublic(type.getModifiers())
-                    && loader.manifest().exports().stream().anyMatch(
-                            pkg -> type.getPackageName().equals(pkg) || type.getPackageName().startsWith(pkg + "."));
+                && loader.manifest().exports().stream().anyMatch(
+                pkg -> type.getPackageName().equals(pkg) || type.getPackageName().startsWith(pkg + "."));
         }
 
         /** Rejects new use after sealing or actual loader closure. / 封闭或加载器实际关闭后拒绝新使用。
@@ -261,6 +270,7 @@ public final class PlatformModServices implements AutoCloseable {
 
         /** Whether registration close has been requested. / 是否请求关闭登记。 */
         private boolean closing;
+
         /** Captures exact provider objects. / 捕获精确提供方对象。
          * @param provider owning activation / 所属启用
          * @param contract shared interface / 共享接口
@@ -298,6 +308,7 @@ public final class PlatformModServices implements AutoCloseable {
 
         /** Whether the handle was closed. / 句柄是否关闭。 */
         private boolean stopped;
+
         /** Binds original caller and provider objects. / 绑定原调用方及提供方对象。
          * @param caller actual caller / 实际调用方
          * @param registration actual registration / 实际登记 */
@@ -321,67 +332,66 @@ public final class PlatformModServices implements AutoCloseable {
                 provider.open();
                 if (stopped || registration.closing || !provider.published || !caller.published)
                     throw error(ProblemCode.UNAVAILABLE, "SERVICE_CALL_CLOSED",
-                            "Service call admission is unavailable");
+                        "Service call admission is unavailable");
                 active++;
                 registration.active++;
             }
             try {
                 return tasks.dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
-                        provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
-                        connection -> claims(connection, provider, task), () -> {
-                            if (tasks.reconciling(task)) {
-                                if (provider.recoveryCleanup == null)
-                                    throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_CLEANUP_MISSING",
-                                            "The original provider's host cleanup is not bound");
-                                provider.recoveryCleanup.close(task);
-                            }
-                            var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
-                            Thread thread = Thread.currentThread();
-                            var publicType = (java.util.function.Predicate<Class<?>>) type -> provider.exported(type)
-                                    || caller.exported(type)
-                                    || type.getName().startsWith("gold.debug.windowstolinux.appapi.")
-                                            && type.getClassLoader() == ModServices.class.getClassLoader();
+                    provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
+                    connection -> claims(connection, provider, task), () -> {
+                        if (tasks.reconciling(task)) {
+                            if (provider.recoveryCleanup == null)
+                                throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_CLEANUP_MISSING",
+                                    "The original provider's host cleanup is not bound");
+                            provider.recoveryCleanup.close(task);
+                        }
+                        var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+                        Thread thread = Thread.currentThread();
+                        var publicType = (java.util.function.Predicate<Class<?>>) type -> provider.exported(type)
+                            || caller.exported(type)
+                            || type.getName().startsWith("gold.debug.windowstolinux.appapi.")
+                            && type.getClassLoader() == ModServices.class.getClassLoader();
+                        @SuppressWarnings("unchecked")
+                        T guarded = (T) Proxy.newProxyInstance(registration.contract.getClassLoader(),
+                            new Class<?>[]{registration.contract}, (proxy, method, args) -> {
+                                if (!valid.get() || thread != Thread.currentThread())
+                                    throw error(ProblemCode.ACCESS_DENIED, "SERVICE_SCOPE_ENDED",
+                                        "Provider proxy is outside its original synchronous call");
+                                tasks.requireExecuting(task, provider.owner(), provider.version());
+                                if (method.getDeclaringClass() == Object.class)
+                                    return switch (method.getName()) {
+                                        case "toString" -> "Service(" + provider.owner() + ")";
+                                        case "hashCode" -> System.identityHashCode(proxy);
+                                        case "equals" -> proxy == args[0];
+                                        default -> throw new IllegalArgumentException("Unsupported Object method");
+                                    };
+                                var values = args == null ? new Object[0] : args.clone();
+                                for (int i = 0; i < values.length; i++)
+                                    if (values[i] != task)
+                                        values[i] = ServiceSnapshot.copy(values[i], publicType);
+                                Object result;
+                                try {
+                                    result = method.invoke(registration.implementation, values);
+                                } catch (InvocationTargetException failure) {
+                                    throw failure.getCause();
+                                }
+                                return ServiceSnapshot.copy(result, publicType);
+                            });
+                        try {
                             @SuppressWarnings("unchecked")
-                            T guarded = (T) Proxy.newProxyInstance(registration.contract.getClassLoader(),
-                                    new Class<?>[]{registration.contract}, (proxy, method, args) -> {
-                                        if (!valid.get() || thread != Thread.currentThread())
-                                            throw error(ProblemCode.ACCESS_DENIED, "SERVICE_SCOPE_ENDED",
-                                                    "Provider proxy is outside its original synchronous call");
-                                        tasks.requireExecuting(task, provider.owner(), provider.version());
-                                        if (method.getDeclaringClass() == Object.class)
-                                            return switch (method.getName()) {
-                                                case "toString" -> "Service(" + provider.owner() + ")";
-                                                case "hashCode" -> System.identityHashCode(proxy);
-                                                case "equals" -> proxy == args[0];
-                                                default ->
-                                                    throw new IllegalArgumentException("Unsupported Object method");
-                                            };
-                                        var values = args == null ? new Object[0] : args.clone();
-                                        for (int i = 0; i < values.length; i++)
-                                            if (values[i] != task)
-                                                values[i] = ServiceSnapshot.copy(values[i], publicType);
-                                        Object result;
-                                        try {
-                                            result = method.invoke(registration.implementation, values);
-                                        } catch (InvocationTargetException failure) {
-                                            throw failure.getCause();
-                                        }
-                                        return ServiceSnapshot.copy(result, publicType);
-                                    });
-                            try {
-                                @SuppressWarnings("unchecked")
-                                R copied = (R) ServiceSnapshot.copy(call.invoke(guarded), publicType);
-                                return copied;
-                            } finally {
-                                valid.set(false);
-                            }
-                        });
+                            R copied = (R) ServiceSnapshot.copy(call.invoke(guarded), publicType);
+                            return copied;
+                        } finally {
+                            valid.set(false);
+                        }
+                    });
             } catch (ApiException failure) {
                 throw failure;
             } catch (Exception | LinkageError | AssertionError failure) {
                 tasks.reportUncertainEffect(task);
                 throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_FAILED",
-                        "Synchronous service call or value contract failed");
+                    "Synchronous service call or value contract failed");
             } finally {
                 synchronized (PlatformModServices.this) {
                     active--;
@@ -398,7 +408,7 @@ public final class PlatformModServices implements AutoCloseable {
                 stopped = true;
                 if (active != 0)
                     throw error(ProblemCode.BUSY, "SERVICE_HANDLE_ACTIVE",
-                            "Accepted service calls must return before closing");
+                        "Accepted service calls must return before closing");
                 caller.handles.remove(this);
             }
         }
@@ -412,41 +422,41 @@ public final class PlatformModServices implements AutoCloseable {
      * @throws SQLException if persistence cannot be observed / 无法观察持久化时
      * @throws ApiException if actual provider state is incompatible / 实际提供方状态不兼容时 */
     private List<TaskResource> claims(Connection connection, Binding provider, TaskContext task)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (provider.mode == ModLaunchMode.NORMAL) {
             var actual = new PlatformTaskAdmission(database).claims(connection, provider.owner(), provider.version(),
-                    new TaskRequest("service.call", "Synchronous service call", List.of(), false));
+                new TaskRequest("service.call", "Synchronous service call", List.of(), false));
             var expected = new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(),
-                    provider.version(), provider.schema).claims();
+                provider.version(), provider.schema).claims();
             if (!new HashSet<>(actual).equals(new HashSet<>(expected)))
                 throw error(ProblemCode.UNAVAILABLE, "SERVICE_SCHEMA_CHANGED",
-                        "Provider data generation differs from its activation");
+                    "Provider data generation differs from its activation");
             return actual;
         }
         if (!tasks.reconciling(task))
             throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
-                    "Recovery graph requires explicit reconciliation");
+                "Recovery graph requires explicit reconciliation");
         boolean original = TaskLedger.TaskLedgerQueries.readDependencies(connection, task.id()).keySet().stream()
-                .anyMatch(call -> call.provider().equals(provider.owner()) && call.version().equals(provider.version())
-                        && call.schema().equals(provider.schema));
+            .anyMatch(call -> call.provider().equals(provider.owner()) && call.version().equals(provider.version())
+                && call.schema().equals(provider.schema));
         if (!original)
             throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_VERSION",
-                    "The original task does not retain this provider release and generation");
+                "The original task does not retain this provider release and generation");
         try (var p = connection
-                .prepareStatement("SELECT state,schema_version FROM mod_version WHERE mod_id=? AND version=?")) {
+            .prepareStatement("SELECT state,schema_version FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, provider.owner());
             p.setString(2, provider.version());
             try (var row = p.executeQuery()) {
                 if (!row.next() || !row.getString(1).equals("READY")
-                        || !Optional.ofNullable(row.getString(2)).equals(provider.loader.manifest().schemaVersion()))
+                    || !Optional.ofNullable(row.getString(2)).equals(provider.loader.manifest().schemaVersion()))
                     throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_INSTALL",
-                            "Original provider release is unavailable");
+                        "Original provider release is unavailable");
             }
         }
         if (provider.schema.isPresent())
             new SchemaCoordinates(provider.schema.get()).requireRegistered(connection, Set.of("READY"));
         return new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(), provider.version(),
-                provider.schema).claims();
+            provider.schema).claims();
     }
 
     /** Distinguishes normal publication from an isolated recovery graph. / 区分普通发布及隔离恢复图。
@@ -454,6 +464,7 @@ public final class PlatformModServices implements AutoCloseable {
      * @param mode actual launch graph / 实际启动图 */
     private record Key(String owner, ModLaunchMode mode) {
     }
+
     /** Creates a bounded public diagnostic without author exception content. / 创建有界公开诊断，不含作者异常内容。
      * @param code public category / 公开类别
      * @param event stable event / 稳定事件

@@ -109,6 +109,6 @@ public enum DeploymentProjectKind {
      */
     public static java.util.Set<DeploymentProjectKind> deployableTypes() {
         return java.util.Arrays.stream(values()).filter(DeploymentProjectKind::deployable)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 }

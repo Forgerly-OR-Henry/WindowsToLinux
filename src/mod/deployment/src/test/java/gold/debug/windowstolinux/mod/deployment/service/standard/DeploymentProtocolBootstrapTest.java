@@ -1,5 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -12,13 +24,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
@@ -37,12 +49,12 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
@@ -50,12 +62,12 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
                 throw new AssertionError("No transfer expected");
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError("No input expected");
             }
         });
@@ -85,40 +97,40 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
                 if (input.contains("prepare_stage=platform-packages")) {
                     installed.incrementAndGet();
                     return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(problem(ProblemCode.UNKNOWN, "TEST_INSTALL_REPLY_LOST")));
+                        Optional.of(problem(ProblemCode.UNKNOWN, "TEST_INSTALL_REPLY_LOST")));
                 }
                 var facts = DeploymentProtocolBootstrapJournal.find(context.tasks(), original.get()).orElseThrow()
-                        .facts();
+                    .facts();
                 return statusReady.get()
-                        ? ok(DeploymentHelperInstallerScript.receipt(original.get().id(), facts.operationId(),
-                                facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"))
-                        : exited(3, "");
+                    ? ok(DeploymentHelperInstallerScript.receipt(original.get().id(), facts.operationId(),
+                    facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"))
+                    : exited(3, "");
             });
             var failure = new AtomicReference<Throwable>();
             var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Review original helper bootstrap", List.of(server.id()), true), task -> {
-                        try {
-                            original.set(task);
-                            var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
-                            var bootstrap = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed,
-                                    context.interaction());
-                            assertEquals(Outcome.UNKNOWN, bootstrap.ensure().outcome());
-                            var journal = DeploymentProtocolBootstrapJournal.find(context.tasks(), task).orElseThrow();
-                            assertEquals("DISPATCHED", journal.facts().phase());
-                            assertEquals(Outcome.UNKNOWN, bootstrap.reconcile(journal).outcome());
-                            assertEquals("DISPATCHED", journal.facts().phase());
-                            statusReady.set(true);
-                            assertEquals(Outcome.SUCCEEDED, bootstrap.reconcile(journal).outcome());
-                            assertEquals("SUCCEEDED", journal.facts().phase());
-                            marker.close();
-                            assertTrue(context.tasks().resourcesReleased(task));
-                        } catch (Throwable error) {
-                            failure.set(error);
-                        }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                "Review original helper bootstrap", List.of(server.id()), true), task -> {
+                try {
+                    original.set(task);
+                    var marker = DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
+                    var bootstrap = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed,
+                        context.interaction());
+                    assertEquals(Outcome.UNKNOWN, bootstrap.ensure().outcome());
+                    var journal = DeploymentProtocolBootstrapJournal.find(context.tasks(), task).orElseThrow();
+                    assertEquals("DISPATCHED", journal.facts().phase());
+                    assertEquals(Outcome.UNKNOWN, bootstrap.reconcile(journal).outcome());
+                    assertEquals("DISPATCHED", journal.facts().phase());
+                    statusReady.set(true);
+                    assertEquals(Outcome.SUCCEEDED, bootstrap.reconcile(journal).outcome());
+                    assertEquals("SUCCEEDED", journal.facts().phase());
+                    marker.close();
+                    assertTrue(context.tasks().resourcesReleased(task));
+                } catch (Throwable error) {
+                    failure.set(error);
+                }
+                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
             if (failure.get() != null)
                 throw new AssertionError("Original helper bootstrap failed", failure.get());
             assertEquals(1, installed.get());
@@ -143,31 +155,31 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
             });
             var review = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                        throws ApiException {
+                    throws ApiException {
                     if (intent.semantics()
-                            .filter(value -> value.operation().equals("deployment.helper.install.tracked.v1"))
-                            .isPresent())
+                        .filter(value -> value.operation().equals("deployment.helper.install.tracked.v1"))
+                        .isPresent())
                         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                                Optional.of(problem(ProblemCode.CANCELLED, "TEST_INSTALL_DECLINED")));
+                            Optional.of(problem(ProblemCode.CANCELLED, "TEST_INSTALL_DECLINED")));
                     return context.interaction().approve(intent, task);
                 }
 
                 public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                        TaskContext task) throws ApiException {
+                                                           TaskContext task) throws ApiException {
                     return context.interaction().requestText(title, prompt, secret, task);
                 }
             };
             var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Decline helper installation", List.of(server.id()), true), task -> {
-                        var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed, review)
-                                .ensure();
-                        assertEquals("INTENT", DeploymentProtocolBootstrapJournal.find(context.tasks(), task)
-                                .orElseThrow().facts().phase());
-                        assertTrue(context.tasks().resourcesReleased(task));
-                        return new OperationResult<Void>(outcome.outcome(), Optional.empty(), outcome.problem());
-                    });
+                "Decline helper installation", List.of(server.id()), true), task -> {
+                var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed, review)
+                    .ensure();
+                assertEquals("INTENT", DeploymentProtocolBootstrapJournal.find(context.tasks(), task)
+                    .orElseThrow().facts().phase());
+                assertTrue(context.tasks().resourcesReleased(task));
+                return new OperationResult<Void>(outcome.outcome(), Optional.empty(), outcome.problem());
+            });
             assertEquals(Outcome.CANCELLED,
-                    handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
             assertEquals(0, installed.get());
         }
     }
@@ -182,17 +194,17 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
             var server = saved(runtime);
             var context = runtime.modContexts().get(OWNER).context();
             List<OperationResult<CommandResult>> cases = List.of(
-                    new OperationResult<>(Outcome.SUCCEEDED,
-                            Optional.of(new CommandResult(Optional.of(7), "", "", false)), Optional.<Problem>empty()),
-                    new OperationResult<>(Outcome.UNKNOWN,
-                            Optional.of(new CommandResult(Optional.of(7), "", "", false)),
-                            Optional.of(problem(ProblemCode.UNKNOWN, "TEST_UNKNOWN_EXIT"))),
-                    new OperationResult<>(Outcome.CANCELLED,
-                            Optional.of(new CommandResult(Optional.of(7), "", "", false)),
-                            Optional.of(problem(ProblemCode.CANCELLED, "TEST_CANCELLED_EXIT"))),
-                    new OperationResult<>(Outcome.SUCCEEDED,
-                            Optional.of(new CommandResult(Optional.of(143), "", "", false)),
-                            Optional.<Problem>empty()));
+                new OperationResult<>(Outcome.SUCCEEDED,
+                    Optional.of(new CommandResult(Optional.of(7), "", "", false)), Optional.<Problem>empty()),
+                new OperationResult<>(Outcome.UNKNOWN,
+                    Optional.of(new CommandResult(Optional.of(7), "", "", false)),
+                    Optional.of(problem(ProblemCode.UNKNOWN, "TEST_UNKNOWN_EXIT"))),
+                new OperationResult<>(Outcome.CANCELLED,
+                    Optional.of(new CommandResult(Optional.of(7), "", "", false)),
+                    Optional.of(problem(ProblemCode.CANCELLED, "TEST_CANCELLED_EXIT"))),
+                new OperationResult<>(Outcome.SUCCEEDED,
+                    Optional.of(new CommandResult(Optional.of(143), "", "", false)),
+                    Optional.<Problem>empty()));
             for (int i = 0; i < cases.size(); i++) {
                 var observed = cases.get(i);
                 boolean known = i == 0;
@@ -205,29 +217,29 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
                     return exited(3, "");
                 });
                 var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                        "Classify original helper installation", List.of(server.id()), true), task -> {
-                            try {
-                                var result = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed,
-                                        context.interaction()).ensure();
-                                assertEquals(known ? Outcome.FAILED : Outcome.UNKNOWN, result.outcome());
-                                var journal = DeploymentProtocolBootstrapJournal.find(context.tasks(), task)
-                                        .orElseThrow();
-                                assertEquals(known ? "FAILED" : "DISPATCHED", journal.facts().phase());
-                                if (!known) {
-                                    assertFalse(context.tasks().resourcesReleased(task));
-                                    // Only this isolated fixture settles an intentionally unresolved operation.
-                                    // 仅该隔离夹具收尾故意保留的未决操作。
-                                    journal.terminal(false);
-                                    journal.close();
-                                }
-                                assertTrue(context.tasks().resourcesReleased(task));
-                            } catch (Throwable error) {
-                                failure.set(error);
-                            }
-                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                        });
+                    "Classify original helper installation", List.of(server.id()), true), task -> {
+                    try {
+                        var result = new DeploymentProtocolBootstrap(context.tasks(), task, server, borrowed,
+                            context.interaction()).ensure();
+                        assertEquals(known ? Outcome.FAILED : Outcome.UNKNOWN, result.outcome());
+                        var journal = DeploymentProtocolBootstrapJournal.find(context.tasks(), task)
+                            .orElseThrow();
+                        assertEquals(known ? "FAILED" : "DISPATCHED", journal.facts().phase());
+                        if (!known) {
+                            assertFalse(context.tasks().resourcesReleased(task));
+                            // Only this isolated fixture settles an intentionally unresolved operation.
+                            // 仅该隔离夹具收尾故意保留的未决操作。
+                            journal.terminal(false);
+                            journal.close();
+                        }
+                        assertTrue(context.tasks().resourcesReleased(task));
+                    } catch (Throwable error) {
+                        failure.set(error);
+                    }
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
                 assertEquals(Outcome.SUCCEEDED,
-                        handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
+                    handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
                 if (failure.get() != null)
                     throw new AssertionError("Helper process classification failed", failure.get());
             }
@@ -241,9 +253,9 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
     private static ServerRef saved(PlatformRuntime runtime) throws Exception {
         var server = new ServerRef("helper-bootstrap-server");
         runtime.servers().saveServerProfile(
-                ServerProfile
-                        .fromStored(new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
-                "fixture-password".toCharArray());
+            ServerProfile
+                .fromStored(new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+            "fixture-password".toCharArray());
         return server;
     }
 
@@ -261,13 +273,13 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
      * @return borrowed session / 借用会话 */
     private static RemoteSession session(Reply reply) {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute"))
-                        return reply.execute((CommandRequest) args[0]);
-                    if (method.getName().equals("close"))
-                        return null;
-                    throw new AssertionError("Unexpected borrowed session call: " + method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute"))
+                    return reply.execute((CommandRequest) args[0]);
+                if (method.getName().equals("close"))
+                    return null;
+                throw new AssertionError("Unexpected borrowed session call: " + method.getName());
+            });
     }
 
     /** Returns a known successful command. / 返回已知成功命令。
@@ -283,7 +295,7 @@ class DeploymentProtocolBootstrapTest extends DeploymentRuntimeFixture {
      * @return command result / 命令结果 */
     private static OperationResult<CommandResult> exited(int code, String stdout) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(code), stdout, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(code), stdout, "", false)), Optional.empty());
     }
 
     /** Creates one bounded test problem. / 构造有界测试问题。

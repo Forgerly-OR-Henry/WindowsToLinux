@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.core;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+
 import java.net.URI;
 import java.time.Instant;
 import java.util.*;
@@ -7,13 +15,13 @@ import java.util.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitMessages;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitPreparer;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitReference;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitRequest;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitMessages;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitPreparer;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
 
 /** Bounded original-task Git facts, atomically advanced on a host-owned author checkpoint. / 在宿主所属作者检查点上原子推进的有界原任务 Git 依据。 */
 final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer {
@@ -22,8 +30,8 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
 
     /** Strict independent parser for persisted author facts. / 严格的独立持久作者依据解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
-            .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
-            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Original platform task and checkpoint identity. / 原平台任务和检查点身份。 */
     private final UUID task;
@@ -70,9 +78,9 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @param next proposed complete row / 拟保存完整新行
      * @param failure known business failure / 已知业务失败 */
     record Facts(UUID task, DeploymentGitPreparer.Planned plan, UUID project, String displayName, Instant observedAt,
-            Optional<DeploymentProjectRecord> expected, DeploymentGitRequest request, long maximumBytes,
-            int maximumEntries, PhaseState phase, Optional<DeploymentGitPreparer.Receipt> receipt,
-            Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
+                 Optional<DeploymentProjectRecord> expected, DeploymentGitRequest request, long maximumBytes,
+                 int maximumEntries, PhaseState phase, Optional<DeploymentGitPreparer.Receipt> receipt,
+                 Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
         /** Requires immutable, internally consistent facts. / 要求不可变且内部一致的依据。
          * @param task original task / 原任务
          * @param plan original physical IDs / 原物理身份
@@ -99,21 +107,21 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
             Objects.requireNonNull(next);
             Objects.requireNonNull(failure);
             if (displayName == null || displayName.isBlank() || displayName.length() > 256
-                    || observedAt.getNano() % 1_000_000 != 0 || maximumBytes < 0
-                    || maximumBytes > 2L * 1024 * 1024 * 1024 || maximumEntries < 1 || maximumEntries > 100000
-                    || expected.stream().anyMatch(old -> !old.id().equals(project))
-                    || expected.stream().anyMatch(old -> !observedAt.isAfter(old.updatedAt()))
-                    || next.stream().anyMatch(row -> !row.id().equals(project)))
+                || observedAt.getNano() % 1_000_000 != 0 || maximumBytes < 0
+                || maximumBytes > 2L * 1024 * 1024 * 1024 || maximumEntries < 1 || maximumEntries > 100000
+                || expected.stream().anyMatch(old -> !old.id().equals(project))
+                || expected.stream().anyMatch(old -> !observedAt.isAfter(old.updatedAt()))
+                || next.stream().anyMatch(row -> !row.id().equals(project)))
                 throw new IllegalArgumentException("Original Git project facts differ");
             if (next.isPresent()) {
                 var row = next.orElseThrow();
                 if (!row.displayName().equals(displayName) || !row.updatedAt().equals(observedAt)
-                        || !row.createdAt().equals(expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt))
-                        || row.source().kind() != DeploymentProjectSource.KindType.GIT
-                        || !row.source().location().equals(request.remote().location())
-                        || !row.source().gitRef().equals(Optional.of(reference(request.reference())))
-                        || receipt.isEmpty() || receipt.orElseThrow().outcome() != Outcome.SUCCEEDED
-                        || !row.source().gitCommit().equals(receipt.orElseThrow().commit()))
+                    || !row.createdAt().equals(expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt))
+                    || row.source().kind() != DeploymentProjectSource.KindType.GIT
+                    || !row.source().location().equals(request.remote().location())
+                    || !row.source().gitRef().equals(Optional.of(reference(request.reference())))
+                    || receipt.isEmpty() || receipt.orElseThrow().outcome() != Outcome.SUCCEEDED
+                    || !row.source().gitCommit().equals(receipt.orElseThrow().commit()))
                     throw new IllegalArgumentException("Proposed project differs from original Git intent");
             }
         }
@@ -143,12 +151,12 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return durable original journal / 持久原日志
      * @throws ApiException if first creation is unconfirmed / 首次创建未确认时 */
     static DeploymentGitSourceJournal begin(TaskService tasks, TaskContext task, UUID project, String name,
-            Optional<DeploymentProjectRecord> expected, Instant observedAt, DeploymentGitRequest request,
-            long maximumBytes, int maximumEntries) throws ApiException {
+                                            Optional<DeploymentProjectRecord> expected, Instant observedAt, DeploymentGitRequest request,
+                                            long maximumBytes, int maximumEntries) throws ApiException {
         var plan = new DeploymentGitPreparer.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID());
+            UUID.randomUUID());
         var initial = new Facts(task.id(), plan, project, name, observedAt, expected, request, maximumBytes,
-                maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
+            maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         var handle = tasks.beginCheckpoint(task, KEY, encode(initial));
         return new DeploymentGitSourceJournal(task.id(), handle, handle.snapshot());
     }
@@ -162,11 +170,11 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @param maximumBytes source budget / 来源预算
      * @param maximumEntries entry budget / 条目预算 */
     static void validateInput(UUID project, String name, Optional<DeploymentProjectRecord> expected, Instant observedAt,
-            DeploymentGitRequest request, long maximumBytes, int maximumEntries) {
+                              DeploymentGitRequest request, long maximumBytes, int maximumEntries) {
         var plan = new DeploymentGitPreparer.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID());
+            UUID.randomUUID());
         var probe = new Facts(UUID.randomUUID(), plan, project, name, observedAt, expected, request, maximumBytes,
-                maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
+            maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         if (encode(probe).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
             throw new IllegalArgumentException("Original Git request exceeds checkpoint budget");
     }
@@ -221,7 +229,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @throws ApiException if CAS is unconfirmed / CAS 未确认时 */
     void propose(DeploymentProjectRecord row) throws ApiException {
         if (facts.phase() != PhaseState.RECEIPT || facts.receipt().orElseThrow().outcome() != Outcome.SUCCEEDED
-                || !row.id().equals(facts.project()))
+            || !row.id().equals(facts.project()))
             throw invalid();
         advance(copy(PhaseState.PROPOSED, facts.receipt(), Optional.of(row), facts.failure()));
     }
@@ -249,7 +257,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
         if (facts.phase() == PhaseState.SAVED || facts.phase() == PhaseState.KNOWN_FAILURE)
             throw invalid();
         var bounded = new Problem(problem.code(), problem.eventCode(), "Original Git project operation failed",
-                Map.of(), Optional.empty());
+            Map.of(), Optional.empty());
         if (bounded.code() == ProblemCode.UNKNOWN || !bounded.eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
             throw invalid();
         advance(copy(PhaseState.KNOWN_FAILURE, facts.receipt(), facts.next(), Optional.of(bounded)));
@@ -277,9 +285,9 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @param failure known failure / 已知失败
      * @return complete next facts / 完整下一依据 */
     private Facts copy(PhaseState phase, Optional<DeploymentGitPreparer.Receipt> receipt,
-            Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
+                       Optional<DeploymentProjectRecord> next, Optional<Problem> failure) {
         return new Facts(task, facts.plan(), facts.project(), facts.displayName(), facts.observedAt(), facts.expected(),
-                facts.request(), facts.maximumBytes(), facts.maximumEntries(), phase, receipt, next, failure);
+            facts.request(), facts.maximumBytes(), facts.maximumEntries(), phase, receipt, next, failure);
     }
 
     /** Advances one exact revision and decodes the confirmed result. / 推进一个精确修订并解码已确认结果。
@@ -295,12 +303,12 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return bounded JSON / 有界 JSON */
     private static String encode(Facts value) {
         var root = JSON.createObjectNode().put("formatVersion", 1).put("taskId", value.task().toString())
-                .put("jobId", value.plan().job().toString()).put("checkoutId", value.plan().checkout().toString())
-                .put("controlId", value.plan().control().toString()).put("processId", value.plan().process().toString())
-                .put("projectId", value.project().toString()).put("displayName", value.displayName())
-                .put("observedAt", value.observedAt().toEpochMilli()).put("phase", value.phase().name())
-                .put("request", DeploymentGitMessages.encode(value.request())).put("maximumBytes", value.maximumBytes())
-                .put("maximumEntries", value.maximumEntries());
+            .put("jobId", value.plan().job().toString()).put("checkoutId", value.plan().checkout().toString())
+            .put("controlId", value.plan().control().toString()).put("processId", value.plan().process().toString())
+            .put("projectId", value.project().toString()).put("displayName", value.displayName())
+            .put("observedAt", value.observedAt().toEpochMilli()).put("phase", value.phase().name())
+            .put("request", DeploymentGitMessages.encode(value.request())).put("maximumBytes", value.maximumBytes())
+            .put("maximumEntries", value.maximumEntries());
         value.expected().ifPresentOrElse(row -> root.set("expected", project(row)), () -> root.putNull("expected"));
         value.next().ifPresentOrElse(row -> root.set("next", project(row)), () -> root.putNull("next"));
         value.receipt().ifPresentOrElse(receipt -> {
@@ -310,7 +318,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
             receipt.eventCode().ifPresentOrElse(event -> node.put("event", event), () -> node.putNull("event"));
         }, () -> root.putNull("receipt"));
         value.failure().ifPresentOrElse(problem -> root.putObject("failure").put("code", problem.code().name())
-                .put("event", problem.eventCode()), () -> root.putNull("failure"));
+            .put("event", problem.eventCode()), () -> root.putNull("failure"));
         return root.toString();
     }
 
@@ -322,33 +330,33 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
         try {
             var root = JSON.readTree(value);
             fields(root,
-                    Set.of("formatVersion", "taskId", "jobId", "checkoutId", "controlId", "processId", "projectId",
-                            "displayName", "observedAt", "phase", "request", "maximumBytes", "maximumEntries",
-                            "expected", "next", "receipt", "failure"));
+                Set.of("formatVersion", "taskId", "jobId", "checkoutId", "controlId", "processId", "projectId",
+                    "displayName", "observedAt", "phase", "request", "maximumBytes", "maximumEntries",
+                    "expected", "next", "receipt", "failure"));
             if (!root.get("formatVersion").isInt() || root.get("formatVersion").intValue() != 1
-                    || !root.get("observedAt").isIntegralNumber() || !root.get("observedAt").canConvertToLong()
-                    || !root.get("maximumBytes").isIntegralNumber() || !root.get("maximumBytes").canConvertToLong()
-                    || !root.get("maximumEntries").isInt())
+                || !root.get("observedAt").isIntegralNumber() || !root.get("observedAt").canConvertToLong()
+                || !root.get("maximumBytes").isIntegralNumber() || !root.get("maximumBytes").canConvertToLong()
+                || !root.get("maximumEntries").isInt())
                 throw new IllegalArgumentException();
             var plan = new DeploymentGitPreparer.Planned(uuid(root, "jobId"), uuid(root, "checkoutId"),
-                    uuid(root, "controlId"), uuid(root, "processId"));
+                uuid(root, "controlId"), uuid(root, "processId"));
             var expected = root.get("expected").isNull()
-                    ? Optional.<DeploymentProjectRecord>empty()
-                    : Optional.of(project(root.get("expected")));
+                ? Optional.<DeploymentProjectRecord>empty()
+                : Optional.of(project(root.get("expected")));
             var next = root.get("next").isNull()
-                    ? Optional.<DeploymentProjectRecord>empty()
-                    : Optional.of(project(root.get("next")));
+                ? Optional.<DeploymentProjectRecord>empty()
+                : Optional.of(project(root.get("next")));
             var receipt = root.get("receipt").isNull()
-                    ? Optional.<DeploymentGitPreparer.Receipt>empty()
-                    : Optional.of(receipt(root.get("receipt")));
+                ? Optional.<DeploymentGitPreparer.Receipt>empty()
+                : Optional.of(receipt(root.get("receipt")));
             var failure = root.get("failure").isNull()
-                    ? Optional.<Problem>empty()
-                    : Optional.of(failure(root.get("failure")));
+                ? Optional.<Problem>empty()
+                : Optional.of(failure(root.get("failure")));
             var facts = new Facts(uuid(root, "taskId"), plan, uuid(root, "projectId"), text(root, "displayName"),
-                    Instant.ofEpochMilli(root.get("observedAt").longValue()), expected,
-                    DeploymentGitMessages.decode(text(root, "request")), root.get("maximumBytes").longValue(),
-                    root.get("maximumEntries").intValue(), PhaseState.valueOf(text(root, "phase")), receipt, next,
-                    failure);
+                Instant.ofEpochMilli(root.get("observedAt").longValue()), expected,
+                DeploymentGitMessages.decode(text(root, "request")), root.get("maximumBytes").longValue(),
+                root.get("maximumEntries").intValue(), PhaseState.valueOf(text(root, "phase")), receipt, next,
+                failure);
             if (!facts.task().equals(task) || !encode(facts).equals(root.toString()) || !validPhase(facts))
                 throw new IllegalArgumentException();
             return facts;
@@ -362,15 +370,15 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return whether the combination is possible / 组合是否可能 */
     private static boolean validPhase(Facts facts) {
         boolean receipt = facts.receipt().isPresent(), next = facts.next().isPresent(),
-                failure = facts.failure().isPresent();
+            failure = facts.failure().isPresent();
         return switch (facts.phase()) {
             case PLANNED, REQUESTED -> !receipt && !next && !failure;
             case RECEIPT -> receipt && !next && !failure;
             case PROPOSED, WRITE_STARTED, SAVED ->
                 receipt && next && !failure && facts.receipt().orElseThrow().outcome() == Outcome.SUCCEEDED;
             case KNOWN_FAILURE -> failure && facts.failure().orElseThrow().code() != ProblemCode.UNKNOWN
-                    && facts.failure().orElseThrow().eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
-                    && (!next || receipt && facts.receipt().orElseThrow().outcome() == Outcome.SUCCEEDED);
+                && facts.failure().orElseThrow().eventCode().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
+                && (!next || receipt && facts.receipt().orElseThrow().outcome() == Outcome.SUCCEEDED);
         };
     }
 
@@ -379,12 +387,12 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return JSON object / JSON 对象 */
     private static ObjectNode project(DeploymentProjectRecord row) {
         var node = JSON.createObjectNode().put("id", row.id().toString()).put("name", row.displayName())
-                .put("kind", row.source().kind().name()).put("location", row.source().location().toString())
-                .put("sha256", row.source().sha256()).put("createdAt", row.createdAt().toEpochMilli())
-                .put("updatedAt", row.updatedAt().toEpochMilli());
+            .put("kind", row.source().kind().name()).put("location", row.source().location().toString())
+            .put("sha256", row.source().sha256()).put("createdAt", row.createdAt().toEpochMilli())
+            .put("updatedAt", row.updatedAt().toEpochMilli());
         row.source().gitRef().ifPresentOrElse(ref -> node.put("gitRef", ref), () -> node.putNull("gitRef"));
         row.source().gitCommit().ifPresentOrElse(commit -> node.put("gitCommit", commit),
-                () -> node.putNull("gitCommit"));
+            () -> node.putNull("gitCommit"));
         return node;
     }
 
@@ -393,15 +401,15 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return checked row / 已核对行 */
     private static DeploymentProjectRecord project(JsonNode node) {
         fields(node,
-                Set.of("id", "name", "kind", "location", "sha256", "createdAt", "updatedAt", "gitRef", "gitCommit"));
+            Set.of("id", "name", "kind", "location", "sha256", "createdAt", "updatedAt", "gitRef", "gitCommit"));
         if (!node.get("createdAt").isIntegralNumber() || !node.get("updatedAt").isIntegralNumber())
             throw new IllegalArgumentException();
         var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.valueOf(text(node, "kind")),
-                URI.create(text(node, "location")), optionalText(node, "gitRef"), optionalText(node, "gitCommit"),
-                text(node, "sha256"));
+            URI.create(text(node, "location")), optionalText(node, "gitRef"), optionalText(node, "gitCommit"),
+            text(node, "sha256"));
         return new DeploymentProjectRecord(uuid(node, "id"), text(node, "name"), source,
-                Instant.ofEpochMilli(node.get("createdAt").longValue()),
-                Instant.ofEpochMilli(node.get("updatedAt").longValue()));
+            Instant.ofEpochMilli(node.get("createdAt").longValue()),
+            Instant.ofEpochMilli(node.get("updatedAt").longValue()));
     }
 
     /** Encodes the selected reference without mixing branch, tag and commit identities. / 编码所选引用，不混淆分支、标签与提交身份。
@@ -422,7 +430,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
     private static DeploymentGitPreparer.Receipt receipt(JsonNode node) {
         fields(node, Set.of("outcome", "commit", "code", "event"));
         return new DeploymentGitPreparer.Receipt(Outcome.valueOf(text(node, "outcome")), optionalText(node, "commit"),
-                optionalText(node, "code").map(ProblemCode::valueOf), optionalText(node, "event"));
+            optionalText(node, "code").map(ProblemCode::valueOf), optionalText(node, "event"));
     }
 
     /** Decodes only a bounded known failure classification. / 仅解码有界已知失败分类。
@@ -431,7 +439,7 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
     private static Problem failure(JsonNode node) {
         fields(node, Set.of("code", "event"));
         return new Problem(ProblemCode.valueOf(text(node, "code")), text(node, "event"),
-                "Original Git project operation failed", Map.of(), Optional.empty());
+            "Original Git project operation failed", Map.of(), Optional.empty());
     }
 
     /** Requires an exact object field set. / 要求精确对象字段集合。
@@ -480,6 +488,6 @@ final class DeploymentGitSourceJournal implements DeploymentGitPreparer.Observer
      * @return error / 错误 */
     private static ApiException invalid() {
         return new ApiException(new Problem(ProblemCode.CONTRACT_VIOLATION, "DEPLOYMENT_GIT_JOURNAL_PHASE",
-                "Original Git journal phase differs", Map.of(), Optional.empty()));
+            "Original Git journal phase differs", Map.of(), Optional.empty()));
     }
 }

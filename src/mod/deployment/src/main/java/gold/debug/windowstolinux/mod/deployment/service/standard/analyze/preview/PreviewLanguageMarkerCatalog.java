@@ -41,8 +41,8 @@ public final class PreviewLanguageMarkerCatalog {
         }
         List<AnalysisEvidence> evidence = new ArrayList<>();
         firstEvidence.forEach((language, path) -> evidence.add(new AnalysisEvidence(
-                DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", language.name()), path.toString(),
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH)));
+            DeploymentLocalizedMessage.of("analysis.language.sourceMarker", "language", language.name()), path.toString(),
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH)));
         return new ProjectLanguageFacts(ecosystems, languages, java.util.Map.of(), evidence);
     }
 

@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.app.mod.process;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessMessage;
+
 import static gold.debug.windowstolinux.app.mod.process.ProcessProtocol.Kind;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,7 +17,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,7 +32,7 @@ class ProcessChannelTest {
     Running launch(String mode) throws Exception {
         var java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var child = new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
-                Child.class.getName(), mode, root.toString()).start();
+            Child.class.getName(), mode, root.toString()).start();
         var capture = new Capture();
         return new Running(child, new ProcessChannel(child, UUID.randomUUID(), UUID.randomUUID(), capture), capture);
     }
@@ -52,7 +59,7 @@ class ProcessChannelTest {
             assertTrue(running.capture.problems.isEmpty(), running.capture.problems.toString());
             assertThrows(ApiException.class, () -> running.channel.request(REQUEST, DEADLINE));
             assertEquals(List.of("HELLO:example.owner:1.2.3", "REQUEST", "STOP"),
-                    Files.readAllLines(root.resolve("events")));
+                Files.readAllLines(root.resolve("events")));
         }
     }
 
@@ -61,7 +68,7 @@ class ProcessChannelTest {
         try (var running = launch("hold")) {
             running.channel.handshake("example.owner", "1", DEADLINE);
             var result = running.channel.request(REQUEST, Duration.ofMillis(80)).toCompletableFuture().get(3,
-                    TimeUnit.SECONDS);
+                TimeUnit.SECONDS);
             assertEquals(Outcome.UNKNOWN, result.outcome());
             assertTrue(running.capture.uncertain.get());
             running.channel.requestCancel();
@@ -88,8 +95,8 @@ class ProcessChannelTest {
             for (int i = 0; i < 32; i++)
                 requests.add(running.channel.request(REQUEST, Duration.ofMinutes(1)).toCompletableFuture());
             assertEquals(ProblemCode.BUSY,
-                    assertThrows(ApiException.class, () -> running.channel.request(REQUEST, DEADLINE)).problem()
-                            .code());
+                assertThrows(ApiException.class, () -> running.channel.request(REQUEST, DEADLINE)).problem()
+                    .code());
             running.channel.close();
             for (var request : requests)
                 assertEquals(Outcome.UNKNOWN, request.get(3, TimeUnit.SECONDS).outcome());
@@ -125,8 +132,8 @@ class ProcessChannelTest {
                 running.channel.handshake("example.owner", "1", DEADLINE);
                 var result = running.channel.request(REQUEST, DEADLINE).toCompletableFuture().get(5, TimeUnit.SECONDS);
                 assertEquals(
-                        mode.equals("conflicting") || mode.equals("duplicate") ? Outcome.SUCCEEDED : Outcome.UNKNOWN,
-                        result.outcome());
+                    mode.equals("conflicting") || mode.equals("duplicate") ? Outcome.SUCCEEDED : Outcome.UNKNOWN,
+                    result.outcome());
                 if (!mode.equals("duplicate"))
                     await(() -> !running.capture.problems.isEmpty());
                 running.channel.close();
@@ -134,7 +141,7 @@ class ProcessChannelTest {
                     assertTrue(running.capture.problems.isEmpty(), running.capture.problems.toString());
                 else
                     assertTrue(
-                            running.capture.problems.stream().anyMatch(p -> p.eventCode().equals("PROCESS_PROTOCOL")));
+                        running.capture.problems.stream().anyMatch(p -> p.eventCode().equals("PROCESS_PROTOCOL")));
             }
         }
     }
@@ -181,7 +188,7 @@ class ProcessChannelTest {
         try (var running = launch("stderr")) {
             running.channel.handshake("example.owner", "1", DEADLINE);
             assertEquals(Outcome.SUCCEEDED, running.channel.request(REQUEST, DEADLINE).toCompletableFuture()
-                    .get(5, TimeUnit.SECONDS).outcome());
+                .get(5, TimeUnit.SECONDS).outcome());
             running.channel.close();
             assertFalse(running.capture.diagnostics.isEmpty());
             assertTrue(running.capture.truncated.get());
@@ -208,7 +215,7 @@ class ProcessChannelTest {
         for (String mode : List.of("bad-ready", "no-ready")) {
             try (var running = launch(mode)) {
                 assertThrows(ApiException.class,
-                        () -> running.channel.handshake("example.owner", "1", Duration.ofSeconds(1)));
+                    () -> running.channel.handshake("example.owner", "1", Duration.ofSeconds(1)));
                 assertTrue(running.child.isAlive());
                 assertThrows(ApiException.class, () -> running.channel.request(REQUEST, DEADLINE));
                 running.channel.close();
@@ -235,6 +242,7 @@ class ProcessChannelTest {
         final AtomicInteger waits = new AtomicInteger();
 
         final AtomicBoolean stopAcknowledged = new AtomicBoolean();
+
         public boolean cancellationRequested() {
             return false;
         }
@@ -276,10 +284,10 @@ class ProcessChannelTest {
                 if (frame.kind() == Kind.HELLO) {
                     var identity = new com.fasterxml.jackson.databind.ObjectMapper().readTree(frame.payload());
                     event(root, "HELLO:" + identity.path("ownerId").asText() + ":"
-                            + identity.path("ownerVersion").asText());
+                        + identity.path("ownerVersion").asText());
                     if (!mode.equals("no-ready"))
                         send(new ProcessProtocol.Frame(frame.process(), frame.task(), frame.request(), Kind.READY,
-                                frame.type(), mode.equals("bad-ready") ? "{\"bad\":true}" : "{}"));
+                            frame.type(), mode.equals("bad-ready") ? "{\"bad\":true}" : "{}"));
                     if (mode.equals("blocked-input"))
                         while (!Files.exists(root.resolve("release-input")))
                             Thread.sleep(10);
@@ -298,31 +306,31 @@ class ProcessChannelTest {
                         continue;
                     }
                     var response = new ProcessProtocol.Frame(frame.process(),
-                            mode.equals("wrong-task")
-                                    ? new UUID(frame.task().getMostSignificantBits() ^ 1L,
-                                            frame.task().getLeastSignificantBits())
-                                    : frame.task(),
-                            mode.equals("unknown-request")
-                                    ? new UUID(frame.request().getMostSignificantBits() ^ 1L,
-                                            frame.request().getLeastSignificantBits())
-                                    : frame.request(),
-                            Kind.RESULT, frame.type(),
-                            "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":true},\"problem\":null}");
+                        mode.equals("wrong-task")
+                            ? new UUID(frame.task().getMostSignificantBits() ^ 1L,
+                            frame.task().getLeastSignificantBits())
+                            : frame.task(),
+                        mode.equals("unknown-request")
+                            ? new UUID(frame.request().getMostSignificantBits() ^ 1L,
+                            frame.request().getLeastSignificantBits())
+                            : frame.request(),
+                        Kind.RESULT, frame.type(),
+                        "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":true},\"problem\":null}");
                     send(response);
                     if (mode.equals("duplicate"))
                         send(new ProcessProtocol.Frame(response.process(), response.task(), response.request(),
-                                response.kind(), response.type(),
-                                "{\"problem\":null,\"value\":{\"accepted\":true},\"outcome\":\"SUCCEEDED\"}"));
+                            response.kind(), response.type(),
+                            "{\"problem\":null,\"value\":{\"accepted\":true},\"outcome\":\"SUCCEEDED\"}"));
                     if (mode.equals("conflicting"))
                         send(new ProcessProtocol.Frame(response.process(), response.task(), response.request(),
-                                response.kind(), response.type(),
-                                "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":false},\"problem\":null}"));
+                            response.kind(), response.type(),
+                            "{\"outcome\":\"SUCCEEDED\",\"value\":{\"accepted\":false},\"problem\":null}"));
                 } else if (frame.kind() == Kind.CANCEL)
                     event(root, "CANCEL");
                 else if (frame.kind() == Kind.STOP) {
                     event(root, "STOP");
                     send(new ProcessProtocol.Frame(frame.process(), frame.task(), frame.request(), Kind.STOPPED,
-                            frame.type(), "{}"));
+                        frame.type(), "{}"));
                     if (mode.equals("nonzero"))
                         System.exit(7);
                     if (mode.equals("delayed-stop") || mode.equals("late-stop")) {
@@ -342,7 +350,7 @@ class ProcessChannelTest {
 
         static void event(Path root, String value) throws Exception {
             Files.writeString(root.resolve("events"), value + "\n", StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND);
+                StandardOpenOption.APPEND);
         }
     }
 }

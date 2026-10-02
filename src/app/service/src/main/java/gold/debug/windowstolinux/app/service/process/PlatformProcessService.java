@@ -1,5 +1,23 @@
 package gold.debug.windowstolinux.app.service.process;
 
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogEvent;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.LogTarget;
+import gold.debug.windowstolinux.appapi.task.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.ProcessService;
+import gold.debug.windowstolinux.appapi.task.ProcessSpec;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.file.*;
 import java.time.*;
 import java.util.*;
@@ -7,12 +25,12 @@ import java.util.concurrent.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
 import gold.debug.windowstolinux.app.mod.process.ProcessChannel;
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Task-bound real auxiliary processes with durable creation facts and proven physical release. / 具有持久创建事实及已证明物理释放的任务绑定真实辅助进程。 */
 public final class PlatformProcessService implements ProcessService, AutoCloseable {
@@ -50,7 +68,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
      * @param owner loaded Mod identity / 加载 Mod 身份
      * @param version actual release / 实际发布 */
     public PlatformProcessService(PlatformDatabase database, PlatformTaskRuntime tasks, PlatformLogService.Binding logs,
-            String owner, String version) {
+                                  String owner, String version) {
         this.database = Objects.requireNonNull(database);
         this.tasks = Objects.requireNonNull(tasks);
         this.logs = Objects.requireNonNull(logs);
@@ -80,12 +98,12 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
         tasks.requireExecuting(task, owner, version);
         if (tasks.reconciling(task))
             throw error(ProblemCode.CONTRACT_VIOLATION, "PROCESS_RECOVERY_CREATE",
-                    "Recovery cannot create a new process");
+                "Recovery cannot create a new process");
         Objects.requireNonNull(id);
         Objects.requireNonNull(spec);
         if (!Files.isRegularFile(spec.executable()) || !Files.isDirectory(spec.workingDirectory()))
             throw error(ProblemCode.INVALID_INPUT, "PROCESS_PATH",
-                    "Process executable or working directory is unavailable");
+                "Process executable or working directory is unavailable");
         synchronized (this) {
             if (closed)
                 throw error(ProblemCode.UNAVAILABLE, "PROCESSES_CLOSED", "Process capability is closing");
@@ -115,10 +133,10 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                 retained.child = builder.start();
                 retained.channel = new ProcessChannel(retained.child, id, task.id(), retained);
                 var started = retained.child.info().startInstant()
-                        .orElseThrow(() -> new java.io.IOException("OS start identity unavailable"));
+                    .orElseThrow(() -> new java.io.IOException("OS start identity unavailable"));
                 try {
                     new TaskLedger(database).checkpointProcess(task.id(), resource, before, new ProcessRecovery(
-                            database.bootId(), id, OptionalLong.of(retained.child.pid()), Optional.of(started)));
+                        database.bootId(), id, OptionalLong.of(retained.child.pid()), Optional.of(started)));
                 } catch (Exception uncertain) {
                     tasks.reportUncertainEffect(task);
                     throw uncertain;
@@ -172,23 +190,23 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                     throw new IllegalArgumentException();
             } catch (RuntimeException invalid) {
                 throw error(ProblemCode.UNKNOWN, "PROCESS_RECOVERY_IDENTITY",
-                        "Original process identity cannot be verified");
+                    "Original process identity cannot be verified");
             }
             if (checkpoint.boot().equals(database.bootId()))
                 throw error(ProblemCode.BUSY, "PROCESS_CURRENT_OWNER",
-                        "Current-boot process cleanup belongs to its original capability");
+                    "Current-boot process cleanup belongs to its original capability");
             if (checkpoint.pid().isEmpty())
                 throw error(ProblemCode.UNKNOWN, "PROCESS_CREATION_UNCONFIRMED",
-                        "Interrupted process creation has no confirmed OS identity");
+                    "Interrupted process creation has no confirmed OS identity");
             var current = ProcessHandle.of(checkpoint.pid().getAsLong());
             if (current.isPresent() && current.get().isAlive()) {
                 var observed = current.get().info().startInstant();
                 if (observed.isEmpty())
                     throw error(ProblemCode.UNKNOWN, "PROCESS_START_UNAVAILABLE",
-                            "Existing PID start time cannot be verified");
+                        "Existing PID start time cannot be verified");
                 if (observed.equals(checkpoint.started()))
                     throw error(ProblemCode.BUSY, "PROCESS_PREVIOUS_ALIVE",
-                            "The original previous-boot child is still alive");
+                        "The original previous-boot child is still alive");
             }
             tasks.retain(task, entry.getKey(), entry.getValue(), false).close();
         }
@@ -233,6 +251,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
 
         /** Whether all actual resources and the claim were released. / 所有实际资源及申请是否已释放。 */
         private boolean released;
+
         /** Captures the durable pre-creation claim. / 捕获持久创建前申请。
          * @param task original task / 原任务
          * @param id original process ID / 原进程 ID
@@ -257,7 +276,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
          * @throws ApiException if the caller cannot continue business / 调用方不能继续业务时 */
         @Override
         public CompletionStage<OperationResult<ProcessMessage>> request(ProcessMessage message, Duration timeout)
-                throws ApiException {
+            throws ApiException {
             worker();
             tasks.requireExecuting(task, owner, version);
             synchronized (PlatformProcessService.this) {
@@ -295,7 +314,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                 channel.close();
             else if (child != null)
                 throw error(ProblemCode.UNKNOWN, "PROCESS_TRANSPORT_UNAVAILABLE",
-                        "Created process transport was not established");
+                    "Created process transport was not established");
             try {
                 lease.close();
             } catch (ApiException uncertain) {
@@ -314,9 +333,9 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
         @Override
         public void diagnostic(String excerpt, boolean truncated) {
             logs.writeExcerpt(
-                    target, new LogEvent(LogLevel.WARN, "PROCESS_STDERR", "Auxiliary process stderr",
-                            Optional.of(excerpt), Optional.of(task.id()), Optional.empty(), Optional.empty()),
-                    truncated);
+                target, new LogEvent(LogLevel.WARN, "PROCESS_STDERR", "Auxiliary process stderr",
+                    Optional.of(excerpt), Optional.of(task.id()), Optional.empty(), Optional.empty()),
+                truncated);
         }
 
         /** Preserves uncertainty even when author code returns success. / 即使作者代码返回成功，也保留不确定性。
@@ -332,7 +351,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                     System.err.println("PROCESS_TASK_UNCERTAINTY_UNCONFIRMED");
                 }
             logs.write(target, new LogEvent(LogLevel.WARN, problem.eventCode(), problem.message(), Optional.empty(),
-                    Optional.of(task.id()), Optional.empty(), Optional.empty()));
+                Optional.of(task.id()), Optional.empty(), Optional.empty()));
         }
 
         /** Refreshes actual blockers while leaving the original child untouched. / 刷新实际阻塞并保持原有子进程不受强制处理。
@@ -341,10 +360,11 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
         public void waiting(boolean acknowledged) {
             try {
                 task.progress(acknowledged
-                        ? "Helper acknowledged the stop request; waiting for actual exit"
-                        : "Waiting for cooperative helper shutdown and actual exit", Optional.empty());
+                    ? "Helper acknowledged the stop request; waiting for actual exit"
+                    : "Waiting for cooperative helper shutdown and actual exit", Optional.empty());
             } catch (ApiException ignored) {
-                /* Durable process occupancy still exposes the blocker. / 持久进程占用仍披露阻塞。 */ }
+                /* Durable process occupancy still exposes the blocker. / 持久进程占用仍披露阻塞。 */
+            }
         }
 
         /** Observes the original task's current cancellation state. / 观察原任务当前取消状态。

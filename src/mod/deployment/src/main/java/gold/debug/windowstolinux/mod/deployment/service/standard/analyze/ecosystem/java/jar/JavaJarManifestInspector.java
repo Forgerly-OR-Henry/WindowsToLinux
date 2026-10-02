@@ -85,8 +85,8 @@ public final class JavaJarManifestInspector {
             if (candidate == null)
                 continue;
             var version = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion.parse(
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
-                    candidate);
+                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA,
+                candidate);
             if (version.isPresent())
                 return version.orElseThrow().branch();
         }
@@ -103,6 +103,6 @@ public final class JavaJarManifestInspector {
      */
     private static AnalysisEvidence evidence(String key, Path relativeJar) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), relativeJar + "!META-INF/MANIFEST.MF",
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

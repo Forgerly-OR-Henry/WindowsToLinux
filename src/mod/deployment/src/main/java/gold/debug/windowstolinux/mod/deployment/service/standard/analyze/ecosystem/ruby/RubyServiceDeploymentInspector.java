@@ -53,17 +53,17 @@ public final class RubyServiceDeploymentInspector implements DeploymentTypeInspe
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         boolean nativeMetadata = ServiceMetadataInspector.present(root, "windowstolinux-ruby.properties");
         boolean bundlerMetadata = ServiceMetadataInspector.present(root, "Gemfile")
-                || ServiceMetadataInspector.present(root, "Gemfile.lock");
+            || ServiceMetadataInspector.present(root, "Gemfile.lock");
         if (nativeMetadata && bundlerMetadata) {
             rejections.add(new RejectionReason("RUBY_ARCHITECTURE_CONFLICT",
-                    DeploymentLocalizedMessage.of("analysis.ruby.architectureConflict"), "deployment"));
+                DeploymentLocalizedMessage.of("analysis.ruby.architectureConflict"), "deployment"));
             return null;
         }
         return nativeMetadata
-                ? rubyCli.inspect(root, source, languageFacts, rejections)
-                : bundler.inspect(root, source, languageFacts, rejections);
+            ? rubyCli.inspect(root, source, languageFacts, rejections)
+            : bundler.inspect(root, source, languageFacts, rejections);
     }
 }

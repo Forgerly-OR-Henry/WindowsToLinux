@@ -15,7 +15,7 @@ import java.util.Optional;
  * @param reviewedRootName original reviewed name for metadata-free identity fallback / 无元数据时身份回退所用原审阅名称
  */
 public record SourceInspectionFacts(int scannedFiles, List<Path> relativeFiles, String scannedText,
-        Optional<String> reviewedRootName) {
+                                    Optional<String> reviewedRootName) {
     /** Preserves legacy Path-based analysis without an explicit reviewed name. / 保留未传明确审阅名称的旧Path分析。
      * @param scannedFiles scanned file count / 已扫描文件数
      * @param relativeFiles bounded relative paths / 有界相对路径

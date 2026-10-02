@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.app.main.mod;
 
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -14,34 +24,36 @@ import java.util.jar.*;
 import javax.swing.*;
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
-import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
+import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.app.ui.shell.*;
-import gold.debug.windowstolinux.appapi.db.*;
+import gold.debug.windowstolinux.app.ui.mod.ExtensionPagePane;
+
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ModLifecycleIntegrationTest {
     static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
-            throws Exception {
+        throws Exception {
         var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
-                new gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository(
-                        new gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections(
-                                db::openConnection)));
+            new gold.debug.windowstolinux.app.db.security.SecurityRepository(
+                new gold.debug.windowstolinux.app.db.connect.RepositoryConnections(
+                    db::openConnection)));
         if (security.securityState().configured())
             security.unlock("fixture-password".toCharArray());
         else
@@ -66,51 +78,52 @@ class ModLifecycleIntegrationTest {
     };
 
     static final String SOURCE = """
-            package example.fixture;
-            import gold.debug.windowstolinux.appapi.mod.*;
-            import gold.debug.windowstolinux.appapi.task.*;
-            import gold.debug.windowstolinux.appapi.ui.*;
-            import java.util.*;
-            import java.util.concurrent.*;
-            import javax.swing.*;
-            public final class Mod implements ModEntrypoint {
-              public static boolean failStart, failAfterCommit;
-              public static int executions, pageCloses, stops;
-              public static final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
-              public static TaskHandle<Integer> task;
-              private PageRegistration page;
-              public void start(ModContext context) throws Exception {
-                context.tasks().registerRecovery("insert",(previous,original)->{
-                  try(var connection=context.db().openConnection(original);var statement=connection.prepareStatement("SELECT payload FROM records WHERE task_id=?")){
-                    statement.setObject(1,original.id());try(var rows=statement.executeQuery()){
-                      if(!rows.next())return new OperationResult<Void>(Outcome.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"MISSING_RECORD","Business row is absent",Map.of(),Optional.empty())));
-                      return new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty());
-                    }
-                  }
-                });
-                page=context.ui().register(new PageSpec("main","fixture.main","Fixture",false),()->new ModPage(){
-                  public JComponent create(UiEnvironment environment){
-                    if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT required");
-                    var panel=new JPanel();var button=new JButton("Insert");panel.add(button);
-                    button.addActionListener(event->{try{task=context.tasks().submit(new TaskRequest("insert","Local row",List.of(),true),active->{
-                      executions++;
-                      try(var connection=context.db().openConnection(active);var statement=connection.prepareStatement("INSERT INTO records VALUES(?,42)")){
-                        connection.setAutoCommit(false);statement.setObject(1,active.id());statement.executeUpdate();connection.commit();entered.countDown();
-                        if(!release.await(8,TimeUnit.SECONDS))throw new IllegalStateException("Test release timed out");
-                        if(failAfterCommit)throw new IllegalStateException("Unacknowledged committed effect");
-                      }
-                      return new OperationResult<Integer>(Outcome.SUCCEEDED,Optional.of(42),Optional.empty());
-                    });}catch(ApiException failure){throw new IllegalStateException(failure);}});
-                    return panel;
-                  }
-                  public void environmentChanged(UiEnvironment environment){}
-                  public void close(){if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT close required");pageCloses++;}
-                });
-                if(failStart)throw new IllegalStateException("Partial startup failure");
+        package example.fixture;
+        import gold.debug.windowstolinux.appapi.mod.*;
+        
+        import gold.debug.windowstolinux.appapi.ui.*;
+        import java.util.*;
+        import java.util.concurrent.*;
+        import javax.swing.*;
+        public final class Mod implements ModEntrypoint {
+          public static boolean failStart, failAfterCommit;
+          public static int executions, pageCloses, stops;
+          public static final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
+          public static TaskHandle<Integer> task;
+          private PageRegistration page;
+          public void start(ModContext context) throws Exception {
+            context.tasks().registerRecovery("insert",(previous,original)->{
+              try(var connection=context.db().openConnection(original);var statement=connection.prepareStatement("SELECT payload FROM records WHERE task_id=?")){
+                statement.setObject(1,original.id());try(var rows=statement.executeQuery()){
+                  if(!rows.next())return new OperationResult<Void>(Outcome.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"MISSING_RECORD","Business row is absent",Map.of(),Optional.empty())));
+                  return new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty());
+                }
               }
-              public void stop(StopContext context)throws Exception {stops++;if(page!=null)page.close();}
-            }
-            """;
+            });
+            page=context.ui().register(new PageSpec("main","fixture.main","Fixture",false),()->new ModPage(){
+              public JComponent create(UiEnvironment environment){
+                if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT required");
+                var panel=new JPanel();var button=new JButton("Insert");panel.add(button);
+                button.addActionListener(event->{try{task=context.tasks().submit(new TaskRequest("insert","Local row",List.of(),true),active->{
+                  executions++;
+                  try(var connection=context.db().openConnection(active);var statement=connection.prepareStatement("INSERT INTO records VALUES(?,42)")){
+                    connection.setAutoCommit(false);statement.setObject(1,active.id());statement.executeUpdate();connection.commit();entered.countDown();
+                    if(!release.await(8,TimeUnit.SECONDS))throw new IllegalStateException("Test release timed out");
+                    if(failAfterCommit)throw new IllegalStateException("Unacknowledged committed effect");
+                  }
+                  return new OperationResult<Integer>(Outcome.SUCCEEDED,Optional.of(42),Optional.empty());
+                });}catch(ApiException failure){throw new IllegalStateException(failure);}});
+                return panel;
+              }
+              public void environmentChanged(UiEnvironment environment){}
+              public void close(){if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT close required");pageCloses++;}
+            });
+            if(failStart)throw new IllegalStateException("Partial startup failure");
+          }
+          public void stop(StopContext context)throws Exception {stops++;if(page!=null)page.close();}
+        }
+        """;
+
     ModClassLoader loader(boolean packaged, Path directory) throws Exception {
         Files.createDirectories(directory);
         var source = directory.resolve("Mod.java");
@@ -119,7 +132,7 @@ class ModLifecycleIntegrationTest {
         Files.createDirectories(classes);
         var api = Path.of(ModContext.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-proc:none",
-                "-encoding", "UTF-8", "-classpath", api.toString(), "-d", classes.toString(), source.toString()));
+            "-encoding", "UTF-8", "-classpath", api.toString(), "-d", classes.toString(), source.toString()));
         Path binary = classes;
         if (packaged) {
             binary = directory.resolve("fixture.jar");
@@ -132,10 +145,10 @@ class ModLifecycleIntegrationTest {
             }
         }
         var manifest = ManifestReader
-                .read("""
-                        {"formatVersion":1,"id":"example.stable","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.fixture.Mod","schemaVersion":"1"}
-                        """
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            .read("""
+                {"formatVersion":1,"id":"example.stable","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"example.fixture.Mod","schemaVersion":"1"}
+                """
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return new ModClassLoader(manifest, List.of(binary.toUri().toURL()), Map.of());
     }
 
@@ -146,8 +159,8 @@ class ModLifecycleIntegrationTest {
             s.execute("INSERT INTO mod_registry(mod_id,updated_at) VALUES('example.stable',1)");
         }
         try (var c = db.openConnection();
-                var p = c.prepareStatement(
-                        "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES('example.stable','1',?,?,?,'PREPARING',1)")) {
+             var p = c.prepareStatement(
+                 "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES('example.stable','1',?,?,?,'PREPARING',1)")) {
             p.setObject(1, identity.generation());
             p.setString(2, names.physicalName());
             p.setString(3, names.databaseUser());
@@ -155,8 +168,8 @@ class ModLifecycleIntegrationTest {
         }
         new SchemaProvisioner(db).create(identity);
         try (var access = new SchemaAccessScope(db, identity, UUID.randomUUID(), false);
-                var c = access.openConnection();
-                var s = c.createStatement()) {
+             var c = access.openConnection();
+             var s = c.createStatement()) {
             s.execute("CREATE TABLE records(task_id UUID PRIMARY KEY,payload INT NOT NULL)");
         }
         try (var c = db.openConnection(); var s = c.createStatement()) {
@@ -167,20 +180,19 @@ class ModLifecycleIntegrationTest {
 
     List<TaskResource> claims(SchemaIdentity identity) {
         return List.of(new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false),
-                new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false));
+            new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false));
     }
 
     ModContext context(ModPageRegistry.PageScope pages, TaskService tasks, ModDatabase database, ModLaunchMode mode) {
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "identity" -> new ModIdentity("example.stable", "1.0.0", Optional.of("1"));
-                    case "launchMode" -> mode;
-                    case "ui" -> pages;
-                    case "tasks" -> tasks;
-                    case "db" -> database;
-                    default ->
-                        throw new AssertionError("Fixture did not implement unused capability " + method.getName());
-                });
+            (proxy, method, args) -> switch (method.getName()) {
+                case "identity" -> new ModIdentity("example.stable", "1.0.0", Optional.of("1"));
+                case "launchMode" -> mode;
+                case "ui" -> pages;
+                case "tasks" -> tasks;
+                case "db" -> database;
+                default -> throw new AssertionError("Fixture did not implement unused capability " + method.getName());
+            });
     }
 
     ModHostLease lease(ModContext context, PlatformTaskRuntime tasks, ModPageRegistry.PageScope pages) {
@@ -230,8 +242,8 @@ class ModLifecycleIntegrationTest {
             try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
                 var identity = schema(db);
                 try (var security = security(db);
-                        var tasks = new PlatformTaskRuntime(db,
-                                (connection, owner, version, request) -> claims(identity), security)) {
+                     var tasks = new PlatformTaskRuntime(db,
+                         (connection, owner, version, request) -> claims(identity), security)) {
                     var pane = new AtomicReference<ExtensionPagePane>();
                     SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                     }, owner -> "Fixture", () -> "Locked", settings -> {
@@ -241,17 +253,17 @@ class ModLifecycleIntegrationTest {
                     var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", false);
                     var database = new TaskModDatabase(db, tasks, identity);
                     var session = new ModRuntimeSession(loader,
-                            lease(context(scope, authorTasks, database, ModLaunchMode.NORMAL), tasks, scope),
-                            SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
-                            });
+                        lease(context(scope, authorTasks, database, ModLaunchMode.NORMAL), tasks, scope),
+                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                    });
                     assertThrows(ApiException.class, () -> authorTasks.submit(
-                            new TaskRequest("prestart", "Denied", List.of(), true),
-                            task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                        new TaskRequest("prestart", "Denied", List.of(), true),
+                        task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
                     session.start();
                     assertEquals(1, pages.contributions().size());
                     scope.open("main");
                     SwingUtilities.invokeAndWait(() -> components(pane.get(), JButton.class).stream()
-                            .filter(button -> button.getText().equals("Insert")).findFirst().orElseThrow().doClick());
+                        .filter(button -> button.getText().equals("Insert")).findFirst().orElseThrow().doClick());
                     assertTrue(signal(entry, "entered").await(8, TimeUnit.SECONDS));
                     var handle = task(entry);
                     pages.closeView(new ModPageRegistry.PageKey(identity.ownerId(), "main"));
@@ -261,16 +273,16 @@ class ModLifecycleIntegrationTest {
                     assertEquals(0, entry.getField("stops").getInt(null));
                     signal(entry, "release").countDown();
                     assertEquals(42,
-                            handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).value().orElseThrow());
+                        handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).value().orElseThrow());
                     session.stop(StopReason.APPLICATION_RESTART);
                     assertTrue(session.resourcesClosed());
                     assertEquals(1, entry.getField("pageCloses").getInt(null));
                     assertTrue(pages.contributions().isEmpty());
                     assertEquals(0, db.openConnections());
                     try (var c = db.openConnection();
-                            var s = c.createStatement();
-                            var rows = s.executeQuery("SELECT COUNT(*) FROM "
-                                    + new SchemaCoordinates(identity).physicalName() + ".records")) {
+                         var s = c.createStatement();
+                         var rows = s.executeQuery("SELECT COUNT(*) FROM "
+                             + new SchemaCoordinates(identity).physicalName() + ".records")) {
                         assertTrue(rows.next());
                         assertEquals(1, rows.getInt(1));
                     }
@@ -292,8 +304,8 @@ class ModLifecycleIntegrationTest {
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
             try (var security = security(db);
-                    var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
-                            security)) {
+                 var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                     security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked", settings -> {
@@ -301,20 +313,20 @@ class ModLifecycleIntegrationTest {
                 var pages = new ModPageRegistry(pane.get(), new UiEnvironment(Locale.ENGLISH, "light", false));
                 var scope = pages.begin(identity.ownerId(), false);
                 var context = context(scope, tasks.bind(identity.ownerId(), "1.0.0", false),
-                        new TaskModDatabase(db, tasks, identity), ModLaunchMode.NORMAL);
+                    new TaskModDatabase(db, tasks, identity), ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
-                        });
+                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                });
                 session.start();
                 scope.open("main");
                 signal(entry, "release").countDown();
                 SwingUtilities.invokeAndWait(() -> components(pane.get(), JButton.class).stream()
-                        .filter(button -> button.getText().equals("Insert")).findFirst().orElseThrow().doClick());
+                    .filter(button -> button.getText().equals("Insert")).findFirst().orElseThrow().doClick());
                 var handle = task(entry);
                 state(handle, TaskState.UNKNOWN);
                 assertThrows(ApiException.class, () -> session.stop(StopReason.APPLICATION_EXIT));
                 assertEquals(TaskState.ENDED,
-                        tasks.reconcile(handle.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                    tasks.reconcile(handle.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
                 assertTrue(handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).value().isEmpty());
                 assertEquals(1, entry.getField("executions").getInt(null));
                 session.stop(StopReason.APPLICATION_EXIT);
@@ -333,8 +345,8 @@ class ModLifecycleIntegrationTest {
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION)) {
             var identity = schema(db);
             try (var security = security(db);
-                    var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
-                            security)) {
+                 var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                     security)) {
                 var pane = new AtomicReference<ExtensionPagePane>();
                 SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
                 }, owner -> "Fixture", () -> "Locked", settings -> {
@@ -343,19 +355,19 @@ class ModLifecycleIntegrationTest {
                 var scope = pages.begin(identity.ownerId(), false);
                 var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", false);
                 var context = context(scope, authorTasks, new TaskModDatabase(db, tasks, identity),
-                        ModLaunchMode.NORMAL);
+                    ModLaunchMode.NORMAL);
                 var session = new ModRuntimeSession(loader, lease(context, tasks, scope),
-                        SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
-                        });
+                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+                });
                 assertThrows(IllegalStateException.class, session::start);
                 assertTrue(pages.contributions().isEmpty());
                 assertTrue(tasks.snapshots().isEmpty());
                 assertTrue(session.resourcesClosed());
                 assertThrows(ApiException.class, () -> authorTasks.submit(
-                        new TaskRequest("insert", "Denied", List.of(), true),
-                        task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                    new TaskRequest("insert", "Denied", List.of(), true),
+                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
                 assertThrows(ApiException.class, () -> authorTasks.registerRecovery("insert", (previous,
-                        task) -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                                                                                               task) -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
             }
         }
     }
@@ -370,20 +382,20 @@ class ModLifecycleIntegrationTest {
             identity = schema(db);
             var ledger = new TaskLedger(db);
             ledger.enqueue(original, identity.ownerId(), "1.0.0",
-                    new TaskRequest("insert", "Recovered row", List.of(), true), claims(identity));
+                new TaskRequest("insert", "Recovered row", List.of(), true), claims(identity));
             assertTrue(ledger.tryStart(original));
             try (var c = db.openConnection();
-                    var p = c.prepareStatement("INSERT INTO " + new SchemaCoordinates(identity).physicalName()
-                            + ".records VALUES(?,42)")) {
+                 var p = c.prepareStatement("INSERT INTO " + new SchemaCoordinates(identity).physicalName()
+                     + ".records VALUES(?,42)")) {
                 p.setObject(1, original);
                 p.executeUpdate();
             }
             assertFalse(ledger.complete(original, Outcome.UNKNOWN, "{\"outcome\":\"UNKNOWN\"}", false));
         }
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION);
-                var security = security(db);
-                var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
-                        security)) {
+             var security = security(db);
+             var tasks = new PlatformTaskRuntime(db, (connection, owner, version, request) -> claims(identity),
+                 security)) {
             var pane = new AtomicReference<ExtensionPagePane>();
             SwingUtilities.invokeAndWait(() -> pane.set(new ExtensionPagePane(key -> {
             }, owner -> "Fixture", () -> "Locked", settings -> {
@@ -392,24 +404,24 @@ class ModLifecycleIntegrationTest {
             var scope = pages.begin(identity.ownerId(), true);
             var authorTasks = tasks.bind(identity.ownerId(), "1.0.0", true);
             var session = new ModRuntimeSession(loader,
-                    lease(context(scope, authorTasks, new TaskModDatabase(db, tasks, identity), ModLaunchMode.RECOVERY),
-                            tasks, scope),
-                    SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
-                    });
+                lease(context(scope, authorTasks, new TaskModDatabase(db, tasks, identity), ModLaunchMode.RECOVERY),
+                    tasks, scope),
+                SemanticVersion.parse("1.0.0-dev.1"), (state, failure, closed) -> {
+            });
             session.start();
             assertTrue(pages.contributions().isEmpty());
             assertThrows(ApiException.class, () -> scope.open("main"));
             assertThrows(ApiException.class,
-                    () -> authorTasks.submit(new TaskRequest("insert", "Denied", List.of(), true),
-                            task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                () -> authorTasks.submit(new TaskRequest("insert", "Denied", List.of(), true),
+                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
             assertEquals(TaskState.ENDED,
-                    tasks.reconcile(original).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                tasks.reconcile(original).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             session.stop(StopReason.RECOVERY_FINISHED);
             assertTrue(session.resourcesClosed());
             var normal = tasks.bind(identity.ownerId(), "1.0.0", false);
             assertThrows(ApiException.class,
-                    () -> normal.submit(new TaskRequest("insert", "Restart required", List.of(), true),
-                            task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                () -> normal.submit(new TaskRequest("insert", "Restart required", List.of(), true),
+                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
         }
         Files.delete(work.resolve("fixture.jar"));
     }

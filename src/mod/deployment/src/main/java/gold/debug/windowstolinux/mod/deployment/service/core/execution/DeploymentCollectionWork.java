@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentCollectionEvidence.*;
 
 import java.nio.charset.StandardCharsets;
@@ -19,7 +25,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
@@ -70,8 +76,8 @@ final class DeploymentCollectionWork {
      * @param channel exact borrowed helper channel / 精确借用helper频道
      * @param publication borrowed original runtime channel / 借用原运行时频道 */
     DeploymentCollectionWork(DeploymentHandoffLedger ledger, ApplicationFacts data, TaskContext task,
-            DeploymentHandoffLedger.Entry entry, List<DeploymentCollectionPlan.ArtifactPlan> plans,
-            DeploymentHandoffChannel channel, DeploymentPublicationChannel publication) {
+                             DeploymentHandoffLedger.Entry entry, List<DeploymentCollectionPlan.ArtifactPlan> plans,
+                             DeploymentHandoffChannel channel, DeploymentPublicationChannel publication) {
         this.ledger = ledger;
         this.data = data;
         this.task = task;
@@ -108,8 +114,8 @@ final class DeploymentCollectionWork {
             if (quiescence && state.equals("ERROR"))
                 return failed("DEPLOYMENT_COLLECTION_FAILED_COMPONENT_CANNOT_QUIESCE");
             units.putObject(component.componentId()).put("before", state).put("maintenanceAttempted", false)
-                    .put("maintenanceAcquired", false).put("stopAttempted", false).put("stopped", false)
-                    .put("startAttempted", false).put("restored", false);
+                .put("maintenanceAcquired", false).put("stopAttempted", false).put("stopped", false)
+                .put("startAttempted", false).put("restored", false);
         }
         facts.put("quiescence", quiescence);
 
@@ -128,9 +134,9 @@ final class DeploymentCollectionWork {
             unit.put("maintenanceAttempted", true);
             save(DeploymentHandoffState.MAINTENANCE);
             var marker = channel.execute(
-                    "application-maintenance", List.of("begin", component.unit().id(),
-                            component.unit().ownershipManifestSha256(), operation, unitRelease(data, component)),
-                    new byte[0], Duration.ofMinutes(2), 1024);
+                "application-maintenance", List.of("begin", component.unit().id(),
+                    component.unit().ownershipManifestSha256(), operation, unitRelease(data, component)),
+                new byte[0], Duration.ofMinutes(2), 1024);
             if (!DeploymentHandoffChannel.receipt(marker, "MAINTENANCE=begin\n"))
                 throw fail("DEPLOYMENT_COLLECTION_MAINTENANCE_UNKNOWN");
             unit.put("maintenanceAcquired", true);
@@ -151,7 +157,7 @@ final class DeploymentCollectionWork {
                 unit.put("stopAttempted", true);
                 save(DeploymentHandoffState.MAINTENANCE);
                 var stopped = publication.lifecycle(component.unit(), component.reviewedRuntime(), "stop",
-                        unitRelease(data, component));
+                    unitRelease(data, component));
                 if (stopped.outcome() != Outcome.SUCCEEDED)
                     throw fail("DEPLOYMENT_COLLECTION_STOP_UNKNOWN");
                 unit.put("stopped", true);
@@ -165,7 +171,7 @@ final class DeploymentCollectionWork {
     DeploymentCollection export() throws ApiException {
         var collected = facts.putArray("artifacts");
         for (var plan : plans) {
-            if (task.cancellation().requested())
+            if (task.cancelToken().requested())
                 throw fail("DEPLOYMENT_COLLECTION_CANCELLED_IN_MAINTENANCE");
             if (current(channel, data).outcome() != Outcome.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_CURRENT_CHANGED");
@@ -173,8 +179,8 @@ final class DeploymentCollectionWork {
             attempts.add(plan.componentId() + ":" + plan.kind() + ":" + plan.resource());
             save(DeploymentHandoffState.MAINTENANCE);
             var remote = channel.execute(plan.kind().equals("database") ? "handoff-database-export" : "backup-create",
-                    plan.createArguments(operation, data.snapshot().application().id()), new byte[0],
-                    Duration.ofHours(2), 4096);
+                plan.createArguments(operation, data.snapshot().application().id()), new byte[0],
+                Duration.ofHours(2), 4096);
             if (remote.outcome() != Outcome.SUCCEEDED || remote.value().isEmpty())
                 throw fail("DEPLOYMENT_COLLECTION_ARTIFACT_UNKNOWN");
             var artifact = parseArtifact(remote, plan, operation, data.snapshot().application().id());
@@ -182,8 +188,8 @@ final class DeploymentCollectionWork {
                 throw fail("DEPLOYMENT_COLLECTION_RECEIPT_UNKNOWN");
             var value = artifact.orElseThrow();
             collected.addObject().put("id", value.id()).put("bindingId", value.bindingId())
-                    .put("remotePath", value.remotePath()).put("byteCount", value.byteCount())
-                    .put("sha256", value.sha256());
+                .put("remotePath", value.remotePath()).put("byteCount", value.byteCount())
+                .put("sha256", value.sha256());
             save(DeploymentHandoffState.MAINTENANCE);
         }
         save(DeploymentHandoffState.COLLECTED);
@@ -219,11 +225,11 @@ final class DeploymentCollectionWork {
             save(DeploymentHandoffState.COMPENSATING);
         }
         if (!DeploymentHandoffChannel.receipt(
-                channel.execute(closePreviouslyAttempted ? "handoff-operation-close-status" : "handoff-operation-close",
-                        List.of(operation, data.snapshot().application().id(), task.id().toString(),
-                                data.snapshot().revisionSha256()),
-                        new byte[0], Duration.ofMinutes(2), 1024),
-                "HANDOFF_OPERATION_CLOSED=1\n"))
+            channel.execute(closePreviouslyAttempted ? "handoff-operation-close-status" : "handoff-operation-close",
+                List.of(operation, data.snapshot().application().id(), task.id().toString(),
+                    data.snapshot().revisionSha256()),
+                new byte[0], Duration.ofMinutes(2), 1024),
+            "HANDOFF_OPERATION_CLOSED=1\n"))
             throw fail("DEPLOYMENT_COLLECTION_PRODUCER_FENCE_UNCONFIRMED");
         facts.put("closed", true);
         save(DeploymentHandoffState.COMPENSATING);
@@ -236,9 +242,9 @@ final class DeploymentCollectionWork {
         var statuses = new HashMap<String, String>();
         for (var plan : attemptedPlans) {
             var status = channel.execute(
-                    plan.kind().equals("database") ? "handoff-database-status" : "handoff-backup-status",
-                    plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
-                    Duration.ofMinutes(10), 4096);
+                plan.kind().equals("database") ? "handoff-database-status" : "handoff-backup-status",
+                plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
+                Duration.ofMinutes(10), 4096);
             String prefix = plan.kind().equals("database") ? "HANDOFF_DATABASE" : "HANDOFF_BACKUP";
             if (DeploymentHandoffChannel.receipt(status, prefix + "=1\nPRESENT=0\n")) {
                 statuses.put(plan.bindingId(), "absent");
@@ -280,7 +286,7 @@ final class DeploymentCollectionWork {
             mutable.put("startAttempted", true);
             save(DeploymentHandoffState.COMPENSATING);
             var started = publication.lifecycle(component.unit(), component.reviewedRuntime(), "start",
-                    unitRelease(data, component));
+                unitRelease(data, component));
             if (started.outcome() != Outcome.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_RESTORE_UNKNOWN");
             mutable.put("restored", true);
@@ -307,16 +313,16 @@ final class DeploymentCollectionWork {
                     cleanup.put("attempted", true);
                     save(DeploymentHandoffState.COMPENSATING);
                     var arguments = new ArrayList<>(
-                            plan.createArguments(operation, data.snapshot().application().id()));
+                        plan.createArguments(operation, data.snapshot().application().id()));
                     arguments.add(expected);
                     var removed = channel.execute("handoff-database-discard", arguments, new byte[0],
-                            Duration.ofMinutes(10), 1024);
+                        Duration.ofMinutes(10), 1024);
                     if (!DeploymentHandoffChannel.receipt(removed, "HANDOFF_DATABASE_DISCARDED=1\n"))
                         throw fail("DEPLOYMENT_COLLECTION_DATABASE_CLEANUP_UNKNOWN");
                 } else {
                     var status = channel.execute("handoff-database-status",
-                            plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
-                            Duration.ofMinutes(10), 1024);
+                        plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
+                        Duration.ofMinutes(10), 1024);
                     if (!DeploymentHandoffChannel.receipt(status, "HANDOFF_DATABASE=1\nPRESENT=0\n"))
                         throw fail("DEPLOYMENT_COLLECTION_DATABASE_CLEANUP_UNKNOWN");
                 }
@@ -334,15 +340,15 @@ final class DeploymentCollectionWork {
                 cleanup.put("attempted", true);
                 save(DeploymentHandoffState.COMPENSATING);
                 var removed = channel.execute("backup-discard", List.of(operation), new byte[0], Duration.ofMinutes(10),
-                        1024);
+                    1024);
                 if (!DeploymentHandoffChannel.receipt(removed, "DISCARDED=1\n"))
                     throw fail("DEPLOYMENT_COLLECTION_ARCHIVE_CLEANUP_UNKNOWN");
             } else
                 for (var plan : attemptedPlans)
                     if (!plan.kind().equals("database")) {
                         var status = channel.execute("handoff-backup-status",
-                                plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
-                                Duration.ofMinutes(10), 1024);
+                            plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
+                            Duration.ofMinutes(10), 1024);
                         if (!DeploymentHandoffChannel.receipt(status, "HANDOFF_BACKUP=1\nPRESENT=0\n"))
                             throw fail("DEPLOYMENT_COLLECTION_ARCHIVE_CLEANUP_UNKNOWN");
                     }
@@ -363,9 +369,9 @@ final class DeploymentCollectionWork {
             if (!marker.orElseThrow())
                 continue;
             var ended = channel.execute(
-                    "application-maintenance", List.of("end", component.unit().id(),
-                            component.unit().ownershipManifestSha256(), operation, unitRelease(data, component)),
-                    new byte[0], Duration.ofMinutes(2), 1024);
+                "application-maintenance", List.of("end", component.unit().id(),
+                    component.unit().ownershipManifestSha256(), operation, unitRelease(data, component)),
+                new byte[0], Duration.ofMinutes(2), 1024);
             if (!DeploymentHandoffChannel.receipt(ended, "MAINTENANCE=end\n"))
                 throw fail("DEPLOYMENT_COLLECTION_MAINTENANCE_END_UNKNOWN");
         }
@@ -381,19 +387,19 @@ final class DeploymentCollectionWork {
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
             String expected = units.path(component.componentId()).path("before").asText();
             if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
-                    || !observed.value().orElseThrow().state().name().equals(expected))
+                || !observed.value().orElseThrow().state().name().equals(expected))
                 throw fail("DEPLOYMENT_COLLECTION_SOURCE_RESTORE_UNVERIFIED");
             if (expected.equals("RUNNING")) {
                 if (publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck())
-                        .outcome() != Outcome.SUCCEEDED)
+                    .outcome() != Outcome.SUCCEEDED)
                     throw fail("DEPLOYMENT_COLLECTION_SOURCE_HEALTH_UNVERIFIED");
             } else
                 allRunning = false;
         }
         if (allRunning) {
             var health = data.graph().components().stream()
-                    .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
-                    .orElseThrow();
+                .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
+                .orElseThrow();
             if (publication.healthCheck(health.unit(), data.graph().healthCheck()).outcome() != Outcome.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_SOURCE_HEALTH_UNVERIFIED");
         }
@@ -405,7 +411,7 @@ final class DeploymentCollectionWork {
     private void save(DeploymentHandoffState phase) throws ApiException {
         ledger.advance(entry, entry.publicValue().state(), phase, facts, Optional.empty(), task);
         entry = ledger.find(entry.publicValue().id(), task)
-                .orElseThrow(() -> problem(ProblemCode.UNKNOWN, "DEPLOYMENT_COLLECTION_JOURNAL_ABSENT"));
+            .orElseThrow(() -> problem(ProblemCode.UNKNOWN, "DEPLOYMENT_COLLECTION_JOURNAL_ABSENT"));
     }
 
     /** Persists uncertainty before returning the original recovery blocker. / 返回原恢复阻碍前持久保存未知。

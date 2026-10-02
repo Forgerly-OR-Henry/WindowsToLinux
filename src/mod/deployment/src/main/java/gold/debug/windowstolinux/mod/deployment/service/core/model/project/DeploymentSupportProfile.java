@@ -20,8 +20,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Deplo
  * @param limitations localized bounded limitations / 本地化有界限制
  */
 public record DeploymentSupportProfile(DeploymentSupportLevel level, SourceLanguageType language, String architecture,
-        String framework, List<ValidatedDeploymentTarget> validatedTargets, List<String> evidenceReferences,
-        List<DeploymentLocalizedMessage> limitations) {
+                                       String framework, List<ValidatedDeploymentTarget> validatedTargets,
+                                       List<String> evidenceReferences,
+                                       List<DeploymentLocalizedMessage> limitations) {
     /**
      * Validates a truthful support claim. / 验证真实的支持声明。
      *

@@ -9,7 +9,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSto
  * Reviewed non-secret database connection; passwords remain exact secret references. / 经审阅的非秘密数据库连接；密码保持为精确秘密引用。
  */
 public sealed interface DeploymentDatabaseConnection
-        permits DeploymentDatabaseConnection.Sqlite, DeploymentDatabaseConnection.Server {
+    permits DeploymentDatabaseConnection.Sqlite, DeploymentDatabaseConnection.Server {
     /**
      * Returns the reviewed database family. / 返回经审阅的数据库族。
      *
@@ -27,7 +27,7 @@ public sealed interface DeploymentDatabaseConnection
      * @param initializationFiles initialization files / 初始化文件集合
      */
     record Sqlite(String fileName, DeploymentStorageLocation location, String accessPath, String seedFile,
-            java.util.List<String> initializationFiles) implements DeploymentDatabaseConnection {
+                  java.util.List<String> initializationFiles) implements DeploymentDatabaseConnection {
         /**
          * Validates one plain file name without path syntax. / 校验不含路径语法的普通文件名。
          *
@@ -41,19 +41,19 @@ public sealed interface DeploymentDatabaseConnection
          */
         public Sqlite {
             seedFile = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSqliteRequirement
-                    .relativeSourceFile(seedFile);
+                .relativeSourceFile(seedFile);
             initializationFiles = java.util.List.copyOf(initializationFiles);
             if (initializationFiles.size() > 32)
                 throw new IllegalArgumentException("too many initialization files");
             initializationFiles.forEach(
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSqliteRequirement::relativeSourceFile);
+                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSqliteRequirement::relativeSourceFile);
             location = Objects.requireNonNull(location, "location");
             accessPath = Objects.requireNonNull(accessPath, "accessPath").trim();
             if (!accessPath.isEmpty())
                 accessPath = DeploymentStorageLocation.validatedPath(accessPath);
             fileName = Objects.requireNonNull(fileName, "fileName").trim();
             if (!fileName.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}") || fileName.equals(".")
-                    || fileName.equals("..")) {
+                || fileName.equals("..")) {
                 throw new IllegalArgumentException("SQLite fileName must be a bounded plain file name");
             }
         }
@@ -90,7 +90,7 @@ public sealed interface DeploymentDatabaseConnection
          */
         public String physicalPath(String applicationId, String databaseId) {
             return location.resolve(applicationId, DeploymentStorageLocation.StorageResourceType.DATABASE, databaseId)
-                    + "/" + fileName;
+                + "/" + fileName;
         }
 
         /**
@@ -117,7 +117,8 @@ public sealed interface DeploymentDatabaseConnection
      * @param tlsRequired tls required / tls必需
      */
     record Server(DeploymentDatabaseEngineType engine, String host, int port, String database, String username,
-            DeploymentSecretReference passwordReference, boolean tlsRequired) implements DeploymentDatabaseConnection {
+                  DeploymentSecretReference passwordReference,
+                  boolean tlsRequired) implements DeploymentDatabaseConnection {
         /**
          * Validates one supported server connection without accepting secret material. / 校验一个受支持且不含秘密内容的服务器连接。
          *
@@ -134,7 +135,7 @@ public sealed interface DeploymentDatabaseConnection
         public Server {
             engine = Objects.requireNonNull(engine, "engine");
             if (engine != DeploymentDatabaseEngineType.POSTGRESQL && engine != DeploymentDatabaseEngineType.MYSQL
-                    && engine != DeploymentDatabaseEngineType.MARIADB && engine != DeploymentDatabaseEngineType.REDIS) {
+                && engine != DeploymentDatabaseEngineType.MARIADB && engine != DeploymentDatabaseEngineType.REDIS) {
                 throw new IllegalArgumentException("server connection requires PostgreSQL, MySQL, MariaDB or Redis");
             }
             host = text(host, "host", 253);
@@ -163,7 +164,7 @@ public sealed interface DeploymentDatabaseConnection
     private static String text(String value, String name, int maximumLength) {
         value = Objects.requireNonNull(value, name).trim();
         if (value.isEmpty() || value.length() > maximumLength
-                || value.chars().anyMatch(character -> Character.isISOControl(character))) {
+            || value.chars().anyMatch(character -> Character.isISOControl(character))) {
             throw new IllegalArgumentException(name + " is invalid");
         }
         return value;

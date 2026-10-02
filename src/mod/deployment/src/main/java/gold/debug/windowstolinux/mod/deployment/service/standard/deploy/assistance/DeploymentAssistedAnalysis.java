@@ -9,22 +9,22 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 
 /** Bounded read-only source analysis for missing technical input, without an execution port. / 不持有执行端口、用于技术缺项的有界只读源码分析。 */
 public final class DeploymentAssistedAnalysis {
     /** Fixed model protocol. / 固定模型协议。 */
     private static final String POLICY = "You are a bounded read-only deployment analyst. Return exactly one JSON "
-            + "object per turn with keys action, sourceRevision, arguments and no prose. sourceRevision must equal "
-            + "the supplied SHA-256. Allowed actions: LIST with arguments {path,offset,limit}; READ with "
-            + "arguments {path,offset,limit}; SEARCH with arguments {query,offset,limit}; ADVISE with arguments "
-            + "{suggestions,summary,unresolved}. offset is a zero-based integer; limit is 1..100. LIST root path is dot. "
-            + "ADVISE suggestions is an array of {field,candidate,evidence}; evidence is a nonempty array of "
-            + "reference IDs from actual READ or SEARCH results. unresolved is an array of human questions. "
-            + "Only propose offered technical field IDs, cite real observed evidence, and leave business intent, "
-            + "credentials and permissions unresolved. Never request commands, writes or secret content. "
-            + "Example LIST: {\"action\":\"LIST\",\"sourceRevision\":\"<supplied SHA-256>\","
-            + "\"arguments\":{\"path\":\".\",\"offset\":0,\"limit\":50}}.";
+        + "object per turn with keys action, sourceRevision, arguments and no prose. sourceRevision must equal "
+        + "the supplied SHA-256. Allowed actions: LIST with arguments {path,offset,limit}; READ with "
+        + "arguments {path,offset,limit}; SEARCH with arguments {query,offset,limit}; ADVISE with arguments "
+        + "{suggestions,summary,unresolved}. offset is a zero-based integer; limit is 1..100. LIST root path is dot. "
+        + "ADVISE suggestions is an array of {field,candidate,evidence}; evidence is a nonempty array of "
+        + "reference IDs from actual READ or SEARCH results. unresolved is an array of human questions. "
+        + "Only propose offered technical field IDs, cite real observed evidence, and leave business intent, "
+        + "credentials and permissions unresolved. Never request commands, writes or secret content. "
+        + "Example LIST: {\"action\":\"LIST\",\"sourceRevision\":\"<supplied SHA-256>\","
+        + "\"arguments\":{\"path\":\".\",\"offset\":0,\"limit\":50}}.";
 
     /** Model adapter and original read-only source. / 模型适配器与原只读来源。 */
     private final DeploymentAiJson ai;
@@ -41,7 +41,7 @@ public final class DeploymentAssistedAnalysis {
      * @param summary bounded explanation / 有界说明
      * @param unresolved questions for the human / 需人工回答的问题 */
     public record Advice(Map<String, String> values, Map<String, String> locations, String summary,
-            List<String> unresolved) {
+                         List<String> unresolved) {
         /** Copies transient review material. / 复制临时审阅材料。
          * @param values technical candidates / 技术候选
          * @param locations actual source locations / 实际源码位置
@@ -72,7 +72,7 @@ public final class DeploymentAssistedAnalysis {
      * @return evidence-checked proposals and unresolved questions / 有依据的建议及未决问题
      * @throws Exception on invalid, cancelled or unavailable analysis / 分析无效、取消或不可用时 */
     public Advice analyze(List<DeploymentReviewField> fields, Map<String, String> facts, TaskContext task)
-            throws Exception {
+        throws Exception {
         var offered = new LinkedHashMap<String, DeploymentReviewField>();
         for (var field : fields)
             if (DeploymentAssistedAdvisor.allows(field.id()))
@@ -84,13 +84,13 @@ public final class DeploymentAssistedAnalysis {
         var queries = new HashSet<String>();
         int characters = 0;
         for (int decision = 0; decision < 12; decision++) {
-            if (task.cancellation().requested())
+            if (task.cancelToken().requested())
                 throw new java.util.concurrent.CancellationException();
             source.verifyBoundaries();
             Map<String, Object> request = Map.of(
-                    "sourceRevision", source.revision(), "facts", facts, "fields", offered.values().stream()
-                            .map(f -> Map.of("id", f.id(), "value", f.value(), "choices", f.choices())).toList(),
-                    "observations", List.copyOf(observations), "remaining", 12 - decision);
+                "sourceRevision", source.revision(), "facts", facts, "fields", offered.values().stream()
+                    .map(f -> Map.of("id", f.id(), "value", f.value(), "choices", f.choices())).toList(),
+                "observations", List.copyOf(observations), "remaining", 12 - decision);
             JsonNode reply = ai.ask(AiPurpose.LANGUAGE, POLICY, request, revision, task);
             exact(reply, Set.of("action", "sourceRevision", "arguments"));
             source.verifyBoundaries();
@@ -125,7 +125,7 @@ public final class DeploymentAssistedAnalysis {
             String reference = "source/" + observations.size();
             observations.add(Map.of("reference", reference, "action", action, "content", content));
             if (!action.equals("LIST") && !lines.isEmpty()
-                    && lines.stream().anyMatch(line -> !line.contains("[credential content excluded]")))
+                && lines.stream().anyMatch(line -> !line.contains("[credential content excluded]")))
                 evidence.put(reference, argument + ":" + offset + "@" + source.revision());
         }
         throw new IllegalStateException("Assisted decision budget exhausted");
@@ -137,11 +137,11 @@ public final class DeploymentAssistedAnalysis {
      * @param evidence actually observed source / 实际观察来源
      * @return checked advice / 已检查建议 */
     private static Advice advice(JsonNode args, Map<String, DeploymentReviewField> offered,
-            Map<String, String> evidence) {
+                                 Map<String, String> evidence) {
         JsonNode suggestions = args.get("suggestions");
         JsonNode unresolved = args.get("unresolved");
         if (suggestions == null || !suggestions.isArray() || suggestions.size() > 16 || unresolved == null
-                || !unresolved.isArray() || unresolved.size() > 16)
+            || !unresolved.isArray() || unresolved.size() > 16)
             throw new IllegalArgumentException("Invalid assisted advice");
         var values = new LinkedHashMap<String, String>();
         var locations = new LinkedHashMap<String, String>();
@@ -152,7 +152,7 @@ public final class DeploymentAssistedAnalysis {
             var field = offered.get(fieldId);
             JsonNode cites = item.get("evidence");
             if (field == null || !DeploymentAssistedAdvisor.accepts(field, value) || values.containsKey(fieldId)
-                    || cites == null || !cites.isArray() || cites.isEmpty() || cites.size() > 8)
+                || cites == null || !cites.isArray() || cites.isEmpty() || cites.size() > 8)
                 throw new SecurityException("Unsupported assisted source suggestion");
             for (JsonNode cite : cites) {
                 if (!cite.isTextual() || !evidence.containsKey(cite.textValue()))
@@ -179,7 +179,7 @@ public final class DeploymentAssistedAnalysis {
     private static int number(JsonNode node, String key, int minimum, int maximum) {
         JsonNode value = node.get(key);
         if (value == null || !value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < minimum
-                || value.intValue() > maximum)
+            || value.intValue() > maximum)
             throw new IllegalArgumentException("Invalid assisted source page");
         return value.intValue();
     }

@@ -38,7 +38,7 @@ public final class DeploymentNativeDatabaseFacts {
      * @param fingerprint helper-bound instance fingerprint / helper 绑定实例指纹
      * @param running observed active state / 已观察运行状态 */
     public record Instance(DeploymentDatabaseEngineType engine, String id, String version, int port, String service,
-            String dataDirectory, String fingerprint, boolean running) {
+                           String dataDirectory, String fingerprint, boolean running) {
         /** Requires the complete bounded helper identity. / 要求完整有界的 helper 身份。
          * @param engine database family / 数据库族
          * @param id exact instance ID / 精确实例 ID
@@ -68,7 +68,7 @@ public final class DeploymentNativeDatabaseFacts {
      * @param candidate available package / 可用软件包
      * @param conflicts actual conflicts / 实际冲突 */
     public record Inventory(DeploymentDatabaseEngineType engine, List<Instance> instances,
-            Optional<Candidate> candidate, List<String> conflicts) {
+                            Optional<Candidate> candidate, List<String> conflicts) {
         /** Copies bounded inventory without inferring a selection. / 复制有界库存而不推断选择。
          * @param engine selected family / 选定数据库族
          * @param instances observed instances / 已观察实例
@@ -102,7 +102,7 @@ public final class DeploymentNativeDatabaseFacts {
      * @param initialization helper initialization phase / helper 初始化阶段
      * @param initializedSourceSha256 completed source digest, if any / 已完成源码摘要，如有 */
     public record Target(Instance instance, String applicationId, String database, String username, boolean exists,
-            boolean empty, String ownershipToken, String initialization, String initializedSourceSha256) {
+                         boolean empty, String ownershipToken, String initialization, String initializedSourceSha256) {
         /** Requires a complete bounded target without inventing ownership. / 要求完整有界目标，不虚构归属。
          * @param instance exact observed instance / 精确已观察实例
          * @param applicationId managed application / 受管应用
@@ -121,8 +121,8 @@ public final class DeploymentNativeDatabaseFacts {
             ownershipToken = Objects.requireNonNull(ownershipToken);
             initializedSourceSha256 = Objects.requireNonNull(initializedSourceSha256);
             if (!exists && !empty
-                    || !java.util.Set.of("UNOWNED", "EMPTY", "STARTED", "FAILED", "COMPLETE", "WAITING_FOR_RESTORE")
-                            .contains(initialization))
+                || !java.util.Set.of("UNOWNED", "EMPTY", "STARTED", "FAILED", "COMPLETE", "WAITING_FOR_RESTORE")
+                .contains(initialization))
                 throw new IllegalArgumentException("Invalid native database target");
             if (!ownershipToken.isEmpty())
                 ownershipToken = digest(ownershipToken);

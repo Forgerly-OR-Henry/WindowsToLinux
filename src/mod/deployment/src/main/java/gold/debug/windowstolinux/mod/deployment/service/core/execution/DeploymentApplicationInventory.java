@@ -1,12 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord.DeploymentReleaseState;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRepository;
@@ -33,8 +38,9 @@ public final class DeploymentApplicationInventory {
      * @param managed original complete publication review / 原完整发布审阅
      * @param external original adopted runtime review / 原接管运行审阅 */
     public record Entry(String key, ServerRef server, String name, String category, Optional<String> accessUrl,
-            Optional<Instant> deployedAt, Optional<Instant> adoptedAt, Optional<DeploymentApplicationSnapshot> managed,
-            Optional<DeploymentExternalApplications.Registered> external) {
+                        Optional<Instant> deployedAt, Optional<Instant> adoptedAt,
+                        Optional<DeploymentApplicationSnapshot> managed,
+                        Optional<DeploymentExternalApplications.Registered> external) {
         /** Requires exactly one original payload and its corresponding real date. / 要求恰好一份原载荷及其对应真实时间。
          * @param key stable selection identity / 稳定选择身份
          * @param server original endpoint / 原端点
@@ -55,13 +61,13 @@ public final class DeploymentApplicationInventory {
             Objects.requireNonNull(managed);
             Objects.requireNonNull(external);
             if (!Set.of("APP", "WEBSITE").contains(category) || managed.isPresent() == external.isPresent()
-                    || deployedAt.isPresent() != managed.isPresent() || adoptedAt.isPresent() != external.isPresent())
+                || deployedAt.isPresent() != managed.isPresent() || adoptedAt.isPresent() != external.isPresent())
                 throw new IllegalArgumentException("Incomplete original inventory identity");
             if (managed.isPresent()
-                    && (!key.equals("managed:" + managed.orElseThrow().application().id())
-                            || !server.equals(managed.orElseThrow().application().server()))
-                    || external.isPresent() && (!key.equals("external:" + external.orElseThrow().id())
-                            || !server.equals(external.orElseThrow().server())))
+                && (!key.equals("managed:" + managed.orElseThrow().application().id())
+                || !server.equals(managed.orElseThrow().application().server()))
+                || external.isPresent() && (!key.equals("external:" + external.orElseThrow().id())
+                || !server.equals(external.orElseThrow().server())))
                 throw new IllegalArgumentException("Inventory selection differs from original payload");
         }
 
@@ -125,43 +131,43 @@ public final class DeploymentApplicationInventory {
      * @throws ApiException if complete evidence differs / 完整依据不符时
      * @throws SQLException if metadata is unavailable / 元数据不可用时 */
     private Entry managedEntry(DeploymentApplicationSnapshot snapshot, TaskContext task)
-            throws ApiException, SQLException {
+        throws ApiException, SQLException {
         var data = new DeploymentApplicationReader(context.db()).find(snapshot.application(), task);
         if (!snapshot.equals(data.snapshot()))
             throw unavailable("DEPLOYMENT_APPLICATION_INVENTORY_CHANGED");
         var releases = new DeploymentReleaseRepository(context.db()).list(task, snapshot.application().id()).stream()
-                .filter(value -> value.state() == DeploymentReleaseState.ACTIVE
-                        && value.identity().sha256().equals(snapshot.revisionSha256()))
-                .toList();
+            .filter(value -> value.state() == DeploymentReleaseState.ACTIVE
+                && value.identity().sha256().equals(snapshot.revisionSha256()))
+            .toList();
         if (releases.size() != 1)
             throw unavailable("DEPLOYMENT_APPLICATION_INVENTORY_CHANGED");
         var health = data.graph().components().stream()
-                .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         Optional<String> url;
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement(
-                        "SELECT has_display_override,access_url,display_name,application_category,current_release_sha256 FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
+             var query = connection.prepareStatement(
+                 "SELECT has_display_override,access_url,display_name,application_category,current_release_sha256 FROM deployment_unit WHERE deployment_unit_id=? AND server_profile_id=?")) {
             query.setString(1, health.unit().id());
             query.setString(2, snapshot.application().server().id());
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     throw unavailable("DEPLOYMENT_APPLICATION_INVENTORY_CHANGED");
                 var binding = data.release().bindings().stream()
-                        .filter(value -> value.unitId().equals(health.unit().id())).findFirst().orElseThrow();
+                    .filter(value -> value.unitId().equals(health.unit().id())).findFirst().orElseThrow();
                 if (!binding.releaseSha256().equals(rows.getString(5))
-                        || rows.getInt(1) == 1 && (!snapshot.displayName().equals(rows.getString(3))
-                                || !health.runtime().workload().category().name().equals(rows.getString(4))))
+                    || rows.getInt(1) == 1 && (!snapshot.displayName().equals(rows.getString(3))
+                    || !health.runtime().workload().category().name().equals(rows.getString(4))))
                     throw unavailable("DEPLOYMENT_APPLICATION_INVENTORY_CHANGED");
                 url = rows.getInt(1) == 1
-                        ? Optional.ofNullable(rows.getString(2))
-                        : health.runtime().userAccessUrl().map(value -> value.url().toString());
+                    ? Optional.ofNullable(rows.getString(2))
+                    : health.runtime().userAccessUrl().map(value -> value.url().toString());
             }
         }
         return new Entry("managed:" + snapshot.application().id(), snapshot.application().server(),
-                snapshot.displayName(), health.runtime().workload().category().name(), url,
-                Optional.of(releases.getFirst().createdAt()), Optional.empty(), Optional.of(snapshot),
-                Optional.empty());
+            snapshot.displayName(), health.runtime().workload().category().name(), url,
+            Optional.of(releases.getFirst().createdAt()), Optional.empty(), Optional.of(snapshot),
+            Optional.empty());
     }
 
     /** Reads adoption time only for the exact saved runtime identity and fingerprint. / 仅为精确保存的运行身份及指纹读取接管时间。
@@ -171,11 +177,11 @@ public final class DeploymentApplicationInventory {
      * @throws ApiException if the original row changed / 原行改变时
      * @throws SQLException if adoption metadata cannot be read / 无法读取接管元数据时 */
     private Entry externalEntry(DeploymentExternalApplications.Registered saved, TaskContext task)
-            throws ApiException, SQLException {
+        throws ApiException, SQLException {
         Instant adopted;
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement(
-                        "SELECT adopted_at FROM external_application WHERE external_application_id=? AND server_profile_id=? AND runtime_type=? AND runtime_identity=? AND identity_fingerprint=?")) {
+             var query = connection.prepareStatement(
+                 "SELECT adopted_at FROM external_application WHERE external_application_id=? AND server_profile_id=? AND runtime_type=? AND runtime_identity=? AND identity_fingerprint=?")) {
             query.setString(1, saved.id());
             query.setString(2, saved.server().id());
             query.setString(3, saved.target().kind());
@@ -188,7 +194,7 @@ public final class DeploymentApplicationInventory {
             }
         }
         return new Entry("external:" + saved.id(), saved.server(), saved.displayName(), saved.category(),
-                saved.accessUrl(), Optional.empty(), Optional.of(adopted), Optional.empty(), Optional.of(saved));
+            saved.accessUrl(), Optional.empty(), Optional.of(adopted), Optional.empty(), Optional.of(saved));
     }
 
     /** Refuses an incomplete local view without claiming a successful application. / 拒绝不完整本地视图，不宣称应用成功。
@@ -196,6 +202,6 @@ public final class DeploymentApplicationInventory {
      * @return original known local read rejection / 原已知本地读取拒绝 */
     private static ApiException unavailable(String event) {
         return new ApiException(new Problem(ProblemCode.IO_FAILURE, event,
-                "Saved application inventory could not be read consistently", Map.of(), Optional.empty()));
+            "Saved application inventory could not be read consistently", Map.of(), Optional.empty()));
     }
 }

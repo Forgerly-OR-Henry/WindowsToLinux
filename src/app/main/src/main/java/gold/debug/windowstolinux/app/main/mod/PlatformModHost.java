@@ -32,16 +32,16 @@ public interface PlatformModHost {
      * @param platformApi actual host API release / 实际宿主 API 版本
      * @return retained original lifecycle session / 保留的原生命周期会话
      * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
-    gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession modSession(
-            gold.debug.windowstolinux.app.mod.loader.ModClassLoader loader,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-            gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
-            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
-            gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception;
+    gold.debug.windowstolinux.app.mod.run.ModRuntimeSession modSession(
+        gold.debug.windowstolinux.app.mod.load.ModClassLoader loader,
+        java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+        gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+        gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
+        gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception;
 
     /** Exposes original sessions for host cleanup retries without replaying author startup. / 向宿主清理重试提供原会话，不重放作者启动。
      * @return retained session identities / 保留会话身份 */
-    java.util.Map<String, gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession> modSessions();
+    java.util.Map<String, gold.debug.windowstolinux.app.mod.run.ModRuntimeSession> modSessions();
 
     /** Returns host-only Mod intent management using the actual compiled public API identity. / 使用实际编译公开 API 身份返回仅供宿主的 Mod 意图管理。
      * @return original management service / 原管理服务
@@ -58,13 +58,13 @@ public interface PlatformModHost {
      * @param schema optional business generation / 可选业务代次
      * @return original activation's logger / 原启用日志器 */
     gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner, String version,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                              java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
 
     /** Creates task-bound local source access for one Mod activation. / 为一次 Mod 启用创建任务绑定本地来源访问。
      * @param owner exact Mod identity / 精确 Mod 身份
      * @param version actual loaded release / 实际已加载版本
      * @return host-owned source capability / 宿主持有的来源能力 */
-    gold.debug.windowstolinux.app.service.source.PlatformSourceAccess source(String owner, String version);
+    gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(String owner, String version);
 
     /**
      * Creates an activation-bound public server reference capability. / 创建绑定一次启用的公开服务器引用能力。
@@ -74,7 +74,7 @@ public interface PlatformModHost {
      * @return host-owned server adapter / 宿主持有的服务器适配器
      */
     gold.debug.windowstolinux.app.service.server.PlatformServerAccess serverAccess(String owner, String version,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                                   java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
 
     /**
      * Creates protected-byte and reference access for one Mod activation. / 为一次 Mod 启用创建受保护字节及引用访问。
@@ -84,7 +84,7 @@ public interface PlatformModHost {
      * @return host-owned secret adapter / 宿主持有的秘密适配器
      */
     gold.debug.windowstolinux.app.service.secret.PlatformSecretService secrets(String owner, String version,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
 
     /**
      * Creates task-owned generic model access for one Mod activation. / 为一次 Mod 启用创建任务所属通用模型访问。
@@ -122,7 +122,7 @@ public interface PlatformModHost {
          * @param task authentic original recovery context / 真实原任务恢复上下文
          * @throws gold.debug.windowstolinux.appapi.task.ApiException if physical release is unconfirmed / 物理释放未确认时 */
         void closeTaskResources(gold.debug.windowstolinux.appapi.task.TaskContext task)
-                throws gold.debug.windowstolinux.appapi.task.ApiException;
+            throws gold.debug.windowstolinux.appapi.task.ApiException;
 
         /** Releases the original capabilities after actual resource cleanup. / 实际资源清理后释放原能力。
          * @throws gold.debug.windowstolinux.appapi.task.ApiException if cleanup remains / 仍有清理残留时 */

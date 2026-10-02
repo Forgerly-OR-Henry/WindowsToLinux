@@ -648,11 +648,11 @@ Maven 同步和 `verify` 使用系统 Maven 本地仓库。依赖尚未同步时
 文档更新与冲突处理统一见[开发总纲](DEVELOPMENT.md#documentation)。
 <a id="format-checks"></a>
 
-### 全仓格式与检查
+### 主项目格式与检查
 
-项目自有源码、测试、脚本、配置和多语言样例统一使用根 `.editorconfig` 与 `.gitattributes`。Java 四空格，`package`、导入区、类型声明之间各保留一个空行，普通与静态导入分组；Web 两空格、Python 四空格，Go 和 Makefile 保留所需制表符。Shell 使用 LF，Windows 批处理使用 CRLF。
+根 `.editorconfig` 与 `.gitattributes` 继续提供编辑和版本管理时的基础规则；自动格式检查仅覆盖下述主项目范围。Java 四空格，`package`、导入区、类型声明之间各保留一个空行；导入分组由 IDEA 的 Optimize Imports 单独处理，格式检查入口不校验导入排序。
 
-固定工具版本、配置、片段处理和例外范围见 [格式工具说明](../../.mvn/formatting/README.md)。`python .mvn/formatting/format.py --check` 只检查；`--write` 才修改。工具缺失须报错，不隐式安装。Java 检查进入 Maven `verify`，前端提供 `format:check`。排除生成产物、第三方、锁文件、二进制和保留证据，不整体排除测试。格式化不得改变字符串、文本块、heredoc、协议载荷和故意失败样例的含义；helper 内容变更同步校验摘要，纯格式变化不升级协议版本。源码阶段交付前必须按已排除 history-src 的活动范围检查通过；确有格式写入时复查无额外差异。纯文档任务不为此执行源码格式写入。
+主项目采用 IDEA 格式引擎，配置、范围和执行方式见 [格式工具说明](../../.mvn/formatting/README.md)。`python .mvn/formatting/format.py --check` 只检查；`--write` 才修改。Maven 默认关闭 IDEA 格式检查，显式执行 `mvn verify -Pidea-check` 后，根 POM 才调用一次检查；单独构建子模块须另执行检查入口。检查 `src/` 下 IDEA 支持的文件并保留各模块 `src/test/`；根目录 `test/` 多语言样例、`history-src/`、Python/Shell、生成产物、锁文件、二进制和保留证据排除。启用检查后，工具缺失或文件被格式引擎跳过须报错，不隐式安装。格式化不得改变字符串、文本块、协议载荷和黄金输入的含义；helper 内容变更仍须同步校验摘要，纯格式变化不升级协议版本。确有格式写入时复查无额外差异。纯文档任务不为此执行源码格式写入。
 
 <a id="internal-specification"></a>
 

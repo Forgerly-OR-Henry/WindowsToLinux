@@ -16,7 +16,7 @@ import org.junit.jupiter.api.function.Executable;
 /** Keeps the real multilingual fixtures connected to automatic discovery and analysis. / 将真实多语言夹具接入自动发现与分析回归。 */
 class DeploymentMultilingualPlanningTest {
     static final List<String> PROJECTS = List.of("task-board", "file-transfer", "asset-lending", "csv-inspector",
-            "survey-scoring", "log-analyzer", "directory-diff", "binary-inspector");
+        "survey-scoring", "log-analyzer", "directory-diff", "binary-inspector");
 
     @Test
     void everyDiscoveredComponentReachesRuntimeInputReview() throws Exception {
@@ -32,7 +32,7 @@ class DeploymentMultilingualPlanningTest {
                 default -> java.util.Set.of("app");
             };
             assertEquals(expected, components.stream().map(c -> c.id()).collect(java.util.stream.Collectors.toSet()),
-                    project);
+                project);
             for (var component : components) {
                 checks.add(() -> {
                     assertEquals(1, component.types().size(), project + "/" + component.id());
@@ -40,18 +40,18 @@ class DeploymentMultilingualPlanningTest {
                     Path source = root.resolve(component.relativeRoot());
                     var assessment = new DeploymentAnalysisCoordinator().analyzeForDatabaseReview(source, type);
                     System.out.println("POLYGLOT_ANALYSIS " + project + "/" + component.id() + " type=" + type
-                            + " admission=" + assessment.admission() + " rejections=" + assessment.rejections());
+                        + " admission=" + assessment.admission() + " rejections=" + assessment.rejections());
                     assertTrue(assessment.facts().isPresent(), assessment::toString);
                     var facts = assessment.facts().orElseThrow();
                     assertTrue(facts.conflicts().isEmpty(), facts.conflicts()::toString);
                     assertTrue(
-                            facts.missingInformation().stream()
-                                    .allMatch(m -> m.key().equals("analysis.db.reviewRequired")),
-                            facts.missingInformation()::toString);
+                        facts.missingInformation().stream()
+                            .allMatch(m -> m.key().equals("analysis.db.reviewRequired")),
+                        facts.missingInformation()::toString);
                     var resolver = new DeploymentStaticRuntimeResolver();
                     var values = resolver.defaults(type, assessment.runtimeSuggestion().orElse(null), source);
                     System.out.println("POLYGLOT_INPUTS " + project + "/" + component.id() + " values=" + values
-                            + " missing=" + resolver.missing(component.id(), type, values));
+                        + " missing=" + resolver.missing(component.id(), type, values));
                 });
             }
         }

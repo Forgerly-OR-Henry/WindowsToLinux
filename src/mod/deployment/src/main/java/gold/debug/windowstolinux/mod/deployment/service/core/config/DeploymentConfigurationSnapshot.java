@@ -23,7 +23,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCon
  * @param sha256 the canonical content digest / 规范内容摘要
  */
 public record DeploymentConfigurationSnapshot(String applicationId, long revision, String schemaVersion,
-        Instant createdAt, List<DeploymentConfigurationEntry> entries, String sha256) {
+                                              Instant createdAt, List<DeploymentConfigurationEntry> entries,
+                                              String sha256) {
     /**
      * Validates and binds the inputs required by configuration snapshot.
      * <p>校验并绑定配置快照所需输入。
@@ -40,19 +41,19 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
         applicationId = requireIdentifier(applicationId, "applicationId");
         if (revision < 1) {
             throw DeploymentConfigurationException.create("configuration.validation.revision-invalid",
-                    "A configuration revision must be positive");
+                "A configuration revision must be positive");
         }
         schemaVersion = requireIdentifier(schemaVersion, "schemaVersion");
         createdAt = Objects.requireNonNull(createdAt, "createdAt");
         entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
         if (entries.stream().map(DeploymentConfigurationEntry::key).distinct().count() != entries.size()) {
             throw DeploymentConfigurationException.create("configuration.snapshot.duplicate-key",
-                    "Configuration snapshot keys must be unique");
+                "Configuration snapshot keys must be unique");
         }
         sha256 = requireSha256(sha256);
         if (!sha256.equals(computeSha256(applicationId, revision, schemaVersion, entries))) {
             throw DeploymentConfigurationException.create("configuration.snapshot.integrity-failed",
-                    "The supplied hash does not match canonical configuration content");
+                "The supplied hash does not match canonical configuration content");
         }
     }
 
@@ -70,13 +71,13 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DeploymentConfigurationSnapshot create(String applicationId, long revision, String schemaVersion,
-            Instant createdAt, List<DeploymentConfigurationEntry> entries) {
+                                                         Instant createdAt, List<DeploymentConfigurationEntry> entries) {
         String normalizedApplicationId = requireIdentifier(applicationId, "applicationId");
         String normalizedSchemaVersion = requireIdentifier(schemaVersion, "schemaVersion");
         List<DeploymentConfigurationEntry> copiedEntries = List.copyOf(Objects.requireNonNull(entries, "entries"));
         return new DeploymentConfigurationSnapshot(normalizedApplicationId, revision, normalizedSchemaVersion,
-                createdAt, copiedEntries,
-                computeSha256(normalizedApplicationId, revision, normalizedSchemaVersion, copiedEntries));
+            createdAt, copiedEntries,
+            computeSha256(normalizedApplicationId, revision, normalizedSchemaVersion, copiedEntries));
     }
 
     /**
@@ -90,8 +91,8 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
      */
     public DeploymentConfigurationValue requireValue(String key, DeploymentConfigurationScopeType scope) {
         return entries.stream().filter(entry -> entry.key().equals(key) && entry.scope() == scope).findFirst()
-                .map(DeploymentConfigurationEntry::value)
-                .orElseThrow(() -> new IllegalArgumentException("no value exists for the requested key and scope"));
+            .map(DeploymentConfigurationEntry::value)
+            .orElseThrow(() -> new IllegalArgumentException("no value exists for the requested key and scope"));
     }
 
     /**
@@ -106,7 +107,7 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
      * @return the deterministic digest for snapshot content / 快照内容的确定性摘要
      */
     public static String computeSha256(String applicationId, long revision, String schemaVersion,
-            List<DeploymentConfigurationEntry> entries) {
+                                       List<DeploymentConfigurationEntry> entries) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             update(digest, requireIdentifier(applicationId, "applicationId"));
@@ -114,7 +115,7 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
             update(digest, requireIdentifier(schemaVersion, "schemaVersion"));
             List<DeploymentConfigurationEntry> sorted = List.copyOf(entries).stream().sorted(Comparator
                     .comparing(DeploymentConfigurationEntry::key).thenComparing(entry -> entry.scope().name()))
-                    .toList();
+                .toList();
             for (DeploymentConfigurationEntry entry : sorted) {
                 update(digest, entry.key());
                 update(digest, entry.scope().name());
@@ -124,7 +125,7 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
             return java.util.HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
             throw DeploymentConfigurationException.create("configuration.runtime.hash-unavailable",
-                    "The required SHA-256 implementation is unavailable", exception);
+                "The required SHA-256 implementation is unavailable", exception);
         }
     }
 
@@ -153,7 +154,7 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
         value = Objects.requireNonNull(value, name).trim();
         if (!value.matches("[a-z0-9][a-z0-9._-]{0,63}")) {
             throw DeploymentConfigurationException.create("configuration.validation.identifier-invalid",
-                    "A configuration snapshot identifier must be bounded and lowercase");
+                "A configuration snapshot identifier must be bounded and lowercase");
         }
         return value;
     }
@@ -170,7 +171,7 @@ public record DeploymentConfigurationSnapshot(String applicationId, long revisio
         value = Objects.requireNonNull(value, "sha256");
         if (!value.matches("[0-9a-f]{64}")) {
             throw DeploymentConfigurationException.create("configuration.validation.hash-invalid",
-                    "A SHA-256 value must use the canonical lowercase form");
+                "A SHA-256 value must use the canonical lowercase form");
         }
         return value;
     }

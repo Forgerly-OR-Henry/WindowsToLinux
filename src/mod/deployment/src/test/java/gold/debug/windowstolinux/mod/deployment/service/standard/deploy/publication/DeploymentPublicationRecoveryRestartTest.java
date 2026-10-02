@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -10,13 +16,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.main.startup.LoopbackSshServer;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.apache.sshd.server.channel.ChannelSession;
@@ -58,10 +64,10 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
     @ParameterizedTest
     @EnumSource(RecoveryScenarioType.class)
     void originalPublishedTaskReopensThroughProductionRecoveryWithoutReplay(RecoveryScenarioType scenario)
-            throws Exception {
+        throws Exception {
         try (var ssh = new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
-                    (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
+                (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             String originalScenario = switch (scenario) {
@@ -70,9 +76,9 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                 default -> scenario.name();
             };
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"),
-                    DeploymentStandardPublicationExecutorTest.class.getName(), "--unknown", root.toString(),
-                    originalScenario, Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
+                "-cp", System.getProperty("java.class.path"),
+                DeploymentStandardPublicationExecutorTest.class.getName(), "--unknown", root.toString(),
+                originalScenario, Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
             try {
                 assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original publication child timed out");
                 String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -92,15 +98,15 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
             release.set(remote.get(0));
             candidate.set(remote.get(1));
             boolean restored = scenario == RecoveryScenarioType.ROLLBACK_UNKNOWN
-                    || scenario == RecoveryScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
-                    || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT;
+                || scenario == RecoveryScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT;
             rolledBack.set(restored);
             maintenance.set(scenario == RecoveryScenarioType.PUBLISH_UNKNOWN
-                    || scenario == RecoveryScenarioType.ROLLBACK_UNKNOWN
-                    || scenario == RecoveryScenarioType.PUBLISH_CONFLICT
-                    || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT);
+                || scenario == RecoveryScenarioType.ROLLBACK_UNKNOWN
+                || scenario == RecoveryScenarioType.PUBLISH_CONFLICT
+                || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT);
             candidatePresent.set(scenario != RecoveryScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
-                    && scenario != RecoveryScenarioType.COMMIT_WINDOW);
+                && scenario != RecoveryScenarioType.COMMIT_WINDOW);
             if (scenario == RecoveryScenarioType.PUBLISH_CONFLICT)
                 currentOverride.set("c".repeat(64));
             if (scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT)
@@ -109,20 +115,20 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                 var report = runtime.startDevelopmentMods(workspace(), pages());
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
-                        report.problems().stream().map(Problem::eventCode).toList());
+                    report.problems().stream().map(Problem::eventCode).toList());
                 var unfinished = new TaskLedger(runtime.persistence().database()).queries().unfinished();
                 assertEquals(1, unfinished.size());
                 assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
-                        + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
+                    + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
                 if (currentOverride.get() != null || staleUnit.get()) {
                     var unconfirmed = runtime.tasks().reconcile(unfinished.getFirst()).toCompletableFuture().get(25,
-                            TimeUnit.SECONDS);
+                        TimeUnit.SECONDS);
                     assertEquals(TaskState.UNKNOWN, unconfirmed.state());
                     assertTrue(checkpointUnreleased(runtime, unfinished.getFirst()));
                     try (var access = scope(runtime, true);
-                            var connection = access.openConnection();
-                            var query = connection.prepareStatement(
-                                    "SELECT business_committed FROM deployment_execution WHERE platform_task_id=?")) {
+                         var connection = access.openConnection();
+                         var query = connection.prepareStatement(
+                             "SELECT business_committed FROM deployment_execution WHERE platform_task_id=?")) {
                         query.setObject(1, unfinished.getFirst());
                         try (var rows = query.executeQuery()) {
                             assertTrue(rows.next());
@@ -130,52 +136,52 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                         }
                     }
                     try (var access = scope(runtime, true);
-                            var connection = access.openConnection();
-                            var statement = connection.createStatement();
-                            var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
+                         var connection = access.openConnection();
+                         var statement = connection.createStatement();
+                         var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
                         assertTrue(rows.next());
                         assertEquals(0, rows.getLong(1));
                     }
                     assertFalse(
-                            commands.stream()
-                                    .anyMatch(value -> value.contains("application-maintenance")
-                                            || value.contains("candidate-cleanup-task") || value.contains("'retain'")),
-                            commands.toString());
+                        commands.stream()
+                            .anyMatch(value -> value.contains("application-maintenance")
+                                || value.contains("candidate-cleanup-task") || value.contains("'retain'")),
+                        commands.toString());
                     currentOverride.set(null);
                     staleUnit.set(false);
                 }
                 TaskSnapshot recovered;
                 try {
                     recovered = runtime.tasks().reconcile(unfinished.getFirst()).toCompletableFuture().get(25,
-                            TimeUnit.SECONDS);
+                        TimeUnit.SECONDS);
                 } catch (TimeoutException unfinishedRecovery) {
                     throw new AssertionError("Original recovery remained unresolved: " + runtime.tasks().snapshots()
-                            + ", commands=" + commands, unfinishedRecovery);
+                        + ", commands=" + commands, unfinishedRecovery);
                 }
                 assertEquals(TaskState.ENDED, recovered.state(), () -> recovered + ", commands=" + commands
-                        + ", checkpoint=" + checkpoint(runtime, unfinished.getFirst()));
+                    + ", checkpoint=" + checkpoint(runtime, unfinished.getFirst()));
                 assertEquals(Optional.of(restored ? Outcome.FAILED : Outcome.SUCCEEDED), recovered.outcome());
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
                     assertTrue(rows.next());
                     assertEquals(restored ? 0 : 1, rows.getLong(1));
                 }
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 if (scenario == RecoveryScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
-                        || scenario == RecoveryScenarioType.COMMIT_WINDOW)
+                    || scenario == RecoveryScenarioType.COMMIT_WINDOW)
                     assertTrue(commands.isEmpty(), "Already verified remote cleanup must not be repeated");
                 else
                     assertTrue(commands.stream().anyMatch(value -> value.contains("publication-original-status")));
                 if (scenario == RecoveryScenarioType.PUBLISH_UNKNOWN
-                        || scenario == RecoveryScenarioType.PUBLISH_CONFLICT)
+                    || scenario == RecoveryScenarioType.PUBLISH_CONFLICT)
                     assertTrue(commands.stream().anyMatch(value -> value.contains("application-health")));
                 assertFalse(commands.stream()
                         .anyMatch(value -> value.contains("publish-deployment") || value.contains("rollback-deployment")
-                                || value.contains("prepare-toolchains") || value.contains("candidate-create-task")),
-                        commands.toString());
+                            || value.contains("prepare-toolchains") || value.contains("candidate-create-task")),
+                    commands.toString());
                 if (scenario == RecoveryScenarioType.RETAIN_UNKNOWN)
                     assertFalse(commands.stream().anyMatch(value -> value.contains("'retain'")), commands.toString());
                 assertFalse(maintenance.get());
@@ -194,12 +200,12 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
         runtime.security().unlock(PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError();
             }
 
@@ -207,13 +213,13 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                 throw new AssertionError();
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 assertEquals(List.of("server-publication"), intent.serverIds());
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError();
             }
         });
@@ -250,21 +256,21 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
         commands.add(command);
         if (command.contains("publication-original-status"))
             return "PUBLICATION_STATUS=1\nCURRENT="
-                    + (currentOverride.get() != null
-                            ? currentOverride.get()
-                            : rolledBack.get() ? "none" : release.get())
-                    + "\nCURRENT_KIND=" + (rolledBack.get() ? "none" : "deployment") + "\nCURRENT_MODE="
-                    + (rolledBack.get() ? "none" : "DAEMON") + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\n"
-                    + "SNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE="
-                    + (maintenance.get() ? "deployment-" + release.get() : "none") + "\nCANDIDATE="
-                    + (candidatePresent.get() ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
-                    + (rolledBack.get() && !staleUnit.get() ? "no" : "yes") + "\n"
-                    + "CONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+                + (currentOverride.get() != null
+                ? currentOverride.get()
+                : rolledBack.get() ? "none" : release.get())
+                + "\nCURRENT_KIND=" + (rolledBack.get() ? "none" : "deployment") + "\nCURRENT_MODE="
+                + (rolledBack.get() ? "none" : "DAEMON") + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\n"
+                + "SNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE="
+                + (maintenance.get() ? "deployment-" + release.get() : "none") + "\nCANDIDATE="
+                + (candidatePresent.get() ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
+                + (rolledBack.get() && !staleUnit.get() ? "no" : "yes") + "\n"
+                + "CONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
         if (command.contains("inspect-runtime"))
             return "KIND=deployment\nMODE=DAEMON\n";
         if (command.contains("observe-deployment"))
             return "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\n"
-                    + "SubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n";
+                + "SubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n";
         if (command.contains("application-health"))
             return "HEALTHY=1\n";
         if (command.contains("application-maintenance")) {
@@ -286,8 +292,8 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
      * @return bounded retained recovery JSON / 有界留存恢复JSON */
     private static String checkpoint(PlatformRuntime runtime, UUID task) {
         try (var connection = runtime.persistence().database().openConnection();
-                var statement = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource"
-                        + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+             var statement = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource"
+                 + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
             statement.setObject(1, task);
             statement.setString(2, "gold.debug.windowstolinux.mod.deployment/checkpoint/deployment-publication-remote");
             try (var rows = statement.executeQuery()) {
@@ -304,8 +310,8 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
      * @return true only while the original checkpoint is held / 仅原检查点仍占用时为真 */
     private static boolean checkpointUnreleased(PlatformRuntime runtime, UUID task) throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
-                var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
-                        + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+             var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
+                 + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
             query.setObject(1, task);
             query.setString(2, "gold.debug.windowstolinux.mod.deployment/checkpoint/deployment-publication-remote");
             try (var rows = query.executeQuery()) {
@@ -357,7 +363,7 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
                 } catch (Throwable failure) {
                     try {
                         error.write((failure.getClass().getSimpleName() + ": " + failure.getMessage())
-                                .getBytes(StandardCharsets.UTF_8));
+                            .getBytes(StandardCharsets.UTF_8));
                         error.flush();
                     } catch (IOException ignored) {
                         // The SSH channel may already have closed. / SSH通道可能已关闭。
@@ -388,7 +394,7 @@ class DeploymentPublicationRecoveryRestartTest extends DeploymentRuntimeFixture 
      * @throws IOException if the frame is incomplete or malformed / 帧不完整或畸形时 */
     private static String readFrame(InputStream input) throws IOException {
         var length = new ByteArrayOutputStream();
-        for (int next; (next = input.read()) != '\n';) {
+        for (int next; (next = input.read()) != '\n'; ) {
             if (next < '0' || next > '9' || length.size() >= 8)
                 throw new IOException("Malformed command frame length");
             length.write(next);

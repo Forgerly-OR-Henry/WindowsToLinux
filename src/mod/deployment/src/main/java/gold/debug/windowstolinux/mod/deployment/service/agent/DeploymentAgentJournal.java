@@ -1,12 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Durable agent-only state and action evidence, independent of standard deployment. / 独立于标准部署的持久自主任务状态与动作依据。 */
 public final class DeploymentAgentJournal {
@@ -73,19 +78,27 @@ public final class DeploymentAgentJournal {
             connection.setAutoCommit(false);
             try {
                 try (var lock = connection.prepareStatement("MERGE INTO preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)")) {
-                    lock.setString(1, "deployment.agent.admission.v2"); lock.setString(2, "2"); lock.executeUpdate();
+                    lock.setString(1, "deployment.agent.admission.v2");
+                    lock.setString(2, "2");
+                    lock.executeUpdate();
                 }
                 requireAvailable(connection, task, identity, endpoint);
                 insert(connection, task, identity);
                 if (endpoint.isPresent()) {
                     try (var target = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,'','REMOTE_TARGET',?,?)")) {
-                        target.setString(1, task.id().toString()); target.setString(2, endpoint.orElseThrow());
-                        target.setLong(3, Instant.now().toEpochMilli()); target.executeUpdate();
+                        target.setString(1, task.id().toString());
+                        target.setString(2, endpoint.orElseThrow());
+                        target.setLong(3, Instant.now().toEpochMilli());
+                        target.executeUpdate();
                     }
                 }
                 connection.commit();
             } catch (Exception failure) {
-                try { connection.rollback(); } catch (SQLException rollback) { failure.addSuppressed(rollback); }
+                try {
+                    connection.rollback();
+                } catch (SQLException rollback) {
+                    failure.addSuppressed(rollback);
+                }
                 throw failure;
             }
         }
@@ -98,9 +111,9 @@ public final class DeploymentAgentJournal {
      * @throws SQLException if the original insert cannot be confirmed / 原插入无法确认时 */
     private static void insert(Connection connection, TaskContext task, Identity identity) throws SQLException {
         try (var statement = connection.prepareStatement("INSERT INTO deployment_agent_task("
-                        + "task_id,server_profile_id,target_digest,configuration_digest,automation_mode,approval_mode,"
-                        + "deployment_skill_id,approval_skill_id,execution_semantics_version,task_state,started_at,updated_at) "
-                        + "VALUES(?,?,?,?,'AGENT',?,'autonomous-deployment-v2','deployment-approval-v2',2,'RUNNING',?,?)")) {
+            + "task_id,server_profile_id,target_digest,configuration_digest,automation_mode,approval_mode,"
+            + "deployment_skill_id,approval_skill_id,execution_semantics_version,task_state,started_at,updated_at) "
+            + "VALUES(?,?,?,?,'AGENT',?,'autonomous-deployment-v2','deployment-approval-v2',2,'RUNNING',?,?)")) {
             long now = Instant.now().toEpochMilli();
             statement.setString(1, task.id().toString());
             statement.setString(2, identity.server());
@@ -121,21 +134,22 @@ public final class DeploymentAgentJournal {
      * @throws SQLException if retained evidence cannot be read completely / 留存依据无法完整读取时
      * @throws ApiException if original unresolved ownership blocks admission / 原未结归属阻止准入时 */
     private static void requireAvailable(Connection connection, TaskContext task, Identity identity,
-            Optional<String> endpoint) throws SQLException, ApiException {
+                                         Optional<String> endpoint) throws SQLException, ApiException {
         try (var query = connection.prepareStatement("SELECT task_id,server_profile_id,task_state FROM deployment_agent_task ORDER BY started_at LIMIT 10001");
              var rows = query.executeQuery()) {
             int count = 0;
             while (rows.next()) {
                 if (++count > 10000) throw blocked(task, task.id(), "DEPLOYMENT_AGENT_TARGET_EVIDENCE_LIMIT");
                 UUID original = UUID.fromString(rows.getString(1));
-                if (original.equals(task.id())) throw blocked(task, original, "DEPLOYMENT_AGENT_ORIGINAL_ALREADY_EXISTS");
+                if (original.equals(task.id()))
+                    throw blocked(task, original, "DEPLOYMENT_AGENT_ORIGINAL_ALREADY_EXISTS");
                 var events = events(connection, original);
                 boolean terminal = Set.of("SUCCEEDED", "FAILED", "CANCELLED").contains(rows.getString(3));
                 if (terminal && effectsSettled(events)) continue;
                 var targets = events.stream().filter(event -> event.type().equals("REMOTE_TARGET")).map(Event::detail).distinct().toList();
                 boolean known = targets.size() == 1 && targets.getFirst().matches("[0-9a-f]{64}");
                 if (identity.server().equals(rows.getString(2)) || !known || endpoint.isEmpty()
-                        || targets.getFirst().equals(endpoint.orElseThrow()))
+                    || targets.getFirst().equals(endpoint.orElseThrow()))
                     throw blocked(task, original, known ? "DEPLOYMENT_AGENT_TARGET_BUSY" : "DEPLOYMENT_AGENT_TARGET_UNCONFIRMED");
             }
         }
@@ -167,7 +181,7 @@ public final class DeploymentAgentJournal {
      * @return original-bound public rejection / 绑定原身份的公开拒绝 */
     private static ApiException blocked(TaskContext task, UUID original, String event) {
         return new ApiException(new Problem(ProblemCode.ACCESS_DENIED, event, "Reconcile the unresolved original agent task before starting this target",
-                Map.of("task", task.id().toString(), "originalTask", original.toString()), Optional.of(original)));
+            Map.of("task", task.id().toString(), "originalTask", original.toString()), Optional.of(original)));
     }
 
     /** Appends action intent before a side effect or a verified result afterward. / 副作用前追加动作意图，之后追加经核实结果。
@@ -178,26 +192,34 @@ public final class DeploymentAgentJournal {
      * @throws Exception on failed persistence / 持久化失败时 */
     public void event(TaskContext task, String type, String action, String detail) throws Exception {
         if (!type.matches("[A-Z_]{1,48}") || action.length() > 128 || detail.length() > 4096
-                || detail.indexOf('\0') >= 0)
+            || detail.indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid agent event");
         try (Connection connection = database.openConnection(task)) {
             connection.setAutoCommit(false);
             try {
                 DeploymentAgentEvidenceLimit.require(connection, task.id(), Set.of("PAUSED", "RESUMED",
-                        "MODEL_REFRESH_REJECTED", "INSPECT_REQUESTED").contains(type));
+                    "MODEL_REFRESH_REJECTED", "INSPECT_REQUESTED").contains(type));
                 try (var statement = connection.prepareStatement("INSERT INTO deployment_agent_event("
-                        + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?)")) {
-                    statement.setString(1, task.id().toString()); statement.setString(2, action);
-                    statement.setString(3, type); statement.setString(4, detail);
-                    statement.setLong(5, Instant.now().toEpochMilli()); statement.executeUpdate();
+                    + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?)")) {
+                    statement.setString(1, task.id().toString());
+                    statement.setString(2, action);
+                    statement.setString(3, type);
+                    statement.setString(4, detail);
+                    statement.setLong(5, Instant.now().toEpochMilli());
+                    statement.executeUpdate();
                 }
                 connection.commit();
             } catch (Exception failure) {
-                try { connection.rollback(); } catch (SQLException rollback) { failure.addSuppressed(rollback); }
+                try {
+                    connection.rollback();
+                } catch (SQLException rollback) {
+                    failure.addSuppressed(rollback);
+                }
                 throw failure;
             }
         }
     }
+
     /** Changes task state and records matching evidence in one transaction. / 在同一事务中改变任务状态并记录相应依据。
      * @param task original task / 原任务
      * @param state known lifecycle state / 已知生命周期状态
@@ -211,7 +233,7 @@ public final class DeploymentAgentJournal {
                 DeploymentAgentEvidenceLimit.require(connection, task.id(), state.equals("WAITING"));
                 long now = Instant.now().toEpochMilli();
                 try (var update = connection.prepareStatement(
-                        "UPDATE deployment_agent_task SET task_state=?,updated_at=? WHERE task_id=?")) {
+                    "UPDATE deployment_agent_task SET task_state=?,updated_at=? WHERE task_id=?")) {
                     update.setString(1, state);
                     update.setLong(2, now);
                     update.setString(3, task.id().toString());
@@ -219,7 +241,7 @@ public final class DeploymentAgentJournal {
                         throw new SQLException("Agent task missing");
                 }
                 try (var event = connection.prepareStatement("INSERT INTO deployment_agent_event("
-                        + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,'','STATE',?,?)")) {
+                    + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,'','STATE',?,?)")) {
                     event.setString(1, task.id().toString());
                     event.setString(2, state);
                     event.setLong(3, now);
@@ -250,19 +272,28 @@ public final class DeploymentAgentJournal {
             try {
                 DeploymentAgentEvidenceLimit.require(connection, task.id(), true);
                 try (var update = connection.prepareStatement("UPDATE deployment_agent_task SET configuration_digest=?,"
-                        + "updated_at=? WHERE task_id=? AND configuration_digest=? AND task_state='WAITING'")) {
-                    update.setString(1, selected); update.setLong(2, Instant.now().toEpochMilli());
-                    update.setString(3, task.id().toString()); update.setString(4, previous);
+                    + "updated_at=? WHERE task_id=? AND configuration_digest=? AND task_state='WAITING'")) {
+                    update.setString(1, selected);
+                    update.setLong(2, Instant.now().toEpochMilli());
+                    update.setString(3, task.id().toString());
+                    update.setString(4, previous);
                     if (update.executeUpdate() != 1) throw new SQLException("Original paused configuration changed");
                 }
                 try (var event = connection.prepareStatement("INSERT INTO deployment_agent_event("
-                        + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,'CONFIGURATION_REPLACED',?,?)")) {
-                    event.setString(1, task.id().toString()); event.setString(2, previous);
-                    event.setString(3, selected); event.setLong(4, Instant.now().toEpochMilli()); event.executeUpdate();
+                    + "task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,'CONFIGURATION_REPLACED',?,?)")) {
+                    event.setString(1, task.id().toString());
+                    event.setString(2, previous);
+                    event.setString(3, selected);
+                    event.setLong(4, Instant.now().toEpochMilli());
+                    event.executeUpdate();
                 }
                 connection.commit();
             } catch (Exception failure) {
-                try { connection.rollback(); } catch (SQLException rollback) { failure.addSuppressed(rollback); }
+                try {
+                    connection.rollback();
+                } catch (SQLException rollback) {
+                    failure.addSuppressed(rollback);
+                }
                 throw failure;
             }
         }
@@ -284,8 +315,8 @@ public final class DeploymentAgentJournal {
     public List<Event> events(TaskContext actual, UUID selected) throws Exception {
         var events = new ArrayList<Event>();
         try (Connection connection = database.openConnection(actual);
-                var query = connection.prepareStatement("SELECT event_id,event_type,action_id,event_detail "
-                        + "FROM deployment_agent_event WHERE task_id=? ORDER BY event_id")) {
+             var query = connection.prepareStatement("SELECT event_id,event_type,action_id,event_detail "
+                 + "FROM deployment_agent_event WHERE task_id=? ORDER BY event_id")) {
             query.setString(1, selected.toString());
             try (var rows = query.executeQuery()) {
                 while (rows.next()) {
@@ -313,19 +344,19 @@ public final class DeploymentAgentJournal {
      * @throws Exception if original semantics or persistence differs / 原语义或持久化不符时 */
     public Optional<Snapshot> find(TaskContext actual, UUID selected) throws Exception {
         try (Connection connection = database.openConnection(actual);
-                var query = connection.prepareStatement("SELECT server_profile_id,target_digest,configuration_digest,"
-                        + "approval_mode,task_state,deployment_skill_id,approval_skill_id,execution_semantics_version "
-                        + "FROM deployment_agent_task WHERE task_id=?")) {
+             var query = connection.prepareStatement("SELECT server_profile_id,target_digest,configuration_digest,"
+                 + "approval_mode,task_state,deployment_skill_id,approval_skill_id,execution_semantics_version "
+                 + "FROM deployment_agent_task WHERE task_id=?")) {
             query.setString(1, selected.toString());
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     return Optional.empty();
                 if (!"autonomous-deployment-v2".equals(rows.getString(6))
-                        || !"deployment-approval-v2".equals(rows.getString(7)) || rows.getInt(8) != 2)
+                    || !"deployment-approval-v2".equals(rows.getString(7)) || rows.getInt(8) != 2)
                     throw new SQLException("Agent persisted semantics changed");
                 var snapshot = new Snapshot(
-                        new Identity(rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4)),
-                        rows.getString(5));
+                    new Identity(rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4)),
+                    rows.getString(5));
                 if (rows.next())
                     throw new SQLException("Duplicate agent task");
                 return Optional.of(snapshot);
@@ -340,12 +371,12 @@ public final class DeploymentAgentJournal {
         var pending = new HashMap<List<String>, Integer>();
         for (var event : events) {
             if (Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING", "SEAL_EXECUTING",
-                    "DELIVERY_EXECUTING").contains(event.type()))
+                "DELIVERY_EXECUTING").contains(event.type()))
                 pending.merge(List.of(event.type().substring(0, event.type().length() - "_EXECUTING".length()), event.action()), 1, Integer::sum);
             if (Set.of("PREPARE_RESULT", "COMMAND_RESULT", "PATCH_RESULT", "SEAL_RESULT", "DELIVERY_RESULT")
-                    .contains(event.type()))
+                .contains(event.type()))
                 pending.computeIfPresent(List.of(event.type().substring(0, event.type().length() - "_RESULT".length()), event.action()),
-                        (key, count) -> count == 1 ? null : count - 1);
+                    (key, count) -> count == 1 ? null : count - 1);
         }
         return pending.isEmpty();
     }
