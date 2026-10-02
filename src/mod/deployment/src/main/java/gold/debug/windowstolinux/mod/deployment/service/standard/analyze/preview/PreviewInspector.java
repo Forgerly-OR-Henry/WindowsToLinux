@@ -46,18 +46,18 @@ public final class PreviewInspector implements DeploymentTypeInspector {
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) {
+                                            List<RejectionReason> rejections) {
         SourceLanguageType language = languageFacts.sourceLanguages().size() == 1
-                ? languageFacts.sourceLanguages().iterator().next()
-                : SourceLanguageType.UNKNOWN;
+            ? languageFacts.sourceLanguages().iterator().next()
+            : SourceLanguageType.UNKNOWN;
         DeploymentSupportProfile support = languageFacts.sourceLanguages().isEmpty()
-                ? DeploymentSupportCatalog.unrecognized()
-                : DeploymentSupportCatalog.preview(language);
+            ? DeploymentSupportCatalog.unrecognized()
+            : DeploymentSupportCatalog.preview(language);
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root,
-                ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
-                DeploymentBuildToolType.NONE_PREVIEW, support, languageFacts, languageFacts.evidence(), List.of(),
-                List.of(DeploymentLocalizedMessage.of("analysis.preview.noDeployment")));
+            ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root)), projectType(),
+            DeploymentBuildToolType.NONE_PREVIEW, support, languageFacts, languageFacts.evidence(), List.of(),
+            List.of(DeploymentLocalizedMessage.of("analysis.preview.noDeployment")));
         return new DeploymentTypeAssessment(facts, new DeploymentRuntimeAssessment(projectType(), Map.of(),
-                Optional.empty(), Map.of(), List.of(), List.of(), List.of()));
+            Optional.empty(), Map.of(), List.of(), List.of(), List.of()));
     }
 }

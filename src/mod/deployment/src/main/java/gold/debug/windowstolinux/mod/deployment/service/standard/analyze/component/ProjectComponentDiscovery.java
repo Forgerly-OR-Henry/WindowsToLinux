@@ -17,7 +17,7 @@ public final class ProjectComponentDiscovery {
      * <p>排除。
      */
     private static final Set<String> EXCLUDED = Set.of(".git", ".idea", ".ai-workspace", "node_modules", "target",
-            "build", "dist", ".venv", "venv", "vendor", "test", "tests", "examples", "docs");
+        "build", "dist", ".venv", "venv", "vendor", "test", "tests", "examples", "docs");
 
     /**
      * Discovers at most 64 component roots without executing project content or following links. / 最多发现 64 个组件根目录，不执行项目内容或跟随链接。
@@ -44,6 +44,7 @@ public final class ProjectComponentDiscovery {
              * <p>数量。
              */
             private int count;
+
             /**
              * Checks the directory boundary before visiting its contents.
              * <p>在访问目录内容前检查目录边界。
@@ -55,8 +56,8 @@ public final class ProjectComponentDiscovery {
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
                 return !directory.equals(root) && EXCLUDED.contains(directory.getFileName().toString())
-                        ? FileVisitResult.SKIP_SUBTREE
-                        : FileVisitResult.CONTINUE;
+                    ? FileVisitResult.SKIP_SUBTREE
+                    : FileVisitResult.CONTINUE;
             }
 
             /**
@@ -84,7 +85,7 @@ public final class ProjectComponentDiscovery {
         Set<Path> nestedStatic = new HashSet<>();
         candidates.forEach((directory, types) -> {
             if (types.equals(Set.of(DeploymentProjectKind.STATIC_SITE)) && candidates.keySet().stream()
-                    .anyMatch(parent -> !parent.equals(directory) && directory.startsWith(parent)))
+                .anyMatch(parent -> !parent.equals(directory) && directory.startsWith(parent)))
                 nestedStatic.add(directory);
         });
         nestedStatic.forEach(candidates::remove);
@@ -101,7 +102,7 @@ public final class ProjectComponentDiscovery {
             throw new IOException("component names collide after normalization; rename their source directories");
         if (result.isEmpty())
             result.add(new DiscoveredProjectComponent("app", Path.of(""),
-                    Arrays.stream(DeploymentProjectKind.values()).filter(DeploymentProjectKind::deployable).toList()));
+                Arrays.stream(DeploymentProjectKind.values()).filter(DeploymentProjectKind::deployable).toList()));
         return List.copyOf(result);
     }
 
@@ -123,7 +124,7 @@ public final class ProjectComponentDiscovery {
                 if (declared.contains("spring-boot") || declared.contains("org.springframework.boot"))
                     yield Set.of(DeploymentProjectKind.SPRING_BOOT);
                 if (name.equals("build.gradle.kts")
-                        && declared.matches("(?s).*kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\).*"))
+                    && declared.matches("(?s).*kotlin\\s*\\(\\s*[\"']jvm[\"']\\s*\\).*"))
                     yield Set.of(DeploymentProjectKind.KOTLIN_SERVICE);
                 yield Set.of(DeploymentProjectKind.JAVA_JAR);
             }
@@ -132,7 +133,7 @@ public final class ProjectComponentDiscovery {
                 if (value.contains("\"workspaces\"") && !value.contains("\"start\"") && !value.contains("\"build\""))
                     yield Set.of();
                 boolean web = value.contains("\"vite\"") || value.contains("\"vue-cli-service\"")
-                        || value.contains("\"react-scripts\"");
+                    || value.contains("\"react-scripts\"");
                 yield Set.of(web ? DeploymentProjectKind.STATIC_SITE : DeploymentProjectKind.NODE_SERVICE);
             }
             case "pyproject.toml", "Pipfile" -> Set.of(DeploymentProjectKind.PYTHON_SERVICE);
@@ -145,9 +146,9 @@ public final class ProjectComponentDiscovery {
             case "windowstolinux-php.properties", "composer.json" -> Set.of(DeploymentProjectKind.PHP_SERVICE);
             case "windowstolinux-ruby.properties", "Gemfile" -> Set.of(DeploymentProjectKind.RUBY_SERVICE);
             case "index.html" -> file.getParent().getFileName().toString().equals("public")
-                    || Files.exists(file.getParent().resolve("package.json"))
-                            ? Set.of()
-                            : Set.of(DeploymentProjectKind.STATIC_SITE);
+                || Files.exists(file.getParent().resolve("package.json"))
+                ? Set.of()
+                : Set.of(DeploymentProjectKind.STATIC_SITE);
             default -> name.endsWith(".csproj") ? Set.of(DeploymentProjectKind.DOTNET_SERVICE) : Set.of();
         };
     }

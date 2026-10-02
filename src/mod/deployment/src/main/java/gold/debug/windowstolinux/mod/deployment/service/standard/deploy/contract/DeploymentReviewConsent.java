@@ -10,7 +10,7 @@ import java.util.Objects;
  * @param archiveSha256 actual tar.gz digest / 实际 tar.gz 摘要
  * @param confirmedAt review time / 审阅时间 */
 public record DeploymentReviewConsent(String applicationId, String serverId, String sourceManifestSha256,
-        String archiveSha256, Instant confirmedAt) {
+                                      String archiveSha256, Instant confirmedAt) {
     /** Validates a review without treating it as an ApprovalGrant. / 校验审阅记录，不将其作为授权令牌。
      * @param applicationId reviewed application / 已审阅应用
      * @param serverId exact server ID / 精确服务器ID
@@ -23,7 +23,7 @@ public record DeploymentReviewConsent(String applicationId, String serverId, Str
         if (serverId == null || serverId.isBlank() || serverId.length() > 512 || serverId.indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid platform server identity");
         if (sourceManifestSha256 == null || !sourceManifestSha256.matches("[0-9a-f]{64}") || archiveSha256 == null
-                || !archiveSha256.matches("[0-9a-f]{64}"))
+            || !archiveSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid reviewed source identities");
         Objects.requireNonNull(confirmedAt);
     }

@@ -34,13 +34,13 @@ final class DeploymentRestoreTransfers {
         var owned = identify(cursor, plan, pending);
         for (var transfer : owned) {
             var file = cursor.unit(transfer.input().artifact().componentId()).withObject("files")
-                    .withObject(transfer.input().file().bindingId());
+                .withObject(transfer.input().file().bindingId());
             file.put("transferId", transfer.checkpoint().id().toString())
-                    .put("transferOverwrite", transfer.checkpoint().overwrite()).put("transferDiscardAttempted", true);
+                .put("transferOverwrite", transfer.checkpoint().overwrite()).put("transferDiscardAttempted", true);
             cursor.save(cursor.entry.publicValue().state());
             var approved = context.interaction().approve(
-                    RemoteActions.recoverTransfer(transfer.checkpoint(), plan.request.reviewedTargetSha256(), false),
-                    cursor.task);
+                RemoteActions.recoverTransfer(transfer.checkpoint(), plan.request.reviewedTargetSha256(), false),
+                cursor.task);
             if (approved.outcome() != Outcome.SUCCEEDED)
                 return false;
             var discarded = session.discardTransfer(transfer.checkpoint().id(), approved.value().orElseThrow());
@@ -59,7 +59,7 @@ final class DeploymentRestoreTransfers {
      * @return exact original uploads admitted for cleanup / 获准清理的精确原上传
      * @throws IllegalArgumentException if any transfer or saved identity differs / 任一传输或保存身份不符时 */
     private static List<OriginalUpload> identify(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            List<TransferCheckpoint> pending) {
+                                                 List<TransferCheckpoint> pending) {
         var owned = new ArrayList<OriginalUpload>();
         var bindings = new HashSet<String>();
         for (var checkpoint : pending) {
@@ -71,10 +71,10 @@ final class DeploymentRestoreTransfers {
                 throw new IllegalArgumentException("Repeated original restore transfer binding");
             var facts = cursor.unit(input.artifact().componentId()).path("files").path(input.file().bindingId());
             if (facts.has("transferId") && (!facts.path("transferId").isTextual()
-                    || !facts.path("transferId").textValue().equals(checkpoint.id().toString())))
+                || !facts.path("transferId").textValue().equals(checkpoint.id().toString())))
                 throw new IllegalArgumentException("Original restore transfer identity differs");
             if (facts.has("transferOverwrite") && (!facts.path("transferOverwrite").isBoolean()
-                    || facts.path("transferOverwrite").booleanValue() != checkpoint.overwrite()))
+                || facts.path("transferOverwrite").booleanValue() != checkpoint.overwrite()))
                 throw new IllegalArgumentException("Original restore transfer choice differs");
             owned.add(new OriginalUpload(input, checkpoint));
         }
@@ -88,17 +88,17 @@ final class DeploymentRestoreTransfers {
      * @param checkpoint host-certified original transfer / 宿主认证的原传输
      * @return whether every immutable field and the original attempt match / 是否全部不可变字段及原尝试均匹配 */
     private static boolean matches(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            DeploymentRestorePlan.FileInput input, TransferCheckpoint checkpoint) {
+                                   DeploymentRestorePlan.FileInput input, TransferCheckpoint checkpoint) {
         var unit = cursor.unit(input.artifact().componentId());
         String candidate = unit.path("candidate").asText();
         var request = new TransferRequest(input.file().verifiedLocalFile(),
-                DeploymentRestoreSteps.root(candidate) + "/mutable/restore/" + input.member(),
-                input.file().byteCount());
+            DeploymentRestoreSteps.root(candidate) + "/mutable/restore/" + input.member(),
+            input.file().byteCount());
         return unit.path("created").asBoolean()
-                && unit.path("files").path(input.file().bindingId()).path("uploadAttempted").asBoolean()
-                && checkpoint.server().equals(plan.request.target()) && checkpoint.upload()
-                && checkpoint.request().equals(request) && checkpoint.size() == input.file().byteCount()
-                && checkpoint.sha256().equals(input.file().sha256());
+            && unit.path("files").path(input.file().bindingId()).path("uploadAttempted").asBoolean()
+            && checkpoint.server().equals(plan.request.target()) && checkpoint.upload()
+            && checkpoint.request().equals(request) && checkpoint.size() == input.file().byteCount()
+            && checkpoint.sha256().equals(input.file().sha256());
     }
 
     /** One host-certified original upload and its exact reviewed file. / 一项宿主认证的原上传及其精确已审阅文件。

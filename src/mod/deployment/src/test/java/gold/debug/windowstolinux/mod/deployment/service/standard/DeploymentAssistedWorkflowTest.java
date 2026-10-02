@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -9,15 +18,15 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -32,6 +41,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     enum ScenarioType {
         REFUSAL, PUBLICATION, CONNECT_DRIFT
     }
+
     private final AtomicInteger calls = new AtomicInteger();
 
     private final AtomicInteger reviews = new AtomicInteger();
@@ -39,6 +49,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     private final List<String> approvals = new CopyOnWriteArrayList<>();
 
     private final AtomicReference<String> revision = new AtomicReference<>("a".repeat(64));
+
     @Override
     protected Path selectedSourceDirectory() {
         return root.resolve("input");
@@ -48,12 +59,12 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                           CancelToken token) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                       CancelToken token) {
                 throw new AssertionError();
             }
 
@@ -61,11 +72,11 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 throw new AssertionError();
             }
 
-            public char[] text(String title, String prompt, boolean secret, TaskSnapshot t, CancellationToken token) {
+            public char[] text(String title, String prompt, boolean secret, TaskSnapshot t, CancelToken token) {
                 throw new AssertionError();
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken token) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
                 approvals.add(intent.type());
                 return true;
             }
@@ -92,14 +103,14 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
         Files.writeString(selectedSourceDirectory().resolve("main.go"), "package main\nfunc main() {}\n");
         Files.writeString(selectedSourceDirectory().resolve("README.md"), "HTTP service default port is 8080.\n");
         Files.writeString(selectedSourceDirectory().resolve("windowstolinux-application.properties"),
-                "version=1\nhealth.mode=TCP\n");
+            "version=1\nhealth.mode=TCP\n");
         enable();
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var actual = runtime.modContexts().get(OWNER).context();
             var ai = ai();
             var peer = new DeploymentAssistedTestPeer();
@@ -118,41 +129,41 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 }
             };
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("ai"))
-                            return ai;
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        try {
-                            return method.invoke(actual, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("ai"))
+                        return ai;
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    try {
+                        return method.invoke(actual, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             var page = new DeploymentStaticPageService(bound, workflow);
             var original = new AtomicReference<UUID>();
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                        List<DiscoveredProjectComponent> found, TaskContext task) {
+                                                                                  List<DiscoveredProjectComponent> found, TaskContext task) {
                     original.set(task.id());
                     assertEquals(1, found.size());
                     return success(
-                            new DeploymentStaticWorkflow.Selection(
-                                    found.getFirst().id(), Map
-                                            .of(found.getFirst().id(),
-                                                    new DeploymentStaticWorkflow.Choice(
-                                                            DeploymentProjectKind.GO_SERVICE, Set.of())),
-                                    Optional.empty()));
+                        new DeploymentStaticWorkflow.Selection(
+                            found.getFirst().id(), Map
+                            .of(found.getFirst().id(),
+                                new DeploymentStaticWorkflow.Choice(
+                                    DeploymentProjectKind.GO_SERVICE, Set.of())),
+                            Optional.empty()));
                 }
 
                 public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
-                        String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                             String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(original.get(), task.id());
                     int round = reviews.getAndIncrement();
                     var prompt = prompts.getFirst();
                     assertEquals("8080", prompt.fields().stream().filter(field -> field.id().endsWith("/port"))
-                            .findFirst().orElseThrow().value());
+                        .findFirst().orElseThrow().value());
                     var values = new HashMap<>(prompt.defaults());
                     values.put("primary", prompt.componentId());
                     values.put("secondary", "main.go");
@@ -161,13 +172,13 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     values.put("port", round == 0 ? "0" : "9090");
                     values.put("exposure", "INTERNAL");
                     return success(Map.of(prompt.componentId(), new DeploymentStaticWorkflow.Answers(values, List.of(),
-                            DeploymentBuildLimits.defaultNonRoot(), false, true)));
+                        DeploymentBuildLimits.defaultNonRoot(), false, true)));
                 }
 
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentPreparedDatabase> databases,
-                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentPreparedDatabase> databases,
+                                                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     assertEquals(original.get(), task.id());
                     assertEquals(1, archives.size());
                     assertEquals("9090", answers.values().iterator().next().values().get("port"));
@@ -175,14 +186,14 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 }
             };
             var handle = page.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft("demo", 65536, 100, 65536), Optional.empty(), reviewer, true);
+                new DeploymentStaticWorkflow.Draft("demo", 65536, 100, 65536), Optional.empty(), reviewer, true);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(
-                    scenario == ScenarioType.REFUSAL
-                            ? Outcome.CANCELLED
-                            : scenario == ScenarioType.PUBLICATION ? Outcome.SUCCEEDED : Outcome.FAILED,
-                    result.outcome(), result.toString());
+                scenario == ScenarioType.REFUSAL
+                    ? Outcome.CANCELLED
+                    : scenario == ScenarioType.PUBLICATION ? Outcome.SUCCEEDED : Outcome.FAILED,
+                result.outcome(), result.toString());
             assertEquals(handle.id(), original.get());
             assertEquals(2, reviews.get());
             assertEquals(3, calls.get());
@@ -191,10 +202,10 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(0, connections.get());
             } else {
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery(
-                                "SELECT platform_task_id,mode,outcome,business_committed FROM deployment_execution")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery(
+                         "SELECT platform_task_id,mode,outcome,business_committed FROM deployment_execution")) {
                     assertTrue(rows.next());
                     assertEquals(handle.id(), rows.getObject(1, UUID.class));
                     assertEquals("ASSISTED", rows.getString(2));
@@ -204,7 +215,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 }
                 assertEquals(scenario == ScenarioType.PUBLICATION ? 1 : 0, peer.publications.get());
                 assertEquals(scenario == ScenarioType.PUBLICATION ? 2 : 1, connections.get(),
-                        "Frozen guard rejects before admitting a second SSH session");
+                    "Frozen guard rejects before admitting a second SSH session");
                 if (scenario == ScenarioType.CONNECT_DRIFT)
                     assertEquals(ProblemCode.ACCESS_DENIED, result.problem().orElseThrow().code());
             }
@@ -245,15 +256,15 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                             field = offered.path("id").textValue();
                     assertFalse(field.isBlank());
                     output = "{\"action\":\"" + (turn == 0 ? "READ" : "ADVISE") + "\",\"sourceRevision\":\"" + revision
-                            + "\",\"arguments\":"
-                            + (turn == 0
-                                    ? "{\"path\":\"README.md\",\"offset\":0,\"limit\":10}"
-                                    : "{\"suggestions\":[{\"field\":\"" + field
-                                            + "\",\"candidate\":\"8080\",\"evidence\":[\"source/0\"]}],\"summary\":\"README default\",\"unresolved\":[]}")
-                            + "}";
+                        + "\",\"arguments\":"
+                        + (turn == 0
+                        ? "{\"path\":\"README.md\",\"offset\":0,\"limit\":10}"
+                        : "{\"suggestions\":[{\"field\":\"" + field
+                        + "\",\"candidate\":\"8080\",\"evidence\":[\"source/0\"]}],\"summary\":\"README default\",\"unresolved\":[]}")
+                        + "}";
                 }
                 return success(
-                        new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                    new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty())));
             }
         };
     }

@@ -7,10 +7,10 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.security.SecurityRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +27,7 @@ class CredentialVaultH2Test {
             return encrypted.clone();
         }
     };
+
     char[] password() {
         return "testpass".toCharArray();
     }
@@ -42,7 +43,7 @@ class CredentialVaultH2Test {
             var vault = new CredentialVault(repository);
             try (var session = vault.initialize(password())) {
                 var original = SecretStoreException.create(SecretStoreFailureType.ENCRYPT_FAILED,
-                        "Credential persistence failed", new SQLException("password=private-fixture"));
+                    "Credential persistence failed", new SQLException("password=private-fixture"));
                 var returned = assertThrows(SecretStoreException.class, () -> session.transaction(() -> {
                     session.save("rollback", "private-value".toCharArray());
                     throw original;
@@ -89,7 +90,7 @@ class CredentialVaultH2Test {
             assertTrue(vault.configured());
             assertThrows(SecretStoreException.class, () -> vault.unlock(password()));
             try (var session = vault.unlock("new-pass".toCharArray());
-                    var stored = repository.find("ssh/test").orElseThrow()) {
+                 var stored = repository.find("ssh/test").orElseThrow()) {
                 assertArrayEquals(before, stored.payload());
                 assertArrayEquals("secret value".toCharArray(), session.read("ssh/test").orElseThrow());
             }
@@ -106,7 +107,7 @@ class CredentialVaultH2Test {
                 session.save("b", "second secret".toCharArray());
                 try (var c = database.openConnection(); var s = c.createStatement()) {
                     s.execute(
-                            "ALTER TABLE credential ADD CONSTRAINT test_reject_plain CHECK(credential_id<>'b' OR storage_format<>'PLAIN_V1')");
+                        "ALTER TABLE credential ADD CONSTRAINT test_reject_plain CHECK(credential_id<>'b' OR storage_format<>'PLAIN_V1')");
                     assertThrows(SecretStoreException.class, () -> vault.setEncryption(password(), false));
                     assertTrue(vault.encryptionEnabled());
                     for (var id : java.util.List.of("a", "b"))
@@ -117,12 +118,12 @@ class CredentialVaultH2Test {
                     var generation = UUID.randomUUID();
                     s.execute("INSERT INTO mod_registry(mod_id,updated_at) VALUES('fixture.mod',0)");
                     try (var p = c.prepareStatement(
-                            "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES('fixture.mod','1',?,'fixture_schema','fixture_user','READY',0,0)")) {
+                        "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at,validated_at) VALUES('fixture.mod','1',?,'fixture_schema','fixture_user','READY',0,0)")) {
                         p.setObject(1, generation);
                         p.executeUpdate();
                     }
                     try (var p = c.prepareStatement(
-                            "INSERT INTO mod_credential_reference VALUES(?,'a','fixture.mod','1',?,'record','fixture','UNKNOWN',0)")) {
+                        "INSERT INTO mod_credential_reference VALUES(?,'a','fixture.mod','1',?,'record','fixture','UNKNOWN',0)")) {
                         p.setObject(1, UUID.randomUUID());
                         p.setObject(2, generation);
                         p.executeUpdate();
@@ -153,7 +154,7 @@ class CredentialVaultH2Test {
                     s.executeUpdate("UPDATE credential SET credential_id='swapped' WHERE credential_id='a'");
                     assertThrows(SecretStoreException.class, () -> session.read("swapped"));
                     try (var stored = repository.find("b").orElseThrow();
-                            var p = c.prepareStatement("UPDATE credential SET payload=? WHERE credential_id='b'")) {
+                         var p = c.prepareStatement("UPDATE credential SET payload=? WHERE credential_id='b'")) {
                         var bytes = stored.payload();
                         Arrays.fill(bytes, (byte) 0);
                         p.setBytes(1, bytes);

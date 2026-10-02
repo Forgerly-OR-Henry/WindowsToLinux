@@ -44,14 +44,14 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
      * <p>用于识别卷的匹配模式。
      */
     private static final Pattern VOLUME = Pattern
-            .compile("(?im)^\\s*VOLUME\\s+(?:\\[\\s*)?['\\\"]?(/[^\\s,'\\\"\\]]+)['\\\"]?(?:\\s*\\])?\\s*$");
+        .compile("(?im)^\\s*VOLUME\\s+(?:\\[\\s*)?['\\\"]?(/[^\\s,'\\\"\\]]+)['\\\"]?(?:\\s*\\])?\\s*$");
 
     /**
      * Pattern recognizing FROM.
      * <p>用于识别来源的匹配模式。
      */
     private static final Pattern FROM = Pattern
-            .compile("(?im)^\\s*FROM\\s+(?:--platform=\\S+\\s+)?(\\S+)(?:\\s+AS\\s+(\\S+))?\\s*(?:#.*)?$");
+        .compile("(?im)^\\s*FROM\\s+(?:--platform=\\S+\\s+)?(\\S+)(?:\\s+AS\\s+(\\S+))?\\s*(?:#.*)?$");
 
     /**
      * Returns the supported deployment project type. / 返回支持的部署项目类型。
@@ -75,29 +75,29 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         Path dockerfile = root.resolve("Dockerfile");
         if (!BoundedMetadataInspector.regular(dockerfile)) {
             rejections.add(rejection("DOCKERFILE_MISSING", "analysis.deployment.rejection.dockerfileMissing"));
             return null;
         }
         if (!BoundedMetadataInspector
-                .existingNames(root, "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
-                .isEmpty()) {
+            .existingNames(root, "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+            .isEmpty()) {
             rejections.add(
-                    rejection("MULTI_CONTAINER_COMPOSE_DETECTED", "analysis.deployment.rejection.composeUnsupported"));
+                rejection("MULTI_CONTAINER_COMPOSE_DETECTED", "analysis.deployment.rejection.composeUnsupported"));
             return null;
         }
         String applicationId = ProjectIdentityResolver.rootApplicationId(source.logicalRootName(root));
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, applicationId, projectType(),
-                DeploymentBuildToolType.CONTAINER_BUILD, languageFacts,
-                List.of(evidence("analysis.deployment.evidence.dockerfile", "Dockerfile",
-                        "analysis.deployment.evidence.detected")),
-                List.of(), List.of());
+            DeploymentBuildToolType.CONTAINER_BUILD, languageFacts,
+            List.of(evidence("analysis.deployment.evidence.dockerfile", "Dockerfile",
+                "analysis.deployment.evidence.detected")),
+            List.of(), List.of());
         String text = BoundedMetadataInspector.read(dockerfile);
         if (!baseImagesPinned(text)) {
             rejections.add(rejection("CONTAINER_BASE_IMAGE_UNPINNED",
-                    "analysis.deployment.rejection.containerBaseImageUnpinned"));
+                "analysis.deployment.rejection.containerBaseImageUnpinned"));
             return null;
         }
         Map<Integer, Integer> ports = ports(text);
@@ -105,20 +105,20 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         List<AnalysisEvidence> evidence = new ArrayList<>();
         if (!ports.isEmpty()) {
             evidence.add(evidence("analysis.deployment.runtime.evidence.containerPorts", "Dockerfile#EXPOSE",
-                    "analysis.deployment.evidence.detected"));
+                "analysis.deployment.evidence.detected"));
         }
         if (!volumes.isEmpty()) {
             evidence.add(evidence("analysis.deployment.runtime.evidence.containerVolumes", "Dockerfile#VOLUME",
-                    "analysis.deployment.evidence.detected"));
+                "analysis.deployment.evidence.detected"));
         }
         List<DeploymentLocalizedMessage> required = new ArrayList<>(
-                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.containerEngine"),
-                        DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
+            List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.containerEngine"),
+                DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         if (ports.isEmpty()) {
             required.add(DeploymentLocalizedMessage.of("analysis.deployment.runtime.containerPorts"));
         }
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), Map.of(),
-                Optional.empty(), ports, volumes, evidence, required);
+            Optional.empty(), ports, volumes, evidence, required);
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -169,7 +169,7 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
             found = true;
             String normalized = matcher.group(1).toLowerCase(Locale.ROOT);
             if (!"scratch".equals(normalized) && !stageAliases.contains(normalized)
-                    && !normalized.matches("[^@\\s]+@sha256:[0-9a-f]{64}")) {
+                && !normalized.matches("[^@\\s]+@sha256:[0-9a-f]{64}")) {
                 return false;
             }
             if (matcher.group(2) != null && !stageAliases.add(matcher.group(2).toLowerCase(Locale.ROOT))) {
@@ -193,7 +193,7 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         while (matcher.find()) {
             String path = matcher.group(1);
             if (path.matches("/[A-Za-z0-9._/-]{1,255}") && !path.equals("/") && !path.contains("..")
-                    && !path.contains("//")) {
+                && !path.contains("//")) {
                 paths.add(path);
             }
         }
@@ -201,17 +201,17 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
         int ordinal = 1;
         for (String path : paths) {
             String suffix = path.substring(path.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT)
-                    .replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
+                .replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
             if (suffix.isBlank()) {
                 suffix = "data";
             }
             String base = "windowstolinux-" + applicationId + "-" + suffix;
             String candidate = base.length() <= 63 ? base : base.substring(0, 63).replaceAll("-+$", "");
             boolean duplicate = volumes.stream().map(DeploymentRuntimeDefinition.ManagedVolume::name)
-                    .anyMatch(candidate::equals);
+                .anyMatch(candidate::equals);
             String name = duplicate
-                    ? (candidate.length() > 61 ? candidate.substring(0, 61) : candidate) + "-" + ordinal
-                    : candidate;
+                ? (candidate.length() > 61 ? candidate.substring(0, 61) : candidate) + "-" + ordinal
+                : candidate;
             volumes.add(new DeploymentRuntimeDefinition.ManagedVolume(name, path, false));
             ordinal++;
         }
@@ -240,11 +240,11 @@ public final class ContainerDeploymentInspector implements DeploymentTypeInspect
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
-            String subject, String source, String conclusion) {
+        String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
-                source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
+            source,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
+            gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

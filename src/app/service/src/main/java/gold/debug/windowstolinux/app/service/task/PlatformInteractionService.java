@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.util.*;
 
 import javax.swing.SwingUtilities;
@@ -7,7 +20,7 @@ import javax.swing.SwingUtilities;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 
 /** Owns caller-bound human review and single-use grants without persisting secret input. / 持有调用方绑定的人工审核及单次授权，不持久化秘密输入。 */
 public final class PlatformInteractionService implements InteractionService, AutoCloseable {
@@ -38,6 +51,25 @@ public final class PlatformInteractionService implements InteractionService, Aut
     /** Revokes further interaction after its owning activation closes. / 所属启用关闭后撤销进一步交互。 */
     private volatile boolean closed;
 
+    /** Independent deletion reviewer installed only by trusted composition. / 仅由可信装配安装的独立删除审批方。 */
+    private DeletionReview deletionReview;
+
+    /** Installs genuine local and independent AI review for preauthorized deletion. / 为前置删除安装真实本地与独立 AI 审批。
+     * @param review platform-owned reviewer / 平台所属审批方 */
+    public synchronized void installDeletionReview(DeletionReview review) {
+        if (closed || deletionReview != null) throw new IllegalStateException("Deletion review is already installed or closed");
+        deletionReview = Objects.requireNonNull(review);
+    }
+
+    /** Trusted review callback, absent from author appapi. / 不向作者 appapi 暴露的可信审核回调。 */
+    @FunctionalInterface public interface DeletionReview {
+        /** Verifies actual local facts and a separate AI approval. / 核验实际本地事实及独立 AI 审批。
+         * @param intent exact deletion / 精确删除
+         * @param task authentic task / 真实任务
+         * @throws ApiException if either proof is unavailable or rejected / 任一证明不可用或拒绝时 */
+        void verify(ActionIntent intent, TaskContext task) throws ApiException;
+    }
+
     /**
      * Binds one Mod's review capability to the platform privacy boundary. / 将一个 Mod 的审核能力绑定到平台隐私边界。
      * @param tasks current task authority / 当前任务授权方
@@ -48,7 +80,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param prompts host-owned presenter / 宿主持有的呈现器
      */
     public PlatformInteractionService(PlatformTaskRuntime tasks, DesktopSecurityService security,
-            PlatformAuthorizationService authorization, String owner, String version, Prompts prompts) {
+                                      PlatformAuthorizationService authorization, String owner, String version, Prompts prompts) {
         this.tasks = Objects.requireNonNull(tasks);
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
@@ -66,17 +98,50 @@ public final class PlatformInteractionService implements InteractionService, Aut
      */
     @Override
     public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) throws ApiException {
+        return approve(intent, task, false, "");
+    }
+
+    /** Confirms every ordinary deletion, independently of optional explanation. / 独立于可选说明地确认每次普通删除。
+     * @param intent exact deletion / 精确删除
+     * @param explanation optional purpose information / 可选用途信息
+     * @param task authentic task / 真实任务
+     * @return exact ordinary grant or decline / 精确普通许可或拒绝
+     * @throws ApiException if review fails / 审核失败时 */
+    public OperationResult<ApprovalGrant> confirmDeletion(ActionIntent intent, String explanation, TaskContext task) throws ApiException {
+        if (!"file-delete".equals(intent.type()))
+            throw error(ProblemCode.INVALID_INPUT, "FILE_DELETE_ACTION", "Deletion confirmation requires a deletion intent");
+        return approve(intent, task, true, Objects.requireNonNull(explanation));
+    }
+
+    /** Issues grants after the applicable independent and human decisions. / 满足适用独立及人工决定后签发许可。
+     * @param intent exact action / 精确动作
+     * @param task original task / 原任务
+     * @param ordinaryDelete unconditional ordinary confirmation / 无条件普通确认
+     * @param explanation optional presentation only / 仅呈现用可选说明
+     * @return original grant / 原许可
+     * @throws ApiException if authorization fails / 授权失败时 */
+    private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task, boolean ordinaryDelete, String explanation) throws ApiException {
         worker();
         validate(intent, task);
+        boolean independent = "file-delete".equals(intent.type()) && !ordinaryDelete;
+        if (independent) {
+            var reviewer = deletionReview;
+            if (reviewer == null)
+                throw error(ProblemCode.UNAVAILABLE, "FILE_DELETE_REVIEW_UNAVAILABLE", "Independent deletion review is unavailable");
+            reviewer.verify(intent, task);
+            validate(intent, task);
+        }
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
-                "interaction-" + UUID.randomUUID(), owner, false));
+            "interaction-" + UUID.randomUUID(), owner, false));
         try {
             final PlatformAuthorizationService.Permit permit;
             try {
-                var cancellation = cancellation(task);
+                var cancellation = cancelToken(task);
+                var display = explanation.isBlank() ? intent : new ActionIntent(intent.type(), intent.serverIds(),
+                    intent.target(), intent.revision(), intent.exactAction(), intent.effectSummary() + "\n\n" + explanation, intent.semantics());
                 permit = authorization.review(owner, version, intent, task, () -> security.human(
-                        () -> prompts.approve(intent, tasks.requireExecuting(task, owner, version), cancellation),
-                        cancellation));
+                    () -> prompts.approve(display, tasks.requireExecuting(task, owner, version), cancellation),
+                    cancellation), ordinaryDelete);
             } catch (java.util.concurrent.CancellationException cancelled) {
                 return cancelled();
             } catch (RuntimeException failure) {
@@ -89,10 +154,10 @@ public final class PlatformInteractionService implements InteractionService, Aut
             synchronized (this) {
                 requireOpen();
                 var activeTasks = tasks.snapshots().stream().filter(snapshot -> snapshot.state() != TaskState.ENDED)
-                        .map(TaskSnapshot::id).collect(java.util.stream.Collectors.toSet());
+                    .map(TaskSnapshot::id).collect(java.util.stream.Collectors.toSet());
                 grants.entrySet().removeIf(entry -> !activeTasks.contains(entry.getValue().task().id()));
                 var grant = new ApprovalGrant(UUID.randomUUID());
-                grants.put(grant, new Reviewed(task, intent, permit));
+                grants.put(grant, new Reviewed(task, intent, permit, independent));
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
         } finally {
@@ -107,21 +172,21 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @return explicit conflict choice, or termination after cancellation / 明确冲突选择，取消后终止
      * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
     public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         worker();
         requireOpen();
         tasks.requireServer(task, owner, version, server.id());
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
-                "interaction-" + UUID.randomUUID(), owner, false));
+            "interaction-" + UUID.randomUUID(), owner, false));
         try {
-            var cancellation = cancellation(task);
+            var cancellation = cancelToken(task);
             var choice = security.human(() -> prompts.transferConflict(conflict, server,
-                    tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+                tasks.requireExecuting(task, owner, version), cancellation), cancellation);
             requireOpen();
             tasks.requireServer(task, owner, version, server.id());
             return Objects.requireNonNull(choice);
         } catch (java.util.concurrent.CancellationException cancelled) {
-            return TransferConflictChoice.TERMINATE;
+            return TransferConflictChoice.SKIP;
         } catch (ApiException failure) {
             throw failure;
         } catch (RuntimeException failure) {
@@ -138,16 +203,16 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @return explicit retry choice, or termination after cancellation / 明确重试选择，取消后终止
      * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
     public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         worker();
         requireOpen();
         tasks.requireServer(task, owner, version, server.id());
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
-                "interaction-" + UUID.randomUUID(), owner, false));
+            "interaction-" + UUID.randomUUID(), owner, false));
         try {
-            var cancellation = cancellation(task);
+            var cancellation = cancelToken(task);
             var choice = security.human(() -> prompts.transferStalled(stall, server,
-                    tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+                tasks.requireExecuting(task, owner, version), cancellation), cancellation);
             requireOpen();
             tasks.requireServer(task, owner, version, server.id());
             return Objects.requireNonNull(choice);
@@ -183,19 +248,19 @@ public final class PlatformInteractionService implements InteractionService, Aut
      */
     @Override
     public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         worker();
         requireOpen();
         tasks.requireExecuting(task, owner, version);
         if (title == null || title.isBlank() || title.length() > 4096 || prompt == null || prompt.length() > 65536)
             throw error(ProblemCode.INVALID_INPUT, "INPUT_PROMPT", "Invalid human input description");
         var lease = tasks.retain(task, new gold.debug.windowstolinux.app.db.task.TaskResource("CUSTOM",
-                "interaction-" + UUID.randomUUID(), owner, false));
+            "interaction-" + UUID.randomUUID(), owner, false));
         char[] value = null;
         try {
-            var cancellation = cancellation(task);
+            var cancellation = cancelToken(task);
             value = security.human(() -> prompts.text(title, prompt, secret,
-                    tasks.requireExecuting(task, owner, version), cancellation), cancellation);
+                tasks.requireExecuting(task, owner, version), cancellation), cancellation);
             requireOpen();
             tasks.requireExecuting(task, owner, version);
             if (value == null)
@@ -221,7 +286,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task authentic original task / 真实原始任务
      * @return cancellation used by the gate and actual dialog / 门禁及实际对话框使用的取消信号
      */
-    private CancellationToken cancellation(TaskContext task) {
+    private CancelToken cancelToken(TaskContext task) {
         var cancellation = tasks.operationCancellation(task);
         return () -> closed || cancellation.requested();
     }
@@ -259,7 +324,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
         var reviewed = grants.get(grant);
         if (reviewed == null || reviewed.task() != task)
             throw error(ProblemCode.ACCESS_DENIED, "APPROVAL_IDENTITY",
-                    "Approval is foreign, expired or already consumed");
+                "Approval is foreign, expired or already consumed");
         authorization.validate(reviewed.permit(), task);
         return reviewed.intent();
     }
@@ -270,10 +335,10 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task original task / 原任务
      * @throws ApiException if any actual effect field differs / 任一实际副作用字段不符时 */
     public synchronized void consumeRemote(ApprovalGrant grant, ActionIntent actual, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var semantics = reviewed(grant, task).semantics();
         consume(grant, new ActionIntent(actual.type(), actual.serverIds(), actual.target(), actual.revision(),
-                actual.exactAction(), actual.effectSummary(), semantics), task);
+            actual.exactAction(), actual.effectSummary(), semantics), task);
     }
 
     /**
@@ -286,9 +351,21 @@ public final class PlatformInteractionService implements InteractionService, Aut
     public synchronized void consume(ApprovalGrant grant, ActionIntent expected, TaskContext task) throws ApiException {
         if (!reviewed(grant, task).equals(expected))
             throw error(ProblemCode.ACCESS_DENIED, "APPROVAL_ACTION",
-                    "The actual operation differs from the reviewed action");
+                "The actual operation differs from the reviewed action");
         validate(expected, task);
         grants.remove(grant);
+    }
+
+    /** Consumes only genuine independently reviewed deletion authority. / 仅消费真实独立审核过的删除授权。
+     * @param grant original grant / 原许可
+     * @param intent freshly reconstructed action / 新重建动作
+     * @param task original task / 原任务
+     * @throws ApiException if independent proof or identity is invalid / 独立证明或身份无效时 */
+    public synchronized void consumeDeletionPermit(ApprovalGrant grant, ActionIntent intent, TaskContext task) throws ApiException {
+        reviewed(grant, task);
+        if (!grants.get(grant).independentDeletion())
+            throw error(ProblemCode.ACCESS_DENIED, "FILE_DELETE_INDEPENDENT_REVIEW", "Deletion permit lacks independent approval");
+        consume(grant, intent, task);
     }
 
     /**
@@ -301,10 +378,10 @@ public final class PlatformInteractionService implements InteractionService, Aut
         requireOpen();
         tasks.requireExecuting(task, owner, version);
         if (intent == null || intent.type().isBlank() || intent.type().length() > 128 || intent.target().isBlank()
-                || intent.target().length() > 4096 || intent.revision().isBlank() || intent.revision().length() > 512
-                || intent.effectSummary().isBlank() || intent.effectSummary().length() > 65536
-                || intent.exactAction().length() > 17 * 1024 * 1024
-                || new HashSet<>(intent.serverIds()).size() != intent.serverIds().size())
+            || intent.target().length() > 4096 || intent.revision().isBlank() || intent.revision().length() > 512
+            || intent.effectSummary().isBlank() || intent.effectSummary().length() > 65536
+            || intent.exactAction().length() > 17 * 1024 * 1024
+            || new HashSet<>(intent.serverIds()).size() != intent.serverIds().size())
             throw error(ProblemCode.INVALID_INPUT, "APPROVAL_INTENT", "Invalid exact review description");
         for (var server : intent.serverIds())
             tasks.requireServer(task, owner, version, server);
@@ -335,7 +412,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
     private static void worker() throws ApiException {
         if (SwingUtilities.isEventDispatchThread())
             throw error(ProblemCode.CONTRACT_VIOLATION, "INTERACTION_REQUIRES_BACKGROUND",
-                    "Interaction requires a background task");
+                "Interaction requires a background task");
     }
 
     /**
@@ -345,7 +422,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      */
     private static <T> OperationResult<T> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional
-                .of(error(ProblemCode.CANCELLED, "HUMAN_CANCELLED", "Human review or input was cancelled").problem()));
+            .of(error(ProblemCode.CANCELLED, "HUMAN_CANCELLED", "Human review or input was cancelled").problem()));
     }
 
     /**
@@ -365,7 +442,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param intent complete reviewed intent / 完整已审核意图
      * @param permit original live-scope policy decision / 原活动作用域策略决定
      */
-    private record Reviewed(TaskContext task, ActionIntent intent, PlatformAuthorizationService.Permit permit) {
+    private record Reviewed(TaskContext task, ActionIntent intent, PlatformAuthorizationService.Permit permit, boolean independentDeletion) {
     }
 
     /** Host-owned human presentation; implementations marshal their controls to the EDT. / 宿主持有的人工呈现；实现将控件操作调度至 EDT。 */
@@ -377,7 +454,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return explicit business choice / 明确业务选择 */
         TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
-                CancellationToken cancellation);
+                                                CancelToken cancellation);
 
         /** Presents retry or termination after the old transfer physically stops. / 原传输物理停止后呈现重试或终止。
          * @param stall last effective progress and original request / 最后有效进展及原请求
@@ -386,7 +463,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return explicit user choice / 明确用户选择 */
         TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                CancellationToken cancellation);
+                                            CancelToken cancellation);
 
         /** Formats a physical stage without accessing window controls. / 不访问窗口控件地格式化物理阶段。
          * @param progress actual stage and byte counts / 实际阶段及字节数
@@ -400,7 +477,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return explicit approval / 明确同意
          */
-        boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation);
+        boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation);
 
         /**
          * Returns a disposable character buffer, or null for cancellation. / 返回可清除的字符缓冲区，取消时返回 null。
@@ -411,6 +488,6 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return input buffer cleared by the host / 由宿主清除的输入缓冲区
          */
-        char[] text(String title, String prompt, boolean secret, TaskSnapshot task, CancellationToken cancellation);
+        char[] text(String title, String prompt, boolean secret, TaskSnapshot task, CancelToken cancellation);
     }
 }

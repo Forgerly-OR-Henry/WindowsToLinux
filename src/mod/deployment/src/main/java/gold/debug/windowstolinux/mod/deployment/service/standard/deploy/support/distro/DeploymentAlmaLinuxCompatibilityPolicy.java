@@ -20,20 +20,20 @@ final class DeploymentAlmaLinuxCompatibilityPolicy implements DeploymentDistribu
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"dnf".equals(capabilities.packageManager())
-                || !("9.8".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
+            || !("9.8".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("AlmaLinux must be maintained 9.8 or 10.2 with dnf", evidence);
+                .unsupported("AlmaLinux must be maintained 9.8 or 10.2 with dnf", evidence);
         }
         if ("9.8".equals(capabilities.version())) {
             if (!"x86_64".equals(capabilities.packageArchitecture())) {
                 return DeploymentDistributionCompatibilityRules.unsupported("AlmaLinux 9.8 requires x86_64 packages",
-                        evidence);
+                    evidence);
             }
             return enterprise(capabilities, DeploymentCpuMicroarchitectureLevel.X86_64_V1, evidence);
         }
         if ("x86_64_v2".equals(capabilities.packageArchitecture())) {
             DeploymentHostCapabilityStatus cpu = DeploymentDistributionCompatibilityRules.requireCpu(capabilities,
-                    DeploymentCpuMicroarchitectureLevel.X86_64_V2, "AlmaLinux 10 x86_64_v2", evidence);
+                DeploymentCpuMicroarchitectureLevel.X86_64_V2, "AlmaLinux 10 x86_64_v2", evidence);
             if (cpu != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION) {
                 return cpu;
             }
@@ -42,7 +42,7 @@ final class DeploymentAlmaLinuxCompatibilityPolicy implements DeploymentDistribu
         }
         if (!"x86_64".equals(capabilities.packageArchitecture())) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("AlmaLinux 10.2 package architecture must be x86_64 or x86_64_v2", evidence);
+                .unsupported("AlmaLinux 10.2 package architecture must be x86_64 or x86_64_v2", evidence);
         }
         return enterprise(capabilities, DeploymentCpuMicroarchitectureLevel.X86_64_V3, evidence);
     }
@@ -57,11 +57,11 @@ final class DeploymentAlmaLinuxCompatibilityPolicy implements DeploymentDistribu
      * @return constructed or resolved host support status / 构造或解析得到的主机支持状态
      */
     private static DeploymentHostCapabilityStatus enterprise(DeploymentLinuxCapabilityFacts capabilities,
-            DeploymentCpuMicroarchitectureLevel cpuLevel, List<String> evidence) {
+                                                             DeploymentCpuMicroarchitectureLevel cpuLevel, List<String> evidence) {
         DeploymentHostCapabilityStatus cpu = DeploymentDistributionCompatibilityRules.requireCpu(capabilities, cpuLevel,
-                "AlmaLinux", evidence);
+            "AlmaLinux", evidence);
         return cpu == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION
-                ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "AlmaLinux", evidence)
-                : cpu;
+            ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "AlmaLinux", evidence)
+            : cpu;
     }
 }

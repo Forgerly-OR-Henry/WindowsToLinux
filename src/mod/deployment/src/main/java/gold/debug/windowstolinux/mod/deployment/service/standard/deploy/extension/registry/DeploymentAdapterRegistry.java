@@ -31,7 +31,7 @@ public final class DeploymentAdapterRegistry {
      */
     public static DeploymentAdapterRegistry defaults() {
         List<DeploymentAdapter> adapters = new java.util.ArrayList<>(
-                ServiceDeploymentProfile.defaults().stream().map(ServiceDeploymentAdapter::new).toList());
+            ServiceDeploymentProfile.defaults().stream().map(ServiceDeploymentAdapter::new).toList());
         adapters.add(new StaticSiteAdapter());
         adapters.add(new ContainerAdapter());
         return new DeploymentAdapterRegistry(adapters);

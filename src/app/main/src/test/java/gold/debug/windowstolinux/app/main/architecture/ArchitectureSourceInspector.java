@@ -49,7 +49,7 @@ final class ArchitectureSourceInspector {
             if (!module.aggregate() && Files.isDirectory(source))
                 try (Stream<Path> files = Files.walk(source)) {
                     paths.addAll(files.filter(Files::isRegularFile)
-                            .filter(path -> path.toString().endsWith(".java")).toList());
+                        .filter(path -> path.toString().endsWith(".java")).toList());
                 }
         }
         paths.sort(Path::compareTo);
@@ -68,14 +68,14 @@ final class ArchitectureSourceInspector {
 
     static List<JavaSource> snippets(Map<String, String> sources) throws IOException {
         List<JavaFileObject> files = sources.entrySet().stream()
-                .map(entry -> (JavaFileObject) new SimpleJavaFileObject(
-                        URI.create("string:///" + entry.getKey().replace('.', '/') + ".java"),
-                        JavaFileObject.Kind.SOURCE) {
-                    @Override
-                    public CharSequence getCharContent(boolean ignoreEncodingErrors) {
-                        return entry.getValue();
-                    }
-                }).toList();
+            .map(entry -> (JavaFileObject) new SimpleJavaFileObject(
+                URI.create("string:///" + entry.getKey().replace('.', '/') + ".java"),
+                JavaFileObject.Kind.SOURCE) {
+                @Override
+                public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+                    return entry.getValue();
+                }
+            }).toList();
         return inspect(files);
     }
 
@@ -84,9 +84,9 @@ final class ArchitectureSourceInspector {
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
         try (var manager = compiler.getStandardFileManager(diagnostics, null, null)) {
             JavacTask task = (JavacTask) compiler.getTask(null, manager, diagnostics,
-                    List.of("-proc:none", "-Xlint:none", "--release", "21", "-classpath",
-                            System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))),
-                    null, files);
+                List.of("-proc:none", "-Xlint:none", "--release", "21", "-classpath",
+                    System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))),
+                null, files);
             List<CompilationUnitTree> trees = new ArrayList<>();
             task.parse().forEach(trees::add);
             Map<CompilationUnitTree, List<String>> sourceReferences = new java.util.IdentityHashMap<>();
@@ -97,7 +97,7 @@ final class ArchitectureSourceInspector {
                     @Override
                     public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                         if (node.toString()
-                                .matches("gold\\.debug\\.windowstolinux\\..*\\.[A-Z][A-Za-z0-9_]*(?:\\..*)?"))
+                            .matches("gold\\.debug\\.windowstolinux\\..*\\.[A-Z][A-Za-z0-9_]*(?:\\..*)?"))
                             references.add(node.toString());
                         return super.visitMemberSelect(node, unused);
                     }
@@ -107,7 +107,7 @@ final class ArchitectureSourceInspector {
             // Attribution expands var types; keep written references separate from inferred contracts. / 类型归属会展开 var 类型，需区分显式引用与推断契约。
             task.analyze();
             List<String> errors = diagnostics.getDiagnostics().stream()
-                    .filter(item -> item.getKind() == Diagnostic.Kind.ERROR).map(Object::toString).toList();
+                .filter(item -> item.getKind() == Diagnostic.Kind.ERROR).map(Object::toString).toList();
             if (!errors.isEmpty())
                 throw new IllegalStateException("Architecture source attribution failed: " + errors);
             Trees syntax = Trees.instance(task);
@@ -115,11 +115,11 @@ final class ArchitectureSourceInspector {
             TypeMirror throwable = task.getElements().getTypeElement("java.lang.Throwable").asType();
             TypeMirror sqlException = task.getElements().getTypeElement("java.sql.SQLException").asType();
             TypeMirror problem = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Problem")
-                    .asType();
+                .asType();
             TypeMirror optionalProblem = types.getDeclaredType(task.getElements().getTypeElement("java.util.Optional"),
-                    problem);
+                problem);
             TypeMirror outcome = task.getElements().getTypeElement("gold.debug.windowstolinux.appapi.task.Outcome")
-                    .asType();
+                .asType();
             TypeMirror uuid = task.getElements().getTypeElement("java.util.UUID").asType();
             List<JavaSource> result = new ArrayList<>();
             for (CompilationUnitTree tree : trees) {
@@ -129,8 +129,8 @@ final class ArchitectureSourceInspector {
                     @Override
                     public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                         if (syntax.getElement(getCurrentPath()) instanceof javax.lang.model.element.ExecutableElement method
-                                && method.getEnclosingElement() instanceof TypeElement owner
-                                && owner.getQualifiedName().toString().startsWith("gold.debug.windowstolinux."))
+                            && method.getEnclosingElement() instanceof TypeElement owner
+                            && owner.getQualifiedName().toString().startsWith("gold.debug.windowstolinux."))
                             calls.add(owner.getQualifiedName() + "#" + method.getSimpleName());
                         return super.visitMemberSelect(node, unused);
                     }
@@ -141,30 +141,30 @@ final class ArchitectureSourceInspector {
                             TypeElement element = (TypeElement) syntax.getElement(getCurrentPath());
                             TypeMirror type = types.erasure(element.asType());
                             var accessors = javax.lang.model.util.ElementFilter
-                                    .methodsIn(task.getElements().getAllMembers(element)).stream()
-                                    .filter(method -> method.getParameters().isEmpty()
-                                            && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
-                                            && !method.getModifiers()
-                                                    .contains(javax.lang.model.element.Modifier.STATIC))
-                                    .toList();
+                                .methodsIn(task.getElements().getAllMembers(element)).stream()
+                                .filter(method -> method.getParameters().isEmpty()
+                                    && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
+                                    && !method.getModifiers()
+                                    .contains(javax.lang.model.element.Modifier.STATIC))
+                                .toList();
                             boolean classifiedOutcome = accessors.stream()
-                                    .anyMatch(method -> method.getSimpleName().contentEquals("outcome")
-                                            && types.isSameType(method.getReturnType(), outcome));
+                                .anyMatch(method -> method.getSimpleName().contentEquals("outcome")
+                                    && types.isSameType(method.getReturnType(), outcome));
                             boolean publicProblem = accessors.stream()
-                                    .anyMatch(method -> method.getSimpleName().contentEquals("problem")
-                                            && (types.isSameType(method.getReturnType(), problem) || classifiedOutcome
-                                                    && types.isSameType(method.getReturnType(), optionalProblem)));
+                                .anyMatch(method -> method.getSimpleName().contentEquals("problem")
+                                    && (types.isSameType(method.getReturnType(), problem) || classifiedOutcome
+                                    && types.isSameType(method.getReturnType(), optionalProblem)));
                             boolean problemFactory = javax.lang.model.util.ElementFilter.methodsIn(element.getEnclosedElements())
-                                    .stream().anyMatch(method -> method.getSimpleName().contentEquals("problem")
-                                            && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
-                                            && !method.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)
-                                            && types.isSameType(method.getReturnType(), problem)
-                                            && method.getParameters().stream()
-                                                    .anyMatch(parameter -> types.isSameType(parameter.asType(), uuid)));
+                                .stream().anyMatch(method -> method.getSimpleName().contentEquals("problem")
+                                    && method.getModifiers().contains(javax.lang.model.element.Modifier.PUBLIC)
+                                    && !method.getModifiers().contains(javax.lang.model.element.Modifier.STATIC)
+                                    && types.isSameType(method.getReturnType(), problem)
+                                    && method.getParameters().stream()
+                                    .anyMatch(parameter -> types.isSameType(parameter.asType(), uuid)));
                             declarations.add(
-                                    new JavaType(element.getQualifiedName().toString(), node.getSimpleName().toString(),
-                                            node.getKind(), types.isAssignable(type, throwable),
-                                            problemFactory, publicProblem, types.isAssignable(type, sqlException)));
+                                new JavaType(element.getQualifiedName().toString(), node.getSimpleName().toString(),
+                                    node.getKind(), types.isAssignable(type, throwable),
+                                    problemFactory, publicProblem, types.isAssignable(type, sqlException)));
                         }
                         return super.visitClass(node, unused);
                     }
@@ -172,7 +172,7 @@ final class ArchitectureSourceInspector {
                 URI uri = tree.getSourceFile().toUri();
                 Path path = uri.getScheme().equals("file") ? Path.of(uri) : Path.of(uri.getPath());
                 result.add(new JavaSource(path, tree.getPackageName().toString(), sourceReferences.get(tree),
-                        List.copyOf(declarations), List.copyOf(calls)));
+                    List.copyOf(declarations), List.copyOf(calls)));
             }
             return List.copyOf(result);
         }
@@ -188,10 +188,10 @@ final class ArchitectureSourceInspector {
     }
 
     record JavaSource(Path path, String packageName, List<String> references, List<JavaType> types,
-            List<String> calls) {
+                      List<String> calls) {
     }
 
     record JavaType(String name, String simpleName, Tree.Kind kind, boolean throwable,
-            boolean problemFactory, boolean publicProblem, boolean sqlException) {
+                    boolean problemFactory, boolean publicProblem, boolean sqlException) {
     }
 }

@@ -1,391 +1,181 @@
-"""Check or format all maintained source with pinned tools. / 使用固定工具检查或格式化全部维护源码。"""
+"""Check or format the main project with IntelliJ IDEA. / 使用 IDEA 检查或格式化主项目。"""
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
-import sys
-import textwrap
+import tempfile
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent.parent
-CACHE = BASE / "target"
-TOOLS = json.loads((BASE / "tools.json").read_text(encoding="utf-8"))
-EXCEPTIONS = json.loads((BASE / "exceptions.json").read_text(encoding="utf-8"))
+CACHE = ROOT / "target" / "formatting" / "idea"
+SUFFIXES = {
+    ".java", ".mjs", ".xml", ".svg", ".json", ".toml", ".properties", ".sql",
+}
+GENERATED = {"target", "node_modules", ".git", ".idea", "__pycache__", ".venv", ".gradle", "vendor"}
+EXCLUDED_NAMES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
+RETAINED_FILES = {
+    "src/mod/deployment/src/test/resources/original-codec-goldens.properties",
+    "src/mod/deployment/src/test/resources/original-format-provenance.md",
+}
+PROJECT_FILES = {"pom.xml", ".mvn/wtlmod-author-parent/pom.xml", ".mvn/formatting/idea.xml"}
 
 
-def command(args, *, cwd=ROOT, env=None, capture=False, allowed=(0,), data=None):
-    """Run one checked tool without an interpolated shell. / 不经字符串拼接的 Shell 执行受检工具。"""
-    result = subprocess.run([str(value) for value in args], cwd=cwd, env=env, capture_output=capture, input=data)
-    if result.returncode not in allowed:
-        if capture:
-            sys.stderr.buffer.write(result.stdout + result.stderr)
-        raise RuntimeError(f"Formatting command failed ({result.returncode}): {args[0]}")
-    return result
-
-
-def executable(name):
-    """Resolve a required tool and report missing prerequisites. / 定位必需工具并报告缺失依赖。"""
-    found = shutil.which(name)
-    if not found:
-        raise RuntimeError(f"Required formatting tool is missing: {name}; see .mvn/formatting/README.md")
-    return found
-
-
-def required(path):
-    """Require an explicitly installed cached tool. / 要求已显式安装的缓存工具。"""
-    if not path.is_file():
-        raise RuntimeError(f"Missing formatting tool: {path.name}; run python .mvn/formatting/bootstrap.py")
-    return path
+def in_scope(name):
+    """Exclude root examples, keeping module tests. / 排除根目录样例，保留模块测试。"""
+    path = Path(name)
+    return (
+        (name.startswith("src/") or name in PROJECT_FILES)
+        and path.suffix.lower() in SUFFIXES
+        and path.name not in EXCLUDED_NAMES
+        and name not in RETAINED_FILES
+        and not GENERATED.intersection(path.parts)
+    )
 
 
 def inventory():
-    """Use Git inventory, excluding only named generated or retained content. / 使用 Git 清单，仅排除登记的生成或保留内容。"""
-    result = command(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], capture=True)
-    names = sorted(set(result.stdout.decode("utf-8").split("\0")))
-    paths = []
-    for name in names:
-        path = ROOT / name
-        if name.startswith("history-src/"):
-            continue
-        if not name or not path.is_file() or path.is_symlink():
-            continue
-        if name in EXCEPTIONS["files"] or path.name in EXCEPTIONS["excludedNames"]:
-            continue
-        if path.suffix.lower() in EXCEPTIONS["excludedSuffixes"]:
-            continue
-        if any(part in EXCEPTIONS["generatedSegments"] for part in Path(name).parts):
-            continue
-        paths.append(path)
-    return paths
-
-
-def batches(paths, size=20):
-    """Bound Windows command-line length. / 限制 Windows 命令行长度。"""
-    for offset in range(0, len(paths), size):
-        yield paths[offset : offset + size]
-
-
-def java(paths, write):
-    """Use the root reactor's fixed JDT and import rules. / 使用根工程固定的 JDT 及导入规则。"""
-    command(
-        [
-            executable("mvn.cmd"),
-            "-B",
-            "-ntp",
-            "com.diffplug.spotless:spotless-maven-plugin:2.44.3:" + ("apply" if write else "check"),
-        ]
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=ROOT, check=True, capture_output=True,
     )
+    return [
+        ROOT / name
+        for name in sorted(set(result.stdout.decode("utf-8").split("\0")))
+        if in_scope(name) and (ROOT / name).is_file() and not (ROOT / name).is_symlink()
+    ]
 
 
-def web(paths, write):
-    """Preserve embedded languages while formatting Web and XML. / 格式化 Web 及 XML 并保留嵌入语言。"""
-    tool = required(BASE / "node_modules" / "prettier" / "bin" / "prettier.cjs")
-    for batch in batches(paths):
-        command(
-            [executable("node"), tool, "--config", BASE / "prettier.json", "--write" if write else "--check", *batch],
-            cwd=BASE,
+def idea_installation():
+    configured = os.environ.get("IDEA_HOME")
+    launcher = shutil.which("idea64.exe")
+    if not configured and not launcher:
+        raise RuntimeError("Set IDEA_HOME to the IntelliJ IDEA installation directory or add idea64.exe to PATH.")
+    home = Path(configured).resolve() if configured else Path(launcher).resolve().parent.parent
+    info = json.loads((home / "product-info.json").read_text(encoding="utf-8"))
+    launch = next((item for item in info["launch"] if item["os"] == "Windows" and item["arch"] == "amd64"), None)
+    if launch is None or not (home / launch["javaExecutablePath"]).is_file():
+        raise RuntimeError("The formatter requires a Windows x64 IntelliJ IDEA installation with its bundled runtime.")
+    return home, info, launch
+
+
+def idea(paths):
+    home, info, launch = idea_installation()
+    print(f"IntelliJ IDEA {info['version']} ({info['buildNumber']}): {len(paths)} files", flush=True)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    (CACHE / "tmp").mkdir(exist_ok=True)
+    # Use launcher metadata and an argument file to avoid Windows' command-length limit.
+    # 使用安装包的启动参数和参数文件，避免 Windows 命令行长度限制。
+    args = [
+        line.strip()
+        for line in (home / launch["vmOptionsFilePath"]).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    args += [arg.replace("%IDE_HOME%", str(home)) for arg in launch["additionalJvmArguments"]]
+    args += [f"-Didea.{key}.path={CACHE / key}" for key in ("config", "system", "plugins", "log")]
+    args += [
+        f"-Djava.io.tmpdir={CACHE / 'tmp'}",
+        f"-XX:ErrorFile={CACHE / 'java_error_%p.log'}",
+        f"-XX:HeapDumpPath={CACHE / 'java_error.hprof'}",
+        "-Duser.language=en", "-Duser.country=US",
+        "-cp", os.pathsep.join(str(home / "lib" / name) for name in launch["bootClassPathJarNames"]),
+        launch["mainClass"], "format", "-s", str(BASE / "idea.xml"), "-charset", "UTF-8",
+    ]
+    args += [str(path) for path in paths]
+    env = dict(os.environ, TEMP=str(CACHE / "tmp"), TMP=str(CACHE / "tmp"))
+    env.pop("IDEA_PROPERTIES", None)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".args", dir=CACHE, delete=False) as file:
+        file.write("\n".join(json.dumps(arg, ensure_ascii=False) for arg in args))
+        argument_file = Path(file.name)
+    try:
+        result = subprocess.run(
+            [str(home / launch["javaExecutablePath"]), "@" + str(argument_file)],
+            cwd=ROOT, env=env, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
         )
+    finally:
+        argument_file.unlink(missing_ok=True)
+    output = result.stdout.decode("utf-8", errors="replace")
+    (CACHE / "last-run.log").write_text(output + result.stderr.decode("utf-8", errors="replace"), encoding="utf-8")
+    for line in output.splitlines():
+        if not line.startswith(("Checking ", "Formatting ")) or not line.endswith(("...Formatted well", "...OK")):
+            print(line, flush=True)
+    count = re.search(r"(?m)^(\d+) file\(s\) formatted\.", output)
+    if not count or int(count.group(1)) != len(paths):
+        raise RuntimeError(f"IDEA did not process all selected files; see {CACHE / 'last-run.log'}")
+    if result.returncode:
+        raise RuntimeError(f"IDEA formatting failed ({result.returncode}); see {CACHE / 'last-run.log'}")
 
 
-def python(paths, write):
-    """Format Python without lint fixes. / 格式化 Python，不执行 lint 修复。"""
-    tool = required(CACHE / "python" / "Scripts" / "ruff.exe")
-    fragments = [path for path in paths if path.name == "centos-source-repositories.py"]
-    for path in fragments:
-        original = path.read_bytes()
-        source = textwrap.dedent(original.decode("utf-8")).encode()
-        formatted = command(
-            [tool, "format", "--config", BASE / "ruff.toml", "--stdin-filename", path, "-"], capture=True, data=source
-        ).stdout.decode()
-        result = textwrap.indent(formatted, " " * 8).encode()
-        if write:
-            path.write_bytes(result)
-        elif result != original:
-            raise RuntimeError(f"Python resource fragment needs formatting: {path}")
-    for batch in batches([path for path in paths if path not in fragments]):
-        command([tool, "format", "--config", BASE / "ruff.toml", *([] if write else ["--check"]), *batch])
-
-
-def kotlin(paths, write):
-    """Apply the fixed four-space Kotlin formatter. / 使用固定的四空格 Kotlin 格式工具。"""
-    for batch in batches(paths):
-        command(
-            [
-                executable("java"),
-                "-jar",
-                required(CACHE / "ktfmt.jar"),
-                "--kotlinlang-style",
-                *([] if write else ["--dry-run", "--set-exit-if-changed"]),
-                *batch,
-            ]
-        )
-
-
-def shell(paths, write):
-    """Format shell syntax without simplifying scripts or heredocs. / 格式化 Shell 语法，不简化脚本或 heredoc。"""
-    first = next(path for path in paths if path.name == "10-native-instances.sh")
-    second = first.with_name("20-native-targets.sh")
-    marker = "# WTL_FORMAT_FRAGMENT_BOUNDARY\n"
-    original = first.read_text(encoding="utf-8") + marker + second.read_text(encoding="utf-8")
-    options = [required(CACHE / "shfmt.exe"), "-ln", "bash", "-i", "4", "-bn", "-ci"]
-    result = command(options, capture=True, data=original.encode()).stdout.decode()
-    if result.count(marker) != 1:
-        raise RuntimeError("Shell resource fragment boundary lost")
-    if write:
-        left, right = result.split(marker)
-        first.write_bytes(left.encode())
-        second.write_bytes(right.encode())
-    elif result != original:
-        raise RuntimeError("Combined native database shell fragments need formatting")
-    for batch in batches([path for path in paths if path not in (first, second)]):
-        command([*options, "-w" if write else "-d", *batch])
-
-
-def native(paths, write):
-    """Apply syntax-aware C and C++ spacing. / 应用语法感知的 C 和 C++ 空白规则。"""
-    tool = required(CACHE / "python" / "Scripts" / "clang-format.exe")
-    for batch in batches(paths):
-        command([tool, f"-style=file:{BASE / 'clang.yaml'}", *(["-i"] if write else ["--dry-run", "--Werror"]), *batch])
-
-
-def csharp(paths, write):
-    """Check whitespace only, avoiding analyzer-driven changes. / 仅检查空白，避免分析器驱动的改动。"""
-    tool = executable("dotnet")
-    version = command([tool, "--version"], capture=True).stdout.decode().strip()
-    if version != TOOLS["dotnet"]:
-        raise RuntimeError(f"Expected .NET SDK {TOOLS['dotnet']}, got {version}")
-    command(
-        [
-            tool,
-            "format",
-            "whitespace",
-            ROOT / "test",
-            "--folder",
-            "--include",
-            *paths,
-            *([] if write else ["--verify-no-changes"]),
-            "--verbosity",
-            "quiet",
-        ]
-    )
-
-
-def go(paths, write):
-    """Use the pinned Go toolchain's formatter. / 使用固定 Go 工具链的格式工具。"""
-    version = command([executable("go"), "version"], capture=True).stdout.decode()
-    if TOOLS["gofmt"] not in version:
-        raise RuntimeError(f"Expected Go {TOOLS['gofmt']}")
-    for path in paths:
-        if path.name == "go.mod":
-            result = command([executable("go"), "mod", "edit", "-print", path], capture=True).stdout
-            if write:
-                path.write_bytes(result)
-            elif result != path.read_bytes():
-                raise RuntimeError(f"Go module formatting differs: {path}")
-    for batch in batches([path for path in paths if path.suffix == ".go"]):
-        result = command([executable("gofmt"), "-w" if write else "-l", *batch], capture=True)
-        if not write and result.stdout.strip():
-            sys.stdout.buffer.write(result.stdout)
-            raise RuntimeError("Go formatting differs")
-
-
-def rust(paths, write):
-    """Use each fixture's declared edition without changing module discovery. / 使用样例声明版本，不改变模块发现。"""
-    tool = executable("rustfmt")
-    if TOOLS["rustfmt"] not in command([tool, "--version"], capture=True).stdout.decode():
-        raise RuntimeError(f"Expected rustfmt {TOOLS['rustfmt']}")
-    import tomllib
-
-    for path in paths:
-        manifest = next((parent / "Cargo.toml" for parent in path.parents if (parent / "Cargo.toml").is_file()), None)
-        edition = (
-            str(tomllib.loads(manifest.read_text(encoding="utf-8")).get("package", {}).get("edition", "2015"))
-            if manifest
-            else "2021"
-        )
-        command(
-            [
-                tool,
-                "--edition",
-                edition,
-                "--config",
-                "max_width=120,skip_children=true",
-                *([] if write else ["--check"]),
-                path,
-            ]
-        )
-
-
-def php(paths, write):
-    """Apply only the explicitly configured PHP whitespace rules. / 仅应用明确配置的 PHP 空白规则。"""
-    tool = required(CACHE / "php" / "php.exe")
-    for batch in batches(paths):
-        command(
-            [
-                tool,
-                required(CACHE / "php-cs-fixer.phar"),
-                "fix",
-                f"--config={BASE / 'php.php'}",
-                "--using-cache=no",
-                "--sequential",
-                *([] if write else ["--dry-run"]),
-                *batch,
-            ]
-        )
-
-
-def ruby(paths, write):
-    """Restrict RuboCop to layout checks and safe layout corrections. / 将 RuboCop 限制为布局检查及安全布局修正。"""
-    interpreter = CACHE / "ruby" / TOOLS["ruby"] / "bin" / "ruby.exe"
-    if not interpreter.exists():
-        raise RuntimeError("Ruby formatting tools are missing; run bootstrap.py")
-    env = dict(
-        os.environ,
-        GEM_HOME=str(CACHE / ("gems-" + TOOLS["rubocop"])),
-        GEM_PATH=str(CACHE / ("gems-" + TOOLS["rubocop"]))
-        + os.pathsep
-        + str(CACHE / "ruby" / TOOLS["ruby"] / "lib/ruby/gems/3.4.0"),
-    )
-    env["PATH"] = str(interpreter.parent) + os.pathsep + env.get("PATH", "")
-    for batch in batches(paths):
-        command(
-            [
-                interpreter,
-                required(CACHE / ("gems-" + TOOLS["rubocop"]) / "bin" / "rubocop"),
-                "--config",
-                BASE / "rubocop.yml",
-                "--only",
-                "Layout",
-                "--cache",
-                "false",
-                *(["--autocorrect"] if write else []),
-                *batch,
-            ],
-            env=env,
-        )
-
-
-def basic(paths, write):
-    """Normalize safe file boundaries without rewriting embedded values. / 规范安全文件边界，不改写嵌入值。"""
-    differences = []
-    for path in paths:
-        data = path.read_bytes()
-        text = data.decode("utf-8-sig")
-        normalized = text.replace("\r\n", "\n")
-        if path.name in {".gitignore", ".gitattributes", ".editorconfig"}:
-            normalized = "\n".join(line.rstrip() for line in normalized.split("\n"))
-        normalized = normalized.rstrip("\n") + "\n" if normalized else ""
-        if path.suffix.lower() in {".bat", ".cmd"}:
-            normalized = normalized.replace("\n", "\r\n")
-        encoded = normalized.encode("utf-8")
-        if encoded != data:
-            differences.append(str(path.relative_to(ROOT)))
-            if write:
-                path.write_bytes(encoded)
-    if differences and not write:
-        raise RuntimeError("File boundary formatting differs: " + ", ".join(differences))
-
-
-FORMATTERS = {
-    "java": ({".java", ".gradle"}, java),
-    "web": (
-        {
-            ".js",
-            ".mjs",
-            ".ts",
-            ".vue",
-            ".html",
-            ".css",
-            ".json",
-            ".xml",
-            ".csproj",
-            ".config",
-            ".yaml",
-            ".yml",
-            ".md",
-            ".svg",
-        },
-        web,
-    ),
-    "python": ({".py"}, python),
-    "kotlin": ({".kt", ".kts"}, kotlin),
-    "shell": ({".sh"}, shell),
-    "native": ({".c", ".cpp", ".h", ".hpp"}, native),
-    "csharp": ({".cs"}, csharp),
-    "go": ({".go", ".mod"}, go),
-    "rust": ({".rs"}, rust),
-    "php": ({".php"}, php),
-    "ruby": ({".rb", ".ru"}, ruby),
-    "basic": ({".properties", ".toml", ".sql", ".bat", ".cmd", ".gitignore", ".in"}, basic),
-}
+def format_paths(paths, write):
+    before = {path: path.read_bytes() for path in paths}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    try:
+        # IDEA dry-run can disagree with its writer; both modes use real formatting on copies.
+        # 两种模式共用实际写入引擎；副本保留目录层级和 EditorConfig，检查不触碰源码。
+        with tempfile.TemporaryDirectory(prefix="files-", dir=CACHE) as directory:
+            mirror = Path(directory)
+            copies = {}
+            configs = set()
+            for path, content in before.items():
+                target = mirror / path.relative_to(ROOT)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                copies[path] = target
+                configs.update(
+                    parent / ".editorconfig" for parent in path.parents
+                    if parent.is_relative_to(ROOT) and (parent / ".editorconfig").is_file()
+                )
+            for config in configs:
+                target = mirror / config.relative_to(ROOT)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(config, target)
+            idea(list(copies.values()))
+            concurrent = [str(path) for path, content in before.items() if path.read_bytes() != content]
+            if concurrent:
+                raise RuntimeError("Sources changed during formatting; retry after edits finish: " + ", ".join(concurrent))
+            failures = []
+            for path, target in copies.items():
+                normalized = target.read_bytes().replace(b"\r\n", b"\n")
+                if normalized and not normalized.endswith(b"\n"):
+                    normalized += b"\n"
+                if before[path] != normalized:
+                    if write:
+                        path.write_bytes(normalized)
+                    else:
+                        failures.append(str(path.relative_to(ROOT)))
+            if failures:
+                raise RuntimeError("Files need formatting (including LF/final newline):\n" + "\n".join(failures))
+    finally:
+        if not write:
+            changed = [str(path) for path, content in before.items() if path.read_bytes() != content]
+            if changed:
+                raise RuntimeError("Sources changed during check: " + ", ".join(changed))
 
 
 def main():
-    """Expose explicit check/write modes and verify checks never rewrite sources. / 提供显式检查及写入模式，并验证检查不会改写源码。"""
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--write", action="store_true")
-    parser.add_argument("--only", choices=FORMATTERS)
+    mode.add_argument("--list", action="store_true", help="List the exact scope without starting IDEA")
+    parser.add_argument("--only", choices=["java"], help="Restrict to Java production and test sources")
     args = parser.parse_args()
     paths = inventory()
-    before = {path: hashlib.sha256(path.read_bytes()).digest() for path in paths} if args.check else {}
-    failures = []
-    selected_paths = set()
-    for name, (suffixes, formatter) in FORMATTERS.items():
-        if args.only and args.only != name:
-            continue
-        named = {
-            "shell": {"gradlew"},
-            "ruby": {"Gemfile"},
-            "basic": {
-                "Pipfile",
-                "CMakeLists.txt",
-                "requirements.txt",
-                ".editorconfig",
-                ".gitattributes",
-                ".gitignore",
-                ".ruby-version",
-                "Makefile",
-            },
-        }
-        selected = [path for path in paths if path.suffix.lower() in suffixes or path.name in named.get(name, set())]
-        if not selected:
-            continue
-        selected_paths.update(selected)
-        print(f"{name}: {len(selected)} files", flush=True)
-        try:
-            formatter(selected, args.write)
-        except (RuntimeError, OSError) as failure:
-            failures.append(f"{name}: {failure}")
-    for path in sorted(selected_paths):
-        original = path.read_bytes()
-        normalized = original.replace(b"\r\n", b"\n")
-        if normalized and not normalized.endswith(b"\n"):
-            normalized += b"\n"
-        if path.suffix.lower() in {".bat", ".cmd"}:
-            normalized = normalized.replace(b"\n", b"\r\n")
-        if original != normalized:
-            if args.write:
-                path.write_bytes(normalized)
-            else:
-                failures.append(f"Line endings or final newline differ: {path.relative_to(ROOT)}")
-    if args.check:
-        changed = [
-            str(path.relative_to(ROOT))
-            for path, digest in before.items()
-            if hashlib.sha256(path.read_bytes()).digest() != digest
-        ]
-        if changed:
-            failures.append("Check mode modified files: " + ", ".join(changed))
-    if failures:
-        raise SystemExit("\n".join(failures))
-    print("Formatting complete." if args.write else "All formatting checks passed.")
+    if args.only == "java":
+        paths = [path for path in paths if path.suffix == ".java"]
+    if args.list:
+        print("\n".join(path.relative_to(ROOT).as_posix() for path in paths))
+        return
+    if not paths:
+        raise RuntimeError("No main-project files selected; refusing to report a successful check.")
+    format_paths(paths, args.write)
+    print("Formatting complete." if args.write else "All main-project formatting checks passed.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, OSError, ValueError, subprocess.CalledProcessError) as error:
+        raise SystemExit(str(error)) from error

@@ -22,7 +22,7 @@ public final class DeploymentBuildOutputProtocol {
      * @param head bounded redacted initial diagnostic / 有界遮蔽的开头诊断
      * @param tail bounded redacted final diagnostic / 有界遮蔽的结尾诊断 */
     public record Receipt(int exit, long bytes, String digest, String uid, String engine, String tool,
-            boolean compatible, String limit, boolean conflicting, String head, String tail) {
+                          boolean compatible, String limit, boolean conflicting, String head, String tail) {
     }
 
     /** Prevents utility construction. / 防止构造工具类。 */
@@ -39,140 +39,140 @@ public final class DeploymentBuildOutputProtocol {
      * @param compatibilityGroups reviewed Java compatibility phrases / 已审阅Java兼容性短语
      * @return exact script sent through the public remote command / 经公开远端命令发送的精确脚本 */
     public static String script(DeploymentRemoteWorkspace workspace, long seconds, int processes, int memory,
-            long output, String engine, List<List<String>> compatibilityGroups) {
+                                long output, String engine, List<List<String>> compatibilityGroups) {
         String groups = groups(compatibilityGroups);
         String python = """
-                import base64, hashlib, os, re, subprocess, sys, threading
-                sys.stdout.reconfigure(newline='\\n')
-                groups = %s
-                markers = [base64.b64decode(item) for group in groups for item in group]
-                overlap = max(map(len, markers)) - 1
-                payload = sys.stdin.buffer.read(1048577)
-                if len(payload) > 1048576:
-                    raise SystemExit(64)
-                proc = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT)
-                def feed():
-                    try:
-                        proc.stdin.write(payload)
-                        proc.stdin.close()
-                    except BrokenPipeError:
-                        pass
-                sender = threading.Thread(target=feed)
-                sender.start()
-                head = bytearray()
-                tail = bytearray()
-                recent = b''
-                seen = set()
-                digest = hashlib.sha256()
-                count = 0
-                output_limit = None
-                controls = {}
-                conflict = False
-                line = bytearray()
-                oversized = False
-                private_key = False
-                private_line = False
-                pending_secret = False
-                marker_recent = b''
-                assignment = re.compile(r'(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+')
-                url_password = re.compile(r'(?i)(https?://)[^\\s/@:]+:[^\\s/@]+@')
-                def accept_line(data):
-                    global conflict
-                    for key, pattern in ((b'BUILD_UID', rb'[0-9]{1,10}'),
-                                         (b'BUILD_ENGINE', rb'(?:ordinary|docker|podman)'),
-                                         (b'BUILD_TOOL', rb'[A-Z0-9_]{1,64}')):
-                        if data.startswith(key + b'='):
-                            value = data[len(key)+1:]
-                            if key in controls or not re.fullmatch(pattern, value):
-                                conflict = True
-                            else:
-                                controls[key] = value.decode('ascii')
-                def safe_line(data, long_line, hidden):
-                    text = data.decode('utf-8', 'replace')
-                    if hidden:
-                        return b'<redacted-key>\\n'
-                    if long_line:
-                        return b'[... long line omitted ...]\\n'
-                    text = assignment.sub(r'\\1=<redacted>', text)
-                    text = url_password.sub(r'\\1<redacted>@', text)
-                    return (text + '\\n').encode('utf-8')
-                def add_diagnostic(data):
-                    if len(head) < 2048:
-                        head.extend(data[:2048-len(head)])
-                    tail.extend(data)
-                    if len(tail) > 4096:
-                        del tail[:-4096]
-                def append_line(part, complete):
-                    global oversized, private_key, private_line, marker_recent, pending_secret
-                    if private_key:
-                        private_line = True
-                    marker_window = marker_recent + part
-                    markers_at = sorted([(match.start(), True) for match in re.finditer(b'-----BEGIN ', marker_window)]
-                                        + [(match.start(), False) for match in
-                                           re.finditer(rb'-----END [A-Z ]+-----', marker_window)])
-                    for _, begins in markers_at:
-                        private_key = begins
-                        private_line = True
-                    marker_recent = marker_window[-128:]
-                    if len(line) + len(part) > 512:
-                        oversized = True
+            import base64, hashlib, os, re, subprocess, sys, threading
+            sys.stdout.reconfigure(newline='\\n')
+            groups = %s
+            markers = [base64.b64decode(item) for group in groups for item in group]
+            overlap = max(map(len, markers)) - 1
+            payload = sys.stdin.buffer.read(1048577)
+            if len(payload) > 1048576:
+                raise SystemExit(64)
+            proc = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            def feed():
+                try:
+                    proc.stdin.write(payload)
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass
+            sender = threading.Thread(target=feed)
+            sender.start()
+            head = bytearray()
+            tail = bytearray()
+            recent = b''
+            seen = set()
+            digest = hashlib.sha256()
+            count = 0
+            output_limit = None
+            controls = {}
+            conflict = False
+            line = bytearray()
+            oversized = False
+            private_key = False
+            private_line = False
+            pending_secret = False
+            marker_recent = b''
+            assignment = re.compile(r'(?i)(password|secret|token|api[_-]?key)\\s*[:=]\\s*\\S+')
+            url_password = re.compile(r'(?i)(https?://)[^\\s/@:]+:[^\\s/@]+@')
+            def accept_line(data):
+                global conflict
+                for key, pattern in ((b'BUILD_UID', rb'[0-9]{1,10}'),
+                                     (b'BUILD_ENGINE', rb'(?:ordinary|docker|podman)'),
+                                     (b'BUILD_TOOL', rb'[A-Z0-9_]{1,64}')):
+                    if data.startswith(key + b'='):
+                        value = data[len(key)+1:]
+                        if key in controls or not re.fullmatch(pattern, value):
+                            conflict = True
+                        else:
+                            controls[key] = value.decode('ascii')
+            def safe_line(data, long_line, hidden):
+                text = data.decode('utf-8', 'replace')
+                if hidden:
+                    return b'<redacted-key>\\n'
+                if long_line:
+                    return b'[... long line omitted ...]\\n'
+                text = assignment.sub(r'\\1=<redacted>', text)
+                text = url_password.sub(r'\\1<redacted>@', text)
+                return (text + '\\n').encode('utf-8')
+            def add_diagnostic(data):
+                if len(head) < 2048:
+                    head.extend(data[:2048-len(head)])
+                tail.extend(data)
+                if len(tail) > 4096:
+                    del tail[:-4096]
+            def append_line(part, complete):
+                global oversized, private_key, private_line, marker_recent, pending_secret
+                if private_key:
+                    private_line = True
+                marker_window = marker_recent + part
+                markers_at = sorted([(match.start(), True) for match in re.finditer(b'-----BEGIN ', marker_window)]
+                                    + [(match.start(), False) for match in
+                                       re.finditer(rb'-----END [A-Z ]+-----', marker_window)])
+                for _, begins in markers_at:
+                    private_key = begins
+                    private_line = True
+                marker_recent = marker_window[-128:]
+                if len(line) + len(part) > 512:
+                    oversized = True
+                if not oversized:
+                    line.extend(part)
+                if complete:
                     if not oversized:
-                        line.extend(part)
-                    if complete:
-                        if not oversized:
-                            accept_line(bytes(line))
-                        complete_line = bytes(line)
-                        secret_prefix = bool(re.search(rb'(?i)(?:password|secret|token|api[_-]?key)\\s*(?:[:=]\\s*)?$', complete_line))
-                        continuation = pending_secret and not complete_line.strip()
-                        continuation = continuation or (pending_secret and bool(re.fullmatch(rb'\\s*[:=]\\s*', complete_line)))
-                        add_diagnostic(safe_line(complete_line, oversized,
-                                                 private_line or pending_secret or secret_prefix))
-                        pending_secret = secret_prefix or continuation or oversized
-                        line.clear()
-                        oversized = False
-                        private_line = False
-                        marker_recent = b''
-                for block in iter(lambda: os.read(proc.stdout.fileno(), 8192), b''):
-                    digest.update(block)
-                    count += len(block)
-                    window = recent + block
-                    for index, marker in enumerate(markers):
-                        if marker in window:
-                            seen.add(index)
-                    if b'BUILD_LIMIT=output' in window:
-                        output_limit = 'output'
-                    if b'BUILD_LIMIT=workspace' in window:
-                        output_limit = 'workspace'
-                    recent = window[-overlap:] if overlap else b''
-                    parts = block.split(b'\\n')
-                    for part in parts[:-1]:
-                        append_line(part, True)
-                    append_line(parts[-1], False)
-                sender.join()
-                exit_code = proc.wait()
-                if line or oversized:
-                    append_line(b'', True)
-                compatible = any(all(markers.index(base64.b64decode(marker)) in seen for marker in group)
-                                 for group in groups)
-                print('WTL_BUILD_REPORT=1')
-                print('EXIT=' + str(exit_code))
-                print('BYTES=' + str(count))
-                print('SHA256=' + digest.hexdigest())
-                print('UID=' + controls.get(b'BUILD_UID', '-'))
-                print('ENGINE=' + controls.get(b'BUILD_ENGINE', '-'))
-                print('TOOL=' + controls.get(b'BUILD_TOOL', '-'))
-                print('COMPAT=' + ('1' if compatible else '0'))
-                print('LIMIT=' + (output_limit or '-'))
-                print('CONFLICT=' + ('1' if conflict else '0'))
-                print('HEAD=' + base64.b64encode(head).decode('ascii'))
-                print('TAIL=' + base64.b64encode(tail).decode('ascii'))
-                """
-                .formatted(groups);
+                        accept_line(bytes(line))
+                    complete_line = bytes(line)
+                    secret_prefix = bool(re.search(rb'(?i)(?:password|secret|token|api[_-]?key)\\s*(?:[:=]\\s*)?$', complete_line))
+                    continuation = pending_secret and not complete_line.strip()
+                    continuation = continuation or (pending_secret and bool(re.fullmatch(rb'\\s*[:=]\\s*', complete_line)))
+                    add_diagnostic(safe_line(complete_line, oversized,
+                                             private_line or pending_secret or secret_prefix))
+                    pending_secret = secret_prefix or continuation or oversized
+                    line.clear()
+                    oversized = False
+                    private_line = False
+                    marker_recent = b''
+            for block in iter(lambda: os.read(proc.stdout.fileno(), 8192), b''):
+                digest.update(block)
+                count += len(block)
+                window = recent + block
+                for index, marker in enumerate(markers):
+                    if marker in window:
+                        seen.add(index)
+                if b'BUILD_LIMIT=output' in window:
+                    output_limit = 'output'
+                if b'BUILD_LIMIT=workspace' in window:
+                    output_limit = 'workspace'
+                recent = window[-overlap:] if overlap else b''
+                parts = block.split(b'\\n')
+                for part in parts[:-1]:
+                    append_line(part, True)
+                append_line(parts[-1], False)
+            sender.join()
+            exit_code = proc.wait()
+            if line or oversized:
+                append_line(b'', True)
+            compatible = any(all(markers.index(base64.b64decode(marker)) in seen for marker in group)
+                             for group in groups)
+            print('WTL_BUILD_REPORT=1')
+            print('EXIT=' + str(exit_code))
+            print('BYTES=' + str(count))
+            print('SHA256=' + digest.hexdigest())
+            print('UID=' + controls.get(b'BUILD_UID', '-'))
+            print('ENGINE=' + controls.get(b'BUILD_ENGINE', '-'))
+            print('TOOL=' + controls.get(b'BUILD_TOOL', '-'))
+            print('COMPAT=' + ('1' if compatible else '0'))
+            print('LIMIT=' + (output_limit or '-'))
+            print('CONFLICT=' + ('1' if conflict else '0'))
+            print('HEAD=' + base64.b64encode(head).decode('ascii'))
+            print('TAIL=' + base64.b64encode(tail).decode('ascii'))
+            """
+            .formatted(groups);
         return "exec /usr/bin/python3 -I -c " + shellQuote(python) + " "
-                + shellQuote(DeploymentManagedHelperBundle.PATH) + " build-run " + shellQuote(workspace.applicationId())
-                + " " + shellQuote(workspace.candidateId()) + " " + seconds + " " + processes + " " + memory + " "
-                + output + " " + shellQuote(engine);
+            + shellQuote(DeploymentManagedHelperBundle.PATH) + " build-run " + shellQuote(workspace.applicationId())
+            + " " + shellQuote(workspace.candidateId()) + " " + seconds + " " + processes + " " + memory + " "
+            + output + " " + shellQuote(engine);
     }
 
     /** Parses only a complete fixed wrapper receipt; arbitrary build output never becomes a control field. / 仅解析完整固定包装器回执；任意构建输出不成为控制字段。
@@ -184,18 +184,18 @@ public final class DeploymentBuildOutputProtocol {
         if (lines.length != 13 || !lines[12].isEmpty() || !lines[0].equals("WTL_BUILD_REPORT=1"))
             throw new IllegalArgumentException("Incomplete build report");
         if (!lines[1].matches("EXIT=-?[0-9]{1,4}") || !lines[2].matches("BYTES=[0-9]{1,12}")
-                || !lines[3].matches("SHA256=[0-9a-f]{64}") || !lines[4].matches("UID=(?:-|[0-9]{1,10})")
-                || !lines[5].matches("ENGINE=(?:-|ordinary|docker|podman)")
-                || !lines[6].matches("TOOL=(?:-|[A-Z0-9_]{1,64})") || !lines[7].matches("COMPAT=[01]")
-                || !lines[8].matches("LIMIT=(?:-|output|workspace)") || !lines[9].matches("CONFLICT=[01]")
-                || !lines[10].matches("HEAD=[A-Za-z0-9+/=]{0,3000}")
-                || !lines[11].matches("TAIL=[A-Za-z0-9+/=]{0,6000}"))
+            || !lines[3].matches("SHA256=[0-9a-f]{64}") || !lines[4].matches("UID=(?:-|[0-9]{1,10})")
+            || !lines[5].matches("ENGINE=(?:-|ordinary|docker|podman)")
+            || !lines[6].matches("TOOL=(?:-|[A-Z0-9_]{1,64})") || !lines[7].matches("COMPAT=[01]")
+            || !lines[8].matches("LIMIT=(?:-|output|workspace)") || !lines[9].matches("CONFLICT=[01]")
+            || !lines[10].matches("HEAD=[A-Za-z0-9+/=]{0,3000}")
+            || !lines[11].matches("TAIL=[A-Za-z0-9+/=]{0,6000}"))
             throw new IllegalArgumentException("Invalid build report");
         return new Receipt(Integer.parseInt(lines[1].substring(5)), Long.parseLong(lines[2].substring(6)),
-                lines[3].substring(7), lines[4].substring(4), lines[5].substring(7), lines[6].substring(5),
-                lines[7].equals("COMPAT=1"), lines[8].substring(6), lines[9].equals("CONFLICT=1"),
-                new String(Base64.getDecoder().decode(lines[10].substring(5)), StandardCharsets.UTF_8),
-                new String(Base64.getDecoder().decode(lines[11].substring(5)), StandardCharsets.UTF_8));
+            lines[3].substring(7), lines[4].substring(4), lines[5].substring(7), lines[6].substring(5),
+            lines[7].equals("COMPAT=1"), lines[8].substring(6), lines[9].equals("CONFLICT=1"),
+            new String(Base64.getDecoder().decode(lines[10].substring(5)), StandardCharsets.UTF_8),
+            new String(Base64.getDecoder().decode(lines[11].substring(5)), StandardCharsets.UTF_8));
     }
 
     /** Encodes the one Java compatibility policy as bounded Python literals. / 将唯一 Java 兼容策略编码为有界 Python 字面量。
@@ -212,7 +212,7 @@ public final class DeploymentBuildOutputProtocol {
                 if (result.charAt(result.length() - 1) != '[')
                     result.append(',');
                 result.append("b'").append(Base64.getEncoder().encodeToString(marker.getBytes(StandardCharsets.UTF_8)))
-                        .append("'");
+                    .append("'");
             }
             result.append(']');
         }

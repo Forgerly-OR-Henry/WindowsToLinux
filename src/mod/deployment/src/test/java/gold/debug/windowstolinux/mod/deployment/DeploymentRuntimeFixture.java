@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -7,15 +10,15 @@ import java.util.*;
 
 import javax.swing.JComponent;
 
-import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,12 +70,12 @@ public class DeploymentRuntimeFixture {
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No remote interaction expected");
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError("No remote interaction expected");
             }
 
@@ -80,12 +83,12 @@ public class DeploymentRuntimeFixture {
                 throw new AssertionError("No remote interaction expected");
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No external action expected");
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError("No input expected");
             }
         };
@@ -120,23 +123,23 @@ public class DeploymentRuntimeFixture {
             start(runtime, false);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_schema"));
             assertEquals(1, scalar(runtime,
-                    "SELECT COUNT(*) FROM mod_version WHERE mod_id='" + OWNER + "' AND origin_kind='CLASS'"));
+                "SELECT COUNT(*) FROM mod_version WHERE mod_id='" + OWNER + "' AND origin_kind='CLASS'"));
             var intents = runtime.modIntents();
             intents.apply(
-                    intents.review(OWNER, new PlatformModIntents.Choice(true, Optional.of(VERSION)), Optional.empty()),
-                    false);
+                intents.review(OWNER, new PlatformModIntents.Choice(true, Optional.of(VERSION)), Optional.empty()),
+                false);
         }
     }
 
     protected SchemaAccessScope scope(PlatformRuntime runtime, boolean readOnly) throws Exception {
         return new SchemaAccessScope(runtime.persistence().database(),
-                runtime.modContexts().get(OWNER).context().db().identity(), UUID.randomUUID(), readOnly);
+            runtime.modContexts().get(OWNER).context().db().identity(), UUID.randomUUID(), readOnly);
     }
 
     protected long scalar(PlatformRuntime runtime, String query) throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery(query)) {
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery(query)) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }

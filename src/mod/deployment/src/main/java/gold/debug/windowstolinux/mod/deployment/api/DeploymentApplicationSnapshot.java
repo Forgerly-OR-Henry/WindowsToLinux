@@ -15,8 +15,10 @@ import java.util.Objects;
  * @param bindings reviewed data bindings / 已审阅数据绑定
  * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要 */
 public record DeploymentApplicationSnapshot(DeploymentApplicationRef application, String displayName,
-        String revisionSha256, String ownershipSha256, ApplicationRunState state, Instant observedAt,
-        VersionedRuntime runtime, List<DeploymentBinding> bindings, String healthPolicySha256) {
+                                            String revisionSha256, String ownershipSha256, ApplicationRunState state,
+                                            Instant observedAt,
+                                            VersionedRuntime runtime, List<DeploymentBinding> bindings,
+                                            String healthPolicySha256) {
     /** Copies public facts without interpreting runtime bytes. / 复制公开事实，不解释运行字节。
      * @param application exact application identity / 精确应用身份
      * @param displayName current display text / 当前展示名称

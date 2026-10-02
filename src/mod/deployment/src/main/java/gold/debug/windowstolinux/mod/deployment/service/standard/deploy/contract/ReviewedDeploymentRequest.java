@@ -8,8 +8,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentSupportLevel;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStoragePlan;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceArchive;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 
 /** Complete reviewed standard candidate using two distinct source digests and original platform handles. / 使用两种独立来源摘要及原平台句柄的完整已审阅标准候选。
  * @param server exact selected platform server / 精确选定的平台服务器
@@ -26,11 +26,13 @@ import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceMaterial;
  * @param containerDaemonRiskAccepted explicit container risk decision / 显式容器风险决定
  * @param experimentalAdapterRiskAccepted explicit experimental decision / 显式试验适配器决定 */
 public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts facts,
-        DeploymentSourceMaterial material, DeploymentSourceArchive archive,
-        DeploymentConfigurationSnapshot configuration, List<DeploymentSecretReference> secretReferences,
-        DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime,
-        Optional<DeploymentAccessUrl> userAccessUrl, DeploymentBuildLimits limits, DeploymentReviewConsent review,
-        boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) {
+                                        DeploymentSourceMaterial material, DeploymentSourceArchive archive,
+                                        DeploymentConfigurationSnapshot configuration,
+                                        List<DeploymentSecretReference> secretReferences,
+                                        DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime,
+                                        Optional<DeploymentAccessUrl> userAccessUrl, DeploymentBuildLimits limits,
+                                        DeploymentReviewConsent review,
+                                        boolean containerDaemonRiskAccepted, boolean experimentalAdapterRiskAccepted) {
     /** Checks every source, identity, risk and runtime binding before a deterministic plan is returned. / 返回确定性计划前核对全部来源、身份、风险及运行绑定。
      * @param server exact platform server / 精确平台服务器
      * @param facts analyzed facts / 已分析事实
@@ -62,20 +64,20 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
             for (var volume : container.volumes())
                 if (files.stream().noneMatch(file -> file.bindingId().equals(volume.bindingId())))
                     files.add(new DeploymentFileBinding(volume.bindingId(),
-                            new DeploymentStoragePath(volume.containerPath(),
-                                    volume.readOnly()
-                                            ? DeploymentStoragePath.AccessMode.READ_ONLY
-                                            : DeploymentStoragePath.AccessMode.READ_WRITE,
-                                    "files", true),
-                            DeploymentStorageLocation.defaults()));
+                        new DeploymentStoragePath(volume.containerPath(),
+                            volume.readOnly()
+                                ? DeploymentStoragePath.AccessMode.READ_ONLY
+                                : DeploymentStoragePath.AccessMode.READ_WRITE,
+                            "files", true),
+                        DeploymentStorageLocation.defaults()));
             resources = new DeploymentResourceBindings(files, resources.databaseBindings());
             for (var volume : container.volumes()) {
                 var binding = resources.fileBindings().stream()
-                        .filter(file -> file.bindingId().equals(volume.bindingId())).findFirst().orElseThrow();
+                    .filter(file -> file.bindingId().equals(volume.bindingId())).findFirst().orElseThrow();
                 if (!binding.dataPath().path().equals(volume.containerPath())
-                        || binding.resourceType() != DeploymentStorageLocation.StorageResourceType.FILE
-                        || (binding.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY) != volume
-                                .readOnly())
+                    || binding.resourceType() != DeploymentStorageLocation.StorageResourceType.FILE
+                    || (binding.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY) != volume
+                    .readOnly())
                     throw new IllegalArgumentException("Container volume and storage binding differ");
             }
         }
@@ -83,33 +85,33 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
         var root = source.directory();
         archive.path();
         if (!facts.sourceRoot().equals(root.resolve(archive.relativeRoot()).normalize())
-                || !archive.originSnapshotId().equals(source.id())
-                || !archive.sourceManifestSha256().equals(source.sha256()))
+            || !archive.originSnapshotId().equals(source.id())
+            || !archive.sourceManifestSha256().equals(source.sha256()))
             throw new IllegalArgumentException("Reviewed candidate is not bound to the original frozen source");
         if (!facts.readyForPlanning() || !facts.projectType().deployable()
-                || facts.projectType() != runtime.projectType()
-                || !facts.buildDirectory().equals(runtime.workload().buildDirectory()))
+            || facts.projectType() != runtime.projectType()
+            || !facts.buildDirectory().equals(runtime.workload().buildDirectory()))
             throw new IllegalArgumentException("Runtime differs from complete analyzed facts");
         if (!facts.applicationId().equals(configuration.applicationId())
-                || !facts.applicationId().equals(review.applicationId()) || !server.id().equals(review.serverId())
-                || !source.sha256().equals(review.sourceManifestSha256())
-                || !archive.sha256().equals(review.archiveSha256()))
+            || !facts.applicationId().equals(review.applicationId()) || !server.id().equals(review.serverId())
+            || !source.sha256().equals(review.sourceManifestSha256())
+            || !archive.sha256().equals(review.archiveSha256()))
             throw new IllegalArgumentException("Reviewed application, server or source identity differs");
         if (runtime.identityPolicy() == DeploymentIdentityMode.LEGACY_UNSPECIFIED || limits.runAsRoot())
             throw new IllegalArgumentException("New deployment requires a restricted build identity");
         if (runtime instanceof DeploymentRuntimeDefinition.Container container
-                && container.engine() == DeploymentRuntimeDefinition.ContainerEngineType.DOCKER
-                && !containerDaemonRiskAccepted)
+            && container.engine() == DeploymentRuntimeDefinition.ContainerEngineType.DOCKER
+            && !containerDaemonRiskAccepted)
             throw new IllegalArgumentException("Docker daemon risk requires explicit review");
         if ((facts.support().level() == DeploymentSupportLevel.EXPERIMENTAL_ADAPTER
-                || !runtime.workload().companions().isEmpty()) && !experimentalAdapterRiskAccepted)
+            || !runtime.workload().companions().isEmpty()) && !experimentalAdapterRiskAccepted)
             throw new IllegalArgumentException("Experimental adapter requires explicit review");
         if (secretReferences.size() != new HashSet<>(secretReferences).size())
             throw new IllegalArgumentException("Reviewed secret revisions must be unique");
         if (resources.databaseBindings().isPresent())
             for (var database : resources.databaseBindings().orElseThrow())
                 if (database.connection() instanceof DeploymentDatabaseConnection.Server connection
-                        && !secretReferences.contains(connection.passwordReference()))
+                    && !secretReferences.contains(connection.passwordReference()))
                     throw new IllegalArgumentException("Database password differs from reviewed secrets");
         DeploymentStoragePlan.resolve(facts.applicationId(), resources, runtime);
     }

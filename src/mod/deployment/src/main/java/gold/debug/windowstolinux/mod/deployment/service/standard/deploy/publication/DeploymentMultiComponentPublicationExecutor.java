@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -25,7 +34,7 @@ import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
@@ -66,9 +75,9 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return original platform task / 原平台任务
      * @throws ApiException if task admission fails / 任务准入失败时 */
     public TaskHandle<Void> submit(ServerRef server, Optional<DeploymentProjectRecord> project,
-            Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
-            String healthComponent, DeploymentHealthCheck health,
-            TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource) throws ApiException {
+                                   Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
+                                   String healthComponent, DeploymentHealthCheck health,
+                                   TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource) throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(project);
         units = Map.copyOf(units);
@@ -79,7 +88,7 @@ public final class DeploymentMultiComponentPublicationExecutor {
         var originalUnits = units;
         var originalCredentials = credentials;
         return references.submitPrepared(server, task -> prepareWithinTask(task, server, project, originalUnits,
-                originalCredentials, healthComponent, health, prepareSource));
+            originalCredentials, healthComponent, health, prepareSource));
     }
 
     /** Creates the graph's complete reference intent before any remote candidate effect. / 任一远端候选副作用前创建整图完整引用意图。
@@ -94,11 +103,11 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return original prepared graph / 原已准备图
      * @throws Exception if original source work fails / 原来源工作失败时 */
     public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
-            ServerRef server, Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
-            Map<DeploymentSecretReference, SecretRef> credentials, String healthComponent, DeploymentHealthCheck health,
-            TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource) throws Exception {
+                                                                                          ServerRef server, Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
+                                                                                          Map<DeploymentSecretReference, SecretRef> credentials, String healthComponent, DeploymentHealthCheck health,
+                                                                                          TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource) throws Exception {
         return prepareWithinTask(task, server, project, units, credentials, healthComponent, health, prepareSource,
-                Map.of());
+            Map.of());
     }
 
     /** Binds bounded typed component corrections to the same original whole-graph publication. / 将有界类型化组件纠正绑定同一原整图发布。
@@ -114,10 +123,10 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return original prepared publication / 原已准备发布
      * @throws Exception if original preparation is unavailable / 原准备不可用时 */
     public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
-            ServerRef server, Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
-            Map<DeploymentSecretReference, SecretRef> credentials, String healthComponent, DeploymentHealthCheck health,
-            TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource,
-            Map<String, DeploymentAssistedBuildCorrection> corrections) throws Exception {
+                                                                                          ServerRef server, Optional<DeploymentProjectRecord> project, Map<String, DeploymentUnitIdentity> units,
+                                                                                          Map<DeploymentSecretReference, SecretRef> credentials, String healthComponent, DeploymentHealthCheck health,
+                                                                                          TaskWork<DeploymentStandardPlanner.ComponentPlans> prepareSource,
+                                                                                          Map<String, DeploymentAssistedBuildCorrection> corrections) throws Exception {
         Objects.requireNonNull(task);
         Objects.requireNonNull(server);
         Objects.requireNonNull(project);
@@ -137,11 +146,11 @@ public final class DeploymentMultiComponentPublicationExecutor {
         boolean handedOff = false;
         try {
             if (ordering.startOrder().size() < 2 || ordering.startOrder().size() > 16
-                    || ordering.startOrder().size() != plans.size()
-                    || new HashSet<>(ordering.startOrder()).size() != ordering.startOrder().size()
-                    || !originalUnits.keySet().equals(plans.keySet())
-                    || !ordering.startOrder().contains(healthComponent)
-                    || !ordering.candidateNamespaces().keySet().equals(plans.keySet()))
+                || ordering.startOrder().size() != plans.size()
+                || new HashSet<>(ordering.startOrder()).size() != ordering.startOrder().size()
+                || !originalUnits.keySet().equals(plans.keySet())
+                || !ordering.startOrder().contains(healthComponent)
+                || !ordering.candidateNamespaces().keySet().equals(plans.keySet()))
                 throw new IllegalArgumentException("Reviewed graph exceeds the 16-component execution bound");
             var material = plans.get(ordering.startOrder().getFirst()).request().material();
             var sourceId = material.snapshot().id();
@@ -154,19 +163,19 @@ public final class DeploymentMultiComponentPublicationExecutor {
                 var request = plans.get(id).request();
                 var unit = originalUnits.get(id);
                 if (!server.equals(request.server()) || !server.equals(unit.server())
-                        || !ordering.candidateNamespaces().get(id).equals(request.facts().applicationId())
-                        || !unit.id().equals(request.facts().applicationId())
-                        || !sourceId.equals(request.material().snapshot().id())
-                        || !sourceSha.equals(request.material().snapshot().sha256())
-                        || !sourceId.equals(request.archive().originSnapshotId())
-                        || !sourceSha.equals(request.archive().sourceManifestSha256()))
+                    || !ordering.candidateNamespaces().get(id).equals(request.facts().applicationId())
+                    || !unit.id().equals(request.facts().applicationId())
+                    || !sourceId.equals(request.material().snapshot().id())
+                    || !sourceSha.equals(request.material().snapshot().sha256())
+                    || !sourceId.equals(request.archive().originSnapshotId())
+                    || !sourceSha.equals(request.archive().sourceManifestSha256()))
                     throw new IllegalArgumentException("Component differs from the original graph or source");
                 union.addAll(request.secretReferences());
                 identities.put(id, ReviewedPlanIdentity.from(request));
                 intents.add(DeploymentReferenceKey.unit(server, unit.id()));
             }
             if (!union.equals(originalCredentials.keySet())
-                    || project.isPresent() && !project.orElseThrow().source().sha256().equals(sourceSha))
+                || project.isPresent() && !project.orElseThrow().source().sha256().equals(sourceSha))
                 throw new IllegalArgumentException("Original graph secret or project identity differs");
             var repository = new DeploymentSecretRepository(context.db());
             for (var entry : originalCredentials.entrySet()) {
@@ -174,20 +183,20 @@ public final class DeploymentMultiComponentPublicationExecutor {
                 if (actual.isPresent() && actual.orElseThrow().purpose().isEmpty())
                     return failed("DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE");
                 if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id())
-                        || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
+                    || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
                     throw new IllegalArgumentException("Secret revision differs from its stored credential");
                 intents.add(DeploymentReferenceKey.secretRevision(server, entry.getValue(), entry.getKey()));
             }
             var revision = graphRevision(ordering, identities, healthComponent, health);
             var plan = new DeploymentPublicationPlan(UUID.randomUUID(), project, ordering.applicationId(), server,
-                    DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, revision, intents,
-                    Instant.now().truncatedTo(ChronoUnit.MILLIS));
+                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, revision, intents,
+                Instant.now().truncatedTo(ChronoUnit.MILLIS));
             var root = new AtomicReference<DeploymentGraphPublicationJournal>();
             var journals = new AtomicReference<Map<String, DeploymentPublicationCleanupJournal>>(Map.of());
             var ready = new DeploymentReferenceFlow.PreparedPublication(plan,
-                    original -> author(ordering, plans, originalUnits, originalCredentials, healthComponent, health,
-                            identities, original, root, journals, corrections),
-                    () -> closeOriginal(plans, root.get(), journals.get()));
+                original -> author(ordering, plans, originalUnits, originalCredentials, healthComponent, health,
+                    identities, original, root, journals, corrections),
+                () -> closeOriginal(plans, root.get(), journals.get()));
             handedOff = true;
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(ready), Optional.empty());
         } catch (SQLException readFailure) {
@@ -214,12 +223,12 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param corrections original typed component review callbacks / 原类型化组件审阅回调
      * @return one verified graph or retained unknown / 一个已核实图或保留未知 */
     private OperationResult<DeploymentPublication> author(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
-            String healthComponent, DeploymentHealthCheck health, Map<String, String> identities, TaskContext task,
-            AtomicReference<DeploymentGraphPublicationJournal> rootRef,
-            AtomicReference<Map<String, DeploymentPublicationCleanupJournal>> journalRef,
-            Map<String, DeploymentAssistedBuildCorrection> corrections) {
+                                                          Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                                          Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
+                                                          String healthComponent, DeploymentHealthCheck health, Map<String, String> identities, TaskContext task,
+                                                          AtomicReference<DeploymentGraphPublicationJournal> rootRef,
+                                                          AtomicReference<Map<String, DeploymentPublicationCleanupJournal>> journalRef,
+                                                          Map<String, DeploymentAssistedBuildCorrection> corrections) {
         if (cancelled(task))
             return cancelled();
         try {
@@ -227,20 +236,20 @@ public final class DeploymentMultiComponentPublicationExecutor {
             for (int index = 0; index < ordering.startOrder().size(); index++) {
                 var id = ordering.startOrder().get(index);
                 indexes.add(new DeploymentGraphPublicationJournal.ComponentIndex(id, units.get(id).id(),
-                        "deployment-publication-unit-" + String.format(java.util.Locale.ROOT, "%02d", index),
-                        identities.get(id)));
+                    "deployment-publication-unit-" + String.format(java.util.Locale.ROOT, "%02d", index),
+                    identities.get(id)));
             }
             var graphPlan = graphRevision(ordering, identities, healthComponent, health);
             rootRef.set(DeploymentGraphPublicationJournal.begin(context, task,
-                    units.get(ordering.startOrder().getFirst()).server().id(), ordering, graphPlan, indexes));
+                units.get(ordering.startOrder().getFirst()).server().id(), ordering, graphPlan, indexes));
             var journals = new LinkedHashMap<String, DeploymentPublicationCleanupJournal>();
             journalRef.set(journals);
             for (var index : indexes) {
                 var request = plans.get(index.componentId()).request();
                 journals.put(index.componentId(),
-                        DeploymentPublicationCleanupJournal.begin(context, task, index.key(),
-                                units.get(index.componentId()), request.archive().sha256(), index.planSha256(),
-                                request.runtime()));
+                    DeploymentPublicationCleanupJournal.begin(context, task, index.key(),
+                        units.get(index.componentId()), request.archive().sha256(), index.planSha256(),
+                        request.runtime()));
             }
         } catch (Exception unconfirmed) {
             return unknown("DEPLOYMENT_GRAPH_CHECKPOINT_UNCONFIRMED");
@@ -254,14 +263,14 @@ public final class DeploymentMultiComponentPublicationExecutor {
         OperationResult<DeploymentPublication> result;
         try {
             return remote(ordering, plans, units, credentials, healthComponent, health, session, task, rootRef.get(),
-                    journalRef.get(), corrections);
+                journalRef.get(), corrections);
         } catch (Exception | LinkageError | AssertionError unconfirmed) {
             result = unknown("DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED");
         }
         try {
             session.close();
             if (result.outcome() == Outcome.SUCCEEDED || result.outcome() == Outcome.FAILED
-                    || result.outcome() == Outcome.CANCELLED) {
+                || result.outcome() == Outcome.CANCELLED) {
                 boolean all = true;
                 for (var journal : journalRef.get().values())
                     all &= journal.sessionClosed();
@@ -290,72 +299,72 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @throws ApiException if host admission rejects / 宿主准入拒绝时
      * @throws Exception if the original reviewed callback or publication operation fails / 原审阅回调或发布操作失败时 */
     private OperationResult<DeploymentPublication> remote(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
-            String healthComponent, DeploymentHealthCheck health, RemoteSession session, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
-            Map<String, DeploymentAssistedBuildCorrection> corrections) throws Exception {
+                                                          Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                                          Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
+                                                          String healthComponent, DeploymentHealthCheck health, RemoteSession session, TaskContext task,
+                                                          DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
+                                                          Map<String, DeploymentAssistedBuildCorrection> corrections) throws Exception {
         try (var owned = new DeploymentPublicationAuthorSession(session, journals, root)) {
             try {
                 plans = new LinkedHashMap<>(plans);
                 var assisted = corrections.isEmpty()
-                        ? null
-                        : new DeploymentAssistedPublicationBuild(context, candidates);
+                    ? null
+                    : new DeploymentAssistedPublicationBuild(context, candidates);
                 var prepared = new LinkedHashMap<String, DeploymentStandardCandidateExecutor.Prepared>();
                 long required = 0;
                 long available = Long.MAX_VALUE;
                 for (var id : ordering.startOrder()) {
                     var observed = candidates.prepare(plans.get(id), session, context.interaction(), task,
-                            assisted == null || assisted.fallbackAvailable());
+                        assisted == null || assisted.fallbackAvailable());
                     if (observed.outcome() != Outcome.SUCCEEDED)
                         return observed.outcome() == Outcome.UNKNOWN
-                                ? unknown("DEPLOYMENT_GRAPH_PREPARE_UNCONFIRMED")
-                                : beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
-                                        observed);
+                            ? unknown("DEPLOYMENT_GRAPH_PREPARE_UNCONFIRMED")
+                            : beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
+                            observed);
                     var selection = observed.value().orElseThrow();
                     if (assisted != null && !assisted.prepared(selection))
                         return beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
-                                new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
-                                        .of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_ASSISTED_RETRY_BUDGET"))));
+                            new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
+                                .of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_ASSISTED_RETRY_BUDGET"))));
                     try {
                         required = Math.addExact(required, selection.requiredSpace());
                     } catch (ArithmeticException overflow) {
                         return beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
-                                new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
-                                        .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GRAPH_SPACE_OVERFLOW"))));
+                            new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
+                                .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GRAPH_SPACE_OVERFLOW"))));
                     }
                     available = Math.min(available, selection.availableBytes());
                     prepared.put(id, selection);
                 }
                 if (required > available)
                     return beforeCandidateFailure(ordering, plans, units, session, task, root, journals,
-                            new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                                    Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_TARGET_SPACE"))));
+                        new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                            Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_TARGET_SPACE"))));
                 if (!root.mark("ALL_PREPARED"))
                     return unknown("DEPLOYMENT_GRAPH_PREPARE_BOUNDARY_UNCONFIRMED");
                 while (true) {
                     var built = buildAll(ordering, plans, units, prepared, healthComponent, health, session, task, root,
-                            journals, corrections, assisted);
+                        journals, corrections, assisted);
                     if (built.outcome() != Outcome.SUCCEEDED)
                         return new OperationResult<>(built.outcome(), Optional.empty(), built.problem());
                     var builds = built.value().orElseThrow();
                     var result = new DeploymentMultiComponentPublicationTransaction(context).publish(ordering, plans,
-                            units, credentials, builds, healthComponent, health, session, task, root, journals);
+                        units, credentials, builds, healthComponent, health, session, task, root, journals);
                     if (result.outcome() == Outcome.UNKNOWN || result.outcome() == Outcome.CANCELLED)
                         return result;
                     boolean retired = owned.retire();
                     if (result.outcome() != Outcome.FAILED || !retired || assisted == null
-                            || result.problem().isEmpty())
+                        || result.problem().isEmpty())
                         return result;
                     String selectedUnit = result.problem().orElseThrow().context().get("publicationHealthFailure");
                     var selected = units.entrySet().stream().filter(entry -> entry.getValue().id().equals(selectedUnit))
-                            .findFirst();
+                        .findFirst();
                     if (selected.isEmpty())
                         return result;
                     var next = new DeploymentAssistedPublicationAttempts(context, assisted, candidates).advance(plans,
-                            units, corrections, selected.orElseThrow().getKey(),
-                            graphDescription(ordering, plans, healthComponent, health), root, journals,
-                            result.problem().orElseThrow(), task);
+                        units, corrections, selected.orElseThrow().getKey(),
+                        graphDescription(ordering, plans, healthComponent, health), root, journals,
+                        result.problem().orElseThrow(), task);
                     if (next.outcome() != Outcome.SUCCEEDED)
                         return new OperationResult<>(next.outcome(), Optional.empty(), next.problem());
                     var continuation = next.value().orElseThrow();
@@ -388,40 +397,40 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return complete verified candidates or original failure / 完整已核候选或原失败
      * @throws Exception if original evidence is unconfirmed / 原依据未确认时 */
     private OperationResult<Map<String, DeploymentVerifiedBuildResult>> buildAll(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units,
-            Map<String, DeploymentStandardCandidateExecutor.Prepared> prepared, String healthComponent,
-            DeploymentHealthCheck health, RemoteSession session, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
-            Map<String, DeploymentAssistedBuildCorrection> corrections, DeploymentAssistedPublicationBuild assisted)
-            throws Exception {
+                                                                                 Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                                                                 Map<String, DeploymentUnitIdentity> units,
+                                                                                 Map<String, DeploymentStandardCandidateExecutor.Prepared> prepared, String healthComponent,
+                                                                                 DeploymentHealthCheck health, RemoteSession session, TaskContext task,
+                                                                                 DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
+                                                                                 Map<String, DeploymentAssistedBuildCorrection> corrections, DeploymentAssistedPublicationBuild assisted)
+        throws Exception {
         var builds = new LinkedHashMap<String, DeploymentVerifiedBuildResult>();
         for (var wave : ordering.buildWaves())
             for (var id : wave) {
                 if (cancelled(task))
                     return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_CANDIDATE_CANCELLED")));
+                        Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_CANDIDATE_CANCELLED")));
                 OperationResult<DeploymentVerifiedBuildResult> observed;
                 if (assisted == null)
                     observed = candidates.build(prepared.get(id), session, task);
                 else {
                     var completed = assisted.build(prepared.get(id), corrections.get(id), units.get(id),
-                            journals.get(id), root, () -> graphDescription(ordering, plans, healthComponent, health),
-                            session, task);
+                        journals.get(id), root, () -> graphDescription(ordering, plans, healthComponent, health),
+                        session, task);
                     plans.put(id, completed.plan());
                     observed = completed.result();
                 }
                 if (observed.outcome() != Outcome.SUCCEEDED) {
                     var failure = observed.outcome() == Outcome.UNKNOWN || observed.outcome() == Outcome.CANCELLED
-                            ? unknown("DEPLOYMENT_GRAPH_CANDIDATE_UNCONFIRMED")
-                            : candidateFailure(ordering, plans, units, session, task, root, journals, observed);
+                        ? unknown("DEPLOYMENT_GRAPH_CANDIDATE_UNCONFIRMED")
+                        : candidateFailure(ordering, plans, units, session, task, root, journals, observed);
                     return new OperationResult<>(failure.outcome(), Optional.empty(), failure.problem());
                 }
                 builds.put(id, observed.value().orElseThrow());
             }
         if (!root.mark("ALL_BUILT"))
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_BUILD_BOUNDARY_UNCONFIRMED")));
+                Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GRAPH_BUILD_BOUNDARY_UNCONFIRMED")));
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(builds), Optional.empty());
     }
 
@@ -436,10 +445,10 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param failure known pre-candidate failure / 已知候选前失败
      * @return original known outcome / 原已知结果 */
     private OperationResult<DeploymentPublication> beforeCandidateFailure(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, RemoteSession session, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
-            OperationResult<?> failure) {
+                                                                          Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                                                          Map<String, DeploymentUnitIdentity> units, RemoteSession session, TaskContext task,
+                                                                          DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
+                                                                          OperationResult<?> failure) {
         if (!root.verified(failure.outcome(), failure.problem()))
             return unknown("DEPLOYMENT_GRAPH_PRECHECK_RESULT_UNCONFIRMED");
         for (var journal : journals.values())
@@ -460,21 +469,21 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param failure known build failure / 已知构建失败
      * @return failed after confirmed cleanup or unknown / 清理确认后的失败或未知 */
     private OperationResult<DeploymentPublication> candidateFailure(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, RemoteSession session, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
-            OperationResult<?> failure) {
+                                                                    Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                                                    Map<String, DeploymentUnitIdentity> units, RemoteSession session, TaskContext task,
+                                                                    DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals,
+                                                                    OperationResult<?> failure) {
         if (!root.verified(Outcome.FAILED, failure.problem()))
             return unknown("DEPLOYMENT_GRAPH_BUILD_FAILURE_UNCONFIRMED");
         for (var id : ordering.startOrder()) {
             var request = plans.get(id).request();
             var journal = journals.get(id);
             var channel = new DeploymentPublicationChannel(session, context.interaction(), units.get(id).server(), task,
-                    journal.facts().path("planSha256").asText());
+                journal.facts().path("planSha256").asText());
             try {
                 if (!DeploymentPublicationCleanupAttempt.run(journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN",
-                        () -> channel.cleanupCandidate(units.get(id), journal.facts().path("candidate").asText()))
-                        || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean())
+                    () -> channel.cleanupCandidate(units.get(id), journal.facts().path("candidate").asText()))
+                    || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean())
                     return unknown("DEPLOYMENT_GRAPH_CANDIDATE_CLEANUP_UNCONFIRMED");
             } catch (ApiException unconfirmed) {
                 return unknown("DEPLOYMENT_GRAPH_CANDIDATE_CLEANUP_UNCONFIRMED");
@@ -491,9 +500,9 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param journals original component journals / 原组件账本
      * @throws Exception if an original resource close cannot be confirmed / 原资源关闭无法确认时 */
     private static void closeOriginal(
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals)
-            throws Exception {
+        Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+        DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals)
+        throws Exception {
         var closed = new IdentityHashMap<AutoCloseable, Boolean>();
         Exception failure = null;
         for (var plan : plans.values()) {
@@ -529,10 +538,10 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return bounded lowercase reviewed digest / 有界小写审阅摘要
      * @throws IOException if fixed binary encoding fails / 固定二进制编码失败时 */
     private static String graphRevision(MultiComponentDeploymentPlan ordering, Map<String, String> identities,
-            String healthComponent, DeploymentHealthCheck health) throws IOException {
+                                        String healthComponent, DeploymentHealthCheck health) throws IOException {
         return DeploymentReviewedPlanDigest.graphFrom(
-                new DeploymentReviewedPlanDigest.GraphValues(ordering.applicationId(), healthComponent, health,
-                        ordering.startOrder(), ordering.candidateNamespaces(), ordering.dependencies(), identities));
+            new DeploymentReviewedPlanDigest.GraphValues(ordering.applicationId(), healthComponent, health,
+                ordering.startOrder(), ordering.candidateNamespaces(), ordering.dependencies(), identities));
     }
 
     /** Copies the actual current child plans into complete canonical root framing. / 将实际当前子计划复制为完整规范根分界。
@@ -542,14 +551,14 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @param health original whole-health gate / 原整图健康门禁
      * @return complete original graph framing / 完整原图分界 */
     private static String graphDescription(MultiComponentDeploymentPlan ordering,
-            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
-            String owner, DeploymentHealthCheck health) {
+                                           Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan> plans,
+                                           String owner, DeploymentHealthCheck health) {
         var identities = new LinkedHashMap<String, String>();
         plans.forEach((id, plan) -> identities.put(id, ReviewedPlanIdentity.from(plan.request())));
         try {
             return DeploymentAssistedBuildReviewCodec.encodeGraph(new DeploymentReviewedPlanDigest.GraphValues(
-                    ordering.applicationId(), owner, health, ordering.startOrder(), ordering.candidateNamespaces(),
-                    ordering.dependencies(), identities));
+                ordering.applicationId(), owner, health, ordering.startOrder(), ordering.candidateNamespaces(),
+                ordering.dependencies(), identities));
         } catch (SQLException invalid) {
             throw new IllegalArgumentException("Original graph framing is invalid", invalid);
         }
@@ -560,21 +569,21 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return known failed preparation / 已知失败准备 */
     private static OperationResult<DeploymentReferenceFlow.PreparedPublication> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INVALID_INPUT, event)));
+            Optional.of(problem(ProblemCode.INVALID_INPUT, event)));
     }
 
     /** Detects the original task's cooperative cancellation. / 检测原任务协作取消。
      * @param task original task / 原任务
      * @return true when requested / 请求时为真 */
     private static boolean cancelled(TaskContext task) {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 
     /** Reports cancellation before any original remote effect. / 任一原远端副作用前报告取消。
      * @return cancelled result / 已取消结果 */
     private static OperationResult<DeploymentPublication> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_GRAPH_CANCELLED")));
+            Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_GRAPH_CANCELLED")));
     }
 
     /** Retains one unconfirmed graph effect without replay. / 不重放地保留整图未确认副作用。
@@ -582,7 +591,7 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return explicit unknown / 显式未知 */
     private static OperationResult<DeploymentPublication> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Creates bounded non-secret public metadata. / 创建有界无秘密公开元数据。
@@ -591,6 +600,6 @@ public final class DeploymentMultiComponentPublicationExecutor {
      * @return bounded problem / 有界问题 */
     private static Problem problem(ProblemCode code, String event) {
         return new Problem(code, event, "Whole reviewed graph requires original-task evidence", Map.of(),
-                Optional.empty());
+            Optional.empty());
     }
 }

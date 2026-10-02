@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -7,7 +11,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRecord;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentRemoteReleaseSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
@@ -27,15 +31,17 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUni
  * @param verifiedOutcome independently persisted verified business result / 独立持久的已核实业务结果
  * @param verifiedProblem bounded original verified failure, if any / 原已核实失败的有界问题 */
 record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String candidate, String plan, String phase,
-        String backend, String engine, Optional<UUID> operation, Optional<String> release, Optional<DeploymentRemoteReleaseSnapshot> snapshot,
-        Optional<Problem> failure, Optional<Outcome> verifiedOutcome, Optional<Problem> verifiedProblem) {
+                                          String backend, String engine, Optional<UUID> operation,
+                                          Optional<String> release, Optional<DeploymentRemoteReleaseSnapshot> snapshot,
+                                          Optional<Problem> failure, Optional<Outcome> verifiedOutcome,
+                                          Optional<Problem> verifiedProblem) {
     /** Fixed recorded phases; later phases cannot invent earlier missing identities. / 固定记录阶段；后续阶段不得补造先前缺失身份。 */
     private static final Set<String> PHASES = Set.of("CANDIDATE_MAY_EXIST", "SNAPSHOT_MAY_HAVE_RUN",
-            "SNAPSHOT_VERIFIED", "SNAPSHOT_DISCARD_MAY_HAVE_RUN", "SNAPSHOT_DISCARDED", "PUBLISH_MAY_HAVE_RUN",
-            "STOP_MAY_HAVE_RUN", "STOP_VERIFIED", "PUBLISHED_VERIFIED", "ROLLBACK_MAY_HAVE_RUN", "ROLLBACK_VERIFIED",
-            "MAINTENANCE_END_MAY_HAVE_RUN", "MAINTENANCE_ENDED", "RETAIN_MAY_HAVE_RUN", "RETAIN_VERIFIED",
-            "CANDIDATE_CLEANUP_MAY_HAVE_RUN", "CANDIDATE_CLEANED", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED",
-            "CLEANUP_VERIFIED");
+        "SNAPSHOT_VERIFIED", "SNAPSHOT_DISCARD_MAY_HAVE_RUN", "SNAPSHOT_DISCARDED", "PUBLISH_MAY_HAVE_RUN",
+        "STOP_MAY_HAVE_RUN", "STOP_VERIFIED", "PUBLISHED_VERIFIED", "ROLLBACK_MAY_HAVE_RUN", "ROLLBACK_VERIFIED",
+        "MAINTENANCE_END_MAY_HAVE_RUN", "MAINTENANCE_ENDED", "RETAIN_MAY_HAVE_RUN", "RETAIN_VERIFIED",
+        "CANDIDATE_CLEANUP_MAY_HAVE_RUN", "CANDIDATE_CLEANED", "REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED",
+        "CLEANUP_VERIFIED");
 
     /** Reads only exact original identities from the retained checkpoint. / 仅从留存检查点读取精确原身份。
      * @param node original JSON object / 原JSON对象
@@ -52,7 +58,7 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
      * @param reviewed expected component review / 预期组件审阅
      * @return validated component facts / 已校验组件事实 */
     static DeploymentPublicationRecoveryFacts read(JsonNode node, DeploymentExecutionRecord record, String application,
-            String reviewed) {
+                                                   String reviewed) {
         String task = text(node, "task");
         String app = text(node, "application");
         String server = text(node, "server");
@@ -66,11 +72,11 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
         DeploymentPublicationAttemptPointers.requireChild(node);
         var operation = node.has("operation") ? Optional.of(UUID.fromString(text(node, "operation"))) : Optional.<UUID>empty();
         if (!task.equals(record.identity().taskId().toString()) || !app.equals(application)
-                || !server.equals(record.identity().server().id()) || !plan.equals(reviewed)
-                || !archive.matches("[0-9a-f]{64}") || !plan.matches("[0-9a-f]{64}") || !PHASES.contains(phase)
-                || !Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine)
-                || node.has("attemptState") && !text(node, "attemptState").equals("CONFIRMED")
-                || !candidate.equals(new DeploymentRemoteWorkspace(app, archive, operation).candidateId()))
+            || !server.equals(record.identity().server().id()) || !plan.equals(reviewed)
+            || !archive.matches("[0-9a-f]{64}") || !plan.matches("[0-9a-f]{64}") || !PHASES.contains(phase)
+            || !Set.of("native:none", "container:docker", "container:podman").contains(backend + ":" + engine)
+            || node.has("attemptState") && !text(node, "attemptState").equals("CONFIRMED")
+            || !candidate.equals(new DeploymentRemoteWorkspace(app, archive, operation).candidateId()))
             throw new IllegalArgumentException("Original publication identity conflicts");
         var unit = DeploymentUnitIdentity.forManaged(app, new ServerRef(server), owner);
         if (!unit.releaseRoot().equals(text(node, "releaseRoot")))
@@ -85,9 +91,9 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
                 throw new IllegalArgumentException("Original rollback token conflicts");
             String digest = text(node, "previousDigest");
             snapshot = Optional
-                    .of(new DeploymentRemoteReleaseSnapshot(token.isEmpty() ? Optional.empty() : Optional.of(token),
-                            node.path("previousRunning").booleanValue(),
-                            digest.isEmpty() ? Optional.empty() : Optional.of(digest), text(node, "previousKind")));
+                .of(new DeploymentRemoteReleaseSnapshot(token.isEmpty() ? Optional.empty() : Optional.of(token),
+                    node.path("previousRunning").booleanValue(),
+                    digest.isEmpty() ? Optional.empty() : Optional.of(digest), text(node, "previousKind")));
         }
         Optional<Problem> failure = Optional.empty();
         if (node.has("failureCode") || node.has("failureEvent")) {
@@ -96,7 +102,7 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
             if (code == ProblemCode.UNKNOWN || !event.matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
                 throw new IllegalArgumentException("Original known failure is invalid");
             failure = Optional.of(
-                    new Problem(code, event, "Original release failed and was restored", Map.of(), Optional.empty()));
+                new Problem(code, event, "Original release failed and was restored", Map.of(), Optional.empty()));
         }
         Optional<Outcome> verifiedOutcome = Optional.empty();
         Optional<Problem> verifiedProblem = Optional.empty();
@@ -111,16 +117,16 @@ record DeploymentPublicationRecoveryFacts(DeploymentUnitIdentity unit, String ca
                 if (code == ProblemCode.UNKNOWN || !event.matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
                     throw new IllegalArgumentException("Original verified failure is invalid");
                 verifiedProblem = Optional
-                        .of(new Problem(code, event, "Original publication failed", Map.of(), Optional.empty()));
+                    .of(new Problem(code, event, "Original publication failed", Map.of(), Optional.empty()));
             } else if (node.has("verifiedCode") || node.has("verifiedEvent"))
                 throw new IllegalArgumentException("Successful publication has failure metadata");
         } else if (node.has("verifiedCode") || node.has("verifiedEvent"))
             throw new IllegalArgumentException("Unverified publication has failure metadata");
         if (phase.equals("PUBLISH_MAY_HAVE_RUN") && (snapshot.isEmpty() || release.isEmpty())
-                || phase.startsWith("ROLLBACK_") && (release.isEmpty() || snapshot.isEmpty() || failure.isEmpty()))
+            || phase.startsWith("ROLLBACK_") && (release.isEmpty() || snapshot.isEmpty() || failure.isEmpty()))
             throw new IllegalArgumentException("Original publication stage lacks its durable predecessor");
         return new DeploymentPublicationRecoveryFacts(unit, candidate, plan, phase, backend, engine, operation, release, snapshot,
-                failure, verifiedOutcome, verifiedProblem);
+            failure, verifiedOutcome, verifiedProblem);
     }
 
     /** Requires an original bounded textual field. / 要求原有界文本字段。

@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentPro
  * @param createdAt first save time / 首次保存时间
  * @param updatedAt last actual update time / 最近实际更新时间 */
 public record DeploymentProjectRecord(UUID id, String displayName, DeploymentProjectSource source, Instant createdAt,
-        Instant updatedAt) {
+                                      Instant updatedAt) {
     /** Validates the bounded complete row at exact millisecond precision. / 按精确毫秒精度校验有界完整记录。
      * @param id stable project identity / 稳定项目身份
      * @param displayName user-facing name / 面向用户名称
@@ -24,7 +24,7 @@ public record DeploymentProjectRecord(UUID id, String displayName, DeploymentPro
         Objects.requireNonNull(id);
         Objects.requireNonNull(source);
         if (displayName == null || displayName.isBlank() || displayName.length() > 256
-                || displayName.chars().anyMatch(c -> c < 32 || c == 127))
+            || displayName.chars().anyMatch(c -> c < 32 || c == 127))
             throw new IllegalArgumentException("Invalid project display name");
         createdAt = millisecond(createdAt);
         updatedAt = millisecond(updatedAt);

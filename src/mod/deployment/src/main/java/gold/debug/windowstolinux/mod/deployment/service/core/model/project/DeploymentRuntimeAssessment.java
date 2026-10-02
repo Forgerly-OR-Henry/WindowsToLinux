@@ -26,9 +26,11 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Deplo
  * @param requiredUserInput unresolved values that remain an explicit human decision / 仍需人工明确决定的未解析值
  */
 public record DeploymentRuntimeAssessment(DeploymentProjectKind projectType, Map<RuntimeInputType, String> values,
-        Optional<Integer> suggestedHealthPort, Map<Integer, Integer> suggestedContainerPorts,
-        List<DeploymentRuntimeDefinition.ManagedVolume> suggestedManagedVolumes, List<AnalysisEvidence> evidence,
-        List<DeploymentLocalizedMessage> requiredUserInput) {
+                                          Optional<Integer> suggestedHealthPort,
+                                          Map<Integer, Integer> suggestedContainerPorts,
+                                          List<DeploymentRuntimeDefinition.ManagedVolume> suggestedManagedVolumes,
+                                          List<AnalysisEvidence> evidence,
+                                          List<DeploymentLocalizedMessage> requiredUserInput) {
     /**
      * Creates a source-backed runtime suggestion. / 创建源码依据的运行时建议。
      *
@@ -57,7 +59,7 @@ public record DeploymentRuntimeAssessment(DeploymentProjectKind projectType, Map
         suggestedHealthPort = Objects.requireNonNull(suggestedHealthPort, "suggestedHealthPort");
         suggestedHealthPort.ifPresent(DeploymentRuntimeAssessment::requirePort);
         suggestedContainerPorts = Map
-                .copyOf(Objects.requireNonNull(suggestedContainerPorts, "suggestedContainerPorts"));
+            .copyOf(Objects.requireNonNull(suggestedContainerPorts, "suggestedContainerPorts"));
         if (projectType != DeploymentProjectKind.DOCKERFILE_CONTAINER && !suggestedContainerPorts.isEmpty()) {
             throw new IllegalArgumentException("only containers may suggest published ports");
         }
@@ -66,7 +68,7 @@ public record DeploymentRuntimeAssessment(DeploymentProjectKind projectType, Map
             requirePort(containerPort);
         });
         suggestedManagedVolumes = List
-                .copyOf(Objects.requireNonNull(suggestedManagedVolumes, "suggestedManagedVolumes"));
+            .copyOf(Objects.requireNonNull(suggestedManagedVolumes, "suggestedManagedVolumes"));
         if (projectType != DeploymentProjectKind.DOCKERFILE_CONTAINER && !suggestedManagedVolumes.isEmpty()) {
             throw new IllegalArgumentException("only containers may suggest managed volumes");
         }
@@ -179,22 +181,22 @@ public record DeploymentRuntimeAssessment(DeploymentProjectKind projectType, Map
             case SPRING_BOOT -> EnumSet.of(RuntimeInputType.JAVA_VERSION);
             case DOCKERFILE_CONTAINER, RECOGNITION_PREVIEW, MANAGED_PROCESS -> EnumSet.noneOf(RuntimeInputType.class);
             case JAVA_JAR -> EnumSet.of(RuntimeInputType.JAVA_JAR_PATH, RuntimeInputType.JAVA_MAIN_CLASS,
-                    RuntimeInputType.JAVA_VERSION);
+                RuntimeInputType.JAVA_VERSION);
             case JAVA_SOURCE -> EnumSet.of(RuntimeInputType.JAVA_SOURCE_ROOT, RuntimeInputType.JAVA_MAIN_CLASS,
-                    RuntimeInputType.JAVA_VERSION);
+                RuntimeInputType.JAVA_VERSION);
             case NODE_SERVICE -> EnumSet.of(RuntimeInputType.NODE_MAJOR_VERSION);
             case PYTHON_SERVICE -> EnumSet.of(RuntimeInputType.PYTHON_VERSION, RuntimeInputType.PYTHON_ENTRYPOINT);
             case STATIC_SITE ->
                 EnumSet.of(RuntimeInputType.STATIC_OUTPUT_DIRECTORY, RuntimeInputType.NODE_MAJOR_VERSION);
             case KOTLIN_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
-                    RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.KOTLIN_JVM_TARGET);
+                RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.KOTLIN_JVM_TARGET);
             case GO_SERVICE, RUST_SERVICE, DOTNET_SERVICE -> EnumSet.of(RuntimeInputType.SERVICE_VERSION,
-                    RuntimeInputType.SERVICE_ARTIFACT, RuntimeInputType.SERVICE_ENTRYPOINT);
+                RuntimeInputType.SERVICE_ARTIFACT, RuntimeInputType.SERVICE_ENTRYPOINT);
             case PHP_SERVICE, RUBY_SERVICE ->
                 EnumSet.of(RuntimeInputType.SERVICE_VERSION, RuntimeInputType.SERVICE_ARTIFACT,
-                        RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.SERVICE_PORT);
+                    RuntimeInputType.SERVICE_ENTRYPOINT, RuntimeInputType.SERVICE_PORT);
             case CMAKE_SERVICE -> EnumSet.of(RuntimeInputType.CMAKE_PRESET, RuntimeInputType.CMAKE_TARGET,
-                    RuntimeInputType.CMAKE_ARTIFACT);
+                RuntimeInputType.CMAKE_ARTIFACT);
         };
     }
 

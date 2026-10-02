@@ -28,7 +28,7 @@ final class RuntimePathResolver {
         Path fileName = executable.getFileName();
         Path appImageRoot = executable.getParent();
         if (fileName == null || !fileName.toString().toLowerCase(Locale.ROOT).endsWith(".exe")
-                || !isJPackageWindowsRoot(appImageRoot)) {
+            || !isJPackageWindowsRoot(appImageRoot)) {
             return Optional.empty();
         }
         return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot));
@@ -53,8 +53,8 @@ final class RuntimePathResolver {
             return Optional.of(layout(RunModeResolver.RunMode.RUN_APP, appImageRoot.get()));
         Path jarDirectory = sourcePath.getParent();
         return jarDirectory == null
-                ? Optional.empty()
-                : Optional.of(layout(RunModeResolver.RunMode.RUN_JAR, jarDirectory));
+            ? Optional.empty()
+            : Optional.of(layout(RunModeResolver.RunMode.RUN_JAR, jarDirectory));
     }
 
     /**
@@ -130,8 +130,8 @@ final class RuntimePathResolver {
         try {
             String pomContent = Files.readString(pom);
             return pomContent.contains("<artifactId>windowstolinux-app-db</artifactId>")
-                    ? Optional.of(normalized)
-                    : Optional.empty();
+                ? Optional.of(normalized)
+                : Optional.empty();
         } catch (Exception ignored) {
             // An unreadable candidate is rejected and other bounded layout candidates remain available. / 不可读候选会被拒绝，其他有界布局候选仍可继续检查。
             return Optional.empty();
@@ -169,7 +169,7 @@ final class RuntimePathResolver {
     private static Optional<Path> findJPackageHomeFromJar(Path jarPath) {
         Path appDirectory = jarPath.getParent();
         if (appDirectory == null || appDirectory.getFileName() == null
-                || !appDirectory.getFileName().toString().equalsIgnoreCase("app")) {
+            || !appDirectory.getFileName().toString().equalsIgnoreCase("app")) {
             return Optional.empty();
         }
         Path appImageRoot = appDirectory.getParent();

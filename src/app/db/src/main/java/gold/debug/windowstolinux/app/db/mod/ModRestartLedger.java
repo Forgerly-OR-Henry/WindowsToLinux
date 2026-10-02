@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.db.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
@@ -8,12 +12,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaAccessScope;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Applies restart intentions and explicit data retries against original durable facts. / 根据原持久事实应用重启意图和明确数据重试。 */
 public final class ModRestartLedger {
@@ -37,7 +41,7 @@ public final class ModRestartLedger {
 
     /** Strict durable request parser. / 严格持久请求解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds the execution ledger without running author code. / 绑定执行账本，不运行作者代码。
      * @param database exclusively owned platform engine / 独占的平台引擎
@@ -48,7 +52,7 @@ public final class ModRestartLedger {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
 
     /** Prepared activation identity; it does not prove author startup succeeded. / 已准备的启用身份，不证明作者启动成功。
@@ -58,7 +62,7 @@ public final class ModRestartLedger {
      * @param version selected release, if any / 选定版本，可不存在
      * @param schema exact ready data generation, if any / 精确就绪数据代次，可不存在 */
     public record Application(UUID operation, String owner, boolean enabled, Optional<String> version,
-            Optional<SchemaIdentity> schema) {
+                              Optional<SchemaIdentity> schema) {
     }
 
     /** Claims one earlier-boot request only after prior work and required data are ready. / 仅在旧工作收尾且所需数据就绪后取得前次启动请求。
@@ -69,7 +73,7 @@ public final class ModRestartLedger {
         return locked(c -> {
             var row = IntentEvidence.required(c, id);
             require(row.state().equals("WAITING") && row.phase().equals("WAIT_RESTART") && row.outcome() == null,
-                    "Original intent is not waiting for restart");
+                "Original intent is not waiting for restart");
             require(!boot.equals(row.requestBoot()), "An intent cannot apply in the boot that accepted it");
             var state = registry(c, row);
             require(!boot.equals(state.boot()), "This Mod already had an activation in the current boot");
@@ -78,7 +82,7 @@ public final class ModRestartLedger {
             var schema = prepared(c, row);
             var recovery = JSON.createObjectNode().put("formatVersion", 1).put("applicationBootId", boot.toString());
             try (var p = c.prepareStatement(
-                    "UPDATE mod_operation SET state='RUNNING',phase='APPLYING',recovery_json=?,updated_at=? WHERE operation_id=?")) {
+                "UPDATE mod_operation SET state='RUNNING',phase='APPLYING',recovery_json=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, recovery.toString());
                 p.setLong(2, System.currentTimeMillis());
                 p.setObject(3, id);
@@ -96,7 +100,7 @@ public final class ModRestartLedger {
         return locked(c -> {
             var row = IntentEvidence.required(c, id);
             return row.state().equals("WAITING") && row.phase().equals("WAIT_RESTART") && row.outcome() == null
-                    && Set.of("INITIALIZE", "MIGRATE").contains(row.data().path("mode").asText());
+                && Set.of("INITIALIZE", "MIGRATE").contains(row.data().path("mode").asText());
         });
     }
 
@@ -110,7 +114,7 @@ public final class ModRestartLedger {
      * @param source confirmed original source, if migrating / 迁移时已确认的原来源
      * @param steps original ordered migration chain / 原有序迁移链 */
     public record Preparation(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
-            UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
+                              UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
         /** Copies the operation-owned ordered steps. / 复制操作所属有序步骤。
          * @param intent original intent, or the standalone retry operation / 原意图，或独立重试操作
          * @param operation preparation operation / 准备操作
@@ -136,7 +140,7 @@ public final class ModRestartLedger {
      * @param writer original target writer scope / 原目标写入作用域
      * @param reader original target validation scope / 原目标验证作用域 */
     public record MigrationStep(int index, String from, String to, String className, SchemaIdentity target,
-            UUID sourceReader, UUID writer, UUID reader) {
+                                UUID sourceReader, UUID writer, UUID reader) {
     }
 
     /** Resolves permanent or intermediate physical target ownership. / 解析正式或中间物理目标归属。
@@ -145,8 +149,8 @@ public final class ModRestartLedger {
      * @return original target coordinates / 原目标坐标 */
     public static SchemaCoordinates targetCoordinates(Preparation plan, MigrationStep step) {
         return step.index() == plan.steps().size() - 1
-                ? new SchemaCoordinates(plan.target())
-                : new SchemaCoordinates(step.target(), plan.operation(), step.index());
+            ? new SchemaCoordinates(plan.target())
+            : new SchemaCoordinates(step.target(), plan.operation(), step.index());
     }
 
     /** Resolves the exact confirmed source or preceding operation-owned intermediate. / 解析精确已确认来源或前一步操作所属中间目标。
@@ -155,8 +159,8 @@ public final class ModRestartLedger {
      * @return exact original source / 精确原来源 */
     public static SchemaCoordinates sourceCoordinates(Preparation plan, MigrationStep step) {
         return step.index() == 0
-                ? new SchemaCoordinates(plan.source().orElseThrow())
-                : targetCoordinates(plan, plan.steps().get(step.index() - 1));
+            ? new SchemaCoordinates(plan.source().orElseThrow())
+            : targetCoordinates(plan, plan.steps().get(step.index() - 1));
     }
 
     /** Claims the original initialization or migration mode without changing its data plan. / 取得原初始化或迁移模式，不改变其数据计划。
@@ -167,8 +171,8 @@ public final class ModRestartLedger {
      * @throws SQLException if the original plan cannot execute / 原计划无法执行时 */
     public Preparation beginPreparation(UUID id, String manifest, String digest) throws SQLException {
         return locked(c -> "MIGRATE".equals(IntentEvidence.required(c, id).data().path("mode").asText())
-                ? beginMigration(id, manifest, digest)
-                : beginInitialization(id, manifest, digest));
+            ? beginMigration(id, manifest, digest)
+            : beginInitialization(id, manifest, digest));
     }
 
     /** Claims one explicitly reviewed failed target inside the caller's platform transaction. / 在调用者的平台事务中取得一个明确审阅的失败目标。
@@ -182,22 +186,22 @@ public final class ModRestartLedger {
      * @return registered original preparation, whose intent equals its standalone operation / 已登记原准备，其意图等于独立操作
      * @throws SQLException if source, target, references or occupancy changed / 来源、目标、引用或占用变化时 */
     public Preparation beginRetry(Connection c, SchemaIdentity previous, String version, long revision, String manifest,
-            String digest, String dataJson) throws SQLException {
+                                  String digest, String dataJson) throws SQLException {
         var data = preparation.retryAdmission(c, previous, version, revision, manifest, digest, dataJson);
         var target = new SchemaIdentity(previous.ownerId(), previous.schemaVersion(), UUID.randomUUID());
         Optional<SchemaIdentity> source = Optional.empty();
         List<MigrationStep> steps = List.of();
         if ("MIGRATE".equals(data.path("mode").textValue())) {
             require(IntentEvidence.fields(data).equals(Set.of("mode", "target", "source", "generation", "steps")),
-                    "Invalid retry source plan");
+                "Invalid retry source plan");
             source = Optional.of(new SchemaIdentity(previous.ownerId(), data.path("source").asText(),
-                    IntentEvidence.uuid(data, "generation")));
+                IntentEvidence.uuid(data, "generation")));
             new SchemaCoordinates(source.get()).requireRegistered(c, Set.of("READY"));
             steps = PreparationLedger.migrationSteps(source.get(), target, data, manifest);
         } else {
             require("INITIALIZE".equals(data.path("mode").textValue())
                     && IntentEvidence.fields(data).equals(Set.of("mode", "target")),
-                    "Retry requires initialization or confirmed migration");
+                "Retry requires initialization or confirmed migration");
             try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND generation<>?")) {
                 p.setString(1, previous.ownerId());
                 p.setObject(2, previous.generation());
@@ -209,23 +213,23 @@ public final class ModRestartLedger {
         }
         UUID operation = UUID.randomUUID();
         var plan = new Preparation(operation, operation, target,
-                steps.isEmpty() ? UUID.randomUUID() : steps.getLast().writer(),
-                steps.isEmpty() ? UUID.randomUUID() : steps.getLast().reader(), UUID.randomUUID(), source, steps);
+            steps.isEmpty() ? UUID.randomUUID() : steps.getLast().writer(),
+            steps.isEmpty() ? UUID.randomUUID() : steps.getLast().reader(), UUID.randomUUID(), source, steps);
         long now = System.currentTimeMillis();
         var request = JSON.createObjectNode().put("formatVersion", 1).put("mode", "RETRY")
-                .put("ownerId", previous.ownerId()).put("previousGeneration", previous.generation().toString())
-                .put("manifest", manifest).put("contentDigest", digest);
+            .put("ownerId", previous.ownerId()).put("previousGeneration", previous.generation().toString())
+            .put("manifest", manifest).put("contentDigest", digest);
         request.putObject("target").put("enabled", true).put("version", version);
         request.set("data", data);
         try (var p = c.prepareStatement(
-                "UPDATE mod_schema SET generation=?,state='PREPARING',created_at=?,validated_at=NULL,validation_digest=NULL WHERE generation=? AND state='FAILED' AND NOT ever_used")) {
+            "UPDATE mod_schema SET generation=?,state='PREPARING',created_at=?,validated_at=NULL,validation_digest=NULL WHERE generation=? AND state='FAILED' AND NOT ever_used")) {
             p.setObject(1, target.generation());
             p.setLong(2, now);
             p.setObject(3, previous.generation());
             require(p.executeUpdate() == 1, "Original failed target changed");
         }
         try (var p = c.prepareStatement(
-                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,source_schema_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
+            "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,source_schema_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
             p.setObject(1, operation);
             p.setString(2, target.ownerId());
             p.setString(3, version);
@@ -250,10 +254,10 @@ public final class ModRestartLedger {
     public void resetCompleted(Preparation plan) throws SQLException {
         locked(c -> {
             require(plan.intent().equals(plan.operation())
-                    && "MIGRATING".equals(preparation.requirePreparation(c, plan)), "Not an active retry reset");
+                && "MIGRATING".equals(preparation.requirePreparation(c, plan)), "Not an active retry reset");
             var target = new SchemaCoordinates(plan.target());
             try (var p = c.prepareStatement(
-                    "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
                 p.setString(1, target.physicalName());
                 p.setString(2, target.databaseUser());
                 try (var r = p.executeQuery()) {
@@ -279,21 +283,21 @@ public final class ModRestartLedger {
             var row = IntentEvidence.required(c, id);
             var data = row.data();
             require(row.enabled() && row.targetSchema() != null && row.generation() == null
-                    && IntentEvidence.fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
-                    && "MIGRATE".equals(data.path("mode").textValue())
-                    && row.targetSchema().equals(data.path("target").textValue()), "Original migration plan changed");
+                && IntentEvidence.fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
+                && "MIGRATE".equals(data.path("mode").textValue())
+                && row.targetSchema().equals(data.path("target").textValue()), "Original migration plan changed");
             var source = new SchemaIdentity(row.owner(), data.path("source").asText(),
-                    IntentEvidence.uuid(data, "generation"));
+                IntentEvidence.uuid(data, "generation"));
             new SchemaCoordinates(source).requireRegistered(c, Set.of("READY"));
             try (var p = c.prepareStatement("SELECT source_schema_version FROM mod_operation WHERE operation_id=?")) {
                 p.setObject(1, id);
                 try (var r = p.executeQuery()) {
                     require(r.next() && source.schemaVersion().equals(r.getString(1)),
-                            "Original source version identity changed");
+                        "Original source version identity changed");
                 }
             }
             try (var p = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
+                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
                 p.setString(1, row.owner());
                 p.setString(2, row.version());
                 p.setString(3, row.targetSchema());
@@ -317,7 +321,7 @@ public final class ModRestartLedger {
             preparation.claimUnprepared(c, row);
             var last = steps.getLast();
             var plan = new Preparation(id, UUID.randomUUID(), target, last.writer(), last.reader(), UUID.randomUUID(),
-                    Optional.of(source), steps);
+                Optional.of(source), steps);
             preparation.registerPreparation(c, row, plan);
             return plan;
         });
@@ -336,7 +340,7 @@ public final class ModRestartLedger {
                     && IntentEvidence.fields(row.data()).equals(Set.of("mode", "target"))
                     && "INITIALIZE".equals(row.data().path("mode").textValue())
                     && row.targetSchema().equals(row.data().path("target").textValue()),
-                    "Original first-use plan changed");
+                "Original first-use plan changed");
             try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_schema WHERE mod_id=?")) {
                 p.setString(1, row.owner());
                 try (var r = p.executeQuery()) {
@@ -345,7 +349,7 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
+                "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND schema_version=? AND manifest_json=? AND content_sha256=? AND state='READY'")) {
                 p.setString(1, row.owner());
                 p.setString(2, row.version());
                 p.setString(3, row.targetSchema());
@@ -358,8 +362,8 @@ public final class ModRestartLedger {
             }
             preparation.claimUnprepared(c, row);
             var plan = new Preparation(id, UUID.randomUUID(),
-                    new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID()), UUID.randomUUID(),
-                    UUID.randomUUID(), UUID.randomUUID(), Optional.empty(), List.of());
+                new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID()), UUID.randomUUID(),
+                UUID.randomUUID(), UUID.randomUUID(), Optional.empty(), List.of());
             preparation.registerPreparation(c, row, plan);
             return plan;
         });
@@ -373,7 +377,7 @@ public final class ModRestartLedger {
             var row = IntentEvidence.required(c, id);
             if (row.state().equals("WAITING")) {
                 require(Set.of("INITIALIZE", "MIGRATE").contains(row.data().path("mode").asText()),
-                        "Not a preparation request");
+                    "Not a preparation request");
                 preparation.claimUnprepared(c, row);
             }
             return null;
@@ -406,14 +410,14 @@ public final class ModRestartLedger {
         locked(c -> {
             preparation.requirePreparation(c, plan);
             boolean owned = new SchemaCoordinates(plan.target()).physicalName().equals(target.physicalName())
-                    || plan.steps().stream().anyMatch(
-                            step -> targetCoordinates(plan, step).physicalName().equals(target.physicalName()));
+                || plan.steps().stream().anyMatch(
+                step -> targetCoordinates(plan, step).physicalName().equals(target.physicalName()));
             require(owned, "Created target is not in the original inventory");
             target.requireRegistered(c, Set.of("PREPARING"));
             target.requirePhysicalOwnership(c);
             var recovery = PreparationLedger.preparationRecovery(c, plan);
             ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/created")
-                    .put(target.physicalName(), target.identity().generation().toString());
+                .put(target.physicalName(), target.identity().generation().toString());
             PreparationLedger.saveRecovery(c, plan, recovery);
             return null;
         });
@@ -434,7 +438,7 @@ public final class ModRestartLedger {
             var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
             String field = after ? "sourceAfter" : "sourceBefore";
             require(after || !facts.has(field) || digest.equals(facts.path(field).asText()),
-                    "Original source proof changed");
+                "Original source proof changed");
             facts.put(field, digest);
             PreparationLedger.saveRecovery(c, plan, recovery);
             return !after || digest.equals(facts.path("sourceBefore").asText());
@@ -452,9 +456,9 @@ public final class ModRestartLedger {
             require(preparation.requirePreparation(c, plan).equals("MIGRATING"), "Migration is not executing");
             var facts = PreparationLedger.preparationRecovery(c, plan).path("facts");
             require(facts.path("sourceBefore").asText().matches("[0-9a-f]{64}"),
-                    "Original source has not been checked");
+                "Original source has not been checked");
             try (var p = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND step_number<? AND state<>'COMPLETE'")) {
+                "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND step_number<? AND state<>'COMPLETE'")) {
                 p.setObject(1, plan.operation());
                 p.setInt(2, step.index());
                 try (var r = p.executeQuery()) {
@@ -463,7 +467,7 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c.prepareStatement(
-                    "UPDATE mod_migration_step SET state='RUNNING',started_at=? WHERE operation_id=? AND step_number=? AND from_version=? AND to_version=? AND migration_class=? AND source_schema=? AND target_schema=? AND state='PENDING'")) {
+                "UPDATE mod_migration_step SET state='RUNNING',started_at=? WHERE operation_id=? AND step_number=? AND from_version=? AND to_version=? AND migration_class=? AND source_schema=? AND target_schema=? AND state='PENDING'")) {
                 p.setLong(1, System.currentTimeMillis());
                 p.setObject(2, plan.operation());
                 p.setInt(3, step.index());
@@ -476,7 +480,7 @@ public final class ModRestartLedger {
             }
             var recovery = PreparationLedger.preparationRecovery(c, plan);
             ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/steps")
-                    .putObject(Integer.toString(step.index())).put("sourceBefore", before);
+                .putObject(Integer.toString(step.index())).put("sourceBefore", before);
             PreparationLedger.saveRecovery(c, plan, recovery);
             return null;
         });
@@ -490,40 +494,40 @@ public final class ModRestartLedger {
      * @param targetDigest target validation receipt / 目标验证凭据
      * @throws SQLException if physical release, proof or write fails / 物理释放、证明或写入失败时 */
     public void completeStep(Preparation plan, MigrationStep step, String before, String after, String targetDigest)
-            throws SQLException {
+        throws SQLException {
         require(before != null && before.matches("[0-9a-f]{64}") && before.equals(after) && targetDigest != null
-                && targetDigest.matches("[0-9a-f]{64}"), "Migration source changed or validation is absent");
+            && targetDigest.matches("[0-9a-f]{64}"), "Migration source changed or validation is absent");
         for (var scope : List.of(step.sourceReader(), step.writer(), step.reader()))
             require(database.openConnections(scope.toString()) == 0, "Original migration step connections remain");
         locked(c -> {
             require(Set.of("MIGRATING", "VALIDATING").contains(preparation.requirePreparation(c, plan)),
-                    "Original migration phase changed");
+                "Original migration phase changed");
             var recovery = PreparationLedger.preparationRecovery(c, plan);
             var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
             var original = facts.path("steps").path(Integer.toString(step.index()));
             require(before.equals(original.path("sourceBefore").asText()), "Original step source proof changed");
             try (var p = c.prepareStatement(
-                    "UPDATE mod_migration_step SET state='COMPLETE',ended_at=? WHERE operation_id=? AND step_number=? AND state='RUNNING'")) {
+                "UPDATE mod_migration_step SET state='COMPLETE',ended_at=? WHERE operation_id=? AND step_number=? AND state='RUNNING'")) {
                 p.setLong(1, System.currentTimeMillis());
                 p.setObject(2, plan.operation());
                 p.setInt(3, step.index());
                 if (p.executeUpdate() != 1) {
                     try (var q = c.prepareStatement(
-                            "SELECT state FROM mod_migration_step WHERE operation_id=? AND step_number=?")) {
+                        "SELECT state FROM mod_migration_step WHERE operation_id=? AND step_number=?")) {
                         q.setObject(1, plan.operation());
                         q.setInt(2, step.index());
                         try (var r = q.executeQuery()) {
                             require(r.next() && "COMPLETE".equals(r.getString(1))
                                     && after.equals(original.path("sourceAfter").asText())
                                     && targetDigest.equals(original.path("targetDigest").asText()),
-                                    "Original step completion is unconfirmed");
+                                "Original step completion is unconfirmed");
                             return null;
                         }
                     }
                 }
             }
             facts.withObject("/steps").putObject(Integer.toString(step.index())).put("sourceBefore", before)
-                    .put("sourceAfter", after).put("targetDigest", targetDigest);
+                .put("sourceAfter", after).put("targetDigest", targetDigest);
             PreparationLedger.saveRecovery(c, plan, recovery);
             return null;
         });
@@ -536,7 +540,7 @@ public final class ModRestartLedger {
      * @throws SQLException if release, identity or atomic archival cannot be confirmed / 无法确认释放、身份或原子归档时 */
     public void finishPreparation(Preparation plan, Outcome outcome, String digest) throws SQLException {
         require(Set.of(Outcome.SUCCEEDED, Outcome.FAILED, Outcome.UNKNOWN).contains(outcome),
-                "Invalid preparation result");
+            "Invalid preparation result");
         var scopes = new HashSet<>(List.of(plan.writer(), plan.reader()));
         plan.steps().forEach(step -> scopes.addAll(List.of(step.sourceReader(), step.writer(), step.reader())));
         for (var scope : scopes)
@@ -548,7 +552,7 @@ public final class ModRestartLedger {
             preparation.verifyCompletion(c, plan, outcome, digest, phase, scopes);
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
-                    "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='PREPARING' AND NOT ever_used")) {
+                "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='PREPARING' AND NOT ever_used")) {
                 p.setString(1, outcome == Outcome.SUCCEEDED ? "READY" : outcome.name());
                 p.setObject(2, outcome == Outcome.SUCCEEDED ? now : null);
                 p.setString(3, outcome == Outcome.SUCCEEDED ? digest : null);
@@ -557,43 +561,43 @@ public final class ModRestartLedger {
             }
             if (outcome == Outcome.UNKNOWN) {
                 try (var p = c.prepareStatement(
-                        "UPDATE mod_migration_step SET state='UNKNOWN' WHERE operation_id=? AND state='RUNNING'")) {
+                    "UPDATE mod_migration_step SET state='UNKNOWN' WHERE operation_id=? AND state='RUNNING'")) {
                     p.setObject(1, plan.operation());
                     p.executeUpdate();
                 }
                 try (var p = c.prepareStatement(
-                        "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_PREPARATION_UNKNOWN',updated_at=? WHERE operation_id IN (?,?)")) {
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_PREPARATION_UNKNOWN',updated_at=? WHERE operation_id IN (?,?)")) {
                     p.setLong(1, now);
                     p.setObject(2, plan.operation());
                     p.setObject(3, plan.intent());
                     require(p.executeUpdate() == (plan.intent().equals(plan.operation()) ? 1 : 2),
-                            "Original preparation identities changed");
+                        "Original preparation identities changed");
                 }
             } else {
                 String owner = plan.target().ownerId();
                 String version = plan.intent().equals(plan.operation())
-                        ? preparation.retryRequest(c, plan).path("target").path("version").asText()
-                        : IntentEvidence.required(c, plan.intent()).version();
+                    ? preparation.retryRequest(c, plan).path("target").path("version").asText()
+                    : IntentEvidence.required(c, plan.intent()).version();
                 boolean migrating = plan.source().isPresent();
                 logs.store(c, archive, List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation",
-                        outcome == Outcome.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
-                        migrating
-                                ? outcome == Outcome.SUCCEEDED ? "MOD_SCHEMA_MIGRATED" : "MOD_SCHEMA_MIGRATION_FAILED"
-                                : outcome == Outcome.SUCCEEDED
-                                        ? "MOD_SCHEMA_INITIALIZED"
-                                        : "MOD_SCHEMA_INITIALIZATION_FAILED",
-                        outcome == Outcome.SUCCEEDED
-                                ? "Data validation and original resource cleanup succeeded"
-                                : "Data preparation failed and original resources are closed",
-                        null, owner, version, null, plan.operation(), outcome, false)), 100);
+                    outcome == Outcome.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
+                    migrating
+                        ? outcome == Outcome.SUCCEEDED ? "MOD_SCHEMA_MIGRATED" : "MOD_SCHEMA_MIGRATION_FAILED"
+                        : outcome == Outcome.SUCCEEDED
+                        ? "MOD_SCHEMA_INITIALIZED"
+                        : "MOD_SCHEMA_INITIALIZATION_FAILED",
+                    outcome == Outcome.SUCCEEDED
+                        ? "Data validation and original resource cleanup succeeded"
+                        : "Data preparation failed and original resources are closed",
+                    null, owner, version, null, plan.operation(), outcome, false)), 100);
                 if (plan.intent().equals(plan.operation())) {
                     try (var p = c.prepareStatement(
-                            "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=?")) {
+                        "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=?")) {
                         p.setObject(1, boot);
                         p.setString(2,
-                                outcome == Outcome.SUCCEEDED
-                                        ? "MOD_DATA_READY_RESTART_REQUIRED"
-                                        : "MOD_SCHEMA_PREPARATION_FAILED");
+                            outcome == Outcome.SUCCEEDED
+                                ? "MOD_DATA_READY_RESTART_REQUIRED"
+                                : "MOD_SCHEMA_PREPARATION_FAILED");
                         p.setString(3, owner);
                         require(p.executeUpdate() == 1, "Retry owner disappeared");
                     }
@@ -625,12 +629,12 @@ public final class ModRestartLedger {
     public static Map<String, Disabled> initiallyDisabled(PlatformDatabase database) throws SQLException {
         var result = new HashMap<String, Disabled>();
         try (var c = database.openConnection();
-                var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT mod_id,revision,updated_at,last_boot_id FROM mod_registry WHERE NOT enabled AND actual_version IS NULL AND last_runtime_state='STOPPED'")) {
+             var s = c.createStatement();
+             var r = s.executeQuery(
+                 "SELECT mod_id,revision,updated_at,last_boot_id FROM mod_registry WHERE NOT enabled AND actual_version IS NULL AND last_runtime_state='STOPPED'")) {
             while (r.next())
                 result.put(r.getString(1),
-                        new Disabled(r.getLong(2), r.getLong(3), Optional.ofNullable(r.getObject(4, UUID.class))));
+                    new Disabled(r.getLong(2), r.getLong(3), Optional.ofNullable(r.getObject(4, UUID.class))));
         }
         return Map.copyOf(result);
     }
@@ -643,7 +647,7 @@ public final class ModRestartLedger {
         locked(c -> {
             ModProgramMaintenance.drained(c, owner, null);
             try (var p = c.prepareStatement(
-                    "UPDATE mod_registry SET last_boot_id=?,disable_ack_revision=revision,updated_at=? WHERE mod_id=? AND NOT enabled AND revision=? AND actual_version IS NULL AND last_runtime_state='STOPPED' AND (last_boot_id IS NULL OR last_boot_id<>?) AND updated_at=? AND last_boot_id IS NOT DISTINCT FROM ?")) {
+                "UPDATE mod_registry SET last_boot_id=?,disable_ack_revision=revision,updated_at=? WHERE mod_id=? AND NOT enabled AND revision=? AND actual_version IS NULL AND last_runtime_state='STOPPED' AND (last_boot_id IS NULL OR last_boot_id<>?) AND updated_at=? AND last_boot_id IS NOT DISTINCT FROM ?")) {
                 p.setObject(1, boot);
                 p.setLong(2, System.currentTimeMillis());
                 p.setString(3, owner);
@@ -684,29 +688,29 @@ public final class ModRestartLedger {
             if (row == null)
                 return false;
             require(row.state().equals("RUNNING") && row.phase().equals("APPLYING") && row.outcome() == null,
-                    "Original intent is not an active application");
+                "Original intent is not an active application");
             var recovery = IntentEvidence.object(row.recovery());
             require(IntentEvidence.fields(recovery).equals(Set.of("formatVersion", "applicationBootId"))
                     && recovery.path("formatVersion").isInt() && recovery.path("formatVersion").intValue() == 1
                     && boot.equals(IntentEvidence.uuid(recovery, "applicationBootId")),
-                    "Application belongs to another boot");
+                "Application belongs to another boot");
             var state = registry(c, row);
             requireDrained(c, row);
             if (failed) {
                 require(row.enabled() && boot.equals(state.boot()) && state.state().equals("FAILED")
                         && state.actual() == null && state.failure() != null && !state.failure().isBlank(),
-                        "Original activation has not recorded a known, fully closed failure");
+                    "Original activation has not recorded a known, fully closed failure");
             } else if (row.enabled()) {
                 require(boot.equals(state.boot()) && state.state().equals("RUNNING")
                         && row.version().equals(state.actual()) && state.failure() == null,
-                        "The requested release is not running in this boot");
+                    "The requested release is not running in this boot");
                 prepared(c, row);
             } else {
                 require(!boot.equals(state.boot()),
-                        "A Mod loaded during this boot cannot receive restart-disable acknowledgement");
+                    "A Mod loaded during this boot cannot receive restart-disable acknowledgement");
                 requireClosed(state);
                 try (var p = c.prepareStatement(
-                        "UPDATE mod_registry SET last_boot_id=?,last_runtime_state='STOPPED',actual_version=NULL,disable_ack_revision=revision,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE mod_id=?")) {
+                    "UPDATE mod_registry SET last_boot_id=?,last_runtime_state='STOPPED',actual_version=NULL,disable_ack_revision=revision,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE mod_id=?")) {
                     p.setObject(1, boot);
                     p.setLong(2, System.currentTimeMillis());
                     p.setString(3, row.owner());
@@ -716,18 +720,18 @@ public final class ModRestartLedger {
             long now = System.currentTimeMillis();
             var outcome = failed ? Outcome.FAILED : Outcome.SUCCEEDED;
             try (var p = c.prepareStatement(
-                    "UPDATE mod_operation SET state='FINISHING',phase='VERIFIED',outcome=?,updated_at=? WHERE operation_id=?")) {
+                "UPDATE mod_operation SET state='FINISHING',phase='VERIFIED',outcome=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, outcome.name());
                 p.setLong(2, now);
                 p.setObject(3, id);
                 require(p.executeUpdate() == 1, "Original intent disappeared");
             }
             logs.store(c, archive, List.of(new LogRecordCodec.Record(row.archive(), now, "app", "mod_operation",
-                    failed ? LogLevel.ERROR : LogLevel.INFO, failed ? "MOD_INTENT_FAILED" : "MOD_INTENT_APPLIED",
-                    failed
-                            ? "Mod startup failed and its original resources are closed"
-                            : "Mod restart change was verified",
-                    null, row.owner(), row.version(), null, id, outcome, false)), 100);
+                failed ? LogLevel.ERROR : LogLevel.INFO, failed ? "MOD_INTENT_FAILED" : "MOD_INTENT_APPLIED",
+                failed
+                    ? "Mod startup failed and its original resources are closed"
+                    : "Mod restart change was verified",
+                null, row.owner(), row.version(), null, id, outcome, false)), 100);
             try (var p = c.prepareStatement("DELETE FROM mod_operation WHERE operation_id=?")) {
                 p.setObject(1, id);
                 require(p.executeUpdate() == 1, "Original execution cleanup was not confirmed");
@@ -743,11 +747,11 @@ public final class ModRestartLedger {
      * @throws SQLException if intent no longer matches / 意图不再匹配时 */
     private RuntimeState registry(Connection c, Intent row) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT enabled,selected_version,revision,last_boot_id,last_runtime_state,actual_version,failure_code FROM mod_registry WHERE mod_id=?")) {
+            "SELECT enabled,selected_version,revision,last_boot_id,last_runtime_state,actual_version,failure_code FROM mod_registry WHERE mod_id=?")) {
             p.setString(1, row.owner());
             try (var r = p.executeQuery()) {
                 require(r.next() && r.getBoolean(1) == row.enabled() && Objects.equals(r.getString(2), row.version())
-                        && r.getLong(3) == row.revision(), "Accepted Mod choice changed before application");
+                    && r.getLong(3) == row.revision(), "Accepted Mod choice changed before application");
                 return new RuntimeState(r.getObject(4, UUID.class), r.getString(5), r.getString(6), r.getString(7));
             }
         }
@@ -758,7 +762,7 @@ public final class ModRestartLedger {
      * @throws SQLException if original resources might remain / 原资源可能残留时 */
     private static void requireClosed(RuntimeState state) throws SQLException {
         require(Set.of("STOPPED", "FAILED").contains(state.state()) && state.actual() == null,
-                "Previous Mod activation still requires reconciliation");
+            "Previous Mod activation still requires reconciliation");
     }
 
     /** Checks owned tasks, cross-Mod resources and other maintenance in the same transaction. / 在同一事务检查自有任务、跨 Mod 资源及其他维护。
@@ -767,7 +771,7 @@ public final class ModRestartLedger {
      * @throws SQLException if unresolved work or migration steps remain / 未解决工作或迁移步骤残留时 */
     private static void requireDrained(Connection c, Intent row) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_id<>? AND state<>'ENDED')+(SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=?)")) {
+            "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_id<>? AND state<>'ENDED')+(SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=?)")) {
             p.setString(1, row.owner());
             p.setString(2, row.owner());
             p.setString(3, row.owner());
@@ -799,27 +803,27 @@ public final class ModRestartLedger {
             }
         }
         require(Objects.equals(schema, row.targetSchema()),
-                "Selected data version no longer matches the accepted request");
+            "Selected data version no longer matches the accepted request");
         var data = row.data();
         if (schema == null) {
             require(IntentEvidence.fields(data).equals(Set.of("mode")) && "NONE".equals(data.path("mode").textValue())
-                    && row.generation() == null, "Stateless startup has invalid data evidence");
+                && row.generation() == null, "Stateless startup has invalid data evidence");
             return Optional.empty();
         }
         boolean initialized = (IntentEvidence.fields(data).equals(Set.of("mode", "target"))
-                && "INITIALIZE".equals(data.path("mode").textValue())
-                || IntentEvidence.fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
-                        && "MIGRATE".equals(data.path("mode").textValue()))
-                && row.state().equals("RUNNING") && row.phase().equals("APPLYING") && row.generation() != null;
+            && "INITIALIZE".equals(data.path("mode").textValue())
+            || IntentEvidence.fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
+            && "MIGRATE".equals(data.path("mode").textValue()))
+            && row.state().equals("RUNNING") && row.phase().equals("APPLYING") && row.generation() != null;
         require((initialized || IntentEvidence.fields(data).equals(Set.of("mode", "target", "generation"))
                 && "REUSE".equals(data.path("mode").textValue())) && schema.equals(data.path("target").textValue()),
-                "Original data preparation must be completed before activation");
+            "Original data preparation must be completed before activation");
         var identity = new SchemaIdentity(row.owner(), schema,
-                initialized ? row.generation() : IntentEvidence.uuid(data, "generation"));
+            initialized ? row.generation() : IntentEvidence.uuid(data, "generation"));
         require(identity.generation().equals(row.generation()), "Accepted target generation changed");
         var coordinates = new SchemaCoordinates(identity);
         try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND schema_version=? AND generation=? AND state='READY' AND physical_name=? AND database_user=?")) {
+            "SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND schema_version=? AND generation=? AND state='READY' AND physical_name=? AND database_user=?")) {
             p.setString(1, row.owner());
             p.setString(2, schema);
             p.setObject(3, identity.generation());
@@ -853,10 +857,10 @@ public final class ModRestartLedger {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
-                        var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+                     var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     require(r.next() && boot.equals(r.getObject(1, UUID.class))
                             && Set.of("STARTING", "RUNNING").contains(r.getString(2)),
-                            "Restart execution no longer owns the active platform boot");
+                        "Restart execution no longer owns the active platform boot");
                 }
                 value.set(work.run(c));
             }
@@ -899,8 +903,9 @@ public final class ModRestartLedger {
      * @param recovery application evidence / 应用证据
      * @param archive fixed archive identity / 固定归档身份 */
     private record Intent(UUID id, String owner, UUID requestBoot, boolean enabled, String version, long revision,
-            String state, String phase, String outcome, JsonNode data, String targetSchema, UUID generation,
-            String recovery, UUID archive) {
+                          String state, String phase, String outcome, JsonNode data, String targetSchema,
+                          UUID generation,
+                          String recovery, UUID archive) {
     }
 
     /** Parses the exact retained intent and canonical recovery identities. / 解析精确保留意图及规范恢复身份。 */
@@ -934,9 +939,9 @@ public final class ModRestartLedger {
                     var request = object(r.getString("request_json"));
                     require(fields(request)
                             .equals(Set.of("formatVersion", "requestId", "bootId", "ownerId", "base", "target", "data",
-                                    "affected"))
+                                "affected"))
                             && request.path("formatVersion").isInt() && request.path("formatVersion").intValue() == 1,
-                            "Unsupported restart request");
+                        "Unsupported restart request");
                     uuid(request, "requestId");
                     var requestBoot = uuid(request, "bootId");
                     String owner = r.getString("mod_id");
@@ -944,26 +949,26 @@ public final class ModRestartLedger {
                     var base = choice(request.path("base"));
                     var target = choice(request.path("target"));
                     String type = base.path("enabled").booleanValue() != target.path("enabled").booleanValue()
-                            ? target.path("enabled").booleanValue() ? "ENABLE" : "DISABLE"
-                            : "SWITCH";
+                        ? target.path("enabled").booleanValue() ? "ENABLE" : "DISABLE"
+                        : "SWITCH";
                     require(type.equals(r.getString("operation_type")) && !base.equals(target)
                             && Objects.equals(base.path("version").textValue(), r.getString("source_version"))
                             && Objects.equals(target.path("version").textValue(), r.getString("target_version"))
                             && r.getObject("accepted_revision") != null && r.getLong("accepted_revision") > 0,
-                            "Restart request identity changed");
+                        "Restart request identity changed");
                     var affected = request.path("affected");
                     require(affected.isArray() && !affected.isEmpty(), "Restart impact is missing");
                     var owners = new HashSet<String>();
                     for (var item : affected)
                         require(item.isTextual() && !item.textValue().isBlank() && item.textValue().length() <= 512
-                                && owners.add(item.textValue()), "Restart impact is invalid");
+                            && owners.add(item.textValue()), "Restart impact is invalid");
                     require(owners.contains(owner) && request.path("data").isObject(),
-                            "Restart impact or data evidence is invalid");
+                        "Restart impact or data evidence is invalid");
                     return new Intent(id, owner, requestBoot, target.path("enabled").booleanValue(),
-                            r.getString("target_version"), r.getLong("accepted_revision"), r.getString("state"),
-                            r.getString("phase"), r.getString("outcome"), request.path("data"),
-                            r.getString("target_schema_version"), r.getObject("target_generation", UUID.class),
-                            r.getString("recovery_json"), canonicalUuid(r.getString("archive_log_id")));
+                        r.getString("target_version"), r.getLong("accepted_revision"), r.getString("state"),
+                        r.getString("phase"), r.getString("outcome"), request.path("data"),
+                        r.getString("target_schema_version"), r.getObject("target_generation", UUID.class),
+                        r.getString("recovery_json"), canonicalUuid(r.getString("archive_log_id")));
                 }
             }
         }
@@ -976,10 +981,10 @@ public final class ModRestartLedger {
             require(node.isObject() && fields(node).equals(Set.of("enabled", "version"))
                     && node.path("enabled").isBoolean()
                     && (node.path("version").isNull()
-                            || node.path("version").isTextual() && !node.path("version").textValue().isBlank()
-                                    && node.path("version").textValue().length() <= 512)
+                    || node.path("version").isTextual() && !node.path("version").textValue().isBlank()
+                    && node.path("version").textValue().length() <= 512)
                     && (!node.path("enabled").booleanValue() || node.path("version").isTextual()),
-                    "Invalid Mod choice");
+                "Invalid Mod choice");
             return node;
         }
 
@@ -989,7 +994,7 @@ public final class ModRestartLedger {
          * @throws SQLException if malformed / 格式错误时 */
         private static JsonNode object(String value) throws SQLException {
             require(value != null && value.getBytes(StandardCharsets.UTF_8).length <= 1024 * 1024,
-                    "Invalid retained JSON size");
+                "Invalid retained JSON size");
             try {
                 var node = JSON.readTree(value);
                 require(node != null && node.isObject(), "Retained evidence is not an object");
@@ -1049,13 +1054,13 @@ public final class ModRestartLedger {
          * @return exact parsed data plan / 精确解析数据计划
          * @throws SQLException if admission or evidence changed / 准入或证据变化时 */
         private JsonNode retryAdmission(Connection c, SchemaIdentity previous, String version, long revision,
-                String manifest, String digest, String dataJson) throws SQLException {
+                                        String manifest, String digest, String dataJson) throws SQLException {
             require(!c.getAutoCommit(), "Explicit retry requires the owning platform transaction");
             RepositoryConnections.lockPlatformState(c);
             try (var s = c.createStatement();
-                    var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+                 var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                 require(r.next() && boot.equals(r.getObject(1, UUID.class)) && "RUNNING".equals(r.getString(2)),
-                        "Retry no longer owns the running platform boot");
+                    "Retry no longer owns the running platform boot");
             }
             var old = new SchemaCoordinates(previous);
             old.requireRegistered(c, Set.of("FAILED"));
@@ -1065,9 +1070,9 @@ public final class ModRestartLedger {
                     && version.equals(declaration.path("version").textValue())
                     && previous.schemaVersion().equals(declaration.path("schemaVersion").textValue())
                     && previous.schemaVersion().equals(data.path("target").textValue()),
-                    "Retry target declaration changed");
+                "Retry target declaration changed");
             try (var p = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_schema s JOIN mod_registry r ON r.mod_id=s.mod_id JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version WHERE s.generation=? AND s.state='FAILED' AND NOT s.ever_used AND s.validated_at IS NULL AND s.validation_digest IS NULL AND r.enabled AND r.selected_version=? AND r.revision=? AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.manifest_json=? AND v.content_sha256=?")) {
+                "SELECT COUNT(*) FROM mod_schema s JOIN mod_registry r ON r.mod_id=s.mod_id JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version WHERE s.generation=? AND s.state='FAILED' AND NOT s.ever_used AND s.validated_at IS NULL AND s.validation_digest IS NULL AND r.enabled AND r.selected_version=? AND r.revision=? AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.manifest_json=? AND v.content_sha256=?")) {
                 p.setObject(1, previous.generation());
                 p.setString(2, version);
                 p.setLong(3, revision);
@@ -1079,7 +1084,7 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c.prepareStatement(
-                    "SELECT (SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_server_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM log_category WHERE schema_generation=?)")) {
+                "SELECT (SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))+(SELECT COUNT(*) FROM mod_server_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM log_category WHERE schema_generation=?)")) {
                 for (int i = 1; i <= 4; i++)
                     p.setString(i, previous.ownerId());
                 for (int i = 5; i <= 7; i++)
@@ -1090,7 +1095,7 @@ public final class ModRestartLedger {
                 }
             }
             try (var p = c
-                    .prepareStatement("SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?")) {
+                .prepareStatement("SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?")) {
                 p.setString(1, old.databaseUser());
                 try (var r = p.executeQuery()) {
                     r.next();
@@ -1108,7 +1113,7 @@ public final class ModRestartLedger {
          * @return original ordered step identities / 原有序步骤身份
          * @throws SQLException if the confirmed chain no longer matches / 已确认链不再匹配时 */
         private static List<MigrationStep> migrationSteps(SchemaIdentity source, SchemaIdentity target, JsonNode data,
-                String manifest) throws SQLException {
+                                                          String manifest) throws SQLException {
             var declared = IntentEvidence.object(manifest).path("migrations");
             var edges = data.path("steps");
             require(edges.isArray() && !edges.isEmpty() && edges.size() <= 256, "Original migration chain is invalid");
@@ -1119,21 +1124,21 @@ public final class ModRestartLedger {
                         && previous.equals(edge.path("from").textValue())
                         && edge.path("to").asText().matches("[1-9][0-9]{0,63}")
                         && new java.math.BigInteger(previous)
-                                .compareTo(new java.math.BigInteger(edge.path("to").asText())) < 0,
-                        "Original migration chain is discontinuous");
+                        .compareTo(new java.math.BigInteger(edge.path("to").asText())) < 0,
+                    "Original migration chain is discontinuous");
                 boolean found = false;
                 for (var candidate : declared)
                     if (edge.path("from").equals(candidate.path("from")) && edge.path("to").equals(candidate.path("to"))
-                            && edge.path("className").asText().equals(candidate.path("class").asText()))
+                        && edge.path("className").asText().equals(candidate.path("class").asText()))
                         found = true;
                 require(found, "Original migration class is no longer declared");
                 previous = edge.path("to").asText();
                 var identity = steps.size() == edges.size() - 1
-                        ? target
-                        : new SchemaIdentity(target.ownerId(), previous, UUID.randomUUID());
+                    ? target
+                    : new SchemaIdentity(target.ownerId(), previous, UUID.randomUUID());
                 steps.add(new MigrationStep(steps.size(), edge.path("from").asText(), previous,
-                        edge.path("className").asText(), identity, UUID.randomUUID(), UUID.randomUUID(),
-                        UUID.randomUUID()));
+                    edge.path("className").asText(), identity, UUID.randomUUID(), UUID.randomUUID(),
+                    UUID.randomUUID()));
             }
             require(previous.equals(target.schemaVersion()), "Original chain does not reach its requested target");
             return List.copyOf(steps);
@@ -1148,7 +1153,7 @@ public final class ModRestartLedger {
             var coordinates = new SchemaCoordinates(plan.target());
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
-                    "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',?)")) {
+                "INSERT INTO mod_schema(mod_id,schema_version,generation,physical_name,database_user,state,created_at) VALUES(?,?,?,?,?,'PREPARING',?)")) {
                 p.setString(1, row.owner());
                 p.setString(2, row.targetSchema());
                 p.setObject(3, plan.target().generation());
@@ -1163,7 +1168,7 @@ public final class ModRestartLedger {
                 require(p.executeUpdate() == 1, "Original intent disappeared");
             }
             try (var p = c.prepareStatement(
-                    "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
+                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'MIGRATE',?,?,?,?,'RUNNING','SOURCE_CHECKED',?,?,?,?,?)")) {
                 p.setObject(1, plan.operation());
                 p.setString(2, row.owner());
                 p.setString(3, row.version());
@@ -1171,9 +1176,9 @@ public final class ModRestartLedger {
                 p.setObject(5, plan.target().generation());
                 p.setLong(6, row.revision());
                 p.setString(7,
-                        JSON.createObjectNode().put("formatVersion", 1)
-                                .put("mode", plan.source().isPresent() ? "MIGRATE" : "INITIALIZE")
-                                .put("intent", plan.intent().toString()).toString());
+                    JSON.createObjectNode().put("formatVersion", 1)
+                        .put("mode", plan.source().isPresent() ? "MIGRATE" : "INITIALIZE")
+                        .put("intent", plan.intent().toString()).toString());
                 p.setString(8, preparationEvidence(plan));
                 p.setString(9, plan.archive().toString());
                 p.setLong(10, now);
@@ -1182,7 +1187,7 @@ public final class ModRestartLedger {
             }
             if (plan.source().isPresent())
                 try (var p = c
-                        .prepareStatement("UPDATE mod_operation SET source_schema_version=? WHERE operation_id=?")) {
+                    .prepareStatement("UPDATE mod_operation SET source_schema_version=? WHERE operation_id=?")) {
                     p.setString(1, plan.source().get().schemaVersion());
                     p.setObject(2, plan.operation());
                     require(p.executeUpdate() == 1, "Original migration disappeared");
@@ -1197,7 +1202,7 @@ public final class ModRestartLedger {
         private static void registerSteps(Connection c, Preparation plan) throws SQLException {
             for (var step : plan.steps()) {
                 try (var p = c.prepareStatement(
-                        "INSERT INTO mod_migration_step(operation_id,step_number,from_version,to_version,migration_class,source_schema,target_schema,state) VALUES(?,?,?,?,?,?,?,'PENDING')")) {
+                    "INSERT INTO mod_migration_step(operation_id,step_number,from_version,to_version,migration_class,source_schema,target_schema,state) VALUES(?,?,?,?,?,?,?,'PENDING')")) {
                     p.setObject(1, plan.operation());
                     p.setInt(2, step.index());
                     p.setString(3, step.from());
@@ -1216,15 +1221,15 @@ public final class ModRestartLedger {
          * @throws SQLException if the original request cannot be claimed / 无法取得原请求时 */
         private void claimUnprepared(Connection c, Intent row) throws SQLException {
             require(row.state().equals("WAITING") && row.phase().equals("WAIT_RESTART") && row.outcome() == null
-                    && !boot.equals(row.requestBoot()), "Original request is not awaiting a new boot");
+                && !boot.equals(row.requestBoot()), "Original request is not awaiting a new boot");
             var state = registry(c, row);
             require(!boot.equals(state.boot()), "This Mod already had an activation in this boot");
             requireClosed(state);
             requireDrained(c, row);
             try (var p = c.prepareStatement(
-                    "UPDATE mod_operation SET state='RUNNING',phase='APPLYING',recovery_json=?,updated_at=? WHERE operation_id=?")) {
+                "UPDATE mod_operation SET state='RUNNING',phase='APPLYING',recovery_json=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, JSON.createObjectNode().put("formatVersion", 1).put("applicationBootId", boot.toString())
-                        .toString());
+                    .toString());
                 p.setLong(2, System.currentTimeMillis());
                 p.setObject(3, row.id());
                 require(p.executeUpdate() == 1, "Original request disappeared");
@@ -1237,7 +1242,7 @@ public final class ModRestartLedger {
          * @return mutable copy of original recovery facts / 原恢复事实的可变副本
          * @throws SQLException if original recovery is absent / 原恢复不存在时 */
         private static com.fasterxml.jackson.databind.node.ObjectNode preparationRecovery(Connection c,
-                Preparation plan) throws SQLException {
+                                                                                          Preparation plan) throws SQLException {
             try (var p = c.prepareStatement("SELECT recovery_json FROM mod_operation WHERE operation_id=?")) {
                 p.setObject(1, plan.operation());
                 try (var r = p.executeQuery()) {
@@ -1254,7 +1259,7 @@ public final class ModRestartLedger {
          * @throws SQLException if the original write cannot be confirmed / 无法确认原写入时 */
         private static void saveRecovery(Connection c, Preparation plan, JsonNode recovery) throws SQLException {
             try (var p = c
-                    .prepareStatement("UPDATE mod_operation SET recovery_json=?,updated_at=? WHERE operation_id=?")) {
+                .prepareStatement("UPDATE mod_operation SET recovery_json=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, recovery.toString());
                 p.setLong(2, System.currentTimeMillis());
                 p.setObject(3, plan.operation());
@@ -1271,7 +1276,7 @@ public final class ModRestartLedger {
          * @param scopes exact original preparation scopes / 精确原准备作用域
          * @throws SQLException if closure or validation evidence is absent / 关闭或验证证据缺失时 */
         private void verifyCompletion(Connection c, Preparation plan, Outcome outcome, String digest, String phase,
-                Set<UUID> scopes) throws SQLException {
+                                      Set<UUID> scopes) throws SQLException {
             for (var scope : scopes) {
                 try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.users WHERE user_name=?")) {
                     p.setString(1, SchemaAccessScope.readerUser(scope));
@@ -1283,26 +1288,26 @@ public final class ModRestartLedger {
             }
             require(outcome != Outcome.SUCCEEDED
                     || phase.equals("VALIDATING") && digest != null && digest.matches("[0-9a-f]{64}"),
-                    "Successful validation evidence is absent");
+                "Successful validation evidence is absent");
             if (plan.source().isPresent() && outcome != Outcome.UNKNOWN) {
                 var facts = PreparationLedger.preparationRecovery(c, plan).path("facts");
                 require(!facts.has("sourceBefore") && outcome == Outcome.FAILED
                         || facts.path("sourceBefore").asText().matches("[0-9a-f]{64}")
-                                && facts.path("sourceBefore").equals(facts.path("sourceAfter")),
-                        "Original source is not confirmed unchanged");
+                        && facts.path("sourceBefore").equals(facts.path("sourceAfter")),
+                    "Original source is not confirmed unchanged");
                 try (var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND state<>'COMPLETE'")) {
+                    "SELECT COUNT(*) FROM mod_migration_step WHERE operation_id=? AND state<>'COMPLETE'")) {
                     p.setObject(1, plan.operation());
                     try (var r = p.executeQuery()) {
                         r.next();
                         require(outcome != Outcome.SUCCEEDED || r.getLong(1) == 0,
-                                "Original migration chain is incomplete");
+                            "Original migration chain is incomplete");
                     }
                 }
                 for (var step : plan.steps().subList(0, plan.steps().size() - 1)) {
                     var coordinates = targetCoordinates(plan, step);
                     try (var p = c.prepareStatement(
-                            "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
+                        "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)")) {
                         p.setString(1, coordinates.physicalName());
                         p.setString(2, coordinates.databaseUser());
                         try (var r = p.executeQuery()) {
@@ -1322,7 +1327,7 @@ public final class ModRestartLedger {
          * @return whether the exact original terminal transaction is already visible / 是否已经可见精确原终态事务
          * @throws SQLException if retained evidence cannot be read / 无法读取保留证据时 */
         private boolean preparationFinished(Connection c, Preparation plan, Outcome outcome, String digest)
-                throws SQLException {
+            throws SQLException {
             if (plan.intent().equals(plan.operation())) {
                 String state = outcome == Outcome.SUCCEEDED ? "READY" : outcome.name();
                 try (var p = c.prepareStatement("SELECT state,validation_digest FROM mod_schema WHERE generation=?")) {
@@ -1338,8 +1343,8 @@ public final class ModRestartLedger {
                     try (var r = p.executeQuery()) {
                         boolean exists = r.next();
                         return outcome == Outcome.UNKNOWN
-                                ? exists && "UNKNOWN".equals(r.getString(1)) && sameInventory(r.getString(2), plan)
-                                : !exists;
+                            ? exists && "UNKNOWN".equals(r.getString(1)) && sameInventory(r.getString(2), plan)
+                            : !exists;
                     }
                 }
             }
@@ -1347,7 +1352,7 @@ public final class ModRestartLedger {
             require(plan.target().ownerId().equals(row.owner()) && plan.target().generation().equals(row.generation())
                     && plan.target().schemaVersion().equals(row.targetSchema())
                     && boot.equals(IntentEvidence.uuid(IntentEvidence.object(row.recovery()), "applicationBootId")),
-                    "Original terminal identity changed");
+                "Original terminal identity changed");
             registry(c, row);
             String state = outcome == Outcome.SUCCEEDED ? "READY" : outcome.name();
             try (var p = c.prepareStatement("SELECT state,validation_digest FROM mod_schema WHERE generation=?")) {
@@ -1363,9 +1368,9 @@ public final class ModRestartLedger {
                 try (var r = p.executeQuery()) {
                     boolean exists = r.next();
                     return outcome == Outcome.UNKNOWN
-                            ? exists && row.state().equals("UNKNOWN") && "UNKNOWN".equals(r.getString(1))
-                                    && sameInventory(r.getString(2), plan)
-                            : !exists && row.state().equals("RUNNING") && row.phase().equals("APPLYING");
+                        ? exists && row.state().equals("UNKNOWN") && "UNKNOWN".equals(r.getString(1))
+                        && sameInventory(r.getString(2), plan)
+                        : !exists && row.state().equals("RUNNING") && row.phase().equals("APPLYING");
                 }
             }
         }
@@ -1385,14 +1390,14 @@ public final class ModRestartLedger {
                         && plan.target().generation().equals(row.generation()) && row.state().equals("RUNNING")
                         && row.phase().equals("APPLYING")
                         && boot.equals(IntentEvidence.uuid(IntentEvidence.object(row.recovery()), "applicationBootId")),
-                        "Original preparation intent changed");
+                    "Original preparation intent changed");
                 requireClosed(registry(c, row));
             }
             new SchemaCoordinates(plan.target()).requireRegistered(c, Set.of("PREPARING"));
             if (plan.source().isPresent())
                 new SchemaCoordinates(plan.source().get()).requireRegistered(c, Set.of("READY"));
             try (var p = c.prepareStatement(
-                    "SELECT phase,recovery_json FROM mod_operation WHERE operation_id=? AND mod_id=? AND operation_type='MIGRATE' AND target_generation=? AND state='RUNNING' AND outcome IS NULL AND archive_log_id=?")) {
+                "SELECT phase,recovery_json FROM mod_operation WHERE operation_id=? AND mod_id=? AND operation_type='MIGRATE' AND target_generation=? AND state='RUNNING' AND outcome IS NULL AND archive_log_id=?")) {
                 p.setObject(1, plan.operation());
                 p.setString(2, plan.target().ownerId());
                 p.setObject(3, plan.target().generation());
@@ -1411,7 +1416,7 @@ public final class ModRestartLedger {
          * @throws SQLException if original program, choice or ownership changed / 原程序、选择或归属变化时 */
         private JsonNode retryRequest(Connection c, Preparation plan) throws SQLException {
             try (var p = c.prepareStatement(
-                    "SELECT o.request_json,o.target_version FROM mod_operation o JOIN mod_registry r ON r.mod_id=o.mod_id JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.mod_id=? AND o.operation_type='MIGRATE' AND o.state='RUNNING' AND o.outcome IS NULL AND o.target_generation=? AND r.enabled AND r.selected_version=o.target_version AND r.revision=o.accepted_revision AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.schema_version=o.target_schema_version")) {
+                "SELECT o.request_json,o.target_version FROM mod_operation o JOIN mod_registry r ON r.mod_id=o.mod_id JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.mod_id=? AND o.operation_type='MIGRATE' AND o.state='RUNNING' AND o.outcome IS NULL AND o.target_generation=? AND r.enabled AND r.selected_version=o.target_version AND r.revision=o.accepted_revision AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.schema_version=o.target_schema_version")) {
                 p.setObject(1, plan.operation());
                 p.setString(2, plan.target().ownerId());
                 p.setObject(3, plan.target().generation());
@@ -1420,16 +1425,16 @@ public final class ModRestartLedger {
                     var request = IntentEvidence.object(r.getString(1));
                     require(IntentEvidence.fields(request)
                             .equals(Set.of("formatVersion", "mode", "ownerId", "previousGeneration", "manifest",
-                                    "contentDigest", "target", "data"))
+                                "contentDigest", "target", "data"))
                             && request.path("formatVersion").asInt() == 1
                             && "RETRY".equals(request.path("mode").asText())
                             && plan.target().ownerId().equals(request.path("ownerId").asText())
                             && request.path("target").path("enabled").asBoolean()
                             && r.getString(2).equals(request.path("target").path("version").asText())
                             && !plan.target().generation().equals(IntentEvidence.uuid(request, "previousGeneration")),
-                            "Original retry request changed");
+                        "Original retry request changed");
                     try (var q = c.prepareStatement(
-                            "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND manifest_json=? AND content_sha256=?")) {
+                        "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=? AND manifest_json=? AND content_sha256=?")) {
                         q.setString(1, plan.target().ownerId());
                         q.setString(2, r.getString(2));
                         q.setString(3, request.path("manifest").asText());
@@ -1450,23 +1455,23 @@ public final class ModRestartLedger {
         private String preparationEvidence(Preparation plan) {
             var coordinates = new SchemaCoordinates(plan.target());
             var recovery = JSON.createObjectNode().put("formatVersion", 1).put("bootId", boot.toString())
-                    .put("intent", plan.intent().toString()).put("writer", plan.writer().toString())
-                    .put("reader", plan.reader().toString()).put("physicalSchema", coordinates.physicalName())
-                    .put("databaseUser", coordinates.databaseUser());
+                .put("intent", plan.intent().toString()).put("writer", plan.writer().toString())
+                .put("reader", plan.reader().toString()).put("physicalSchema", coordinates.physicalName())
+                .put("databaseUser", coordinates.databaseUser());
             recovery.putObject("facts");
             if (plan.source().isPresent()) {
                 var source = plan.source().get();
                 recovery.putObject("source").put("schemaVersion", source.schemaVersion()).put("generation",
-                        source.generation().toString());
+                    source.generation().toString());
             }
             var steps = recovery.putArray("steps");
             for (var step : plan.steps()) {
                 var target = targetCoordinates(plan, step);
                 steps.addObject().put("from", step.from()).put("to", step.to()).put("className", step.className())
-                        .put("generation", step.target().generation().toString())
-                        .put("physicalSchema", target.physicalName()).put("databaseUser", target.databaseUser())
-                        .put("sourceReader", step.sourceReader().toString()).put("writer", step.writer().toString())
-                        .put("reader", step.reader().toString());
+                    .put("generation", step.target().generation().toString())
+                    .put("physicalSchema", target.physicalName()).put("databaseUser", target.databaseUser())
+                    .put("sourceReader", step.sourceReader().toString()).put("writer", step.writer().toString())
+                    .put("reader", step.reader().toString());
             }
             return recovery.toString();
         }
@@ -1479,7 +1484,7 @@ public final class ModRestartLedger {
         private boolean sameInventory(String encoded, Preparation plan) throws SQLException {
             var actual = (com.fasterxml.jackson.databind.node.ObjectNode) IntentEvidence.object(encoded);
             var expected = (com.fasterxml.jackson.databind.node.ObjectNode) IntentEvidence
-                    .object(preparationEvidence(plan));
+                .object(preparationEvidence(plan));
             require(actual.path("facts").isObject(), "Original preparation facts are invalid");
             actual.remove("facts");
             expected.remove("facts");

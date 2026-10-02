@@ -33,7 +33,7 @@ class MultiComponentDeploymentPlannerTest {
         var api = component("api", 8080, Set.of("cache", "database"));
         var web = component("web", 8081, Set.of("api"));
         var assessment = new MultiComponentProjectAssessment(DeploymentAdmissionStatus.READY_FOR_PLANNING, "shop",
-                temporaryDirectory, List.of(web, api, database, cache), List.of());
+            temporaryDirectory, List.of(web, api, database, cache), List.of());
 
         var plan = new MultiComponentDeploymentPlanner().plan(assessment);
 
@@ -47,10 +47,10 @@ class MultiComponentDeploymentPlannerTest {
     private DeploymentComponent component(String id, int port, Set<String> dependencies) throws Exception {
         Path root = Files.createDirectory(temporaryDirectory.resolve(id));
         var facts = new DeploymentProjectFacts(root, "shop-" + id, DeploymentProjectKind.STATIC_SITE,
-                DeploymentBuildToolType.STATIC_SITE_BUILD, List.of(), List.of(), List.of());
+            DeploymentBuildToolType.STATIC_SITE_BUILD, List.of(), List.of(), List.of());
         var runtime = new DeploymentRuntimeDefinition.StaticSite("public",
-                new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:" + port + "/"), 200, 10));
+            new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:" + port + "/"), 200, 10));
         return new DeploymentComponent(id, root, facts, Optional.of(runtime), List.of(id + "/public"), Set.of(port),
-                List.of("PORT"), List.of(), List.of(), dependencies, true, ComponentIsolationSpecification.managed());
+            List.of("PORT"), List.of(), List.of(), dependencies, true, ComponentIsolationSpecification.managed());
     }
 }

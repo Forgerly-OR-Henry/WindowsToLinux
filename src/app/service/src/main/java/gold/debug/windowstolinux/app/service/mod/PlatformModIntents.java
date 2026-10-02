@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.app.service.mod;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
@@ -8,17 +15,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModDependencyPlan;
-import gold.debug.windowstolinux.app.mod.manifest.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.config.ModManifest;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Reviews and atomically claims restart intentions or explicit data retries without invoking author code. / 审阅并原子取得重启意图或明确数据重试，不调用作者代码。 */
 public final class PlatformModIntents implements AutoCloseable {
@@ -45,7 +53,7 @@ public final class PlatformModIntents implements AutoCloseable {
 
     /** Strict durable request parser. / 严格持久请求解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Whether management has closed after accepted operations returned. / 已接纳操作返回后管理能力是否关闭。 */
     private boolean closed;
@@ -56,14 +64,14 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param api actual host API release / 实际宿主 API 版本
      * @throws SQLException if the fixed archive target cannot be verified / 无法核验固定归档目标时 */
     public PlatformModIntents(PlatformDatabase database, DesktopSecurityService security, SemanticVersion api)
-            throws SQLException {
+        throws SQLException {
         boot = database.bootId();
         connections = new RepositoryConnections(database::openConnection);
         this.security = Objects.requireNonNull(security);
         this.api = Objects.requireNonNull(api);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
         preparations = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(database);
     }
 
@@ -100,8 +108,8 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param operations unfinished original operations / 未结束原操作
      * @param stopAcknowledged whether the original revision completed restart shutdown / 原修订是否完成重启停用 */
     public record ModView(String owner, Choice choice, String runtime, Optional<String> actual,
-            Optional<Problem> failure, List<ReleaseView> versions, List<SchemaView> data,
-            List<OperationView> operations, boolean stopAcknowledged) {
+                          Optional<Problem> failure, List<ReleaseView> versions, List<SchemaView> data,
+                          List<OperationView> operations, boolean stopAcknowledged) {
         /** Copies the management collections without granting mutation authority. / 复制管理集合，不授予修改权限。
          * @param owner stable identity / 稳定身份
          * @param choice saved choice / 已存选择
@@ -129,23 +137,23 @@ public final class PlatformModIntents implements AutoCloseable {
                 var state = read(c);
                 var failures = new HashMap<String, Problem>();
                 try (var s = c.createStatement();
-                        var r = s.executeQuery(
-                                "SELECT mod_id,failure_code,failure_detail FROM mod_registry WHERE failure_code IS NOT NULL")) {
+                     var r = s.executeQuery(
+                         "SELECT mod_id,failure_code,failure_detail FROM mod_registry WHERE failure_code IS NOT NULL")) {
                     while (r.next())
                         failures.put(r.getString(1), diagnostic(r.getString(2), r.getString(3)));
                 }
                 var operations = new HashMap<String, List<OperationView>>();
                 try (var s = c.createStatement();
-                        var r = s.executeQuery(
-                                "SELECT operation_id,mod_id,operation_type,state,phase FROM mod_operation WHERE state<>'ENDED' ORDER BY created_at,operation_id")) {
+                     var r = s.executeQuery(
+                         "SELECT operation_id,mod_id,operation_type,state,phase FROM mod_operation WHERE state<>'ENDED' ORDER BY created_at,operation_id")) {
                     while (r.next()) {
                         UUID id = r.getObject(1, UUID.class);
                         var pending = state.pending().get(r.getString(2));
                         operations.computeIfAbsent(r.getString(2), k -> new ArrayList<>())
-                                .add(new OperationView(id, r.getString(3), r.getString(4), r.getString(5),
-                                        pending != null && pending.id().equals(id)
-                                                ? Optional.of(pending.requestId())
-                                                : Optional.empty()));
+                            .add(new OperationView(id, r.getString(3), r.getString(4), r.getString(5),
+                                pending != null && pending.id().equals(id)
+                                    ? Optional.of(pending.requestId())
+                                    : Optional.empty()));
                     }
                 }
                 var result = new ArrayList<ModView>();
@@ -156,10 +164,10 @@ public final class PlatformModIntents implements AutoCloseable {
                     for (var release : state.releases().getOrDefault(owner, Map.of()).entrySet()) {
                         try {
                             var manifest = ManifestReader
-                                    .read(release.getValue().json().getBytes(StandardCharsets.UTF_8));
+                                .read(release.getValue().json().getBytes(StandardCharsets.UTF_8));
                             if (!owner.equals(manifest.id()) || !release.getKey().equals(manifest.version().toString())
-                                    || !manifest.schemaVersion()
-                                            .equals(Optional.ofNullable(release.getValue().schema())))
+                                || !manifest.schemaVersion()
+                                .equals(Optional.ofNullable(release.getValue().schema())))
                                 throw new IllegalArgumentException("Registered release identity changed");
                             versions.add(new ReleaseView(manifest, release.getValue().state()));
                         } catch (java.io.IOException | IllegalArgumentException invalid) {
@@ -171,18 +179,18 @@ public final class PlatformModIntents implements AutoCloseable {
                     for (var item : new TreeMap<>(state.schemas().getOrDefault(owner, Map.of())).entrySet()) {
                         var value = item.getValue();
                         data.add(new SchemaView(new SchemaIdentity(owner, item.getKey(), value.generation()),
-                                value.state(), "FAILED".equals(value.state()) && !value.used()
-                                        && value.validatedAt() == null && value.validationDigest() == null));
+                            value.state(), "FAILED".equals(value.state()) && !value.used()
+                            && value.validatedAt() == null && value.validationDigest() == null));
                     }
                     result.add(new ModView(owner, saved.choice(), saved.runtime(), Optional.ofNullable(saved.actual()),
-                            Optional.ofNullable(failures.get(owner)), versions, data,
-                            operations.getOrDefault(owner, List.of()), stopAcknowledged(c, owner)));
+                        Optional.ofNullable(failures.get(owner)), versions, data,
+                        operations.getOrDefault(owner, List.of()), stopAcknowledged(c, owner)));
                 }
                 for (var entry : operations.entrySet()) {
                     if (!state.owners().containsKey(entry.getKey())
-                            && entry.getValue().stream().anyMatch(o -> o.type().equals("DELETE_MOD")))
+                        && entry.getValue().stream().anyMatch(o -> o.type().equals("DELETE_MOD")))
                         result.add(new ModView(entry.getKey(), new Choice(false, Optional.empty()), "UNREGISTERED",
-                                Optional.empty(), Optional.empty(), List.of(), List.of(), entry.getValue(), false));
+                            Optional.empty(), Optional.empty(), List.of(), List.of(), entry.getValue(), false));
                 }
                 result.sort(Comparator.comparing(ModView::owner));
                 return List.copyOf(result);
@@ -199,7 +207,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @throws SQLException if the observation is unavailable / 观察不可用时 */
     private static boolean stopAcknowledged(Connection c, String owner) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND NOT enabled AND disable_ack_revision=revision AND last_boot_id IS NOT NULL AND last_runtime_state='STOPPED' AND actual_version IS NULL")) {
+            "SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND NOT enabled AND disable_ack_revision=revision AND last_boot_id IS NOT NULL AND last_runtime_state='STOPPED' AND actual_version IS NULL")) {
             p.setString(1, owner);
             try (var r = p.executeQuery()) {
                 r.next();
@@ -216,13 +224,13 @@ public final class PlatformModIntents implements AutoCloseable {
     private static Problem diagnostic(String event, String detail) throws SQLException {
         if (detail == null)
             return new Problem(ProblemCode.UNAVAILABLE, event, "Mod requires attention before business can run",
-                    Map.of(), Optional.empty());
+                Map.of(), Optional.empty());
         try {
             if (detail.length() > 65536)
                 throw new IllegalArgumentException("Oversized diagnostic");
             var node = JSON.readTree(detail);
             if (node.path("formatVersion").asInt() != 1 || !event.equals(node.path("eventCode").textValue())
-                    || !node.path("context").isObject())
+                || !node.path("context").isObject())
                 throw new IllegalArgumentException("Diagnostic identity changed");
             var context = new TreeMap<String, String>();
             var fields = node.path("context").fields();
@@ -233,10 +241,10 @@ public final class PlatformModIntents implements AutoCloseable {
                 context.put(field.getKey(), field.getValue().textValue());
             }
             return new Problem(ProblemCode.valueOf(node.path("code").asText()), event, node.path("message").textValue(),
-                    context,
-                    node.has("diagnosticId")
-                            ? Optional.of(UUID.fromString(node.path("diagnosticId").asText()))
-                            : Optional.empty());
+                context,
+                node.has("diagnosticId")
+                    ? Optional.of(UUID.fromString(node.path("diagnosticId").asText()))
+                    : Optional.empty());
         } catch (java.io.IOException | IllegalArgumentException invalid) {
             throw rejected("MOD_DIAGNOSTIC_INVALID", "The retained Mod diagnostic cannot be verified");
         }
@@ -263,7 +271,7 @@ public final class PlatformModIntents implements AutoCloseable {
             return locked(c -> {
                 read(c);
                 return ModNavigationPreferences.read(c).stream().map(pin -> new PagePin(pin.ownerId(), pin.pageId()))
-                        .toList();
+                    .toList();
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -282,25 +290,25 @@ public final class PlatformModIntents implements AutoCloseable {
                 var state = read(c);
                 var owner = state.owners().get(pin.ownerId());
                 try (var pending = c.prepareStatement(
-                        "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='DELETE_MOD'")) {
+                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='DELETE_MOD'")) {
                     pending.setString(1, pin.ownerId());
                     try (var rows = pending.executeQuery()) {
                         rows.next();
                         if (rows.getLong(1) != 0)
                             throw rejected("MOD_DELETE_PENDING",
-                                    "Whole-Mod deletion retains the original navigation scope");
+                                "Whole-Mod deletion retains the original navigation scope");
                     }
                 }
                 if (pinned && (owner == null || !"RUNNING".equals(owner.runtime()) || owner.actual() == null))
                     throw rejected("MOD_PAGE_UNAVAILABLE", "Only an actually running Mod can add navigation entries");
                 var pins = new ArrayList<>(ModNavigationPreferences.read(c).stream()
-                        .map(saved -> new PagePin(saved.ownerId(), saved.pageId())).toList());
+                    .map(saved -> new PagePin(saved.ownerId(), saved.pageId())).toList());
                 if (pinned && !pins.contains(pin))
                     pins.add(pin);
                 if (!pinned)
                     pins.remove(pin);
                 ModNavigationPreferences.write(c, pins.stream()
-                        .map(saved -> new ModNavigationPreferences.PagePin(saved.ownerId(), saved.pageId())).toList());
+                    .map(saved -> new ModNavigationPreferences.PagePin(saved.ownerId(), saved.pageId())).toList());
                 return List.copyOf(pins);
             });
         } catch (SQLException failure) {
@@ -353,7 +361,7 @@ public final class PlatformModIntents implements AutoCloseable {
          * @param affected all owners whose admission must wait / 所有准入必须等待的所有者
          * @param dataPlans selected data preparation / 已选数据准备 */
         private Review(Snapshot before, Map<String, Choice> choices, Set<String> cascade, Set<String> affected,
-                Map<String, String> dataPlans) {
+                       Map<String, String> dataPlans) {
             this.before = before;
             this.choices = Collections.unmodifiableMap(new TreeMap<>(choices));
             this.cascade = Collections.unmodifiableSet(new TreeSet<>(cascade));
@@ -399,11 +407,11 @@ public final class PlatformModIntents implements AutoCloseable {
      * @return concrete review including any dependent disablement / 包含任何依赖者禁用的具体审阅
      * @throws ApiException if selection, dependencies, source or state is invalid / 选择、依赖、来源或状态无效时 */
     public synchronized Review review(String owner, Choice target, Optional<SchemaIdentity> source)
-            throws ApiException {
+        throws ApiException {
         requireOpen();
         try (var operation = security.enterOperation()) {
             return locked(
-                    c -> calculate(read(c), Map.of(owner, target), source.map(s -> Map.of(owner, s)).orElse(Map.of())));
+                c -> calculate(read(c), Map.of(owner, target), source.map(s -> Map.of(owner, s)).orElse(Map.of())));
         } catch (SQLException failure) {
             throw publicFailure(failure);
         }
@@ -425,6 +433,7 @@ public final class PlatformModIntents implements AutoCloseable {
 
         /** Prevents replay after any attempted acceptance. / 防止尝试接纳后的重放。 */
         private boolean consumed;
+
         /** Freezes the concrete reviewed retry. / 冻结具体已审阅重试。
          * @param before decision snapshot / 决策快照
          * @param target failed target / 失败目标
@@ -480,19 +489,19 @@ public final class PlatformModIntents implements AutoCloseable {
                 var state = read(c);
                 var entry = state.owners().get(owner);
                 if (entry == null || !entry.choice().enabled() || entry.actual() != null
-                        || !Set.of("STOPPED", "FAILED").contains(entry.runtime()))
+                    || !Set.of("STOPPED", "FAILED").contains(entry.runtime()))
                     throw rejected("MOD_RETRY_UNAVAILABLE",
-                            "Retry requires an enabled selected Mod with closed previous work");
+                        "Retry requires an enabled selected Mod with closed previous work");
                 if (state.busy().contains(owner) || state.pending().containsKey(owner))
                     throw rejected("MOD_MAINTENANCE_PENDING", "Original maintenance must finish before retry");
                 var manifest = selected(state, owner, entry.choice());
                 if (manifest.schemaVersion().isEmpty() || !manifest.platformApiRange().contains(api)
-                        || Runtime.version().feature() < manifest.minJavaVersion())
+                    || Runtime.version().feature() < manifest.minJavaVersion())
                     throw rejected("MOD_RETRY_UNAVAILABLE", "The selected program cannot prepare data on this host");
                 String schema = manifest.schemaVersion().get();
                 var data = state.schemas().getOrDefault(owner, Map.of()).get(schema);
                 if (data == null || !"FAILED".equals(data.state()) || data.used() || data.validatedAt() != null
-                        || data.validationDigest() != null)
+                    || data.validationDigest() != null)
                     throw rejected("MOD_RETRY_UNAVAILABLE", "Only the first failed unused target may be rebuilt");
                 requireCoordinates(owner, schema, data);
                 var schemas = new TreeMap<>(state.schemas());
@@ -500,9 +509,9 @@ public final class PlatformModIntents implements AutoCloseable {
                 remaining.remove(schema);
                 schemas.put(owner, Map.copyOf(remaining));
                 var withoutFailed = new Snapshot(state.revision(), state.owners(), state.releases(),
-                        Map.copyOf(schemas), state.pending(), state.busy());
+                    Map.copyOf(schemas), state.pending(), state.busy());
                 return new RetryReview(state, new SchemaIdentity(owner, schema, data.generation()), manifest,
-                        dataPlan(withoutFailed, manifest, source.orElse(null)));
+                    dataPlan(withoutFailed, manifest, source.orElse(null)));
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -514,19 +523,19 @@ public final class PlatformModIntents implements AutoCloseable {
      * @return new exclusive preparation generation / 新独占准备代次
      * @throws ApiException if review changed, was consumed, or original work remains / 审阅变化、已使用或原工作残留时 */
     public synchronized gold.debug.windowstolinux.app.db.mod.ModRestartLedger.Preparation acceptRetry(
-            RetryReview review) throws ApiException {
+        RetryReview review) throws ApiException {
         requireOpen();
         try (var permission = security.enterOperation()) {
             if (review == null || review.owner() != this || review.consumed)
                 throw new ApiException(new Problem(ProblemCode.UNAVAILABLE, "MOD_REVIEW_STALE",
-                        "Retry needs a fresh explicit review", Map.of(), Optional.empty()));
+                    "Retry needs a fresh explicit review", Map.of(), Optional.empty()));
             review.consumed = true;
             return locked(c -> {
                 if (!read(c).equals(review.before))
                     throw rejected("MOD_REVIEW_STALE", "Retry evidence changed; review again");
                 return preparations.beginRetry(c, review.target, review.manifest.version().toString(),
-                        review.before.owners().get(review.target.ownerId()).revision(), review.manifest.json(),
-                        review.contentDigest(), review.dataPlan);
+                    review.before.owners().get(review.target.ownerId()).revision(), review.manifest.json(),
+                    review.contentDigest(), review.dataPlan);
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -565,10 +574,10 @@ public final class PlatformModIntents implements AutoCloseable {
         Objects.requireNonNull(review);
         if (review.owner() != this || review.attempted)
             throw publicFailure(
-                    rejected("MOD_REVIEW_USED", "The review does not belong to an unused original request"));
+                rejected("MOD_REVIEW_USED", "The review does not belong to an unused original request"));
         if (!review.cascade.isEmpty() && !confirmCascade)
             throw publicFailure(rejected("MOD_CASCADE_CONFIRMATION_REQUIRED",
-                    "The listed dependent disablement must be confirmed"));
+                "The listed dependent disablement must be confirmed"));
         try (var operation = security.enterOperation()) {
             review.attempted = true;
             return locked(c -> {
@@ -594,7 +603,7 @@ public final class PlatformModIntents implements AutoCloseable {
                         throw rejected("MOD_REVISION_EXHAUSTED", "The Mod revision cannot be advanced");
                     }
                     try (var p = c.prepareStatement(
-                            "UPDATE mod_registry SET enabled=?,selected_version=?,selection_initialized=TRUE,revision=?,updated_at=? WHERE mod_id=? AND revision=?")) {
+                        "UPDATE mod_registry SET enabled=?,selected_version=?,selection_initialized=TRUE,revision=?,updated_at=? WHERE mod_id=? AND revision=?")) {
                         p.setBoolean(1, change.getValue().enabled());
                         p.setString(2, change.getValue().version().orElse(null));
                         p.setLong(3, revision);
@@ -609,7 +618,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 }
                 if (changed) {
                     try (var p = c.prepareStatement(
-                            "UPDATE app_state SET intent_revision=intent_revision+1,updated_at=? WHERE singleton_id=1")) {
+                        "UPDATE app_state SET intent_revision=intent_revision+1,updated_at=? WHERE singleton_id=1")) {
                         p.setLong(1, now);
                         p.executeUpdate();
                     }
@@ -628,7 +637,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @return concrete immutable review / 具体不可变审阅
      * @throws SQLException if a requested target cannot be accepted / 请求目标无法接纳时 */
     private Review calculate(Snapshot state, Map<String, Choice> requested, Map<String, SchemaIdentity> sources)
-            throws SQLException {
+        throws SQLException {
         var choices = new TreeMap<String, Choice>(requested);
         var dataPlans = new TreeMap<String, String>();
         for (var change : requested.entrySet()) {
@@ -640,20 +649,20 @@ public final class PlatformModIntents implements AutoCloseable {
             if (prior.choice().equals(change.getValue())) {
                 if (sources.containsKey(change.getKey()))
                     throw rejected("MOD_SOURCE_NOT_APPLICABLE",
-                            "An unchanged choice cannot request a new migration source");
+                        "An unchanged choice cannot request a new migration source");
                 continue;
             }
             boolean activating = change.getValue().enabled()
-                    || !prior.choice().version().equals(change.getValue().version());
+                || !prior.choice().version().equals(change.getValue().version());
             if (activating) {
                 if (state.busy().contains(change.getKey()))
                     throw rejected("MOD_MAINTENANCE_PENDING",
-                            "Mod maintenance or reconciliation must finish before this choice");
+                        "Mod maintenance or reconciliation must finish before this choice");
                 var manifest = selected(state, change.getKey(), change.getValue());
                 if (!manifest.platformApiRange().contains(api)
-                        || Runtime.version().feature() < manifest.minJavaVersion())
+                    || Runtime.version().feature() < manifest.minJavaVersion())
                     throw rejected("MOD_HOST_INCOMPATIBLE",
-                            "The selected release is incompatible with the actual host");
+                        "The selected release is incompatible with the actual host");
                 dataPlans.put(change.getKey(), dataPlan(state, manifest, sources.get(change.getKey())));
             }
         }
@@ -667,7 +676,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 continue;
             if (change.getValue().enabled() && plan.failures().containsKey(change.getKey()))
                 throw new SQLException("Mod dependency validation failed",
-                        new ApiException(plan.failures().get(change.getKey())));
+                    new ApiException(plan.failures().get(change.getKey())));
             var affected = new TreeSet<String>();
             affected.add(change.getKey());
             boolean added;
@@ -675,7 +684,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 added = false;
                 for (var manifest : manifests.values())
                     if (!affected.contains(manifest.id())
-                            && manifest.dependencies().stream().anyMatch(d -> affected.contains(d.id())))
+                        && manifest.dependencies().stream().anyMatch(d -> affected.contains(d.id())))
                         added |= affected.add(manifest.id());
             } while (added);
             admission.addAll(affected);
@@ -684,7 +693,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 previousAdded = false;
                 for (var manifest : priorManifests.values())
                     if (!admission.contains(manifest.id())
-                            && manifest.dependencies().stream().anyMatch(d -> admission.contains(d.id())))
+                        && manifest.dependencies().stream().anyMatch(d -> admission.contains(d.id())))
                         previousAdded |= admission.add(manifest.id());
             } while (previousAdded);
             for (var dependent : affected) {
@@ -707,7 +716,7 @@ public final class PlatformModIntents implements AutoCloseable {
                         var provider = state.owners().get(dependency.id());
                         if (Set.of("FAILED", "UNKNOWN").contains(provider.runtime()))
                             throw rejected("MOD_DEPENDENCY_NOT_RUNNING",
-                                    "A required Mod has a failed or unknown runtime; confirm its recovery first");
+                                "A required Mod has a failed or unknown runtime; confirm its recovery first");
                         remaining.addLast(dependency.id());
                     }
                 }
@@ -728,7 +737,8 @@ public final class PlatformModIntents implements AutoCloseable {
                 try {
                     result.put(owner.getKey(), selected(state, owner.getKey(), choice));
                 } catch (SQLException unavailable) {
-                    /* The requested activation is validated separately. / 请求的启用另行核验。 */ }
+                    /* The requested activation is validated separately. / 请求的启用另行核验。 */
+                }
             }
         }
         return result;
@@ -747,7 +757,7 @@ public final class PlatformModIntents implements AutoCloseable {
         try {
             var manifest = ManifestReader.read(release.json().getBytes(StandardCharsets.UTF_8));
             if (!manifest.id().equals(owner) || !manifest.version().toString().equals(choice.version().orElseThrow())
-                    || !manifest.schemaVersion().equals(Optional.ofNullable(release.schema())))
+                || !manifest.schemaVersion().equals(Optional.ofNullable(release.schema())))
                 throw new IllegalArgumentException("Manifest identity differs from its registration");
             return manifest;
         } catch (java.io.IOException | IllegalArgumentException invalid) {
@@ -774,13 +784,13 @@ public final class PlatformModIntents implements AutoCloseable {
         if (ready != null) {
             if (!ready.state().equals("READY"))
                 throw rejected("MOD_SCHEMA_RECONCILIATION_REQUIRED",
-                        "The existing target needs its original migration recovery");
+                    "The existing target needs its original migration recovery");
             if (source != null)
                 throw rejected("MOD_SOURCE_NOT_APPLICABLE",
-                        "An existing ready target must be reused without migration");
+                    "An existing ready target must be reused without migration");
             requireCoordinates(manifest.id(), target, ready);
             return plan.put("mode", "REUSE").put("target", target).put("generation", ready.generation().toString())
-                    .toString();
+                .toString();
         }
         if (schemas.isEmpty()) {
             if (source != null)
@@ -791,7 +801,7 @@ public final class PlatformModIntents implements AutoCloseable {
             throw rejected("MOD_MIGRATION_SOURCE_REQUIRED", "Select and confirm an existing source before this change");
         var original = schemas.get(source.schemaVersion());
         if (!manifest.id().equals(source.ownerId()) || original == null || !original.state().equals("READY")
-                || !original.generation().equals(source.generation()))
+            || !original.generation().equals(source.generation()))
             throw rejected("MOD_SOURCE_NOT_AVAILABLE", "The confirmed original data source is unavailable");
         requireCoordinates(manifest.id(), source.schemaVersion(), original);
         var paths = new HashMap<String, List<ModManifest.Migration>>();
@@ -811,9 +821,9 @@ public final class PlatformModIntents implements AutoCloseable {
         }
         if (counts.getOrDefault(target, 0) != 1)
             throw rejected("MOD_MIGRATION_PATH_INVALID",
-                    "The selected source needs exactly one declared migration path");
+                "The selected source needs exactly one declared migration path");
         plan.put("mode", "MIGRATE").put("target", target).put("source", source.schemaVersion()).put("generation",
-                source.generation().toString());
+            source.generation().toString());
         plan.set("steps", JSON.valueToTree(paths.get(target)));
         return plan.toString();
     }
@@ -836,63 +846,63 @@ public final class PlatformModIntents implements AutoCloseable {
     private Snapshot read(Connection c) throws SQLException {
         long revision;
         try (var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT intent_revision,boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+             var r = s.executeQuery(
+                 "SELECT intent_revision,boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
             if (!r.next() || !boot.equals(r.getObject(2, UUID.class)) || !"RUNNING".equals(r.getString(3)))
                 throw rejected("PLATFORM_NOT_RUNNING", "Mod management requires the original running platform boot");
             revision = r.getLong(1);
         }
         var owners = new TreeMap<String, Owner>();
         try (var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT mod_id,enabled,selected_version,revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry ORDER BY mod_id")) {
+             var r = s.executeQuery(
+                 "SELECT mod_id,enabled,selected_version,revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry ORDER BY mod_id")) {
             while (r.next())
                 owners.put(r.getString(1), new Owner(new Choice(r.getBoolean(2), Optional.ofNullable(r.getString(3))),
-                        r.getLong(4), r.getObject(5, UUID.class), r.getString(6), r.getString(7)));
+                    r.getLong(4), r.getObject(5, UUID.class), r.getString(6), r.getString(7)));
         }
         var releases = new TreeMap<String, Map<String, Release>>();
         try (var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT mod_id,version,state,schema_version,manifest_json,content_sha256 FROM mod_version ORDER BY mod_id,version")) {
+             var r = s.executeQuery(
+                 "SELECT mod_id,version,state,schema_version,manifest_json,content_sha256 FROM mod_version ORDER BY mod_id,version")) {
             while (r.next())
                 releases.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2),
-                        new Release(r.getString(3), r.getString(4), r.getString(5), r.getString(6)));
+                    new Release(r.getString(3), r.getString(4), r.getString(5), r.getString(6)));
         }
         var schemas = new TreeMap<String, Map<String, SchemaState>>();
         try (var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT mod_id,schema_version,generation,state,physical_name,database_user,ever_used,validated_at,validation_digest FROM mod_schema ORDER BY mod_id,schema_version")) {
+             var r = s.executeQuery(
+                 "SELECT mod_id,schema_version,generation,state,physical_name,database_user,ever_used,validated_at,validation_digest FROM mod_schema ORDER BY mod_id,schema_version")) {
             while (r.next())
                 schemas.computeIfAbsent(r.getString(1), k -> new TreeMap<>()).put(r.getString(2),
-                        new SchemaState(r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6),
-                                r.getBoolean(7), r.getObject(8, Long.class), r.getString(9)));
+                    new SchemaState(r.getObject(3, UUID.class), r.getString(4), r.getString(5), r.getString(6),
+                        r.getBoolean(7), r.getObject(8, Long.class), r.getString(9)));
         }
         var pending = new TreeMap<String, Pending>();
         var busy = new TreeSet<String>();
         try (var s = c.createStatement();
-                var r = s.executeQuery(
-                        "SELECT operation_id,mod_id,operation_type,state,phase,outcome,request_json,archive_log_id,accepted_revision,source_version,target_version FROM mod_operation WHERE state<>'ENDED' ORDER BY operation_id")) {
+             var r = s.executeQuery(
+                 "SELECT operation_id,mod_id,operation_type,state,phase,outcome,request_json,archive_log_id,accepted_revision,source_version,target_version FROM mod_operation WHERE state<>'ENDED' ORDER BY operation_id")) {
             while (r.next()) {
                 String owner = r.getString(2);
                 if (!Set.of("ENABLE", "DISABLE", "SWITCH").contains(r.getString(3)) || !"WAITING".equals(r.getString(4))
-                        || !"WAIT_RESTART".equals(r.getString(5)) || r.getString(6) != null) {
+                    || !"WAIT_RESTART".equals(r.getString(5)) || r.getString(6) != null) {
                     busy.add(owner);
                     continue;
                 }
                 var item = pending(r.getObject(1, UUID.class), owner, r.getString(7), UUID.fromString(r.getString(8)));
                 if (!owners.containsKey(owner) || r.getObject(9) == null || owners.get(owner).revision() != r.getLong(9)
-                        || !item.base().version().equals(Optional.ofNullable(r.getString(10)))
-                        || !item.target().version().equals(Optional.ofNullable(r.getString(11)))
-                        || !owners.get(owner).choice().equals(item.target())
-                        || pending.putIfAbsent(owner, item) != null)
+                    || !item.base().version().equals(Optional.ofNullable(r.getString(10)))
+                    || !item.target().version().equals(Optional.ofNullable(r.getString(11)))
+                    || !owners.get(owner).choice().equals(item.target())
+                    || pending.putIfAbsent(owner, item) != null)
                     throw rejected("MOD_PENDING_INVALID",
-                            "Pending intent no longer matches its original registry revision");
+                        "Pending intent no longer matches its original registry revision");
             }
         }
         releases.replaceAll((k, v) -> Map.copyOf(v));
         schemas.replaceAll((k, v) -> Map.copyOf(v));
         return new Snapshot(revision, Map.copyOf(owners), Map.copyOf(releases), Map.copyOf(schemas),
-                Map.copyOf(pending), Set.copyOf(busy));
+            Map.copyOf(pending), Set.copyOf(busy));
     }
 
     /** Parses a bounded original pending intent without accepting unknown fields. / 解析有界原待执行意图，不接受未知字段。
@@ -910,19 +920,19 @@ public final class PlatformModIntents implements AutoCloseable {
             var names = new TreeSet<String>();
             node.fieldNames().forEachRemaining(names::add);
             if (!names.equals(
-                    Set.of("formatVersion", "requestId", "bootId", "ownerId", "base", "target", "data", "affected"))
-                    || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1
-                    || !owner.equals(node.path("ownerId").asText()))
+                Set.of("formatVersion", "requestId", "bootId", "ownerId", "base", "target", "data", "affected"))
+                || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1
+                || !owner.equals(node.path("ownerId").asText()))
                 throw new IllegalArgumentException();
             if (!UUID.fromString(node.required("bootId").textValue()).toString()
-                    .equals(node.required("bootId").textValue())
-                    || !UUID.fromString(node.required("requestId").textValue()).toString()
-                            .equals(node.required("requestId").textValue()))
+                .equals(node.required("bootId").textValue())
+                || !UUID.fromString(node.required("requestId").textValue()).toString()
+                .equals(node.required("requestId").textValue()))
                 throw new IllegalArgumentException();
             if (!node.path("affected").isArray() || node.path("affected").isEmpty())
                 throw new IllegalArgumentException();
             return new Pending(id, owner, UUID.fromString(node.required("requestId").textValue()),
-                    choice(node.required("base")), choice(node.required("target")), archiveId, json);
+                choice(node.required("base")), choice(node.required("target")), archiveId, json);
         } catch (java.io.IOException | RuntimeException invalid) {
             throw rejected("MOD_PENDING_INVALID", "The retained intent request cannot be validated");
         }
@@ -933,7 +943,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @return validated choice / 已校验选择 */
     private static Choice choice(JsonNode node) {
         if (!node.isObject() || node.size() != 2 || !node.has("version") || !node.path("enabled").isBoolean()
-                || !(node.get("version").isNull() || node.get("version").isTextual()))
+            || !(node.get("version").isNull() || node.get("version").isTextual()))
             throw new IllegalArgumentException();
         return new Choice(node.get("enabled").booleanValue(), Optional.ofNullable(node.get("version").textValue()));
     }
@@ -955,9 +965,9 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param now transaction timestamp / 事务时间戳
      * @throws SQLException if the insert fails / 插入失败时 */
     private void insert(Connection c, Review review, String owner, Choice base, Choice target, long revision, long now)
-            throws SQLException {
+        throws SQLException {
         var request = JSON.createObjectNode().put("formatVersion", 1).put("requestId", review.id.toString())
-                .put("bootId", boot.toString()).put("ownerId", owner);
+            .put("bootId", boot.toString()).put("ownerId", owner);
         request.set("base", json(base));
         request.set("target", json(target));
         request.set("affected", JSON.valueToTree(review.affected));
@@ -973,13 +983,13 @@ public final class PlatformModIntents implements AutoCloseable {
         var original = review.before.releases().getOrDefault(owner, Map.of()).get(base.version().orElse(""));
         var selected = review.before.releases().getOrDefault(owner, Map.of()).get(target.version().orElse(""));
         String sourceSchema = "MIGRATE".equals(data.path("mode").asText())
-                ? data.path("source").asText()
-                : original == null ? null : original.schema();
+            ? data.path("source").asText()
+            : original == null ? null : original.schema();
         UUID targetGeneration = "REUSE".equals(data.path("mode").asText())
-                ? UUID.fromString(data.path("generation").asText())
-                : null;
+            ? UUID.fromString(data.path("generation").asText())
+            : null;
         try (var p = c.prepareStatement(
-                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,target_version,source_schema_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'WAITING','WAIT_RESTART',?,'{}',?,?,?)")) {
+            "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,target_version,source_schema_version,target_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'WAITING','WAIT_RESTART',?,'{}',?,?,?)")) {
             p.setObject(1, UUID.randomUUID());
             p.setString(2, owner);
             p.setString(3, type);
@@ -1004,13 +1014,13 @@ public final class PlatformModIntents implements AutoCloseable {
      * @throws SQLException if archive or cleanup is unconfirmed / 归档或清理未确认时 */
     private void archiveCancelled(Connection c, Pending pending, long now) throws SQLException {
         logs.store(c, archive,
-                List.of(new LogRecordCodec.Record(pending.archive(), now, "app", "mod_operation", LogLevel.INFO,
-                        "MOD_INTENT_CANCELLED", "Pending Mod change was superseded before execution", null,
-                        pending.owner(), pending.target().version().orElse(null), null, pending.id(), Outcome.CANCELLED,
-                        false)),
-                100);
+            List.of(new LogRecordCodec.Record(pending.archive(), now, "app", "mod_operation", LogLevel.INFO,
+                "MOD_INTENT_CANCELLED", "Pending Mod change was superseded before execution", null,
+                pending.owner(), pending.target().version().orElse(null), null, pending.id(), Outcome.CANCELLED,
+                false)),
+            100);
         try (var p = c.prepareStatement(
-                "DELETE FROM mod_operation WHERE operation_id=? AND state='WAITING' AND phase='WAIT_RESTART'")) {
+            "DELETE FROM mod_operation WHERE operation_id=? AND state='WAITING' AND phase='WAIT_RESTART'")) {
             p.setObject(1, pending.id());
             if (p.executeUpdate() != 1)
                 throw new SQLException("Original pending request changed");
@@ -1039,7 +1049,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @return internal transactional signal carrying public evidence / 携带公开证据的内部事务信号 */
     private static SQLException rejected(String event, String message) {
         return new SQLException(message,
-                new ApiException(new Problem(ProblemCode.UNAVAILABLE, event, message, Map.of(), Optional.empty())));
+            new ApiException(new Problem(ProblemCode.UNAVAILABLE, event, message, Map.of(), Optional.empty())));
     }
 
     /** Preserves known rejection, otherwise reports uncertain persistence without replay. / 保留已知拒绝，否则报告不确定持久化且不重放。
@@ -1049,12 +1059,12 @@ public final class PlatformModIntents implements AutoCloseable {
         if (failure.getSuppressed().length == 0 && failure.getCause() instanceof ApiException api)
             return api;
         if (failure.getSuppressed().length == 0 && ("MOD_NAVIGATION_INVALID".equals(failure.getSQLState())
-                || "MOD_NAVIGATION_FULL".equals(failure.getSQLState())))
+            || "MOD_NAVIGATION_FULL".equals(failure.getSQLState())))
             return new ApiException(new Problem(ProblemCode.UNAVAILABLE, failure.getSQLState(),
-                    "Navigation preferences could not be verified or exceed their bounds", Map.of(), Optional.empty()));
+                "Navigation preferences could not be verified or exceed their bounds", Map.of(), Optional.empty()));
         return new ApiException(new Problem(ProblemCode.UNKNOWN, "MOD_INTENT_STORAGE_UNCONFIRMED",
-                "Mod management storage could not be confirmed; reread the saved state", Map.of(),
-                Optional.of(UUID.randomUUID())));
+            "Mod management storage could not be confirmed; reread the saved state", Map.of(),
+            Optional.of(UUID.randomUUID())));
     }
 
     /** Rejects EDT database access and use after closure. / 拒绝 EDT 数据库访问及关闭后使用。 */
@@ -1106,7 +1116,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param validatedAt original accepted validation time / 原接纳验证时间
      * @param validationDigest original accepted validation receipt / 原接纳验证凭据 */
     private record SchemaState(UUID generation, String state, String physical, String user, boolean used,
-            Long validatedAt, String validationDigest) {
+                               Long validatedAt, String validationDigest) {
     }
 
     /** Retained original restart request. / 保留的原重启请求。
@@ -1118,7 +1128,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param archive original archive identity / 原归档身份
      * @param json original request evidence / 原请求证据 */
     private record Pending(UUID id, String owner, UUID requestId, Choice base, Choice target, UUID archive,
-            String json) {
+                           String json) {
     }
 
     /** Immutable complete review snapshot. / 不可变完整审阅快照。
@@ -1129,6 +1139,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param pending unexecuted requests / 未执行请求
      * @param busy owners retaining other operations / 保留其他操作的所有者 */
     private record Snapshot(long revision, Map<String, Owner> owners, Map<String, Map<String, Release>> releases,
-            Map<String, Map<String, SchemaState>> schemas, Map<String, Pending> pending, Set<String> busy) {
+                            Map<String, Map<String, SchemaState>> schemas, Map<String, Pending> pending,
+                            Set<String> busy) {
     }
 }

@@ -18,6 +18,7 @@ final class JavadocCoverageInspector {
     private static final Pattern CHINESE = Pattern.compile("[\\p{IsHan}]");
 
     private static final Pattern ENGLISH = Pattern.compile("[A-Za-z]{2,}");
+
     private JavadocCoverageInspector() {
     }
 
@@ -27,7 +28,7 @@ final class JavadocCoverageInspector {
 
     static Inspection production() throws IOException {
         try (var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, null,
-                StandardCharsets.UTF_8)) {
+            StandardCharsets.UTF_8)) {
             return inspect(manager.getJavaFileObjectsFromPaths(productionPaths()));
         }
     }
@@ -50,9 +51,9 @@ final class JavadocCoverageInspector {
             }
         };
         try (var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, null,
-                StandardCharsets.UTF_8)) {
+            StandardCharsets.UTF_8)) {
             var task = (JavacTask) ToolProvider.getSystemJavaCompiler().getTask(null, manager, null,
-                    List.of("-proc:none", "--release", "21"), null, List.of(file));
+                List.of("-proc:none", "--release", "21"), null, List.of(file));
             var docs = DocTrees.instance(task);
             var documented = new BitSet(source.length());
             for (var unit : task.parse())
@@ -110,9 +111,9 @@ final class JavadocCoverageInspector {
     private static Inspection inspect(Iterable<? extends JavaFileObject> files) throws IOException {
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
         try (var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(diagnostics, null,
-                StandardCharsets.UTF_8)) {
+            StandardCharsets.UTF_8)) {
             var task = (JavacTask) ToolProvider.getSystemJavaCompiler().getTask(null, manager, diagnostics,
-                    List.of("-proc:none", "--release", "21"), null, files);
+                List.of("-proc:none", "--release", "21"), null, files);
             var docs = DocTrees.instance(task);
             var positions = docs.getSourcePositions();
             List<String> violations = new ArrayList<>();
@@ -122,16 +123,16 @@ final class JavadocCoverageInspector {
                     private boolean component(VariableTree variable, ClassTree owner) {
                         // Records cannot declare additional instance fields. / record 不允许声明额外实例字段。
                         return owner.getKind() == Tree.Kind.RECORD && !variable.getModifiers().getFlags()
-                                .contains(javax.lang.model.element.Modifier.STATIC);
+                            .contains(javax.lang.model.element.Modifier.STATIC);
                     }
 
                     private void check(Tree node, String name, List<String> parameters, List<String> typeParameters,
-                            boolean returns, List<String> thrown) {
+                                       boolean returns, List<String> thrown) {
                         if (positions.getStartPosition(unit, node) < 0 || positions.getEndPosition(unit, node) < 0)
                             return;
                         count[0]++;
                         String location = unit.getSourceFile().getName() + ":"
-                                + unit.getLineMap().getLineNumber(positions.getStartPosition(unit, node)) + " " + name;
+                            + unit.getLineMap().getLineNumber(positions.getStartPosition(unit, node)) + " " + name;
                         var doc = docs.getDocCommentTree(getCurrentPath());
                         if (doc == null) {
                             violations.add(location + " missing Javadoc");
@@ -142,10 +143,10 @@ final class JavadocCoverageInspector {
                             violations.add(location + " requires an English summary followed by Chinese: " + body);
                         if (body.contains("{@inheritDoc}"))
                             violations.add(location
-                                    + " inherited documentation requires an explicitly verified source contract");
+                                + " inherited documentation requires an explicitly verified source contract");
                         if (Pattern.compile(
                                 "(?s)(Provides the \\{@code|Performs the \\{@code|the \\{@code [^}]+} value|提供 \\{@code [^}]+} 实现|执行 \\{@code [^}]+} 操作)")
-                                .matcher(body).find())
+                            .matcher(body).find())
                             violations.add(location + " contains a non-semantic template summary");
                         Set<String> params = new HashSet<>(), types = new HashSet<>(), exceptions = new HashSet<>();
                         boolean hasReturn = false;
@@ -163,11 +164,11 @@ final class JavadocCoverageInspector {
                             }
                             if (description != null && !bilingual(prose(description)))
                                 violations.add(
-                                        location + " has a blank or monolingual " + tag.getKind() + " description");
+                                    location + " has a blank or monolingual " + tag.getKind() + " description");
                         }
                         if (!params.equals(new HashSet<>(parameters)))
                             violations.add(
-                                    location + " @param mismatch: expected " + parameters + " but found " + params);
+                                location + " @param mismatch: expected " + parameters + " but found " + params);
                         if (!types.equals(new HashSet<>(typeParameters)))
                             violations.add(location + " type @param mismatch");
                         if (returns != hasReturn)
@@ -181,11 +182,11 @@ final class JavadocCoverageInspector {
                     public Void visitClass(ClassTree node, Void unused) {
                         if (!node.getSimpleName().isEmpty()) {
                             List<String> components = node.getMembers().stream().filter(VariableTree.class::isInstance)
-                                    .map(VariableTree.class::cast).filter(variable -> component(variable, node))
-                                    .map(variable -> variable.getName().toString()).toList();
+                                .map(VariableTree.class::cast).filter(variable -> component(variable, node))
+                                .map(variable -> variable.getName().toString()).toList();
                             check(node, node.getSimpleName().toString(), components,
-                                    node.getTypeParameters().stream().map(type -> type.getName().toString()).toList(),
-                                    false, List.of());
+                                node.getTypeParameters().stream().map(type -> type.getName().toString()).toList(),
+                                false, List.of());
                         }
                         return super.visitClass(node, unused);
                     }
@@ -193,31 +194,31 @@ final class JavadocCoverageInspector {
                     @Override
                     public Void visitMethod(MethodTree node, Void unused) {
                         check(node, node.getName().toString(),
-                                node.getParameters().stream().map(param -> param.getName().toString()).toList(),
-                                node.getTypeParameters().stream().map(type -> type.getName().toString()).toList(),
-                                node.getReturnType() != null && !node.getReturnType().toString().equals("void"),
-                                node.getThrows().stream().map(Object::toString).toList());
+                            node.getParameters().stream().map(param -> param.getName().toString()).toList(),
+                            node.getTypeParameters().stream().map(type -> type.getName().toString()).toList(),
+                            node.getReturnType() != null && !node.getReturnType().toString().equals("void"),
+                            node.getThrows().stream().map(Object::toString).toList());
                         return super.visitMethod(node, unused);
                     }
 
                     @Override
                     public Void visitVariable(VariableTree node, Void unused) {
                         if (getCurrentPath().getParentPath().getLeaf() instanceof ClassTree owner
-                                && !component(node, owner))
+                            && !component(node, owner))
                             check(node, node.getName().toString(), List.of(), List.of(), false, List.of());
                         return super.visitVariable(node, unused);
                     }
                 }.scan(unit, null);
             }
             diagnostics.getDiagnostics().stream().filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
-                    .forEach(d -> violations.add(d.toString()));
+                .forEach(d -> violations.add(d.toString()));
             return new Inspection(count[0], List.copyOf(violations));
         }
     }
 
     private static String prose(List<? extends DocTree> trees) {
         return String.join("",
-                trees.stream().map(tree -> tree instanceof TextTree text ? text.getBody() : tree.toString()).toList());
+            trees.stream().map(tree -> tree instanceof TextTree text ? text.getBody() : tree.toString()).toList());
     }
 
     private static boolean bilingual(String text) {
@@ -235,6 +236,7 @@ final class JavadocCoverageInspector {
     private static String simple(String type) {
         return type.substring(type.lastIndexOf('.') + 1);
     }
+
     record Inspection(int declarations, List<String> violations) {
     }
 }

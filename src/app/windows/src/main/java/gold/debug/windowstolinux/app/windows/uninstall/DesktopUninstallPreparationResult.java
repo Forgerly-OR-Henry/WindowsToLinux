@@ -17,7 +17,8 @@ import gold.debug.windowstolinux.appapi.task.Problem;
  * @param problem structured problem occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
 public record DesktopUninstallPreparationResult(UUID operationIdentity, DesktopUninstallPreparationStatus status,
-        List<DesktopUninstallEvent> events, Optional<DesktopUninstallHandoff> handoff, Optional<Problem> problem) {
+                                                List<DesktopUninstallEvent> events,
+                                                Optional<DesktopUninstallHandoff> handoff, Optional<Problem> problem) {
     /**
      * Validates one exact preparation outcome. / 校验一个精确准备结果。
      *
@@ -39,7 +40,7 @@ public record DesktopUninstallPreparationResult(UUID operationIdentity, DesktopU
             throw new IllegalArgumentException("uninstall preparation requires events");
         if (status == DesktopUninstallPreparationStatus.READY_FOR_HANDOFF) {
             if (handoff.isEmpty() || problem.isPresent()
-                    || !handoff.orElseThrow().operationIdentity().equals(operationIdentity)) {
+                || !handoff.orElseThrow().operationIdentity().equals(operationIdentity)) {
                 throw new IllegalArgumentException("ready uninstall preparation requires its exact handoff");
             }
         } else if (handoff.isPresent() || problem.isEmpty()) {

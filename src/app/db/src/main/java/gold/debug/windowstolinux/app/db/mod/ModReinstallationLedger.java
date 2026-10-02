@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.db.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import static gold.debug.windowstolinux.app.db.mod.ModProgramMaintenance.*;
 
 import java.io.IOException;
@@ -11,9 +15,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+
 
 /** Owns same-release replacement checkpoints without modifying Mod data or user choices. / 持有同版本替换检查点，不修改 Mod 数据或用户选择。 */
 public final class ModReinstallationLedger {
@@ -34,13 +38,13 @@ public final class ModReinstallationLedger {
 
     /** Strict original request and recovery decoder. / 严格原请求及恢复解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
-            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Valid durable phases, including explicitly selected restoration. / 有效持久阶段，包含明确选择的恢复原程序。 */
     private static final Set<String> PHASES = Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED",
-            "REGISTERED", "CLEANUP", "RESTORING", "RESTORED");
+        "REGISTERED", "CLEANUP", "RESTORING", "RESTORED");
 
     /** Binds the original engine and installed home; CLASS output is never a repair target. / 绑定原引擎及安装程序根，CLASS 输出绝非修复目标。
      * @param database original engine / 原引擎
@@ -54,7 +58,7 @@ public final class ModReinstallationLedger {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
 
     /** Exact immutable release metadata preserved throughout replacement. / 替换全程保留的精确不可变发布元数据。
@@ -67,7 +71,7 @@ public final class ModReinstallationLedger {
      * @param origin original acquisition kind / 原获取种类
      * @param installed original installation time / 原安装时间 */
     private record Release(String version, String path, String content, String archive, String schema, String manifest,
-            String origin, long installed) {
+                           String origin, long installed) {
     }
 
     /** Single-use review of stopped intention and the immutable selected release. / 已停止意图及不可变所选发布的一次性审阅。 */
@@ -83,6 +87,7 @@ public final class ModReinstallationLedger {
 
         /** Prevents replay after uncertain admission. / 防止未知准入后的重放。 */
         private boolean used;
+
         /** Captures the inspected catalog. / 捕获已检查目录。
          * @param request original evidence / 原依据 */
         private Review(Request request) {
@@ -119,12 +124,12 @@ public final class ModReinstallationLedger {
     public Review review(String owner, String version, String contentHash, String archiveHash) throws SQLException {
         return locked(c -> {
             var request = new Request(1, home.toString(), owner, stopped(c, owner), release(c, owner, version, "READY"),
-                    archiveHash, null);
+                archiveHash, null);
             validate(request);
             require(request.release().content().equals(contentHash), "Same release has different content");
             admissible(c, owner, null);
             require(count(c, "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND state<>'READY'", owner) == 0,
-                    "Installed owner has retained program maintenance");
+                "Installed owner has retained program maintenance");
             return new Review(request);
         });
     }
@@ -140,7 +145,7 @@ public final class ModReinstallationLedger {
         review.used = true;
         var before = review.request;
         var request = new Request(1, home.toString(), before.owner(), before.stopped(), before.release(),
-                before.archiveHash(), files);
+            before.archiveHash(), files);
         validate(request);
         object(files, 4 * 1024 * 1024);
         String encoded = encode(request), recovery = recovery(checkpoint);
@@ -148,17 +153,17 @@ public final class ModReinstallationLedger {
             return locked(c -> {
                 require(before.stopped().equals(stopped(c, before.owner()))
                         && before.release().equals(release(c, before.owner(), before.release().version(), "READY")),
-                        "Reviewed replacement catalog changed");
+                    "Reviewed replacement catalog changed");
                 admissible(c, before.owner(), null);
                 require(count(c, "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND state<>'READY'",
-                        before.owner()) == 0, "Installed owner has retained maintenance");
+                    before.owner()) == 0, "Installed owner has retained maintenance");
                 long now = System.currentTimeMillis();
                 update(c,
-                        "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,target_version,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'REINSTALL',?,?,?,'RUNNING','VALIDATED',?,?,?,?,?)",
-                        review.id(), before.owner(), before.release().version(), before.release().version(),
-                        before.stopped().revision(), encoded, recovery, UUID.randomUUID().toString(), now, now);
+                    "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,target_version,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'REINSTALL',?,?,?,'RUNNING','VALIDATED',?,?,?,?,?)",
+                    review.id(), before.owner(), before.release().version(), before.release().version(),
+                    before.stopped().revision(), encoded, recovery, UUID.randomUUID().toString(), now, now);
                 update(c, "UPDATE mod_version SET state='REINSTALLING' WHERE mod_id=? AND version=?", before.owner(),
-                        before.release().version());
+                    before.release().version());
                 return review.id();
             });
         } catch (SQLException failure) {
@@ -180,7 +185,7 @@ public final class ModReinstallationLedger {
      * @param files immutable host scope / 不可变宿主范围
      * @param checkpoint last host physical observations / 最后宿主物理观察 */
     public record Execution(UUID id, String owner, String version, Path program, String phase, String state,
-            String manifest, String contentHash, String archiveHash, String files, String checkpoint) {
+                            String manifest, String contentHash, String archiveHash, String files, String checkpoint) {
     }
 
     /** Reads only original validated evidence without claiming execution ownership. / 仅读取原已验证依据，不取得执行归属。
@@ -192,9 +197,9 @@ public final class ModReinstallationLedger {
             var row = load(c, operation);
             unchanged(c, row);
             return new Execution(operation, row.request().owner(), row.request().release().version(),
-                    Path.of(row.request().release().path()), row.phase(), row.state(),
-                    row.request().release().manifest(), row.request().release().content(), row.request().archiveHash(),
-                    row.request().files(), row.recovery().files());
+                Path.of(row.request().release().path()), row.phase(), row.state(),
+                row.request().release().manifest(), row.request().release().content(), row.request().archiveHash(),
+                row.request().files(), row.recovery().files());
         });
     }
 
@@ -215,7 +220,7 @@ public final class ModReinstallationLedger {
      * @throws SQLException if the transition is out of order or unconfirmed / 转换乱序或未确认时 */
     public void advance(UUID operation, String from, String to, String files) throws SQLException {
         require(Map.of("VALIDATED", "STAGED", "STAGED", "OLD_SAVED", "OLD_SAVED", "FILES_PUBLISHED", "REGISTERED",
-                "CLEANUP").getOrDefault(from, "").equals(to), "Replacement physical stages must remain ordered");
+            "CLEANUP").getOrDefault(from, "").equals(to), "Replacement physical stages must remain ordered");
         transition(operation, from, to, files, false);
     }
 
@@ -234,7 +239,7 @@ public final class ModReinstallationLedger {
      * @throws SQLException if new registration already committed or scope is unavailable / 新登记已提交或范围不可用时 */
     public void beginRestore(UUID operation, String from, String files) throws SQLException {
         require(Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(from),
-                "Registered replacement cannot restore old files");
+            "Registered replacement cannot restore old files");
         transition(operation, from, "RESTORING", files, false);
     }
 
@@ -257,8 +262,8 @@ public final class ModReinstallationLedger {
             unchanged(c, row);
             admissible(c, row.request().owner(), operation);
             update(c,
-                    "UPDATE mod_operation SET state='RUNNING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=?",
-                    recovery(row.recovery().files()), System.currentTimeMillis(), operation);
+                "UPDATE mod_operation SET state='RUNNING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=?",
+                recovery(row.recovery().files()), System.currentTimeMillis(), operation);
             return row.phase();
         });
     }
@@ -269,8 +274,8 @@ public final class ModReinstallationLedger {
     public void unconfirmed(UUID operation) throws SQLException {
         locked(c -> {
             update(c,
-                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_REINSTALL_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type='REINSTALL' AND state='RUNNING' AND outcome IS NULL",
-                    System.currentTimeMillis(), operation);
+                "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_REINSTALL_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type='REINSTALL' AND state='RUNNING' AND outcome IS NULL",
+                System.currentTimeMillis(), operation);
             return null;
         });
     }
@@ -291,7 +296,7 @@ public final class ModReinstallationLedger {
      * @throws SQLException if completion or cleanup evidence is unconfirmed / 完成或清理依据未确认时 */
     public boolean finish(UUID operation, String originalCleanup) throws SQLException {
         require(Set.of("RETAINED", "ABSENT", "DELETED", "RETAINED_UNCONFIRMED", "UNTOUCHED").contains(originalCleanup),
-                "Invalid original cleanup result");
+            "Invalid original cleanup result");
         try {
             return locked(c -> {
                 if (count(c, "SELECT COUNT(*) FROM mod_operation WHERE operation_id=?", operation) == 0)
@@ -306,11 +311,11 @@ public final class ModReinstallationLedger {
                         "mod_operation", restored ? LogLevel.WARN : LogLevel.INFO,
                         restored ? "MOD_REINSTALL_RESTORED" : "MOD_REINSTALLED",
                         restored
-                                ? "Repair failed; original program restored and data retained"
-                                : "Original release repaired; data and choices retained",
+                            ? "Repair failed; original program restored and data retained"
+                            : "Original release repaired; data and choices retained",
                         JSON.createObjectNode().put("originalCleanup", originalCleanup).toString(),
                         row.request().owner(), row.request().release().version(), null, operation, outcome, false)),
-                        100);
+                    100);
                 update(c, "DELETE FROM mod_operation WHERE operation_id=?", operation);
                 return true;
             });
@@ -335,10 +340,10 @@ public final class ModReinstallationLedger {
                 var row = active(c, operation, from);
                 if (ready)
                     update(c, "UPDATE mod_version SET state='READY',archive_sha256=? WHERE mod_id=? AND version=?",
-                            to.equals("RESTORED") ? row.request().release().archive() : row.request().archiveHash(),
-                            row.request().owner(), row.request().release().version());
+                        to.equals("RESTORED") ? row.request().release().archive() : row.request().archiveHash(),
+                        row.request().owner(), row.request().release().version());
                 update(c, "UPDATE mod_operation SET phase=?,recovery_json=?,updated_at=? WHERE operation_id=?", to,
-                        recovery, System.currentTimeMillis(), operation);
+                    recovery, System.currentTimeMillis(), operation);
                 return null;
             });
         } catch (SQLException failure) {
@@ -356,7 +361,7 @@ public final class ModReinstallationLedger {
     private Row active(Connection c, UUID operation, String phase) throws SQLException {
         var row = load(c, operation);
         require(row.state().equals("RUNNING") && row.recovery().boot().equals(database.bootId().toString())
-                && (phase == null || phase.equals(row.phase())), "Replacement does not own the original phase");
+            && (phase == null || phase.equals(row.phase())), "Replacement does not own the original phase");
         unchanged(c, row);
         admissible(c, row.request().owner(), operation);
         return row;
@@ -373,10 +378,10 @@ public final class ModReinstallationLedger {
         boolean registered = Set.of("REGISTERED", "CLEANUP").contains(row.phase());
         boolean ready = registered || row.phase().equals("RESTORED");
         var expected = new Release(original.version(), original.path(), original.content(),
-                registered ? request.archiveHash() : original.archive(), original.schema(), original.manifest(),
-                original.origin(), original.installed());
+            registered ? request.archiveHash() : original.archive(), original.schema(), original.manifest(),
+            original.origin(), original.installed());
         require(expected.equals(release(c, request.owner(), original.version(), ready ? "READY" : "REINSTALLING")),
-                "Original replacement registration changed");
+            "Original replacement registration changed");
     }
 
     /** Reuses owner/task admission and checks actual H2 owner or reader sessions. / 复用所有者及任务准入，并检查实际 H2 所有者或读取者会话。
@@ -388,8 +393,8 @@ public final class ModReinstallationLedger {
         drained(c, owner, operation);
         dependents(c, owner);
         require(count(c,
-                "SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name) IN (SELECT database_user FROM mod_schema WHERE mod_id=? UNION SELECT LOWER(grantee) FROM information_schema.rights WHERE table_schema IN (SELECT physical_name FROM mod_schema WHERE mod_id=?) AND LOWER(grantee)<>'app_internal')",
-                owner, owner) == 0, "Actual Mod data sessions still require release");
+            "SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name) IN (SELECT database_user FROM mod_schema WHERE mod_id=? UNION SELECT LOWER(grantee) FROM information_schema.rights WHERE table_schema IN (SELECT physical_name FROM mod_schema WHERE mod_id=?) AND LOWER(grantee)<>'app_internal')",
+            owner, owner) == 0, "Actual Mod data sessions still require release");
     }
 
     /** Reads the exact existing release in its expected maintenance state. / 读取处于期望维护状态的精确现有发布。
@@ -401,13 +406,13 @@ public final class ModReinstallationLedger {
      * @throws SQLException if absent or mismatched / 缺失或不匹配时 */
     private static Release release(Connection c, String owner, String version, String state) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state FROM mod_version WHERE mod_id=? AND version=?")) {
+            "SELECT install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, owner);
             p.setString(2, version);
             try (var r = p.executeQuery()) {
                 require(r.next() && state.equals(r.getString(8)), "Installed replacement release is unavailable");
                 return new Release(version, r.getString(1), r.getString(2), r.getString(3), r.getString(4),
-                        r.getString(5), r.getString(6), r.getLong(7));
+                    r.getString(5), r.getString(6), r.getLong(7));
             }
         }
     }
@@ -418,27 +423,27 @@ public final class ModReinstallationLedger {
     private void validate(Request request) throws SQLException {
         try {
             require(request.format() == 1 && home.toString().equals(request.home())
-                    && request.stopped().revision() >= 0, "Invalid replacement request");
+                && request.stopped().revision() >= 0, "Invalid replacement request");
             UUID.fromString(request.stopped().ackBoot());
             var release = request.release();
             require(segment(request.owner()) && !Set.of("app", "@platform").contains(request.owner())
                     && segment(release.version())
                     && home.resolve("mod").resolve(request.owner()).resolve(release.version()).toString()
-                            .equals(release.path())
+                    .equals(release.path())
                     && Set.of("LOCAL", "BUNDLED", "STORE").contains(release.origin()),
-                    "Only original installed programs can be repaired");
+                "Only original installed programs can be repaired");
             require(release.content().matches("[0-9a-f]{64}") && request.archiveHash().matches("[0-9a-f]{64}")
-                    && (release.archive() == null || release.archive().matches("[0-9a-f]{64}"))
-                    && release.installed() >= 0, "Invalid original release digests");
+                && (release.archive() == null || release.archive().matches("[0-9a-f]{64}"))
+                && release.installed() >= 0, "Invalid original release digests");
             object(release.manifest(), 1024 * 1024);
             var manifest = JSON.readTree(release.manifest());
             require(request.owner().equals(manifest.path("id").textValue())
                     && release.version().equals(manifest.path("version").textValue()),
-                    "Original manifest identity differs");
+                "Original manifest identity differs");
             var schema = manifest.get("schemaVersion");
             require((schema == null || schema.isNull() || schema.isTextual())
                     && Objects.equals(release.schema(), schema == null ? null : schema.textValue()),
-                    "Original manifest data version differs");
+                "Original manifest data version differs");
         } catch (IOException | RuntimeException invalid) {
             throw new SQLException("Invalid replacement evidence", invalid);
         }
@@ -451,21 +456,21 @@ public final class ModReinstallationLedger {
      * @throws SQLException if absent, malformed or internally inconsistent / 缺失、畸形或内部不一致时 */
     private Row load(Connection c, UUID operation) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type='REINSTALL' AND outcome IS NULL")) {
+            "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type='REINSTALL' AND outcome IS NULL")) {
             p.setObject(1, operation);
             try (var r = p.executeQuery()) {
                 require(r.next(), "Original replacement operation is absent");
                 try {
                     String json = r.getString("request_json"), raw = r.getString("recovery_json");
                     require(json.length() <= 8 * 1024 * 1024 && raw.length() <= 2 * 1024 * 1024,
-                            "Replacement evidence exceeds bounds");
+                        "Replacement evidence exceeds bounds");
                     var request = JSON.readValue(json, Request.class);
                     validate(request);
                     object(request.files(), 4 * 1024 * 1024);
                     var recovery = JSON.readValue(raw, Recovery.class);
                     require(recovery.format() == 1
                             && UUID.fromString(recovery.boot()).toString().equals(recovery.boot()),
-                            "Invalid recovery boot");
+                        "Invalid recovery boot");
                     object(recovery.files(), 1024 * 1024);
                     require(request.owner().equals(r.getString("mod_id"))
                             && request.release().version().equals(r.getString("source_version"))
@@ -474,9 +479,9 @@ public final class ModReinstallationLedger {
                             && request.stopped().revision() == r.getLong("accepted_revision")
                             && PHASES.contains(r.getString("phase"))
                             && Set.of("RUNNING", "UNKNOWN").contains(r.getString("state")),
-                            "Replacement row identity differs");
+                        "Replacement row identity differs");
                     return new Row(request, r.getString("phase"), r.getString("state"), recovery,
-                            UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"));
+                        UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"));
                 } catch (IOException | RuntimeException invalid) {
                     throw new SQLException("Invalid retained replacement", invalid);
                 }
@@ -548,7 +553,7 @@ public final class ModReinstallationLedger {
                 var attrs = Files.readAttributes(part, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 require(attrs.isDirectory() && !attrs.isOther() && !attrs.isSymbolicLink()
                         && part.toRealPath().toString().equals(part.toString()),
-                        "Replacement path is redirected or irregular");
+                    "Replacement path is redirected or irregular");
             }
         } catch (IOException failure) {
             throw new SQLException("Replacement directory is unconfirmed", failure);
@@ -569,7 +574,8 @@ public final class ModReinstallationLedger {
                 Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 throw new SQLException("Replacement staging still requires cleanup");
             } catch (NoSuchFileException missing) {
-                /* Exact original scope is gone. / 精确原范围已不存在。 */ }
+                /* Exact original scope is gone. / 精确原范围已不存在。 */
+            }
         } catch (IOException failure) {
             throw new SQLException("Replacement staging absence is unconfirmed", failure);
         }
@@ -599,8 +605,8 @@ public final class ModReinstallationLedger {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 require(count(c,
-                        "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
-                        database.bootId()) == 1, "Original application boot is unavailable");
+                    "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
+                    database.bootId()) == 1, "Original application boot is unavailable");
                 result.set(action.run(c));
             }
         });
@@ -616,7 +622,7 @@ public final class ModReinstallationLedger {
      * @param archiveHash replacement archive bytes / 替换原包字节摘要
      * @param files original host scope / 原宿主范围 */
     private record Request(int format, String home, String owner, ModProgramMaintenance.Stopped stopped,
-            Release release, String archiveHash, String files) {
+                           Release release, String archiveHash, String files) {
     }
 
     /** Original checkpoint and current exclusive boot. / 原检查点及当前独占启动。

@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpServer;
-import gold.debug.windowstolinux.app.main.startup.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.session.SessionListener;
@@ -25,7 +25,7 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
     @ParameterizedTest(name = "{0}")
     @EnumSource(BoundaryType.class)
     void originalEnvironmentUnknownRetainsItsFormalIntentAndResourcesAcrossBoot(BoundaryType boundary)
-            throws Exception {
+        throws Exception {
         var connections = new AtomicInteger();
         var commands = new AtomicInteger();
         var requests = new AtomicInteger();
@@ -34,7 +34,7 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
             requests.incrementAndGet();
             exchange.getRequestBody().readAllBytes();
             byte[] response = "{\"choices\":[{\"message\":{\"content\":\"unexpected recovery model call\"},\"finish_reason\":\"stop\"}]}"
-                    .getBytes(StandardCharsets.UTF_8);
+                .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, response.length);
             try (var output = exchange.getResponseBody()) {
                 output.write(response);
@@ -62,7 +62,7 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
             assertEquals(0, connections.get(), "The real registered cross-boot recovery must reject before connecting");
             assertEquals(0, commands.get());
             assertEquals(0, requests.get(),
-                    "The reopened real AI capability has a usable route but must send zero HTTP");
+                "The reopened real AI capability has a usable route but must send zero HTTP");
             assertTrue(Files.isRegularFile(root.resolve("environment-" + boundary + "-before.json")));
             assertTrue(Files.isRegularFile(root.resolve("environment-" + boundary + "-after.json")));
         } finally {
@@ -74,10 +74,10 @@ class DeploymentAssistedEnvironmentRecoveryRestartTest extends DeploymentRuntime
         Path output = root.resolve("environment-" + boundary + "-" + phase + ".log");
         String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
         var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", executable).toString(),
-                "-Djdk.net.unixdomain.tmpdir=" + root, "-cp", System.getProperty("java.class.path"),
-                DeploymentAssistedEnvironmentRecoveryWorker.class.getName(), phase, root.toString(), boundary.name(),
-                Integer.toString(port), Integer.toString(httpPort)).redirectErrorStream(true)
-                .redirectOutput(output.toFile()).start();
+            "-Djdk.net.unixdomain.tmpdir=" + root, "-cp", System.getProperty("java.class.path"),
+            DeploymentAssistedEnvironmentRecoveryWorker.class.getName(), phase, root.toString(), boundary.name(),
+            Integer.toString(port), Integer.toString(httpPort)).redirectErrorStream(true)
+            .redirectOutput(output.toFile()).start();
         try {
             assertTrue(process.waitFor(75, TimeUnit.SECONDS), "Original environment worker timed out: " + phase);
             String diagnostic = Files.readString(output, StandardCharsets.UTF_8);

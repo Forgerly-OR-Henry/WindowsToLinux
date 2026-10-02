@@ -73,18 +73,18 @@ public final class NodeBuildInspector {
         }
         String json = BoundedMetadataInspector.read(packageJson);
         List<NodeBuildArchitectureFacts> selected = List
-                .of(npm.inspect(root).map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.NPM, lock)),
-                        pnpm.inspect(root)
-                                .map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.PNPM, lock)),
-                        yarn.inspect(root)
-                                .map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.YARN, lock)))
-                .stream().flatMap(Optional::stream).toList();
+            .of(npm.inspect(root).map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.NPM, lock)),
+                pnpm.inspect(root)
+                    .map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.PNPM, lock)),
+                yarn.inspect(root)
+                    .map(lock -> new NodeBuildArchitectureFacts(DeploymentBuildToolType.YARN, lock)))
+            .stream().flatMap(Optional::stream).toList();
         List<String> lockFiles = selected.stream().map(NodeBuildArchitectureFacts::lockFile).toList();
         DeploymentBuildToolType buildTool = selected.size() == 1
-                ? selected.getFirst().buildTool()
-                : DeploymentBuildToolType.NPM;
+            ? selected.getFirst().buildTool()
+            : DeploymentBuildToolType.NPM;
         return Optional.of(new NodeBuildFacts(ProjectIdentityResolver.applicationId(root, json, NAME, logicalRootName),
-                buildTool, lockFiles, hasScript(json, "build"), hasScript(json, "start")));
+            buildTool, lockFiles, hasScript(json, "build"), hasScript(json, "start")));
     }
 
     /**

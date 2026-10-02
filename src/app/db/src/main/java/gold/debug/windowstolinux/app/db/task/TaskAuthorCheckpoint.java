@@ -6,8 +6,8 @@ import java.util.*;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
 import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
 
 /** Exact owner-bound author facts stored on one platform CUSTOM lease without exposing host recovery protocols. / 存于一个平台 CUSTOM 占用、且不暴露宿主恢复协议的精确作者依据。 */
@@ -20,6 +20,7 @@ public final class TaskAuthorCheckpoint {
             super(message);
         }
     }
+
     /** Fixed host-controlled envelope, never supplied by a Mod. / 固定宿主控制封套，绝不由 Mod 指定。 */
     private static final String PROTOCOL = "author-checkpoint.v1";
 
@@ -28,8 +29,8 @@ public final class TaskAuthorCheckpoint {
 
     /** Strict object parser for author checkpoint syntax. / 严格的作者检查点对象解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
-            .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
-            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Original platform store. / 原平台存储。 */
     private final PlatformDatabase database;
@@ -69,7 +70,7 @@ public final class TaskAuthorCheckpoint {
         }
         var facts = facts(task, owner, version, key, 0, initial);
         UUID lease = new TaskLedger(database).retain(task,
-                new TaskResource("CUSTOM", resourceId(owner, key), owner, false), facts, true);
+            new TaskResource("CUSTOM", resourceId(owner, key), owner, false), facts, true);
         return new Entry(lease, new TaskCheckpoint.Snapshot(0, initial, false));
     }
 
@@ -85,7 +86,7 @@ public final class TaskAuthorCheckpoint {
         try (var connection = database.openConnection()) {
             requireTask(connection, task, owner, version);
             try (var query = connection.prepareStatement(
-                    "SELECT lease_id,owner_id,access_mode,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+                "SELECT lease_id,owner_id,access_mode,recovery_json,released_at FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
                 query.setObject(1, task);
                 query.setString(2, resourceId(owner, key));
                 try (var rows = query.executeQuery()) {
@@ -114,7 +115,7 @@ public final class TaskAuthorCheckpoint {
      * @return confirmed next value / 已确认的新值
      * @throws SQLException if compare-and-set or durability cannot be confirmed / 比较更新或持久性无法确认时 */
     public TaskCheckpoint.Snapshot advance(UUID task, String owner, String version, String key, UUID lease,
-            TaskCheckpoint.Snapshot expected, String next) throws SQLException {
+                                           TaskCheckpoint.Snapshot expected, String next) throws SQLException {
         validateKey(key);
         if (expected == null || expected.revision() < 0)
             throw new RejectedException("Author checkpoint expected value is invalid");
@@ -129,7 +130,7 @@ public final class TaskAuthorCheckpoint {
             requireTask(connection, task, owner, version);
             String before;
             try (var query = connection.prepareStatement(
-                    "SELECT recovery_json,released_at FROM platform_task_resource WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED'")) {
+                "SELECT recovery_json,released_at FROM platform_task_resource WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED'")) {
                 query.setObject(1, lease);
                 query.setObject(2, task);
                 query.setString(3, resourceId(owner, key));
@@ -143,7 +144,7 @@ public final class TaskAuthorCheckpoint {
                 }
             }
             try (var update = connection.prepareStatement(
-                    "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED' AND recovery_json=? AND released_at IS NULL")) {
+                "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=? AND task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND owner_id=? AND access_mode='SHARED' AND recovery_json=? AND released_at IS NULL")) {
                 update.setString(1, after);
                 update.setObject(2, lease);
                 update.setObject(3, task);
@@ -212,9 +213,9 @@ public final class TaskAuthorCheckpoint {
      * @param payload author value / 作者值
      * @return exact host envelope / 精确宿主封套 */
     private static ResourceRecovery facts(UUID task, String owner, String version, String key, long revision,
-            String payload) {
+                                          String payload) {
         return new ResourceRecovery(PROTOCOL, Map.of("taskId", task.toString(), "ownerId", owner, "ownerVersion",
-                version, "key", key, "revision", Long.toString(revision), "payload", payload));
+            version, "key", key, "revision", Long.toString(revision), "payload", payload));
     }
 
     /** Decodes only this exact row's fixed host protocol and immutable identity. / 仅解码此精确行的固定宿主协议和不可变身份。
@@ -227,20 +228,20 @@ public final class TaskAuthorCheckpoint {
      * @return validated public snapshot / 已核验的公开快照
      * @throws SQLException if any fact differs / 任一依据不符时 */
     private static TaskCheckpoint.Snapshot decode(String value, UUID task, String owner, String version, String key,
-            boolean released) throws SQLException {
+                                                  boolean released) throws SQLException {
         try {
             var decoded = ResourceRecovery.decode(value);
             var fields = decoded.fields();
             if (!decoded.protocol().equals(PROTOCOL)
-                    || !fields.keySet()
-                            .equals(Set.of("taskId", "ownerId", "ownerVersion", "key", "revision", "payload"))
-                    || !fields.get("taskId").equals(task.toString()) || !fields.get("ownerId").equals(owner)
-                    || !fields.get("ownerVersion").equals(version) || !fields.get("key").equals(key))
+                || !fields.keySet()
+                .equals(Set.of("taskId", "ownerId", "ownerVersion", "key", "revision", "payload"))
+                || !fields.get("taskId").equals(task.toString()) || !fields.get("ownerId").equals(owner)
+                || !fields.get("ownerVersion").equals(version) || !fields.get("key").equals(key))
                 throw new IllegalArgumentException("Author checkpoint identity differs");
             long revision = Long.parseLong(fields.get("revision"));
             validatePayload(fields.get("payload"));
             if (revision < 0 || !Long.toString(revision).equals(fields.get("revision"))
-                    || !decoded.equals(facts(task, owner, version, key, revision, fields.get("payload"))))
+                || !decoded.equals(facts(task, owner, version, key, revision, fields.get("payload"))))
                 throw new IllegalArgumentException("Author checkpoint revision differs");
             return new TaskCheckpoint.Snapshot(revision, fields.get("payload"), released);
         } catch (IllegalArgumentException | NullPointerException invalid) {
@@ -255,9 +256,9 @@ public final class TaskAuthorCheckpoint {
      * @param version bound release / 绑定发布
      * @throws SQLException if identity differs / 身份不符时 */
     private static void requireTask(Connection connection, UUID task, String owner, String version)
-            throws SQLException {
+        throws SQLException {
         try (var query = connection
-                .prepareStatement("SELECT owner_id,owner_version FROM platform_task WHERE task_id=?")) {
+            .prepareStatement("SELECT owner_id,owner_version FROM platform_task WHERE task_id=?")) {
             query.setObject(1, task);
             try (var rows = query.executeQuery()) {
                 if (!rows.next() || !owner.equals(rows.getString(1)) || !version.equals(rows.getString(2)))

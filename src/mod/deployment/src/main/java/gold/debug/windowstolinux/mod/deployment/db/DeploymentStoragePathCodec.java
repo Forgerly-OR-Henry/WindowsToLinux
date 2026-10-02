@@ -131,7 +131,7 @@ public final class DeploymentStoragePathCodec {
             throw new IOException("reviewed data-path collection exceeds the storage limit");
         }
         List<DeploymentStoragePath> values = paths.stream().map(path -> Objects.requireNonNull(path, "path"))
-                .sorted(Comparator.comparing(DeploymentStoragePath::path)).toList();
+            .sorted(Comparator.comparing(DeploymentStoragePath::path)).toList();
         if (values.stream().map(DeploymentStoragePath::path).distinct().count() != values.size()) {
             throw new IOException("reviewed data paths contain duplicate paths");
         }

@@ -6,8 +6,10 @@ import java.util.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
 
 /** Edits only persisted platform policy, independently of AI approval. / 独立于 AI 审批，仅编辑持久平台策略。 */
@@ -38,13 +40,14 @@ public final class AuthorizationSettingsPane extends JPanel implements AutoClose
      * @param components themed controls / 主题控件
      * @param messages localized text / 本地化文字 */
     public AuthorizationSettingsPane(PlatformAuthorizationService service, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                                     PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Settings require the EDT");
         this.service = Objects.requireNonNull(service);
         this.messages = Objects.requireNonNull(messages);
         setName("platform.authorization");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         mode.setName("authorization.mode");
         var renderer = mode.getRenderer();
@@ -52,7 +55,7 @@ public final class AuthorizationSettingsPane extends JPanel implements AutoClose
         icons.put(AuthorizationMode.ONCE, DesktopIcons.icon("hand", 16, mode::getForeground));
         icons.put(AuthorizationMode.GENERAL, DesktopIcons.icon("shield", 16, mode::getForeground));
         icons.put(AuthorizationMode.FULL, DesktopIcons.icon("shield-alert", 16,
-                () -> mode.isEnabled() ? new Color(234, 108, 36) : UIManager.getColor("Label.disabledForeground")));
+            () -> mode.isEnabled() ? new Color(234, 108, 36) : UIManager.getColor("Label.disabledForeground")));
         mode.setRenderer((list, value, index, selected, focus) -> {
             var label = (JLabel) renderer.getListCellRendererComponent(list, value, index, selected, focus);
             label.setText(value == null ? "" : messages.text("authorization.mode." + value.name()));
@@ -78,11 +81,12 @@ public final class AuthorizationSettingsPane extends JPanel implements AutoClose
         choices.add(mode);
         choices.add(reload);
         status.setName("authorization.status");
-        var editor = components.transparent(new BorderLayout(10, 10));
+        var editor = components.card(new BorderLayout(10, 10));
         editor.add(choices, BorderLayout.NORTH);
         editor.add(explanation, BorderLayout.CENTER);
         editor.add(status, BorderLayout.SOUTH);
         add(editor, BorderLayout.NORTH);
+        components.scrollPage(this);
         controls();
     }
 
@@ -116,7 +120,7 @@ public final class AuthorizationSettingsPane extends JPanel implements AutoClose
         controls();
         status.setText(messages.text("authorization.saving"));
         DesktopTaskExecutor.run(() -> service.saveMode(requested), value -> completed(value, "authorization.saved"),
-                this::failed);
+            this::failed);
     }
 
     /** Publishes confirmed storage values. / 发布已确认存储值。

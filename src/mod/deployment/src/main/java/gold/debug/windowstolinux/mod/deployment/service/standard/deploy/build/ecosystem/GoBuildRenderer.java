@@ -48,29 +48,29 @@ public final class GoBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.GoService service)
-                || facts.buildTool() != DeploymentBuildToolType.GO_MODULE) {
+            || facts.buildTool() != DeploymentBuildToolType.GO_MODULE) {
             throw new IllegalArgumentException("Go renderer requires reviewed Go Module inputs");
         }
         String artifact = SafeBuildScriptEnvelope.shellQuote(service.artifactName());
         String version = SafeBuildScriptEnvelope
-                .shellQuote("^go version go" + service.version().replace(".", "[.]") + "([.][0-9]+)? ");
+            .shellQuote("^go version go" + service.version().replace(".", "[.]") + "([.][0-9]+)? ");
         String command = """
-                artifact_name=%s
-                command -v go >/dev/null
-                if [ -n "${WTL_GO_VERSION:-}" ]; then
-                  go version | grep -F "go version go${WTL_GO_VERSION} "
-                else go version | grep -Eq %s; fi
-                test -f ./go.mod
-                test -f ./go.sum
-                test -f ./main.go
-                mkdir -p ./.w2l/bin
-                CGO_ENABLED=0 run go build -mod=readonly -trimpath -o "./.w2l/bin/$artifact_name" .
-                test -x "./.w2l/bin/$artifact_name"
-                test ! -L "./.w2l/bin/$artifact_name"
-                printf 'ARTIFACT=%%s\n' "./.w2l/bin/$artifact_name"
-                """.formatted(artifact, version);
+            artifact_name=%s
+            command -v go >/dev/null
+            if [ -n "${WTL_GO_VERSION:-}" ]; then
+              go version | grep -F "go version go${WTL_GO_VERSION} "
+            else go version | grep -Eq %s; fi
+            test -f ./go.mod
+            test -f ./go.sum
+            test -f ./main.go
+            mkdir -p ./.w2l/bin
+            CGO_ENABLED=0 run go build -mod=readonly -trimpath -o "./.w2l/bin/$artifact_name" .
+            test -x "./.w2l/bin/$artifact_name"
+            test ! -L "./.w2l/bin/$artifact_name"
+            printf 'ARTIFACT=%%s\n' "./.w2l/bin/$artifact_name"
+            """.formatted(artifact, version);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

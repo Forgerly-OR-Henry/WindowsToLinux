@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.task.Outcome;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
@@ -27,7 +27,7 @@ abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixtur
     void runIsolated(String scenario) throws Exception {
         var executable = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var process = new ProcessBuilder(executable.toString(), "-cp", System.getProperty("java.class.path"),
-                getClass().getName(), "--unknown", root.toString(), scenario).redirectErrorStream(true).start();
+            getClass().getName(), "--unknown", root.toString(), scenario).redirectErrorStream(true).start();
         try {
             assertTrue(process.waitFor(50, TimeUnit.SECONDS), "Original unknown child timed out");
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -52,16 +52,16 @@ abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixtur
      * @return exact immutable formal release / 精确不可变正式发布
      * @throws Exception if the actual original publication fails / 实际原发布失败时 */
     DeploymentReleaseRecord publishManaged(PlatformRuntime runtime, TaskContext task,
-            DeploymentApplicationGraph graph, int revision) throws Exception {
+                                           DeploymentApplicationGraph graph, int revision) throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         var units = publications(graph, revision, List.of()).stream()
-                .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList();
+            .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList();
         var proposal = new DeploymentPublication(graph, units);
         var server = graph.components().getFirst().unit().server();
         var plan = new DeploymentPublicationPlan(UUID.randomUUID(), Optional.empty(), graph.applicationId(), server,
-                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
-                DeploymentOriginalPublicationCommit.references(server, proposal, Map.of()),
-                Instant.ofEpochMilli(System.currentTimeMillis()));
+            DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
+            DeploymentOriginalPublicationCommit.references(server, proposal, Map.of()),
+            Instant.ofEpochMilli(System.currentTimeMillis()));
         var commit = new DeploymentOriginalPublicationCommit(context);
         commit.begin(plan, proposal, task, "deployment-publication");
         assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());

@@ -12,7 +12,7 @@ import java.util.UUID;
  * @param preparationEvents preparation events / 准备事件集合
  */
 public record DesktopUninstallHandoff(UUID operationIdentity, DesktopUninstallRequest request,
-        List<DesktopUninstallEvent> preparationEvents) {
+                                      List<DesktopUninstallEvent> preparationEvents) {
     /**
      * Requires a decision and successful task quiesce before process exit. / 要求进程退出前已有决定且任务停收成功。
      *
@@ -27,11 +27,11 @@ public record DesktopUninstallHandoff(UUID operationIdentity, DesktopUninstallRe
         request = Objects.requireNonNull(request, "request");
         preparationEvents = List.copyOf(Objects.requireNonNull(preparationEvents, "preparationEvents"));
         if (request.decision().isEmpty() || preparationEvents.size() != 2
-                || preparationEvents.get(0).state() != DesktopUninstallState.DECISION_VALIDATED
-                || preparationEvents.get(1).state() != DesktopUninstallState.TASKS_STOPPED
-                || preparationEvents.stream().anyMatch(event -> !event.succeeded())) {
+            || preparationEvents.get(0).state() != DesktopUninstallState.DECISION_VALIDATED
+            || preparationEvents.get(1).state() != DesktopUninstallState.TASKS_STOPPED
+            || preparationEvents.stream().anyMatch(event -> !event.succeeded())) {
             throw new IllegalArgumentException(
-                    "uninstall handoff requires an explicit decision and stopped owned tasks");
+                "uninstall handoff requires an explicit decision and stopped owned tasks");
         }
     }
 }

@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,7 +22,7 @@ import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
@@ -47,15 +56,15 @@ public final class DeploymentStandardPublicationExecutor {
      * @return original platform task / 原平台任务
      * @throws ApiException if task admission fails / 任务准入失败时 */
     public TaskHandle<Void> submit(DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
-            Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
-            throws ApiException {
+                                   Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
+        throws ApiException {
         Objects.requireNonNull(unit);
         Objects.requireNonNull(project);
         credentials = Map.copyOf(credentials);
         Objects.requireNonNull(prepareSource);
         Map<DeploymentSecretReference, SecretRef> originals = credentials;
         return references.submitPrepared(unit.server(),
-                task -> prepareWithinTask(task, unit, project, originals, prepareSource));
+            task -> prepareWithinTask(task, unit, project, originals, prepareSource));
     }
 
     /** Binds the open source and actual saved credentials before the first publication reservation. / 在首次发布预留前绑定开放来源及实际已保存凭据。
@@ -67,9 +76,9 @@ public final class DeploymentStandardPublicationExecutor {
      * @return task-bound publication facts / 任务绑定发布事实
      * @throws Exception if original preparation fails / 原准备失败时 */
     public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
-            DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
-            Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
-            throws Exception {
+                                                                                          DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
+                                                                                          Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource)
+        throws Exception {
         return prepareWithinTask(task, unit, project, credentials, prepareSource, Optional.empty());
     }
 
@@ -83,9 +92,9 @@ public final class DeploymentStandardPublicationExecutor {
      * @return original one-shot publication / 原一次性发布
      * @throws Exception if original preparation is unavailable / 原准备不可用时 */
     public OperationResult<DeploymentReferenceFlow.PreparedPublication> prepareWithinTask(TaskContext task,
-            DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
-            Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource,
-            Optional<DeploymentAssistedBuildCorrection> correction) throws Exception {
+                                                                                          DeploymentUnitIdentity unit, Optional<DeploymentProjectRecord> project,
+                                                                                          Map<DeploymentSecretReference, SecretRef> credentials, TaskWork<ReviewedDeploymentPlan> prepareSource,
+                                                                                          Optional<DeploymentAssistedBuildCorrection> correction) throws Exception {
         Objects.requireNonNull(task);
         Objects.requireNonNull(unit);
         Objects.requireNonNull(project);
@@ -99,10 +108,10 @@ public final class DeploymentStandardPublicationExecutor {
         try {
             var request = plan.request();
             if (!unit.server().equals(request.server()) || !unit.id().equals(request.facts().applicationId())
-                    || !originals.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
+                || !originals.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
                 throw new IllegalArgumentException("Publication target or secrets differ from reviewed source");
             if (project.isPresent()
-                    && !project.orElseThrow().source().sha256().equals(request.material().snapshot().sha256()))
+                && !project.orElseThrow().source().sha256().equals(request.material().snapshot().sha256()))
                 throw new IllegalArgumentException("Saved project source differs from original frozen material");
             var repository = new DeploymentSecretRepository(context.db());
             for (var entry : originals.entrySet()) {
@@ -110,30 +119,30 @@ public final class DeploymentStandardPublicationExecutor {
                 if (actual.isPresent() && actual.orElseThrow().purpose().isEmpty())
                     return failed("DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE");
                 if (actual.isEmpty() || !actual.orElseThrow().credentialId().equals(entry.getValue().id())
-                        || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
+                    || !actual.orElseThrow().purpose().equals(Optional.of(entry.getValue().purpose())))
                     throw new IllegalArgumentException("Secret revision differs from its stored credential");
             }
             var intents = new ArrayList<DeploymentReferenceIntent>();
             intents.add(DeploymentReferenceKey.application(unit.server(), unit.id()));
             intents.add(DeploymentReferenceKey.unit(unit.server(), unit.id()));
             originals.forEach((revision, secret) -> intents
-                    .add(DeploymentReferenceKey.secretRevision(unit.server(), secret, revision)));
+                .add(DeploymentReferenceKey.secretRevision(unit.server(), secret, revision)));
             var publicationPlan = new DeploymentPublicationPlan(UUID.randomUUID(), project, unit.id(), unit.server(),
-                    DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, ReviewedPlanIdentity.from(request),
-                    List.copyOf(intents), Instant.now().truncatedTo(ChronoUnit.MILLIS));
+                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, ReviewedPlanIdentity.from(request),
+                List.copyOf(intents), Instant.now().truncatedTo(ChronoUnit.MILLIS));
             var cleanupFacts = new java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal>();
             var ready = new DeploymentReferenceFlow.PreparedPublication(publicationPlan,
-                    original -> author(plan, unit, originals, original, cleanupFacts, correction), () -> {
-                        boolean closed = false;
-                        try {
-                            request.archive().close();
-                        } finally {
-                            request.material().close();
-                            closed = true;
-                        }
-                        if (closed && cleanupFacts.get() != null)
-                            cleanupFacts.get().release();
-                    });
+                original -> author(plan, unit, originals, original, cleanupFacts, correction), () -> {
+                boolean closed = false;
+                try {
+                    request.archive().close();
+                } finally {
+                    request.material().close();
+                    closed = true;
+                }
+                if (closed && cleanupFacts.get() != null)
+                    cleanupFacts.get().release();
+            });
             handedOff = true;
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(ready), Optional.empty());
         } catch (SQLException knownReadFailure) {
@@ -160,13 +169,13 @@ public final class DeploymentStandardPublicationExecutor {
      * @param correction optional bounded typed build correction / 可选有界类型化构建纠正
      * @return verified publication or retained unknown / 已核实发布或保留未知 */
     private OperationResult<DeploymentPublication> author(ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
-            Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task,
-            java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal> cleanupFacts,
-            Optional<DeploymentAssistedBuildCorrection> correction) {
-        if (task.cancellation().requested() || Thread.currentThread().isInterrupted())
+                                                          Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task,
+                                                          java.util.concurrent.atomic.AtomicReference<DeploymentPublicationCleanupJournal> cleanupFacts,
+                                                          Optional<DeploymentAssistedBuildCorrection> correction) {
+        if (task.cancelToken().requested() || Thread.currentThread().isInterrupted())
             return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANCELLED_BEFORE_REMOTE",
-                            "Publication cancelled before remote work", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANCELLED_BEFORE_REMOTE",
+                    "Publication cancelled before remote work", Map.of(), Optional.empty())));
         final gold.debug.windowstolinux.appapi.linux.RemoteSession session;
         try {
             session = context.linux().connect(unit.server(), task);
@@ -181,14 +190,14 @@ public final class DeploymentStandardPublicationExecutor {
         try {
             var request = plan.request();
             var journal = DeploymentPublicationCleanupJournal.begin(context, task, unit, request.archive().sha256(),
-                    ReviewedPlanIdentity.from(request), request.runtime());
+                ReviewedPlanIdentity.from(request), request.runtime());
             cleanupFacts.set(journal);
             if (correction.isEmpty()) {
                 var build = new DeploymentStandardCandidateExecutor().execute(plan, session, context.interaction(), task);
                 result = build.outcome() == Outcome.SUCCEEDED
-                        ? new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
-                                build.value().orElseThrow(), credentials, session, task, journal)
-                        : unknown("DEPLOYMENT_CANDIDATE_NOT_CONFIRMED");
+                    ? new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
+                    build.value().orElseThrow(), credentials, session, task, journal)
+                    : unknown("DEPLOYMENT_CANDIDATE_NOT_CONFIRMED");
             } else return assisted(plan, unit, credentials, task, session, journal, correction.orElseThrow());
         } catch (Exception | LinkageError | AssertionError uncertain) {
             result = unknown("DEPLOYMENT_PUBLICATION_SESSION_UNCONFIRMED");
@@ -196,7 +205,7 @@ public final class DeploymentStandardPublicationExecutor {
         try {
             session.close();
             if (cleanupFacts.get() != null
-                    && (result.outcome() == Outcome.SUCCEEDED || result.outcome() == Outcome.FAILED))
+                && (result.outcome() == Outcome.SUCCEEDED || result.outcome() == Outcome.FAILED))
                 cleanupFacts.get().sessionClosed();
         } catch (Exception | LinkageError | AssertionError uncertainCleanup) {
             if (result.outcome() != Outcome.SUCCEEDED && result.outcome() != Outcome.FAILED)
@@ -216,8 +225,8 @@ public final class DeploymentStandardPublicationExecutor {
      * @return verified publication or retained original failure / 已核发布或保留原失败
      * @throws Exception if review or original persistence is uncertain / 审阅或原持久确认不明时 */
     private OperationResult<DeploymentPublication> assisted(ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
-            Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task, gold.debug.windowstolinux.appapi.linux.RemoteSession session,
-            DeploymentPublicationCleanupJournal journal, DeploymentAssistedBuildCorrection correction) throws Exception {
+                                                            Map<DeploymentSecretReference, SecretRef> credentials, TaskContext task, gold.debug.windowstolinux.appapi.linux.RemoteSession session,
+                                                            DeploymentPublicationCleanupJournal journal, DeploymentAssistedBuildCorrection correction) throws Exception {
         var candidates = new DeploymentStandardCandidateExecutor();
         var loop = new DeploymentAssistedPublicationBuild(context, candidates);
         var attempts = new DeploymentAssistedPublicationAttempts(context, loop, candidates);
@@ -225,11 +234,14 @@ public final class DeploymentStandardPublicationExecutor {
         try (var owned = new DeploymentPublicationAuthorSession(session, journals, null)) {
             var prepared = candidates.prepare(plan, owned.current(), context.interaction(), task, loop.fallbackAvailable());
             if (prepared.outcome() != Outcome.SUCCEEDED) {
-                if (prepared.outcome() == Outcome.UNKNOWN || prepared.outcome() == Outcome.CANCELLED) return unknown("DEPLOYMENT_ASSISTED_PREPARE_UNCONFIRMED");
-                if (!journal.verifiedBusiness(Outcome.FAILED, prepared.problem()) || !journal.remoteClean() || !owned.retire()) return unknown("DEPLOYMENT_ASSISTED_PREPARE_RESULT_UNCONFIRMED");
+                if (prepared.outcome() == Outcome.UNKNOWN || prepared.outcome() == Outcome.CANCELLED)
+                    return unknown("DEPLOYMENT_ASSISTED_PREPARE_UNCONFIRMED");
+                if (!journal.verifiedBusiness(Outcome.FAILED, prepared.problem()) || !journal.remoteClean() || !owned.retire())
+                    return unknown("DEPLOYMENT_ASSISTED_PREPARE_RESULT_UNCONFIRMED");
                 return new OperationResult<>(Outcome.FAILED, Optional.empty(), prepared.problem());
             }
-            if (!loop.prepared(prepared.value().orElseThrow())) return unknown("DEPLOYMENT_ASSISTED_RETRY_BUDGET_UNCONFIRMED");
+            if (!loop.prepared(prepared.value().orElseThrow()))
+                return unknown("DEPLOYMENT_ASSISTED_RETRY_BUDGET_UNCONFIRMED");
             var selected = prepared.value().orElseThrow();
             while (true) {
                 var completed = loop.build(selected, correction, unit, journal, null, () -> "", owned.current(), task);
@@ -237,17 +249,20 @@ public final class DeploymentStandardPublicationExecutor {
                     return assistedBuildFailure(completed, unit, task, journal, owned);
                 plan = completed.plan();
                 var result = new DeploymentStandardPublicationTransaction(context).publish(plan, unit,
-                        completed.result().value().orElseThrow(), credentials, owned.current(), task, journal);
+                    completed.result().value().orElseThrow(), credentials, owned.current(), task, journal);
                 if (result.outcome() == Outcome.UNKNOWN || result.outcome() == Outcome.CANCELLED) return result;
                 boolean retired = owned.retire();
                 if (result.outcome() != Outcome.FAILED || !retired || result.problem().isEmpty()
-                        || !unit.id().equals(result.problem().orElseThrow().context().get("publicationHealthFailure"))) return result;
+                    || !unit.id().equals(result.problem().orElseThrow().context().get("publicationHealthFailure")))
+                    return result;
                 var next = attempts.advance(Map.of(unit.id(), plan), Map.of(unit.id(), unit), Map.of(unit.id(), correction),
-                        unit.id(), "", null, journals, result.problem().orElseThrow(), task);
+                    unit.id(), "", null, journals, result.problem().orElseThrow(), task);
                 if (next.outcome() != Outcome.SUCCEEDED)
                     return new OperationResult<>(next.outcome(), Optional.empty(), next.problem());
                 var continuation = next.value().orElseThrow();
-                owned.next(continuation.session()); plan = continuation.plans().get(unit.id()); selected = continuation.prepared().get(unit.id());
+                owned.next(continuation.session());
+                plan = continuation.plans().get(unit.id());
+                selected = continuation.prepared().get(unit.id());
             }
         }
     }
@@ -261,22 +276,24 @@ public final class DeploymentStandardPublicationExecutor {
      * @return known cleaned failure or retained unknown / 已知已清理失败或保留未知
      * @throws Exception if original physical close is unconfirmed / 原物理关闭未确认时 */
     private OperationResult<DeploymentPublication> assistedBuildFailure(DeploymentAssistedPublicationBuild.Completed completed,
-            DeploymentUnitIdentity unit, TaskContext task, DeploymentPublicationCleanupJournal journal,
-            DeploymentPublicationAuthorSession owned) throws Exception {
+                                                                        DeploymentUnitIdentity unit, TaskContext task, DeploymentPublicationCleanupJournal journal,
+                                                                        DeploymentPublicationAuthorSession owned) throws Exception {
         if (completed.result().outcome() != Outcome.FAILED) return unknown("DEPLOYMENT_ASSISTED_CANDIDATE_UNCONFIRMED");
         var channel = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel(owned.current(), context.interaction(), unit.server(), task, journal.facts().path("planSha256").asText());
         if (!journal.verifiedBusiness(Outcome.FAILED, completed.result().problem())
-                || !DeploymentPublicationCleanupAttempt.run(journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN", () -> channel.cleanupCandidate(unit, journal.facts().path("candidate").asText()))
-                || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean() || !owned.retire()) return unknown("DEPLOYMENT_ASSISTED_CANDIDATE_CLEANUP_UNCONFIRMED");
+            || !DeploymentPublicationCleanupAttempt.run(journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN", () -> channel.cleanupCandidate(unit, journal.facts().path("candidate").asText()))
+            || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean() || !owned.retire())
+            return unknown("DEPLOYMENT_ASSISTED_CANDIDATE_CLEANUP_UNCONFIRMED");
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), completed.result().problem());
     }
+
     /** Reports a known pre-publication metadata rejection. / 报告已知发布前元数据拒绝。
      * @param event stable event / 稳定事件
      * @return known failure / 已知失败 */
     private static OperationResult<DeploymentReferenceFlow.PreparedPublication> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Reviewed publication preparation failed",
-                        Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Reviewed publication preparation failed",
+                Map.of(), Optional.empty())));
     }
 
     /** Retains a remote candidate whose cleanup cannot yet be established. / 保留尚不能证明清理的远端候选。
@@ -284,6 +301,6 @@ public final class DeploymentStandardPublicationExecutor {
      * @return explicit unknown / 显式未知 */
     private static OperationResult<DeploymentPublication> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Original remote work requires reconciliation", Map.of(), Optional.empty())));
+            event, "Original remote work requires reconciliation", Map.of(), Optional.empty())));
     }
 }

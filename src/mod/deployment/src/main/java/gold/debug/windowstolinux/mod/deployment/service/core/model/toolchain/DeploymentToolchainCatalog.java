@@ -124,7 +124,7 @@ public final class DeploymentToolchainCatalog {
      * @param installation installation / 安装
      */
     public record Branch(DeploymentToolchainType ecosystem, String version, ReleaseType releaseType,
-            MaintenanceStatus maintenance, InstallationType installation) {
+                         MaintenanceStatus maintenance, InstallationType installation) {
         /**
          * Validates and binds the inputs required by branch.
          * <p>校验并绑定分支所需输入。
@@ -169,6 +169,7 @@ public final class DeploymentToolchainCatalog {
      * <p>返回所选生态的分支，并按目录的版本比较规则排序。
      */
     private final List<Branch> branches;
+
     /**
      * Validates and binds the inputs required by toolchain support catalog.
      * <p>校验并绑定工具链支持目录所需输入。
@@ -216,7 +217,7 @@ public final class DeploymentToolchainCatalog {
      */
     public List<Branch> branches(DeploymentToolchainType ecosystem) {
         return branches.stream().filter(b -> b.ecosystem() == ecosystem)
-                .sorted(Comparator.comparing(Branch::identity, DeploymentToolchainCatalog::compareBranch)).toList();
+            .sorted(Comparator.comparing(Branch::identity, DeploymentToolchainCatalog::compareBranch)).toList();
     }
 
     /**
@@ -228,7 +229,7 @@ public final class DeploymentToolchainCatalog {
      */
     public boolean permits(DeploymentToolchainVersion version) {
         return !version.preview() && branches.stream()
-                .anyMatch(b -> b.ecosystem() == version.ecosystem() && b.version().equals(version.branch()));
+            .anyMatch(b -> b.ecosystem() == version.ecosystem() && b.version().equals(version.branch()));
     }
 
     /**
@@ -243,16 +244,16 @@ public final class DeploymentToolchainCatalog {
         DeploymentToolchainVersion requested = requirement.version().orElseThrow();
         var available = branches(requirement.ecosystem());
         if (requirement.ecosystem() == DeploymentToolchainType.C
-                || requirement.ecosystem() == DeploymentToolchainType.CPP)
+            || requirement.ecosystem() == DeploymentToolchainType.CPP)
             return available.stream().filter(b -> b.version().equals(requested.branch()) && !requested.preview())
-                    .toList();
+                .toList();
         if (!requested.preview() && requirement.constraint() != ToolchainRequirement.ConstraintType.MINIMUM) {
             var exact = available.stream().filter(b -> b.version().equals(requested.branch())).toList();
             if (!exact.isEmpty())
                 return exact;
         }
         DeploymentToolchainVersion requestedBranch = DeploymentToolchainVersion
-                .parse(requirement.ecosystem(), requested.branch()).orElseThrow();
+            .parse(requirement.ecosystem(), requested.branch()).orElseThrow();
         return available.stream().filter(b -> compareBranch(b.identity(), requestedBranch) >= 0).limit(2).toList();
     }
 
@@ -283,26 +284,26 @@ public final class DeploymentToolchainCatalog {
         List<Branch> result = new ArrayList<>();
         add(result, DeploymentToolchainType.JAVA, ReleaseType.LTS, InstallationType.TEMURIN, "8 11 17 21 25", "");
         add(result, DeploymentToolchainType.NODE, ReleaseType.LTS, InstallationType.NODE_ARCHIVE, "16 18 20 22 24",
-                "16 18 20");
+            "16 18 20");
         add(result, DeploymentToolchainType.PYTHON, ReleaseType.STABLE, InstallationType.CPYTHON_SOURCE,
-                "3.8 3.9 3.10 3.11 3.12 3.13 3.14", "3.8 3.9");
+            "3.8 3.9 3.10 3.11 3.12 3.13 3.14", "3.8 3.9");
         add(result, DeploymentToolchainType.DOTNET, ReleaseType.LTS, InstallationType.DOTNET_SDK, "8 10", "");
         add(result, DeploymentToolchainType.KOTLIN, ReleaseType.STABLE, InstallationType.KOTLIN_ARCHIVE,
-                "1.8 1.9 2.0 2.1 2.2 2.3 2.4", "1.8 1.9 2.0 2.1 2.2 2.3");
+            "1.8 1.9 2.0 2.1 2.2 2.3 2.4", "1.8 1.9 2.0 2.1 2.2 2.3");
         for (int minor = 18; minor <= 27; minor++)
             add(result, DeploymentToolchainType.GO, ReleaseType.STABLE, InstallationType.GO_ARCHIVE, "1." + minor,
-                    minor < 26 ? "1." + minor : "");
+                minor < 26 ? "1." + minor : "");
         for (int minor = 56; minor <= 98; minor++)
             add(result, DeploymentToolchainType.RUST, ReleaseType.STABLE, InstallationType.RUST_STANDALONE,
-                    "1." + minor, minor < 98 ? "1." + minor : "");
+                "1." + minor, minor < 98 ? "1." + minor : "");
         add(result, DeploymentToolchainType.PHP, ReleaseType.STABLE, InstallationType.PHP_SOURCE,
-                "8.0 8.1 8.2 8.3 8.4 8.5", "8.0 8.1");
+            "8.0 8.1 8.2 8.3 8.4 8.5", "8.0 8.1");
         add(result, DeploymentToolchainType.RUBY, ReleaseType.STABLE, InstallationType.RUBY_SOURCE,
-                "3.0 3.1 3.2 3.3 3.4 4.0", "3.0 3.1 3.2");
+            "3.0 3.1 3.2 3.3 3.4 4.0", "3.0 3.1 3.2");
         add(result, DeploymentToolchainType.C, ReleaseType.LANGUAGE_STANDARD, InstallationType.SYSTEM_COMPILER,
-                "99 11 17", "");
+            "99 11 17", "");
         add(result, DeploymentToolchainType.CPP, ReleaseType.LANGUAGE_STANDARD, InstallationType.SYSTEM_COMPILER,
-                "11 14 17 20", "");
+            "11 14 17 20", "");
         return new DeploymentToolchainCatalog("2026-09-09.1", result);
     }
 
@@ -318,14 +319,14 @@ public final class DeploymentToolchainCatalog {
      * @param historical historical / 历史
      */
     private static void add(List<Branch> target, DeploymentToolchainType ecosystem, ReleaseType type,
-            InstallationType installation, String versions, String historical) {
+                            InstallationType installation, String versions, String historical) {
         for (String version : versions.split(" "))
             target.add(new Branch(ecosystem, version, type,
-                    type == ReleaseType.LANGUAGE_STANDARD
-                            ? MaintenanceStatus.STANDARD
-                            : List.of(historical.split(" ")).contains(version)
-                                    ? MaintenanceStatus.HISTORICAL
-                                    : MaintenanceStatus.MAINTAINED,
-                    installation));
+                type == ReleaseType.LANGUAGE_STANDARD
+                    ? MaintenanceStatus.STANDARD
+                    : List.of(historical.split(" ")).contains(version)
+                    ? MaintenanceStatus.HISTORICAL
+                    : MaintenanceStatus.MAINTAINED,
+                installation));
     }
 }

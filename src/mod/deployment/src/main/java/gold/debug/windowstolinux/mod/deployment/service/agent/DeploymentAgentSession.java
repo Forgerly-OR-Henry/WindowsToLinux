@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CancellationException;
@@ -7,10 +15,10 @@ import java.util.function.Supplier;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAgentProtocol;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 
 /** Serial evidence-driven deployment loop, independent of standard analysis. / 独立于标准分析的串行证据驱动部署循环。 */
 public final class DeploymentAgentSession {
@@ -80,11 +88,11 @@ public final class DeploymentAgentSession {
      * @param configurationRevision exact frozen model configuration / 精确冻结模型配置
      * @param currentConfigurationRevision live task-authorized revision / 实时任务授权修订 */
     public DeploymentAgentSession(ModContext context, TaskContext task, ServerRef server,
-            Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-            DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
-            Supplier<String> currentConfigurationRevision) {
+                                  Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
+                                  DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
+                                  Supplier<String> currentConfigurationRevision) {
         this(context, task, server, requirements, source, tools, journal, approvalMode, configurationRevision,
-                currentConfigurationRevision, new DeploymentAgentControl());
+            currentConfigurationRevision, new DeploymentAgentControl());
     }
 
     /** Binds explicit user control to the same original task and budgets. / 将显式用户控制绑定到同一原任务及预算。
@@ -100,9 +108,9 @@ public final class DeploymentAgentSession {
      * @param currentConfigurationRevision live route observer / 实时路由观察器
      * @param control original worker control / 原工作线程控制 */
     public DeploymentAgentSession(ModContext context, TaskContext task, ServerRef server,
-            Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-            DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
-            Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
+                                  Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
+                                  DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
+                                  Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server);
@@ -111,11 +119,11 @@ public final class DeploymentAgentSession {
         this.journal = Objects.requireNonNull(journal);
         this.control = Objects.requireNonNull(control);
         if (requirements.size() > 64 || requirements.toString().length() > 8000 || requirements.keySet().stream()
-                .anyMatch(k -> k.matches("(?i).*(password|secret|credential|token|key).*")))
+            .anyMatch(k -> k.matches("(?i).*(password|secret|credential|token|key).*")))
             throw new IllegalArgumentException("Agent requirements exceed nonsecret budget");
         this.requirements = Map.copyOf(requirements);
         this.models = new DeploymentAgentModels(context, task, server, approvalMode, configurationRevision,
-                currentConfigurationRevision, journal, tools);
+            currentConfigurationRevision, journal, tools);
     }
 
     /** Runs until actual whole-application health succeeds or a bounded stop occurs. / 运行至真实整应用健康成功或有界停止。
@@ -149,11 +157,11 @@ public final class DeploymentAgentSession {
      * @return terminal publication or null to continue / 终态发布结果，继续时为空
      * @throws Exception on denied or unknown tool effect / 工具影响被拒绝或未知时 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> perform(DeploymentAgentProposal proposal)
-            throws Exception {
+        throws Exception {
         return switch (proposal) {
             case DeploymentAgentProposal.ListSource value -> {
                 observe("LIST", String.join("\n",
-                        source.list(value.path().equals(".") ? "" : value.path(), value.offset(), value.limit())));
+                    source.list(value.path().equals(".") ? "" : value.path(), value.offset(), value.limit())));
                 yield null;
             }
             case DeploymentAgentProposal.ReadSource value -> {
@@ -181,7 +189,7 @@ public final class DeploymentAgentSession {
             case DeploymentAgentProposal.ReadRemote value -> {
                 var candidate = prepare(value.component());
                 observe("REMOTE_READ", tools.read(task, candidate, revisions.get(value.component()), value.path(),
-                        value.offset(), value.limit()));
+                    value.offset(), value.limit()));
                 yield null;
             }
             case DeploymentAgentProposal.Patch value -> {
@@ -215,7 +223,7 @@ public final class DeploymentAgentSession {
             for (var candidate : candidates.keySet()) {
                 var before = component(candidate);
                 var after = proposal.plan().components().stream().filter(c -> c.id().equals(candidate)).findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException("Prepared component removed"));
+                    .orElseThrow(() -> new IllegalArgumentException("Prepared component removed"));
                 if (!before.runtime().getClass().equals(after.runtime().getClass()))
                     throw new IllegalArgumentException("Prepared sandbox backend changed");
             }
@@ -253,7 +261,7 @@ public final class DeploymentAgentSession {
         DeploymentAgentDeliveryPort.CommandFeedback result;
         try {
             result = tools.command(task, candidate, revisions.get(component.id()), proposal.script(),
-                    Duration.ofSeconds(proposal.seconds()));
+                Duration.ofSeconds(proposal.seconds()));
         } catch (Exception unknown) {
             journal.state(task, "UNKNOWN");
             throw unknown;
@@ -264,7 +272,7 @@ public final class DeploymentAgentSession {
         }
         journal.event(task, "COMMAND_RESULT", binding, Integer.toString(result.exitStatus()));
         observe("COMMAND_RESULT",
-                "component=" + component.id() + " exit=" + result.exitStatus() + "\n" + result.evidenceOutput());
+            "component=" + component.id() + " exit=" + result.exitStatus() + "\n" + result.evidenceOutput());
         stalled = result.succeeded() ? 0 : stalled + 1;
     }
 
@@ -308,17 +316,17 @@ public final class DeploymentAgentSession {
         if (plan == null)
             throw new IllegalArgumentException("Source-backed plan required");
         return plan.components().stream().filter(c -> c.id().equals(id)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Undeclared agent component"));
+            .orElseThrow(() -> new IllegalArgumentException("Undeclared agent component"));
     }
 
     /** Provides current real facts, without inferred success. / 提供当前真实事实，不推断成功。
      * @return bounded model context / 有界模型上下文 */
     private Map<String, Object> context() {
         return Map.of("task", task.id().toString(), "requirements", requirements, "sourceRevision", source.revision(),
-                "planRevision", planRevision, "components",
-                plan == null ? List.of() : plan.components().stream().map(DeploymentAgentPlan.Component::id).toList(),
-                "remoteRevisions", Map.copyOf(revisions), "sealed", Map.copyOf(artifacts), "readFiles",
-                read.stream().sorted().toList());
+            "planRevision", planRevision, "components",
+            plan == null ? List.of() : plan.components().stream().map(DeploymentAgentPlan.Component::id).toList(),
+            "remoteRevisions", Map.copyOf(revisions), "sealed", Map.copyOf(artifacts), "readFiles",
+            read.stream().sorted().toList());
     }
 
     /** Records only a digest durably while retaining bounded redacted live feedback. / 仅持久化摘要，保留有界脱敏实时反馈。
@@ -348,8 +356,8 @@ public final class DeploymentAgentSession {
          * @param originalTask authentic original identity / 真实原身份 */
         private ProposalInvalidatedException(UUID originalTask) {
             super(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_AGENT_PROPOSAL_INVALIDATED",
-                    "Explicit model replacement invalidated the old proposal", Map.of("task", originalTask.toString()),
-                    Optional.of(originalTask)));
+                "Explicit model replacement invalidated the old proposal", Map.of("task", originalTask.toString()),
+                Optional.of(originalTask)));
         }
     }
 
@@ -358,7 +366,7 @@ public final class DeploymentAgentSession {
      * @return safe observation / 安全观察 */
     private static String redact(String value) {
         return value.replaceAll("(?im)^.*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key).*[:=].*$",
-                "[credential content excluded]");
+            "[credential content excluded]");
     }
 
     /** Hashes a nonsecret action binding. / 散列不含秘密的动作绑定。
@@ -367,7 +375,7 @@ public final class DeploymentAgentSession {
     private static String digest(String value) {
         try {
             return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException unavailable) {
             throw new IllegalStateException("SHA-256 unavailable", unavailable);
         }
@@ -385,18 +393,18 @@ public final class DeploymentAgentSession {
         String path = patch.path().toLowerCase(Locale.ROOT);
         for (String part : path.split("/"))
             if (Set.of(".git", ".ssh", ".env", ".npmrc", ".pypirc", ".w2l").contains(part) || part.startsWith(".env.")
-                    || part.endsWith(".pem") || part.endsWith(".key"))
+                || part.endsWith(".pem") || part.endsWith(".key"))
                 throw new SecurityException("Protected source path");
         String binding = digest(old + ":" + patch);
         models.reviewer().patch(patch);
         requireConfiguration();
         var intent = new ActionIntent("deployment.agent.patch", List.of(server.id()), patch.path(),
-                models.revision(), "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
-                "Apply the exact reviewed diff only to the task-owned source candidate");
+            models.revision(), "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
+            "Apply the exact reviewed diff only to the task-owned source candidate");
         var approval = context.interaction().approve(intent, task);
         if (approval.outcome() != Outcome.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                    approval.outcome(), approval.problem());
+                approval.outcome(), approval.problem());
         checkpoint();
         requireConfiguration();
         journal.event(task, "PATCH_EXECUTING", binding, old + ":" + patch.beforeDigest());
@@ -459,7 +467,7 @@ public final class DeploymentAgentSession {
         var answer = context.interaction().requestText("Autonomous deployment input", question, false, task);
         if (answer.outcome() != Outcome.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                    answer.outcome(), answer.problem());
+                answer.outcome(), answer.problem());
         observe("USER_INPUT", answer.value().orElseThrow());
     }
 

@@ -27,14 +27,15 @@ public final class DeploymentBuildRendererRegistry {
      * @return one renderer for every deployable architecture / 每种可部署架构各一渲染器 */
     public static DeploymentBuildRendererRegistry defaults() {
         return new DeploymentBuildRendererRegistry(List.of(new GradleBuildRenderer(), new MavenBuildRenderer(),
-                new JavaJarBuildRenderer(), new JdkBuildRenderer(), new NpmBuildRenderer(), new PnpmBuildRenderer(),
-                new YarnBuildRenderer(), new PipBuildRenderer(), new PipenvBuildRenderer(), new PoetryBuildRenderer(),
-                new UvBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
-                new GoBuildRenderer(), new CargoBuildRenderer(), new DotNetSdkBuildRenderer(),
-                new KotlinGradleBuildRenderer(), new KotlinCompilerBuildRenderer(), new ComposerBuildRenderer(),
-                new PhpCliBuildRenderer(), new BundlerBuildRenderer(), new RubyCliBuildRenderer(),
-                new CmakeBuildRenderer()));
+            new JavaJarBuildRenderer(), new JdkBuildRenderer(), new NpmBuildRenderer(), new PnpmBuildRenderer(),
+            new YarnBuildRenderer(), new PipBuildRenderer(), new PipenvBuildRenderer(), new PoetryBuildRenderer(),
+            new UvBuildRenderer(), new StaticSiteBuildRenderer(), new ContainerBuildRenderer(),
+            new GoBuildRenderer(), new CargoBuildRenderer(), new DotNetSdkBuildRenderer(),
+            new KotlinGradleBuildRenderer(), new KotlinCompilerBuildRenderer(), new ComposerBuildRenderer(),
+            new PhpCliBuildRenderer(), new BundlerBuildRenderer(), new RubyCliBuildRenderer(),
+            new CmakeBuildRenderer()));
     }
+
     /**
      * Renderers.
      * <p>渲染器集合。
@@ -57,7 +58,7 @@ public final class DeploymentBuildRendererRegistry {
             }
             for (DeploymentBuildToolType buildTool : renderer.buildTools()) {
                 DeploymentArchitectureType architecture = new DeploymentArchitectureType(renderer.projectType(),
-                        buildTool);
+                    buildTool);
                 if (registered.putIfAbsent(architecture, renderer) != null) {
                     throw new IllegalArgumentException("duplicate deployment build renderer for " + architecture);
                 }
@@ -80,7 +81,7 @@ public final class DeploymentBuildRendererRegistry {
      */
     public DeploymentBuildRenderer require(DeploymentProjectKind projectType, DeploymentBuildToolType buildTool) {
         DeploymentArchitectureType architecture = new DeploymentArchitectureType(
-                Objects.requireNonNull(projectType, "projectType"), Objects.requireNonNull(buildTool, "buildTool"));
+            Objects.requireNonNull(projectType, "projectType"), Objects.requireNonNull(buildTool, "buildTool"));
         DeploymentBuildRenderer renderer = renderers.get(architecture);
         if (renderer == null || renderer.projectType() != projectType || !renderer.buildTools().contains(buildTool)) {
             throw new IllegalArgumentException("no matching deployment build renderer is registered");

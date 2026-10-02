@@ -53,11 +53,11 @@ class DeploymentNativeDatabaseResultsTest {
         byte[] borrowed = "密碼✓".getBytes(StandardCharsets.UTF_8);
         byte[] original = borrowed.clone();
         byte[] frame = DeploymentNativeDatabaseWire.sensitiveFrame(Map.of("engine", "POSTGRESQL"),
-                Map.of("adminPassword", borrowed));
+            Map.of("adminPassword", borrowed));
         try {
             String expected = "engine="
-                    + Base64.getEncoder().encodeToString("POSTGRESQL".getBytes(StandardCharsets.UTF_8))
-                    + "\nadminPassword=" + Base64.getEncoder().encodeToString(original) + "\n";
+                + Base64.getEncoder().encodeToString("POSTGRESQL".getBytes(StandardCharsets.UTF_8))
+                + "\nadminPassword=" + Base64.getEncoder().encodeToString(original) + "\n";
             assertArrayEquals(expected.getBytes(StandardCharsets.US_ASCII), frame);
             assertArrayEquals(original, borrowed);
         } finally {
@@ -67,7 +67,7 @@ class DeploymentNativeDatabaseResultsTest {
         }
         byte[] tooLarge = new byte[3 * 1024 * 1024];
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentNativeDatabaseWire.sensitiveFrame(Map.of(), Map.of("sql", tooLarge)));
+            () -> DeploymentNativeDatabaseWire.sensitiveFrame(Map.of(), Map.of("sql", tooLarge)));
     }
 
     /** Fills the helper's exact observed instance fields. / 填写 helper 精确观测实例字段。

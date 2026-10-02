@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.secret;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
@@ -7,7 +18,7 @@ import java.util.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.*;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
@@ -39,7 +50,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return original task handle / 原任务句柄
      * @throws ApiException if admission or pure input validation fails / 准入或纯输入校验失败时 */
     public TaskHandle<DeploymentSecretRevision> submit(ServerRef server, DeploymentSecretReference revision,
-            String purpose, Instant createdAt, SecretValueSource value) throws ApiException {
+                                                       String purpose, Instant createdAt, SecretValueSource value) throws ApiException {
         Objects.requireNonNull(value);
         try {
             DeploymentSecretProvisionJournal.validateInput(server, revision, purpose, createdAt);
@@ -47,7 +58,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT");
         }
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Secret revision", List.of(server.id()), true),
-                task -> execute(task, server, revision, purpose, createdAt, value, false));
+            task -> execute(task, server, revision, purpose, createdAt, value, false));
     }
 
     /** Transfers a page-owned plaintext buffer to one admitted task and clears it on every outcome. / 将页面所属明文缓冲区转交一项已准入任务，并在所有结果下清零。
@@ -59,7 +70,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return original task handle / 原任务句柄
      * @throws ApiException if admission fails / 准入失败时 */
     public TaskHandle<DeploymentSecretRevision> submitOwned(ServerRef server, DeploymentSecretReference revision,
-            String purpose, Instant createdAt, SecretValueSource value) throws ApiException {
+                                                            String purpose, Instant createdAt, SecretValueSource value) throws ApiException {
         Objects.requireNonNull(value);
         try {
             DeploymentSecretProvisionJournal.validateInput(server, revision, purpose, createdAt);
@@ -67,7 +78,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
             throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT");
         }
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Secret revision", List.of(server.id()), true),
-                task -> execute(task, server, revision, purpose, createdAt, value, true));
+            task -> execute(task, server, revision, purpose, createdAt, value, true));
     }
 
     /** Creates one indexed database credential inside the already admitted publication task. / 在已准入发布原任务内创建一项已索引数据库凭据。
@@ -80,7 +91,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param value one-shot source transferring its returned bytes / 转移返回字节所有权的一次性来源
      * @return known revision or retained uncertainty / 已知修订或保留未知 */
     public OperationResult<DeploymentSecretRevision> createWithinTask(TaskContext task, ServerRef server, String key,
-            DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value) {
+                                                                      DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value) {
         Objects.requireNonNull(value);
         try {
             DeploymentSecretProvisionJournal.validateInput(server, revision, purpose, createdAt);
@@ -100,7 +111,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param borrowed caller-owned bytes that remain needed for original DB preparation / 原数据库准备仍需使用的调用方字节
      * @return known revision or retained uncertainty / 已知修订或保留未知 */
     public OperationResult<DeploymentSecretRevision> saveBorrowedWithinTask(TaskContext task, ServerRef server,
-            String key, DeploymentSecretReference revision, String purpose, Instant createdAt, byte[] borrowed) {
+                                                                            String key, DeploymentSecretReference revision, String purpose, Instant createdAt, byte[] borrowed) {
         Objects.requireNonNull(borrowed);
         try {
             DeploymentSecretProvisionJournal.validateInput(server, revision, purpose, createdAt);
@@ -119,7 +130,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
         try {
             var original = DeploymentSecretProvisionJournal.find(context.tasks(), task, key);
             if (original.isEmpty() || !server.equals(original.orElseThrow().facts().server())
-                    || !"deployment-database".equals(original.orElseThrow().facts().purpose()))
+                || !"deployment-database".equals(original.orElseThrow().facts().purpose()))
                 return unknown();
             return settle(task, original.orElseThrow(), false);
         } catch (Exception | LinkageError | AssertionError unconfirmed) {
@@ -134,7 +145,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return saved business revision or genuine absence / 已保存业务修订或真实不存在
      * @throws ApiException if original evidence cannot be read / 原依据无法读取时 */
     public Optional<DeploymentSecretReference> savedChild(TaskContext task, String key, ServerRef server)
-            throws ApiException {
+        throws ApiException {
         var original = DeploymentSecretProvisionJournal.find(context.tasks(), task, key);
         if (original.isEmpty())
             return Optional.empty();
@@ -142,8 +153,8 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
         if (!server.equals(facts.server()) || !"deployment-database".equals(facts.purpose()))
             throw new IllegalArgumentException("Database secret child differs from original plan");
         return facts.phase() == DeploymentSecretProvisionJournal.PhaseType.SAVED
-                ? Optional.of(facts.revision())
-                : Optional.empty();
+            ? Optional.of(facts.revision())
+            : Optional.empty();
     }
 
     /** Reconciles the original task without creating a credential or reservation. / 不创建凭据或预留地核对原任务。
@@ -172,10 +183,10 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param ownsOriginal whether the flow clears the returned source array / 流程是否清零返回的来源数组
      * @return observed result / 已观察结果 */
     private OperationResult<DeploymentSecretRevision> execute(TaskContext task, ServerRef server,
-            DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value,
-            boolean ownsOriginal) {
+                                                              DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value,
+                                                              boolean ownsOriginal) {
         return execute(task, server, revision, purpose, createdAt, value, ownsOriginal,
-                DeploymentSecretProvisionJournal.KEY, true);
+            DeploymentSecretProvisionJournal.KEY, true);
     }
 
     /** Runs one original indexed or standalone creation with the same save and recovery algorithm. / 用同一保存与恢复算法执行已索引或独立原创建。
@@ -190,45 +201,45 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param requireAll whether this is the standalone whole-task result / 是否独立整任务结果
      * @return observed result / 已观察结果 */
     private OperationResult<DeploymentSecretRevision> execute(TaskContext task, ServerRef server,
-            DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value,
-            boolean ownsOriginal, String key, boolean requireAll) {
+                                                              DeploymentSecretReference revision, String purpose, Instant createdAt, SecretValueSource value,
+                                                              boolean ownsOriginal, String key, boolean requireAll) {
         try {
             if (revisions.findRevision(task, revision).isPresent())
                 return failed("DEPLOYMENT_SECRET_REVISION_EXISTS");
         } catch (ApiException rejected) {
             return new OperationResult<>(
-                    rejected.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                    Optional.empty(), Optional.of(rejected.problem()));
+                rejected.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                Optional.empty(), Optional.of(rejected.problem()));
         } catch (SQLException unreadable) {
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_PREFLIGHT_FAILED",
-                            "Existing secret revision could not be checked", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_PREFLIGHT_FAILED",
+                    "Existing secret revision could not be checked", Map.of(), Optional.empty())));
         }
         DeploymentSecretProvisionJournal journal = null;
         try {
             journal = DeploymentSecretProvisionJournal.begin(context.tasks(), task, server, revision, purpose,
-                    createdAt, key);
+                createdAt, key);
             byte[] original;
             try {
                 original = Objects.requireNonNull(value.obtain(task));
             } catch (Exception | LinkageError | AssertionError invalid) {
                 journal.knownFailure(
-                        task.cancellation().requested() || invalid instanceof java.util.concurrent.CancellationException
-                                ? new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
-                                        "Secret creation was cancelled before it began", Map.of(), Optional.empty())
-                                : new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_INPUT_FAILED",
-                                        "Secret input could not be obtained", Map.of(), Optional.empty()));
+                    task.cancelToken().requested() || invalid instanceof java.util.concurrent.CancellationException
+                        ? new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
+                        "Secret creation was cancelled before it began", Map.of(), Optional.empty())
+                        : new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_INPUT_FAILED",
+                        "Secret input could not be obtained", Map.of(), Optional.empty()));
                 return result(settle(task, journal, requireAll), journal);
             }
             try {
-                if (task.cancellation().requested()) {
+                if (task.cancelToken().requested()) {
                     journal.knownFailure(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SECRET_CANCELLED",
-                            "Secret creation was cancelled before it began", Map.of(), Optional.empty()));
+                        "Secret creation was cancelled before it began", Map.of(), Optional.empty()));
                     return result(settle(task, journal, requireAll), journal);
                 }
                 if (original.length > 1024 * 1024) {
                     journal.knownFailure(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_INPUT_SIZE",
-                            "Secret input exceeds the platform bound", Map.of(), Optional.empty()));
+                        "Secret input exceeds the platform bound", Map.of(), Optional.empty()));
                     return result(settle(task, journal, requireAll), journal);
                 }
                 byte[] copy = original.clone();
@@ -244,16 +255,16 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
                 var intent = journal.intent();
                 var existing = context.secrets().findReference(created, intent.businessKey(), task);
                 var reference = existing.isPresent()
-                        ? existing.orElseThrow()
-                        : context.secrets().reserve(created, intent.businessKey(), task);
+                    ? existing.orElseThrow()
+                    : context.secrets().reserve(created, intent.businessKey(), task);
                 journal.reserved(reference.id());
                 journal.writeStarted();
                 try {
                     revisions.saveRevision(task,
-                            new DeploymentSecretRevision(revision, created.id(), createdAt, Optional.of(purpose)));
+                        new DeploymentSecretRevision(revision, created.id(), createdAt, Optional.of(purpose)));
                 } catch (SQLException knownRollback) {
                     journal.knownFailure(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_SAVE_FAILED",
-                            "Secret revision was not saved", Map.of(), Optional.empty()));
+                        "Secret revision was not saved", Map.of(), Optional.empty()));
                     return result(settle(task, journal, requireAll), journal);
                 }
                 journal.saved();
@@ -279,13 +290,13 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @param journal original facts / 原依据
      * @return exact current result / 精确当前结果 */
     private static OperationResult<DeploymentSecretRevision> result(OperationResult<Void> settled,
-            DeploymentSecretProvisionJournal journal) {
+                                                                    DeploymentSecretProvisionJournal journal) {
         if (settled.outcome() == Outcome.SUCCEEDED) {
             var facts = journal.facts();
             return new OperationResult<>(
-                    Outcome.SUCCEEDED, Optional.of(new DeploymentSecretRevision(facts.revision(),
-                            facts.credentialId().orElseThrow(), facts.createdAt(), Optional.of(facts.purpose()))),
-                    Optional.empty());
+                Outcome.SUCCEEDED, Optional.of(new DeploymentSecretRevision(facts.revision(),
+                facts.credentialId().orElseThrow(), facts.createdAt(), Optional.of(facts.purpose()))),
+                Optional.empty());
         }
         return new OperationResult<>(settled.outcome(), Optional.empty(), settled.problem());
     }
@@ -297,7 +308,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @throws SQLException if business facts cannot be read / 业务依据无法读取时
      * @throws ApiException if original capability cannot be confirmed / 原能力无法确认时 */
     private OperationResult<Void> settle(TaskContext task, DeploymentSecretProvisionJournal journal)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         return settle(task, journal, true);
     }
 
@@ -309,7 +320,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @throws SQLException if immutable business facts fail / 不可变业务依据失败时
      * @throws ApiException if original platform facts fail / 原平台依据失败时 */
     private OperationResult<Void> settle(TaskContext task, DeploymentSecretProvisionJournal journal, boolean requireAll)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         journal.refresh();
         var facts = journal.facts();
         if (facts.phase() == DeploymentSecretProvisionJournal.PhaseType.CREATE_STARTED)
@@ -326,20 +337,20 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
         if (current.isPresent() && facts.credentialId().isPresent() && !current.orElseThrow().equals(revision(facts)))
             return unknown();
         if (facts.phase() == DeploymentSecretProvisionJournal.PhaseType.WRITE_STARTED
-                && current.filter(revision(facts)::equals).isPresent()) {
+            && current.filter(revision(facts)::equals).isPresent()) {
             journal.saved();
             facts = journal.facts();
         }
         if (facts.phase() == DeploymentSecretProvisionJournal.PhaseType.WRITE_STARTED
-                || facts.phase() == DeploymentSecretProvisionJournal.PhaseType.SAVED && current.isEmpty())
+            || facts.phase() == DeploymentSecretProvisionJournal.PhaseType.SAVED && current.isEmpty())
             return unknown();
         if (facts.phase() != DeploymentSecretProvisionJournal.PhaseType.SAVED && current.isPresent())
             return unknown();
         Outcome outcome = facts.phase() == DeploymentSecretProvisionJournal.PhaseType.SAVED
-                ? Outcome.SUCCEEDED
-                : facts.failure().filter(failure -> failure.code() == ProblemCode.CANCELLED).isPresent()
-                        ? Outcome.CANCELLED
-                        : Outcome.FAILED;
+            ? Outcome.SUCCEEDED
+            : facts.failure().filter(failure -> failure.code() == ProblemCode.CANCELLED).isPresent()
+            ? Outcome.CANCELLED
+            : Outcome.FAILED;
         if (facts.phase() == DeploymentSecretProvisionJournal.PhaseType.KNOWN_FAILURE && current.isPresent())
             return unknown();
         if (facts.referenceId().isPresent()) {
@@ -362,9 +373,9 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
         if (outcome == Outcome.SUCCEEDED)
             return success();
         return new OperationResult<>(outcome, Optional.empty(),
-                Optional.of(facts.failure()
-                        .orElseGet(() -> new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_NOT_SAVED",
-                                "Original secret revision was not saved", Map.of(), Optional.empty()))));
+            Optional.of(facts.failure()
+                .orElseGet(() -> new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_NOT_SAVED",
+                    "Original secret revision was not saved", Map.of(), Optional.empty()))));
     }
 
     /** Constructs the original opaque secret only from durable facts. / 仅从持久依据构造原不透明秘密。
@@ -379,7 +390,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return exact row / 精确行 */
     private static DeploymentSecretRevision revision(DeploymentSecretProvisionJournal.Facts facts) {
         return new DeploymentSecretRevision(facts.revision(), facts.credentialId().orElseThrow(), facts.createdAt(),
-                Optional.of(facts.purpose()));
+            Optional.of(facts.purpose()));
     }
 
     /** Returns a successful result without a retained Java value. / 返回不留存 Java 值的成功结果。
@@ -393,16 +404,16 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return known failed result / 已知失败结果 */
     private static OperationResult<DeploymentSecretRevision> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Secret revision already exists", Map.of(),
-                        Optional.empty())));
+            Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Secret revision already exists", Map.of(),
+                Optional.empty())));
     }
 
     /** Returns uncertainty without claiming cleanup. / 不声称收尾地返回未知。
      * @return retained uncertainty / 保留未知 */
     private static OperationResult<Void> unknown() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_SECRET_UNKNOWN",
-                        "Original secret creation requires reconciliation", Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_SECRET_UNKNOWN",
+                "Original secret creation requires reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Returns unknown direct task result. / 返回未知直接任务结果。
@@ -418,7 +429,7 @@ public final class DeploymentSecretProvisionFlow implements TaskRecovery {
      * @return API exception / API 异常 */
     private static ApiException problem(ProblemCode code, String event) {
         return new ApiException(
-                new Problem(code, event, "Secret provision input is invalid", Map.of(), Optional.empty()));
+            new Problem(code, event, "Secret provision input is invalid", Map.of(), Optional.empty()));
     }
 
 }

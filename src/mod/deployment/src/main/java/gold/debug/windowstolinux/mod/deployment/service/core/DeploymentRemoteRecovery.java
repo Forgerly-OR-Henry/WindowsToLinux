@@ -16,5 +16,5 @@ public interface DeploymentRemoteRecovery {
      * @return remote-owned result, or absence for a reference-only execution / 远端所属结果；纯引用执行为空
      * @throws Exception if original evidence or cleanup cannot be accessed / 原依据或收尾不可访问时 */
     Optional<OperationResult<DeploymentPublicationProposal>> reconcile(TaskContext task,
-            DeploymentExecutionRecord record) throws Exception;
+                                                                       DeploymentExecutionRecord record) throws Exception;
 }

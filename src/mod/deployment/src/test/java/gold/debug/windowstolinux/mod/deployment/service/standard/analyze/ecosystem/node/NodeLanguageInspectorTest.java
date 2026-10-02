@@ -21,13 +21,13 @@ class NodeLanguageInspectorTest {
     void preservesMixedJavaScriptAndTypeScriptAndOnlyAcceptsAnExactEngine() throws Exception {
         Files.writeString(temporaryDirectory.resolve("package.json"), "{\"engines\":{\"node\":\"22\"}}");
         SourceInspectionFacts source = new SourceInspectionFacts(3,
-                List.of(Path.of("package.json"), Path.of("src/a.js"), Path.of("src/b.ts")), "");
+            List.of(Path.of("package.json"), Path.of("src/a.js"), Path.of("src/b.ts")), "");
 
         var facts = new NodeLanguageInspector().inspect(temporaryDirectory, source);
 
         assertEquals("22", facts.values().get(LanguageFactKind.NODE_MAJOR_VERSION));
         assertTrue(facts.sourceLanguages()
-                .containsAll(List.of(SourceLanguageType.JAVASCRIPT, SourceLanguageType.TYPESCRIPT)));
+            .containsAll(List.of(SourceLanguageType.JAVASCRIPT, SourceLanguageType.TYPESCRIPT)));
 
         Files.writeString(temporaryDirectory.resolve("package.json"), "{\"engines\":{\"node\":\">=20\"}}");
         assertTrue(new NodeLanguageInspector().inspect(temporaryDirectory, source).values().isEmpty());

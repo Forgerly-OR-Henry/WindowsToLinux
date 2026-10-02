@@ -1,26 +1,34 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import gold.debug.windowstolinux.appapi.task.*;
+
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Retains exact command and patch completion proof across real CLASS/H2 reopen. / 跨真实CLASS/H2重开保留精确命令与补丁完成证明。 */
 class DeploymentAgentEffectEvidenceTest extends DeploymentRuntimeFixture {
-    @ParameterizedTest @ValueSource(strings = {"COMMAND", "PATCH"})
+    @ParameterizedTest
+    @ValueSource(strings = {"COMMAND", "PATCH"})
     void unrelatedReceiptsCannotReleaseOriginalEffectAfterReopen(String kind) throws Exception {
-        enable(); UUID original;
+        enable();
+        UUID original;
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var journal = new DeploymentAgentJournal(context.db());
             var work = context.tasks().submit(new TaskRequest(DeploymentAgentWorkflow.TASK_TYPE,
-                    "Persist exact effect kinds", List.of(), true), task -> {
+                "Persist exact effect kinds", List.of(), true), task -> {
                 journal.create(task, new DeploymentAgentJournal.Identity("evidence-only", "a".repeat(64),
-                        "b".repeat(64), "MANUAL_REVIEW"));
+                    "b".repeat(64), "MANUAL_REVIEW"));
                 String other = kind.equals("COMMAND") ? "PATCH" : "COMMAND";
                 journal.event(task, kind + "_EXECUTING", "shared-binding", "first");
                 journal.event(task, other + "_RESULT", "shared-binding", "unrelated-kind");

@@ -1,14 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.*;
+
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 
 /** Confirms only retained formal-to-checkpoint build review pointers after restart, never installs or builds. / 重启后仅确认留存正式账本到检查点的构建审阅指针，绝不安装或构建。 */
 final class DeploymentAssistedReviewRecovery {
     /** Prevents construction. / 禁止构造。 */
-    private DeploymentAssistedReviewRecovery() {}
+    private DeploymentAssistedReviewRecovery() {
+    }
 
     /** Reads the full original intent and review chain before accepting any child recovery identity. / 接受任一子恢复身份前读取完整原意图及审阅链。
      * @param context actual original Mod activation / 实际原Mod启用
@@ -24,7 +28,8 @@ final class DeploymentAssistedReviewRecovery {
         if (pending.isPresent() && pending.orElseThrow().unitId().equals(facts.path("application").asText())) {
             var intent = pending.orElseThrow();
             if (!record.identity().reviewedRevision().equals(intent.previousRoot()) || !journal.actualBuild(intent)
-                    || !facts.path("planSha256").asText().equals(DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan()).reviewedRevision())) return false;
+                || !facts.path("planSha256").asText().equals(DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan()).reviewedRevision()))
+                return false;
             return !facts.path("environmentRecovery").asText().equals("MAY_HAVE_RUN");
         }
         if (!facts.has("buildReviewState")) return true;
@@ -34,15 +39,15 @@ final class DeploymentAssistedReviewRecovery {
         if (found.isEmpty()) return false;
         var review = found.orElseThrow();
         if (!facts.path("buildReviewPrevious").asText().equals(DeploymentAssistedBuildReviewCodec.decodeDescription(review.previousPlan()).reviewedRevision())
-                || !facts.path("buildReviewNext").asText().equals(DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan()).reviewedRevision())
-                || !facts.path("buildReviewRootPrevious").asText().equals(review.previousRoot()) || !facts.path("buildReviewRootNext").asText().equals(review.nextRoot())
-                || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())) return false;
+            || !facts.path("buildReviewNext").asText().equals(DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan()).reviewedRevision())
+            || !facts.path("buildReviewRootPrevious").asText().equals(review.previousRoot()) || !facts.path("buildReviewRootNext").asText().equals(review.nextRoot())
+            || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())) return false;
         if (facts.path("buildReviewState").textValue().equals("CONFIRMED"))
             return facts.path("planSha256").asText().equals(facts.path("buildReviewNext").textValue());
         if (!facts.path("buildReviewState").textValue().equals("PENDING") || !record.identity().reviewedRevision().equals(review.nextRoot())
-                || !facts.path("environmentRecovery").asText().equals("VERIFIED") || !facts.path("environmentTools").asText().equals(sha(review.nextTools()))
-                || !facts.path("buildScript").asText().equals(sha(review.previousScript())) || !facts.path("buildTools").asText().equals(sha(review.previousTools()))
-                || !facts.path("buildFailureEvidence").asText().equals(sha(review.failureEvidence()))) return false;
+            || !facts.path("environmentRecovery").asText().equals("VERIFIED") || !facts.path("environmentTools").asText().equals(sha(review.nextTools()))
+            || !facts.path("buildScript").asText().equals(sha(review.previousScript())) || !facts.path("buildTools").asText().equals(sha(review.previousTools()))
+            || !facts.path("buildFailureEvidence").asText().equals(sha(review.failureEvidence()))) return false;
         return journal.reviewConfirmed(review);
     }
 
@@ -61,7 +66,7 @@ final class DeploymentAssistedReviewRecovery {
         var repository = new DeploymentExecutionRepository(context.db());
         var pending = repository.buildIntent(record);
         if (pending.isPresent()) return facts.path("planSha256").asText().equals(record.identity().reviewedRevision())
-                && pending.orElseThrow().previousRoot().equals(record.identity().reviewedRevision()) && pending.orElseThrow().nextRoot().equals(facts.path("buildReviewNext").asText());
+            && pending.orElseThrow().previousRoot().equals(record.identity().reviewedRevision()) && pending.orElseThrow().nextRoot().equals(facts.path("buildReviewNext").asText());
         var chain = repository.buildReviews(record);
         return !chain.isEmpty() && chain.getLast().nextRoot().equals(record.identity().reviewedRevision()) && root.reviewConfirmed(chain.getLast());
     }
@@ -70,7 +75,10 @@ final class DeploymentAssistedReviewRecovery {
      * @param value original persisted bytes represented as text / 以文本表示的原持久字节
      * @return exact proof SHA / 精确证明SHA */
     private static String sha(String value) {
-        try { return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException unavailable) { throw new IllegalStateException("JDK SHA-256 unavailable", unavailable); }
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("JDK SHA-256 unavailable", unavailable);
+        }
     }
 }

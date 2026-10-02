@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,7 +23,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
@@ -43,7 +49,7 @@ final class DeploymentCollectionEvidence {
      * @return exact original unit release digest / 精确原单元发布摘要 */
     static String unitRelease(ApplicationFacts data, DeploymentApplicationGraph.Component component) {
         return data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
-                .findFirst().orElseThrow().releaseSha256();
+            .findFirst().orElseThrow().releaseSha256();
     }
 
     /** Reads only this original operation's maintenance marker ownership. / 仅读取本原操作的维护标记归属。
@@ -53,10 +59,10 @@ final class DeploymentCollectionEvidence {
      * @return confirmed presence, absence or uncertainty / 已确证存在、不存在或未知
      * @throws ApiException if provider authority is unavailable / 提供方权限不可用时 */
     static Optional<Boolean> marker(DeploymentHandoffChannel channel, DeploymentApplicationGraph.Component component,
-            String operation) throws ApiException {
+                                    String operation) throws ApiException {
         var result = channel.execute("handoff-maintenance-status",
-                List.of(component.unit().id(), component.unit().ownershipManifestSha256(), operation), new byte[0],
-                Duration.ofMinutes(2), 1024);
+            List.of(component.unit().id(), component.unit().ownershipManifestSha256(), operation), new byte[0],
+            Duration.ofMinutes(2), 1024);
         if (DeploymentHandoffChannel.receipt(result, "HANDOFF_MAINTENANCE=1\nPRESENT=1\n"))
             return Optional.of(true);
         if (DeploymentHandoffChannel.receipt(result, "HANDOFF_MAINTENANCE=1\nPRESENT=0\n"))
@@ -71,8 +77,8 @@ final class DeploymentCollectionEvidence {
      * @param application original application ID / 原应用ID
      * @return verified original artifact or unconfirmed status / 已核实原产物或未确证状态 */
     static Optional<DeploymentArtifact> parseStatus(
-            OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
-            DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
+        OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
+        DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
         if (result.outcome() != Outcome.SUCCEEDED || result.value().isEmpty())
             return Optional.empty();
         var reply = result.value().orElseThrow();
@@ -86,21 +92,21 @@ final class DeploymentCollectionEvidence {
         }
         boolean database = plan.kind().equals("database");
         if (!"1".equals(fields.get(database ? "HANDOFF_DATABASE" : "HANDOFF_BACKUP"))
-                || !"1".equals(fields.get("PRESENT")) || !"1".equals(fields.get("COMPLETE")))
+            || !"1".equals(fields.get("PRESENT")) || !"1".equals(fields.get("COMPLETE")))
             return Optional.empty();
         if (database && !fields.keySet()
-                .equals(Set.of("HANDOFF_DATABASE", "PRESENT", "COMPLETE", "ARTIFACT_ID", "BYTE_COUNT", "SHA256")))
+            .equals(Set.of("HANDOFF_DATABASE", "PRESENT", "COMPLETE", "ARTIFACT_ID", "BYTE_COUNT", "SHA256")))
             return Optional.empty();
         if (!database && (!fields.keySet()
-                .equals(Set.of("HANDOFF_BACKUP", "PRESENT", "COMPLETE", "ARTIFACT", "KIND", "SIZE", "SHA256"))
-                || !plan.kind().equals(fields.get("KIND"))))
+            .equals(Set.of("HANDOFF_BACKUP", "PRESENT", "COMPLETE", "ARTIFACT", "KIND", "SIZE", "SHA256"))
+            || !plan.kind().equals(fields.get("KIND"))))
             return Optional.empty();
         String id = fields.get(database ? "ARTIFACT_ID" : "ARTIFACT");
         String expected = database
-                ? "db-" + digest32(operation, application, plan.componentId(), plan.unitId(), plan.release(),
-                        plan.resource())
-                : "artifact-" + digest32(application, plan.componentId(), plan.unitId(), plan.release(), plan.kind(),
-                        plan.resource());
+            ? "db-" + digest32(operation, application, plan.componentId(), plan.unitId(), plan.release(),
+            plan.resource())
+            : "artifact-" + digest32(application, plan.componentId(), plan.unitId(), plan.release(), plan.kind(),
+            plan.resource());
         String size = fields.get(database ? "BYTE_COUNT" : "SIZE");
         String digest = fields.get("SHA256");
         if (!expected.equals(id) || !size.matches("[1-9][0-9]{0,11}") || !digest.matches("[0-9a-f]{64}"))
@@ -109,9 +115,9 @@ final class DeploymentCollectionEvidence {
         if (count > Long.parseLong(plan.maximum()))
             return Optional.empty();
         String path = database
-                ? "/var/lib/windowstolinux/backups/" + id
-                : "/var/lib/windowstolinux/backups/" + operation + "/" + id
-                        + (plan.kind().equals("oci") ? ".oci" : ".pax");
+            ? "/var/lib/windowstolinux/backups/" + id
+            : "/var/lib/windowstolinux/backups/" + operation + "/" + id
+            + (plan.kind().equals("oci") ? ".oci" : ".pax");
         return Optional.of(new DeploymentArtifact(id, plan.bindingId(), path, count, digest));
     }
 
@@ -139,7 +145,7 @@ final class DeploymentCollectionEvidence {
     static OperationResult<Void> current(DeploymentHandoffChannel channel, ApplicationFacts data) throws ApiException {
         for (var component : data.graph().components()) {
             var release = data.release().bindings().stream()
-                    .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
+                .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
             var verified = channel.current(component, release.releaseSha256());
             if (verified.outcome() != Outcome.SUCCEEDED)
                 return verified;
@@ -154,8 +160,8 @@ final class DeploymentCollectionEvidence {
      * @param application original application ID / 原应用ID
      * @return verified complete original artifact or unconfirmed receipt / 已核实完整原产物或未确证回执 */
     static Optional<DeploymentArtifact> parseArtifact(
-            OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
-            DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
+        OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
+        DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
         var reply = result.value().orElseThrow();
         if (reply.truncated() || !reply.exitCode().equals(Optional.of(0)))
             return Optional.empty();
@@ -167,17 +173,17 @@ final class DeploymentCollectionEvidence {
         }
         boolean database = plan.kind().equals("database");
         if (database && (!fields.keySet().equals(Set.of("HANDOFF_DATABASE", "ARTIFACT_ID", "BYTE_COUNT", "SHA256"))
-                || !fields.get("HANDOFF_DATABASE").equals("1")))
+            || !fields.get("HANDOFF_DATABASE").equals("1")))
             return Optional.empty();
         if (!database && (!fields.keySet().equals(Set.of("ARTIFACT", "KIND", "SIZE", "SHA256"))
-                || !fields.get("KIND").equals(plan.kind())))
+            || !fields.get("KIND").equals(plan.kind())))
             return Optional.empty();
         String id = fields.get(database ? "ARTIFACT_ID" : "ARTIFACT");
         String expected = database
-                ? "db-" + digest32(operation, application, plan.componentId(), plan.unitId(), plan.release(),
-                        plan.resource())
-                : "artifact-" + digest32(application, plan.componentId(), plan.unitId(), plan.release(), plan.kind(),
-                        plan.resource());
+            ? "db-" + digest32(operation, application, plan.componentId(), plan.unitId(), plan.release(),
+            plan.resource())
+            : "artifact-" + digest32(application, plan.componentId(), plan.unitId(), plan.release(), plan.kind(),
+            plan.resource());
         String size = fields.get(database ? "BYTE_COUNT" : "SIZE");
         String digest = fields.get("SHA256");
         if (!expected.equals(id) || !size.matches("[1-9][0-9]{0,11}") || !digest.matches("[0-9a-f]{64}"))
@@ -186,9 +192,9 @@ final class DeploymentCollectionEvidence {
         if (count > Long.parseLong(plan.maximum()))
             return Optional.empty();
         String path = database
-                ? "/var/lib/windowstolinux/backups/" + id
-                : "/var/lib/windowstolinux/backups/" + operation + "/" + id
-                        + (plan.kind().equals("oci") ? ".oci" : ".pax");
+            ? "/var/lib/windowstolinux/backups/" + id
+            : "/var/lib/windowstolinux/backups/" + operation + "/" + id
+            + (plan.kind().equals("oci") ? ".oci" : ".pax");
         return Optional.of(new DeploymentArtifact(id, plan.bindingId(), path, count, digest));
     }
 
@@ -201,8 +207,8 @@ final class DeploymentCollectionEvidence {
         if (values.isArray())
             for (var value : values)
                 result.add(new DeploymentArtifact(value.path("id").asText(), value.path("bindingId").asText(),
-                        value.path("remotePath").asText(), value.path("byteCount").asLong(),
-                        value.path("sha256").asText()));
+                    value.path("remotePath").asText(), value.path("byteCount").asLong(),
+                    value.path("sha256").asText()));
         return List.copyOf(result);
     }
 
@@ -247,7 +253,7 @@ final class DeploymentCollectionEvidence {
      * @return known failed result / 已知失败结果 */
     static <T> OperationResult<T> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
-                event, "Collection differs from the original reviewed release", Map.of(), Optional.empty())));
+            event, "Collection differs from the original reviewed release", Map.of(), Optional.empty())));
     }
 
     /** Retains uncertain original effects without concluding cleanup. / 保留未知原副作用而不结束清理。
@@ -256,7 +262,7 @@ final class DeploymentCollectionEvidence {
      * @return retained unknown result / 留存未知结果 */
     static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Collection requires original-task read-only reconciliation", Map.of(), Optional.empty())));
+            event, "Collection requires original-task read-only reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Preserves classified original ownership or recovery evidence. / 保留已分类原归属或恢复依据。
@@ -265,6 +271,6 @@ final class DeploymentCollectionEvidence {
      * @return original checked problem / 原受检问题 */
     static ApiException problem(ProblemCode code, String event) {
         return new ApiException(
-                new Problem(code, event, "Collection evidence cannot be confirmed", Map.of(), Optional.empty()));
+            new Problem(code, event, "Collection evidence cannot be confirmed", Map.of(), Optional.empty()));
     }
 }

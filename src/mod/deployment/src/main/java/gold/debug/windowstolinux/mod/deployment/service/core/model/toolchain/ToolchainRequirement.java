@@ -17,7 +17,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToo
  * @param version version of the relevant protocol, configuration or runtime / 相应协议、配置或运行时的版本
  */
 public record ToolchainRequirement(DeploymentToolchainType ecosystem, String declaration, String source,
-        PurposeType purpose, ConstraintType constraint, Optional<DeploymentToolchainVersion> version) {
+                                   PurposeType purpose, ConstraintType constraint,
+                                   Optional<DeploymentToolchainVersion> version) {
     /**
      * Distinguishes build-time and runtime toolchain requirements.
      * <p>区分构建期及运行期工具链需求。
@@ -105,7 +106,7 @@ public record ToolchainRequirement(DeploymentToolchainType ecosystem, String dec
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static ToolchainRequirement declared(DeploymentToolchainType ecosystem, String declaration, String source,
-            PurposeType purpose) {
+                                                PurposeType purpose) {
         String value = Objects.requireNonNull(declaration, "declaration").trim();
         boolean minimum = value.startsWith(">=");
         String token = minimum ? value.substring(2).trim() : value.replaceFirst("^(?:==|=)", "").trim();
@@ -113,15 +114,15 @@ public record ToolchainRequirement(DeploymentToolchainType ecosystem, String dec
             token = token.substring(0, token.length() - 2);
         Optional<DeploymentToolchainVersion> parsed = DeploymentToolchainVersion.parse(ecosystem, token);
         ConstraintType kind = parsed.isEmpty()
-                ? ConstraintType.UNRESOLVED
-                : minimum
-                        ? ConstraintType.MINIMUM
-                        : parsed.orElseThrow().numbers().size() <= ecosystem.branchSegments()
-                                || ecosystem == DeploymentToolchainType.DOTNET
-                                        && parsed.orElseThrow().numbers().size() == 2
-                                        && parsed.orElseThrow().numbers().get(1) == 0
-                                                ? ConstraintType.SERIES
-                                                : ConstraintType.EXACT;
+            ? ConstraintType.UNRESOLVED
+            : minimum
+            ? ConstraintType.MINIMUM
+            : parsed.orElseThrow().numbers().size() <= ecosystem.branchSegments()
+            || ecosystem == DeploymentToolchainType.DOTNET
+            && parsed.orElseThrow().numbers().size() == 2
+            && parsed.orElseThrow().numbers().get(1) == 0
+            ? ConstraintType.SERIES
+            : ConstraintType.EXACT;
         return new ToolchainRequirement(ecosystem, declaration, source, purpose, kind, parsed);
     }
 

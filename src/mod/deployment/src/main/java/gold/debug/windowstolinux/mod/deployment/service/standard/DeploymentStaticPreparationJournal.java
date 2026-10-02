@@ -26,7 +26,7 @@ public final class DeploymentStaticPreparationJournal {
 
     /** Strict bounded JSON document. / 严格有界 JSON 文档。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Original explicit task occupancy. / 原显式任务占用。 */
     private final TaskCheckpoint checkpoint;
@@ -54,7 +54,7 @@ public final class DeploymentStaticPreparationJournal {
      * @return original held marker / 原占用标记
      * @throws ApiException if persistence cannot be confirmed / 无法确认持久化时 */
     public static DeploymentStaticPreparationJournal begin(TaskService tasks, TaskContext task, ServerRef server)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(tasks);
         Objects.requireNonNull(task);
         Objects.requireNonNull(server);
@@ -68,7 +68,7 @@ public final class DeploymentStaticPreparationJournal {
      * @return original marker or absence / 原标记或不存在
      * @throws ApiException if original read fails / 原读取失败时 */
     public static Optional<DeploymentStaticPreparationJournal> find(TaskService tasks, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var checkpoint = tasks.findCheckpoint(task, KEY);
         if (checkpoint.isEmpty())
             return Optional.empty();
@@ -76,7 +76,7 @@ public final class DeploymentStaticPreparationJournal {
         if (!task.id().equals(UUID.fromString(fields.get("taskId"))))
             throw new IllegalArgumentException("Static preparation task identity differs");
         return Optional.of(
-                new DeploymentStaticPreparationJournal(checkpoint.orElseThrow(), task.id(), fields.get("serverId")));
+            new DeploymentStaticPreparationJournal(checkpoint.orElseThrow(), task.id(), fields.get("serverId")));
     }
 
     /** Marks an observed cancellation before local cleanup. / 本机清理前记录已观测取消。
@@ -109,7 +109,7 @@ public final class DeploymentStaticPreparationJournal {
         try {
             var node = JSON.readTree(payload);
             if (node == null || !node.isObject() || node.size() != 4 || !node.path("formatVersion").isIntegralNumber()
-                    || !node.path("formatVersion").canConvertToInt() || node.path("formatVersion").asInt() != VERSION)
+                || !node.path("formatVersion").canConvertToInt() || node.path("formatVersion").asInt() != VERSION)
                 throw new IllegalArgumentException("Invalid static preparation marker");
             var names = new java.util.HashSet<String>();
             node.fieldNames().forEachRemaining(names::add);
@@ -120,7 +120,7 @@ public final class DeploymentStaticPreparationJournal {
             var stage = node.path("stage").textValue();
             UUID.fromString(taskId);
             if (serverId == null || serverId.isBlank() || serverId.length() > 512 || serverId.indexOf('\0') >= 0
-                    || !Set.of("PREPARING", "CANCELLED").contains(stage))
+                || !Set.of("PREPARING", "CANCELLED").contains(stage))
                 throw new IllegalArgumentException("Invalid static preparation identity");
             return Map.of("taskId", taskId, "serverId", serverId, "stage", stage);
         } catch (IOException invalid) {
@@ -136,7 +136,7 @@ public final class DeploymentStaticPreparationJournal {
     private static String encode(UUID taskId, String serverId, String stage) {
         try {
             return JSON.writeValueAsString(Map.of("formatVersion", VERSION, "taskId", taskId.toString(), "serverId",
-                    serverId, "stage", stage));
+                serverId, "stage", stage));
         } catch (com.fasterxml.jackson.core.JsonProcessingException impossible) {
             throw new IllegalStateException("Static marker encoding failed", impossible);
         }

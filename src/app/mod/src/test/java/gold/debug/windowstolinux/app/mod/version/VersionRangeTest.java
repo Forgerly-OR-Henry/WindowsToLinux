@@ -26,7 +26,7 @@ class VersionRangeTest {
     @Test
     void canonicalSemverOrderingIncludesNumericPrereleasesAndFinalReleases() {
         var ordered = List.of("1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2",
-                "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1");
+            "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1");
         for (int i = 1; i < ordered.size(); i++)
             assertTrue(SemanticVersion.parse(ordered.get(i - 1)).compareTo(SemanticVersion.parse(ordered.get(i))) < 0);
         assertEquals(SemanticVersion.parse("1.0.0"), SemanticVersion.parse("1.0.0"));
@@ -36,10 +36,10 @@ class VersionRangeTest {
     @Test
     void malformedVersionsAndRangesAreRejected() {
         for (var version : new String[]{"01.0.0", "1.0", "1.0.0+build", "1.0.0-01", "1.0.0 ", "-1.0.0", "1.0.0-",
-                "9".repeat(513) + ".0.0"})
+            "9".repeat(513) + ".0.0"})
             assertThrows(IllegalArgumentException.class, () -> SemanticVersion.parse(version));
         for (var range : new String[]{"(,)", "[2.0.0,1.0.0)", "(1.0.0,1.0.0)", "[1.0.0,2.0.0", ">=1.0.0", "*",
-                "[1.0.0,2.0.0),[3.0.0,4.0.0)"})
+            "[1.0.0,2.0.0),[3.0.0,4.0.0)"})
             assertThrows(IllegalArgumentException.class, () -> VersionRange.parse(range));
     }
 }

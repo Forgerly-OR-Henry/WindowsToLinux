@@ -1,15 +1,21 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,7 +38,7 @@ class DependencyRecoveryLedgerTest {
             var second = call(db, schema);
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
-                        "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_acquire CHECK(resource_kind<>'SCHEMA')");
+                    "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_acquire CHECK(resource_kind<>'SCHEMA')");
             }
             assertThrows(SQLException.class, () -> ledger.retainDependency(task, first, c -> first.claims()));
             assertTrue(ledger.queries().dependencies(task).isEmpty());
@@ -46,7 +52,7 @@ class DependencyRecoveryLedgerTest {
             assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, two));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
-                        "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_release CHECK(resource_kind<>'SCHEMA' OR released_at IS NULL)");
+                    "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_release CHECK(resource_kind<>'SCHEMA' OR released_at IS NULL)");
             }
             assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, one));
             assertEquals(2, ledger.queries().dependencies(task).size());
@@ -75,8 +81,8 @@ class DependencyRecoveryLedgerTest {
             ledger.retainDependency(task, original, c -> original.claims());
             for (String owner : List.of("caller", "provider"))
                 ledger.retain(task, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), owner, false),
-                        new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")),
-                        false);
+                    new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")),
+                    false);
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
@@ -87,8 +93,8 @@ class DependencyRecoveryLedgerTest {
             assertTrue(ledger.queries().hasDependencyResources(task, Set.of("caller")));
             ledger.releasePreviousSshConnections(task, "caller", "1.0.0");
             try (var c = db.openConnection();
-                    var p = c.prepareStatement(
-                            "UPDATE platform_task_resource SET owner_id='different' WHERE task_id=? AND resource_kind='SCHEMA'")) {
+                 var p = c.prepareStatement(
+                     "UPDATE platform_task_resource SET owner_id='different' WHERE task_id=? AND resource_kind='SCHEMA'")) {
                 p.setObject(1, task);
                 p.executeUpdate();
             }
@@ -99,14 +105,14 @@ class DependencyRecoveryLedgerTest {
     @Test
     void recoveryIdentityRejectsMissingExtraAndNoncanonicalFacts() {
         var original = new DependencyRecovery(UUID.randomUUID(), UUID.randomUUID(), "provider", "1.0.0",
-                Optional.empty());
+            Optional.empty());
         assertEquals(original, DependencyRecovery.decode(original.encode()));
         for (var change : List.of(Map.entry("bootId", "1-1-1-1-1"),
-                Map.entry("schemaGeneration", UUID.randomUUID().toString()), Map.entry("extra", "value"))) {
+            Map.entry("schemaGeneration", UUID.randomUUID().toString()), Map.entry("extra", "value"))) {
             var fields = new HashMap<>(original.encode().fields());
             fields.put(change.getKey(), change.getValue());
             assertThrows(IllegalArgumentException.class,
-                    () -> DependencyRecovery.decode(new ResourceRecovery("service.v1", fields)));
+                () -> DependencyRecovery.decode(new ResourceRecovery("service.v1", fields)));
         }
     }
 }

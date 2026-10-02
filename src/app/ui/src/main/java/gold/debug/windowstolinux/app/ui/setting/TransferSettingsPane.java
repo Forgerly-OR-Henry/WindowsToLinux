@@ -7,8 +7,9 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
 import gold.debug.windowstolinux.app.service.linux.TransferSettingsService;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Permanent platform threshold editor with persistence-confirmed values. / 使用持久化已确认值的常驻平台阈值编辑器。 */
 public final class TransferSettingsPane extends JPanel implements AutoCloseable {
@@ -41,13 +42,14 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
      * @param components themed platform controls / 主题平台控件
      * @param messages localized feedback / 本地化反馈 */
     public TransferSettingsPane(TransferSettingsService service, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                                PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Settings controls require the EDT");
         this.service = Objects.requireNonNull(service);
         this.messages = Objects.requireNonNull(messages);
         setName("platform.transfers");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         connect.setName("transfer.settings.connect");
         idle.setName("transfer.settings.idle");
@@ -75,12 +77,13 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         var editor = components.transparent(new BorderLayout(10, 10));
         editor.add(fields, BorderLayout.CENTER);
         editor.add(actions, BorderLayout.SOUTH);
-        var top = components.transparent(new BorderLayout(10, 10));
+        var top = components.card(new BorderLayout(10, 10));
         top.add(description, BorderLayout.NORTH);
         top.add(editor, BorderLayout.CENTER);
         status.setName("transfer.settings.status");
         top.add(status, BorderLayout.SOUTH);
         add(top, BorderLayout.NORTH);
+        components.scrollPage(this);
         controls();
     }
 
@@ -110,7 +113,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         final TransferConfiguration requested;
         try {
             requested = new TransferConfiguration(Integer.parseInt(connect.getText().trim()),
-                    Integer.parseInt(idle.getText().trim()));
+                Integer.parseInt(idle.getText().trim()));
         } catch (IllegalArgumentException invalid) {
             status.setText(messages.text("transfer.settings.invalid"));
             return;
@@ -119,7 +122,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         controls();
         status.setText(messages.text("transfer.settings.saving"));
         DesktopTaskExecutor.run(() -> service.save(requested), value -> completed(value, "transfer.settings.saved"),
-                this::failed);
+            this::failed);
     }
 
     /** Publishes only a confirmed read or completed atomic write. / 仅发布已确认读取或已完成原子写入。

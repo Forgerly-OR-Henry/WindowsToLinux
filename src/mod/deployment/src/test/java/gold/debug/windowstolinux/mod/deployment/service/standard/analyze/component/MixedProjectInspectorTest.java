@@ -30,15 +30,15 @@ class MixedProjectInspectorTest {
         goProject("backend");
 
         var assessment = new MixedProjectInspector().analyze(temporaryDirectory, "shop", List.of(
-                go("backend", 8080, Set.of("database"),
-                        List.of(new DeploymentStoragePath("orders", DeploymentStoragePath.AccessMode.READ_ONLY,
-                                "orders-v1", true))),
-                go("database", 5432, Set.of(), List.of(new DeploymentStoragePath("orders",
-                        DeploymentStoragePath.AccessMode.READ_WRITE, "orders-v1", true)))));
+            go("backend", 8080, Set.of("database"),
+                List.of(new DeploymentStoragePath("orders", DeploymentStoragePath.AccessMode.READ_ONLY,
+                    "orders-v1", true))),
+            go("database", 5432, Set.of(), List.of(new DeploymentStoragePath("orders",
+                DeploymentStoragePath.AccessMode.READ_WRITE, "orders-v1", true)))));
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals(List.of("backend", "database"),
-                assessment.components().stream().map(component -> component.componentId()).toList());
+            assessment.components().stream().map(component -> component.componentId()).toList());
         assertEquals(Set.of("database"), assessment.components().getFirst().dependencies());
         assertEquals("shop-backend", assessment.components().getFirst().facts().applicationId());
         assertTrue(assessment.issues().isEmpty());
@@ -49,16 +49,16 @@ class MixedProjectInspectorTest {
         goProject("left");
         goProject("right");
         ComponentAnalysisRequest left = go("left", 8080, Set.of("right"),
-                List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v1", false)));
+            List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v1", false)));
         ComponentAnalysisRequest right = new ComponentAnalysisRequest("right", "right",
-                DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime("right", 8080)), List.of("left/.w2l/bin"),
-                Set.of(8080), List.of("PORT"), List.of(),
-                List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v2", false)),
-                Set.of("left"), true, new ComponentIsolationSpecification(true, false, false, false));
+            DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime("right", 8080)), List.of("left/.w2l/bin"),
+            Set.of(8080), List.of("PORT"), List.of(),
+            List.of(new DeploymentStoragePath("shared", DeploymentStoragePath.AccessMode.READ_WRITE, "v2", false)),
+            Set.of("left"), true, new ComponentIsolationSpecification(true, false, false, false));
 
         var assessment = new MixedProjectInspector().analyze(temporaryDirectory, "unsafe", List.of(left, right));
         Set<String> codes = assessment.issues().stream().map(ComponentIssue::code)
-                .collect(java.util.stream.Collectors.toSet());
+            .collect(java.util.stream.Collectors.toSet());
 
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(codes.contains("COMPONENT_ARTIFACT_OVERLAP"));
@@ -76,17 +76,17 @@ class MixedProjectInspectorTest {
         Path preview = Files.createDirectories(temporaryDirectory.resolve("scripts"));
         Files.writeString(preview.resolve("deploy.sh"), "#!/bin/sh\n");
         ComponentAnalysisRequest nested = new ComponentAnalysisRequest("nested", "service/nested",
-                DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime("nested", 8081)),
-                List.of("service/nested/.w2l/bin/nested"), Set.of(8081), List.of(), List.of(), List.of(), Set.of(),
-                true, ComponentIsolationSpecification.managed());
+            DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime("nested", 8081)),
+            List.of("service/nested/.w2l/bin/nested"), Set.of(8081), List.of(), List.of(), List.of(), Set.of(),
+            true, ComponentIsolationSpecification.managed());
         ComponentAnalysisRequest previewRequest = new ComponentAnalysisRequest("scripts", "scripts",
-                DeploymentProjectKind.RECOGNITION_PREVIEW, Optional.empty(), List.of(), Set.of(), List.of(), List.of(),
-                List.of(), Set.of(), true, ComponentIsolationSpecification.managed());
+            DeploymentProjectKind.RECOGNITION_PREVIEW, Optional.empty(), List.of(), Set.of(), List.of(), List.of(),
+            List.of(), Set.of(), true, ComponentIsolationSpecification.managed());
 
         var assessment = new MixedProjectInspector().analyze(temporaryDirectory, "mixed",
-                List.of(go("service", 8080, Set.of(), List.of()), nested, previewRequest));
+            List.of(go("service", 8080, Set.of(), List.of()), nested, previewRequest));
         Set<String> codes = assessment.issues().stream().map(ComponentIssue::code)
-                .collect(java.util.stream.Collectors.toSet());
+            .collect(java.util.stream.Collectors.toSet());
 
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(codes.contains("COMPONENT_ROOT_OVERLAP"));
@@ -94,21 +94,21 @@ class MixedProjectInspectorTest {
     }
 
     private ComponentAnalysisRequest go(String id, int port, Set<String> dependencies,
-            List<DeploymentStoragePath> dataPaths) {
+                                        List<DeploymentStoragePath> dataPaths) {
         return new ComponentAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE, Optional.of(goRuntime(id, port)),
-                List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of("service-token"), dataPaths,
-                dependencies, true, ComponentIsolationSpecification.managed());
+            List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of("service-token"), dataPaths,
+            dependencies, true, ComponentIsolationSpecification.managed());
     }
 
     private static DeploymentRuntimeDefinition goRuntime(String artifact, int port) {
         return new DeploymentRuntimeDefinition.GoService("1.24", artifact, "main.go",
-                new DeploymentHealthCheck.Tcp(port, 10, 2));
+            new DeploymentHealthCheck.Tcp(port, 10, 2));
     }
 
     private void goProject(String relative) throws Exception {
         Path root = Files.createDirectories(temporaryDirectory.resolve(relative));
         Files.writeString(root.resolve("go.mod"),
-                "module example.test/" + relative.replace('/', '-') + "\n\ngo 1.24\n");
+            "module example.test/" + relative.replace('/', '-') + "\n\ngo 1.24\n");
         Files.writeString(root.resolve("go.sum"), "example.test/dependency v1.0.0 h1:fixture\n");
         Files.writeString(root.resolve("main.go"), "package main\nfunc main() {}\n");
     }

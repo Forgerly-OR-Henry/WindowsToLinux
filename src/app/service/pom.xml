@@ -11,7 +11,7 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-app-source</artifactId>
+      <artifactId>windowstolinux-app-file</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

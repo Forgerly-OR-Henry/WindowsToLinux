@@ -1,12 +1,20 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Tracks synchronous platform capability work until its physical and durable release. / 跟踪同步平台能力操作，直至物理和持久释放完成。 */
 public final class TaskCapabilityScope implements AutoCloseable {
@@ -47,7 +55,7 @@ public final class TaskCapabilityScope implements AutoCloseable {
      * @param resourcePrefix host-defined resource prefix / 宿主定义的资源前缀
      */
     public TaskCapabilityScope(PlatformDatabase database, PlatformTaskRuntime tasks, String owner, String version,
-            Optional<SchemaIdentity> schema, String resourcePrefix) {
+                               Optional<SchemaIdentity> schema, String resourcePrefix) {
         this.tasks = Objects.requireNonNull(tasks);
         ledger = new TaskLedger(database);
         this.owner = Objects.requireNonNull(owner);
@@ -90,9 +98,9 @@ public final class TaskCapabilityScope implements AutoCloseable {
         }
         try {
             if (schema.isPresent() && !ledger.queries().holds(task.id(),
-                    new TaskResource("SCHEMA", schema.orElseThrow().generation().toString(), owner, false)))
+                new TaskResource("SCHEMA", schema.orElseThrow().generation().toString(), owner, false)))
                 throw error(ProblemCode.ACCESS_DENIED, "CAPABILITY_SCHEMA",
-                        "The task does not hold this schema generation");
+                    "The task does not hold this schema generation");
             return work.run();
         } finally {
             try {
@@ -159,7 +167,7 @@ public final class TaskCapabilityScope implements AutoCloseable {
     private static void worker() throws ApiException {
         if (javax.swing.SwingUtilities.isEventDispatchThread())
             throw error(ProblemCode.CONTRACT_VIOLATION, "CAPABILITY_BACKGROUND",
-                    "Capability access requires a background thread");
+                "Capability access requires a background thread");
     }
 
     /** Builds a non-secret public failure. / 构造非秘密公开失败。

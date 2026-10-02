@@ -1,11 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Commits an owned business transaction without treating uncertain acknowledgements as failure. / 提交所属业务事务，不将不确定的确认误记为已失败。 */
 final class DeploymentStorageTransaction {
@@ -69,8 +73,8 @@ final class DeploymentStorageTransaction {
      * @return original-result uncertainty / 原结果不确定性 */
     private static ApiException uncertain(String code) {
         return new ApiException(new Problem(ProblemCode.UNKNOWN, code,
-                "Deployment data or connection release requires reconciliation before retry", Map.of(),
-                Optional.empty()));
+            "Deployment data or connection release requires reconciliation before retry", Map.of(),
+            Optional.empty()));
     }
 
     /** SQL work whose surrounding transaction is owned by the caller. / 外层事务由调用方持有的SQL工作。 */

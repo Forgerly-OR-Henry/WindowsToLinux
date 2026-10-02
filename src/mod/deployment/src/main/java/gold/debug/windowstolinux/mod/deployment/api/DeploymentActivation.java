@@ -6,4 +6,5 @@ package gold.debug.windowstolinux.mod.deployment.api;
  * @param healthEvidence bounded health evidence / 有界健康依据
  * @param cleanupComplete whether owned staging was cleaned / 所属暂存是否已清理 */
 public record DeploymentActivation(DeploymentHandoff handoff, String accessDescription, String healthEvidence,
-        boolean cleanupComplete) {}
+                                   boolean cleanupComplete) {
+}

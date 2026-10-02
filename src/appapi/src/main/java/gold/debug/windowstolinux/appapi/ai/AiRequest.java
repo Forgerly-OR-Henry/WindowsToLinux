@@ -12,7 +12,7 @@ import java.util.List;
  * @param jsonObjectResponse whether the response must contain a JSON object / 是否要求响应包含 JSON 对象
  */
 public record AiRequest(AiPurpose purpose, List<AiMessage> messages, int maxOutputTokens, Duration timeout,
-        boolean jsonObjectResponse) {
+                        boolean jsonObjectResponse) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param purpose declared purpose used for routing or authorization / 路由或授权使用的声明用途

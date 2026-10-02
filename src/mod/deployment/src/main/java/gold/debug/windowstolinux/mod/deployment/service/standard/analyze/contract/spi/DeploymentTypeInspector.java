@@ -33,6 +33,6 @@ public interface DeploymentTypeInspector {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException;
+                                     List<RejectionReason> rejections) throws IOException;
 
 }

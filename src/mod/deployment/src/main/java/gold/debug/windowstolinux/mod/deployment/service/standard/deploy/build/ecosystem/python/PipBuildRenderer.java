@@ -48,12 +48,12 @@ public final class PipBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (facts.buildTool() == DeploymentBuildToolType.PYTHON_STDLIB)
             return PythonArchitectureBuildRenderer.render(DeploymentBuildToolType.PYTHON_STDLIB, facts, runtime,
-                    workspace, limits, null, "test -f ./pyproject.toml");
+                workspace, limits, null, "test -f ./pyproject.toml");
         return PythonArchitectureBuildRenderer.render(DeploymentBuildToolType.PIP_LOCKED, facts, runtime, workspace,
-                limits, null,
-                "test -f ./requirements.lock\nrun ./.venv/bin/python -m pip install --disable-pip-version-check --require-hashes -r ./requirements.lock");
+            limits, null,
+            "test -f ./requirements.lock\nrun ./.venv/bin/python -m pip install --disable-pip-version-check --require-hashes -r ./requirements.lock");
     }
 }

@@ -39,13 +39,20 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.server.securi
  * @param evidence bounded collection evidence / 有界采集证据
  */
 public record DeploymentLinuxCapabilityFacts(LinuxDistroType distro, String version, String architecture,
-        String packageManager, String packageArchitecture, boolean systemdAvailable, boolean dockerAvailable,
-        boolean podmanAvailable, boolean podmanQuadletAvailable, Set<Integer> javaMajorVersions,
-        Set<Integer> nodeMajorVersions, boolean npmAvailable, boolean mavenAvailable, Set<String> pythonVersions,
-        boolean python3Available, Map<DeploymentProjectKind, Set<String>> serviceRuntimeVersions,
-        Map<DeploymentEcosystemToolType, Set<String>> ecosystemToolVersions, boolean dockerOperational,
-        boolean podmanOperational, DeploymentCpuMicroarchitectureLevel cpuMicroarchitecture, Set<String> cpuFlags,
-        DeploymentLinuxSecurityPosture securityPosture, String evidence) {
+                                             String packageManager, String packageArchitecture,
+                                             boolean systemdAvailable, boolean dockerAvailable,
+                                             boolean podmanAvailable, boolean podmanQuadletAvailable,
+                                             Set<Integer> javaMajorVersions,
+                                             Set<Integer> nodeMajorVersions, boolean npmAvailable,
+                                             boolean mavenAvailable, Set<String> pythonVersions,
+                                             boolean python3Available,
+                                             Map<DeploymentProjectKind, Set<String>> serviceRuntimeVersions,
+                                             Map<DeploymentEcosystemToolType, Set<String>> ecosystemToolVersions,
+                                             boolean dockerOperational,
+                                             boolean podmanOperational,
+                                             DeploymentCpuMicroarchitectureLevel cpuMicroarchitecture,
+                                             Set<String> cpuFlags,
+                                             DeploymentLinuxSecurityPosture securityPosture, String evidence) {
     /**
      * Validates and binds the inputs required by linux capability facts.
      * <p>校验并绑定Linux能力事实所需输入。
@@ -95,24 +102,24 @@ public record DeploymentLinuxCapabilityFacts(LinuxDistroType distro, String vers
             throw new IllegalArgumentException("pythonVersions must contain supported normalized versions");
         }
         java.util.EnumMap<DeploymentProjectKind, Set<String>> normalizedService = new java.util.EnumMap<>(
-                DeploymentProjectKind.class);
+            DeploymentProjectKind.class);
         Objects.requireNonNull(serviceRuntimeVersions, "serviceRuntimeVersions").forEach((projectType, versions) -> {
             Objects.requireNonNull(projectType, "service runtime project type");
             Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "service runtime versions"));
             if (!serviceProjectType(projectType)
-                    || copied.stream().anyMatch(candidate -> !validServiceVersion(projectType, candidate))) {
+                || copied.stream().anyMatch(candidate -> !validServiceVersion(projectType, candidate))) {
                 throw new IllegalArgumentException("service runtime versions must match their bounded project type");
             }
             normalizedService.put(projectType, copied);
         });
         serviceRuntimeVersions = Map.copyOf(normalizedService);
         java.util.EnumMap<DeploymentEcosystemToolType, Set<String>> normalizedTools = new java.util.EnumMap<>(
-                DeploymentEcosystemToolType.class);
+            DeploymentEcosystemToolType.class);
         Objects.requireNonNull(ecosystemToolVersions, "ecosystemToolVersions").forEach((tool, versions) -> {
             Objects.requireNonNull(tool, "ecosystem tool");
             Set<String> copied = Set.copyOf(Objects.requireNonNull(versions, "ecosystem tool versions"));
             if (copied.stream().anyMatch(
-                    candidate -> candidate == null || !candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))) {
+                candidate -> candidate == null || !candidate.matches("[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}"))) {
                 throw new IllegalArgumentException("ecosystem tool versions must be bounded normalized values");
             }
             normalizedTools.put(tool, copied);

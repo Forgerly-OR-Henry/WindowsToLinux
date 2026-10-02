@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -9,7 +15,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion;
@@ -38,7 +44,7 @@ final class DeploymentToolchainPreparer {
      * @return confirmed installed tools or a known/uncertain outcome / 已确认安装工具或已知及未知结果
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<DeploymentResolvedToolchains> prepare(List<ToolchainRequirement> requirements, int attempt,
-            int seconds) throws ApiException {
+                                                          int seconds) throws ApiException {
         if (attempt < 0 || attempt > 1)
             throw new IllegalArgumentException("Only two catalog candidates are allowed");
         var selections = new ArrayList<DeploymentResolvedToolchains.Selection>();
@@ -50,27 +56,27 @@ final class DeploymentToolchainPreparer {
             if (branch.installation() == DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)
                 continue;
             String exact = requirement.constraint() == ToolchainRequirement.ConstraintType.EXACT
-                    && requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
-                    && requirement.version().orElseThrow().branch().equals(branch.version())
-                            ? requirement.version().orElseThrow().text()
-                            : "-";
+                && requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
+                && requirement.version().orElseThrow().branch().equals(branch.version())
+                ? requirement.version().orElseThrow().text()
+                : "-";
             String javaHome = selections.stream().filter(s -> s.version().ecosystem() == DeploymentToolchainType.JAVA)
-                    .map(DeploymentResolvedToolchains.Selection::directory).findFirst().orElse("-");
+                .map(DeploymentResolvedToolchains.Selection::directory).findFirst().orElse("-");
             var observed = commands.prepare(requirement.ecosystem(), branch.version(), exact,
-                    Math.max(30, Math.min(7200, seconds)), javaHome);
+                Math.max(30, Math.min(7200, seconds)), javaHome);
             if (observed.outcome() == Outcome.UNKNOWN || observed.outcome() == Outcome.CANCELLED)
                 return withoutValue(observed);
             if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
                 return withoutValue(observed);
             if (!complete(observed))
                 return observed.outcome() == Outcome.FAILED && knownExit(observed)
-                        ? observed.value().orElseThrow().stdout().startsWith("TOOLCHAIN_FAILURE=unavailable:")
-                                ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED")
-                                : failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED")
-                        : unknown("DEPLOYMENT_TOOLCHAIN_PREPARE_UNCONFIRMED");
+                    ? observed.value().orElseThrow().stdout().startsWith("TOOLCHAIN_FAILURE=unavailable:")
+                    ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED")
+                    : failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_PREPARE_FAILED")
+                    : unknown("DEPLOYMENT_TOOLCHAIN_PREPARE_UNCONFIRMED");
             String stdout = observed.value().orElseThrow().stdout();
             if (!stdout.startsWith("TOOLCHAIN=") || !stdout.endsWith("\n")
-                    || stdout.indexOf('\n') != stdout.length() - 1)
+                || stdout.indexOf('\n') != stdout.length() - 1)
                 return unknown("DEPLOYMENT_TOOLCHAIN_RECEIPT_UNCONFIRMED");
             String[] fields = stdout.substring(10, stdout.length() - 1).split("\\|", -1);
             if (fields.length != 6 || !fields[0].equals(requirement.ecosystem().name()))
@@ -80,13 +86,13 @@ final class DeploymentToolchainPreparer {
                 if (!catalog.permits(version) || !version.branch().equals(branch.version()))
                     return unknown("DEPLOYMENT_TOOLCHAIN_IDENTITY_UNCONFIRMED");
                 if (requirement.constraint() == ToolchainRequirement.ConstraintType.MINIMUM
-                        && version.compareTo(requirement.version().orElseThrow()) < 0)
+                    && version.compareTo(requirement.version().orElseThrow()) < 0)
                     return attempt == 0 && candidates.size() > 1
-                            ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_MINIMUM")
-                            : failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED");
+                        ? failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_MINIMUM")
+                        : failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_TOOLCHAIN_UNSUPPORTED");
                 new DeploymentToolchainSelectionPolicy(catalog).resolve(requirement, branch, List.of(version));
                 selections.add(new DeploymentResolvedToolchains.Selection(requirement, version, fields[2],
-                        DeploymentResolvedToolchains.OriginType.valueOf(fields[3]), fields[4], fields[5]));
+                    DeploymentResolvedToolchains.OriginType.valueOf(fields[3]), fields[4], fields[5]));
             } catch (IllegalArgumentException | java.util.NoSuchElementException invalid) {
                 return unknown("DEPLOYMENT_TOOLCHAIN_IDENTITY_UNCONFIRMED");
             }
@@ -94,7 +100,7 @@ final class DeploymentToolchainPreparer {
         var set = new DeploymentResolvedToolchains(catalog.revision(), selections);
         if (!selections.isEmpty()) {
             String encoded = Base64.getEncoder()
-                    .encodeToString(DeploymentToolchainBindingCodec.encode(set).getBytes(StandardCharsets.UTF_8));
+                .encodeToString(DeploymentToolchainBindingCodec.encode(set).getBytes(StandardCharsets.UTF_8));
             var bound = commands.bind(encoded);
             if (bound.outcome() == Outcome.UNKNOWN || bound.outcome() == Outcome.CANCELLED)
                 return withoutValue(bound);
@@ -102,10 +108,10 @@ final class DeploymentToolchainPreparer {
                 return withoutValue(bound);
             if (!complete(bound))
                 return bound.outcome() == Outcome.FAILED && knownExit(bound)
-                        ? failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_BIND_FAILED")
-                        : unknown("DEPLOYMENT_TOOLCHAIN_BIND_UNCONFIRMED");
+                    ? failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_TOOLCHAIN_BIND_FAILED")
+                    : unknown("DEPLOYMENT_TOOLCHAIN_BIND_UNCONFIRMED");
             if (!bound.value().orElseThrow().stdout()
-                    .equals("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(set) + "\n"))
+                .equals("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(set) + "\n"))
                 return unknown("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED");
         }
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(set), Optional.empty());
@@ -116,8 +122,8 @@ final class DeploymentToolchainPreparer {
      * @return true only for untruncated exit zero / 仅未截断且退出零时为真 */
     private static boolean complete(OperationResult<CommandResult> result) {
         return result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
-                && result.value().orElseThrow().exitCode().equals(Optional.of(0))
-                && !result.value().orElseThrow().truncated();
+            && result.value().orElseThrow().exitCode().equals(Optional.of(0))
+            && !result.value().orElseThrow().truncated();
     }
 
     /** Distinguishes an observed nonzero helper exit from lost confirmation. / 区分已观察非零 helper 退出与确认丢失。
@@ -125,8 +131,8 @@ final class DeploymentToolchainPreparer {
      * @return whether an untruncated nonzero exit is known / 是否已知未截断非零退出 */
     private static boolean knownExit(OperationResult<CommandResult> result) {
         return result.value().isPresent() && !result.value().orElseThrow().truncated()
-                && result.value().orElseThrow().exitCode().isPresent()
-                && result.value().orElseThrow().exitCode().orElseThrow() != 0;
+            && result.value().orElseThrow().exitCode().isPresent()
+            && result.value().orElseThrow().exitCode().orElseThrow() != 0;
     }
 
     /** Removes an absent tool payload without changing outcome or problem. / 移除不存在的工具载荷而不改变结果或问题。
@@ -149,7 +155,7 @@ final class DeploymentToolchainPreparer {
      * @return uncertain outcome / 未知结果 */
     private static OperationResult<DeploymentResolvedToolchains> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Builds a bounded non-secret failure. / 构造有界且不含秘密的失败。

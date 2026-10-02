@@ -21,14 +21,14 @@ class DesktopUninstallCoordinatorTest {
         RecordingUninstallPort port = new RecordingUninstallPort(false, false, false);
 
         DesktopUninstallPreparationResult result = new DesktopUninstallCoordinator(port)
-                .prepare(request(Optional.empty()));
+            .prepare(request(Optional.empty()));
 
         assertEquals(DesktopUninstallPreparationStatus.DECISION_REQUIRED, result.status());
         assertEquals("windows.uninstall.decision-required", result.problem().orElseThrow().eventCode());
         assertEquals(gold.debug.windowstolinux.appapi.task.ProblemCode.INVALID_INPUT,
-                result.problem().orElseThrow().code());
+            result.problem().orElseThrow().code());
         assertEquals("windows.error.uninstallDecisionRequired",
-                result.problem().orElseThrow().context().get("messageKey"));
+            result.problem().orElseThrow().context().get("messageKey"));
         assertEquals(result.operationIdentity(), result.problem().orElseThrow().diagnosticId().orElseThrow());
         assertTrue(port.calls.isEmpty());
     }
@@ -56,7 +56,7 @@ class DesktopUninstallCoordinatorTest {
 
         DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
         DesktopUninstallPreparationResult preparation = coordinator
-                .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+            .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
         DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.SUCCEEDED_DATA_DELETED, result.status());
@@ -70,7 +70,7 @@ class DesktopUninstallCoordinatorTest {
 
         DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
         DesktopUninstallPreparationResult preparation = coordinator
-                .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+            .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
         DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
         assertEquals(DesktopUninstallStatus.PRECONDITION_REJECTED, result.status());
@@ -82,7 +82,7 @@ class DesktopUninstallCoordinatorTest {
         RecordingUninstallPort port = new RecordingUninstallPort(true, false, false);
         DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
         DesktopUninstallPreparationResult preparation = coordinator
-                .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
+            .prepare(request(Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS)));
 
         DesktopUninstallResult result = coordinator.apply(preparation.handoff().orElseThrow());
 
@@ -94,7 +94,7 @@ class DesktopUninstallCoordinatorTest {
     void incompleteDeletionReportsExactResidualItems() {
         RecordingUninstallPort port = new RecordingUninstallPort(false, false, true);
         DesktopUninstallRequest request = request(
-                Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS));
+            Optional.of(DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS));
 
         DesktopUninstallCoordinator coordinator = new DesktopUninstallCoordinator(port);
         DesktopUninstallResult result = coordinator.apply(coordinator.prepare(request).handoff().orElseThrow());
@@ -108,9 +108,9 @@ class DesktopUninstallCoordinatorTest {
     void databaseCredentialsStayInsideTheFixedDataDirectory() {
         Path install = temporary.resolve("WindowsToLinux");
         assertThrows(IllegalArgumentException.class,
-                () -> new DesktopUninstallRequest(Optional.empty(), install, install.resolve("other")));
+            () -> new DesktopUninstallRequest(Optional.empty(), install, install.resolve("other")));
         assertEquals(install.resolve("data").toAbsolutePath().normalize(),
-                new DesktopUninstallRequest(Optional.empty(), install, install.resolve("data")).dataRoot());
+            new DesktopUninstallRequest(Optional.empty(), install, install.resolve("data")).dataRoot());
     }
 
     @Test
@@ -118,14 +118,14 @@ class DesktopUninstallCoordinatorTest {
         var cause = new java.io.IOException("Original safe evidence");
         var suppressed = new java.io.IOException("Safe cleanup evidence");
         java.io.IOException[] failures = {
-                DesktopUninstallException.create(DesktopUninstallFailureType.BOUNDARY_INVALID, "Rejected boundary",
-                        cause),
-                gold.debug.windowstolinux.app.windows.update.DesktopUpdateException.create(
-                        gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType.PACKAGE_INVALID,
-                        "Rejected package", cause),
-                gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException.create(
-                        gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType.HANDOFF_INVALID,
-                        "Rejected handoff", cause)};
+            DesktopUninstallException.create(DesktopUninstallFailureType.BOUNDARY_INVALID, "Rejected boundary",
+                cause),
+            gold.debug.windowstolinux.app.windows.update.DesktopUpdateException.create(
+                gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType.PACKAGE_INVALID,
+                "Rejected package", cause),
+            gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException.create(
+                gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType.HANDOFF_INVALID,
+                "Rejected handoff", cause)};
         for (var failure : failures) {
             org.junit.jupiter.api.Assertions.assertSame(cause, failure.getCause());
             failure.addSuppressed(suppressed);
@@ -173,14 +173,14 @@ class DesktopUninstallCoordinatorTest {
             calls.add("handoff");
             boolean verified = !invalidWorker;
             return new HandoffEvidence(verified, verified, verified,
-                    List.of("external worker, process exit and handoff checked"));
+                List.of("external worker, process exit and handoff checked"));
         }
 
         @Override
         public BoundaryEvidence verifyManagedBoundaries(DesktopUninstallRequest request) {
             calls.add("verify");
             return new BoundaryEvidence(!invalidBoundary, !invalidBoundary, !invalidBoundary,
-                    List.of("jpackage, markers and credential namespace checked"));
+                List.of("jpackage, markers and credential namespace checked"));
         }
 
         @Override
@@ -194,7 +194,7 @@ class DesktopUninstallCoordinatorTest {
             calls.add("data");
             if (dataResidual) {
                 return new RemovalEvidence(false, false, List.of(request.dataRoot().resolve("locked.db").toString()),
-                        List.of("locked database file could not be removed"));
+                    List.of("locked database file could not be removed"));
             }
             return removed("managed data removed");
         }

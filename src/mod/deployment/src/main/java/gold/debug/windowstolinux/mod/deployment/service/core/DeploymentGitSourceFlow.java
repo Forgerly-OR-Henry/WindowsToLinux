@@ -1,5 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.service.core;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -7,10 +18,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 
 /** Executes one reviewed Git project task and reconciles only its original durable evidence. / 执行一次已审阅 Git 项目任务，并仅核对其原持久依据。 */
 public final class DeploymentGitSourceFlow implements TaskRecovery {
@@ -53,7 +64,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
          * @param journal original journal / 原日志
          * @param task original task / 原任务 */
         private PublicationSource(DeploymentGitSourceFlow owner, DeploymentGitMaterial material,
-                DeploymentGitSourceJournal journal, TaskContext task) {
+                                  DeploymentGitSourceJournal journal, TaskContext task) {
             this.owner = owner;
             this.material = material;
             this.journal = journal;
@@ -81,10 +92,10 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
                 throw new IllegalStateException("Original Git source was already saved");
             var facts = journal.facts();
             var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT, material.remote().location(),
-                    Optional.of(DeploymentGitSourceFlow.reference(facts.request().reference())),
-                    Optional.of(material.commit()), material.source().snapshot().sha256());
+                Optional.of(DeploymentGitSourceFlow.reference(facts.request().reference())),
+                Optional.of(material.commit()), material.source().snapshot().sha256());
             var row = new DeploymentProjectRecord(facts.project(), facts.displayName(), source, facts.observedAt(),
-                    facts.observedAt());
+                facts.observedAt());
             journal.propose(row);
             journal.writeStarted();
             try {
@@ -127,26 +138,26 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @return live pinned source and original save boundary / 开放的固定来源与原保存边界
      * @throws ApiException if input, physical work or cleanup cannot be confirmed / 输入、物理工作或清理未确认时 */
     public PublicationSource prepareForPublication(DeploymentGitRequest request, Path executable, String name,
-            long maximumBytes, int maximumEntries, TaskContext task) throws ApiException {
+                                                   long maximumBytes, int maximumEntries, TaskContext task) throws ApiException {
         Objects.requireNonNull(request);
         Objects.requireNonNull(executable);
         if (!executable.isAbsolute() || !java.nio.file.Files.isRegularFile(executable) || name == null
-                || name.isBlank())
+            || name.isBlank())
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
         var when = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         var project = UUID.randomUUID();
         try {
             DeploymentGitSourceJournal.validateInput(project, name, Optional.empty(), when, request, maximumBytes,
-                    maximumEntries);
+                maximumEntries);
         } catch (IllegalArgumentException invalid) {
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
         }
         var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, project, name, Optional.empty(), when,
-                request, maximumBytes, maximumEntries);
+            request, maximumBytes, maximumEntries);
         var preparer = new DeploymentGitPreparer(context, executable);
         try {
             return new PublicationSource(this, preparer.prepare(request, maximumBytes, maximumEntries, task, journal),
-                    journal, task);
+                journal, task);
         } catch (ApiException failure) {
             OperationResult<Void> settled;
             try {
@@ -188,8 +199,8 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @return original platform task / 原平台任务
      * @throws ApiException if original admission fails / 原准入失败时 */
     public TaskHandle<DeploymentProjectRecord> submit(DeploymentGitRequest request, Path executable, UUID project,
-            String displayName, Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumSourceBytes,
-            int maximumEntries) throws ApiException {
+                                                      String displayName, Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumSourceBytes,
+                                                      int maximumEntries) throws ApiException {
         Objects.requireNonNull(request);
         Objects.requireNonNull(executable);
         Objects.requireNonNull(project);
@@ -199,13 +210,13 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             if (!executable.isAbsolute() || !java.nio.file.Files.isRegularFile(executable))
                 throw new IllegalArgumentException("Native Git executable is unavailable");
             DeploymentGitSourceJournal.validateInput(project, displayName, expected, observedAt, request,
-                    maximumSourceBytes, maximumEntries);
+                maximumSourceBytes, maximumEntries);
         } catch (IllegalArgumentException invalid) {
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
         }
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Git project source", List.of(), true),
-                task -> execute(request, executable, project, displayName, expected, observedAt, maximumSourceBytes,
-                        maximumEntries, task));
+            task -> execute(request, executable, project, displayName, expected, observedAt, maximumSourceBytes,
+                maximumEntries, task));
     }
 
     /** Reconciles the original task without sending another Git request or opening a writable source. / 不重发 Git 请求或打开可写来源，仅核对原任务。
@@ -239,20 +250,20 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @param task original context / 原上下文
      * @return complete observed result / 完整观测结果 */
     private OperationResult<DeploymentProjectRecord> execute(DeploymentGitRequest request, Path executable,
-            UUID project, String name, Optional<DeploymentProjectRecord> expected, Instant observedAt,
-            long maximumBytes, int maximumEntries, TaskContext task) {
+                                                             UUID project, String name, Optional<DeploymentProjectRecord> expected, Instant observedAt,
+                                                             long maximumBytes, int maximumEntries, TaskContext task) {
         DeploymentGitSourceJournal journal = null;
         DeploymentGitPreparer preparer = null;
         try {
             journal = DeploymentGitSourceJournal.begin(context.tasks(), task, project, name, expected, observedAt,
-                    request, maximumBytes, maximumEntries);
+                request, maximumBytes, maximumEntries);
             preparer = new DeploymentGitPreparer(context, executable);
             try (var material = preparer.prepare(request, maximumBytes, maximumEntries, task, journal)) {
                 var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
-                        material.remote().location(), Optional.of(reference(request.reference())),
-                        Optional.of(material.commit()), material.source().snapshot().sha256());
+                    material.remote().location(), Optional.of(reference(request.reference())),
+                    Optional.of(material.commit()), material.source().snapshot().sha256());
                 var next = new DeploymentProjectRecord(project, name, source,
-                        expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt), observedAt);
+                    expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt), observedAt);
                 journal.propose(next);
                 journal.writeStarted();
                 try {
@@ -276,10 +287,10 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             try {
                 journal.refresh();
                 if (journal.facts().phase() == DeploymentGitSourceJournal.PhaseState.RECEIPT
-                        && journal.facts().receipt().orElseThrow().outcome() != Outcome.SUCCEEDED) {
+                    && journal.facts().receipt().orElseThrow().outcome() != Outcome.SUCCEEDED) {
                     var receipt = journal.facts().receipt().orElseThrow();
                     journal.knownFailure(
-                            problem(receipt.problemCode().orElseThrow(), receipt.eventCode().orElseThrow()));
+                        problem(receipt.problemCode().orElseThrow(), receipt.eventCode().orElseThrow()));
                 }
                 var settled = settle(task, journal, preparer);
                 return new OperationResult<>(settled.outcome(), Optional.empty(), settled.problem());
@@ -297,7 +308,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @throws ApiException if platform evidence or cleanup fails / 平台依据或清理失败时
      * @throws SQLException if project observation fails / 项目观察失败时 */
     private OperationResult<Void> settle(TaskContext task, DeploymentGitSourceJournal journal,
-            DeploymentGitPreparer preparer) throws ApiException, SQLException {
+                                         DeploymentGitPreparer preparer) throws ApiException, SQLException {
         return settle(task, journal, preparer, true);
     }
 
@@ -310,19 +321,19 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @throws ApiException if original evidence or cleanup is unavailable / 原依据或清理不可用时
      * @throws SQLException if exact project observation fails / 精确项目观察失败时 */
     private OperationResult<Void> settle(TaskContext task, DeploymentGitSourceJournal journal,
-            DeploymentGitPreparer preparer, boolean wholeTask) throws ApiException, SQLException {
+                                         DeploymentGitPreparer preparer, boolean wholeTask) throws ApiException, SQLException {
         if (preparer != null)
             preparer.closeTaskResources(task);
         var facts = journal.refresh();
         context.processes().closeTaskResources(task);
         if (facts.phase() == DeploymentGitSourceJournal.PhaseState.REQUESTED) {
-            var bytes = context.source()
-                    .readWorkspaceEvidence(task, facts.plan().control(), "git-result.json", 1_048_576).orElse(null);
+            var bytes = context.file()
+                .readWorkspaceEvidence(task, facts.plan().control(), "git-result.json", 1_048_576).orElse(null);
             if (bytes == null)
                 return unknown();
             try {
                 journal.receipt(DeploymentGitPreparer.readReceipt(bytes, task.id(), facts.plan().process(),
-                        facts.plan().job()));
+                    facts.plan().job()));
             } catch (java.io.IOException invalid) {
                 return unknown();
             }
@@ -333,7 +344,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
         var result = business(task, journal);
         if (result.outcome() == Outcome.UNKNOWN)
             return result;
-        context.source().closeTaskResources(task);
+        context.file().closeTaskResources(task);
         journal.close();
         if (wholeTask && !context.tasks().resourcesReleased(task))
             return unknown();
@@ -347,12 +358,12 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @throws SQLException if project row cannot be read / 项目行无法读取时
      * @throws ApiException if original database cannot be read / 原数据库无法读取时 */
     private OperationResult<Void> business(TaskContext task, DeploymentGitSourceJournal journal)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         var facts = journal.facts();
         if (facts.phase() == DeploymentGitSourceJournal.PhaseState.KNOWN_FAILURE)
             return failed(facts.failure().orElseThrow());
         if (facts.phase() == DeploymentGitSourceJournal.PhaseState.PLANNED
-                || facts.phase() == DeploymentGitSourceJournal.PhaseState.PROPOSED)
+            || facts.phase() == DeploymentGitSourceJournal.PhaseState.PROPOSED)
             return failed(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GIT_NOT_SAVED"));
         if (facts.phase() == DeploymentGitSourceJournal.PhaseState.RECEIPT) {
             var receipt = facts.receipt().orElseThrow();
@@ -395,7 +406,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @return known failure or cancellation / 已知失败或取消 */
     private static OperationResult<Void> failed(Problem problem) {
         return new OperationResult<>(problem.code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                Optional.empty(), Optional.of(problem));
+            Optional.empty(), Optional.of(problem));
     }
 
     /** Retains uncertain original effects and resources. / 保留不确定的原效果及资源。
@@ -403,6 +414,6 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @return explicit uncertainty / 明确未知 */
     private static <T> OperationResult<T> unknown() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RECOVERY_UNKNOWN")));
+            Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RECOVERY_UNKNOWN")));
     }
 }

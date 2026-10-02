@@ -65,6 +65,7 @@ public enum DeploymentToolchainType {
      * <p>分支Segments。
      */
     private final int branchSegments;
+
     /**
      * Binds the supplied dependencies and state for toolchain ecosystem type.
      * <p>为工具链生态类型绑定传入的依赖及状态。

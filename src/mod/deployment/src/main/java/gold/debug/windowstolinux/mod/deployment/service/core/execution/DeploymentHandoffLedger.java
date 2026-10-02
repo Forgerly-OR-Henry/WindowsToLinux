@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -18,7 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
@@ -49,7 +55,7 @@ public final class DeploymentHandoffLedger {
      * @param recovery original recovery facts / 原恢复事实
      * @param result optional operation result / 可选操作结果 */
     public record Entry(DeploymentHandoff publicValue, String ownerVersion, UUID taskId, Optional<ServerRef> target,
-            JsonNode request, JsonNode recovery, Optional<JsonNode> result) {
+                        JsonNode request, JsonNode recovery, Optional<JsonNode> result) {
     }
 
     /** Creates one deterministic collection review with no remote effect. / 创建一次确定身份且无远端副作用的采集审阅。
@@ -60,14 +66,14 @@ public final class DeploymentHandoffLedger {
      * @return retained handoff / 留存交接
      * @throws ApiException if original identity or commit is unavailable / 原身份或提交不可用时 */
     public DeploymentHandoff reviewCollection(DeploymentApplicationRef application, String revision,
-            List<String> bindingIds, TaskContext task) throws ApiException {
+                                              List<String> bindingIds, TaskContext task) throws ApiException {
         TaskSnapshot caller = caller(task);
         var request = JSON.createObjectNode().put("formatVersion", 1).put("kind", "COLLECTION").put("ownerVersion",
-                caller.ownerVersion());
+            caller.ownerVersion());
         var selected = request.putArray("bindings");
         bindingIds.stream().sorted().forEach(selected::add);
         var recovery = JSON.createObjectNode().put("formatVersion", 1).put("before", "UNKNOWN").put("changed", false)
-                .put("operation", "backup-" + token(task, application, "collection"));
+            .put("operation", "backup-" + token(task, application, "collection"));
         return create(application, revision, Optional.empty(), request, recovery, task);
     }
 
@@ -81,7 +87,7 @@ public final class DeploymentHandoffLedger {
         var body = restoreRequest(request, task);
         var recovery = JSON.createObjectNode().put("formatVersion", 1).put("before", "UNKNOWN").put("changed", false);
         return create(archived.application(), archived.revisionSha256(), Optional.of(request.target()), body, recovery,
-                task);
+            task);
     }
 
     /** Reads only the original restore intent after an uncertain call, without reopening files or creating candidates. / 未知调用后仅读取原恢复意图，不重新打开文件或创建候选。
@@ -95,7 +101,7 @@ public final class DeploymentHandoffLedger {
         var existing = find(identity(caller(task), "RESTORE", archived.application()), task);
         if (existing.isPresent())
             requireRequest(existing.orElseThrow(), archived.application(), archived.revisionSha256(),
-                    Optional.of(request.target()), body);
+                Optional.of(request.target()), body);
         return existing;
     }
 
@@ -113,26 +119,26 @@ public final class DeploymentHandoffLedger {
         }
         TaskSnapshot caller = caller(task);
         var body = JSON.createObjectNode().put("formatVersion", 1).put("kind", "RESTORE")
-                .put("ownerVersion", caller.ownerVersion()).put("archiveSha256", request.archiveSha256())
-                .put("targetReviewSha256", request.reviewedTargetSha256())
-                .put("archivedOwnershipSha256", archived.ownershipSha256());
+            .put("ownerVersion", caller.ownerVersion()).put("archiveSha256", request.archiveSha256())
+            .put("targetReviewSha256", request.reviewedTargetSha256())
+            .put("archivedOwnershipSha256", archived.ownershipSha256());
         var snapshot = body.putObject("archivedSnapshot").put("applicationId", archived.application().id())
-                .put("serverId", archived.application().server().id()).put("displayName", archived.displayName())
-                .put("revisionSha256", archived.revisionSha256()).put("ownershipSha256", archived.ownershipSha256())
-                .put("state", archived.state().name()).put("observedAt", archived.observedAt().toString())
-                .put("runtimeVersion", archived.runtime().formatVersion())
-                .put("runtimeBase64", Base64.getEncoder().encodeToString(archived.runtime().payload()))
-                .put("healthPolicySha256", archived.healthPolicySha256());
+            .put("serverId", archived.application().server().id()).put("displayName", archived.displayName())
+            .put("revisionSha256", archived.revisionSha256()).put("ownershipSha256", archived.ownershipSha256())
+            .put("state", archived.state().name()).put("observedAt", archived.observedAt().toString())
+            .put("runtimeVersion", archived.runtime().formatVersion())
+            .put("runtimeBase64", Base64.getEncoder().encodeToString(archived.runtime().payload()))
+            .put("healthPolicySha256", archived.healthPolicySha256());
         var bindings = snapshot.putArray("bindings");
         for (var binding : archived.bindings())
             bindings.addObject().put("id", binding.id()).put("componentId", binding.componentId())
-                    .put("kind", binding.kind()).put("path", binding.path()).put("engine", binding.engine())
-                    .put("needsQuiescence", binding.needsQuiescence())
-                    .put("secretReferenceId", binding.secretReferenceId().orElse(null));
+                .put("kind", binding.kind()).put("path", binding.path()).put("engine", binding.engine())
+                .put("needsQuiescence", binding.needsQuiescence())
+                .put("secretReferenceId", binding.secretReferenceId().orElse(null));
         var files = body.putArray("files");
         for (var file : request.files())
             files.addObject().put("bindingId", file.bindingId()).put("path", file.verifiedLocalFile().toString())
-                    .put("size", file.byteCount()).put("sha256", file.sha256());
+                .put("size", file.byteCount()).put("sha256", file.sha256());
         return body;
     }
 
@@ -145,13 +151,13 @@ public final class DeploymentHandoffLedger {
         TaskSnapshot caller = caller(task);
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement("SELECT * FROM deployment_handoff WHERE handoff_id=?")) {
+             var query = connection.prepareStatement("SELECT * FROM deployment_handoff WHERE handoff_id=?")) {
             query.setObject(1, id);
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     return Optional.empty();
                 if (!caller.id().equals(rows.getObject("platform_task_id", UUID.class))
-                        || !caller.ownerId().equals(rows.getString("owner_backup_mod")))
+                    || !caller.ownerId().equals(rows.getString("owner_backup_mod")))
                     throw denied();
                 var request = parse(rows.getBinaryStream("request_payload"));
                 if (!caller.ownerVersion().equals(request.path("ownerVersion").asText()))
@@ -160,7 +166,7 @@ public final class DeploymentHandoffLedger {
                 String targetId = rows.getString("target_server_id");
                 var target = targetId == null ? Optional.<ServerRef>empty() : Optional.of(new ServerRef(targetId));
                 var application = new DeploymentApplicationRef(rows.getString("application_id"),
-                        new ServerRef(rows.getString("source_server_id")));
+                    new ServerRef(rows.getString("source_server_id")));
                 if (request.path("kind").asText().equals("COLLECTION"))
                     context.servers().get(application.server(), task);
                 else if (request.path("kind").asText().equals("RESTORE") && target.isPresent())
@@ -168,10 +174,10 @@ public final class DeploymentHandoffLedger {
                 else
                     throw invalid("DEPLOYMENT_HANDOFF_KIND_INVALID");
                 var publicValue = new DeploymentHandoff(id, DeploymentHandoffState.valueOf(rows.getString("state")),
-                        application, rows.getString("revision_sha256"), blockers(recovery));
+                    application, rows.getString("revision_sha256"), blockers(recovery));
                 var result = rows.getBinaryStream("result_payload");
                 return Optional.of(new Entry(publicValue, caller.ownerVersion(), caller.id(), target, request, recovery,
-                        result == null ? Optional.empty() : Optional.of(parse(result))));
+                    result == null ? Optional.empty() : Optional.of(parse(result))));
             }
         } catch (SQLException | IOException | IllegalArgumentException failure) {
             throw invalid("DEPLOYMENT_HANDOFF_READ_FAILED");
@@ -188,14 +194,14 @@ public final class DeploymentHandoffLedger {
      * @return resulting public handoff / 结果公开交接
      * @throws ApiException if compare-and-set commit is unknown / 比较更新提交未知时 */
     public DeploymentHandoff advance(Entry entry, DeploymentHandoffState expected, DeploymentHandoffState next,
-            JsonNode recovery, Optional<JsonNode> result, TaskContext task) throws ApiException {
+                                     JsonNode recovery, Optional<JsonNode> result, TaskContext task) throws ApiException {
         require(entry, task);
         byte[] recoveryBytes = bytes(recovery);
         byte[] resultBytes = result.map(DeploymentHandoffLedger::bytes).orElse(null);
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var update = connection.prepareStatement(
-                        "UPDATE deployment_handoff SET state=?,recovery_payload=?,result_payload=?,updated_at=? WHERE handoff_id=? AND state=? AND platform_task_id=? AND owner_backup_mod=? AND revision_sha256=?")) {
+             var update = connection.prepareStatement(
+                 "UPDATE deployment_handoff SET state=?,recovery_payload=?,result_payload=?,updated_at=? WHERE handoff_id=? AND state=? AND platform_task_id=? AND owner_backup_mod=? AND revision_sha256=?")) {
             update.setString(1, next.name());
             update.setBytes(2, recoveryBytes);
             update.setBytes(3, resultBytes);
@@ -208,7 +214,7 @@ public final class DeploymentHandoffLedger {
             if (update.executeUpdate() != 1)
                 throw invalid("DEPLOYMENT_HANDOFF_PHASE_CHANGED");
             return new DeploymentHandoff(entry.publicValue().id(), next, entry.publicValue().application(),
-                    entry.publicValue().revisionSha256(), blockers(recovery));
+                entry.publicValue().revisionSha256(), blockers(recovery));
         } catch (SQLException failure) {
             throw invalid("DEPLOYMENT_HANDOFF_COMMIT_UNKNOWN");
         }
@@ -231,7 +237,7 @@ public final class DeploymentHandoffLedger {
      * @return original durable handoff / 原持久交接
      * @throws ApiException if original authorization or commit fails / 原授权或提交失败时 */
     private DeploymentHandoff create(DeploymentApplicationRef application, String revision, Optional<ServerRef> target,
-            ObjectNode request, ObjectNode recovery, TaskContext task) throws ApiException {
+                                     ObjectNode request, ObjectNode recovery, TaskContext task) throws ApiException {
         TaskSnapshot owner = caller(task);
         if (!revision.matches("[0-9a-f]{64}"))
             throw invalid("DEPLOYMENT_HANDOFF_REVISION_INVALID");
@@ -249,8 +255,8 @@ public final class DeploymentHandoffLedger {
         }
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var insert = connection.prepareStatement(
-                        "INSERT INTO deployment_handoff(handoff_id,owner_backup_mod,platform_task_id,application_id,source_server_id,target_server_id,revision_sha256,state,request_payload,recovery_payload,updated_at) VALUES(?,?,?,?,?,?,?,'REVIEWED',?,?,?)")) {
+             var insert = connection.prepareStatement(
+                 "INSERT INTO deployment_handoff(handoff_id,owner_backup_mod,platform_task_id,application_id,source_server_id,target_server_id,revision_sha256,state,request_payload,recovery_payload,updated_at) VALUES(?,?,?,?,?,?,?,'REVIEWED',?,?,?)")) {
             insert.setObject(1, id);
             insert.setString(2, owner.ownerId());
             insert.setObject(3, owner.id());
@@ -275,7 +281,7 @@ public final class DeploymentHandoffLedger {
      * @return stable original intent identity / 稳定原意图身份 */
     private static UUID identity(TaskSnapshot owner, String kind, DeploymentApplicationRef application) {
         return UUID.nameUUIDFromBytes(("deployment-handoff-v1\n" + owner.id() + "\n" + kind + "\n" + application.id())
-                .getBytes(StandardCharsets.UTF_8));
+            .getBytes(StandardCharsets.UTF_8));
     }
 
     /** Rejects replacing any part of the original persisted request. / 拒绝替换原持久请求的任何部分。
@@ -286,7 +292,7 @@ public final class DeploymentHandoffLedger {
      * @param request complete immutable original intent / 完整不可变原意图
      * @throws ApiException if any original request fact differs / 任何原请求事实不符时 */
     private static void requireRequest(Entry existing, DeploymentApplicationRef application, String revision,
-            Optional<ServerRef> target, ObjectNode request) throws ApiException {
+                                       Optional<ServerRef> target, ObjectNode request) throws ApiException {
         final JsonNode canonical;
         try {
             canonical = JSON.readTree(request.toString());
@@ -294,8 +300,8 @@ public final class DeploymentHandoffLedger {
             throw invalid("DEPLOYMENT_HANDOFF_REQUEST_INVALID");
         }
         if (!existing.publicValue().application().equals(application)
-                || !existing.publicValue().revisionSha256().equals(revision) || !existing.target().equals(target)
-                || !existing.request().equals(canonical))
+            || !existing.publicValue().revisionSha256().equals(revision) || !existing.target().equals(target)
+            || !existing.request().equals(canonical))
             throw invalid("DEPLOYMENT_HANDOFF_REQUEST_CHANGED");
     }
 
@@ -379,14 +385,14 @@ public final class DeploymentHandoffLedger {
      * @return stable original remote suffix / 稳定原远端后缀 */
     private static String token(TaskContext task, DeploymentApplicationRef application, String kind) {
         return UUID.nameUUIDFromBytes((task.id() + application.id() + kind).getBytes(StandardCharsets.UTF_8)).toString()
-                .replace("-", "");
+            .replace("-", "");
     }
 
     /** Rejects a forged or unrelated caller. / 拒绝伪造或无关调用者。
      * @return bounded original authorization failure / 有界原授权失败 */
     private static ApiException denied() {
         return new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_HANDOFF_OWNER",
-                "Handoff belongs to another original task or Mod", Map.of(), Optional.empty()));
+            "Handoff belongs to another original task or Mod", Map.of(), Optional.empty()));
     }
 
     /** Preserves one explicit data or phase failure. / 保留一项明确数据或阶段失败。
@@ -394,6 +400,6 @@ public final class DeploymentHandoffLedger {
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException invalid(String event) {
         return new ApiException(new Problem(ProblemCode.INCOMPATIBLE, event,
-                "Handoff identity or phase cannot be confirmed", Map.of(), Optional.empty()));
+            "Handoff identity or phase cannot be confirmed", Map.of(), Optional.empty()));
     }
 }

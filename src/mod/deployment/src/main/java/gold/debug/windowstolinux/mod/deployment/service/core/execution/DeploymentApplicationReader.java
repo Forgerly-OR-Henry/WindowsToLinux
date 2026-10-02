@@ -45,14 +45,14 @@ public final class DeploymentApplicationReader {
      * @return consistent application page / 一致的应用页
      * @throws ApiException if access or stored evidence fails / 访问或存储依据失败时 */
     public PageSlice<DeploymentApplicationSnapshot> list(Optional<String> cursor, int limit, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         if (limit < 1 || limit > 100 || cursor == null
-                || cursor.isPresent() && !cursor.orElseThrow().matches("[a-z0-9][a-z0-9-]{0,62}"))
+            || cursor.isPresent() && !cursor.orElseThrow().matches("[a-z0-9][a-z0-9-]{0,62}"))
             throw problem("DEPLOYMENT_APPLICATION_PAGE_INVALID");
         try (var connection = open(task)) {
             var ids = new ArrayList<String>();
             try (var query = connection.prepareStatement(
-                    "SELECT application_id FROM managed_application WHERE graph_ready=TRUE AND application_id>? ORDER BY application_id LIMIT ?")) {
+                "SELECT application_id FROM managed_application WHERE graph_ready=TRUE AND application_id>? ORDER BY application_id LIMIT ?")) {
                 query.setString(1, cursor.orElse(""));
                 query.setInt(2, limit + 1);
                 try (var rows = query.executeQuery()) {
@@ -126,10 +126,10 @@ public final class DeploymentApplicationReader {
      * @throws IOException if complete archive encoding fails / 完整归档编码失败时
      * @throws ApiException if original evidence access fails / 原依据访问失败时 */
     private ApplicationFacts read(Connection connection, String id, TaskContext task)
-            throws SQLException, IOException, ApiException {
+        throws SQLException, IOException, ApiException {
         DeploymentReleaseRecord record = null;
         try (var query = connection
-                .prepareStatement("SELECT * FROM deployment_release WHERE application_id=? AND state='ACTIVE'")) {
+            .prepareStatement("SELECT * FROM deployment_release WHERE application_id=? AND state='ACTIVE'")) {
             query.setString(1, id);
             try (var rows = query.executeQuery()) {
                 while (rows.next()) {
@@ -151,13 +151,13 @@ public final class DeploymentApplicationReader {
         Instant observed = record.createdAt();
         for (var component : graph.components()) {
             try (var query = connection.prepareStatement(
-                    "SELECT current_release_sha256,runtime_state,is_ownership_verified,display_name,observed_at FROM deployment_unit WHERE deployment_unit_id=?")) {
+                "SELECT current_release_sha256,runtime_state,is_ownership_verified,display_name,observed_at FROM deployment_unit WHERE deployment_unit_id=?")) {
                 query.setString(1, component.unit().id());
                 try (var rows = query.executeQuery()) {
                     if (!rows.next())
                         throw new SQLException("Published unit is absent");
                     var binding = release.bindings().stream()
-                            .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
+                        .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
                     if (!binding.releaseSha256().equals(rows.getString(1)))
                         throw new SQLException("Current unit differs from release");
                     String runtimeState = rows.getString(2);
@@ -177,8 +177,8 @@ public final class DeploymentApplicationReader {
         }
         var bindings = bindings(graph);
         var snapshot = new DeploymentApplicationSnapshot(new DeploymentApplicationRef(id, server), display,
-                record.identity().sha256(), ownership(graph), state, observed, archived(release, record, task),
-                bindings, sha256(new DeploymentHealthCodec().write(graph.healthCheck())));
+            record.identity().sha256(), ownership(graph), state, observed, archived(release, record, task),
+            bindings, sha256(new DeploymentHealthCodec().write(graph.healthCheck())));
         return new ApplicationFacts(snapshot, graph, release);
     }
 
@@ -191,24 +191,24 @@ public final class DeploymentApplicationReader {
      * @throws IOException if the complete archive exceeds its bound / 完整归档超出界限时
      * @throws ApiException if original metadata access fails / 原元数据访问失败时 */
     private VersionedRuntime archived(DeploymentReleaseSnapshot release, DeploymentReleaseRecord record,
-            TaskContext task) throws SQLException, IOException, ApiException {
+                                      TaskContext task) throws SQLException, IOException, ApiException {
         var configurations = new DeploymentConfigurationRepository(database);
         var credentials = new DeploymentSecretRepository(database);
         var commits = new ArrayList<DeploymentUnitCommit>();
         var metadata = new java.util.LinkedHashMap<DeploymentSecretReference, DeploymentSecretRevision>();
         for (var component : release.graph().components()) {
             var binding = release.bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
-                    .findFirst().orElseThrow();
+                .findFirst().orElseThrow();
             var configuration = configurations.find(task, component.unit().id(), binding.configurationRevision())
-                    .orElseThrow(() -> new SQLException("Published configuration is absent"));
+                .orElseThrow(() -> new SQLException("Published configuration is absent"));
             if (!configuration.sha256().equals(binding.configurationSha256()))
                 throw new SQLException("Published configuration changed");
             commits.add(new DeploymentUnitCommit(component.unit(), component.runtime(),
-                    new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(), record.createdAt()),
-                    configuration, binding.secrets()));
+                new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(), record.createdAt()),
+                configuration, binding.secrets()));
             for (var secret : binding.secrets())
                 metadata.putIfAbsent(secret, credentials.findRevision(task, secret)
-                        .orElseThrow(() -> new SQLException("Published credential metadata is absent")));
+                    .orElseThrow(() -> new SQLException("Published credential metadata is absent")));
         }
         var proposal = new DeploymentPublicationProposal(release.graph(), commits);
         if (!DeploymentReleaseSnapshot.capture(proposal.graph(), proposal.units()).equals(release))
@@ -223,13 +223,13 @@ public final class DeploymentApplicationReader {
     private static DeploymentReleaseRecord release(ResultSet rows) throws SQLException {
         try {
             return new DeploymentReleaseRecord(rows.getString("application_id"),
-                    new DeploymentReleaseIdentity(rows.getObject("release_id", java.util.UUID.class),
-                            rows.getString("release_sha256")),
-                    rows.getObject("execution_id", java.util.UUID.class),
-                    DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE,
-                    new String(bounded(rows, "runtime_payload", 16 * 1_048_576), StandardCharsets.UTF_8),
-                    new String(bounded(rows, "health_payload", 1_048_576), StandardCharsets.UTF_8),
-                    Instant.ofEpochMilli(rows.getLong("created_at")));
+                new DeploymentReleaseIdentity(rows.getObject("release_id", java.util.UUID.class),
+                    rows.getString("release_sha256")),
+                rows.getObject("execution_id", java.util.UUID.class),
+                DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE,
+                new String(bounded(rows, "runtime_payload", 16 * 1_048_576), StandardCharsets.UTF_8),
+                new String(bounded(rows, "health_payload", 1_048_576), StandardCharsets.UTF_8),
+                Instant.ofEpochMilli(rows.getLong("created_at")));
         } catch (IOException | IllegalArgumentException failure) {
             throw new SQLException("Stored release is invalid", failure);
         }
@@ -290,33 +290,33 @@ public final class DeploymentApplicationReader {
         for (var component : graph.components()) {
             for (var file : component.resources().fileBindings())
                 values.add(new DeploymentBinding(component.componentId() + ":" + file.bindingId(),
-                        component.componentId(),
-                        file.resourceType() == DeploymentStorageLocation.StorageResourceType.CONFIGURATION
-                                ? "CONFIG"
-                                : "FILE",
-                        file.physicalPath(component.unit().id()), "",
-                        file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_WRITE, Optional.empty()));
+                    component.componentId(),
+                    file.resourceType() == DeploymentStorageLocation.StorageResourceType.CONFIGURATION
+                        ? "CONFIG"
+                        : "FILE",
+                    file.physicalPath(component.unit().id()), "",
+                    file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_WRITE, Optional.empty()));
             for (var database : component.resources().databaseBindings().orElse(List.of())) {
                 var connection = database.connection();
                 String path = connection instanceof DeploymentDatabaseConnection.Sqlite sqlite
-                        ? sqlite.physicalPath(component.unit().id(), database.databaseId())
-                        : connection instanceof DeploymentDatabaseConnection.Server remote
-                                ? remote.engine().name().toLowerCase(java.util.Locale.ROOT) + "://" + remote.host()
-                                        + ":" + remote.port() + "/" + remote.database()
-                                : throwUnsupportedDatabase(connection);
+                    ? sqlite.physicalPath(component.unit().id(), database.databaseId())
+                    : connection instanceof DeploymentDatabaseConnection.Server remote
+                    ? remote.engine().name().toLowerCase(java.util.Locale.ROOT) + "://" + remote.host()
+                    + ":" + remote.port() + "/" + remote.database()
+                    : throwUnsupportedDatabase(connection);
                 Optional<String> secret = connection instanceof DeploymentDatabaseConnection.Server remote
-                        ? Optional.of(remote.passwordReference().identifier())
-                        : Optional.empty();
+                    ? Optional.of(remote.passwordReference().identifier())
+                    : Optional.empty();
                 values.add(new DeploymentBinding(component.componentId() + ":" + database.databaseId(),
-                        component.componentId(), "DATABASE", path, connection.engine().name(),
-                        connection.engine() == DeploymentDatabaseEngineType.MYSQL
-                                || connection.engine() == DeploymentDatabaseEngineType.MARIADB,
-                        secret));
+                    component.componentId(), "DATABASE", path, connection.engine().name(),
+                    connection.engine() == DeploymentDatabaseEngineType.MYSQL
+                        || connection.engine() == DeploymentDatabaseEngineType.MARIADB,
+                    secret));
             }
         }
         return values.stream()
-                .sorted(Comparator.comparing(DeploymentBinding::componentId).thenComparing(DeploymentBinding::id))
-                .toList();
+            .sorted(Comparator.comparing(DeploymentBinding::componentId).thenComparing(DeploymentBinding::id))
+            .toList();
     }
 
     /** Refuses an unknown binding instead of fabricating a physical path. / 拒绝未知绑定而不捏造物理路径。
@@ -334,7 +334,7 @@ public final class DeploymentApplicationReader {
         var text = new StringBuilder("deployment-ownership-v1\n");
         for (var component : graph.components())
             text.append(component.componentId()).append('\n').append(component.unit().id()).append('\n')
-                    .append(component.unit().ownershipManifestSha256()).append('\n');
+                .append(component.unit().ownershipManifestSha256()).append('\n');
         return sha256(text.toString().getBytes(StandardCharsets.UTF_8));
     }
 
@@ -354,8 +354,8 @@ public final class DeploymentApplicationReader {
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException problem(String event) {
         return new ApiException(new gold.debug.windowstolinux.appapi.task.Problem(
-                gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE, event,
-                "Deployment application evidence cannot be confirmed", java.util.Map.of(), Optional.empty()));
+            gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE, event,
+            "Deployment application evidence cannot be confirmed", java.util.Map.of(), Optional.empty()));
     }
 
     /** Full original facts retained only inside deployment service. / 仅在部署服务内部保留的完整原事实。
@@ -363,6 +363,6 @@ public final class DeploymentApplicationReader {
      * @param graph original graph / 原图
      * @param release original active release / 原活动发布 */
     public record ApplicationFacts(DeploymentApplicationSnapshot snapshot, DeploymentApplicationGraph graph,
-            DeploymentReleaseSnapshot release) {
+                                   DeploymentReleaseSnapshot release) {
     }
 }

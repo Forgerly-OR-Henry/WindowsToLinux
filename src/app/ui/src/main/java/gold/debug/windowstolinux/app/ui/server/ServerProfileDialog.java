@@ -11,10 +11,11 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
-import gold.debug.windowstolinux.app.service.contract.spi.ServerProfileEditor;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /**
  * Independent server configuration editor; connection checks are separate actions. / 独立服务器配置编辑窗口，连接检查是单独动作。
@@ -112,10 +113,10 @@ public final class ServerProfileDialog extends JDialog {
      * @param saved saved / 已保存
      */
     public ServerProfileDialog(Window owner, ServerProfileEditor service, DesktopComponentFactory c,
-            PageMessagePresenter messages, ServerProfile profile, Consumer<ServerProfile> saved) {
+                               PageMessagePresenter messages, ServerProfile profile, Consumer<ServerProfile> saved) {
         super(owner, messages.text(profile == null ? "auto.addServer" : "server.edit"), ModalityType.APPLICATION_MODAL);
-        gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(this,
-                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of(profile == null ? "auto.addServer" : "server.edit"), messages.catalog());
+        gold.debug.windowstolinux.app.ui.language.LocaleBinding.title(this,
+            gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of(profile == null ? "auto.addServer" : "server.edit"), messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
@@ -133,8 +134,8 @@ public final class ServerProfileDialog extends JDialog {
             host.setText(profile.host());
             username.setText(profile.username());
             port.setText(Integer.toString(profile.sshPort()));
-            gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.tooltip(password,
-                    gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage.of("server.password.keep"), messages.catalog());
+            gold.debug.windowstolinux.app.ui.language.LocaleBinding.tooltip(password,
+                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("server.password.keep"), messages.catalog());
         }
         form = c.card(new GridBagLayout());
         c.addField(form, 0, 0, messages, "server.name", name);
@@ -204,7 +205,7 @@ public final class ServerProfileDialog extends JDialog {
             return;
         try {
             var profile = new ServerProfile(id, host.getText().trim(), Integer.parseInt(port.getText().trim()),
-                    username.getText().trim(), credentialKey, name.getText());
+                username.getText().trim(), credentialKey, name.getText());
             char[] secret = password.getPassword();
             password.setText("");
             if (!existing && secret.length == 0) {

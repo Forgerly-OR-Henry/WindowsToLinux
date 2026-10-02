@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.service.core;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -8,17 +12,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.source.SourceService;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.FileService;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
-import gold.debug.windowstolinux.mod.deployment.source.*;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 
 /** Prepares an authorized source and saves its actual location and frozen digest with one project revision. / 准备已授权来源，并将实际位置及冻结摘要存入一个项目修订。 */
 public final class DeploymentProjectSourceRecorder {
     /** Original source capability. / 原来源能力。 */
-    private final SourceService sources;
+    private final FileService sources;
 
     /** Original task-bound project database. / 原任务绑定项目数据库。 */
     private final DeploymentProjectRepository projects;
@@ -31,7 +35,7 @@ public final class DeploymentProjectSourceRecorder {
      * @param gitExecutable absolute native Git program / 绝对原生Git程序 */
     public DeploymentProjectSourceRecorder(ModContext context, Path gitExecutable) {
         Objects.requireNonNull(context);
-        sources = context.source();
+        sources = context.file();
         projects = new DeploymentProjectRepository(context.db());
         git = new DeploymentGitPreparer(context, gitExecutable);
     }
@@ -49,15 +53,15 @@ public final class DeploymentProjectSourceRecorder {
      * @throws SQLException if project persistence conflicts or fails / 项目持久化冲突或失败时
      * @throws ApiException if authorization, preparation or durability fails / 授权、准备或持久性失败时 */
     public PreparedLocal prepareLocal(TaskContext task, String title, UUID id, String displayName,
-            Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumBytes, int maximumEntries)
-            throws SQLException, ApiException {
+                                      Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumBytes, int maximumEntries)
+        throws SQLException, ApiException {
         var selection = sources.selectDirectory(title, task);
         DeploymentSourceMaterial material = new DeploymentSourcePreparer(sources).prepare(selection, maximumBytes,
-                maximumEntries, task);
+            maximumEntries, task);
         try {
             var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.LOCAL,
-                    sources.location(selection, task), Optional.empty(), Optional.empty(),
-                    material.snapshot().sha256());
+                sources.location(selection, task), Optional.empty(), Optional.empty(),
+                material.snapshot().sha256());
             var project = record(id, displayName, source, expected, observedAt);
             save(task, expected, project);
             return new PreparedLocal(project, material);
@@ -89,15 +93,15 @@ public final class DeploymentProjectSourceRecorder {
      * @throws SQLException if project persistence conflicts or fails / 项目持久化冲突或失败时
      * @throws ApiException if preparation or durability fails / 准备或持久性失败时 */
     public PreparedGit prepareGit(TaskContext task, DeploymentGitRequest request, UUID id, String displayName,
-            Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumBytes, int maximumEntries)
-            throws SQLException, ApiException {
+                                  Optional<DeploymentProjectRecord> expected, Instant observedAt, long maximumBytes, int maximumEntries)
+        throws SQLException, ApiException {
         DeploymentGitMaterial material = git.prepare(request, maximumBytes, maximumEntries, task);
         try {
             if (!request.remote().equals(material.remote()))
                 throw new IllegalArgumentException("Git material belongs to another remote");
             var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT, material.remote().location(),
-                    Optional.of(reference(request.reference())), Optional.of(material.commit()),
-                    material.source().snapshot().sha256());
+                Optional.of(reference(request.reference())), Optional.of(material.commit()),
+                material.source().snapshot().sha256());
             var project = record(id, displayName, source, expected, observedAt);
             save(task, expected, project);
             return new PreparedGit(project, material);
@@ -124,10 +128,10 @@ public final class DeploymentProjectSourceRecorder {
      * @param observedAt caller observation / 调用方观测
      * @return complete revision / 完整修订 */
     private static DeploymentProjectRecord record(UUID id, String displayName, DeploymentProjectSource source,
-            Optional<DeploymentProjectRecord> expected, Instant observedAt) {
+                                                  Optional<DeploymentProjectRecord> expected, Instant observedAt) {
         Objects.requireNonNull(expected);
         return new DeploymentProjectRecord(id, displayName, source,
-                expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt), observedAt);
+            expected.map(DeploymentProjectRecord::createdAt).orElse(observedAt), observedAt);
     }
 
     /** Uses exactly one managed transaction without retrying an unknown write. / 仅使用一个受管事务，不重放未知写入。
@@ -137,7 +141,7 @@ public final class DeploymentProjectSourceRecorder {
      * @throws SQLException if original row differs / 原记录不同时
      * @throws ApiException if transaction confirmation is unknown / 事务确认未知时 */
     private void save(TaskContext task, Optional<DeploymentProjectRecord> expected, DeploymentProjectRecord project)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (expected.isPresent())
             projects.update(task, expected.get(), project);
         else
@@ -160,7 +164,7 @@ public final class DeploymentProjectSourceRecorder {
      * @param project saved project revision / 已存项目修订
      * @param material frozen source material / 冻结来源素材 */
     public record PreparedLocal(DeploymentProjectRecord project,
-            DeploymentSourceMaterial material) implements AutoCloseable {
+                                DeploymentSourceMaterial material) implements AutoCloseable {
         /** Releases the actual frozen source. / 释放实际冻结来源。
          * @throws ApiException if cleanup is unknown / 清理未知时 */
         @Override
@@ -173,7 +177,7 @@ public final class DeploymentProjectSourceRecorder {
      * @param project saved project revision / 已存项目修订
      * @param material pinned Git material / 固定Git素材 */
     public record PreparedGit(DeploymentProjectRecord project,
-            DeploymentGitMaterial material) implements AutoCloseable {
+                              DeploymentGitMaterial material) implements AutoCloseable {
         /** Releases actual Git source and archive. / 释放实际Git来源及归档。
          * @throws ApiException if cleanup is unknown / 清理未知时 */
         @Override

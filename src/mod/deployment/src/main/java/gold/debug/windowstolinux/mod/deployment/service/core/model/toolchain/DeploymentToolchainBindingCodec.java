@@ -33,10 +33,10 @@ public final class DeploymentToolchainBindingCodec {
         for (var s : set.selections()) {
             var r = s.requirement();
             out.append(r.ecosystem()).append('\t').append(r.purpose()).append('\t').append(base64(r.declaration()))
-                    .append('\t').append(base64(r.source())).append('\t').append(r.constraint()).append('\t')
-                    .append(r.version().map(DeploymentToolchainVersion::text).orElse("-")).append('\t')
-                    .append(s.version().text()).append('\t').append(s.directory()).append('\t').append(s.origin())
-                    .append('\t').append(base64(s.source())).append('\t').append(s.sha256()).append('\n');
+                .append('\t').append(base64(r.source())).append('\t').append(r.constraint()).append('\t')
+                .append(r.version().map(DeploymentToolchainVersion::text).orElse("-")).append('\t')
+                .append(s.version().text()).append('\t').append(s.directory()).append('\t').append(s.origin())
+                .append('\t').append(base64(s.source())).append('\t').append(s.sha256()).append('\n');
         }
         return out.toString();
     }
@@ -63,11 +63,11 @@ public final class DeploymentToolchainBindingCodec {
                 throw new IllegalArgumentException("invalid binding field count");
             var eco = DeploymentToolchainType.valueOf(f[0]);
             var requirement = new ToolchainRequirement(eco, unbase64(f[2]), unbase64(f[3]),
-                    ToolchainRequirement.PurposeType.valueOf(f[1]), ToolchainRequirement.ConstraintType.valueOf(f[4]),
-                    f[5].equals("-") ? java.util.Optional.empty() : DeploymentToolchainVersion.parse(eco, f[5]));
+                ToolchainRequirement.PurposeType.valueOf(f[1]), ToolchainRequirement.ConstraintType.valueOf(f[4]),
+                f[5].equals("-") ? java.util.Optional.empty() : DeploymentToolchainVersion.parse(eco, f[5]));
             selections.add(new DeploymentResolvedToolchains.Selection(requirement,
-                    DeploymentToolchainVersion.parse(eco, f[6]).orElseThrow(), f[7],
-                    DeploymentResolvedToolchains.OriginType.valueOf(f[8]), unbase64(f[9]), f[10]));
+                DeploymentToolchainVersion.parse(eco, f[6]).orElseThrow(), f[7],
+                DeploymentResolvedToolchains.OriginType.valueOf(f[8]), unbase64(f[9]), f[10]));
         }
         return new DeploymentResolvedToolchains(header[1], selections);
     }
@@ -83,7 +83,7 @@ public final class DeploymentToolchainBindingCodec {
     public static String identity(DeploymentResolvedToolchains set) {
         try {
             return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(encode(set).getBytes(StandardCharsets.UTF_8)));
+                MessageDigest.getInstance("SHA-256").digest(encode(set).getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

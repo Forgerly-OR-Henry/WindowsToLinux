@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.app.service.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -12,14 +19,15 @@ import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
-import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.windows.filesystem.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
+import gold.debug.windowstolinux.app.windows.file.WindowsFilePublication;
+
 
 /** Installs reviewed local originals through durable phases without enabling or executing author code. / 经持久阶段安装已审阅本地原包，不启用或执行作者代码。 */
 public final class PlatformModInstallation implements AutoCloseable {
@@ -58,9 +66,9 @@ public final class PlatformModInstallation implements AutoCloseable {
 
     /** Strict bounded request codec. / 严格有界请求编解码。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
-            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Retention preference shared by all original-package sources. / 所有原包来源共用的留存偏好。 */
     private static final String KEEP = "mod_keep_original";
@@ -77,8 +85,8 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @throws IOException if the root is absent or redirected / 根缺失或重定向时
      * @throws SQLException if archive registration fails / 归档登记失败时 */
     public PlatformModInstallation(PlatformDatabase database, DesktopSecurityService security, Path applicationHome,
-            gold.debug.windowstolinux.app.service.log.PlatformLogService diagnostics, SemanticVersion api)
-            throws IOException, SQLException {
+                                   gold.debug.windowstolinux.app.service.log.PlatformLogService diagnostics, SemanticVersion api)
+        throws IOException, SQLException {
         InstallationPaths.directory(applicationHome);
         home = applicationHome;
         boot = database.bootId();
@@ -86,7 +94,7 @@ public final class PlatformModInstallation implements AutoCloseable {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
         deletion = new PlatformModDeletion(database, security, home, diagnostics);
         reinstallation = new PlatformModReinstallation(database, security, home, api);
     }
@@ -167,8 +175,8 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param state AVAILABLE, INSTALLED, CONFLICT, BUSY or INVALID / 可安装、已安装、冲突、占用或无效
      * @param problem bounded reading failure / 有界读取失败
      * @param deletable whether current facts permit requesting a deletion review / 当前事实是否允许请求删除审阅 */
-    public record OriginalView(Path file, Optional<gold.debug.windowstolinux.app.mod.manifest.ModManifest> manifest,
-            String state, Optional<Problem> problem, boolean deletable) {
+    public record OriginalView(Path file, Optional<gold.debug.windowstolinux.app.mod.config.ModManifest> manifest,
+                               String state, Optional<Problem> problem, boolean deletable) {
     }
 
     /** Retained installation displayed even when its original file has disappeared. / 即使原文件已消失也展示的保留安装。
@@ -181,7 +189,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param original validated source path when readable / 可读时已校验来源路径
      * @param failure bounded original failure explanation / 有界原失败说明 */
     public record PendingView(UUID id, String owner, String version, String type, String state, String phase,
-            Optional<Path> original, Optional<String> failure) {
+                              Optional<Path> original, Optional<String> failure) {
     }
 
     /** One explicit scan with a current durable management snapshot. / 一次明确扫描及当前持久管理快照。
@@ -229,6 +237,7 @@ public final class PlatformModInstallation implements AutoCloseable {
 
         /** Whether the deletion was already attempted. / 是否已尝试删除。 */
         private boolean used;
+
         /** Captures service-verified evidence only. / 仅捕获服务已核验依据。
          * @param file exact original / 精确原文件
          * @param stamp original physical facts / 原物理事实 */
@@ -277,7 +286,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             review.used = true;
             locked(c -> {
                 if (InstallationInventory.inUse(records.maintenance(c), review.file, review.stamp)
-                        || deletion.originalBusy(c, review.file, review.stamp.identity()))
+                    || deletion.originalBusy(c, review.file, review.stamp.identity()))
                     throw new SQLException("Original package is in use");
                 try {
                     paths.originalPath(review.file);
@@ -331,8 +340,8 @@ public final class PlatformModInstallation implements AutoCloseable {
         try (var ignored = security.enterOperation()) {
             locked(c -> {
                 InstallationRecords.execute(c,
-                        "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)",
-                        KEEP, Boolean.toString(keep));
+                    "MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)",
+                    KEEP, Boolean.toString(keep));
                 return null;
             });
         }
@@ -374,25 +383,25 @@ public final class PlatformModInstallation implements AutoCloseable {
                 throw new IOException("Original identity changed after review");
             var current = ModPackageReader.read(review.inspection.archive());
             if (!current.archiveSha256().equals(review.inspection.archiveSha256())
-                    || !current.contentSha256().equals(review.inspection.contentSha256()))
+                || !current.contentSha256().equals(review.inspection.contentSha256()))
                 throw new IOException("Original bytes changed after review");
             review.used = true;
             var request = new Request(1, home.toString(), boot.toString(), current.archive().toString(),
-                    review.identity, current.manifest().json(), current.archiveSha256(), current.contentSha256(),
-                    current.files(), review.keep);
+                review.identity, current.manifest().json(), current.archiveSha256(), current.contentSha256(),
+                current.files(), review.keep);
             String json = JSON.writeValueAsString(request);
             if (json.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024)
                 throw new IOException("Installation evidence exceeds limit");
             var pending = new Pending(review.id, current, request, json, "VALIDATED", new Checkpoint(null, null, null),
-                    UUID.randomUUID(), System.currentTimeMillis(), null);
+                UUID.randomUUID(), System.currentTimeMillis(), null);
             try {
                 locked(c -> {
                     records.available(c, current);
                     InstallationRecords.execute(c,
-                            "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'INSTALL',?,'RUNNING','VALIDATED',?,?,?, ?,?)",
-                            pending.id(), current.manifest().id(), current.manifest().version().toString(), json,
-                            InstallationRecords.encode(pending.checkpoint()), pending.archive().toString(), pending.created(),
-                            pending.created());
+                        "INSERT INTO mod_operation(operation_id,mod_id,operation_type,target_version,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,'INSTALL',?,'RUNNING','VALIDATED',?,?,?, ?,?)",
+                        pending.id(), current.manifest().id(), current.manifest().version().toString(), json,
+                        InstallationRecords.encode(pending.checkpoint()), pending.archive().toString(), pending.created(),
+                        pending.created());
                     return null;
                 });
             } catch (SQLException unconfirmed) {
@@ -419,11 +428,11 @@ public final class PlatformModInstallation implements AutoCloseable {
                 return success(completed);
             Pending pending = locked(c -> {
                 var original = records.load(c, operation);
-                if (original.cancellation() != null)
+                if (original.cancelToken() != null)
                     throw new SQLException("Cancellation must continue through its original cleanup action");
                 if (InstallationRecords.execute(c,
-                        "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
-                        System.currentTimeMillis(), operation) != 1)
+                    "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
+                    System.currentTimeMillis(), operation) != 1)
                     throw new SQLException("Installation is not available for explicit reconciliation");
                 return original;
             });
@@ -444,6 +453,7 @@ public final class PlatformModInstallation implements AutoCloseable {
 
         /** Whether this review has been consumed. / 此审阅是否已消费。 */
         private boolean used;
+
         /** Captures immutable original evidence. / 捕获不可变原依据。
          * @param pending original operation / 原操作
          * @param cancellation reviewed file set / 审阅文件集合 */
@@ -501,7 +511,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             var pending = locked(c -> {
                 var original = records.load(c, operation);
                 records.requireCancellation(c, original);
-                if (original.cancellation() != null)
+                if (original.cancelToken() != null)
                     throw new SQLException("Cancellation already has an accepted scope");
                 InstallationRecords.requireUnknown(c, operation);
                 return original;
@@ -517,7 +527,7 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @throws IOException if files changed before acceptance / 接纳前文件变化时
      * @throws SQLException if admission cannot be confirmed / 无法确认准入时 */
     public synchronized OperationResult<CancellationReceipt> cancel(CancelReview review)
-            throws IOException, SQLException {
+        throws IOException, SQLException {
         requireOpen();
         if (review == null || review.owner != this || review.used)
             throw new IllegalArgumentException("Cancellation requires an unused original review");
@@ -540,13 +550,13 @@ public final class PlatformModInstallation implements AutoCloseable {
                     if (recovery.getBytes(StandardCharsets.UTF_8).length > 8 * 1024 * 1024)
                         throw new SQLException("Cancellation scope exceeds limit");
                     if (InstallationRecords.execute(c,
-                            "UPDATE mod_operation SET state='RUNNING',phase='CANCELLING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
-                            recovery, System.currentTimeMillis(), review.id()) != 1)
+                        "UPDATE mod_operation SET state='RUNNING',phase='CANCELLING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
+                        recovery, System.currentTimeMillis(), review.id()) != 1)
                         throw new SQLException("Cancellation admission changed");
                     var original = review.pending;
                     return new Pending(original.id(), original.inspection(), original.request(), original.json(),
-                            "CANCELLING", original.checkpoint(), original.archive(), original.created(),
-                            review.cancellation);
+                        "CANCELLING", original.checkpoint(), original.archive(), original.created(),
+                        review.cancellation);
                 });
             } catch (SQLException failure) {
                 try {
@@ -573,12 +583,12 @@ public final class PlatformModInstallation implements AutoCloseable {
             var pending = locked(c -> {
                 var original = records.load(c, operation);
                 records.requireCancellation(c, original);
-                if (original.cancellation() == null)
+                if (original.cancelToken() == null)
                     throw new SQLException("No original cancellation scope exists");
                 InstallationRecords.requireUnknown(c, operation);
                 if (InstallationRecords.execute(c,
-                        "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
-                        System.currentTimeMillis(), operation) != 1)
+                    "UPDATE mod_operation SET state='RUNNING',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=? AND state='UNKNOWN' AND outcome IS NULL",
+                    System.currentTimeMillis(), operation) != 1)
                     throw new SQLException("Cancellation reconciliation admission changed");
                 return original;
             });
@@ -592,8 +602,8 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @throws IOException if unavailable or outside the package scope / 不可用或超出包范围时 */
     private List<ModInstallationCleanup.Entry> cancellationFiles(Pending pending) throws IOException {
         return ModInstallationCleanup.inspect(home.resolve(".mod-staging").resolve(pending.id().toString()),
-                pending.checkpoint().root(), paths.target(pending.inspection()), pending.checkpoint().program(),
-                pending.inspection().files());
+            pending.checkpoint().root(), paths.target(pending.inspection()), pending.checkpoint().program(),
+            pending.inspection().files());
     }
 
     /** Deletes the persisted original subset, then archives cancellation in the same original identity. / 删除已持久原子集，再按同一原身份归档撤销。
@@ -601,25 +611,25 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @return actual cancellation or retained uncertainty / 实际撤销或保留不确定性 */
     private OperationResult<CancellationReceipt> cancelFiles(Pending pending) {
         try {
-            ModInstallationCleanup.remove(pending.cancellation().entries(),
-                    home.resolve(".mod-staging").resolve(pending.id().toString()), pending.checkpoint().root(),
-                    paths.target(pending.inspection()), pending.checkpoint().program(), pending.inspection().files());
+            ModInstallationCleanup.remove(pending.cancelToken().entries(),
+                home.resolve(".mod-staging").resolve(pending.id().toString()), pending.checkpoint().root(),
+                paths.target(pending.inspection()), pending.checkpoint().program(), pending.inspection().files());
             var receipt = new CancellationReceipt(pending.id(), pending.inspection().manifest().id(),
-                    pending.inspection().manifest().version().toString());
+                pending.inspection().manifest().version().toString());
             locked(c -> {
                 records.requirePending(c, pending);
                 records.requireCancellation(c, pending);
-                String details = JSON.createObjectNode().put("originalPhase", pending.cancellation().phase())
-                        .put("reviewedEntries", pending.cancellation().entries().size())
-                        .put("reviewedBytes", pending.cancellation().entries().stream()
-                                .mapToLong(ModInstallationCleanup.Entry::size).sum())
-                        .put("originalArchive", "UNTOUCHED").toString();
+                String details = JSON.createObjectNode().put("originalPhase", pending.cancelToken().phase())
+                    .put("reviewedEntries", pending.cancelToken().entries().size())
+                    .put("reviewedBytes", pending.cancelToken().entries().stream()
+                        .mapToLong(ModInstallationCleanup.Entry::size).sum())
+                    .put("originalArchive", "UNTOUCHED").toString();
                 logs.store(c, archive,
-                        List.of(new LogRecordCodec.Record(pending.archive(), pending.created(), "app", "mod_operation",
-                                LogLevel.INFO, "MOD_INSTALL_CANCELLED",
-                                "Reviewed installation cancelled; original archive untouched", details, receipt.owner(),
-                                receipt.version(), null, pending.id(), Outcome.CANCELLED, false)),
-                        100);
+                    List.of(new LogRecordCodec.Record(pending.archive(), pending.created(), "app", "mod_operation",
+                        LogLevel.INFO, "MOD_INSTALL_CANCELLED",
+                        "Reviewed installation cancelled; original archive untouched", details, receipt.owner(),
+                        receipt.version(), null, pending.id(), Outcome.CANCELLED, false)),
+                    100);
                 InstallationRecords.execute(c, "DELETE FROM mod_operation WHERE operation_id=?", pending.id());
                 return null;
             });
@@ -627,16 +637,16 @@ public final class PlatformModInstallation implements AutoCloseable {
         } catch (Exception failure) {
             try {
                 records.retain(pending,
-                        "CANCELLING: " + (failure instanceof IOException
-                                ? bounded(failure.getMessage())
-                                : "Cancellation persistence could not be confirmed"));
+                    "CANCELLING: " + (failure instanceof IOException
+                        ? bounded(failure.getMessage())
+                        : "Cancellation persistence could not be confirmed"));
             } catch (SQLException unavailable) {
                 failure.addSuppressed(unavailable);
             }
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_INSTALL_CANCEL_UNCONFIRMED",
-                            "Installation cancellation requires reconciliation using its original file scope",
-                            Map.of("operationId", pending.id().toString()), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_INSTALL_CANCEL_UNCONFIRMED",
+                    "Installation cancellation requires reconciliation using its original file scope",
+                    Map.of("operationId", pending.id().toString()), Optional.empty())));
         }
     }
 
@@ -678,7 +688,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                 records.verifyRegistration(pending);
                 String cleanup = cleanupOriginal(pending);
                 pending = records.checkpoint(pending, "CLEANUP",
-                        new Checkpoint(pending.checkpoint().root(), pending.checkpoint().program(), cleanup));
+                    new Checkpoint(pending.checkpoint().root(), pending.checkpoint().program(), cleanup));
             }
             if (!pending.phase().equals("CLEANUP"))
                 throw new IOException("Unknown installation phase");
@@ -695,17 +705,17 @@ public final class PlatformModInstallation implements AutoCloseable {
         } catch (Exception failure) {
             try {
                 records.retain(original,
-                        pending.phase() + ": "
-                                + (failure instanceof IOException
-                                        ? bounded(failure.getMessage())
-                                        : "Installation persistence or step completion could not be confirmed"));
+                    pending.phase() + ": "
+                        + (failure instanceof IOException
+                        ? bounded(failure.getMessage())
+                        : "Installation persistence or step completion could not be confirmed"));
             } catch (SQLException unavailable) {
                 failure.addSuppressed(unavailable);
             }
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_INSTALL_UNCONFIRMED",
-                            "Installation requires reconciliation using its original operation",
-                            Map.of("operationId", original.id().toString()), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_INSTALL_UNCONFIRMED",
+                    "Installation requires reconciliation using its original operation",
+                    Map.of("operationId", original.id().toString()), Optional.empty())));
         }
     }
 
@@ -751,9 +761,9 @@ public final class PlatformModInstallation implements AutoCloseable {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 try (var p = c.prepareStatement("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1");
-                        var r = p.executeQuery()) {
+                     var r = p.executeQuery()) {
                     if (!r.next() || !boot.equals(r.getObject(1, UUID.class))
-                            || !Set.of("STARTING", "RUNNING").contains(r.getString(2)))
+                        || !Set.of("STARTING", "RUNNING").contains(r.getString(2)))
                         throw new SQLException("Original application boot is unavailable");
                 }
                 result.set(work.run(c));
@@ -790,7 +800,7 @@ public final class PlatformModInstallation implements AutoCloseable {
         for (Path part = path; part != null; part = part.getParent()) {
             var attrs = Files.readAttributes(part, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             if (attrs.isOther() || attrs.isSymbolicLink() || !part.toRealPath().toString().equals(part.toString())
-                    || (part.equals(path) && !directory ? !attrs.isRegularFile() : !attrs.isDirectory()))
+                || (part.equals(path) && !directory ? !attrs.isRegularFile() : !attrs.isDirectory()))
                 throw new IOException("Installation path is redirected or irregular");
         }
     }
@@ -863,7 +873,8 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param files original file evidence / 原文件依据
      * @param keep captured retention / 捕获留存 */
     private record Request(int format, String home, String boot, String original, String identity, String manifest,
-            String archiveHash, String contentHash, List<ModPackageReader.FileEntry> files, boolean keep) {
+                           String archiveHash, String contentHash, List<ModPackageReader.FileEntry> files,
+                           boolean keep) {
     }
 
     /** Proven physical identities and cleanup observation. / 已证明物理身份及清理观察。
@@ -898,13 +909,14 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param created original timestamp / 原时间戳
      * @param cancellation accepted cancellation scope or absent / 已接纳撤销范围或缺省 */
     private record Pending(UUID id, ModPackageReader.Inspection inspection, Request request, String json, String phase,
-            Checkpoint checkpoint, UUID archive, long created, Cancellation cancellation) {
+                           Checkpoint checkpoint, UUID archive, long created, Cancellation cancellation) {
     }
 
     /** Original installation records on the same locked transaction. / 在同一已锁事务上的原安装记录。 */
     private final class InstallationRecords {
         /** Binds the original owning service. / 绑定原服务所有者。 */
-        private InstallationRecords() { }
+        private InstallationRecords() {
+        }
 
         /** Reads retained package use and preserves rows whose original evidence is unreadable. / 读取保留包占用，并保留原依据不可读的行。
          * @param c locked transaction / 已锁事务
@@ -913,8 +925,8 @@ public final class PlatformModInstallation implements AutoCloseable {
         private List<Maintenance> maintenance(Connection c) throws SQLException {
             var results = new ArrayList<Maintenance>();
             try (var p = c.prepareStatement(
-                    "SELECT operation_id,mod_id,target_version,state,phase,request_json,operation_type,failure_detail FROM mod_operation WHERE operation_type IN ('INSTALL','REINSTALL') AND state<>'ENDED' ORDER BY created_at,operation_id");
-                    var r = p.executeQuery()) {
+                "SELECT operation_id,mod_id,target_version,state,phase,request_json,operation_type,failure_detail FROM mod_operation WHERE operation_type IN ('INSTALL','REINSTALL') AND state<>'ENDED' ORDER BY created_at,operation_id");
+                 var r = p.executeQuery()) {
                 while (r.next()) {
                     Path path = null;
                     String identity = null;
@@ -930,8 +942,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                         var source = Path.of(repair ? retained.path() : node.required("original").textValue());
                         String nativeId = repair ? retained.identity() : node.required("identity").textValue();
                         if (!source.isAbsolute() || !source.equals(source.normalize())
-                                || !repair && !originalsDirectory().equals(source.getParent()) || nativeId == null
-                                || !nativeId.matches("[0-9a-f]{48}"))
+                            || !repair && !originalsDirectory().equals(source.getParent()) || nativeId == null
+                            || !nativeId.matches("[0-9a-f]{48}"))
                             throw new IOException("Invalid package use evidence");
                         path = source;
                         identity = nativeId;
@@ -939,8 +951,8 @@ public final class PlatformModInstallation implements AutoCloseable {
                         // Unknown ownership must block deletion, not disappear from the view. / 未知归属必须阻止删除，不能从视图消失。
                     }
                     results.add(new Maintenance(new PendingView(r.getObject(1, UUID.class), r.getString(2), r.getString(3),
-                            r.getString(7), r.getString(4), r.getString(5), Optional.ofNullable(path),
-                            Optional.ofNullable(r.getString(8)).map(PlatformModInstallation::bounded)), identity));
+                        r.getString(7), r.getString(4), r.getString(5), Optional.ofNullable(path),
+                        Optional.ofNullable(r.getString(8)).map(PlatformModInstallation::bounded)), identity));
                 }
             }
             return results;
@@ -951,7 +963,7 @@ public final class PlatformModInstallation implements AutoCloseable {
          * @param pending original operation / 原操作
          * @throws SQLException if cancellation would remove an installed version / 撤销会移除已安装版本时 */
         private void requireCancellation(Connection c, Pending pending) throws SQLException {
-            String phase = pending.cancellation() == null ? pending.phase() : pending.cancellation().phase();
+            String phase = pending.cancelToken() == null ? pending.phase() : pending.cancelToken().phase();
             if (!Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(phase))
                 throw new SQLException("Registered installations cannot be cancelled");
             try (var query = c.prepareStatement("SELECT 1 FROM mod_version WHERE mod_id=? AND version=?")) {
@@ -985,12 +997,12 @@ public final class PlatformModInstallation implements AutoCloseable {
         private CancellationReceipt cancelled(UUID operation) throws SQLException {
             return locked(c -> {
                 try (var query = c.prepareStatement(
-                        "SELECT subject_mod_id,mod_version FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code='MOD_INSTALL_CANCELLED' AND outcome='CANCELLED'")) {
+                    "SELECT subject_mod_id,mod_version FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code='MOD_INSTALL_CANCELLED' AND outcome='CANCELLED'")) {
                     query.setObject(1, operation);
                     try (var result = query.executeQuery()) {
                         return result.next()
-                                ? new CancellationReceipt(operation, result.getString(1), result.getString(2))
-                                : null;
+                            ? new CancellationReceipt(operation, result.getString(1), result.getString(2))
+                            : null;
                     }
                 }
             });
@@ -1003,8 +1015,8 @@ public final class PlatformModInstallation implements AutoCloseable {
         private void retain(Pending original, String detail) throws SQLException {
             locked(c -> {
                 InstallationRecords.execute(c,
-                        "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_INSTALL_UNCONFIRMED',failure_detail=?,updated_at=? WHERE operation_id=? AND request_json=? AND state='RUNNING' AND outcome IS NULL",
-                        bounded(detail), System.currentTimeMillis(), original.id(), original.json());
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_INSTALL_UNCONFIRMED',failure_detail=?,updated_at=? WHERE operation_id=? AND request_json=? AND state='RUNNING' AND outcome IS NULL",
+                    bounded(detail), System.currentTimeMillis(), original.id(), original.json());
                 return null;
             });
         }
@@ -1020,13 +1032,13 @@ public final class PlatformModInstallation implements AutoCloseable {
                 var manifest = pending.inspection().manifest();
                 String owner = manifest.id(), version = manifest.version().toString();
                 InstallationRecords.execute(c,
-                        "INSERT INTO mod_registry(mod_id,updated_at) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM mod_registry WHERE mod_id=?)",
-                        owner, System.currentTimeMillis(), owner);
+                    "INSERT INTO mod_registry(mod_id,updated_at) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM mod_registry WHERE mod_id=?)",
+                    owner, System.currentTimeMillis(), owner);
                 InstallationRecords.execute(c,
-                        "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,?,?,?,?,?,'LOCAL',?,'READY')",
-                        owner, version, target.toString(), pending.inspection().contentSha256(),
-                        pending.inspection().archiveSha256(), manifest.schemaVersion().orElse(null), manifest.json(),
-                        pending.created());
+                    "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,?,?,?,?,?,?,'LOCAL',?,'READY')",
+                    owner, version, target.toString(), pending.inspection().contentSha256(),
+                    pending.inspection().archiveSha256(), manifest.schemaVersion().orElse(null), manifest.json(),
+                    pending.created());
                 var versions = new ArrayList<String>();
                 try (var p = c.prepareStatement("SELECT version FROM mod_version WHERE mod_id=? AND state='READY'")) {
                     p.setString(1, owner);
@@ -1036,11 +1048,11 @@ public final class PlatformModInstallation implements AutoCloseable {
                     }
                 }
                 String first = versions.stream()
-                        .max(Comparator.comparing(SemanticVersion::parse).thenComparing(Comparator.naturalOrder()))
-                        .orElseThrow();
+                    .max(Comparator.comparing(SemanticVersion::parse).thenComparing(Comparator.naturalOrder()))
+                    .orElseThrow();
                 InstallationRecords.execute(c,
-                        "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0",
-                        first, System.currentTimeMillis(), owner);
+                    "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0",
+                    first, System.currentTimeMillis(), owner);
                 return checkpoint(c, pending, "REGISTERED", pending.checkpoint());
             });
         }
@@ -1052,18 +1064,18 @@ public final class PlatformModInstallation implements AutoCloseable {
             locked(c -> {
                 records.requirePending(c, pending);
                 try (var p = c.prepareStatement(
-                        "SELECT install_path,content_sha256,archive_sha256,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
+                    "SELECT install_path,content_sha256,archive_sha256,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
                     p.setString(1, pending.inspection().manifest().id());
                     p.setString(2, pending.inspection().manifest().version().toString());
                     try (var r = p.executeQuery()) {
                         if (!r.next()
-                                || !r.getString(1)
-                                        .equals(home.resolve("mod").resolve(pending.inspection().manifest().id())
-                                                .resolve(pending.inspection().manifest().version().toString()).toString())
-                                || !r.getString(2).equals(pending.inspection().contentSha256())
-                                || !r.getString(3).equals(pending.inspection().archiveSha256())
-                                || !r.getString(4).equals(pending.inspection().manifest().json())
-                                || !r.getString(5).equals("LOCAL") || !r.getString(6).equals("READY"))
+                            || !r.getString(1)
+                            .equals(home.resolve("mod").resolve(pending.inspection().manifest().id())
+                                .resolve(pending.inspection().manifest().version().toString()).toString())
+                            || !r.getString(2).equals(pending.inspection().contentSha256())
+                            || !r.getString(3).equals(pending.inspection().archiveSha256())
+                            || !r.getString(4).equals(pending.inspection().manifest().json())
+                            || !r.getString(5).equals("LOCAL") || !r.getString(6).equals("READY"))
                             throw new SQLException("Original installation registration differs");
                     }
                 }
@@ -1079,12 +1091,12 @@ public final class PlatformModInstallation implements AutoCloseable {
             locked(c -> {
                 records.requirePending(c, pending);
                 var details = JSON.createObjectNode().put("directory", receipt.directory().toString())
-                        .put("originalCleanup", receipt.originalCleanup()).toString();
+                    .put("originalCleanup", receipt.originalCleanup()).toString();
                 logs.store(c, archive,
-                        List.of(new LogRecordCodec.Record(pending.archive(), pending.created(), "app", "mod_operation",
-                                LogLevel.INFO, "MOD_INSTALLED", "Reviewed original package installed", details,
-                                receipt.owner(), receipt.version(), null, pending.id(), Outcome.SUCCEEDED, false)),
-                        100);
+                    List.of(new LogRecordCodec.Record(pending.archive(), pending.created(), "app", "mod_operation",
+                        LogLevel.INFO, "MOD_INSTALLED", "Reviewed original package installed", details,
+                        receipt.owner(), receipt.version(), null, pending.id(), Outcome.SUCCEEDED, false)),
+                    100);
                 InstallationRecords.execute(c, "DELETE FROM mod_operation WHERE operation_id=?", pending.id());
                 return null;
             });
@@ -1097,7 +1109,7 @@ public final class PlatformModInstallation implements AutoCloseable {
         private Receipt completed(UUID operation) throws SQLException {
             return locked(c -> {
                 try (var p = c.prepareStatement(
-                        "SELECT subject_mod_id,mod_version,details FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code='MOD_INSTALLED' AND outcome='SUCCEEDED'")) {
+                    "SELECT subject_mod_id,mod_version,details FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code='MOD_INSTALLED' AND outcome='SUCCEEDED'")) {
                     p.setObject(1, operation);
                     try (var r = p.executeQuery()) {
                         if (!r.next())
@@ -1108,7 +1120,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                             if (!path.equals(home.resolve("mod").resolve(r.getString(1)).resolve(r.getString(2))))
                                 throw new IOException("Receipt is outside original home");
                             return new Receipt(operation, r.getString(1), r.getString(2), path,
-                                    details.required("originalCleanup").textValue());
+                                details.required("originalCleanup").textValue());
                         } catch (IOException | RuntimeException invalid) {
                             throw new SQLException("Invalid installation receipt", invalid);
                         }
@@ -1123,7 +1135,7 @@ public final class PlatformModInstallation implements AutoCloseable {
          * @throws SQLException if admission conflicts / 准入冲突时 */
         private void available(Connection c, ModPackageReader.Inspection inspection) throws SQLException {
             try (var p = c.prepareStatement(
-                    "SELECT 1 FROM mod_version WHERE mod_id=? AND version=? UNION ALL SELECT 1 FROM mod_operation WHERE mod_id=?")) {
+                "SELECT 1 FROM mod_version WHERE mod_id=? AND version=? UNION ALL SELECT 1 FROM mod_operation WHERE mod_id=?")) {
                 p.setString(1, inspection.manifest().id());
                 p.setString(2, inspection.manifest().version().toString());
                 p.setString(3, inspection.manifest().id());
@@ -1157,7 +1169,7 @@ public final class PlatformModInstallation implements AutoCloseable {
          * @throws SQLException if absent, malformed or bound elsewhere / 缺失、格式错误或绑定其他位置时 */
         private Pending load(Connection c, UUID operation) throws SQLException {
             try (var p = c.prepareStatement(
-                    "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type='INSTALL' AND outcome IS NULL")) {
+                "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type='INSTALL' AND outcome IS NULL")) {
                 p.setObject(1, operation);
                 try (var r = p.executeQuery()) {
                     if (!r.next())
@@ -1167,48 +1179,48 @@ public final class PlatformModInstallation implements AutoCloseable {
                         String phase = r.getString("phase");
                         boolean cancelling = phase.equals("CANCELLING");
                         if (json.getBytes(StandardCharsets.UTF_8).length > 4 * 1024 * 1024
-                                || recovery.getBytes(StandardCharsets.UTF_8).length > (cancelling ? 8 * 1024 * 1024 : 4096))
+                            || recovery.getBytes(StandardCharsets.UTF_8).length > (cancelling ? 8 * 1024 * 1024 : 4096))
                             throw new IOException("Retained installation evidence exceeds limits");
                         var request = JSON.readValue(json, Request.class);
                         var cancellation = cancelling ? JSON.readValue(recovery, Cancellation.class) : null;
                         var checkpoint = cancelling
-                                ? cancellation.checkpoint()
-                                : JSON.readValue(recovery, Checkpoint.class);
+                            ? cancellation.checkpoint()
+                            : JSON.readValue(recovery, Checkpoint.class);
                         var manifest = ManifestReader.read(request.manifest().getBytes(StandardCharsets.UTF_8));
                         if (request.format() != 1 || !request.home().equals(home.toString())
-                                || !UUID.fromString(request.boot()).toString().equals(request.boot())
-                                || !request.identity().matches("[0-9a-f]{48}")
-                                || !request.archiveHash().matches("[0-9a-f]{64}")
-                                || !request.contentHash().matches("[0-9a-f]{64}")
-                                || request.files().size() > ModPackageReader.MAX_ENTRIES
-                                || !manifest.id().equals(r.getString("mod_id"))
-                                || !manifest.version().toString().equals(r.getString("target_version")))
+                            || !UUID.fromString(request.boot()).toString().equals(request.boot())
+                            || !request.identity().matches("[0-9a-f]{48}")
+                            || !request.archiveHash().matches("[0-9a-f]{64}")
+                            || !request.contentHash().matches("[0-9a-f]{64}")
+                            || request.files().size() > ModPackageReader.MAX_ENTRIES
+                            || !manifest.id().equals(r.getString("mod_id"))
+                            || !manifest.version().toString().equals(r.getString("target_version")))
                             throw new IOException("Retained installation identity differs");
                         Path path = Path.of(request.original());
                         if (!path.isAbsolute() || !path.equals(path.normalize())
-                                || !path.getParent().equals(home.resolve("mod-zip")))
+                            || !path.getParent().equals(home.resolve("mod-zip")))
                             throw new IOException("Retained original is outside its root");
                         var inspection = new ModPackageReader.Inspection(path, manifest, request.archiveHash(),
-                                request.contentHash(), request.files(), List.of(), Map.of());
+                            request.contentHash(), request.files(), List.of(), Map.of());
                         paths.target(inspection);
                         String originalPhase = cancelling ? cancellation.phase() : phase;
                         if (!Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED", "REGISTERED", "CLEANUP")
-                                .contains(originalPhase)
-                                || cancelling && !Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(originalPhase)
-                                || checkpoint.root() != null && !checkpoint.root().matches("[0-9a-f]{48}")
-                                || checkpoint.program() != null && !checkpoint.program().matches("[0-9a-f]{48}")
-                                || !originalPhase.equals("VALIDATED")
-                                        && (checkpoint.root() == null || checkpoint.program() == null)
-                                || phase.equals("CLEANUP")
-                                        && !Set.of("RETAINED", "DELETED", "ABSENT", "RETAINED_UNCONFIRMED")
-                                                .contains(checkpoint.cleanup()))
+                            .contains(originalPhase)
+                            || cancelling && !Set.of("VALIDATED", "STAGED", "FILES_PUBLISHED").contains(originalPhase)
+                            || checkpoint.root() != null && !checkpoint.root().matches("[0-9a-f]{48}")
+                            || checkpoint.program() != null && !checkpoint.program().matches("[0-9a-f]{48}")
+                            || !originalPhase.equals("VALIDATED")
+                            && (checkpoint.root() == null || checkpoint.program() == null)
+                            || phase.equals("CLEANUP")
+                            && !Set.of("RETAINED", "DELETED", "ABSENT", "RETAINED_UNCONFIRMED")
+                            .contains(checkpoint.cleanup()))
                             throw new IOException("Invalid retained installation phase");
                         if (cancelling)
                             ModInstallationCleanup.validate(cancellation.entries(),
-                                    home.resolve(".mod-staging").resolve(operation.toString()), checkpoint.root(),
-                                    paths.target(inspection), checkpoint.program(), inspection.files());
+                                home.resolve(".mod-staging").resolve(operation.toString()), checkpoint.root(),
+                                paths.target(inspection), checkpoint.program(), inspection.files());
                         return new Pending(operation, inspection, request, json, phase, checkpoint,
-                                UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"), cancellation);
+                            UUID.fromString(r.getString("archive_log_id")), r.getLong("created_at"), cancellation);
                     } catch (IOException | RuntimeException invalid) {
                         throw new SQLException("Retained installation cannot be validated", invalid);
                     }
@@ -1223,9 +1235,9 @@ public final class PlatformModInstallation implements AutoCloseable {
         private void requirePending(Connection c, Pending pending) throws SQLException {
             var actual = records.load(c, pending.id());
             if (!actual.json().equals(pending.json()) || !actual.phase().equals(pending.phase())
-                    || !actual.checkpoint().equals(pending.checkpoint()) || !actual.archive().equals(pending.archive()))
+                || !actual.checkpoint().equals(pending.checkpoint()) || !actual.archive().equals(pending.archive()))
                 throw new SQLException("Original installation checkpoint changed");
-            if (!Objects.equals(actual.cancellation(), pending.cancellation()))
+            if (!Objects.equals(actual.cancelToken(), pending.cancelToken()))
                 throw new SQLException("Original cancellation scope changed");
         }
 
@@ -1249,11 +1261,11 @@ public final class PlatformModInstallation implements AutoCloseable {
         private Pending checkpoint(Connection c, Pending pending, String phase, Checkpoint checkpoint) throws SQLException {
             records.requirePending(c, pending);
             if (InstallationRecords.execute(c,
-                    "UPDATE mod_operation SET phase=?,recovery_json=?,updated_at=? WHERE operation_id=? AND state='RUNNING'",
-                    phase, encode(checkpoint), System.currentTimeMillis(), pending.id()) != 1)
+                "UPDATE mod_operation SET phase=?,recovery_json=?,updated_at=? WHERE operation_id=? AND state='RUNNING'",
+                phase, encode(checkpoint), System.currentTimeMillis(), pending.id()) != 1)
                 throw new SQLException("Installation no longer owns its original phase");
             return new Pending(pending.id(), pending.inspection(), pending.request(), pending.json(), phase, checkpoint,
-                    pending.archive(), pending.created(), pending.cancellation());
+                pending.archive(), pending.created(), pending.cancelToken());
         }
 
         /** Encodes a small original physical checkpoint. / 编码小型原物理检查点。
@@ -1288,15 +1300,16 @@ public final class PlatformModInstallation implements AutoCloseable {
          * @throws IOException if original target is invalid / 原目标无效时 */
         private Receipt receipt(Pending pending) throws IOException {
             return new Receipt(pending.id(), pending.inspection().manifest().id(),
-                    pending.inspection().manifest().version().toString(), paths.target(pending.inspection()),
-                    pending.checkpoint().cleanup());
+                pending.inspection().manifest().version().toString(), paths.target(pending.inspection()),
+                pending.checkpoint().cleanup());
         }
     }
 
     /** Canonical installation paths and physical ownership checks. / 规范安装路径与物理归属核验。 */
     private final class InstallationPaths {
         /** Binds the original owning service. / 绑定原服务所有者。 */
-        private InstallationPaths() { }
+        private InstallationPaths() {
+        }
 
         /** Requires a direct ordinary original-package path. / 要求直接普通原包路径。
          * @param original explicit archive / 明示归档
@@ -1304,8 +1317,8 @@ public final class PlatformModInstallation implements AutoCloseable {
         private void originalPath(Path original) throws IOException {
             InstallationPaths.directory(home.resolve("mod-zip"));
             if (!original.isAbsolute() || !original.equals(original.normalize())
-                    || !original.getParent().equals(home.resolve("mod-zip"))
-                    || !original.getFileName().toString().endsWith(".wtlmod"))
+                || !original.getParent().equals(home.resolve("mod-zip"))
+                || !original.getFileName().toString().endsWith(".wtlmod"))
                 throw new IOException("Original must be a direct mod-zip child");
             ordinary(original, false);
         }
@@ -1317,11 +1330,11 @@ public final class PlatformModInstallation implements AutoCloseable {
         private Path target(ModPackageReader.Inspection inspection) throws IOException {
             for (String part : List.of(inspection.manifest().id(), inspection.manifest().version().toString()))
                 if (part.isEmpty() || part.length() > 255 || part.endsWith(".") || part.endsWith(" ")
-                        || part.matches(".*[<>:\"|?*\\\\/\\x00-\\x1f].*")
-                        || part.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\..*)?"))
+                    || part.matches(".*[<>:\"|?*\\\\/\\x00-\\x1f].*")
+                    || part.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\..*)?"))
                     throw new IOException("Mod identity cannot be preserved as a Windows directory");
             return home.resolve("mod").resolve(inspection.manifest().id())
-                    .resolve(inspection.manifest().version().toString());
+                .resolve(inspection.manifest().version().toString());
         }
 
         /** Creates only a single ordinary container, never a redirected parent tree. / 仅创建单个普通容器，绝不创建重定向父目录树。
@@ -1333,7 +1346,8 @@ public final class PlatformModInstallation implements AutoCloseable {
             try {
                 Files.createDirectory(path);
             } catch (FileAlreadyExistsException exists) {
-                /* Verify below. / 下方核验。 */ }
+                /* Verify below. / 下方核验。 */
+            }
             InstallationPaths.directory(path);
         }
 
@@ -1347,7 +1361,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                 for (Path sibling : siblings) {
                     String existing = sibling.getFileName().toString();
                     if (!existing.equals(name) && java.text.Normalizer.normalize(existing, java.text.Normalizer.Form.NFC)
-                            .toUpperCase(Locale.ROOT).equals(key))
+                        .toUpperCase(Locale.ROOT).equals(key))
                         throw new IOException("Installation directory spelling conflicts with an existing entry");
                 }
             }
@@ -1383,7 +1397,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             if (pending.checkpoint().root() == null) {
                 Files.createDirectory(stage);
                 pending = records.checkpoint(pending, "VALIDATED",
-                        new Checkpoint(WindowsFileIdentity.read(stage), null, null));
+                    new Checkpoint(WindowsFileIdentity.read(stage), null, null));
             }
             identity(stage, pending.checkpoint().root());
             InstallationPaths.onlyProgram(stage);
@@ -1395,7 +1409,7 @@ public final class PlatformModInstallation implements AutoCloseable {
             ModPackageReader.verifyDirectory(pending.inspection(), program);
             identity(stage, pending.checkpoint().root());
             pending = records.checkpoint(pending, "STAGED",
-                    new Checkpoint(pending.checkpoint().root(), WindowsFileIdentity.read(program), null));
+                new Checkpoint(pending.checkpoint().root(), WindowsFileIdentity.read(program), null));
             return pending;
         }
     }
@@ -1403,7 +1417,8 @@ public final class PlatformModInstallation implements AutoCloseable {
     /** Combines actual original files with the same locked maintenance inventory. / 将实际原文件与同一已锁维护清单合并。 */
     private final class InstallationInventory {
         /** Binds the original installation owner. / 绑定原安装所有者。 */
-        private InstallationInventory() { }
+        private InstallationInventory() {
+        }
 
         /** Reads files and saved status under the original outer monitor. / 在原外部同步锁下读取文件与已存状态。
          * @return actual package inventory / 实际包清单
@@ -1417,19 +1432,19 @@ public final class PlatformModInstallation implements AutoCloseable {
                 var rows = new ArrayList<OriginalView>();
                 for (var value : observed) {
                     boolean busy = InstallationInventory.inUse(pending, value.file(), value.stamp()) || deletion.originalBusy(c, value.file(),
-                            value.stamp() == null ? null : value.stamp().identity());
+                        value.stamp() == null ? null : value.stamp().identity());
                     String state = value.inspection() == null ? "INVALID" : "AVAILABLE";
                     if (value.inspection() != null) {
                         var manifest = value.inspection().manifest();
                         try (var p = c.prepareStatement(
-                                "SELECT content_sha256 FROM mod_version WHERE mod_id=? AND version=?")) {
+                            "SELECT content_sha256 FROM mod_version WHERE mod_id=? AND version=?")) {
                             p.setString(1, manifest.id());
                             p.setString(2, manifest.version().toString());
                             try (var r = p.executeQuery()) {
                                 if (r.next())
                                     state = r.getString(1).equals(value.inspection().contentSha256())
-                                            ? "INSTALLED"
-                                            : "CONFLICT";
+                                        ? "INSTALLED"
+                                        : "CONFLICT";
                             }
                         }
                         try (var p = c.prepareStatement("SELECT 1 FROM mod_operation WHERE mod_id=?")) {
@@ -1443,15 +1458,14 @@ public final class PlatformModInstallation implements AutoCloseable {
                     if (busy)
                         state = "BUSY";
                     rows.add(new OriginalView(value.file(),
-                            Optional.ofNullable(value.inspection()).map(ModPackageReader.Inspection::manifest), state,
-                            Optional.ofNullable(value.problem()), value.stamp() != null && !busy));
+                        Optional.ofNullable(value.inspection()).map(ModPackageReader.Inspection::manifest), state,
+                        Optional.ofNullable(value.problem()), value.stamp() != null && !busy));
                 }
                 return new Inventory(rows, pending.stream().map(Maintenance::view).toList(), keepOriginal(c));
             });
         }
 
         /** Checks exact path or native identity, conservatively retaining unreadable maintenance. / 检查精确路径或原生身份，保守保留不可读维护。
-
          * @param operations retained operations / 保留操作
 
          * @param file selected original / 已选原包
@@ -1464,16 +1478,15 @@ public final class PlatformModInstallation implements AutoCloseable {
 
             return operations.stream()
 
-                    .anyMatch(o -> o.view().original().isEmpty() || o.identity() == null
+                .anyMatch(o -> o.view().original().isEmpty() || o.identity() == null
 
-                            || o.view().original().orElseThrow().equals(file)
+                    || o.view().original().orElseThrow().equals(file)
 
-                            || stamp != null && o.identity().equals(stamp.identity()));
+                    || stamp != null && o.identity().equals(stamp.identity()));
 
         }
 
         /** Reads physical deletion evidence without requiring valid package bytes. / 读取物理删除依据，不要求包字节有效。
-
          * @param file ordinary original / 普通原文件
 
          * @return current file stamp / 当前文件事实
@@ -1492,7 +1505,7 @@ public final class PlatformModInstallation implements AutoCloseable {
 
             if (!Objects.equals(before.fileKey(), after.fileKey()) || before.size() != after.size()
 
-                    || !before.lastModifiedTime().equals(after.lastModifiedTime()))
+                || !before.lastModifiedTime().equals(after.lastModifiedTime()))
 
                 throw new IOException("Original changed during inspection");
 
@@ -1521,7 +1534,7 @@ public final class PlatformModInstallation implements AutoCloseable {
                                 throw new IOException("Original changed while scanning");
                         } catch (IOException failure) {
                             problem = new Problem(ProblemCode.UNAVAILABLE, "MOD_PACKAGE_INVALID",
-                                    bounded(failure.getMessage()), Map.of(), Optional.empty());
+                                bounded(failure.getMessage()), Map.of(), Optional.empty());
                             inspection = null;
                         }
                         observed.add(new Observed(path, inspection, stamp, problem));

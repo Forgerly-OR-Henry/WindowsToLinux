@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
@@ -30,8 +30,8 @@ class TaskAuthorCheckpointTest {
     private static UUID started(PlatformDatabase db) throws SQLException {
         var ledger = new TaskLedger(db);
         var id = ledger.enqueue(UUID.randomUUID(), OWNER, VERSION,
-                new TaskRequest("fixture", "Author checkpoint", List.of(), true),
-                List.of(new TaskResource("MOD", OWNER, OWNER, false)));
+            new TaskRequest("fixture", "Author checkpoint", List.of(), true),
+            List.of(new TaskResource("MOD", OWNER, OWNER, false)));
         assertTrue(ledger.tryStart(id));
         return id;
     }
@@ -45,23 +45,23 @@ class TaskAuthorCheckpointTest {
             assertEquals(new TaskCheckpoint.Snapshot(0, "{\"phase\":\"prepared\"}", false), initial.snapshot());
             assertEquals(initial, checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow());
             assertThrows(SQLException.class,
-                    () -> checkpoints.begin(task, OWNER, VERSION, "publication", "{\"phase\":\"duplicate\"}"));
+                () -> checkpoints.begin(task, OWNER, VERSION, "publication", "{\"phase\":\"duplicate\"}"));
             assertThrows(SQLException.class,
-                    () -> checkpoints.advance(task, OWNER, VERSION, "publication", initial.lease(),
-                            new TaskCheckpoint.Snapshot(0, "{\"phase\":\"forged\"}", false),
-                            "{\"phase\":\"committed\"}"));
+                () -> checkpoints.advance(task, OWNER, VERSION, "publication", initial.lease(),
+                    new TaskCheckpoint.Snapshot(0, "{\"phase\":\"forged\"}", false),
+                    "{\"phase\":\"committed\"}"));
             var committed = checkpoints.advance(task, OWNER, VERSION, "publication", initial.lease(),
-                    initial.snapshot(), "{\"phase\":\"committed\"}");
+                initial.snapshot(), "{\"phase\":\"committed\"}");
             assertEquals(new TaskCheckpoint.Snapshot(1, "{\"phase\":\"committed\"}", false), committed);
             assertThrows(SQLException.class, () -> checkpoints.advance(task, OWNER, VERSION, "publication",
-                    initial.lease(), initial.snapshot(), "{\"phase\":\"stale\"}"));
+                initial.lease(), initial.snapshot(), "{\"phase\":\"stale\"}"));
             assertEquals(committed, checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot());
 
             checkpoints.release(task, OWNER, VERSION, "publication", initial.lease());
             assertEquals(new TaskCheckpoint.Snapshot(1, committed.payload(), true),
-                    checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot());
+                checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot());
             assertThrows(SQLException.class, () -> checkpoints.advance(task, OWNER, VERSION, "publication",
-                    initial.lease(), committed, "{\"phase\":\"after-release\"}"));
+                initial.lease(), committed, "{\"phase\":\"after-release\"}"));
             assertThrows(SQLException.class, () -> checkpoints.begin(task, OWNER, VERSION, "publication", "{}"));
         }
     }
@@ -78,13 +78,13 @@ class TaskAuthorCheckpointTest {
             assertThrows(SQLException.class, () -> checkpoints.find(task, "other-owner", VERSION, "publication"));
             assertThrows(SQLException.class, () -> checkpoints.find(task, OWNER, "2.0.0", "publication"));
             assertThrows(SQLException.class, () -> checkpoints.advance(task, "other-owner", VERSION, "publication",
-                    original.lease(), original.snapshot(), "{\"step\":1}"));
+                original.lease(), original.snapshot(), "{\"step\":1}"));
             assertThrows(SQLException.class, () -> checkpoints.advance(task, OWNER, "2.0.0", "publication",
-                    original.lease(), original.snapshot(), "{\"step\":1}"));
+                original.lease(), original.snapshot(), "{\"step\":1}"));
             assertThrows(SQLException.class,
-                    () -> checkpoints.release(task, OWNER, VERSION, "publication", UUID.randomUUID()));
+                () -> checkpoints.release(task, OWNER, VERSION, "publication", UUID.randomUUID()));
             assertThrows(SQLException.class,
-                    () -> checkpoints.release(task, "other-owner", VERSION, "publication", original.lease()));
+                () -> checkpoints.release(task, "other-owner", VERSION, "publication", original.lease()));
             assertFalse(checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot().released());
             checkpoints.release(task, OWNER, VERSION, "publication", original.lease());
         }
@@ -108,7 +108,7 @@ class TaskAuthorCheckpointTest {
             assertEquals(lease, stored.lease());
             assertEquals(new TaskCheckpoint.Snapshot(1, "{\"state\":1}", true), stored.snapshot());
             assertThrows(SQLException.class, () -> checkpoints.advance(task, OWNER, VERSION, "publication", lease,
-                    stored.snapshot(), "{\"state\":2}"));
+                stored.snapshot(), "{\"state\":2}"));
         }
     }
 
@@ -121,8 +121,8 @@ class TaskAuthorCheckpointTest {
             task = started(db);
             lease = new TaskAuthorCheckpoint(db).begin(task, OWNER, VERSION, "publication", initial).lease();
             try (var connection = db.openConnection();
-                    var query = connection
-                            .prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
+                 var query = connection
+                     .prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
                 query.setObject(1, lease);
                 try (var rows = query.executeQuery()) {
                     assertTrue(rows.next());
@@ -136,7 +136,7 @@ class TaskAuthorCheckpointTest {
                     var reordered = new ObjectMapper().writeValueAsString(alternative);
                     assertNotEquals(stored, reordered);
                     try (var update = connection
-                            .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                        .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
                         update.setString(1, reordered);
                         update.setObject(2, lease);
                         assertEquals(1, update.executeUpdate());
@@ -149,10 +149,10 @@ class TaskAuthorCheckpointTest {
             var original = checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow();
             assertEquals(new TaskCheckpoint.Snapshot(0, initial, false), original.snapshot());
             assertThrows(TaskAuthorCheckpoint.RejectedException.class,
-                    () -> checkpoints.advance(task, OWNER, VERSION, "publication", lease,
-                            new TaskCheckpoint.Snapshot(0, "{\"phase\":\"forged\"}", false), "{\"phase\":\"done\"}"));
+                () -> checkpoints.advance(task, OWNER, VERSION, "publication", lease,
+                    new TaskCheckpoint.Snapshot(0, "{\"phase\":\"forged\"}", false), "{\"phase\":\"done\"}"));
             var advanced = checkpoints.advance(task, OWNER, VERSION, "publication", lease, original.snapshot(),
-                    "{\"phase\":\"done\"}");
+                "{\"phase\":\"done\"}");
             assertEquals(1, advanced.revision());
             assertEquals(advanced, checkpoints.find(task, OWNER, VERSION, "publication").orElseThrow().snapshot());
         }
@@ -166,15 +166,15 @@ class TaskAuthorCheckpointTest {
             assertThrows(SQLException.class, () -> checkpoints.begin(task, OWNER, VERSION, "bad", "{\"x\":1,\"x\":2}"));
             assertThrows(SQLException.class, () -> checkpoints.begin(task, OWNER, VERSION, "bad", "{} {}"));
             assertThrows(SQLException.class,
-                    () -> checkpoints.begin(task, OWNER, VERSION, "bad", "{\"x\":\"" + "中".repeat(4001) + "\"}"));
+                () -> checkpoints.begin(task, OWNER, VERSION, "bad", "{\"x\":\"" + "中".repeat(4001) + "\"}"));
             assertTrue(checkpoints.find(task, OWNER, VERSION, "bad").isEmpty());
 
             String payload = "{\"protocol\":\"forged\",\"ownerId\":\"other-owner\"}";
             var entry = checkpoints.begin(task, OWNER, VERSION, "publication", payload);
             String encoded;
             try (var connection = db.openConnection();
-                    var query = connection
-                            .prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
+                 var query = connection
+                     .prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
                 query.setObject(1, entry.lease());
                 try (var row = query.executeQuery()) {
                     assertTrue(row.next());
@@ -189,15 +189,15 @@ class TaskAuthorCheckpointTest {
             assertEquals(payload, host.fields().get("payload"));
 
             try (var connection = db.openConnection();
-                    var update = connection
-                            .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                 var update = connection
+                     .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
                 update.setString(1, "{\"release\":\"EXPLICIT\"}");
                 update.setObject(2, entry.lease());
                 assertEquals(1, update.executeUpdate());
             }
             assertThrows(SQLException.class, () -> checkpoints.find(task, OWNER, VERSION, "publication"));
             assertThrows(SQLException.class,
-                    () -> checkpoints.release(task, OWNER, VERSION, "publication", entry.lease()));
+                () -> checkpoints.release(task, OWNER, VERSION, "publication", entry.lease()));
         }
     }
 }

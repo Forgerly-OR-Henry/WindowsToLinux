@@ -1,17 +1,27 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPlatformCapabilityParser;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPlatformCapabilityProbe;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
-import gold.debug.windowstolinux.mod.deployment.source.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 
 /** Sends fixed pre-upload probes, task-owned candidate creation and one exact archive transfer. / 发送固定上传前探测、任务所属候选创建及一次精确归档传输。 */
 public final class DeploymentCandidateChannel {
@@ -44,7 +54,7 @@ public final class DeploymentCandidateChannel {
      * @param revision reviewed plan digest / 已审阅计划摘要
      * @param budget shared cumulative build budget / 共用累计构建预算 */
     public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String revision, DeploymentBuildBudget budget) {
+                                      TaskContext task, String revision, DeploymentBuildBudget budget) {
         this(session, interaction, server, task, revision, budget, DeploymentSendGuard.NONE);
     }
 
@@ -57,7 +67,7 @@ public final class DeploymentCandidateChannel {
      * @param budget shared build budget / 共用构建预算
      * @param beforeSend caller-owned check / 调用方持有的核对 */
     public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
+                                      TaskContext task, String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -65,7 +75,7 @@ public final class DeploymentCandidateChannel {
         this.revision = Objects.requireNonNull(revision);
         this.beforeSend = Objects.requireNonNull(beforeSend);
         this.commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget,
-                beforeSend);
+            beforeSend);
     }
 
     /** Collects the original typed read-only host matrix with the actual SSH fingerprint. / 以实际SSH指纹采集原类型化只读主机矩阵。
@@ -73,7 +83,7 @@ public final class DeploymentCandidateChannel {
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<DeploymentLinuxCapabilityFacts> hostFacts() throws ApiException {
         var observed = commands.send("deployment.candidate.host-probe.v1", "deployment-host", server.id(),
-                DeploymentPlatformCapabilityProbe.render(), new byte[0], Duration.ofMinutes(2), 65536);
+            DeploymentPlatformCapabilityProbe.render(), new byte[0], Duration.ofMinutes(2), 65536);
         if (observed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(observed);
         if (observed.value().isEmpty())
@@ -96,9 +106,9 @@ public final class DeploymentCandidateChannel {
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<Long> availableBytes() throws ApiException {
         String script = "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\n"
-                + "stat -f -c '%a %S' -- '/var/lib'\n";
+            + "stat -f -c '%a %S' -- '/var/lib'\n";
         var observed = commands.send("deployment.candidate.capacity.v1", "deployment-workspace", "/var/lib", script,
-                new byte[0], Duration.ofSeconds(20), 1024);
+            new byte[0], Duration.ofSeconds(20), 1024);
         if (observed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(observed);
         if (observed.value().isEmpty())
@@ -122,29 +132,29 @@ public final class DeploymentCandidateChannel {
      * @return confirmed task-owned candidate / 已确认任务所属候选
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<DeploymentRemoteWorkspace> create(DeploymentRemoteWorkspace workspace,
-            long maxWorkspaceBytes) throws ApiException {
+                                                             long maxWorkspaceBytes) throws ApiException {
         Objects.requireNonNull(workspace);
         if (maxWorkspaceBytes < 64L * 1024 * 1024 || maxWorkspaceBytes > 128L * 1024 * 1024 * 1024)
             throw new IllegalArgumentException("Candidate budget is outside helper limits");
         String original = task.id().toString();
         String args = quoted(workspace.applicationId()) + " " + quoted(workspace.candidateId()) + " "
-                + maxWorkspaceBytes + " " + quoted(original);
+            + maxWorkspaceBytes + " " + quoted(original);
         String helper = quoted(DeploymentManagedHelperBundle.PATH);
         var created = commands.send("deployment.candidate.create.v1", "deployment-candidate", workspace.candidateRoot(),
-                helper + " candidate-create-task " + args, new byte[0], Duration.ofMinutes(5), 4096);
+            helper + " candidate-create-task " + args, new byte[0], Duration.ofMinutes(5), 4096);
         if (created.outcome() == Outcome.CANCELLED || created.outcome() == Outcome.UNKNOWN)
             return withoutValue(created);
         if (created.outcome() == Outcome.FAILED && created.value().isEmpty())
             return withoutValue(created);
         if (!complete(created)
-                || !created.value().orElseThrow().stdout().equals("CANDIDATE=" + workspace.candidateRoot() + "\n"))
+            || !created.value().orElseThrow().stdout().equals("CANDIDATE=" + workspace.candidateRoot() + "\n"))
             return unknown("DEPLOYMENT_CANDIDATE_CREATE_UNCONFIRMED");
         var queried = commands.send("deployment.candidate.query.v1", "deployment-candidate", workspace.candidateRoot(),
-                helper + " candidate-query-task " + quoted(workspace.applicationId()) + " "
-                        + quoted(workspace.candidateId()) + " " + quoted(original),
-                new byte[0], Duration.ofSeconds(20), 4096);
+            helper + " candidate-query-task " + quoted(workspace.applicationId()) + " "
+                + quoted(workspace.candidateId()) + " " + quoted(original),
+            new byte[0], Duration.ofSeconds(20), 4096);
         if (!complete(queried)
-                || !queried.value().orElseThrow().stdout().equals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n"))
+            || !queried.value().orElseThrow().stdout().equals("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n"))
             return unknown("DEPLOYMENT_CANDIDATE_OWNER_UNCONFIRMED");
         return success(workspace);
     }
@@ -155,15 +165,15 @@ public final class DeploymentCandidateChannel {
      * @return exact endpoint and byte confirmation / 精确端点和字节确认
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<TransferResult> upload(DeploymentSourceArchive archive, DeploymentRemoteWorkspace workspace)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(archive);
         Objects.requireNonNull(workspace);
         Path local = archive.path();
         String remote = workspace.candidateRoot() + "/mutable/source.tar.gz";
         var request = new TransferRequest(local, remote, archive.byteCount());
         var intent = RemoteActions.transfer(server, revision, request, archive.sha256(), true)
-                .withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
-                        Set.of(new ActionTarget(server.id(), "deployment-candidate", remote))));
+            .withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
+                Set.of(new ActionTarget(server.id(), "deployment-candidate", remote))));
         var grant = interaction.approve(intent, task);
         if (grant.outcome() != Outcome.SUCCEEDED)
             return withoutValue(grant);
@@ -173,7 +183,7 @@ public final class DeploymentCandidateChannel {
             result = session.upload(request, grant.value().orElseThrow());
         } catch (ApiException failure) {
             if (failure.problem().code() == ProblemCode.ACCESS_DENIED
-                    || failure.problem().code() == ProblemCode.INVALID_INPUT)
+                || failure.problem().code() == ProblemCode.INVALID_INPUT)
                 throw failure;
             return unknown("DEPLOYMENT_UPLOAD_DISPATCH_UNCONFIRMED");
         }
@@ -183,7 +193,7 @@ public final class DeploymentCandidateChannel {
             return unknown("DEPLOYMENT_UPLOAD_RECEIPT_MISSING");
         var receipt = result.value().orElseThrow();
         if (!receipt.localPath().equals(local) || !receipt.remoteAbsolutePath().equals(remote)
-                || receipt.transferredBytes() != archive.byteCount() || !receipt.sha256().equals(archive.sha256()))
+            || receipt.transferredBytes() != archive.byteCount() || !receipt.sha256().equals(archive.sha256()))
             return unknown("DEPLOYMENT_UPLOAD_RECEIPT_CONFLICT");
         return result;
     }
@@ -194,25 +204,25 @@ public final class DeploymentCandidateChannel {
      * @return verified candidate identity / 已核验候选身份
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<DeploymentRemoteWorkspace> verify(DeploymentRemoteWorkspace workspace,
-            DeploymentSourceArchive archive) throws ApiException {
+                                                             DeploymentSourceArchive archive) throws ApiException {
         String root = workspace.candidateRoot();
         String remote = root + "/mutable/source.tar.gz";
         String helper = quoted(DeploymentManagedHelperBundle.PATH);
         String script = "set -euo pipefail\n" + helper + " candidate-query-task " + quoted(workspace.applicationId())
-                + " " + quoted(workspace.candidateId()) + " " + quoted(task.id().toString()) + "\n" + "test -f "
-                + quoted(remote) + " && test ! -L " + quoted(remote) + "\n" + "test \"$(realpath -e -- "
-                + quoted(remote) + ")\" = " + quoted(remote) + "\n" + "printf 'BYTES='; stat -c '%s' -- "
-                + quoted(remote) + "\n" + "printf 'SHA256='; sha256sum -- " + quoted(remote) + " | cut -d ' ' -f1\n"
-                + "printf 'OWNER='; stat -c '%u' -- " + quoted(remote) + "\n";
+            + " " + quoted(workspace.candidateId()) + " " + quoted(task.id().toString()) + "\n" + "test -f "
+            + quoted(remote) + " && test ! -L " + quoted(remote) + "\n" + "test \"$(realpath -e -- "
+            + quoted(remote) + ")\" = " + quoted(remote) + "\n" + "printf 'BYTES='; stat -c '%s' -- "
+            + quoted(remote) + "\n" + "printf 'SHA256='; sha256sum -- " + quoted(remote) + " | cut -d ' ' -f1\n"
+            + "printf 'OWNER='; stat -c '%u' -- " + quoted(remote) + "\n";
         var result = commands.send("deployment.candidate.verify.v1", "deployment-candidate", root, script, new byte[0],
-                Duration.ofSeconds(30), 4096);
+            Duration.ofSeconds(30), 4096);
         if (!complete(result))
             return unknown("DEPLOYMENT_UPLOAD_REMOTE_UNCONFIRMED");
         String expected = "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archive.byteCount() + "\nSHA256="
-                + archive.sha256() + "\nOWNER=0\n";
+            + archive.sha256() + "\nOWNER=0\n";
         return result.value().orElseThrow().stdout().equals(expected)
-                ? success(workspace)
-                : unknown("DEPLOYMENT_UPLOAD_REMOTE_CONFLICT");
+            ? success(workspace)
+            : unknown("DEPLOYMENT_UPLOAD_REMOTE_CONFLICT");
     }
 
     /** Retains the first observation for an original flat capability field. / 为原扁平能力字段保留首次观测。
@@ -234,8 +244,8 @@ public final class DeploymentCandidateChannel {
      * @return whether complete success was observed / 是否观察到完整成功 */
     private static boolean complete(OperationResult<CommandResult> observed) {
         return observed.outcome() == Outcome.SUCCEEDED && observed.value().isPresent()
-                && observed.value().orElseThrow().exitCode().equals(Optional.of(0))
-                && !observed.value().orElseThrow().truncated();
+            && observed.value().orElseThrow().exitCode().equals(Optional.of(0))
+            && !observed.value().orElseThrow().truncated();
     }
 
     /** Quotes one reviewed literal. / 引用一个已审阅字面量。
@@ -276,7 +286,7 @@ public final class DeploymentCandidateChannel {
      * @return unknown result / 未知结果 */
     private static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Builds a safe bounded diagnostic. / 构造安全有界诊断。
@@ -285,6 +295,6 @@ public final class DeploymentCandidateChannel {
      * @return public problem / 公开问题 */
     private static Problem problem(ProblemCode code, String event) {
         return new Problem(code, event, "Reviewed candidate evidence could not be confirmed", Map.of(),
-                Optional.empty());
+            Optional.empty());
     }
 }

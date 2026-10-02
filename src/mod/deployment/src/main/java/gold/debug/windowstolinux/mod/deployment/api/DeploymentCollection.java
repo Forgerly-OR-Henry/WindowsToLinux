@@ -9,5 +9,7 @@ public record DeploymentCollection(DeploymentHandoff handoff, List<DeploymentArt
     /** Copies the artifact list. / 复制产物列表。
      * @param handoff durable handoff / 持久交接
      * @param artifacts complete artifacts / 完整产物 */
-    public DeploymentCollection { artifacts = List.copyOf(artifacts); }
+    public DeploymentCollection {
+        artifacts = List.copyOf(artifacts);
+    }
 }

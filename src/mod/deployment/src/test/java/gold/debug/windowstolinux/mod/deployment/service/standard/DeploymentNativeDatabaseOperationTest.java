@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -15,14 +28,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
@@ -41,12 +54,12 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
@@ -54,13 +67,13 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 throw new AssertionError("No transfer expected");
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 approved.incrementAndGet();
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError("No input expected");
             }
         });
@@ -85,10 +98,10 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 return reply("HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var handle = context.tasks()
-                    .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Reject old native DB helper",
-                            List.of(server.id()), true),
-                            task -> new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
-                                    .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
+                .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Reject old native DB helper",
+                        List.of(server.id()), true),
+                    task -> new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
+                        .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(Outcome.FAILED, result.outcome());
             assertEquals(0, starts.get());
@@ -109,30 +122,30 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 if (request.script().contains("native-db start"))
                     starts.incrementAndGet();
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var review = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                        throws ApiException {
+                    throws ApiException {
                     if (intent.semantics().isPresent()
-                            && "deployment.native-db.start.v1".equals(intent.semantics().orElseThrow().operation()))
+                        && "deployment.native-db.start.v1".equals(intent.semantics().orElseThrow().operation()))
                         throw new ApiException(new Problem(ProblemCode.CANCELLED, "TEST_REVIEW_CANCELLED",
-                                "Review ended before native DB dispatch", Map.of(), Optional.empty()));
+                            "Review ended before native DB dispatch", Map.of(), Optional.empty()));
                     return context.interaction().approve(intent, task);
                 }
 
                 public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                        TaskContext task) throws ApiException {
+                                                           TaskContext task) throws ApiException {
                     return context.interaction().requestText(title, prompt, secret, task);
                 }
             };
             var handle = context.tasks()
-                    .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Cancel native DB before dispatch",
-                            List.of(server.id()), true),
-                            task -> new DeploymentNativeDatabaseChannel(borrowed, review, server, task)
-                                    .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
+                .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Cancel native DB before dispatch",
+                        List.of(server.id()), true),
+                    task -> new DeploymentNativeDatabaseChannel(borrowed, review, server, task)
+                        .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
             assertEquals(Outcome.CANCELLED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(0, starts.get());
         }
     }
@@ -148,43 +161,43 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             var failure = new AtomicReference<Throwable>();
             var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Serial native DB evidence", List.of(server.id()), true), task -> {
-                        try {
-                            var journal = DeploymentNativeDatabaseJournal.begin(context.tasks(), task, server,
-                                    java.util.UUID.randomUUID(), "start", "a".repeat(64), "b".repeat(64),
-                                    "POSTGRESQL:original");
-                            journal.dispatched();
-                            assertThrows(IllegalArgumentException.class, () -> journal.next(java.util.UUID.randomUUID(),
-                                    "prepare", "c".repeat(64), "d".repeat(64), "POSTGRESQL:next"));
-                            journal.terminal("SUCCEEDED", "CONFIRMED");
+                "Serial native DB evidence", List.of(server.id()), true), task -> {
+                try {
+                    var journal = DeploymentNativeDatabaseJournal.begin(context.tasks(), task, server,
+                        java.util.UUID.randomUUID(), "start", "a".repeat(64), "b".repeat(64),
+                        "POSTGRESQL:original");
+                    journal.dispatched();
+                    assertThrows(IllegalArgumentException.class, () -> journal.next(java.util.UUID.randomUUID(),
+                        "prepare", "c".repeat(64), "d".repeat(64), "POSTGRESQL:next"));
+                    journal.terminal("SUCCEEDED", "CONFIRMED");
+                    journal.next(java.util.UUID.randomUUID(), "prepare", "c".repeat(64), "d".repeat(64),
+                        "POSTGRESQL:next");
+                    assertEquals("INTENT", journal.facts().phase());
+                    assertEquals(List.of("POSTGRESQL:original"), journal.facts().effectTargets());
+                    assertTrue(journal.facts().effectsObserved());
+                    for (int i = 0; i < 16; i++) {
+                        journal.dispatched();
+                        journal.terminal("SUCCEEDED", "CONFIRMED");
+                        if (i < 15) {
+                            String target = ("db-" + i + "-" + "x".repeat(256)).substring(0, 256);
                             journal.next(java.util.UUID.randomUUID(), "prepare", "c".repeat(64), "d".repeat(64),
-                                    "POSTGRESQL:next");
-                            assertEquals("INTENT", journal.facts().phase());
-                            assertEquals(List.of("POSTGRESQL:original"), journal.facts().effectTargets());
-                            assertTrue(journal.facts().effectsObserved());
-                            for (int i = 0; i < 16; i++) {
-                                journal.dispatched();
-                                journal.terminal("SUCCEEDED", "CONFIRMED");
-                                if (i < 15) {
-                                    String target = ("db-" + i + "-" + "x".repeat(256)).substring(0, 256);
-                                    journal.next(java.util.UUID.randomUUID(), "prepare", "c".repeat(64), "d".repeat(64),
-                                            target);
-                                }
-                            }
-                            assertThrows(IllegalArgumentException.class,
-                                    () -> journal.next(java.util.UUID.randomUUID(), "prepare", "c".repeat(64),
-                                            "d".repeat(64), ("db-16-" + "x".repeat(256)).substring(0, 256)));
-                            assertEquals("SUCCEEDED", journal.facts().phase());
-                            journal.close();
-                            assertTrue(context.tasks().findCheckpoint(task, DeploymentNativeDatabaseJournal.KEY)
-                                    .orElseThrow().snapshot().released());
-                        } catch (Throwable caught) {
-                            failure.set(caught);
+                                target);
                         }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                    }
+                    assertThrows(IllegalArgumentException.class,
+                        () -> journal.next(java.util.UUID.randomUUID(), "prepare", "c".repeat(64),
+                            "d".repeat(64), ("db-16-" + "x".repeat(256)).substring(0, 256)));
+                    assertEquals("SUCCEEDED", journal.facts().phase());
+                    journal.close();
+                    assertTrue(context.tasks().findCheckpoint(task, DeploymentNativeDatabaseJournal.KEY)
+                        .orElseThrow().snapshot().released());
+                } catch (Throwable caught) {
+                    failure.set(caught);
+                }
+                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             if (failure.get() != null)
                 throw new AssertionError("Serial original checkpoint failed", failure.get());
         }
@@ -208,8 +221,8 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     starts.incrementAndGet();
                     peer(state, "start", request.stdin());
                     return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_REPLY_LOST", "Controlled reply lost",
-                                    Map.of(), Optional.empty())));
+                        Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_REPLY_LOST", "Controlled reply lost",
+                            Map.of(), Optional.empty())));
                 }
                 if (request.script().contains("native-db status")) {
                     statuses.incrementAndGet();
@@ -218,57 +231,57 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     return reply(status);
                 }
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                        + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
-                    new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("connect"))
-                            return session;
-                        throw new AssertionError("Only original connection is needed");
-                    });
+                new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("connect"))
+                        return session;
+                    throw new AssertionError("Only original connection is needed");
+                });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        try {
-                            return method.invoke(original, args);
-                        } catch (InvocationTargetException wrapped) {
-                            throw wrapped.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    try {
+                        return method.invoke(original, args);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
+                    }
+                });
             var callbackFailure = new AtomicReference<Throwable>();
             var handle = original.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
-                        try {
-                            DeploymentStaticPreparationJournal.begin(original.tasks(), task, server);
-                            var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
-                                    task);
-                            assertEquals(Outcome.UNKNOWN,
-                                    channel.start(original.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64))
-                                            .outcome());
-                            var journal = DeploymentNativeDatabaseJournal.find(original.tasks(), task).orElseThrow();
-                            assertEquals("DISPATCHED", journal.facts().phase());
-                            var prior = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentReferenceFlow.TASK_TYPE,
-                                    TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(),
-                                    List.of());
-                            var reconciled = new DeploymentStaticTaskRecovery(bound, new DeploymentReferenceFlow(bound))
-                                    .reconcile(prior, task);
-                            assertEquals(Outcome.FAILED, reconciled.outcome(),
-                                    reconciled + " status=" + observedStatus.get());
-                            assertTrue(journal.facts().effectsObserved());
-                            assertTrue(original.tasks().resourcesReleased(task));
-                        } catch (Throwable failure) {
-                            callbackFailure.set(failure);
-                        }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
+                try {
+                    DeploymentStaticPreparationJournal.begin(original.tasks(), task, server);
+                    var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
+                        task);
+                    assertEquals(Outcome.UNKNOWN,
+                        channel.start(original.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64))
+                            .outcome());
+                    var journal = DeploymentNativeDatabaseJournal.find(original.tasks(), task).orElseThrow();
+                    assertEquals("DISPATCHED", journal.facts().phase());
+                    var prior = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentReferenceFlow.TASK_TYPE,
+                        TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(),
+                        List.of());
+                    var reconciled = new DeploymentStaticTaskRecovery(bound, new DeploymentReferenceFlow(bound))
+                        .reconcile(prior, task);
+                    assertEquals(Outcome.FAILED, reconciled.outcome(),
+                        reconciled + " status=" + observedStatus.get());
+                    assertTrue(journal.facts().effectsObserved());
+                    assertTrue(original.tasks().resourcesReleased(task));
+                } catch (Throwable failure) {
+                    callbackFailure.set(failure);
+                }
+                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
             for (int attempt = 0; attempt < 100 && callbackFailure.get() == null
-                    && handle.snapshot().state() != TaskState.ENDED; attempt++)
+                && handle.snapshot().state() != TaskState.ENDED; attempt++)
                 Thread.sleep(50);
             if (callbackFailure.get() != null)
                 throw new AssertionError("Original native DB recovery failed", callbackFailure.get());
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(1, starts.get());
             assertEquals(1, statuses.get());
             try (var files = Files.list(state)) {
@@ -281,9 +294,9 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
     private ServerRef saved(PlatformRuntime runtime) throws Exception {
         var server = new ServerRef("database-server");
         runtime.servers().saveServerProfile(
-                ServerProfile
-                        .fromStored(new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
-                "fixture-password".toCharArray());
+            ServerProfile
+                .fromStored(new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+            "fixture-password".toCharArray());
         return server;
     }
 
@@ -293,31 +306,31 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
 
     private static RemoteSession session(Reply reply) {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute"))
-                        return reply.execute((CommandRequest) args[0]);
-                    if (method.getName().equals("close"))
-                        return null;
-                    throw new AssertionError("Unexpected borrowed session call: " + method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute"))
+                    return reply.execute((CommandRequest) args[0]);
+                if (method.getName().equals("close"))
+                    return null;
+                throw new AssertionError("Unexpected borrowed session call: " + method.getName());
+            });
     }
 
     private static OperationResult<CommandResult> reply(String stdout) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 
     private String peer(Path state, String action, byte[] frame) throws Exception {
         var script = workspace().resolve("src/mod/deployment/src/test/python/test_native_database_operation.py");
         var process = new ProcessBuilder(System.getProperty("managed.test.python", "python"), script.toString(), "peer",
-                state.toString(), action).start();
+            state.toString(), action).start();
         try {
             try (var input = process.getOutputStream()) {
                 input.write(frame);
             }
             assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Controlled helper peer timed out");
             String output = new String(process.getInputStream().readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
+                java.nio.charset.StandardCharsets.UTF_8);
             String error = new String(process.getErrorStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertEquals(0, process.exitValue(), error);
             return output.replace("\r\n", "\n");

@@ -12,7 +12,7 @@ import java.util.Optional;
  * @param databaseBindings the reviewed database scope, or empty when it was not reviewed / 经审阅数据库范围；未审阅时为空
  */
 public record DeploymentResourceBindings(List<DeploymentFileBinding> fileBindings,
-        Optional<List<DeploymentDatabaseBinding>> databaseBindings) {
+                                         Optional<List<DeploymentDatabaseBinding>> databaseBindings) {
     /**
      * Canonicalizes bindings while preserving unknown versus explicitly empty databases. / 规范化绑定并保留数据库未知与显式为空的区别。
      *
@@ -23,19 +23,19 @@ public record DeploymentResourceBindings(List<DeploymentFileBinding> fileBinding
      */
     public DeploymentResourceBindings {
         fileBindings = List.copyOf(Objects.requireNonNull(fileBindings, "fileBindings").stream()
-                .map(value -> Objects.requireNonNull(value, "file binding"))
-                .sorted(Comparator.comparing(DeploymentFileBinding::bindingId)).toList());
+            .map(value -> Objects.requireNonNull(value, "file binding"))
+            .sorted(Comparator.comparing(DeploymentFileBinding::bindingId)).toList());
         databaseBindings = Objects.requireNonNull(databaseBindings, "databaseBindings").map(
-                values -> List.copyOf(values.stream().map(value -> Objects.requireNonNull(value, "database binding"))
-                        .sorted(Comparator.comparing(DeploymentDatabaseBinding::databaseId)).toList()));
+            values -> List.copyOf(values.stream().map(value -> Objects.requireNonNull(value, "database binding"))
+                .sorted(Comparator.comparing(DeploymentDatabaseBinding::databaseId)).toList()));
         if (fileBindings.stream().map(DeploymentFileBinding::bindingId).distinct().count() != fileBindings.size()
-                || fileBindings.stream().map(value -> value.dataPath().path()).distinct().count() != fileBindings
-                        .size()) {
+            || fileBindings.stream().map(value -> value.dataPath().path()).distinct().count() != fileBindings
+            .size()) {
             throw new IllegalArgumentException("managed file binding identities and logical paths must be unique");
         }
         if (databaseBindings.isPresent()
-                && databaseBindings.orElseThrow().stream().map(DeploymentDatabaseBinding::databaseId).distinct()
-                        .count() != databaseBindings.orElseThrow().size()) {
+            && databaseBindings.orElseThrow().stream().map(DeploymentDatabaseBinding::databaseId).distinct()
+            .count() != databaseBindings.orElseThrow().size()) {
             throw new IllegalArgumentException("managed database binding identities must be unique");
         }
     }

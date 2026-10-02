@@ -1,10 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.PageSlice;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 
 /** Deployment-owned synchronous API; every call remains under the authenticated root task. / 部署所属同步API，每次调用均留在已认证根任务下。 */
@@ -42,7 +49,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public PageSlice<DeploymentApplicationSnapshot> listApplications(Optional<String> cursor, int limit,
-            TaskContext task) throws ApiException {
+                                                                     TaskContext task) throws ApiException {
         authenticate(task);
         return applications.list(cursor, limit, task);
     }
@@ -54,7 +61,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application,
-            TaskContext task) throws ApiException {
+                                                                  TaskContext task) throws ApiException {
         authenticate(task);
         context.servers().get(application.server(), task);
         return applications.inspect(application, task);
@@ -69,7 +76,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application, String revision,
-            DeploymentLifecycleAction action, TaskContext task) throws ApiException {
+                                                                DeploymentLifecycleAction action, TaskContext task) throws ApiException {
         authenticate(task);
         context.servers().get(application.server(), task);
         return applications.lifecycle(application, revision, action, task);
@@ -82,7 +89,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public OperationResult<DeploymentHandoff> reviewCollection(DeploymentCollectionRequest request, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         authenticate(task);
         context.servers().get(request.application().server(), task);
         return collection.review(request, task);
@@ -119,7 +126,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archived, ServerRef target,
-            String archiveSha, TaskContext task) throws ApiException {
+                                                       String archiveSha, TaskContext task) throws ApiException {
         authenticate(task);
         return restore.review(archived, target, archiveSha, task);
     }
@@ -131,7 +138,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
     public OperationResult<DeploymentHandoff> prepareRestore(DeploymentRestoreRequest request, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         authenticate(task);
         return restore.prepare(request, task);
     }
@@ -167,11 +174,11 @@ public final class DeploymentApiProvider implements DeploymentApi {
     public OperationResult<DeploymentHandoff> reconcile(UUID handoff, TaskContext task) throws ApiException {
         authenticate(task);
         var original = ledger.find(handoff, task)
-                .orElseThrow(() -> new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_HANDOFF_ABSENT",
-                        "Original handoff is absent", Map.of(), Optional.empty())));
+            .orElseThrow(() -> new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_HANDOFF_ABSENT",
+                "Original handoff is absent", Map.of(), Optional.empty())));
         return original.request().path("kind").asText().equals("COLLECTION")
-                ? collection.reconcile(handoff, task)
-                : restore.reconcile(handoff, task);
+            ? collection.reconcile(handoff, task)
+            : restore.reconcile(handoff, task);
     }
 
     /** Requires the actual host-certified root task within the current provider call. / 要求当前提供方调用内实际宿主认证根任务。

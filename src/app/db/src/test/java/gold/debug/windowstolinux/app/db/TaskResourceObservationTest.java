@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.db.task.TaskResourceObservation;
@@ -25,9 +25,9 @@ class TaskResourceObservationTest {
             var ledger = new TaskLedger(db);
             var observation = new TaskResourceObservation(db);
             var id = ledger.enqueue(UUID.randomUUID(), "owner", "1.0.0",
-                    new TaskRequest("fixture", "fixture", List.of("server"), true),
-                    List.of(new TaskResource("MOD", "owner", "owner", false),
-                            new TaskResource("SERVER", "server", "owner", true)));
+                new TaskRequest("fixture", "fixture", List.of("server"), true),
+                List.of(new TaskResource("MOD", "owner", "owner", false),
+                    new TaskResource("SERVER", "server", "owner", true)));
             assertThrows(SQLException.class, () -> observation.released(UUID.randomUUID()));
             assertTrue(ledger.tryStart(id));
             assertTrue(observation.released(id));
@@ -43,8 +43,8 @@ class TaskResourceObservationTest {
             setMetadata(db, file, null);
             assertFalse(observation.released(id));
             try (var connection = db.openConnection();
-                    var update = connection
-                            .prepareStatement("UPDATE platform_task_resource SET released_at=1 WHERE lease_id=?")) {
+                 var update = connection
+                     .prepareStatement("UPDATE platform_task_resource SET released_at=1 WHERE lease_id=?")) {
                 update.setObject(1, file);
                 assertEquals(1, update.executeUpdate());
             }
@@ -59,7 +59,7 @@ class TaskResourceObservationTest {
                     statement.execute("ALTER TABLE platform_task_resource ALTER COLUMN recovery_json SET NULL");
                 }
             try (var update = connection
-                    .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                .prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
                 update.setString(1, metadata);
                 update.setObject(2, leaseId);
                 assertEquals(1, update.executeUpdate());

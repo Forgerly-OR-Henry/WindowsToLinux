@@ -31,6 +31,6 @@ public final class NpmBuildInspector {
             return Optional.empty();
         String content = BoundedMetadataInspector.read(path);
         return LOCK_VERSION.matcher(content).find() && content.matches("(?s).*\\\"packages\\\"\\s*:\\s*\\{.*")
-                && content.matches("(?s).*\\\"\\\"\\s*:\\s*\\{.*") ? Optional.of(lockFile) : Optional.empty();
+            && content.matches("(?s).*\\\"\\\"\\s*:\\s*\\{.*") ? Optional.of(lockFile) : Optional.empty();
     }
 }

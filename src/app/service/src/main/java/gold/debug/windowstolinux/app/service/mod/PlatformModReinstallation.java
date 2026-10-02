@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.app.service.mod;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import static gold.debug.windowstolinux.app.service.mod.PlatformModInstallation.*;
 
 import java.io.IOException;
@@ -12,13 +17,14 @@ import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.mod.ModReinstallationLedger;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
-import gold.debug.windowstolinux.app.mod.manifest.ManifestReader;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.windows.filesystem.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
+import gold.debug.windowstolinux.app.windows.file.WindowsFilePublication;
+
 
 /** Repairs the original installed release while preserving data, choices and a recoverable old program. / 修复原安装发布，保留数据、选择及可恢复旧程序。 */
 public final class PlatformModReinstallation implements AutoCloseable {
@@ -45,9 +51,9 @@ public final class PlatformModReinstallation implements AutoCloseable {
 
     /** Rejects ambiguous or truncated physical evidence. / 拒绝歧义或截断物理依据。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
-            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Binds repair to the installed host and its shared operation gate. / 将修复绑定安装宿主及其共用操作门。
      * @param database original database / 原数据库
@@ -56,7 +62,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @param api actual public API version / 实际公开 API 版本
      * @throws SQLException if the original root or ledger is unavailable / 原根或账本不可用时 */
     PlatformModReinstallation(PlatformDatabase database, DesktopSecurityService security, Path home,
-            SemanticVersion api) throws SQLException {
+                              SemanticVersion api) throws SQLException {
         this.database = database;
         this.security = security;
         this.home = home;
@@ -80,12 +86,13 @@ public final class PlatformModReinstallation implements AutoCloseable {
 
         /** Prevents uncertain approval replay. / 防止未知批准重放。 */
         private boolean used;
+
         /** Retains reviewed facts. / 保留已审阅事实。
          * @param catalog original catalog / 原目录
          * @param inspection verified archive / 已验证归档
          * @param evidence captured files / 捕获文件 */
         private Review(ModReinstallationLedger.Review catalog, ModPackageReader.Inspection inspection,
-                Evidence evidence) {
+                       Evidence evidence) {
             this.catalog = catalog;
             this.inspection = inspection;
             this.evidence = evidence;
@@ -139,7 +146,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
             var source = ModInstallationCleanup.observe(original, ModPackageReader.MAX_BYTES);
             var inspection = ModPackageReader.read(original);
             if (!owner.equals(inspection.manifest().id())
-                    || !version.equals(inspection.manifest().version().toString()))
+                || !version.equals(inspection.manifest().version().toString()))
                 throw new IOException("Repair package identity differs from selected release");
             compatible(inspection);
             var catalog = ledger.review(owner, version, inspection.contentSha256(), inspection.archiveSha256());
@@ -156,8 +163,8 @@ public final class PlatformModReinstallation implements AutoCloseable {
             }
             keep |= !original.getParent().equals(home.resolve("mod-zip"));
             var evidence = new Evidence(1, RepairFileScope.nativeDirectory(home), RepairFileScope.nativeDirectory(home.resolve("mod")),
-                    RepairFileScope.nativeDirectory(catalog.program().getParent()), source, RepairFileScope.nativeDirectory(original.getParent()), keep,
-                    inspection.files(), ModInstallationCleanup.installed(catalog.program()));
+                RepairFileScope.nativeDirectory(catalog.program().getParent()), source, RepairFileScope.nativeDirectory(original.getParent()), keep,
+                inspection.files(), ModInstallationCleanup.installed(catalog.program()));
             files.parents(evidence, catalog.program());
             RepairFileScope.unchanged(source);
             return new Review(catalog, inspection, evidence);
@@ -181,7 +188,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
                 throw new IOException("Old program changed after repair confirmation");
             review.used = true;
             ledger.begin(review.catalog, encode(review.evidence),
-                    encode(new Checkpoint(1, null, null, null, null, null, null)));
+                encode(new Checkpoint(1, null, null, null, null, null, null)));
             return advance(review.id());
         }
     }
@@ -219,6 +226,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
 
         /** Rejects repeated restoration approval. / 拒绝重复恢复批准。 */
         private boolean used;
+
         /** Saves actual restoration observations. / 保存实际恢复观察。
          * @param pending original repair / 原修复
          * @param location STAGE, TARGET or NONE / 暂存、目标或无
@@ -264,14 +272,14 @@ public final class PlatformModReinstallation implements AutoCloseable {
         try (var permission = security.enterOperation()) {
             var p = read(operation);
             if (!p.execution().state().equals("UNKNOWN")
-                    || !Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(p.execution().phase()))
+                || !Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(p.execution().phase()))
                 throw new SQLException("Repair is not awaiting a pre-registration restoration decision");
             files.checkedParents(p);
             files.oldLocation(p);
             String location = files.newLocation(p);
             var discarded = location.equals("NONE")
-                    ? List.<ModInstallationCleanup.Entry>of()
-                    : ModInstallationCleanup.installed(files.newPath(p, location));
+                ? List.<ModInstallationCleanup.Entry>of()
+                : ModInstallationCleanup.installed(files.newPath(p, location));
             files.allowedNewFiles(p, discarded, files.newPath(p, location));
             restorationCheckpoint(p, location, discarded);
             return new RestoreReview(p, location, discarded);
@@ -294,8 +302,8 @@ public final class PlatformModReinstallation implements AutoCloseable {
             files.checkedParents(p);
             files.oldLocation(p);
             if (!review.location.equals(files.newLocation(p)) || !review.discarded.equals(review.location.equals("NONE")
-                    ? List.of()
-                    : ModInstallationCleanup.installed(files.newPath(p, review.location))))
+                ? List.of()
+                : ModInstallationCleanup.installed(files.newPath(p, review.location))))
                 throw new IOException("New files changed after restoration review");
             String checkpoint = restorationCheckpoint(p, review.location, review.discarded);
             review.used = true;
@@ -312,7 +320,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @return bounded original restoration checkpoint / 有界原恢复检查点
      * @throws IOException if restoration exceeds the durable checkpoint bound / 恢复超出持久检查点界限时 */
     private static String restorationCheckpoint(Pending p, String location,
-            List<ModInstallationCleanup.Entry> discarded) throws IOException {
+                                                List<ModInstallationCleanup.Entry> discarded) throws IOException {
         var cp = p.checkpoint();
         String encoded = encode(new Checkpoint(1, cp.parent(), cp.root(), cp.program(), location, discarded, null));
         if (encoded.length() > 1024 * 1024)
@@ -331,7 +339,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
             while (true) {
                 files.checkedParents(p);
                 Path stage = files.stage(operation), program = stage.resolve("program"), old = stage.resolve("old"),
-                        target = p.execution().program();
+                    target = p.execution().program();
                 switch (p.execution().phase()) {
                     case "VALIDATED" -> {
                         files.stageCandidate(p, stage, program, old, target);
@@ -373,7 +381,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
                         files.removeOld(p, old);
                         var cp = p.checkpoint();
                         ledger.advance(operation, "REGISTERED", "CLEANUP", encode(new Checkpoint(1, cp.parent(),
-                                cp.root(), cp.program(), null, null, cleanupOriginal(p))));
+                            cp.root(), cp.program(), null, null, cleanupOriginal(p))));
                     }
                     case "CLEANUP" -> {
                         RepairFileScope.verified(p, target, p.checkpoint().program());
@@ -382,7 +390,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
                         files.removeStage(p);
                         ledger.finish(operation, p.checkpoint().cleanup());
                         return result(new Receipt(operation, p.execution().owner(), p.execution().version(), false,
-                                p.checkpoint().cleanup()));
+                            p.checkpoint().cleanup()));
                     }
                     default -> throw new IOException("Unrecognized repair phase");
                 }
@@ -395,9 +403,9 @@ public final class PlatformModReinstallation implements AutoCloseable {
                 failure.addSuppressed(retaining);
             }
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_REINSTALL_UNCONFIRMED",
-                            "Repair requires its original file scope and explicit reconciliation",
-                            Map.of("operationId", operation.toString()), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "MOD_REINSTALL_UNCONFIRMED",
+                    "Repair requires its original file scope and explicit reconciliation",
+                    Map.of("operationId", operation.toString()), Optional.empty())));
         }
     }
 
@@ -411,7 +419,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
         var e = p.execution();
         var cp = p.checkpoint();
         Path stage = files.stage(e.id()), old = stage.resolve("old"), program = stage.resolve("program"),
-                target = e.program();
+            target = e.program();
         if (e.phase().equals("RESTORING")) {
             String oldAt = files.oldLocation(p);
             if (!cp.discardAt().equals("NONE") && !(cp.discardAt().equals("TARGET") && oldAt.equals("TARGET"))) {
@@ -455,32 +463,32 @@ public final class PlatformModReinstallation implements AutoCloseable {
             validIdentity(cp.root(), true);
             validIdentity(cp.program(), true);
             if (cp.root() != null && cp.parent() == null || cp.program() != null && cp.root() == null
-                    || !e.phase().equals("VALIDATED") && !Set.of("RESTORING", "RESTORED").contains(e.phase())
-                            && cp.program() == null)
+                || !e.phase().equals("VALIDATED") && !Set.of("RESTORING", "RESTORED").contains(e.phase())
+                && cp.program() == null)
                 throw new IOException("Repair directory ownership is incomplete");
             ModInstallationCleanup.validateEntry(evidence.original());
             Path original = Path.of(evidence.original().path());
             if (evidence.original().directory() || !original.isAbsolute() || !original.equals(original.normalize())
-                    || !original.toString().endsWith(".wtlmod") || original.startsWith(home.resolve("mod"))
-                    || original.startsWith(home.resolve(".mod-staging"))
-                    || !e.archiveHash().equals(evidence.original().sha256()))
+                || !original.toString().endsWith(".wtlmod") || original.startsWith(home.resolve("mod"))
+                || original.startsWith(home.resolve(".mod-staging"))
+                || !e.archiveHash().equals(evidence.original().sha256()))
                 throw new IOException("Invalid repair source scope");
             if (!evidence.keep() && !original.getParent().equals(home.resolve("mod-zip")))
                 throw new IOException("External repair source cannot be removed");
             ModInstallationCleanup.validateInstalled(evidence.old(), e.program());
             var inspection = new ModPackageReader.Inspection(original,
-                    ManifestReader.read(e.manifest().getBytes(StandardCharsets.UTF_8)), e.archiveHash(),
-                    e.contentHash(), evidence.files(), List.of(), Map.of());
+                ManifestReader.read(e.manifest().getBytes(StandardCharsets.UTF_8)), e.archiveHash(),
+                e.contentHash(), evidence.files(), List.of(), Map.of());
             compatible(inspection);
             var p = new Pending(e, evidence, cp, inspection);
             boolean restoring = Set.of("RESTORING", "RESTORED").contains(e.phase());
             if (restoring) {
                 if (!Set.of("STAGE", "TARGET", "NONE").contains(cp.discardAt()) || cp.discarded() == null
-                        || evidence.old().isEmpty() || cp.discardAt().equals("NONE") && !cp.discarded().isEmpty())
+                    || evidence.old().isEmpty() || cp.discardAt().equals("NONE") && !cp.discarded().isEmpty())
                     throw new IOException("Invalid original restoration scope");
                 files.allowedNewFiles(p, cp.discarded(), files.newPath(p, cp.discardAt()));
                 if (!cp.discarded().isEmpty()
-                        && !Objects.equals(RepairFileScope.rootIdentity(cp.discarded(), files.newPath(p, cp.discardAt())), cp.program()))
+                    && !Objects.equals(RepairFileScope.rootIdentity(cp.discarded(), files.newPath(p, cp.discardAt())), cp.program()))
                     throw new IOException("Restoration does not own the new program");
             } else if (cp.discardAt() != null || cp.discarded() != null)
                 throw new IOException("Unexpected restoration evidence");
@@ -500,7 +508,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @throws IOException if incompatible / 不兼容时 */
     private void compatible(ModPackageReader.Inspection inspection) throws IOException {
         if (!inspection.manifest().platformApiRange().contains(api)
-                || inspection.manifest().minJavaVersion() > Runtime.version().feature())
+            || inspection.manifest().minJavaVersion() > Runtime.version().feature())
             throw new IOException("Repair package is incompatible with the actual host");
     }
 
@@ -534,10 +542,10 @@ public final class PlatformModReinstallation implements AutoCloseable {
     ModInstallationCleanup.Entry original(JsonNode request, String owner, String version) throws IOException {
         try {
             if (request.path("format").asInt() != 1 || !home.toString().equals(request.path("home").textValue())
-                    || !owner.equals(request.path("owner").textValue())
-                    || !version.equals(request.path("release").path("version").textValue())
-                    || !home.resolve("mod").resolve(owner).resolve(version).toString()
-                            .equals(request.path("release").path("path").textValue()))
+                || !owner.equals(request.path("owner").textValue())
+                || !version.equals(request.path("release").path("version").textValue())
+                || !home.resolve("mod").resolve(owner).resolve(version).toString()
+                .equals(request.path("release").path("path").textValue()))
                 throw new IOException("Original repair inventory identity differs");
             String raw = request.path("files").textValue();
             if (raw == null || raw.length() > 4 * 1024 * 1024)
@@ -548,8 +556,8 @@ public final class PlatformModReinstallation implements AutoCloseable {
             validIdentity(evidence.originalParent(), false);
             Path path = Path.of(entry.path());
             if (evidence.format() != 1 || entry.directory() || !path.isAbsolute() || !path.equals(path.normalize())
-                    || !path.toString().endsWith(".wtlmod")
-                    || !entry.sha256().equals(request.path("archiveHash").textValue()))
+                || !path.toString().endsWith(".wtlmod")
+                || !entry.sha256().equals(request.path("archiveHash").textValue()))
                 throw new IOException("Invalid repair original scope");
             return entry;
         } catch (RuntimeException invalid) {
@@ -563,8 +571,8 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @throws SQLException if reading fails / 读取失败时 */
     private Receipt receipt(UUID operation) throws SQLException {
         try (var c = database.openConnection();
-                var q = c.prepareStatement(
-                        "SELECT subject_mod_id,mod_version,event_code,outcome,details FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code IN ('MOD_REINSTALLED','MOD_REINSTALL_RESTORED')")) {
+             var q = c.prepareStatement(
+                 "SELECT subject_mod_id,mod_version,event_code,outcome,details FROM runtime_log WHERE owner_id='app' AND category='mod_operation' AND operation_id=? AND event_code IN ('MOD_REINSTALLED','MOD_REINSTALL_RESTORED')")) {
             q.setObject(1, operation);
             try (var r = q.executeQuery()) {
                 if (!r.next())
@@ -579,7 +587,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
                     throw new SQLException("Invalid repair receipt", invalid);
                 }
                 if (cleanup == null || !Set.of("RETAINED", "ABSENT", "DELETED", "RETAINED_UNCONFIRMED", "UNTOUCHED")
-                        .contains(cleanup))
+                    .contains(cleanup))
                     throw new SQLException("Invalid original cleanup result");
                 return new Receipt(operation, r.getString(1), r.getString(2), restored, cleanup);
             }
@@ -591,10 +599,10 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @return exact outcome / 精确结果 */
     private static OperationResult<Receipt> result(Receipt receipt) {
         return new OperationResult<>(receipt.restored() ? Outcome.FAILED : Outcome.SUCCEEDED, Optional.of(receipt),
-                receipt.restored()
-                        ? Optional.of(new Problem(ProblemCode.IO_FAILURE, "MOD_REINSTALL_RESTORED",
-                                "Repair failed; original program restored", Map.of(), Optional.empty()))
-                        : Optional.empty());
+            receipt.restored()
+                ? Optional.of(new Problem(ProblemCode.IO_FAILURE, "MOD_REINSTALL_RESTORED",
+                "Repair failed; original program restored", Map.of(), Optional.empty()))
+                : Optional.empty());
     }
 
     /** Checks retained native identity syntax. / 检查保留原生身份语法。
@@ -640,8 +648,8 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @param files original new package contents / 原新包内容
      * @param old actual original old program / 实际原旧程序 */
     private record Evidence(int format, String home, String mod, String owner, ModInstallationCleanup.Entry original,
-            String originalParent, boolean keep, List<ModPackageReader.FileEntry> files,
-            List<ModInstallationCleanup.Entry> old) {
+                            String originalParent, boolean keep, List<ModPackageReader.FileEntry> files,
+                            List<ModInstallationCleanup.Entry> old) {
     }
 
     /** Durable physical ownership and explicit restoration scope. / 持久物理归属及明确恢复范围。
@@ -653,7 +661,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @param discarded explicitly reviewed actual new files / 明确审阅实际新文件
      * @param cleanup separately observed source result after registration / 登记后单独观察的来源结果 */
     private record Checkpoint(int format, String parent, String root, String program, String discardAt,
-            List<ModInstallationCleanup.Entry> discarded, String cleanup) {
+                              List<ModInstallationCleanup.Entry> discarded, String cleanup) {
     }
 
     /** Validated original execution and physical evidence. / 已验证原执行及物理依据。
@@ -662,13 +670,14 @@ public final class PlatformModReinstallation implements AutoCloseable {
      * @param checkpoint original physical ownership / 原物理归属
      * @param inspection original package declaration / 原包声明 */
     private record Pending(ModReinstallationLedger.Execution execution, Evidence evidence, Checkpoint checkpoint,
-            ModPackageReader.Inspection inspection) {
+                           ModPackageReader.Inspection inspection) {
     }
 
     /** Original repair file identities, locations and authorized subsets. / 原修复文件身份、位置与授权子集。 */
     private final class RepairFileScope {
         /** Binds the original owning service. / 绑定原服务所有者。 */
-        private RepairFileScope() { }
+        private RepairFileScope() {
+        }
 
         /** Confirms immutable shared ancestors before any file action. / 任何文件动作前确认不可变共用祖先。
          * @param evidence original physical scope / 原物理范围
@@ -722,7 +731,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
         private String newLocation(Pending p) throws IOException {
             Path program = files.stage(p.execution().id()).resolve("program"), target = p.execution().program();
             boolean staged = exists(program),
-                    atTarget = exists(target) && Objects.equals(WindowsFileIdentity.read(target), p.checkpoint().program());
+                atTarget = exists(target) && Objects.equals(WindowsFileIdentity.read(target), p.checkpoint().program());
             if (staged && atTarget)
                 throw new IOException("New program has conflicting locations");
             if (staged) {
@@ -771,7 +780,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
          * @throws IOException if any original file changed / 任意原文件变化时 */
         private void equalOld(Pending p, Path location) throws IOException {
             if (!RepairFileScope.moved(p.evidence().old(), p.execution().program(), location)
-                    .equals(ModInstallationCleanup.installed(location)))
+                .equals(ModInstallationCleanup.installed(location)))
                 throw new IOException("Complete original old program cannot be confirmed");
         }
 
@@ -781,11 +790,11 @@ public final class PlatformModReinstallation implements AutoCloseable {
          * @param to fixed renamed root / 固定重命名根
          * @return same immutable files at the renamed location / 重命名位置的同一不可变文件 */
         private static List<ModInstallationCleanup.Entry> moved(List<ModInstallationCleanup.Entry> entries, Path from,
-                Path to) {
+                                                                Path to) {
             return ModInstallationCleanup.ordered(entries.stream()
-                    .map(e -> new ModInstallationCleanup.Entry(to.resolve(from.relativize(Path.of(e.path()))).toString(),
-                            e.identity(), e.directory(), e.size(), e.sha256()))
-                    .toList());
+                .map(e -> new ModInstallationCleanup.Entry(to.resolve(from.relativize(Path.of(e.path()))).toString(),
+                    e.identity(), e.directory(), e.size(), e.sha256()))
+                .toList());
         }
 
         /** Removes only the unchanged remaining saved-old subset after successful new registration. / 新登记成功后仅移除未变剩余旧副本子集。
@@ -814,7 +823,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
             for (var parent : parents.entrySet())
                 if (parent.getValue() != null)
                     parentEntries.add(
-                            new ModInstallationCleanup.Entry(parent.getKey().toString(), parent.getValue(), true, 0, null));
+                        new ModInstallationCleanup.Entry(parent.getKey().toString(), parent.getValue(), true, 0, null));
             ModInstallationCleanup.removeEntries(accepted, ModInstallationCleanup.installed(root), parentEntries);
             RepairFileScope.absent(root);
         }
@@ -889,7 +898,7 @@ public final class PlatformModReinstallation implements AutoCloseable {
          * @return captured identity or absent / 捕获身份或缺省 */
         private static String rootIdentity(List<ModInstallationCleanup.Entry> entries, Path root) {
             return entries.stream().filter(e -> e.path().equals(root.toString()) && e.directory())
-                    .map(ModInstallationCleanup.Entry::identity).findFirst().orElse(null);
+                .map(ModInstallationCleanup.Entry::identity).findFirst().orElse(null);
         }
 
         /** Creates and validates only the original staged candidate. / 仅创建并核验原暂存候选。

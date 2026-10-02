@@ -20,19 +20,19 @@ final class DeploymentCentosStreamCompatibilityPolicy implements DeploymentDistr
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"dnf".equals(capabilities.packageManager())
-                || !("9".equals(capabilities.version()) || "10".equals(capabilities.version()))
-                || !"x86_64".equals(capabilities.packageArchitecture())) {
+            || !("9".equals(capabilities.version()) || "10".equals(capabilities.version()))
+            || !"x86_64".equals(capabilities.packageArchitecture())) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("CentOS Stream must be 9 or 10 with dnf and x86_64 packages", evidence);
+                .unsupported("CentOS Stream must be 9 or 10 with dnf and x86_64 packages", evidence);
         }
         DeploymentCpuMicroarchitectureLevel required = "10".equals(capabilities.version())
-                ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
-                : DeploymentCpuMicroarchitectureLevel.X86_64_V2;
+            ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
+            : DeploymentCpuMicroarchitectureLevel.X86_64_V2;
         DeploymentHostCapabilityStatus cpu = DeploymentDistributionCompatibilityRules.requireCpu(capabilities, required,
-                "CentOS Stream", evidence);
+            "CentOS Stream", evidence);
         return cpu == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION
-                ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "CentOS Stream",
-                        evidence)
-                : cpu;
+            ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "CentOS Stream",
+            evidence)
+            : cpu;
     }
 }

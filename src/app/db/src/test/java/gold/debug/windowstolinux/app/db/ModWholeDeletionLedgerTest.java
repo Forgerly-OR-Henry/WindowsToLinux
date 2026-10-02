@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+
 import static gold.debug.windowstolinux.app.db.ModVersionDeletionLedgerTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,9 +13,9 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.mod.*;
 import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences.PagePin;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -53,10 +56,10 @@ class ModWholeDeletionLedgerTest {
         var repo = new LogRepository(db);
         var target = repo.register(owner, Optional.empty(), new LogCategory("runtime", "fixture", Optional.empty()));
         repo.store(target,
-                List.of(new LogRecordCodec.Record(UUID.randomUUID(), 1, owner, "runtime", LogLevel.INFO, "FIXTURE",
-                        "retained record", null, owner.equals("app") ? OWNER : owner, "1.0.0", null, null, null,
-                        false)),
-                100);
+            List.of(new LogRecordCodec.Record(UUID.randomUUID(), 1, owner, "runtime", LogLevel.INFO, "FIXTURE",
+                "retained record", null, owner.equals("app") ? OWNER : owner, "1.0.0", null, null, null,
+                false)),
+            100);
         return target;
     }
 
@@ -73,16 +76,16 @@ class ModWholeDeletionLedgerTest {
             log(db, "other.owner");
             log(db, "app");
             pins(db, new PagePin("other.owner", "first"), new PagePin(OWNER, "main"),
-                    new PagePin("other.owner", "last"));
+                new PagePin("other.owner", "last"));
             sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
-                    new byte[48], new byte[12], new byte[16]);
+                new byte[48], new byte[12], new byte[16]);
             sql(db, "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('shared','AES256_GCM_V1',?,?)",
-                    new byte[20], new byte[12]);
+                new byte[20], new byte[12]);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared','shared','localhost',22,'fixture','fixture')");
             sql(db, "INSERT INTO mod_server_reference VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
-                    UUID.randomUUID(), OWNER, orphan.generation());
+                UUID.randomUUID(), OWNER, orphan.generation());
             sql(db, "INSERT INTO mod_credential_reference VALUES(?,'shared',?,'2',?,'record','fixture','UNKNOWN',1)",
-                    UUID.randomUUID(), OWNER, current.generation());
+                UUID.randomUUID(), OWNER, current.generation());
             sql(db, "CREATE TABLE app.unrelated_fixture(value_text VARCHAR)");
             sql(db, "INSERT INTO app.unrelated_fixture VALUES('keep')");
             var ledger = new ModDeletionLedger(db, root);
@@ -105,11 +108,11 @@ class ModWholeDeletionLedgerTest {
             assertEquals("1", value(db, "SELECT COUNT(*) FROM server_profile"));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM runtime_log WHERE owner_id='other.owner'"));
             assertEquals("1", value(db,
-                    "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND event_code='FIXTURE' AND subject_mod_id=?",
-                    OWNER));
+                "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND event_code='FIXTURE' AND subject_mod_id=?",
+                OWNER));
             assertEquals("1", value(db,
-                    "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND event_code='MOD_DELETED' AND operation_id=?",
-                    id));
+                "SELECT COUNT(*) FROM runtime_log WHERE owner_id='app' AND event_code='MOD_DELETED' AND operation_id=?",
+                id));
             assertEquals("keep", value(db, "SELECT value_text FROM app.unrelated_fixture"));
             assertEquals(List.of(new PagePin("other.owner", "first"), new PagePin("other.owner", "last")), pins(db));
         }
@@ -125,7 +128,7 @@ class ModWholeDeletionLedgerTest {
             Path emergency = db.root().resolve("log/emergency");
             Files.createDirectories(emergency);
             Path original = emergency.resolve(target.key() + ".log"),
-                    pending = emergency.resolve(target.key() + ".pending");
+                pending = emergency.resolve(target.key() + ".pending");
             Files.writeString(original, "corrupt owned file");
             Files.writeString(pending, "interrupted owned file");
             Path foreign = emergency.resolve(UUID.randomUUID() + ".log");
@@ -306,11 +309,11 @@ class ModWholeDeletionLedgerTest {
             removePrograms("1.0.0");
             ledger.programRemoved(id);
             sql(db, "CREATE VIEW app.external_keep AS SELECT * FROM " + new SchemaCoordinates(second).physicalName()
-                    + ".items");
+                + ".items");
             assertThrows(SQLException.class, () -> ledger.removeData(id));
             assertEquals("UNKNOWN/PROGRAM_REMOVED", phase(db, id));
             assertEquals("0", value(db, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?",
-                    new SchemaCoordinates(first).physicalName()));
+                new SchemaCoordinates(first).physicalName()));
             assertEquals("retained data", value(db, "SELECT value_text FROM app.external_keep"));
             assertEquals("2", value(db, "SELECT COUNT(*) FROM mod_schema WHERE state='DELETE_PENDING'"));
             sql(db, "DROP VIEW app.external_keep");
@@ -333,11 +336,11 @@ class ModWholeDeletionLedgerTest {
             var id = ledger.begin(ledger.review(OWNER), "{}");
             String original = value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id);
             sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?",
-                    original.replace("\"owner\":\"" + OWNER + "\"", "\"owner\":\"other.owner\""), id);
+                original.replace("\"owner\":\"" + OWNER + "\"", "\"owner\":\"other.owner\""), id);
             assertThrows(SQLException.class, () -> ledger.programRemoved(id));
             assertEquals("1", value(db, "SELECT COUNT(*) FROM runtime_log WHERE owner_id=?", OWNER));
             sql(db, "UPDATE mod_operation SET request_json=?,operation_type='DELETE_VERSION' WHERE operation_id=?",
-                    original, id);
+                original, id);
             assertThrows(SQLException.class, () -> ledger.resume(id));
             assertTrue(Files.exists(fixture.program("1.0.0")));
         }
@@ -359,7 +362,7 @@ class ModWholeDeletionLedgerTest {
             id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{\"scope\":\"original physical evidence\"}");
             var json = new com.fasterxml.jackson.databind.ObjectMapper();
             var node = (com.fasterxml.jackson.databind.node.ObjectNode) json
-                    .readTree(value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id));
+                .readTree(value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id));
             var data = node.remove("schemas");
             if (data.isEmpty())
                 node.putNull("schema");
@@ -386,9 +389,9 @@ class ModWholeDeletionLedgerTest {
             fixture.complete(ledger, id);
             assertEquals("TRUE", value(db, "SELECT selection_initialized FROM mod_registry WHERE mod_id=?", OWNER));
             assertEquals(kind.equals("shared") ? "1" : "0",
-                    value(db, "SELECT COUNT(*) FROM mod_schema WHERE mod_id=?", OWNER));
+                value(db, "SELECT COUNT(*) FROM mod_schema WHERE mod_id=?", OWNER));
             assertEquals("MOD_VERSION_DELETED",
-                    value(db, "SELECT event_code FROM runtime_log WHERE operation_id=?", id));
+                value(db, "SELECT event_code FROM runtime_log WHERE operation_id=?", id));
         }
     }
 
@@ -398,20 +401,20 @@ class ModWholeDeletionLedgerTest {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
             sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
-                    new byte[48], new byte[12], new byte[16]);
-            String owned = gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository
-                    .newSecret(OWNER, "fixture").id();
-            String shared = gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository
-                    .newSecret(OWNER, "server").id();
-            String other = gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository
-                    .newSecret("other.owner", "fixture").id();
+                new byte[48], new byte[12], new byte[16]);
+            String owned = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+                .newSecret(OWNER, "fixture").id();
+            String shared = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+                .newSecret(OWNER, "server").id();
+            String other = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+                .newSecret("other.owner", "fixture").id();
             for (String id : List.of(owned, shared, other))
                 sql(db, "INSERT INTO credential(credential_id,storage_format,payload) VALUES(?,'PLAIN_V1',?)", id,
-                        new byte[]{1, 2, 3});
+                    new byte[]{1, 2, 3});
             var ledger = new ModDeletionLedger(db, root);
             var stale = ledger.review(OWNER);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared',?,'localhost',22,'fixture','fixture')",
-                    shared);
+                shared);
             assertThrows(SQLException.class, () -> ledger.begin(stale, "{}"));
             var review = ledger.review(OWNER);
             assertEquals(List.of(owned), review.removedSecrets());

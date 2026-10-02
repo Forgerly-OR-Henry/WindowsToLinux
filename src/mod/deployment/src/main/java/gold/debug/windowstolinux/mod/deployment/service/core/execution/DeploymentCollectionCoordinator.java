@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentCollectionEvidence.*;
 
 import java.nio.charset.StandardCharsets;
@@ -19,7 +25,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
@@ -54,13 +60,13 @@ public final class DeploymentCollectionCoordinator {
      * @return reviewed durable handoff / 已审阅持久交接
      * @throws ApiException if release or selected binding is not supported / 发布或绑定不受支持时 */
     public OperationResult<DeploymentHandoff> review(DeploymentCollectionRequest request, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var data = reader.find(request.application(), task);
         if (!data.snapshot().revisionSha256().equals(request.expectedRevisionSha256()))
             return failed("DEPLOYMENT_COLLECTION_REVISION_CHANGED");
         planner.build(data, request.bindingIds());
         return success(ledger.reviewCollection(request.application(), request.expectedRevisionSha256(),
-                request.bindingIds(), task));
+            request.bindingIds(), task));
     }
 
     /** Collects release, image and selected data only once under original maintenance. / 仅在原维护下采集一次发布、镜像与所选数据。
@@ -82,19 +88,19 @@ public final class DeploymentCollectionCoordinator {
             selected.add(value.asText());
         var plans = planner.build(data, selected);
         boolean quiescence = selected.stream().anyMatch(idValue -> data.snapshot().bindings().stream()
-                .anyMatch(binding -> binding.id().equals(idValue) && binding.needsQuiescence()));
+            .anyMatch(binding -> binding.id().equals(idValue) && binding.needsQuiescence()));
         String operation = entry.recovery().path("operation").asText();
         if (!operation.matches("backup-[0-9a-f]{32}"))
             return unknown("DEPLOYMENT_COLLECTION_TOKEN_INVALID");
         try (var session = context.linux().connect(data.snapshot().application().server(), task)) {
             var helper = new DeploymentManagedHelper(session, context.interaction(),
-                    data.snapshot().application().server(), task, data.snapshot().revisionSha256()).probe();
+                data.snapshot().application().server(), task, data.snapshot().revisionSha256()).probe();
             if (helper.outcome() != Outcome.SUCCEEDED)
                 return copy(helper);
             var publication = new DeploymentPublicationChannel(session, context.interaction(),
-                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                data.snapshot().application().server(), task, data.snapshot().revisionSha256());
             var channel = new DeploymentHandoffChannel(session, context.interaction(),
-                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                data.snapshot().application().server(), task, data.snapshot().revisionSha256());
             var work = new DeploymentCollectionWork(ledger, data, task, entry, plans, channel, publication);
             var begun = work.begin(quiescence);
             if (begun.outcome() != Outcome.SUCCEEDED)
@@ -124,7 +130,7 @@ public final class DeploymentCollectionCoordinator {
             return success(entry.publicValue());
         if (!Set.of(DeploymentHandoffState.MAINTENANCE, DeploymentHandoffState.COLLECTED,
                 DeploymentHandoffState.UNKNOWN, DeploymentHandoffState.COMPENSATING)
-                .contains(entry.publicValue().state()))
+            .contains(entry.publicValue().state()))
             return failed("DEPLOYMENT_COLLECTION_PHASE_INVALID");
         try {
             var data = current(entry, task);
@@ -135,14 +141,14 @@ public final class DeploymentCollectionCoordinator {
                 return unknown("DEPLOYMENT_COLLECTION_BEFORE_MISSING");
             try (var session = context.linux().connect(data.snapshot().application().server(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), data.snapshot().application().server(),
-                        task, data.snapshot().revisionSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    task, data.snapshot().revisionSha256()).probe().outcome() != Outcome.SUCCEEDED)
                     return uncertain(entry, ledger.recovery(entry), task, "DEPLOYMENT_COLLECTION_HELPER_UNCONFIRMED");
                 var publication = new DeploymentPublicationChannel(session, context.interaction(),
-                        data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
                 var channel = new DeploymentHandoffChannel(session, context.interaction(),
-                        data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
                 return success(
-                        new DeploymentCollectionWork(ledger, data, task, entry, plans, channel, publication).finish());
+                    new DeploymentCollectionWork(ledger, data, task, entry, plans, channel, publication).finish());
             }
         } catch (ApiException | RuntimeException failure) {
             retainFailure(required(id, task), task);
@@ -177,13 +183,13 @@ public final class DeploymentCollectionCoordinator {
             var confirmed = facts.putArray("artifacts");
             try (var session = context.linux().connect(data.snapshot().application().server(), task)) {
                 var helper = new DeploymentManagedHelper(session, context.interaction(),
-                        data.snapshot().application().server(), task, data.snapshot().revisionSha256()).probe();
+                    data.snapshot().application().server(), task, data.snapshot().revisionSha256()).probe();
                 if (helper.outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_COLLECTION_HELPER_UNCONFIRMED");
                 var channel = new DeploymentHandoffChannel(session, context.interaction(),
-                        data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
                 var publication = new DeploymentPublicationChannel(session, context.interaction(),
-                        data.snapshot().application().server(), task, data.snapshot().revisionSha256());
+                    data.snapshot().application().server(), task, data.snapshot().revisionSha256());
                 var verifiedCurrent = DeploymentCollectionEvidence.current(channel, data);
                 if (verifiedCurrent.outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_COLLECTION_CURRENT_UNCONFIRMED");
@@ -199,7 +205,7 @@ public final class DeploymentCollectionCoordinator {
                     if (saved.path("stopAttempted").asBoolean(false)) {
                         var observed = publication.observe(component.unit(), component.reviewedRuntime());
                         if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
-                                || !observed.value().orElseThrow().state().name().equals("STOPPED"))
+                            || !observed.value().orElseThrow().state().name().equals("STOPPED"))
                             return unknown("DEPLOYMENT_COLLECTION_QUIESCENCE_UNCONFIRMED");
                     }
                 }
@@ -208,16 +214,16 @@ public final class DeploymentCollectionCoordinator {
                     if (!attempts.contains(key))
                         return unknown("DEPLOYMENT_COLLECTION_ARTIFACT_NOT_ATTEMPTED");
                     var remote = channel.execute(
-                            plan.kind().equals("database") ? "handoff-database-status" : "handoff-backup-status",
-                            plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
-                            Duration.ofMinutes(10), 4096);
+                        plan.kind().equals("database") ? "handoff-database-status" : "handoff-backup-status",
+                        plan.statusArguments(operation, data.snapshot().application().id()), new byte[0],
+                        Duration.ofMinutes(10), 4096);
                     var value = parseStatus(remote, plan, operation, data.snapshot().application().id());
                     if (value.isEmpty())
                         return unknown("DEPLOYMENT_COLLECTION_ARTIFACT_UNCONFIRMED");
                     var artifact = value.orElseThrow();
                     confirmed.addObject().put("id", artifact.id()).put("bindingId", artifact.bindingId())
-                            .put("remotePath", artifact.remotePath()).put("byteCount", artifact.byteCount())
-                            .put("sha256", artifact.sha256());
+                        .put("remotePath", artifact.remotePath()).put("byteCount", artifact.byteCount())
+                        .put("sha256", artifact.sha256());
                 }
             }
             entry = advance(entry, DeploymentHandoffState.COLLECTED, facts.put("reconciledReadOnly", true), task);
@@ -247,7 +253,7 @@ public final class DeploymentCollectionCoordinator {
      * @throws ApiException if original identity or access is unavailable / 原身份或访问不可用时 */
     private DeploymentHandoffLedger.Entry required(UUID id, TaskContext task) throws ApiException {
         return ledger.find(id, task)
-                .orElseThrow(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_COLLECTION_HANDOFF_ABSENT"));
+            .orElseThrow(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_COLLECTION_HANDOFF_ABSENT"));
     }
 
     /** Advances and reloads a durable step. / 推进并重读一项持久步骤。
@@ -258,7 +264,7 @@ public final class DeploymentCollectionCoordinator {
      * @return reloaded original row / 重读的原行
      * @throws ApiException if original persistence is unconfirmed / 原持久化未确证时 */
     private DeploymentHandoffLedger.Entry advance(DeploymentHandoffLedger.Entry entry, DeploymentHandoffState next,
-            ObjectNode facts, TaskContext task) throws ApiException {
+                                                  ObjectNode facts, TaskContext task) throws ApiException {
         ledger.advance(entry, entry.publicValue().state(), next, facts, Optional.empty(), task);
         return required(entry.publicValue().id(), task);
     }
@@ -272,7 +278,7 @@ public final class DeploymentCollectionCoordinator {
      * @return retained unknown result / 留存未知结果
      * @throws ApiException if original persistence is unavailable / 原持久化不可用时 */
     private <T> OperationResult<T> uncertain(DeploymentHandoffLedger.Entry entry, ObjectNode facts, TaskContext task,
-            String event) throws ApiException {
+                                             String event) throws ApiException {
         if (entry.publicValue().state() != DeploymentHandoffState.UNKNOWN)
             advance(entry, DeploymentHandoffState.UNKNOWN, facts, task);
         return unknown(event);
@@ -286,7 +292,7 @@ public final class DeploymentCollectionCoordinator {
         var phase = entry.publicValue().state();
         if (phase != DeploymentHandoffState.UNKNOWN && phase != DeploymentHandoffState.FINISHED)
             advance(entry, DeploymentHandoffState.UNKNOWN, ledger.recovery(entry).put("callOutcomeUnconfirmed", true),
-                    task);
+                task);
     }
 
 }

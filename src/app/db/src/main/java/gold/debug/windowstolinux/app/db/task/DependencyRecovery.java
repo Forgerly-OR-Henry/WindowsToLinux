@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
  * @param version actual loaded release / 实际加载发布
  * @param schema selected optional data generation / 选定可选数据代次 */
 public record DependencyRecovery(UUID boot, UUID call, String provider, String version,
-        Optional<SchemaIdentity> schema) {
+                                 Optional<SchemaIdentity> schema) {
     /** Validates ownership before any claim can be recorded. / 任一申请登记前校验归属。
      * @param boot current physical boot / 当前物理启动
      * @param call original call UUID / 原调用 UUID
@@ -23,7 +23,7 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
         Objects.requireNonNull(call);
         Objects.requireNonNull(schema);
         if (provider == null || provider.isBlank() || provider.length() > 512 || version == null || version.isBlank()
-                || version.length() > 512 || schema.isPresent() && !schema.get().ownerId().equals(provider))
+            || version.length() > 512 || schema.isPresent() && !schema.get().ownerId().equals(provider))
             throw new IllegalArgumentException("Invalid dependency identity");
     }
 
@@ -33,7 +33,7 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
         var result = new ArrayList<TaskResource>();
         result.add(new TaskResource("MOD", provider, provider, false));
         schema.ifPresent(
-                value -> result.add(new TaskResource("SCHEMA", value.generation().toString(), provider, false)));
+            value -> result.add(new TaskResource("SCHEMA", value.generation().toString(), provider, false)));
         return List.copyOf(result);
     }
 
@@ -41,9 +41,9 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
      * @return original resource recovery envelope / 原资源恢复封套 */
     public ResourceRecovery encode() {
         return new ResourceRecovery("service.v1",
-                Map.of("bootId", boot.toString(), "callId", call.toString(), "providerId", provider, "providerVersion",
-                        version, "schemaVersion", schema.map(SchemaIdentity::schemaVersion).orElse(""),
-                        "schemaGeneration", schema.map(value -> value.generation().toString()).orElse("")));
+            Map.of("bootId", boot.toString(), "callId", call.toString(), "providerId", provider, "providerVersion",
+                version, "schemaVersion", schema.map(SchemaIdentity::schemaVersion).orElse(""),
+                "schemaGeneration", schema.map(value -> value.generation().toString()).orElse("")));
     }
 
     /** Decodes the exact supported shape without supplying missing facts. / 解码精确受支持形状，不补造缺失事实。
@@ -52,14 +52,14 @@ public record DependencyRecovery(UUID boot, UUID call, String provider, String v
     public static DependencyRecovery decode(ResourceRecovery value) {
         var f = value.fields();
         if (!value.protocol().equals("service.v1") || !f.keySet().equals(
-                Set.of("bootId", "callId", "providerId", "providerVersion", "schemaVersion", "schemaGeneration")))
+            Set.of("bootId", "callId", "providerId", "providerVersion", "schemaVersion", "schemaGeneration")))
             throw new IllegalArgumentException("Invalid dependency checkpoint");
         Optional<SchemaIdentity> schema = f.get("schemaVersion").isEmpty()
-                ? Optional.empty()
-                : Optional.of(new SchemaIdentity(f.get("providerId"), f.get("schemaVersion"),
-                        UUID.fromString(f.get("schemaGeneration"))));
+            ? Optional.empty()
+            : Optional.of(new SchemaIdentity(f.get("providerId"), f.get("schemaVersion"),
+            UUID.fromString(f.get("schemaGeneration"))));
         var decoded = new DependencyRecovery(UUID.fromString(f.get("bootId")), UUID.fromString(f.get("callId")),
-                f.get("providerId"), f.get("providerVersion"), schema);
+            f.get("providerId"), f.get("providerVersion"), schema);
         if (!decoded.encode().equals(value))
             throw new IllegalArgumentException("Noncanonical dependency checkpoint");
         return decoded;

@@ -18,6 +18,7 @@ public final class DatabaseVersionRequirement {
      * <p>声明。
      */
     private final String declaration;
+
     /**
      * Validates and binds the inputs required by database version requirement.
      * <p>校验并绑定数据库版本要求所需输入。
@@ -86,8 +87,8 @@ public final class DatabaseVersionRequirement {
      */
     private List<String> terms() {
         return declaration.isEmpty()
-                ? List.of()
-                : List.of(declaration.replaceAll("([<>=]+)\\s+", "$1").split("[,\\s]+"));
+            ? List.of()
+            : List.of(declaration.replaceAll("([<>=]+)\\s+", "$1").split("[,\\s]+"));
     }
 
     /**
@@ -112,7 +113,7 @@ public final class DatabaseVersionRequirement {
     private static int compare(int[] left, int[] right) {
         for (int index = 0; index < Math.max(left.length, right.length); index++) {
             int compared = Integer.compare(index < left.length ? left[index] : 0,
-                    index < right.length ? right[index] : 0);
+                index < right.length ? right[index] : 0);
             if (compared != 0)
                 return compared;
         }

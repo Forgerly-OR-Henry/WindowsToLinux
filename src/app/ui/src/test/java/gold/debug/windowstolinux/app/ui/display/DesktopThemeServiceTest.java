@@ -11,10 +11,26 @@ import javax.swing.UIManager;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
-import gold.debug.windowstolinux.app.ui.shell.PlatformFrame;
+import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import org.junit.jupiter.api.Test;
 
 class DesktopThemeServiceTest {
+    @Test
+    void wrappedDescriptionsStayInsideActualWidthAndGrowWhenNarrowed() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            DesktopThemeService.install(ThemeMode.LIGHT);
+            var components = new gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory(ThemePalette.light());
+            var description = components.description("Save connection settings, then check SSH authentication when needed. "
+                + "A check does not inspect or change the remote environment.");
+            description.setBounds(0, 0, 420, 100);
+            int wideHeight = description.getPreferredSize().height;
+            assertTrue(description.getPreferredSize().width <= 420);
+            description.setBounds(0, 0, 220, 100);
+            assertTrue(description.getPreferredSize().width <= 220);
+            assertTrue(description.getPreferredSize().height > wideHeight);
+        });
+    }
+
     @Test
     void dropdownWidthsStayStableAcrossSelectionsTextChangesAndAsyncOptions() throws Exception {
         assumeFalse(GraphicsEnvironment.isHeadless());
@@ -46,23 +62,23 @@ class DesktopThemeServiceTest {
                             choices.setSelectedIndex(1);
                             layout(content);
                             assertEquals(choiceWidth, choices.getWidth(),
-                                    "Replacing labels must not resize an existing dropdown");
+                                "Replacing labels must not resize an existing dropdown");
                             delayed.addItem(longer);
                             layout(content);
                             assertEquals(delayedWidth, delayed.getWidth(),
-                                    "Loading options after opening the page must not shift its layout");
+                                "Loading options after opening the page must not shift its layout");
                             choices.showPopup();
                             var popup = (javax.swing.plaf.basic.BasicComboPopup) choices.getUI()
-                                    .getAccessibleChild(choices, 0);
+                                .getAccessibleChild(choices, 0);
                             assertTrue(popup.getWidth() > choices.getWidth(),
-                                    "The expanded list must still fit longer options");
+                                "The expanded list must still fit longer options");
                             assertEquals(longer, choices.getSelectedItem());
                             choices.hidePopup();
                             choices.setEditable(true);
                             choices.setSelectedItem(longer + longer);
                             layout(content);
                             assertEquals(choiceWidth, choices.getWidth(),
-                                    "Editing text must retain the dropdown width");
+                                "Editing text must retain the dropdown width");
                             assertEquals(longer + longer, choices.getSelectedItem());
                         } finally {
                             choices.hidePopup();
@@ -86,10 +102,9 @@ class DesktopThemeServiceTest {
             for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
                 for (String language : new String[]{"zh-CN", "en-US"}) {
                     DesktopThemeService.install(theme);
-                    var messages = new gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter(
-                            gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag(language));
-                    var combo = new javax.swing.JComboBox<>(
-                            ThemeMode.values());
+                    var messages = new gold.debug.windowstolinux.app.ui.error.PageMessagePresenter(
+                        gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag(language));
+                    var combo = new javax.swing.JComboBox<>(ThemeMode.values());
                     combo.setSelectedIndex(1);
                     messages.localize(combo, "theme.");
                     var renderer = combo.getRenderer();
@@ -105,33 +120,33 @@ class DesktopThemeServiceTest {
                         var list = popup.getList();
                         assertEquals(1, list.getSelectedIndex());
                         assertTrue(
-                                list.getCellBounds(0, 0).height >= list.getFontMetrics(list.getFont()).getHeight() + 8);
+                            list.getCellBounds(0, 0).height >= list.getFontMetrics(list.getFont()).getHeight() + 8);
                         var label = (javax.swing.JLabel) list.getCellRenderer().getListCellRendererComponent(list,
-                                combo.getItemAt(1), 1, true, false);
+                            combo.getItemAt(1), 1, true, false);
                         assertEquals(messages.text("theme.light"), label.getText());
                         assertEquals(combo.getItemAt(1), combo.getSelectedItem());
                         popup.setSize(popup.getPreferredSize());
                         layout(popup);
                         assertTrue(popup.getHeight() > list.getCellBounds(0, 2).height);
                         int width = Math.max(combo.getWidth(), popup.getWidth()) + 32,
-                                height = combo.getHeight() + popup.getHeight() + 40;
+                            height = combo.getHeight() + popup.getHeight() + 40;
                         var image = new java.awt.image.BufferedImage(width, height,
-                                java.awt.image.BufferedImage.TYPE_INT_RGB);
+                            java.awt.image.BufferedImage.TYPE_INT_RGB);
                         var graphics = image.createGraphics();
                         graphics.setColor(theme == ThemeMode.DARK
-                                ? ThemePalette.dark().pageBackground()
-                                : ThemePalette.light().pageBackground());
+                            ? ThemePalette.dark().pageBackground()
+                            : ThemePalette.light().pageBackground());
                         graphics.fillRect(0, 0, width, height);
                         var controlGraphics = graphics.create(16, 12, combo.getWidth(), combo.getHeight());
                         combo.printAll(controlGraphics);
                         controlGraphics.dispose();
                         var popupGraphics = graphics.create(16, combo.getHeight() + 20, popup.getWidth(),
-                                popup.getHeight());
+                            popup.getHeight());
                         popup.printAll(popupGraphics);
                         popupGraphics.dispose();
                         graphics.dispose();
                         var path = java.nio.file.Path
-                                .of("target/visual-checks/dropdown-" + theme + "-" + language + ".png");
+                            .of("target/visual-checks/dropdown-" + theme + "-" + language + ".png");
                         java.nio.file.Files.createDirectories(path.getParent());
                         javax.imageio.ImageIO.write(image, "png", path.toFile());
                         combo.hidePopup();
@@ -188,24 +203,26 @@ class DesktopThemeServiceTest {
         AtomicReference<PlatformFrame> frame = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
-            var security = (gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade)
-                    java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
-                            new Class<?>[]{gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade.class},
-                            (proxy, method, arguments) -> {
-                                if (method.getName().equals("securityState"))
-                                    return new gold.debug.windowstolinux.app.service.contract.security.DesktopSecurityState(
-                                            true, true, false, 0, false);
-                                throw new AssertionError(method);
-                            });
+            var security = (gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade) java.lang.reflect.Proxy
+                .newProxyInstance(getClass().getClassLoader(), new Class<?>[]{
+                        gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade.class},
+                    (proxy, method, arguments) -> {
+                        if (method.getName().equals("securityState"))
+                            return new gold.debug.windowstolinux.app.service.security.DesktopSecurityState(
+                                true, true, false, 0, false);
+                        throw new AssertionError(method);
+                    });
             PlatformFrame desktopFrame = new PlatformFrame(security,
-                    gold.debug.windowstolinux.app.ui.i18n.MessageCatalog.forLanguageTag("en"), ThemePalette.light(),
-                    new gold.debug.windowstolinux.appapi.ui.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false),
-                    gold.debug.windowstolinux.app.ui.diagnostic.FailureReportStore.disabled());
+                gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag("en"), ThemePalette.light(),
+                new gold.debug.windowstolinux.appapi.ui.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false),
+                gold.debug.windowstolinux.app.ui.error.FailureReportStore.disabled());
             frame.set(desktopFrame);
             var root = desktopFrame.getContentPane();
             root.setSize(1060, 680);
             root.doLayout();
-            var layout = (java.awt.BorderLayout) root.getLayout();
+            var shell = (javax.swing.JPanel) root.getComponent(0);
+            shell.doLayout();
+            var layout = (java.awt.BorderLayout) shell.getLayout();
             var sidebar = layout.getLayoutComponent(java.awt.BorderLayout.WEST);
             var workspace = layout.getLayoutComponent(java.awt.BorderLayout.CENTER);
             assertEquals(0, sidebar.getY());

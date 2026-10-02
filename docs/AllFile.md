@@ -278,6 +278,7 @@ WindowsToLinux/
    │  │  │  └─ PlatformModelsPane.java  # 常驻模型清单及明确的中断探测恢复
    │  │  ├─ component/  # 组件事实
    │  │  │  ├─ DesktopComponentFactory.java  # 按所选桌面主题及共享视觉约定创建 Swing 控件
+   │  │  │  ├─ WrappingFlowLayout.java  # 按可用宽度测量换行操作区
    │  │  │  ├─ DesktopIcons.java  # 跟随主题的内置 SVG 图标
    │  │  │  ├─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
    │  │  │  ├─ DesktopTaskHandle.java  # 通过中断其工作线程取消单个任务，完成回调等待资源清理
@@ -323,6 +324,7 @@ WindowsToLinux/
    │  │  │  ├─ DesktopLockController.java  # 统一遮挡桌面外壳和所有从属窗口
    │  │  │  ├─ ExtensionPagePane.java  # 挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项
    │  │  │  ├─ PlatformFrame.java  # 承载安全控件及独立所属 Mod 视图的平台桌面
+   │  │  │  ├─ PlatformNavigationShell.java  # 保留页面实例的侧栏、标题及设置分类外壳
    │  │  │  └─ TaskInteractionPresenter.java  # 在平台隐私窗口所属对话框内呈现完整任务审核
    │  │  └─ resources/  # 随附运行资源
    │  │     ├─ component/  # 组件事实
@@ -1075,6 +1077,7 @@ WindowsToLinux/
          │  ├─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
          │  ├─ DeploymentGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
          │  ├─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
+         │  ├─ DeploymentPageStyle.java  # 使用 Swing 主题值的 Mod 本地卡片及从属高级窗口
          │  ├─ DeploymentRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
          │  ├─ DeploymentSecretReferenceField.java  # 将既有精确业务修订添加到高级无秘密引用字段
          │  ├─ DeploymentStaticPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务

@@ -21,8 +21,8 @@ final class DeploymentPublicationAttemptCodec {
 
     /** Exact new fields, independent of unchanged older request layouts. / 精确新字段，独立于未变更旧请求布局。 */
     static final Set<String> FIELDS = Set.of("attemptProofs", "attemptReviews", "attemptBuildReviews",
-            "attemptTemplates", "attemptOperation", "attemptTemplate", "attemptIntent", "attemptPendingProof",
-            "attemptFallbacks");
+        "attemptTemplates", "attemptOperation", "attemptTemplate", "attemptIntent", "attemptPendingProof",
+        "attemptFallbacks");
 
     /** Prevents construction. / 禁止构造。 */
     private DeploymentPublicationAttemptCodec() {
@@ -53,7 +53,7 @@ final class DeploymentPublicationAttemptCodec {
         if (!version(request.path("formatVersion").intValue()))
             return total;
         if (!request.path("attemptFallbacks").isInt() || request.path("attemptFallbacks").intValue() < 0
-                || request.path("attemptFallbacks").intValue() > 2)
+            || request.path("attemptFallbacks").intValue() > 2)
             throw new SQLException("Original fixed catalog fallback count is malformed");
         total += request.path("attemptFallbacks").intValue();
         total += array(request, "attemptReviews", 2).size();
@@ -77,9 +77,9 @@ final class DeploymentPublicationAttemptCodec {
         if (array(request, "attemptReviews", 2).isEmpty())
             return Optional.of(first);
         return request.path("attemptTemplate").isNull()
-                ? Optional.empty()
-                : Optional.of(DeploymentAttemptTemplateCodec.decodeCompact(first,
-                        request.path("attemptTemplate").toString(), execution));
+            ? Optional.empty()
+            : Optional.of(DeploymentAttemptTemplateCodec.decodeCompact(first,
+            request.path("attemptTemplate").toString(), execution));
     }
 
     /** Reads the original full proposal which remains immutable across every later operation. / 读取跨所有后续操作保持不可变的原完整提案。
@@ -91,7 +91,7 @@ final class DeploymentPublicationAttemptCodec {
         if (!request.path("publicationTemplate").isObject())
             throw new SQLException("Later operation lacks the complete original template");
         return DeploymentPublicationTemplateCodec.decodeTemplate(request.path("publicationTemplate").toString(),
-                execution);
+            execution);
     }
 
     /** Reads one retired complete proposal by its original operation index. / 按原操作索引读取一份已退出完整提案。
@@ -116,7 +116,7 @@ final class DeploymentPublicationAttemptCodec {
      * @throws SQLException if root, operation, proof, template or retry bindings differ / 根、操作、证明、模板或重试绑定不符时 */
     static void known(DeploymentExecutionRecord record, JsonNode request) throws SQLException {
         if (record.identity().mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED
-                || !string(request, "operationType").equals("deployment-publication"))
+            || !string(request, "operationType").equals("deployment-publication"))
             throw new SQLException("Later operation belongs only to original assisted publication");
         var original = first(request, record.identity().executionId());
         if ((request.path("formatVersion").intValue() == SINGLE_VERSION) != (original.units().size() == 1))
@@ -126,8 +126,8 @@ final class DeploymentPublicationAttemptCodec {
         var groups = array(request, "attemptBuildReviews", 2);
         var templates = array(request, "attemptTemplates", 1);
         if (proofs.size() != reviews.size() || groups.size() != reviews.size()
-                || templates.size() != Math.max(0, reviews.size() - 1) || !request.has("attemptTemplate")
-                || !request.has("attemptIntent") || !request.has("attemptPendingProof"))
+            || templates.size() != Math.max(0, reviews.size() - 1) || !request.has("attemptTemplate")
+            || !request.has("attemptIntent") || !request.has("attemptPendingProof"))
             throw new SQLException("Incomplete original attempt chain");
         UUID operation = record.identity().taskId();
         String root = null;
@@ -145,9 +145,9 @@ final class DeploymentPublicationAttemptCodec {
             if (!prior.isEmpty())
                 root = prior.getLast().nextRoot();
             if (!proof.task().equals(record.identity().taskId()) || !proof.operation().equals(operation)
-                    || !review.previousOperation().equals(operation)
-                    || root != null && !root.equals(review.previousRoot()) || proof.retriesSpent() != consumed
-                    || review.retry() != ++consumed || !failures.add(failureBinding(proof, review.unitId())))
+                || !review.previousOperation().equals(operation)
+                || root != null && !root.equals(review.previousRoot()) || proof.retriesSpent() != consumed
+                || review.retry() != ++consumed || !failures.add(failureBinding(proof, review.unitId())))
                 throw new SQLException("Publication retry does not consume its exact original operation");
             var actualPrevious = retired(request, index, record.identity().executionId());
             requireProof(proof, actualPrevious);
@@ -162,8 +162,8 @@ final class DeploymentPublicationAttemptCodec {
             root = current.getLast().nextRoot();
         }
         if (!uuid(request, "attemptOperation").equals(operation)
-                || root != null && !root.equals(record.identity().reviewedRevision())
-                || retries(request) != consumed + current.size())
+            || root != null && !root.equals(record.identity().reviewedRevision())
+            || retries(request) != consumed + current.size())
             throw new SQLException("Current operation or reviewed root is not formally confirmed");
         var actual = template(request, record.identity().executionId());
         if (!reviews.isEmpty() && actual.isPresent())
@@ -182,9 +182,9 @@ final class DeploymentPublicationAttemptCodec {
         for (var entry : node) {
             var value = DeploymentAssistedBuildReview.decode(entry);
             DeploymentAssistedBuildReview.requireContinuation(values, value.unitId(), value.previousPlan(),
-                    value.previousScript(), value.previousTools());
+                value.previousScript(), value.previousTools());
             if (value.attempt() != values.size() + 1
-                    || !values.isEmpty() && !value.previousRoot().equals(values.getLast().nextRoot()))
+                || !values.isEmpty() && !value.previousRoot().equals(values.getLast().nextRoot()))
                 throw new SQLException("Retired original build review chain changed");
             values.add(value);
         }
@@ -203,15 +203,15 @@ final class DeploymentPublicationAttemptCodec {
         var intent = DeploymentPublicationAttemptIntent.decode(request.path("attemptIntent"));
         var proof = DeploymentPublicationAttemptProof.decode(request.path("attemptPendingProof"));
         if (!request.path("buildIntent").isNull() || !proof.task().equals(record.identity().taskId())
-                || !proof.operation().equals(uuid(request, "attemptOperation"))
-                || !proof.reviewedRevision().equals(record.identity().reviewedRevision())
-                || !intent.previousOperation().equals(proof.operation())
-                || !intent.previousRoot().equals(proof.reviewedRevision()) || intent.retry() != retries(request) + 1
-                || proof.retriesSpent() != retries(request)
-                || !intent.proofSha256().equals(DeploymentPublicationAttemptProof.digest(proof.encode())))
+            || !proof.operation().equals(uuid(request, "attemptOperation"))
+            || !proof.reviewedRevision().equals(record.identity().reviewedRevision())
+            || !intent.previousOperation().equals(proof.operation())
+            || !intent.previousRoot().equals(proof.reviewedRevision()) || intent.retry() != retries(request) + 1
+            || proof.retriesSpent() != retries(request)
+            || !intent.proofSha256().equals(DeploymentPublicationAttemptProof.digest(proof.encode())))
             throw new SQLException("Pending publication consent changed the original root");
         var actual = template(request, record.identity().executionId())
-                .orElseThrow(() -> new SQLException("Pending publication recovery lacks the actual previous template"));
+            .orElseThrow(() -> new SQLException("Pending publication recovery lacks the actual previous template"));
         requireProof(proof, actual);
         intent.requirePrevious(proof, actual);
         var reviews = array(request, "attemptReviews", 2);
@@ -230,12 +230,12 @@ final class DeploymentPublicationAttemptCodec {
      * @throws SQLException if the executed child binding is absent / 已执行子绑定缺失时 */
     private static String failureBinding(DeploymentPublicationAttemptProof proof, String unit) throws SQLException {
         var child = proof.children().stream().filter(value -> value.unitId().equals(unit)).findFirst()
-                .orElseThrow(() -> new SQLException("Original failed unit is absent"));
+            .orElseThrow(() -> new SQLException("Original failed unit is absent"));
         return DeploymentPublicationAttemptProof
-                .digest(object().put("unit", unit).put("archive", string(child.checkpoint(), "archiveSha256"))
-                        .put("script", string(child.checkpoint(), "buildScript"))
-                        .put("tools", string(child.checkpoint(), "buildTools")).put("code", proof.failureCode().name())
-                        .put("event", proof.failureEvent()).toString());
+            .digest(object().put("unit", unit).put("archive", string(child.checkpoint(), "archiveSha256"))
+                .put("script", string(child.checkpoint(), "buildScript"))
+                .put("tools", string(child.checkpoint(), "buildTools")).put("code", proof.failureCode().name())
+                .put("event", proof.failureEvent()).toString());
     }
 
     /** Requires all original units and complete previous template before beginning new consent. / 新同意开始前要求全部原单元及完整旧模板。
@@ -243,21 +243,21 @@ final class DeploymentPublicationAttemptCodec {
      * @param original actual immutable proposal / 实际不可变提案
      * @throws SQLException if complete graph or template changed / 完整图或模板改变时 */
     private static void requireProof(DeploymentPublicationAttemptProof proof, DeploymentPublicationProposal original)
-            throws SQLException {
+        throws SQLException {
         if (!proof.templateSha256().equals(
-                DeploymentPublicationAttemptProof.digest(DeploymentPublicationTemplateCodec.encodeTemplate(original)))
-                || !new HashSet<>(original.units().stream().map(unit -> unit.unit().id()).toList())
-                        .equals(new HashSet<>(proof.children().stream()
-                                .map(DeploymentPublicationAttemptProof.Child::unitId).toList())))
+            DeploymentPublicationAttemptProof.digest(DeploymentPublicationTemplateCodec.encodeTemplate(original)))
+            || !new HashSet<>(original.units().stream().map(unit -> unit.unit().id()).toList())
+            .equals(new HashSet<>(proof.children().stream()
+                .map(DeploymentPublicationAttemptProof.Child::unitId).toList())))
             throw new SQLException("Publication recovery omitted or replaced an original unit");
         for (var unit : original.units()) {
             var child = proof.children().stream().filter(value -> value.unitId().equals(unit.unit().id())).findFirst()
-                    .orElseThrow();
+                .orElseThrow();
             if (!string(child.checkpoint(), "ownerManifestSha256").equals(unit.unit().ownershipManifestSha256())
-                    || !string(child.checkpoint(), "server").equals(unit.unit().server().id())
-                    || !string(child.checkpoint(), "releaseRoot").equals(unit.unit().releaseRoot())
-                    || child.checkpoint().has("releaseSha256")
-                            && !string(child.checkpoint(), "releaseSha256").equals(unit.release().sha256()))
+                || !string(child.checkpoint(), "server").equals(unit.unit().server().id())
+                || !string(child.checkpoint(), "releaseRoot").equals(unit.unit().releaseRoot())
+                || child.checkpoint().has("releaseSha256")
+                && !string(child.checkpoint(), "releaseSha256").equals(unit.release().sha256()))
                 throw new SQLException("Retired proof changed an original release owner");
         }
     }
@@ -269,7 +269,7 @@ final class DeploymentPublicationAttemptCodec {
      * @return complete new explicitly versioned request / 完整新明确版本化请求
      * @throws SQLException if any actual previous binding conflicts / 任一实际原绑定冲突时 */
     static String withIntent(DeploymentExecutionRecord record, DeploymentPublicationAttemptIntent intent,
-            DeploymentPublicationAttemptProof proof) throws SQLException {
+                             DeploymentPublicationAttemptProof proof) throws SQLException {
         var request = parse(record.requestJson(), LIMIT);
         if (!version(request.path("formatVersion").intValue()))
             initialize(request, record.identity().taskId(), proof.retriesSpent());
@@ -302,7 +302,7 @@ final class DeploymentPublicationAttemptCodec {
         for (String field : List.of("attemptProofs", "attemptReviews", "attemptBuildReviews", "attemptTemplates"))
             request.putArray(field);
         request.put("attemptOperation", task.toString()).putNull("attemptTemplate").putNull("attemptIntent")
-                .putNull("attemptPendingProof");
+            .putNull("attemptPendingProof");
     }
 
     /** Consumes exact prior consent after actual tools and final approval, retaining the same formal execution. / 实际工具及最终审批后消费精确原同意，保留同一正式执行。
@@ -311,7 +311,7 @@ final class DeploymentPublicationAttemptCodec {
      * @return new formal root and current operation request / 新正式根及当前操作请求
      * @throws SQLException if any original predecessor or proof differs / 任一原前驱或证明不符时 */
     static String withReview(DeploymentExecutionRecord record, DeploymentPublicationAttemptReview review)
-            throws SQLException {
+        throws SQLException {
         var request = parse(record.requestJson(), LIMIT);
         if (!version(request.path("formatVersion").intValue()) || request.path("attemptIntent").isNull())
             throw new SQLException("Original publication has no durable new operation consent");
@@ -320,7 +320,7 @@ final class DeploymentPublicationAttemptCodec {
         if (!intent.matches(review) || review.retry() != retries(request) + 1)
             throw new SQLException("Final publication review changed its explicit prior consent");
         var old = template(request, record.identity().executionId())
-                .orElseThrow(() -> new SQLException("Original previous template is absent"));
+            .orElseThrow(() -> new SQLException("Original previous template is absent"));
         review.requirePrevious(proof, old);
         if (!request.path("attemptReviews").isEmpty()) {
             if (!request.path("attemptTemplate").isObject())
@@ -342,12 +342,12 @@ final class DeploymentPublicationAttemptCodec {
      * @return complete bounded request / 完整有界请求
      * @throws SQLException if fixed configuration, confirmed review or prior template differs / 固定配置、已确认审阅或原模板不符时 */
     static String withTemplate(DeploymentExecutionRecord record, DeploymentPublicationProposal proposal)
-            throws SQLException {
+        throws SQLException {
         var request = parse(record.requestJson(), LIMIT);
         if (array(request, "attemptReviews", 2).isEmpty() || !request.path("attemptIntent").isNull())
             throw new SQLException("Original later operation is not formally confirmed");
         String compact = DeploymentAttemptTemplateCodec.encodeCompact(first(request, record.identity().executionId()),
-                proposal);
+            proposal);
         if (!request.path("attemptTemplate").isNull() && !compact.equals(request.path("attemptTemplate").toString()))
             throw new SQLException("Original later publication template is immutable");
         requireReviewTemplate(request, proposal);
@@ -360,7 +360,7 @@ final class DeploymentPublicationAttemptCodec {
      * @param proposal actual later proposal / 实际后续提案
      * @throws SQLException if a corrected unit or configuration changed / 纠正单元或配置改变时 */
     private static void requireReviewTemplate(JsonNode request, DeploymentPublicationProposal proposal)
-            throws SQLException {
+        throws SQLException {
         var latest = new LinkedHashMap<String, DeploymentAssistedBuildReviewCodec.Description>();
         for (var entry : array(request, "attemptReviews", 2)) {
             var review = DeploymentPublicationAttemptReview.decode(entry);
@@ -370,19 +370,19 @@ final class DeploymentPublicationAttemptCodec {
             latest.put(review.unitId(), DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan()));
         for (var description : latest.values()) {
             var component = proposal.graph().components().stream()
-                    .filter(value -> value.unit().id().equals(description.applicationId())).findFirst()
-                    .orElseThrow(() -> new SQLException("Reviewed unit is absent from the actual later template"));
+                .filter(value -> value.unit().id().equals(description.applicationId())).findFirst()
+                .orElseThrow(() -> new SQLException("Reviewed unit is absent from the actual later template"));
             var unit = proposal.units().stream().filter(value -> value.unit().id().equals(description.applicationId()))
-                    .findFirst().orElseThrow();
+                .findFirst().orElseThrow();
             var expectedConfiguration = object();
             var actualConfiguration = object();
             DeploymentPublicationTemplateCodec.configuration(expectedConfiguration, description.configuration());
             DeploymentPublicationTemplateCodec.configuration(actualConfiguration, unit.configuration());
             if (!component.reviewedRuntime().equals(description.runtime())
-                    || !component.resources().equals(description.resources())
-                    || !component.unit().server().id().equals(description.serverId())
-                    || !actualConfiguration.equals(expectedConfiguration)
-                    || !new HashSet<>(unit.secrets()).equals(new HashSet<>(description.secrets())))
+                || !component.resources().equals(description.resources())
+                || !component.unit().server().id().equals(description.serverId())
+                || !actualConfiguration.equals(expectedConfiguration)
+                || !new HashSet<>(unit.secrets()).equals(new HashSet<>(description.secrets())))
                 throw new SQLException("Later template changed its complete confirmed review");
         }
     }
@@ -392,7 +392,7 @@ final class DeploymentPublicationAttemptCodec {
      * @return whether current build consent can be stored / 是否可存储当前构建同意 */
     static boolean buildBoundary(JsonNode request) {
         return request.path("attemptTemplate").isNull() && request.path("attemptIntent").isNull()
-                && !request.path("attemptReviews").isEmpty();
+            && !request.path("attemptReviews").isEmpty();
     }
 
     /** Enforces per-field bounds before the complete independent later-format byte cap. / 完整独立后续格式字节上限前实施各字段边界。
@@ -402,11 +402,11 @@ final class DeploymentPublicationAttemptCodec {
     static String encodeBounded(ObjectNode request) throws SQLException {
         retries(request);
         if (!request.path("attemptIntent").isNull() && retries(request) >= 2
-                || !request.path("buildIntent").isNull() && retries(request) >= 2)
+            || !request.path("buildIntent").isNull() && retries(request) >= 2)
             throw new SQLException("Original retry allowance cannot admit another pending consent");
         var metadata = request.deepCopy();
         metadata.remove(List.of("publicationTemplate", "buildReviews", "buildIntent", "attemptProofs", "attemptReviews",
-                "attemptBuildReviews", "attemptTemplates", "attemptTemplate", "attemptIntent", "attemptPendingProof"));
+            "attemptBuildReviews", "attemptTemplates", "attemptTemplate", "attemptIntent", "attemptPendingProof"));
         encode(metadata, 1_048_576);
         return encode(request, LIMIT);
     }

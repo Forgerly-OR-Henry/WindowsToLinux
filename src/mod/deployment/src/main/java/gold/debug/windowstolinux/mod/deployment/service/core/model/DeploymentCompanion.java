@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param environment environment / 环境
  */
 public record DeploymentCompanion(String id, String sourcePath, BuildType projectType, String artifactPath,
-        String environment) {
+                                  String environment) {
     /**
      * Selects the supported build contract for a companion artifact.
      * <p>选择配套制品支持的构建契约。
@@ -44,10 +44,10 @@ public record DeploymentCompanion(String id, String sourcePath, BuildType projec
         artifactPath = DeploymentCommand.relative(artifactPath, false);
         Objects.requireNonNull(projectType);
         if (!Objects.requireNonNull(environment).matches("[A-Z][A-Z0-9_]{0,63}") || environment.startsWith("LD_")
-                || environment.startsWith("PYTHON") || environment.startsWith("RUBY") || environment.startsWith("GEM_")
-                || environment.startsWith("BUNDLE_") || environment.startsWith("JAVA")
-                || environment.startsWith("NODE_") || environment.startsWith("WINDOWSTOLINUX_")
-                || java.util.Set.of("PATH", "HOME", "SHELL", "ENV", "BASH_ENV", "TMPDIR").contains(environment))
+            || environment.startsWith("PYTHON") || environment.startsWith("RUBY") || environment.startsWith("GEM_")
+            || environment.startsWith("BUNDLE_") || environment.startsWith("JAVA")
+            || environment.startsWith("NODE_") || environment.startsWith("WINDOWSTOLINUX_")
+            || java.util.Set.of("PATH", "HOME", "SHELL", "ENV", "BASH_ENV", "TMPDIR").contains(environment))
             throw new IllegalArgumentException("companion requires a path environment binding");
     }
 }

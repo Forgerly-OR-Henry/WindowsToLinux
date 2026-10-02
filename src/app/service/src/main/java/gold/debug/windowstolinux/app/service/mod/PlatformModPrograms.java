@@ -7,9 +7,10 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
-import gold.debug.windowstolinux.app.mod.manifest.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.config.ModManifest;
 import gold.debug.windowstolinux.appapi.task.Problem;
 
 /** Resolves exact registered code for the common lifecycle without mixing source modes. / 为共用生命周期解析精确登记代码，不混用来源模式。 */
@@ -77,20 +78,20 @@ public final class PlatformModPrograms {
                 throw new IOException("Selected CLASS build is unavailable");
             PlatformModCatalog.verify(root, build);
             return new Program(build.candidate().manifest(), build.candidate().descriptor().sources(),
-                    build.contentDigest());
+                build.contentDigest());
         }
         try (var c = database.openConnection();
-                var p = c.prepareStatement(
-                        "SELECT install_path,manifest_json,content_sha256,schema_version,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
+             var p = c.prepareStatement(
+                 "SELECT install_path,manifest_json,content_sha256,schema_version,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, owner);
             p.setString(2, version);
             try (var r = p.executeQuery()) {
                 if (!r.next() || !"READY".equals(r.getString(6))
-                        || !Set.of("LOCAL", "BUNDLED", "STORE").contains(r.getString(5)))
+                    || !Set.of("LOCAL", "BUNDLED", "STORE").contains(r.getString(5)))
                     throw new IOException("Selected installed release is unavailable");
                 var manifest = ManifestReader.read(r.getString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 if (!manifest.id().equals(owner) || !manifest.version().toString().equals(version)
-                        || !manifest.schemaVersion().equals(Optional.ofNullable(r.getString(4))))
+                    || !manifest.schemaVersion().equals(Optional.ofNullable(r.getString(4))))
                     throw new IOException("Registered release identity is inconsistent");
                 Path program = root.resolve("mod").resolve(owner).resolve(version);
                 if (!program.toString().equals(r.getString(1)))
@@ -108,8 +109,8 @@ public final class PlatformModPrograms {
     public void verify(Program original) throws IOException, SQLException {
         var current = read(original.manifest().id(), original.manifest().version().toString());
         if (!original.manifest().json().equals(current.manifest().json())
-                || !original.sources().equals(current.sources())
-                || !original.contentDigest().equals(current.contentDigest()))
+            || !original.sources().equals(current.sources())
+            || !original.contentDigest().equals(current.contentDigest()))
             throw new IOException("Original program changed before loading");
     }
 

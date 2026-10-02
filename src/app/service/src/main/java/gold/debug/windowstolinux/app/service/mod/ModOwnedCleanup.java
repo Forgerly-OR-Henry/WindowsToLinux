@@ -6,7 +6,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.log.LogRepository;
-import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
 import gold.debug.windowstolinux.app.service.mod.ModInstallationCleanup.Entry;
 
 /** Reviews whole-owner installed programs and explicitly attributed auxiliary files without following links. / 不跟随链接地审阅整所有者安装程序及明确归属辅助文件。 */
@@ -141,7 +141,7 @@ final class ModOwnedCleanup {
                 if (entries.size() >= ModPackageReader.MAX_ENTRIES)
                     throw new IOException("Private cleanup scope exceeds bounds");
                 var entry = ModInstallationCleanup.observe(path,
-                        directory ? -1 : ModPackageReader.MAX_BYTES - bytes[0]);
+                    directory ? -1 : ModPackageReader.MAX_BYTES - bytes[0]);
                 bytes[0] += entry.size();
                 entries.add(entry);
             }
@@ -177,10 +177,10 @@ final class ModOwnedCleanup {
      * @param targets original registered categories / 原登记类别
      * @throws IOException if evidence expands beyond original ownership / 证据扩展超出原归属时 */
     static void validate(Scope scope, Path dataRoot, String owner, List<LogRepository.Target> targets)
-            throws IOException {
+        throws IOException {
         if (scope == null || !dataRoot.toString().equals(scope.dataRoot()) || scope.parents() == null
-                || scope.auxiliary() == null || scope.auxiliary().size() > ModPackageReader.MAX_ENTRIES
-                || scope.emergency() == null || scope.emergency().size() > 8192)
+            || scope.auxiliary() == null || scope.auxiliary().size() > ModPackageReader.MAX_ENTRIES
+            || scope.emergency() == null || scope.emergency().size() > 8192)
             throw new IOException("Invalid private deletion evidence");
         Path root = dataRoot.resolve("mod").resolve(owner);
         var indexed = new HashMap<String, Entry>();
@@ -189,7 +189,7 @@ final class ModOwnedCleanup {
             ModInstallationCleanup.validateEntry(entry);
             Path path = Path.of(entry.path());
             if (!path.isAbsolute() || !path.normalize().equals(path) || !path.startsWith(root)
-                    || indexed.putIfAbsent(entry.path(), entry) != null || path.equals(root) && !entry.directory())
+                || indexed.putIfAbsent(entry.path(), entry) != null || path.equals(root) && !entry.directory())
                 throw new IOException("Invalid private path");
             bytes += entry.size();
         }
@@ -253,7 +253,7 @@ final class ModOwnedCleanup {
      * @param targets original categories / 原类别
      * @throws IOException if new, changed or occupied entries prevent cleanup / 新增、变化或占用条目阻止清理时 */
     static void remove(Scope scope, Path dataRoot, String owner, List<LogRepository.Target> targets)
-            throws IOException {
+        throws IOException {
         validate(scope, dataRoot, owner, targets);
         parents(scope);
         var auxiliary = privateTree(dataRoot.resolve("mod").resolve(owner));

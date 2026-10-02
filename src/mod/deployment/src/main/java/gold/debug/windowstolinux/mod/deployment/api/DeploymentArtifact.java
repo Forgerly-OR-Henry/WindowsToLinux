@@ -6,4 +6,5 @@ package gold.debug.windowstolinux.mod.deployment.api;
  * @param remotePath exact remote path / 精确远端路径
  * @param byteCount observed byte length / 已观察字节长度
  * @param sha256 observed digest / 已观察摘要 */
-public record DeploymentArtifact(String id, String bindingId, String remotePath, long byteCount, String sha256) {}
+public record DeploymentArtifact(String id, String bindingId, String remotePath, long byteCount, String sha256) {
+}

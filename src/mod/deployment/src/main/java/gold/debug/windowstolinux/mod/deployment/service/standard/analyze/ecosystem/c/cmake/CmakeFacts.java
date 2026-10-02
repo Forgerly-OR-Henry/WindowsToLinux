@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.language.Sour
  * @param conflicts the observed conflicting facts / 观察到的冲突事实
  */
 public record CmakeFacts(String preset, String target, Set<SourceLanguageType> sourceLanguages,
-        List<String> targetSources, List<String> missingItems, List<String> conflicts) {
+                         List<String> targetSources, List<String> missingItems, List<String> conflicts) {
     /**
      * Makes CMake architecture facts immutable. / 使 CMake 架构事实不可变。
      *

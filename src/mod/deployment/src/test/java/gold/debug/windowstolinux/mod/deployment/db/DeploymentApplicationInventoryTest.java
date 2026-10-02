@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -13,12 +16,12 @@ import java.util.function.BooleanSupplier;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
@@ -41,27 +44,27 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
             var service = new DeploymentApplicationsService(context(runtime));
             var entries = await(service.inventory()).value().orElseThrow();
             assertEquals(List.of("external:", "managed:c", "managed:a", "managed:b"),
-                    entries.stream().map(value -> value.external().isPresent() ? "external:" : value.key()).toList());
+                entries.stream().map(value -> value.external().isPresent() ? "external:" : value.key()).toList());
             var external = entries.getFirst();
             assertTrue(external.deployedAt().isEmpty());
             assertTrue(external.adoptedAt().isPresent());
             assertEquals(adoptedAt(runtime, external.external().orElseThrow().id()),
-                    external.adoptedAt().orElseThrow());
+                external.adoptedAt().orElseThrow());
             assertEquals(DEPLOYED, entries.get(2).deployedAt().orElseThrow());
             assertEquals(DEPLOYED, entries.get(3).deployedAt().orElseThrow());
             assertTrue(entries.subList(1, 4).stream().allMatch(value -> value.adoptedAt().isEmpty()));
             assertEquals(2,
-                    entries.stream().filter(
-                            value -> value.matches(Optional.of("WEBSITE"), Optional.of(new ServerRef("server"))))
-                            .count());
+                entries.stream().filter(
+                        value -> value.matches(Optional.of("WEBSITE"), Optional.of(new ServerRef("server"))))
+                    .count());
             assertEquals(0,
-                    entries.stream()
-                            .filter(value -> value.matches(Optional.of("WEBSITE"), Optional.of(new ServerRef("other"))))
-                            .count());
+                entries.stream()
+                    .filter(value -> value.matches(Optional.of("WEBSITE"), Optional.of(new ServerRef("other"))))
+                    .count());
             assertEquals(1, entries.stream()
-                    .filter(value -> value.matches(Optional.of("APP"), Optional.of(new ServerRef("other")))).count());
+                .filter(value -> value.matches(Optional.of("APP"), Optional.of(new ServerRef("other")))).count());
             assertEquals(4,
-                    entries.stream().filter(value -> value.matches(Optional.empty(), Optional.empty())).count());
+                entries.stream().filter(value -> value.matches(Optional.empty(), Optional.empty())).count());
             assertEquals(3, await(service.list()).value().orElseThrow().size());
             assertEquals(1, await(service.externalApplications()).value().orElseThrow().size());
             var selected = entries.get(2);
@@ -69,29 +72,29 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
             var originalBusiness = businessBytes(runtime);
             int reads = peer.reads.get(), effects = peer.effects.get();
             assertEquals(Outcome.FAILED,
-                    await(service.edit(selected.managed().orElseThrow(), "Invalid", "APP", Optional.of(BUSINESS_URL)))
-                            .outcome());
+                await(service.edit(selected.managed().orElseThrow(), "Invalid", "APP", Optional.of(BUSINESS_URL)))
+                    .outcome());
             String editedUrl = "https://example.debug.gold/display?view=1";
             assertEquals(Outcome.SUCCEEDED,
-                    await(service.edit(selected.managed().orElseThrow(), "本地名称", "WEBSITE", Optional.of(editedUrl)))
-                            .outcome());
+                await(service.edit(selected.managed().orElseThrow(), "本地名称", "WEBSITE", Optional.of(editedUrl)))
+                    .outcome());
             var edited = await(service.inventory()).value().orElseThrow().stream()
-                    .filter(value -> value.key().equals(selected.key())).findFirst().orElseThrow();
+                .filter(value -> value.key().equals(selected.key())).findFirst().orElseThrow();
             assertEquals("本地名称", edited.name());
             assertEquals("WEBSITE", edited.category());
             assertEquals(Optional.of(editedUrl), edited.accessUrl());
             assertEquals(selected.deployedAt(), edited.deployedAt());
             assertEquals(originalBusiness, businessBytes(runtime));
             assertEquals(Outcome.SUCCEEDED, await(
-                    service.edit(edited.managed().orElseThrow(), "Explicitly cleared", "WEBSITE", Optional.empty()))
-                    .outcome());
+                service.edit(edited.managed().orElseThrow(), "Explicitly cleared", "WEBSITE", Optional.empty()))
+                .outcome());
             var cleared = await(service.inventory()).value().orElseThrow().stream()
-                    .filter(value -> value.key().equals(selected.key())).findFirst().orElseThrow();
+                .filter(value -> value.key().equals(selected.key())).findFirst().orElseThrow();
             assertTrue(cleared.accessUrl().isEmpty(), "A cleared override must not resurrect the declared URL");
             assertEquals(Outcome.SUCCEEDED, await(service.editExternal(external.external().orElseThrow(),
-                    "External website", "WEBSITE", Optional.of(editedUrl))).outcome());
+                "External website", "WEBSITE", Optional.of(editedUrl))).outcome());
             var savedExternal = await(service.inventory()).value().orElseThrow().stream()
-                    .filter(value -> value.key().equals(external.key())).findFirst().orElseThrow();
+                .filter(value -> value.key().equals(external.key())).findFirst().orElseThrow();
             assertEquals(external.adoptedAt(), savedExternal.adoptedAt());
             assertTrue(savedExternal.deployedAt().isEmpty());
             assertEquals(Optional.of(editedUrl), savedExternal.accessUrl());
@@ -105,7 +108,7 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
 
     @Test
     void actualLazyClassPageFiltersLocallyKeepsSelectionAndShowsBusinessUrlAcrossLanguageAndLockChanges()
-            throws Exception {
+        throws Exception {
         enable();
         try (var ssh = ssh(); var runtime = open()) {
             var mounted = new AtomicReference<JComponent>();
@@ -136,23 +139,23 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
             assertNotNull(component);
             var actualControls = new AtomicReference<List<Component>>();
             SwingUtilities.invokeAndWait(() -> actualControls
-                    .set(List.of(named(component, "applications.inventory"), named(component, "applications.category"),
-                            named(component, "applications.serverFilter"), named(component, "applications.details"))));
-            var selector = (JComboBox<?>) actualControls.get().get(0);
+                .set(List.of(named(component, "applications.inventory"), named(component, "applications.category"),
+                    named(component, "applications.serverFilter"), named(component, "applications.details"))));
+            var selector = (JList<?>) actualControls.get().get(0);
             var categories = (JComboBox<?>) actualControls.get().get(1);
             var servers = (JComboBox<?>) actualControls.get().get(2);
             var details = (JTextArea) actualControls.get().get(3);
-            waitEdt(() -> selector.getItemCount() == 4 && selector.isEnabled());
+            waitEdt(() -> selector.getModel().getSize() == 4 && selector.isEnabled());
             int reads = peer.reads.get(), effects = peer.effects.get();
             SwingUtilities.invokeAndWait(() -> {
                 categories.setSelectedItem("WEBSITE");
                 servers.setSelectedItem(new ServerRef("server"));
             });
-            waitEdt(() -> selector.getItemCount() == 2);
+            waitEdt(() -> selector.getModel().getSize() == 2);
             SwingUtilities.invokeAndWait(() -> selector.setSelectedIndex(0));
             var original = new AtomicReference<Object>();
             SwingUtilities.invokeAndWait(() -> {
-                original.set(selector.getSelectedItem());
+                original.set(selector.getSelectedValue());
                 assertEquals("managed:a", entryKey(original.get()));
                 assertTrue(details.getText().contains(BUSINESS_URL));
                 assertFalse(details.getText().contains("http://127.0.0.1:8080"));
@@ -160,7 +163,7 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
             });
             pages.environment(new UiEnvironment(Locale.ENGLISH, "LIGHT", false));
             SwingUtilities.invokeAndWait(() -> {
-                assertSame(original.get(), selector.getSelectedItem());
+                assertSame(original.get(), selector.getSelectedValue());
                 assertTrue(details.getText().contains("Business access URL: " + BUSINESS_URL));
             });
             var refresh = new AtomicReference<JButton>();
@@ -168,14 +171,14 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
                 refresh.set(button(component, "Refresh"));
                 refresh.get().doClick();
             });
-            waitEdt(() -> selector.isEnabled() && selector.getSelectedItem() != null
-                    && entryKey(selector.getSelectedItem()).equals("managed:a"));
+            waitEdt(() -> selector.isEnabled() && selector.getSelectedValue() != null
+                && entryKey(selector.getSelectedValue()).equals("managed:a"));
             SwingUtilities.invokeAndWait(() -> servers.setSelectedItem(new ServerRef("other")));
-            waitEdt(() -> selector.getItemCount() == 0 && selector.getSelectedItem() == null);
+            waitEdt(() -> selector.getModel().getSize() == 0 && selector.getSelectedValue() == null);
             SwingUtilities.invokeAndWait(() -> servers.setSelectedItem(new ServerRef("server")));
-            waitEdt(() -> selector.getItemCount() == 2);
-            SwingUtilities.invokeAndWait(() -> assertNull(selector.getSelectedItem(),
-                    "A hidden original selection is cleared explicitly, never replaced by another entry"));
+            waitEdt(() -> selector.getModel().getSize() == 2);
+            SwingUtilities.invokeAndWait(() -> assertNull(selector.getSelectedValue(),
+                "A hidden original selection is cleared explicitly, never replaced by another entry"));
             pages.environment(new UiEnvironment(Locale.ENGLISH, "LIGHT", true));
             SwingUtilities.invokeAndWait(() -> {
                 assertFalse(selector.isEnabled());
@@ -197,7 +200,7 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
             waitEdt(() -> {
                 try {
                     return scalar(runtime,
-                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL") == 0;
+                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL") == 0;
                 } catch (Exception failed) {
                     throw new AssertionError(failed);
                 }
@@ -209,102 +212,102 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
     private void prepareInventory(PlatformRuntime runtime, int port) throws Exception {
         server(runtime, port, "tester");
         runtime.servers().saveServerProfile(
-                ServerProfile
-                        .fromStored(new StoredServerProfile("other", "127.0.0.2", port, "tester", "fixture-secret")),
-                "fixture-secret".toCharArray());
+            ServerProfile
+                .fromStored(new StoredServerProfile("other", "127.0.0.2", port, "tester", "fixture-secret")),
+            "fixture-secret".toCharArray());
         publishAt(runtime, "b", "server", true, DEPLOYED);
         publishAt(runtime, "a", "server", true, DEPLOYED);
         publishAt(runtime, "c", "other", false, DEPLOYED.plusSeconds(1));
         var service = new DeploymentApplicationsService(context(runtime));
         var scan = await(service.scan(new ServerRef("server"))).value().orElseThrow();
         assertEquals(Outcome.SUCCEEDED,
-                await(service.adopt(new ServerRef("server"), scan.applications().getFirst())).outcome());
+            await(service.adopt(new ServerRef("server"), scan.applications().getFirst())).outcome());
     }
 
     /** Uses original formal repository transitions with monotonic explicit evidence times, never fabricated rows. / 使用原正式仓库迁移及单调明确依据时间，不伪造行。 */
     private void publishAt(PlatformRuntime runtime, String application, String server, boolean website, Instant time)
-            throws Exception {
+        throws Exception {
         var context = context(runtime);
         var captured = new AtomicReference<Throwable>();
         var handle = context.tasks().submit(new TaskRequest("inventory-publication-seed",
-                "Original formal inventory publication", List.of(server), true), task -> {
-                    try {
-                        var original = graph(application);
-                        var components = new ArrayList<DeploymentApplicationGraph.Component>();
-                        for (var component : original.components()) {
-                            var workload = component.runtime().workload();
-                            boolean web = website && component.componentId().equals(original.healthComponentId());
-                            if (web)
-                                workload = new DeploymentWorkload(workload.mode(), workload.reviewed(),
-                                        workload.command(), workload.workingDirectory(),
-                                        List.of(new DeploymentEndpoint("business-http",
-                                                DeploymentEndpoint.ProtocolType.HTTP, "0.0.0.0", 8080, 8080,
-                                                DeploymentEndpoint.ExposureType.EXTERNAL, BUSINESS_URL)),
-                                        workload.verification(), workload.expectedOutput(), workload.client(),
-                                        workload.inputs(), workload.companions(), workload.buildDirectory(),
-                                        workload.workers());
-                            DeploymentHealthCheck health = web
-                                    ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:8080/health"), 200,
-                                            10)
-                                    : component.runtime().healthCheck();
-                            var definition = web
-                                    ? new DeploymentRuntimeDefinition.NodeService(22, health).withWorkload(workload)
-                                    : component.reviewedRuntime();
-                            var unit = DeploymentUnitIdentity.forManaged(application + "-" + component.componentId(),
-                                    new ServerRef(server), "a".repeat(64));
-                            var runtimeValue = new DeploymentUnitRuntimeConfiguration(health,
-                                    web
-                                            ? Optional.of(new DeploymentAccessUrl(URI.create(BUSINESS_URL)))
-                                            : Optional.empty(),
-                                    definition.identityPolicy(), workload);
-                            components.add(new DeploymentApplicationGraph.Component(component.componentId(), unit,
-                                    runtimeValue, component.dependencies(), definition, component.dataPaths(),
-                                    component.resources()));
-                        }
-                        var graph = new DeploymentApplicationGraph(application, original.healthComponentId(),
-                                original.healthCheck(), components);
-                        var publication = new DeploymentPublication(graph, publications(graph, 1, List.of()));
-                        var references = DeploymentOriginalPublicationCommit.references(new ServerRef(server),
-                                publication, Map.of());
-                        var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), task.id(), Optional.empty(),
-                                application, new ServerRef(server),
-                                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64));
-                        var repository = new DeploymentExecutionRepository(context.db());
-                        repository.begin(task, identity, "deployment-publication", references, Optional.empty(), time);
-                        for (var reference : references) {
-                            assertEquals(DeploymentReferenceIntent.DeploymentReferenceKind.SERVER, reference.kind());
-                            var reserved = context.servers().reserve(new ServerRef(reference.resourceId()),
-                                    reference.businessKey(), task);
-                            repository.recordReference(task, identity.executionId(), reference, reserved.id(), time);
-                        }
-                        repository.startEffects(task, identity.executionId(), time);
-                        repository.recordPublicationTemplate(task, identity.executionId(),
-                                new DeploymentPublicationProposal(graph, publication.units()), time);
-                        repository.commitApplication(task, identity.executionId(), graph, publication.units(), time);
-                        var commit = new DeploymentOriginalPublicationCommit(context);
-                        assertEquals(Outcome.SUCCEEDED,
-                                commit.commitVerified(task, identity.executionId(), publication).outcome());
-                        assertEquals(Outcome.SUCCEEDED,
-                                commit.finishKnown(task, repository.find(task, identity.executionId()).orElseThrow())
-                                        .outcome());
-                        var record = repository.find(task, identity.executionId()).orElseThrow();
-                        assertEquals("FINISHED", record.phase());
-                        assertTrue(record.businessCommitted());
-                        assertTrue(record.cleanupComplete());
-                        return success();
-                    } catch (Exception | AssertionError failed) {
-                        captured.set(failed);
-                        throw failed;
-                    }
-                });
+            "Original formal inventory publication", List.of(server), true), task -> {
+            try {
+                var original = graph(application);
+                var components = new ArrayList<DeploymentApplicationGraph.Component>();
+                for (var component : original.components()) {
+                    var workload = component.runtime().workload();
+                    boolean web = website && component.componentId().equals(original.healthComponentId());
+                    if (web)
+                        workload = new DeploymentWorkload(workload.mode(), workload.reviewed(),
+                            workload.command(), workload.workingDirectory(),
+                            List.of(new DeploymentEndpoint("business-http",
+                                DeploymentEndpoint.ProtocolType.HTTP, "0.0.0.0", 8080, 8080,
+                                DeploymentEndpoint.ExposureType.EXTERNAL, BUSINESS_URL)),
+                            workload.verification(), workload.expectedOutput(), workload.client(),
+                            workload.inputs(), workload.companions(), workload.buildDirectory(),
+                            workload.workers());
+                    DeploymentHealthCheck health = web
+                        ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:8080/health"), 200,
+                        10)
+                        : component.runtime().healthCheck();
+                    var definition = web
+                        ? new DeploymentRuntimeDefinition.NodeService(22, health).withWorkload(workload)
+                        : component.reviewedRuntime();
+                    var unit = DeploymentUnitIdentity.forManaged(application + "-" + component.componentId(),
+                        new ServerRef(server), "a".repeat(64));
+                    var runtimeValue = new DeploymentUnitRuntimeConfiguration(health,
+                        web
+                            ? Optional.of(new DeploymentAccessUrl(URI.create(BUSINESS_URL)))
+                            : Optional.empty(),
+                        definition.identityPolicy(), workload);
+                    components.add(new DeploymentApplicationGraph.Component(component.componentId(), unit,
+                        runtimeValue, component.dependencies(), definition, component.dataPaths(),
+                        component.resources()));
+                }
+                var graph = new DeploymentApplicationGraph(application, original.healthComponentId(),
+                    original.healthCheck(), components);
+                var publication = new DeploymentPublication(graph, publications(graph, 1, List.of()));
+                var references = DeploymentOriginalPublicationCommit.references(new ServerRef(server),
+                    publication, Map.of());
+                var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), task.id(), Optional.empty(),
+                    application, new ServerRef(server),
+                    DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64));
+                var repository = new DeploymentExecutionRepository(context.db());
+                repository.begin(task, identity, "deployment-publication", references, Optional.empty(), time);
+                for (var reference : references) {
+                    assertEquals(DeploymentReferenceIntent.DeploymentReferenceKind.SERVER, reference.kind());
+                    var reserved = context.servers().reserve(new ServerRef(reference.resourceId()),
+                        reference.businessKey(), task);
+                    repository.recordReference(task, identity.executionId(), reference, reserved.id(), time);
+                }
+                repository.startEffects(task, identity.executionId(), time);
+                repository.recordPublicationTemplate(task, identity.executionId(),
+                    new DeploymentPublicationProposal(graph, publication.units()), time);
+                repository.commitApplication(task, identity.executionId(), graph, publication.units(), time);
+                var commit = new DeploymentOriginalPublicationCommit(context);
+                assertEquals(Outcome.SUCCEEDED,
+                    commit.commitVerified(task, identity.executionId(), publication).outcome());
+                assertEquals(Outcome.SUCCEEDED,
+                    commit.finishKnown(task, repository.find(task, identity.executionId()).orElseThrow())
+                        .outcome());
+                var record = repository.find(task, identity.executionId()).orElseThrow();
+                assertEquals("FINISHED", record.phase());
+                assertTrue(record.businessCommitted());
+                assertTrue(record.cleanupComplete());
+                return success();
+            } catch (Exception | AssertionError failed) {
+                captured.set(failed);
+                throw failed;
+            }
+        });
         assertEquals(Outcome.SUCCEEDED, await(handle).outcome(), () -> String.valueOf(captured.get()));
     }
 
     private Instant adoptedAt(PlatformRuntime runtime, String id) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.prepareStatement(
-                        "SELECT adopted_at FROM external_application WHERE external_application_id=?")) {
+             var connection = access.openConnection();
+             var statement = connection.prepareStatement(
+                 "SELECT adopted_at FROM external_application WHERE external_application_id=?")) {
             statement.setString(1, id);
             try (var rows = statement.executeQuery()) {
                 assertTrue(rows.next());
@@ -319,21 +322,21 @@ class DeploymentApplicationInventoryTest extends DeploymentApplicationsFixture {
         var facts = new ArrayList<String>();
         try (var access = scope(runtime, true); var connection = access.openConnection()) {
             for (String sql : List.of(
-                    "SELECT deployment_unit_id,runtime_payload,current_release_sha256,current_release_published_at,runtime_state,autostart_state FROM deployment_unit ORDER BY deployment_unit_id",
-                    "SELECT * FROM managed_application ORDER BY application_id",
-                    "SELECT * FROM deployment_release ORDER BY application_id,release_id",
-                    "SELECT * FROM deployment_unit_configuration_snapshot ORDER BY deployment_unit_id,configuration_revision",
-                    "SELECT * FROM deployment_unit_configuration_entry ORDER BY deployment_unit_id,configuration_revision,configuration_key",
-                    "SELECT * FROM deployment_unit_release_binding ORDER BY deployment_unit_id,release_sha256",
-                    "SELECT external_application_id,server_profile_id,runtime_type,runtime_identity,identity_fingerprint,bound_host,bound_ssh_port,bound_username,runtime_state,can_start,can_stop,adopted_at,observed_at FROM external_application ORDER BY external_application_id")) {
+                "SELECT deployment_unit_id,runtime_payload,current_release_sha256,current_release_published_at,runtime_state,autostart_state FROM deployment_unit ORDER BY deployment_unit_id",
+                "SELECT * FROM managed_application ORDER BY application_id",
+                "SELECT * FROM deployment_release ORDER BY application_id,release_id",
+                "SELECT * FROM deployment_unit_configuration_snapshot ORDER BY deployment_unit_id,configuration_revision",
+                "SELECT * FROM deployment_unit_configuration_entry ORDER BY deployment_unit_id,configuration_revision,configuration_key",
+                "SELECT * FROM deployment_unit_release_binding ORDER BY deployment_unit_id,release_sha256",
+                "SELECT external_application_id,server_profile_id,runtime_type,runtime_identity,identity_fingerprint,bound_host,bound_ssh_port,bound_username,runtime_state,can_start,can_stop,adopted_at,observed_at FROM external_application ORDER BY external_application_id")) {
                 try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
                     while (rows.next())
                         for (int i = 1; i <= rows.getMetaData().getColumnCount(); i++) {
                             Object value = rows.getMetaData().getColumnType(i) == Types.BLOB
-                                    ? rows.getBytes(i)
-                                    : rows.getObject(i);
+                                ? rows.getBytes(i)
+                                : rows.getObject(i);
                             facts.add(sql + ":" + rows.getMetaData().getColumnName(i) + "="
-                                    + (value instanceof byte[] bytes ? HexFormat.of().formatHex(bytes) : value));
+                                + (value instanceof byte[] bytes ? HexFormat.of().formatHex(bytes) : value));
                         }
                 }
             }

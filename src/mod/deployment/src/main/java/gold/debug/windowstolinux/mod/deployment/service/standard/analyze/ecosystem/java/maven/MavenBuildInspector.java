@@ -37,14 +37,14 @@ public final class MavenBuildInspector {
      * <p>用于识别Spring Boot 构建插件的匹配模式。
      */
     private static final Pattern BOOT_PLUGIN = Pattern
-            .compile("<artifactId>\\s*spring-boot-maven-plugin\\s*</artifactId>", Pattern.CASE_INSENSITIVE);
+        .compile("<artifactId>\\s*spring-boot-maven-plugin\\s*</artifactId>", Pattern.CASE_INSENSITIVE);
 
     /**
      * Pattern recognizing WAR packaging declaration.
      * <p>用于识别WAR 打包声明的匹配模式。
      */
     private static final Pattern WAR_PACKAGING = Pattern.compile("<packaging>\\s*war\\s*</packaging>",
-            Pattern.CASE_INSENSITIVE);
+        Pattern.CASE_INSENSITIVE);
 
     /**
      * Inspects optional.
@@ -78,7 +78,7 @@ public final class MavenBuildInspector {
             return Optional.empty();
         }
         return Optional.of(new MavenBuildFacts(pomText, applicationName(logicalRootName, pomText),
-                BOOT_PLUGIN.matcher(pomText).find(), WAR_PACKAGING.matcher(pomText).find()));
+            BOOT_PLUGIN.matcher(pomText).find(), WAR_PACKAGING.matcher(pomText).find()));
     }
 
     /**
@@ -98,7 +98,7 @@ public final class MavenBuildInspector {
             return Files.readString(pom, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             rejections.add(new RejectionReason("POM_UNREADABLE",
-                    DeploymentLocalizedMessage.of("analysis.rejection.pomUnreadable"), "input"));
+                DeploymentLocalizedMessage.of("analysis.rejection.pomUnreadable"), "input"));
             return null;
         }
     }

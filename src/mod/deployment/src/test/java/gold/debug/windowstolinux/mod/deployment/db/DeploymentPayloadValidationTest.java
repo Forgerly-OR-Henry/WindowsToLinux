@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.Connection;
@@ -7,8 +11,8 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.junit.jupiter.api.Test;
@@ -25,15 +29,15 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
         var context = runtime.modContexts().get(OWNER).context();
         var failure = new AtomicReference<Throwable>();
         var handle = context.tasks()
-                .submit(new TaskRequest("payload_acceptance", "Payload acceptance", List.of(), true), task -> {
-                    try (var connection = context.db().openConnection(task)) {
-                        work.run(connection);
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    } catch (Exception | AssertionError error) {
-                        failure.set(error);
-                        throw error;
-                    }
-                });
+            .submit(new TaskRequest("payload_acceptance", "Payload acceptance", List.of(), true), task -> {
+                try (var connection = context.db().openConnection(task)) {
+                    work.run(connection);
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                } catch (Exception | AssertionError error) {
+                    failure.set(error);
+                    throw error;
+                }
+            });
         var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
         if (failure.get() != null)
             throw new AssertionError("Fixture SQL failed", failure.get());
@@ -45,35 +49,35 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
             var health = new DeploymentHealthCheck.Tcp(8080, 20, 2);
             var definition = new DeploymentRuntimeDefinition.NodeService(22, health);
             var unit = new DeploymentUnitRuntimeConfiguration(health, Optional.empty(), definition.identityPolicy(),
-                    definition.workload());
+                definition.workload());
             try (var statement = connection.prepareStatement(
-                    """
-                            INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload)
-                            VALUES('unit','server','windowstolinux-unit.service','/opt/windowstolinux/apps/unit',?,?)
-                            """)) {
+                """
+                    INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload)
+                    VALUES('unit','server','windowstolinux-unit.service','/opt/windowstolinux/apps/unit',?,?)
+                    """)) {
                 statement.setString(1, "a".repeat(64));
                 statement.setBytes(2, DeploymentCodecCompatibility.write(unit));
                 statement.executeUpdate();
             }
             try (var statement = connection.prepareStatement(
-                    "INSERT INTO managed_application(application_id,server_profile_id,health_check_payload,updated_at) VALUES('application','server',?,1)")) {
+                "INSERT INTO managed_application(application_id,server_profile_id,health_check_payload,updated_at) VALUES('application','server',?,1)")) {
                 statement.setBytes(1, DeploymentCodecCompatibility.write(health));
                 statement.executeUpdate();
             }
             try (var statement = connection.prepareStatement(
-                    """
-                            INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id,reviewed_runtime_payload,reviewed_data_paths_payload,reviewed_resource_bindings_payload)
-                            VALUES('application','component','unit',?,?,?)
-                            """)) {
+                """
+                    INSERT INTO managed_application_component(application_id,component_id,deployment_unit_id,reviewed_runtime_payload,reviewed_data_paths_payload,reviewed_resource_bindings_payload)
+                    VALUES('application','component','unit',?,?,?)
+                    """)) {
                 statement.setBytes(1, DeploymentCodecCompatibility.write(definition));
                 statement.setBytes(2, DeploymentCodecCompatibility.write(List.<DeploymentStoragePath>of()));
                 statement.setBytes(3, DeploymentCodecCompatibility
-                        .write(new DeploymentResourceBindings(List.of(), Optional.empty())));
+                    .write(new DeploymentResourceBindings(List.of(), Optional.empty())));
                 statement.executeUpdate();
             }
             try (var statement = connection.createStatement()) {
                 statement.executeUpdate(
-                        "UPDATE managed_application SET health_component_id='component',graph_ready=TRUE");
+                    "UPDATE managed_application SET health_component_id='component',graph_ready=TRUE");
             }
         });
     }
@@ -110,9 +114,9 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
 
     @ParameterizedTest
     @ValueSource(strings = {"deployment_unit.runtime_payload", "managed_application.health_check_payload",
-            "managed_application_component.reviewed_runtime_payload",
-            "managed_application_component.reviewed_data_paths_payload",
-            "managed_application_component.reviewed_resource_bindings_payload"})
+        "managed_application_component.reviewed_runtime_payload",
+        "managed_application_component.reviewed_data_paths_payload",
+        "managed_application_component.reviewed_resource_bindings_payload"})
     void invalidStoredFormatIsRejectedWithoutChangingTheOriginalBytes(String field) throws Exception {
         enable();
         try (var runtime = open()) {
@@ -128,9 +132,9 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
             });
             rejected(runtime);
             try (var access = scope(runtime, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery("SELECT " + parts[1] + " FROM " + parts[0])) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery("SELECT " + parts[1] + " FROM " + parts[0])) {
                 assertTrue(rows.next());
                 assertArrayEquals(original, rows.getBytes(1));
             }
@@ -152,7 +156,7 @@ class DeploymentPayloadValidationTest extends DeploymentRuntimeFixture {
             write(runtime, connection -> {
                 try (var statement = connection.createStatement()) {
                     statement
-                            .executeUpdate("UPDATE managed_application SET graph_ready=FALSE,health_component_id=NULL");
+                        .executeUpdate("UPDATE managed_application SET graph_ready=FALSE,health_component_id=NULL");
                     statement.executeUpdate("UPDATE managed_application_component SET reviewed_runtime_payload=NULL");
                 }
             });

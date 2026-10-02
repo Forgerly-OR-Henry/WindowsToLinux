@@ -11,7 +11,7 @@ import java.util.Optional;
  * @param needsQuiescence whether collection must stop writes / 采集是否须停写
  * @param secretReferenceId opaque original secret reference / 不透明原秘密引用 */
 public record DeploymentBinding(String id, String componentId, String kind, String path, String engine,
-        boolean needsQuiescence, Optional<String> secretReferenceId) {
+                                boolean needsQuiescence, Optional<String> secretReferenceId) {
     /** Validates the shared binding shape. / 校验共享绑定形状。
      * @param id stable binding identity / 稳定绑定身份
      * @param componentId owning component / 所属组件
@@ -22,9 +22,9 @@ public record DeploymentBinding(String id, String componentId, String kind, Stri
      * @param secretReferenceId opaque original secret reference / 不透明原秘密引用 */
     public DeploymentBinding {
         if (id == null || id.isBlank() || componentId == null || componentId.isBlank()
-                || !java.util.Set.of("CONFIG", "FILE", "DATABASE").contains(kind)
-                || path == null || !(path.startsWith("/") || "DATABASE".equals(kind)
-                        && path.matches("[a-z]+://[^/]+/.+")) || engine == null)
+            || !java.util.Set.of("CONFIG", "FILE", "DATABASE").contains(kind)
+            || path == null || !(path.startsWith("/") || "DATABASE".equals(kind)
+            && path.matches("[a-z]+://[^/]+/.+")) || engine == null)
             throw new IllegalArgumentException("Invalid deployment binding");
         java.util.Objects.requireNonNull(secretReferenceId);
     }

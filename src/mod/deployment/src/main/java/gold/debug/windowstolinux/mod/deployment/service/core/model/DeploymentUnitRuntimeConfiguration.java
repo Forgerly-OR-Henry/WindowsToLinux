@@ -18,8 +18,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentIde
  * @param workload reviewed application execution and resource contract / 已审阅应用执行及资源契约
  */
 public record DeploymentUnitRuntimeConfiguration(DeploymentHealthCheck healthCheck,
-        Optional<DeploymentAccessUrl> userAccessUrl, DeploymentIdentityMode identityPolicy,
-        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload workload) {
+                                                 Optional<DeploymentAccessUrl> userAccessUrl,
+                                                 DeploymentIdentityMode identityPolicy,
+                                                 gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload workload) {
     /**
      * Initializes managed application runtime configuration through its shared constructor contract.
      * <p>通过共享构造契约初始化受管应用运行时配置。
@@ -29,9 +30,9 @@ public record DeploymentUnitRuntimeConfiguration(DeploymentHealthCheck healthChe
      * @param identityPolicy reviewed process identity and privilege policy / 已审阅进程身份及权限策略
      */
     public DeploymentUnitRuntimeConfiguration(DeploymentHealthCheck healthCheck,
-            Optional<DeploymentAccessUrl> userAccessUrl, DeploymentIdentityMode identityPolicy) {
+                                              Optional<DeploymentAccessUrl> userAccessUrl, DeploymentIdentityMode identityPolicy) {
         this(healthCheck, userAccessUrl, identityPolicy,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.unspecified());
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.unspecified());
     }
 
     /**
@@ -41,7 +42,7 @@ public record DeploymentUnitRuntimeConfiguration(DeploymentHealthCheck healthChe
      * @param userAccessUrl the optional user-facing HTTP URL / 可选的用户访问 HTTP URL
      */
     public DeploymentUnitRuntimeConfiguration(DeploymentHealthCheck healthCheck,
-            Optional<DeploymentAccessUrl> userAccessUrl) {
+                                              Optional<DeploymentAccessUrl> userAccessUrl) {
         this(healthCheck, userAccessUrl, DeploymentIdentityMode.LEGACY_UNSPECIFIED);
     }
 

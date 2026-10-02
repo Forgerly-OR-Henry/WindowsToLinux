@@ -44,7 +44,7 @@ public final class WindowPrivacy {
             hide();
         else {
             invoke("restore", hidden.entrySet().stream().map(e -> e.getKey() + ":" + e.getValue())
-                    .collect(java.util.stream.Collectors.joining(";")));
+                .collect(java.util.stream.Collectors.joining(";")));
             hidden.clear();
         }
     }
@@ -91,10 +91,10 @@ public final class WindowPrivacy {
             if (input == null)
                 throw new java.io.IOException("privacy adapter unavailable");
             String script = "$browserProcessId=" + processId + "; $privacyAction='" + action + "'; $restoreHandles='"
-                    + handles + "';\n" + new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                + handles + "';\n" + new String(input.readAllBytes(), StandardCharsets.UTF_8);
             String encoded = Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
             command = new ProcessBuilder("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
-                    "-EncodedCommand", encoded).redirectErrorStream(true).start();
+                "-EncodedCommand", encoded).redirectErrorStream(true).start();
             command.getOutputStream().close();
             if (!command.waitFor(10, TimeUnit.SECONDS))
                 throw new java.io.IOException("privacy adapter timed out");

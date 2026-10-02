@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -12,7 +21,7 @@ import java.util.UUID;
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseResults;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
@@ -43,7 +52,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @param server exact server / 精确服务器
      * @param task original task / 原任务 */
     public DeploymentNativeDatabaseChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task) {
+                                           TaskContext task) {
         this.wire = new DeploymentNativeDatabaseWire(session, interaction, server, task);
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -89,7 +98,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @return observed target / 已观察目标
      * @throws ApiException if helper identity or reviewed transport fails / helper 身份或已审核传输失败时 */
     public OperationResult<Target> target(Map<String, String> fields, byte[] administratorPassword)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(administratorPassword);
         if (fields.keySet().stream().anyMatch(Set.of("adminPassword", "applicationPassword", "sql")::contains))
             throw new IllegalArgumentException("Administrator password must remain mutable bytes");
@@ -97,10 +106,10 @@ public final class DeploymentNativeDatabaseChannel {
         if (identity.outcome() != Outcome.SUCCEEDED)
             return empty(identity);
         byte[] frame = DeploymentNativeDatabaseWire.sensitiveFrame(fields,
-                administratorPassword.length == 0 ? Map.of() : Map.of("adminPassword", administratorPassword));
+            administratorPassword.length == 0 ? Map.of() : Map.of("adminPassword", administratorPassword));
         try {
             return readOnly("target", frame, fields.getOrDefault("applicationId", "native-database"),
-                    result -> DeploymentNativeDatabaseResults.target(result, ""));
+                result -> DeploymentNativeDatabaseResults.target(result, ""));
         } finally {
             Arrays.fill(frame, (byte) 0);
         }
@@ -115,20 +124,20 @@ public final class DeploymentNativeDatabaseChannel {
      * @param <T> result type / 结果类型
      * @throws ApiException if reviewed transport fails / 已审核传输失败时 */
     private <T> OperationResult<T> readOnly(String action, byte[] frame, String target,
-            java.util.function.Function<Map<String, String>, T> decode) throws ApiException {
+                                            java.util.function.Function<Map<String, String>, T> decode) throws ApiException {
         var observed = wire.send(action, frame, DeploymentNativeDatabaseWire.digest(frame), target, () -> {
         });
         if (observed.outcome() != Outcome.SUCCEEDED)
             return empty(observed);
         if (observed.value().isEmpty())
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_MISSING",
-                            "Native database inspection returned no command result", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_MISSING",
+                    "Native database inspection returned no command result", Map.of(), Optional.empty())));
         var command = observed.value().orElseThrow();
         if (!command.exitCode().equals(Optional.of(0)) || command.truncated() || !command.stderr().isEmpty())
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_UNCONFIRMED",
-                            "Native database read-only result was not confirmed", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_UNCONFIRMED",
+                    "Native database read-only result was not confirmed", Map.of(), Optional.empty())));
         try {
             var fields = DeploymentNativeDatabaseWire.fields(command.stdout());
             String status = fields.get("status");
@@ -136,13 +145,13 @@ public final class DeploymentNativeDatabaseChannel {
                 throw new IllegalArgumentException("Invalid native database status");
             if (!"OK".equals(status))
                 return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_INSPECT_FAILED",
-                                "Native database inspection failed", Map.of("reason", status), Optional.empty())));
+                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_INSPECT_FAILED",
+                        "Native database inspection failed", Map.of("reason", status), Optional.empty())));
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(decode.apply(fields)), Optional.empty());
         } catch (IllegalArgumentException invalid) {
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_INVALID",
-                            "Native database inspection returned invalid facts", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_INVALID",
+                    "Native database inspection returned invalid facts", Map.of(), Optional.empty())));
         }
     }
 
@@ -162,18 +171,18 @@ public final class DeploymentNativeDatabaseChannel {
      * @return exact known result or retained uncertainty / 精确已知结果或保留未知
      * @throws ApiException if original persistence or admission fails / 原持久化或准入失败时 */
     public OperationResult<Void> start(TaskService tasks, String engine, String instanceId, String fingerprint)
-            throws ApiException {
+        throws ApiException {
         if (!Set.of("POSTGRESQL", "MYSQL", "MARIADB", "REDIS").contains(engine) || instanceId == null
-                || instanceId.isBlank() || instanceId.length() > 256 || instanceId.indexOf('\0') >= 0
-                || fingerprint == null || !fingerprint.matches("[0-9a-f]{64}"))
+            || instanceId.isBlank() || instanceId.length() > 256 || instanceId.indexOf('\0') >= 0
+            || fingerprint == null || !fingerprint.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid selected native database instance");
         final OperationResult<DeploymentManagedHelper.Identity> identity;
         try {
             identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
         } catch (ApiException unsent) {
             return new OperationResult<>(
-                    unsent.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                    Optional.empty(), Optional.of(unsent.problem()));
+                unsent.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                Optional.empty(), Optional.of(unsent.problem()));
         }
         if (identity.outcome() != Outcome.SUCCEEDED)
             return withoutValue(identity);
@@ -185,21 +194,21 @@ public final class DeploymentNativeDatabaseChannel {
         values.put("instanceId", instanceId);
         values.put("fingerprint", fingerprint);
         String targetDigest = DeploymentNativeDatabaseWire
-                .digest((engine + '\0' + instanceId + '\0' + fingerprint).getBytes(StandardCharsets.UTF_8));
+            .digest((engine + '\0' + instanceId + '\0' + fingerprint).getBytes(StandardCharsets.UTF_8));
         byte[] frame = DeploymentNativeDatabaseWire.frame(values);
         try {
             var journal = DeploymentNativeDatabaseJournal.begin(tasks, task, server,
-                    UUID.fromString(values.get("operationId")), "start", targetDigest,
-                    DeploymentNativeDatabaseWire.digest(frame), engine + ":" + instanceId);
+                UUID.fromString(values.get("operationId")), "start", targetDigest,
+                DeploymentNativeDatabaseWire.digest(frame), engine + ":" + instanceId);
             var dispatched = new java.util.concurrent.atomic.AtomicBoolean();
             var approvalReturned = new java.util.concurrent.atomic.AtomicBoolean();
             try {
                 var observed = wire.send("start", frame, journal.facts().requestDigest(), journal.facts().target(),
-                        () -> {
-                            approvalReturned.set(true);
-                            journal.dispatched();
-                            dispatched.set(true);
-                        });
+                    () -> {
+                        approvalReturned.set(true);
+                        journal.dispatched();
+                        dispatched.set(true);
+                    });
                 if (!dispatched.get()) {
                     journal.close();
                     return withoutValue(observed);
@@ -209,8 +218,8 @@ public final class DeploymentNativeDatabaseChannel {
                 if (!approvalReturned.get()) {
                     journal.close();
                     return new OperationResult<>(
-                            uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                            Optional.empty(), Optional.of(uncertain.problem()));
+                        uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        Optional.empty(), Optional.of(uncertain.problem()));
                 }
                 return unknown("DEPLOYMENT_NATIVE_DB_DISPATCH_UNCONFIRMED");
             }
@@ -230,15 +239,15 @@ public final class DeploymentNativeDatabaseChannel {
      * @return exact known non-secret result or retained uncertainty / 精确已知非秘密结果或保留未知
      * @throws ApiException if original persistence or admission fails / 原持久化或准入失败时 */
     public OperationResult<Map<String, String>> perform(TaskService tasks, DeploymentDatabasePlanJournal plan,
-            DeploymentDatabasePlanJournal.Entry entry, String action, Map<String, String> fields,
-            Map<String, byte[]> sensitive, String target) throws ApiException {
+                                                        DeploymentDatabasePlanJournal.Entry entry, String action, Map<String, String> fields,
+                                                        Map<String, byte[]> sensitive, String target) throws ApiException {
         if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action)
-                || !plan.facts().serverId().equals(server.id()) || !plan.facts().keys().contains(entry.key())
-                || fields.keySet().stream()
-                        .anyMatch(Set.of("operationId", "taskId", "serverId", "adminPassword", "applicationPassword",
-                                "sql")::contains)
-                || sensitive.keySet().stream()
-                        .anyMatch(key -> !Set.of("adminPassword", "applicationPassword", "sql").contains(key)))
+            || !plan.facts().serverId().equals(server.id()) || !plan.facts().keys().contains(entry.key())
+            || fields.keySet().stream()
+            .anyMatch(Set.of("operationId", "taskId", "serverId", "adminPassword", "applicationPassword",
+                "sql")::contains)
+            || sensitive.keySet().stream()
+            .anyMatch(key -> !Set.of("adminPassword", "applicationPassword", "sql").contains(key)))
             throw new IllegalArgumentException("Unplanned native database operation");
         var identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
         if (identity.outcome() != Outcome.SUCCEEDED)
@@ -257,7 +266,7 @@ public final class DeploymentNativeDatabaseChannel {
             var journal = previous.orElse(null);
             if (journal == null)
                 journal = DeploymentNativeDatabaseJournal.begin(tasks, task, server, key, operationId, action,
-                        targetDigest, requestDigest, target);
+                    targetDigest, requestDigest, target);
             else
                 journal.next(operationId, action, targetDigest, requestDigest, target);
             var current = journal;
@@ -287,8 +296,8 @@ public final class DeploymentNativeDatabaseChannel {
                 if (!approvalReturned.get()) {
                     current.close();
                     return new OperationResult<>(
-                            uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
-                            Optional.empty(), Optional.of(uncertain.problem()));
+                        uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        Optional.empty(), Optional.of(uncertain.problem()));
                 }
                 return empty(unknown("DEPLOYMENT_NATIVE_DB_DISPATCH_UNCONFIRMED"));
             }
@@ -335,7 +344,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @throws ApiException when the journal cannot be read or advanced / 检查点无法读取或推进时
      */
     private OperationResult<Void> confirmed(OperationResult<CommandResult> observed,
-            DeploymentNativeDatabaseJournal journal) throws ApiException {
+                                            DeploymentNativeDatabaseJournal journal) throws ApiException {
         return confirmed(observed, journal, false, Map.of());
     }
 
@@ -347,7 +356,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @return exact known result or unknown / 精确已知结果或未知
      * @throws ApiException if persistence fails / 持久化失败时 */
     private OperationResult<Void> confirmed(OperationResult<CommandResult> observed,
-            DeploymentNativeDatabaseJournal journal, boolean typed, Map<String, String> expected) throws ApiException {
+                                            DeploymentNativeDatabaseJournal journal, boolean typed, Map<String, String> expected) throws ApiException {
         if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
             return unknown("DEPLOYMENT_NATIVE_DB_RECEIPT_UNCONFIRMED");
         var command = observed.value().orElseThrow();
@@ -361,38 +370,38 @@ public final class DeploymentNativeDatabaseChannel {
         }
         var facts = journal.facts();
         if (!"1".equals(fields.get("receipt.formatVersion"))
-                || !facts.operationId().toString().equals(fields.get("receipt.operationId"))
-                || !task.id().toString().equals(fields.get("receipt.taskId"))
-                || !facts.serverId().equals(fields.get("receipt.serverId"))
-                || !facts.action().equals(fields.get("receipt.action"))
-                || !facts.targetDigest().equals(fields.get("receipt.targetDigest"))
-                || !facts.requestDigest().equals(fields.get("receipt.requestDigest")))
+            || !facts.operationId().toString().equals(fields.get("receipt.operationId"))
+            || !task.id().toString().equals(fields.get("receipt.taskId"))
+            || !facts.serverId().equals(fields.get("receipt.serverId"))
+            || !facts.action().equals(fields.get("receipt.action"))
+            || !facts.targetDigest().equals(fields.get("receipt.targetDigest"))
+            || !facts.requestDigest().equals(fields.get("receipt.requestDigest")))
             return unknown("DEPLOYMENT_NATIVE_DB_RECEIPT_CONFLICT");
         String phase = fields.get("receipt.phase");
         String boundary = fields.get("receipt.effectBoundary");
         if ("SUCCEEDED".equals(phase) && "CONFIRMED".equals(boundary) && "OK".equals(fields.get("status"))
-                && !fields.containsKey("receipt.failureCode")) {
+            && !fields.containsKey("receipt.failureCode")) {
             if (typed) {
                 try {
                     switch (facts.action()) {
                         case "install" -> {
                             if (!DeploymentNativeDatabaseResults.inventory(fields, "result.").engine().name()
-                                    .equals(expected.get("engine")))
+                                .equals(expected.get("engine")))
                                 throw new IllegalArgumentException("Native DB installation returned another engine");
                         }
                         case "start", "resume" -> {
                             var instance = DeploymentNativeDatabaseResults.instance(fields, "result.instance.");
                             if (!instance.engine().name().equals(expected.get("engine"))
-                                    || !instance.id().equals(expected.get("instanceId")))
+                                || !instance.id().equals(expected.get("instanceId")))
                                 throw new IllegalArgumentException("Native DB operation returned another instance");
                         }
                         case "prepare", "initialize" -> {
                             var targetResult = DeploymentNativeDatabaseResults.target(fields, "result.");
                             if (!targetResult.instance().engine().name().equals(expected.get("engine"))
-                                    || !targetResult.instance().id().equals(expected.get("instanceId"))
-                                    || !targetResult.applicationId().equals(expected.get("applicationId"))
-                                    || !targetResult.database().equals(expected.get("database"))
-                                    || !targetResult.username().equals(expected.get("username")))
+                                || !targetResult.instance().id().equals(expected.get("instanceId"))
+                                || !targetResult.applicationId().equals(expected.get("applicationId"))
+                                || !targetResult.database().equals(expected.get("database"))
+                                || !targetResult.username().equals(expected.get("username")))
                                 throw new IllegalArgumentException("Native DB operation returned another target");
                         }
                         default -> throw new IllegalArgumentException("Unexpected native database result action");
@@ -405,17 +414,17 @@ public final class DeploymentNativeDatabaseChannel {
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         }
         if ("FAILED".equals(phase) && ("NONE".equals(boundary) || "MAY_HAVE_RUN".equals(boundary))
-                && fields.get("receipt.failureCode") != null
-                && fields.get("receipt.failureCode").matches("[A-Z][A-Z0-9_]{0,63}")
-                && ("OK".equals(fields.get("status"))
-                        || fields.get("receipt.failureCode").equals(fields.get("status")))) {
+            && fields.get("receipt.failureCode") != null
+            && fields.get("receipt.failureCode").matches("[A-Z][A-Z0-9_]{0,63}")
+            && ("OK".equals(fields.get("status"))
+            || fields.get("receipt.failureCode").equals(fields.get("status")))) {
             journal.terminal(phase, boundary);
             return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_HELPER_FAILED",
-                            "Native database operation failed; inspect original server and target before retry",
-                            Map.of("serverId", facts.serverId(), "target", facts.target(), "failureCode",
-                                    fields.get("receipt.failureCode")),
-                            Optional.empty())));
+                Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_HELPER_FAILED",
+                    "Native database operation failed; inspect original server and target before retry",
+                    Map.of("serverId", facts.serverId(), "target", facts.target(), "failureCode",
+                        fields.get("receipt.failureCode")),
+                    Optional.empty())));
         }
         return unknown("DEPLOYMENT_NATIVE_DB_RECEIPT_UNCONFIRMED");
     }
@@ -434,6 +443,6 @@ public final class DeploymentNativeDatabaseChannel {
      */
     private static OperationResult<Void> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Original native database operation needs exact receipt review", Map.of(), Optional.empty())));
+            event, "Original native database operation needs exact receipt review", Map.of(), Optional.empty())));
     }
 }

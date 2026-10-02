@@ -25,8 +25,8 @@ public record ReviewedDeploymentPlan(ReviewedDeploymentRequest request, List<Dep
         request = Objects.requireNonNull(request, "request");
         steps = List.copyOf(Objects.requireNonNull(steps, "steps"));
         if (steps.isEmpty() || steps.getFirst() != DeploymentPlanAction.VERIFY_SOURCE_IDENTITY
-                || !steps.contains(DeploymentPlanAction.ROLLBACK_ON_FAILURE)
-                || !steps.contains(DeploymentPlanAction.CHECK_HEALTH)) {
+            || !steps.contains(DeploymentPlanAction.ROLLBACK_ON_FAILURE)
+            || !steps.contains(DeploymentPlanAction.CHECK_HEALTH)) {
             throw new IllegalArgumentException("deployment plans must bind source, check health, and retain rollback");
         }
         if (steps.stream().distinct().count() != steps.size()) {

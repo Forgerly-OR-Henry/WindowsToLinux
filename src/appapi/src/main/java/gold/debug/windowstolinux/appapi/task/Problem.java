@@ -13,7 +13,7 @@ import java.util.UUID;
  * @param diagnosticId optional identifier for retained diagnostics / 可选的已保存诊断标识
  */
 public record Problem(ProblemCode code, String eventCode, String message, Map<String, String> context,
-        Optional<UUID> diagnosticId) {
+                      Optional<UUID> diagnosticId) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param code stable public failure category / 稳定的公开失败类别

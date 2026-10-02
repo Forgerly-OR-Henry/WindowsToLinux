@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.task.ApiException;
 import gold.debug.windowstolinux.appapi.ui.*;
@@ -24,7 +24,7 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
     @ParameterizedTest
     @EnumSource(value = DeploymentProjectKind.class, names = {"GO_SERVICE", "NODE_SERVICE"})
     void actualClassOwnerPublishesPureRuntimePreviewWithoutOpeningBusinessOrAdmittingTasks(DeploymentProjectKind kind)
-            throws Exception {
+        throws Exception {
         enable();
         var views = new LinkedHashMap<ModPageRegistry.PageKey, JComponent>();
         var normal = new ModPageRegistry.PageHost() {
@@ -69,16 +69,16 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertEquals(Set.of(OWNER), report.running());
             assertEquals(Set.of("static-deployment", "agent-deployment", "applications"), pages.contributions().stream()
-                    .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
+                .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
             assertEquals(Set.of("runtime-preview-go_service", "runtime-preview-node_service"), pages.previews().stream()
-                    .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
+                .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
             assertTrue(views.isEmpty());
             var before = effectCounts(runtime);
             var key = new ModPageRegistry.PageKey(OWNER, "runtime-preview-" + kind.name().toLowerCase(Locale.ROOT));
             var context = runtime.modContexts().get(OWNER).context();
             assertThrows(ApiException.class, () -> context.ui().open(key.pageId()));
             assertThrows(ApiException.class,
-                    () -> pages.openPreview(new ModPageRegistry.PageKey(OWNER, "static-deployment")));
+                () -> pages.openPreview(new ModPageRegistry.PageKey(OWNER, "static-deployment")));
             pages.openPreview(key);
             pages.openPreview(key);
             var original = onEdt(() -> views.get(key));
@@ -101,7 +101,7 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
             pages.environment(new UiEnvironment(Locale.ENGLISH, "DARK", true));
             assertTrue(onEdt(views::isEmpty));
             assertEquals("PAGE_LOCKED",
-                    assertThrows(ApiException.class, () -> pages.openPreview(key)).problem().eventCode());
+                assertThrows(ApiException.class, () -> pages.openPreview(key)).problem().eventCode());
             pages.environment(initial);
             pages.openPreview(key);
             assertNotSame(original, onEdt(() -> views.get(key)), "Released preview reopens as a fresh author instance");
@@ -116,26 +116,26 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
     private Map<String, Long> effectCounts(PlatformRuntime runtime) throws Exception {
         var values = new LinkedHashMap<String, Long>();
         for (var table : List.of("platform_task", "platform_task_resource", "mod_operation", "server_profile",
-                "credential", "ai_model", "mod_server_reference", "mod_credential_reference"))
+            "credential", "ai_model", "mod_server_reference", "mod_credential_reference"))
             values.put("app." + table, scalar(runtime, "SELECT COUNT(*) FROM " + table));
         try (var access = scope(runtime, true); var connection = access.openConnection()) {
             var tables = new ArrayList<String>();
             try (var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT table_name FROM information_schema.tables WHERE table_schema=CURRENT_SCHEMA AND table_type='BASE TABLE' ORDER BY table_name")) {
+                 var rows = statement.executeQuery(
+                     "SELECT table_name FROM information_schema.tables WHERE table_schema=CURRENT_SCHEMA AND table_type='BASE TABLE' ORDER BY table_name")) {
                 while (rows.next())
                     tables.add(rows.getString(1));
             }
             assertEquals(Set.of("deployment_unit", "managed_application", "managed_application_component",
-                    "managed_application_dependency", "external_application", "deployment_unit_configuration_snapshot",
-                    "deployment_unit_configuration_entry", "deployment_unit_release_binding", "secret_revision",
-                    "deployment_unit_release_secret_reference", "deployment_agent_task", "deployment_agent_event",
-                    "deployment_project", "deployment_execution", "deployment_release", "deployment_handoff",
-                    "preference", "deployment_log", "deployment_management_operation"), Set.copyOf(tables));
+                "managed_application_dependency", "external_application", "deployment_unit_configuration_snapshot",
+                "deployment_unit_configuration_entry", "deployment_unit_release_binding", "secret_revision",
+                "deployment_unit_release_secret_reference", "deployment_agent_task", "deployment_agent_event",
+                "deployment_project", "deployment_execution", "deployment_release", "deployment_handoff",
+                "preference", "deployment_log", "deployment_management_operation"), Set.copyOf(tables));
             for (var table : tables) {
                 assertTrue(table.matches("[A-Za-z0-9_]+"));
                 try (var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM \"" + table + "\"")) {
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM \"" + table + "\"")) {
                     assertTrue(rows.next());
                     values.put("author." + table, rows.getLong(1));
                 }
@@ -146,25 +146,25 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
 
     private static void assertRuntimeFields(JComponent root, DeploymentProjectKind kind, Locale locale) {
         var values = descendants(root).filter(JTextField.class::isInstance).map(JTextField.class::cast)
-                .map(JTextField::getText).toList();
+            .map(JTextField::getText).toList();
         for (String expected : List.of(kind == DeploymentProjectKind.NODE_SERVICE ? "22" : "1.25", "8080", "TCP",
-                "https://example.invalid/preview", "APP_MODE=preview", "1800", "1024", "4096", "4194304", "4294967296"))
+            "https://example.invalid/preview", "APP_MODE=preview", "1800", "1024", "4096", "4194304", "4294967296"))
             assertTrue(values.contains(expected), "Missing actual ordinary runtime control value: " + expected);
         assertEquals(2, values.stream().filter("8080"::equals).count());
         var catalog = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", locale);
         assertTrue(descendants(root).filter(JLabel.class::isInstance).map(JLabel.class::cast).anyMatch(
-                label -> (catalog.getString("application") + ": preview-application").equals(label.getText())));
+            label -> (catalog.getString("application") + ": preview-application").equals(label.getText())));
         assertTrue(descendants(root).filter(JButton.class::isInstance).map(JButton.class::cast)
-                .anyMatch(button -> catalog.getString("addFile").equals(button.getText())));
+            .anyMatch(button -> catalog.getString("addFile").equals(button.getText())));
         assertTrue(descendants(root).filter(JCheckBox.class::isInstance).map(JCheckBox.class::cast)
-                .noneMatch(JCheckBox::isSelected));
+            .noneMatch(JCheckBox::isSelected));
     }
 
     private static Stream<Component> descendants(Component root) {
         return Stream.concat(Stream.of(root),
-                root instanceof Container container
-                        ? Arrays.stream(container.getComponents()).flatMap(DeploymentRuntimePreviewTest::descendants)
-                        : Stream.empty());
+            root instanceof Container container
+                ? Arrays.stream(container.getComponents()).flatMap(DeploymentRuntimePreviewTest::descendants)
+                : Stream.empty());
     }
 
     private static <T> T onEdt(Callable<T> action) throws Exception {

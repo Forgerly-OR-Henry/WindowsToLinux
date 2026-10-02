@@ -26,11 +26,11 @@ public final class DeploymentProtocolBootstrapJournal {
 
     /** Strict bounded JSON codec. / 严格有界 JSON 编解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Exact persisted fields. / 精确持久字段。 */
     private static final Set<String> FIELDS = Set.of("formatVersion", "taskId", "serverId", "operationId",
-            "serverDigest", "bodyDigest", "requestDigest", "helperDigest", "phase");
+        "serverDigest", "bodyDigest", "requestDigest", "helperDigest", "phase");
 
     /** Original checkpoint. / 原检查点。 */
     private final TaskCheckpoint checkpoint;
@@ -47,7 +47,7 @@ public final class DeploymentProtocolBootstrapJournal {
      * @param helperDigest expected managed helper digest / 预期受管 helper 摘要
      * @param phase original installation phase / 原安装阶段 */
     public record Facts(String serverId, UUID operationId, String serverDigest, String bodyDigest, String requestDigest,
-            String helperDigest, String phase) {
+                        String helperDigest, String phase) {
         /** Validates the complete original identity. / 校验完整原身份。
          * @param serverId exact admitted server / 精确已准入服务器
          * @param operationId original installation UUID / 原安装 UUID
@@ -58,10 +58,10 @@ public final class DeploymentProtocolBootstrapJournal {
          * @param phase original phase / 原阶段 */
         public Facts {
             if (serverId == null || serverId.isBlank() || serverId.length() > 512
-                    || serverId.chars().anyMatch(value -> value < 32) || operationId == null || !digest(serverDigest)
-                    || !digest(bodyDigest) || !digest(requestDigest)
-                    || !DeploymentManagedHelperBundle.EXPECTED_SHA256.equals(helperDigest)
-                    || !Set.of("INTENT", "DISPATCHED", "SUCCEEDED", "FAILED").contains(phase))
+                || serverId.chars().anyMatch(value -> value < 32) || operationId == null || !digest(serverDigest)
+                || !digest(bodyDigest) || !digest(requestDigest)
+                || !DeploymentManagedHelperBundle.EXPECTED_SHA256.equals(helperDigest)
+                || !Set.of("INTENT", "DISPATCHED", "SUCCEEDED", "FAILED").contains(phase))
                 throw new IllegalArgumentException("Invalid original helper installation identity");
         }
     }
@@ -85,11 +85,11 @@ public final class DeploymentProtocolBootstrapJournal {
      * @return original installation journal / 原安装日志
      * @throws ApiException if persistence fails / 持久化失败时 */
     public static DeploymentProtocolBootstrapJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            UUID operationId, String serverDigest, String bodyDigest, String requestDigest) throws ApiException {
+                                                           UUID operationId, String serverDigest, String bodyDigest, String requestDigest) throws ApiException {
         var facts = new Facts(server.id(), operationId, serverDigest, bodyDigest, requestDigest,
-                DeploymentManagedHelperBundle.EXPECTED_SHA256, "INTENT");
+            DeploymentManagedHelperBundle.EXPECTED_SHA256, "INTENT");
         return new DeploymentProtocolBootstrapJournal(tasks.beginCheckpoint(task, KEY, encode(task.id(), facts)),
-                task.id());
+            task.id());
     }
 
     /** Finds only the original task's retained installation evidence. / 仅读取原任务留存的安装依据。
@@ -98,7 +98,7 @@ public final class DeploymentProtocolBootstrapJournal {
      * @return retained journal or absence / 留存日志或不存在
      * @throws ApiException if the original row cannot be read / 原行无法读取时 */
     public static Optional<DeploymentProtocolBootstrapJournal> find(TaskService tasks, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var found = tasks.findCheckpoint(task, KEY);
         if (found.isEmpty())
             return Optional.empty();
@@ -147,7 +147,7 @@ public final class DeploymentProtocolBootstrapJournal {
         if (!expected.equals(facts.phase()))
             throw new IllegalArgumentException("Original helper installation phase differs");
         checkpoint.advance(before, encode(taskId, new Facts(facts.serverId(), facts.operationId(), facts.serverDigest(),
-                facts.bodyDigest(), facts.requestDigest(), facts.helperDigest(), next)));
+            facts.bodyDigest(), facts.requestDigest(), facts.helperDigest(), next)));
     }
 
     /** Encodes bounded original facts. / 编码有界原事实。
@@ -183,18 +183,18 @@ public final class DeploymentProtocolBootstrapJournal {
         try {
             var node = JSON.readTree(payload);
             if (node == null || !node.isObject() || node.size() != FIELDS.size()
-                    || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
-                    || node.path("formatVersion").asInt() != 1
-                    || !taskId.toString().equals(node.path("taskId").textValue()))
+                || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
+                || node.path("formatVersion").asInt() != 1
+                || !taskId.toString().equals(node.path("taskId").textValue()))
                 throw new IllegalArgumentException("Invalid original helper installation checkpoint");
             var names = new java.util.HashSet<String>();
             node.fieldNames().forEachRemaining(names::add);
             if (!names.equals(FIELDS))
                 throw new IllegalArgumentException("Unknown original helper installation checkpoint field");
             return new Facts(node.path("serverId").textValue(), UUID.fromString(node.path("operationId").textValue()),
-                    node.path("serverDigest").textValue(), node.path("bodyDigest").textValue(),
-                    node.path("requestDigest").textValue(), node.path("helperDigest").textValue(),
-                    node.path("phase").textValue());
+                node.path("serverDigest").textValue(), node.path("bodyDigest").textValue(),
+                node.path("requestDigest").textValue(), node.path("helperDigest").textValue(),
+                node.path("phase").textValue());
         } catch (IOException | NullPointerException invalid) {
             throw new IllegalArgumentException("Invalid original helper installation checkpoint", invalid);
         }

@@ -24,8 +24,8 @@ public record TransferProgress(UUID transferId, Stage stage, long completedBytes
      * @return optional stage fraction / 可选阶段比例 */
     public Optional<Double> fraction() {
         return totalBytes < 0
-                ? Optional.empty()
-                : Optional.of(totalBytes == 0 ? 1.0 : (double) completedBytes / totalBytes);
+            ? Optional.empty()
+            : Optional.of(totalBytes == 0 ? 1.0 : (double) completedBytes / totalBytes);
     }
 
     /** Distinguishes actual copying from the separate verification work. / 区分实际复制及独立核验工作。 */

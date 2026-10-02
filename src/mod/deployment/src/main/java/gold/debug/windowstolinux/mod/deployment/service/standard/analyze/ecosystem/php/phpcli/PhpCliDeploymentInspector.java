@@ -45,7 +45,7 @@ public final class PhpCliDeploymentInspector {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         List<String> missing = new ArrayList<>();
         List<String> conflicts = new ArrayList<>();
         String metadata = ServiceMetadataInspector.readIfPresent(root.resolve(METADATA));
@@ -64,26 +64,26 @@ public final class PhpCliDeploymentInspector {
         }
         String entrypoint = relative(values.get("entrypoint"));
         if (!("source".equals(documentRoot) && entrypoint != null && entrypoint.endsWith(".php"))
-                && !"public/index.php".equals(entrypoint)) {
+            && !"public/index.php".equals(entrypoint)) {
             entrypoint = null;
             missing.add("entrypoint=public/index.php");
         }
         if (entrypoint != null && !ServiceMetadataInspector.present(root, entrypoint))
             missing.add(entrypoint);
         boolean anyPhp = source.relativeFiles().stream()
-                .anyMatch(path -> path.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".php"));
+            .anyMatch(path -> path.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".php"));
         if (!anyPhp)
             missing.add("PHP source files");
         if (source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).anyMatch(
-                path -> path.equals("composer.json") || path.equals("composer.lock") || path.startsWith("vendor/"))) {
+            path -> path.equals("composer.json") || path.equals("composer.lock") || path.startsWith("vendor/"))) {
             conflicts.add("php-composer-dependency");
         }
         PhpCliFacts facts = new PhpCliFacts(version, documentRoot, entrypoint,
-                java.util.stream.Stream.concat(missing.stream(), conflicts.stream()).toList());
+            java.util.stream.Stream.concat(missing.stream(), conflicts.stream()).toList());
         ServiceProjectFacts shape = new ServiceProjectFacts(METADATA, facts.version(), facts.documentRoot(),
-                facts.entrypoint(), facts.missingItems());
+            facts.entrypoint(), facts.missingItems());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root),
-                DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI, languageFacts, shape, true);
+            DeploymentProjectKind.PHP_SERVICE, DeploymentBuildToolType.PHP_CLI, languageFacts, shape, true);
     }
 
     /**
@@ -99,7 +99,7 @@ public final class PhpCliDeploymentInspector {
         Matcher matcher = PROPERTY.matcher(text);
         while (matcher.find()) {
             if (!List.of("phpVersion", "documentRoot", "entrypoint").contains(matcher.group(1))
-                    || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
+                || result.putIfAbsent(matcher.group(1), matcher.group(2).trim()) != null) {
                 conflicts.add("php-metadata-property:" + matcher.group(1));
             }
         }
@@ -118,6 +118,6 @@ public final class PhpCliDeploymentInspector {
             return null;
         value = value.replace('\\', '/');
         return value.matches("[A-Za-z0-9._/-]{1,255}") && !value.startsWith("/") && !value.contains("..")
-                && !value.contains("//") ? value : null;
+            && !value.contains("//") ? value : null;
     }
 }

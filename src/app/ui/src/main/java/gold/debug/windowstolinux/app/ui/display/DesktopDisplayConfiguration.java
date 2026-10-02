@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.ui.display;
 import java.util.Locale;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 
 /**
  * Persistable display preferences selected in the desktop settings page.
@@ -60,13 +60,13 @@ public record DesktopDisplayConfiguration(String localeTag, ThemeMode themeMode)
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static DesktopDisplayConfiguration fromStoredValues(String storedLocaleTag, String storedThemeMode,
-            Locale systemLocale) {
+                                                               Locale systemLocale) {
         Objects.requireNonNull(systemLocale, "systemLocale");
         if (storedLocaleTag != null && !java.util.Set.of("zh-CN", "en-US", "en").contains(storedLocaleTag))
             throw new IllegalArgumentException("invalid ui_locale preference");
         String localeTag = storedLocaleTag == null
-                ? MessageCatalog.defaultLanguageTag(systemLocale)
-                : MessageCatalog.normalizeLanguageTag(storedLocaleTag);
+            ? MessageCatalog.defaultLanguageTag(systemLocale)
+            : MessageCatalog.normalizeLanguageTag(storedLocaleTag);
         return new DesktopDisplayConfiguration(localeTag, ThemeMode.fromStoredValue(storedThemeMode));
     }
 }

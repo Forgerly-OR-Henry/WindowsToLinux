@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.Graphics2D;
@@ -18,13 +24,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.task.TaskState;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
@@ -52,16 +58,16 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             try {
                 SwingUtilities
-                        .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", true)));
+                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", true)));
                 assertFalse(SwingUtilities.isEventDispatchThread());
                 for (RuntimeException original : List.of(new IllegalArgumentException("invalid reviewed input"),
-                        new java.util.concurrent.CancellationException("original review cancelled"))) {
+                    new java.util.concurrent.CancellationException("original review cancelled"))) {
                     assertSame(original, assertThrows(original.getClass(), () -> page.onEdt(() -> {
                         throw original;
                     })));
@@ -77,7 +83,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     Thread.sleep(10);
                 assertEquals(0, runtime.security().securityState().activeTasks());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             } finally {
                 SwingUtilities.invokeAndWait(page::close);
             }
@@ -94,49 +100,49 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var actual = runtime.modContexts().get(OWNER).context();
             var remoteCalls = new java.util.concurrent.atomic.AtomicInteger();
             var linux = Proxy.newProxyInstance(getClass().getClassLoader(),
-                    new Class<?>[]{gold.debug.windowstolinux.appapi.linux.LinuxService.class},
-                    (proxy, method, args) -> {
-                        remoteCalls.incrementAndGet();
-                        throw new AssertionError("Modal review cannot perform SSH effects");
-                    });
+                new Class<?>[]{gold.debug.windowstolinux.appapi.linux.LinuxService.class},
+                (proxy, method, args) -> {
+                    remoteCalls.incrementAndGet();
+                    throw new AssertionError("Modal review cannot perform SSH effects");
+                });
             var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        try {
-                            return method.invoke(actual, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    try {
+                        return method.invoke(actual, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var originalTask = new AtomicReference<UUID>();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             SwingUtilities
-                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+                .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var server = new gold.debug.windowstolinux.appapi.server.ServerRef("native-modal-server");
             var previous = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "15.6", 5432,
-                    "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), false);
+                "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), false);
             var installed = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "16.6", 5432,
-                    "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), true);
+                "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), true);
             var candidate = new Candidate("postgresql-16", "16.6-1", "16.6");
             var database = new gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement(
-                    "main", DeploymentDatabaseEngineType.POSTGRESQL, ">=16", "sampledb", "sampleuser", "DB",
-                    "DB_PASSWORD", List.of(), false, "fixture");
+                "main", DeploymentDatabaseEngineType.POSTGRESQL, ">=16", "sampledb", "sampleuser", "DB",
+                "DB_PASSWORD", List.of(), false, "fixture");
             var handle = context.tasks().submit(new TaskRequest("native-modal-test", "Native review", List.of(), true),
-                    task -> {
-                        assertTrue(originalTask.compareAndSet(null, task.id()));
-                        var reviewer = new DeploymentStaticPageReviewer(page, page.viewGeneration());
-                        for (var result : List.of(reviewer.install(server, database, candidate, task),
-                                reviewer.replacement(server, previous, candidate, task),
-                                reviewer.restored(server, installed, task)))
-                            if (result.outcome() != Outcome.SUCCEEDED)
-                                return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                task -> {
+                    assertTrue(originalTask.compareAndSet(null, task.id()));
+                    var reviewer = new DeploymentStaticPageReviewer(page, page.viewGeneration());
+                    for (var result : List.of(reviewer.install(server, database, candidate, task),
+                        reviewer.replacement(server, previous, candidate, task),
+                        reviewer.restored(server, installed, task)))
+                        if (result.outcome() != Outcome.SUCCEEDED)
+                            return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             var install = awaitDialog("安装数据库软件包");
             captureDialog(install, "native-install");
             acceptDialog(install);
@@ -146,14 +152,14 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var checks = new AtomicReference<List<JCheckBox>>();
             SwingUtilities.invokeAndWait(() -> {
                 panel.set(assertInstanceOf(JPanel.class,
-                        assertInstanceOf(JScrollPane.class, findOptionPane(replacement).getMessage()).getViewport()
-                                .getView()));
+                    assertInstanceOf(JScrollPane.class, findOptionPane(replacement).getMessage()).getViewport()
+                        .getView()));
                 checks.set(Arrays.stream(panel.get().getComponents()).filter(JCheckBox.class::isInstance)
-                        .map(JCheckBox.class::cast).toList());
+                    .map(JCheckBox.class::cast).toList());
                 assertEquals(
-                        List.of("database.replacement.backup", "database.replacement.downtime",
-                                "database.replacement.software"),
-                        checks.get().stream().map(JCheckBox::getName).toList());
+                    List.of("database.replacement.backup", "database.replacement.downtime",
+                        "database.replacement.software"),
+                    checks.get().stream().map(JCheckBox::getName).toList());
                 checks.get().forEach(check -> assertFalse(check.isSelected()));
             });
             var current = replacement;
@@ -171,7 +177,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 var repeated = current;
                 SwingUtilities.invokeAndWait(() -> {
                     assertSame(panel.get(), assertInstanceOf(JScrollPane.class, findOptionPane(repeated).getMessage())
-                            .getViewport().getView());
+                        .getViewport().getView());
                     for (int index = 0; index < checks.get().size(); index++)
                         assertSame(checks.get().get(index), panel.get().getComponent(index + 4));
                     checks.get().get(accepted).setSelected(true);
@@ -182,7 +188,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             captureDialog(restoration, "native-restoration");
             acceptDialog(restoration);
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(handle.id(), originalTask.get());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(0, remoteCalls.get());
@@ -199,48 +205,48 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers()
-                    .saveServerProfile(ServerProfile.fromStored(
-                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
-                            "fixture-password".toCharArray());
+                .saveServerProfile(ServerProfile.fromStored(
+                        new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
             var real = runtime.modContexts().get(OWNER).context();
             var entered = new CountDownLatch(1);
             var release = new CountDownLatch(1);
             var cancelled = new AtomicBoolean();
             var intercepted = (SecretService) Proxy.newProxyInstance(getClass().getClassLoader(),
-                    new Class<?>[]{SecretService.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("create")) {
-                            entered.countDown();
-                            assertTrue(release.await(20, TimeUnit.SECONDS));
-                            cancelled.set(((TaskContext) args[2]).cancellation().requested());
-                        }
-                        try {
-                            return method.invoke(real.secrets(), args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{SecretService.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("create")) {
+                        entered.countDown();
+                        assertTrue(release.await(20, TimeUnit.SECONDS));
+                        cancelled.set(((TaskContext) args[2]).cancelToken().requested());
+                    }
+                    try {
+                        return method.invoke(real.secrets(), args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var bound = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("secrets"))
-                            return intercepted;
-                        try {
-                            return method.invoke(real, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("secrets"))
+                        return intercepted;
+                    try {
+                        return method.invoke(real, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(bound,
-                            new DeploymentStaticWorkflow(bound,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            bound))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(bound,
+                    new DeploymentStaticWorkflow(bound,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            bound))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
-                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+                () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
             awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
-            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
+            var secretPanel = (JPanel) namedControl(advancedControls(mounted.get()), "deployment.secrets");
             SwingUtilities.invokeAndWait(() -> {
-                ((JTextField) secretPanel.getComponent(3)).setText("confirmed-secret");
+                ((JTextField) namedControl(secretPanel, "deployment.secret.identifier")).setText("confirmed-secret");
                 findButton(secretPanel, "创建受保护修订").doClick();
             });
             var dialog = awaitDialog("创建受保护的应用秘密");
@@ -257,7 +263,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 release.countDown();
             }
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertFalse(cancelled.get(), "Confirmed original secret creation must outlive the view");
             awaitServerTasks(real);
         }
@@ -273,22 +279,22 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers()
-                    .saveServerProfile(ServerProfile.fromStored(
-                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
-                            "fixture-password".toCharArray());
+                .saveServerProfile(ServerProfile.fromStored(
+                        new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
-                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+                () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
             awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
-            var secretPanel = (JPanel) ((JPanel) mounted.get().getComponent(0)).getComponent(2);
+            var secretPanel = (JPanel) namedControl(advancedControls(mounted.get()), "deployment.secrets");
             SwingUtilities.invokeAndWait(() -> {
-                ((JTextField) secretPanel.getComponent(3)).setText("cancelled-secret");
+                ((JTextField) namedControl(secretPanel, "deployment.secret.identifier")).setText("cancelled-secret");
                 findButton(secretPanel, "创建受保护修订").doClick();
             });
             var dialog = awaitDialog("创建受保护的应用秘密");
@@ -301,15 +307,15 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             });
             assertFalse(dialog.isVisible());
             assertEquals(Outcome.CANCELLED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var read = context.tasks().submit(
-                    new TaskRequest("cancelled-secret-read", "Check absent revision", List.of(), true), task -> {
-                        assertTrue(new DeploymentSecretRepository(context.db())
-                                .findRevision(task, new DeploymentSecretReference("cancelled-secret", 1)).isEmpty());
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                new TaskRequest("cancelled-secret-read", "Check absent revision", List.of(), true), task -> {
+                    assertTrue(new DeploymentSecretRepository(context.db())
+                        .findRevision(task, new DeploymentSecretReference("cancelled-secret", 1)).isEmpty());
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             assertEquals(Outcome.SUCCEEDED,
-                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             if (lock)
                 SwingUtilities.invokeAndWait(page::close);
             awaitServerTasks(context);
@@ -333,7 +339,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 Thread.currentThread().interrupt();
             }
         });
-        var capture = DeploymentStaticSecretControls.class.getDeclaredMethod("capturePassword", JPasswordField.class);
+        var capture = DeploymentStaticPasswordInput.class.getDeclaredMethod("capture", JPasswordField.class);
         capture.setAccessible(true);
         var worker = Thread.ofVirtual().start(() -> {
             try {
@@ -366,26 +372,29 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers()
-                    .saveServerProfile(ServerProfile.fromStored(
-                            new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
-                            "fixture-password".toCharArray());
+                .saveServerProfile(ServerProfile.fromStored(
+                        new StoredServerProfile("secret-server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
-                    () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+                () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
             awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
+            var controls = advancedControls(mounted.get());
             SwingUtilities.invokeAndWait(() -> {
-                var identifier = inputAfterLabel(mounted.get(), page.text("secretIdentifier"));
-                var revision = inputAfterLabel(mounted.get(), page.text("secretRevision"));
-                var create = findButton(mounted.get(), page.text("secretCreate"));
+                var identifier = inputAfterLabel(controls, page.text("secretIdentifier"));
+                var revision = inputAfterLabel(controls, page.text("secretRevision"));
+                var create = findButton(controls, page.text("secretCreate"));
                 assertNotNull(create);
-                assertSame(identifier.getParent(), revision.getParent());
-                assertSame(identifier.getParent(), create.getParent());
+                var secrets = namedControl(controls, "deployment.secrets");
+                assertTrue(SwingUtilities.isDescendingFrom(identifier, secrets));
+                assertTrue(SwingUtilities.isDescendingFrom(revision, secrets));
+                assertTrue(SwingUtilities.isDescendingFrom(create, secrets));
                 identifier.setText("page-secret");
                 revision.setText("1");
                 render(mounted.get(), "secret-page");
@@ -407,22 +416,22 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var reference = new DeploymentSecretReference("page-secret", 1);
             awaitSecretChoice(page, reference);
             var read = context.tasks().submit(
-                    new TaskRequest("page-secret-read", "Read saved revision", List.of("secret-server"), false),
-                    task -> {
-                        var stored = new DeploymentSecretRepository(context.db()).findRevision(task, reference)
-                                .orElseThrow();
-                        assertEquals("deployment-application", stored.purpose().orElseThrow());
-                        var expected = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5,
-                                (byte) 0xbd, 0x21};
-                        boolean matched = context.secrets().use(
-                                new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
-                                stored.purpose().orElseThrow(), task, actual -> Arrays.equals(expected, actual));
-                        Arrays.fill(expected, (byte) 0);
-                        assertTrue(matched);
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                new TaskRequest("page-secret-read", "Read saved revision", List.of("secret-server"), false),
+                task -> {
+                    var stored = new DeploymentSecretRepository(context.db()).findRevision(task, reference)
+                        .orElseThrow();
+                    assertEquals("deployment-application", stored.purpose().orElseThrow());
+                    var expected = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5,
+                        (byte) 0xbd, 0x21};
+                    boolean matched = context.secrets().use(
+                        new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
+                        stored.purpose().orElseThrow(), task, actual -> Arrays.equals(expected, actual));
+                    Arrays.fill(expected, (byte) 0);
+                    assertTrue(matched);
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             assertEquals(Outcome.SUCCEEDED,
-                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             SwingUtilities.invokeAndWait(() -> {
                 var choice = new DeploymentSecretReferenceField(page::text, "", page.secretChoices());
                 findButton(choice, "使用所选修订").doClick();
@@ -433,21 +442,21 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 var review = new JPanel(new java.awt.BorderLayout());
                 review.add(reviewRow, java.awt.BorderLayout.NORTH);
                 render(new JOptionPane(review, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION),
-                        "secret-review");
+                    "secret-review");
                 assertEquals(0, password.getPassword().length, "The Swing password control must be cleared");
                 page.close();
             });
             var reopened = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             var reopenedView = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(() -> reopenedView
-                    .set(reopened.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
+                .set(reopened.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
             awaitSecretChoice(reopened, reference);
             assertEquals("deployment-application", reopened.secretChoices().stream()
-                    .filter(item -> item.reference().equals(reference)).findFirst().orElseThrow().purpose());
+                .filter(item -> item.reference().equals(reference)).findFirst().orElseThrow().purpose());
             SwingUtilities.invokeAndWait(() -> render(reopenedView.get(), "secret-page-saved"));
             SwingUtilities.invokeAndWait(reopened::close);
             awaitServerTasks(context);
@@ -461,9 +470,9 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             runtime.servers()
-                    .saveServerProfile(ServerProfile.fromStored(
-                            new StoredServerProfile("visual-server", "127.0.0.1", 22, "root", "fixture-password")),
-                            "fixture-password".toCharArray());
+                .saveServerProfile(ServerProfile.fromStored(
+                        new StoredServerProfile("visual-server", "127.0.0.1", 22, "root", "fixture-password")),
+                    "fixture-password".toCharArray());
             var mounted = new AtomicReference<JComponent>();
             var pages = new ModPageRegistry(new ModPageRegistry.PageHost() {
                 public void show(ModPageRegistry.PageKey key, PageSpec spec, JComponent component) {
@@ -483,8 +492,10 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var report = runtime.startDevelopmentMods(workspace(), pages);
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             var key = new ModPageRegistry.PageKey(OWNER, "static-deployment");
-            assertEquals(List.of(key),
-                    pages.contributions().stream().map(ModPageRegistry.PageContribution::key).toList());
+            assertEquals(
+                List.of(key, new ModPageRegistry.PageKey(OWNER, "agent-deployment"),
+                    new ModPageRegistry.PageKey(OWNER, "applications")),
+                pages.contributions().stream().map(ModPageRegistry.PageContribution::key).toList());
             assertNull(mounted.get(), "Registration must remain lazy");
             pages.openView(key);
             var first = mounted.get();
@@ -493,18 +504,17 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             assertNotNull(start);
             awaitEnabled(start);
             SwingUtilities.invokeAndWait(() -> render(first, "page"));
-            var sourceControls = (JPanel) first.getComponent(0);
-            var mainControls = (JPanel) sourceControls.getComponent(0);
-            var mode = (JComboBox<?>) mainControls.getComponent(5);
-            var gitPanel = (JPanel) sourceControls.getComponent(1);
-            var secretPanel = (JPanel) sourceControls.getComponent(2);
-            var url = (JTextField) gitPanel.getComponent(1);
-            var name = (JTextField) mainControls.getComponent(3);
-            var nativeGit = (JTextField) gitPanel.getComponent(7);
-            var status = (JTextArea) ((JScrollPane) first.getComponent(1)).getViewport().getView();
+            var advanced = advancedControls(first);
+            var mode = (JComboBox<?>) namedControl(first, "deployment.sourceMode");
+            var gitPanel = (JPanel) namedControl(advanced, "deployment.git");
+            var secretPanel = (JPanel) namedControl(advanced, "deployment.secrets");
+            var url = (JTextField) namedControl(advanced, "deployment.git.url");
+            var name = (JTextField) namedControl(first, "deployment.sourceName");
+            var nativeGit = (JTextField) namedControl(advanced, "deployment.git.executable");
+            var status = (JTextArea) namedControl(first, "deployment.status");
             SwingUtilities.invokeAndWait(() -> {
                 assertFalse(gitPanel.isVisible());
-                ((JTextField) secretPanel.getComponent(3)).setText("INVALID-UPPER");
+                ((JTextField) namedControl(secretPanel, "deployment.secret.identifier")).setText("INVALID-UPPER");
                 findButton(secretPanel, "创建受保护修订").doClick();
                 assertNotNull(findLabel(secretPanel, "请输入小写标识和正修订号。"));
                 mode.setSelectedIndex(1);
@@ -550,12 +560,12 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             SwingUtilities
-                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+                .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var defaults = new LinkedHashMap<String, String>();
             defaults.put("healthMode", "TCP");
             defaults.put("configuration", "RUNTIME:PORT=8080");
@@ -564,16 +574,16 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             defaults.put("databaseDetails", "");
             var fields = new DeploymentStaticRuntimeResolver().corrections("service", defaults);
             var prompt = new DeploymentStaticWorkflow.Prompt("service", "service", DeploymentProjectKind.GO_SERVICE,
-                    defaults, fields);
+                defaults, fields);
             var formClass = Class.forName(DeploymentStaticPageReviewer.class.getName() + "$ComponentForm");
             var constructor = formClass.getDeclaredConstructor(DeploymentStaticPage.class,
-                    DeploymentStaticWorkflow.Prompt.class);
+                DeploymentStaticWorkflow.Prompt.class);
             constructor.setAccessible(true);
             var panelMethod = formClass.getDeclaredMethod("panel");
             panelMethod.setAccessible(true);
             var confirmation = DeploymentStaticPageReviewer.class.getDeclaredMethod("confirmation",
-                    DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.ServerRef.class, String.class,
-                    Map.class, Map.class, Map.class, Optional.class);
+                DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.ServerRef.class, String.class,
+                Map.class, Map.class, Map.class, Optional.class);
             confirmation.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
                 try {
@@ -583,20 +593,21 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     assertNotNull(findLabel(panel, "已存在的秘密修订"));
                     assertNotNull(findLabel(panel, "数据库绑定方式"));
                     render(new JOptionPane(new JScrollPane(panel), JOptionPane.QUESTION_MESSAGE,
-                            JOptionPane.OK_CANCEL_OPTION), "runtime-review");
+                        JOptionPane.OK_CANCEL_OPTION), "runtime-review");
                     var gitReview = new DeploymentStaticWorkflow.GitReview("https://example.invalid/repository.git",
-                            "DEFAULT:HEAD", "a".repeat(40));
+                        "DEFAULT:HEAD", "a".repeat(40));
                     var finalPanel = (JPanel) confirmation.invoke(null, page,
-                            new gold.debug.windowstolinux.appapi.server.ServerRef("visual-server"), "b".repeat(64),
-                            Map.of("service", "c".repeat(64)), Map.of(), Map.of(), Optional.of(gitReview));
+                        new gold.debug.windowstolinux.appapi.server.ServerRef("visual-server"), "b".repeat(64),
+                        Map.of("service", "c".repeat(64)), Map.of(), Map.of(), Optional.of(gitReview));
                     assertNotNull(findLabel(finalPanel, "确认后将在部署前保存本次经审阅的来源项目记录。"));
                     render(new JOptionPane(new JScrollPane(finalPanel), JOptionPane.QUESTION_MESSAGE,
-                            JOptionPane.OK_CANCEL_OPTION), "git-confirm");
+                        JOptionPane.OK_CANCEL_OPTION), "git-confirm");
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }
             });
             SwingUtilities.invokeAndWait(page::close);
+            awaitServerTasks(context);
         }
     }
 
@@ -607,8 +618,8 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         Path source = root.resolve("sqlite-source");
         Files.createDirectories(source);
         Files.writeString(source.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/custom.db\n"
-                        + "db.main.pathEnvironment=APP_DB_PATH\ndb.main.initialize=schema-a.sql,missing.sql\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/custom.db\n"
+                + "db.main.pathEnvironment=APP_DB_PATH\ndb.main.initialize=schema-a.sql,missing.sql\n");
         Files.writeString(source.resolve("schema-a.sql"), "CREATE TABLE a(id integer);");
         Files.writeString(source.resolve("schema-b.sql"), "CREATE TABLE b(id integer);");
         var assessment = new DatabaseProjectInspector().inspect(source);
@@ -617,39 +628,39 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             SwingUtilities
-                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+                .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var target = new gold.debug.windowstolinux.appapi.server.ServerRef("sqlite-server");
             var result = new AtomicReference<Map<String, String>>();
             var handle = context.tasks().submit(new TaskRequest("sqlite-modal-test", "SQLite review", List.of(), true),
-                    task -> {
-                        var reviewer = new DeploymentStaticPageReviewer(page, 0);
-                        var input = reviewer.databaseInputs(target, "api", "a".repeat(64), source, "sqlite-app",
-                                assessment, task);
-                        if (input.outcome() != Outcome.SUCCEEDED)
-                            return new OperationResult<Void>(input.outcome(), Optional.empty(), input.problem());
-                        result.set(input.value().orElseThrow());
-                        var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment,
-                                result.get());
-                        var first = reviewer.confirmSqliteInitialization(target, "api", "a".repeat(64), completed,
-                                task);
-                        if (first.outcome() != Outcome.SUCCEEDED)
-                            return new OperationResult<Void>(first.outcome(), Optional.empty(), first.problem());
-                        var prepared = DeploymentSqlitePreparation.prepare(source, "sqlite-app", completed, true, task);
-                        var answers = new DeploymentStaticWorkflow.Answers(
-                                Map.of("databaseMode", "NONE", "databaseDetails", ""), List.of(),
-                                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits
-                                        .defaultNonRoot(),
-                                false, true);
-                        var finalReview = reviewer.confirm(target, "a".repeat(64), Map.of("api", "b".repeat(64)),
-                                Map.of("api", answers), Map.of("api", prepared), Optional.empty(), task);
-                        return new OperationResult<Void>(finalReview.outcome(), Optional.empty(),
-                                finalReview.problem());
-                    });
+                task -> {
+                    var reviewer = new DeploymentStaticPageReviewer(page, 0);
+                    var input = reviewer.databaseInputs(target, "api", "a".repeat(64), source, "sqlite-app",
+                        assessment, task);
+                    if (input.outcome() != Outcome.SUCCEEDED)
+                        return new OperationResult<Void>(input.outcome(), Optional.empty(), input.problem());
+                    result.set(input.value().orElseThrow());
+                    var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment,
+                        result.get());
+                    var first = reviewer.confirmSqliteInitialization(target, "api", "a".repeat(64), completed,
+                        task);
+                    if (first.outcome() != Outcome.SUCCEEDED)
+                        return new OperationResult<Void>(first.outcome(), Optional.empty(), first.problem());
+                    var prepared = DeploymentSqlitePreparation.prepare(source, "sqlite-app", completed, true, task);
+                    var answers = new DeploymentStaticWorkflow.Answers(
+                        Map.of("databaseMode", "NONE", "databaseDetails", ""), List.of(),
+                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits
+                            .defaultNonRoot(),
+                        false, true);
+                    var finalReview = reviewer.confirm(target, "a".repeat(64), Map.of("api", "b".repeat(64)),
+                        Map.of("api", answers), Map.of("api", prepared), Optional.empty(), task);
+                    return new OperationResult<Void>(finalReview.outcome(), Optional.empty(),
+                        finalReview.problem());
+                });
             acceptDialog(awaitDialog("审阅源码数据库声明"));
             var correction = awaitDialog("审阅源码数据库声明");
             SwingUtilities.invokeAndWait(() -> {
@@ -669,12 +680,12 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             SwingUtilities.invokeAndWait(() -> captureDialog(finalDialog, "sqlite-final-confirm"));
             acceptDialog(finalDialog);
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment, result.get());
             assertEquals("state/custom.db", completed.databases().getFirst().sqlite().orElseThrow().accessPath());
             assertEquals("APP_DB_PATH", completed.databases().getFirst().sqlite().orElseThrow().pathEnvironment());
             assertEquals(List.of("schema-a.sql", "schema-b.sql"),
-                    completed.databases().getFirst().initializationFiles());
+                completed.databases().getFirst().initializationFiles());
             SwingUtilities.invokeAndWait(page::close);
         }
     }
@@ -690,15 +701,15 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             SwingUtilities
-                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+                .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var handle = context.tasks().submit(new TaskRequest("modal-review-test", "Modal review", List.of(), true),
-                    task -> new OperationResult<>(Outcome.SUCCEEDED,
-                            Optional.of(page.approve(0, new JPanel(), "Review", task)), Optional.empty()));
+                task -> new OperationResult<>(Outcome.SUCCEEDED,
+                    Optional.of(page.approve(0, new JPanel(), "Review", task)), Optional.empty()));
             awaitDialog();
             SwingUtilities.invokeAndWait(() -> {
                 if (lock)
@@ -724,24 +735,24 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var page = new DeploymentStaticPage(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
-                            new DeploymentStaticWorkflow(context,
-                                    new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
-                                            context))));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                    new DeploymentStaticWorkflow(context,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                            context))));
             SwingUtilities
-                    .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
+                .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var accepted = new CountDownLatch(1);
             var release = new CountDownLatch(1);
             var cancelled = new AtomicBoolean();
             var handle = context.tasks().submit(new TaskRequest("final-review-test", "Final review", List.of(), true),
-                    task -> {
-                        boolean approved = page.approve(0, new JPanel(), "Final review", task, true);
-                        accepted.countDown();
-                        if (!release.await(10, TimeUnit.SECONDS))
-                            throw new AssertionError("Original task release timed out");
-                        cancelled.set(task.cancellation().requested());
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(approved), Optional.empty());
-                    });
+                task -> {
+                    boolean approved = page.approve(0, new JPanel(), "Final review", task, true);
+                    accepted.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS))
+                        throw new AssertionError("Original task release timed out");
+                    cancelled.set(task.cancelToken().requested());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(approved), Optional.empty());
+                });
             var field = DeploymentStaticPage.class.getDeclaredField("currentTask");
             field.setAccessible(true);
             field.set(page, handle);
@@ -775,9 +786,9 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         var visible = new AtomicReference<JDialog>();
         while (System.nanoTime() < until) {
             SwingUtilities.invokeAndWait(() -> visible.set(Arrays.stream(Window.getWindows())
-                    .filter(window -> window instanceof JDialog dialog && dialog.isVisible()
-                            && dialog.getTitle().equals(title))
-                    .map(window -> (JDialog) window).findFirst().orElse(null)));
+                .filter(window -> window instanceof JDialog dialog && dialog.isVisible()
+                    && dialog.getTitle().equals(title))
+                .map(window -> (JDialog) window).findFirst().orElse(null)));
             if (visible.get() != null)
                 return visible.get();
             Thread.sleep(20);
@@ -891,7 +902,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
      * @param reference expected business revision / 预期业务修订
      * @throws Exception if no saved choice is observed / 未观察到已保存选项时 */
     private static void awaitSecretChoice(DeploymentStaticPage page, DeploymentSecretReference reference)
-            throws Exception {
+        throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (System.nanoTime() < until) {
             if (page.secretChoices().stream().anyMatch(item -> item.reference().equals(reference)))
@@ -899,6 +910,48 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             Thread.sleep(20);
         }
         fail("Page did not observe the saved secret revision");
+    }
+
+    private final List<JFrame> layoutOwners = new ArrayList<>();
+
+    @org.junit.jupiter.api.AfterEach
+    void disposeLayoutOwners() throws Exception {
+        SwingUtilities.invokeAndWait(() -> layoutOwners.forEach(JFrame::dispose));
+    }
+
+    private JPanel advancedControls(JComponent page) throws Exception {
+        var result = new AtomicReference<JPanel>();
+        Runnable open = () -> {
+            if (SwingUtilities.getWindowAncestor(page) == null) {
+                var owner = new JFrame("Isolated page layout");
+                owner.setContentPane(page);
+                owner.setSize(1000, 760);
+                layoutOwners.add(owner);
+            }
+            ((JButton) namedControl(page, "deployment.advanced")).doClick(0);
+            var owner = SwingUtilities.getWindowAncestor(page);
+            result.set((JPanel) namedControl(owner.getOwnedWindows(), "deployment.advanced.content"));
+        };
+        if (SwingUtilities.isEventDispatchThread())
+            open.run();
+        else
+            SwingUtilities.invokeAndWait(open);
+        return result.get();
+    }
+
+    private static java.awt.Component namedControl(java.awt.Component[] roots, String name) {
+        for (var root : roots) {
+            var found = namedControl(root, name);
+            if (found != null)
+                return found;
+        }
+        return null;
+    }
+
+    private static java.awt.Component namedControl(java.awt.Component root, String name) {
+        if (name.equals(root.getName()))
+            return root;
+        return root instanceof java.awt.Container container ? namedControl(container.getComponents(), name) : null;
     }
 
     private static JButton findButton(java.awt.Container root, String text) {
@@ -932,9 +985,9 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         while (System.nanoTime() < until) {
             var tasks = context.tasks().list(Optional.empty(), 200).items();
             if (tasks.stream()
-                    .filter(item -> item.type().equals("deployment-server-list")
-                            || item.type().equals("deployment-secret-list"))
-                    .allMatch(item -> item.state() == TaskState.ENDED))
+                .filter(item -> item.type().equals("deployment-server-list")
+                    || item.type().equals("deployment-secret-list"))
+                .allMatch(item -> item.state() == TaskState.ENDED))
                 return;
             Thread.sleep(20);
         }

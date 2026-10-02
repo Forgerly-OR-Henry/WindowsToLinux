@@ -20,18 +20,18 @@ final class DeploymentRockyLinuxCompatibilityPolicy implements DeploymentDistrib
     @Override
     public DeploymentHostCapabilityStatus evaluate(DeploymentLinuxCapabilityFacts capabilities, List<String> evidence) {
         if (!"dnf".equals(capabilities.packageManager()) || !"x86_64".equals(capabilities.packageArchitecture())
-                || !("9.8".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
+            || !("9.8".equals(capabilities.version()) || "10.2".equals(capabilities.version()))) {
             return DeploymentDistributionCompatibilityRules
-                    .unsupported("Rocky Linux must be maintained 9.8 or 10.2 with dnf and x86_64 packages", evidence);
+                .unsupported("Rocky Linux must be maintained 9.8 or 10.2 with dnf and x86_64 packages", evidence);
         }
         DeploymentCpuMicroarchitectureLevel required = capabilities.version().startsWith("10.")
-                ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
-                : DeploymentCpuMicroarchitectureLevel.X86_64_V1;
+            ? DeploymentCpuMicroarchitectureLevel.X86_64_V3
+            : DeploymentCpuMicroarchitectureLevel.X86_64_V1;
         DeploymentHostCapabilityStatus cpu = DeploymentDistributionCompatibilityRules.requireCpu(capabilities, required,
-                "Rocky Linux", evidence);
+            "Rocky Linux", evidence);
         return cpu == DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION
-                ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "Rocky Linux",
-                        evidence)
-                : cpu;
+            ? DeploymentDistributionCompatibilityRules.requireEnforcingSelinux(capabilities, "Rocky Linux",
+            evidence)
+            : cpu;
     }
 }

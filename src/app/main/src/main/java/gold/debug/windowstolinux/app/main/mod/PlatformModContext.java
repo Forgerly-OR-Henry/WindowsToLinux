@@ -1,24 +1,43 @@
 package gold.debug.windowstolinux.app.main.mod;
 
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.LogService;
+import gold.debug.windowstolinux.appapi.task.PageSlice;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessService;
+import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.sql.Connection;
 import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.ContextLease;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
-import gold.debug.windowstolinux.app.service.database.TaskModDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ContextLease;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.ai.AiService;
-import gold.debug.windowstolinux.appapi.db.*;
+
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.*;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.source.SourceService;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.FileService;
+
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
 /** Owns complete capabilities and staged contributions of one actual Mod activation. / 持有一次实际 Mod 启用的完整能力及暂存扩展。 */
@@ -64,7 +83,7 @@ public final class PlatformModContext implements ContextLease {
      * @param pages actual desktop page registry / 实际桌面页面登记
      * @param released host release bookkeeping / 宿主释放登记 */
     public PlatformModContext(PlatformModHost runtime, ModClassLoader loader, Optional<SchemaIdentity> schema,
-            ModLaunchMode mode, ModPageRegistry pages, Runnable released) {
+                              ModLaunchMode mode, ModPageRegistry pages, Runnable released) {
         this.runtime = Objects.requireNonNull(runtime);
         this.loader = Objects.requireNonNull(loader);
         this.schema = Objects.requireNonNull(schema);
@@ -74,7 +93,7 @@ public final class PlatformModContext implements ContextLease {
         var manifest = loader.manifest();
         identity = new ModIdentity(manifest.id(), manifest.version().toString(), manifest.schemaVersion());
         if (loader.isClosed() || !manifest.schemaVersion().equals(schema.map(SchemaIdentity::schemaVersion))
-                || schema.isPresent() && !schema.get().ownerId().equals(identity.id()))
+            || schema.isPresent() && !schema.get().ownerId().equals(identity.id()))
             throw new IllegalArgumentException("Context identity differs from the actual loader and schema");
     }
 
@@ -101,12 +120,12 @@ public final class PlatformModContext implements ContextLease {
         var source = own(runtime.source(identity.id(), identity.version()));
         var processes = own(runtime.processes(identity.id(), identity.version()));
         var tasks = new RecoveryTasks(
-                runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote);
+            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote);
         ModDatabase database = schema.isPresent()
-                ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
-                : new StatelessDatabase();
+            ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
+            : new StatelessDatabase();
         var context = new BoundContext(identity, mode, pageScope, tasks, remote.interaction(), servers, remote.linux(),
-                ai, database, secrets, source, logs, processes, services);
+            ai, database, secrets, source, logs, processes, services);
         lease = new ModHostLease(context, runtime.tasks(), contributions);
     }
 
@@ -139,18 +158,18 @@ public final class PlatformModContext implements ContextLease {
     /** Binds normal activation persistence; recovery contexts never replace ordinary runtime state. / 绑定普通启用持久化；恢复上下文不替换普通运行状态。
      * @param finalized removes the original session only after durable final acknowledgement / 仅在最终持久确认后移除原会话
      * @return original host lifecycle journal / 原宿主生命周期记录器 */
-    public gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.Journal journal(Runnable finalized) {
+    public gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.Journal journal(Runnable finalized) {
         var ledger = new gold.debug.windowstolinux.app.db.mod.ModActivationLedger(runtime.persistence().database(),
-                identity.id(), identity.version(), schema);
+            identity.id(), identity.version(), schema);
         return (state, failure, resourcesClosed) -> {
             if (mode == ModLaunchMode.NORMAL) {
                 if (resourcesClosed)
                     ledger.closed(failure);
-                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.STARTING)
+                else if (state == gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.SessionState.STARTING)
                     ledger.starting();
-                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.RUNNING)
+                else if (state == gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.SessionState.RUNNING)
                     ledger.running();
-                else if (state == gold.debug.windowstolinux.app.mod.execution.lifecycle.ModRuntimeSession.SessionState.STOPPING) {
+                else if (state == gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.SessionState.STOPPING) {
                     ledger.stopping();
                     if (failure.isPresent())
                         ledger.retained(failure.get(), true);
@@ -202,7 +221,7 @@ public final class PlatformModContext implements ContextLease {
         else {
             if (!blockers().isEmpty())
                 throw new ApiException(new Problem(ProblemCode.BUSY, "MOD_CONTEXT_RETAINED",
-                        "Original Mod tasks still require reconciliation", Map.of(), Optional.empty()));
+                    "Original Mod tasks still require reconciliation", Map.of(), Optional.empty()));
             while (!contributions.isEmpty()) {
                 contributions.getLast().close();
                 contributions.removeLast();
@@ -223,7 +242,7 @@ public final class PlatformModContext implements ContextLease {
      * @param publication staged publication / 暂存发布
      * @param resource actual close owner / 实际关闭所有者 */
     private record OwnedContribution(Publication publication,
-            AutoCloseable resource) implements ModHostLease.Contribution {
+                                     AutoCloseable resource) implements ModHostLease.Contribution {
         /** Publishes the already prepared contribution. / 发布已准备扩展。
          * @throws Exception if publication fails / 发布失败时 */
         @Override
@@ -263,9 +282,10 @@ public final class PlatformModContext implements ContextLease {
      * @param processes original process owner / 原进程所有者
      * @param services original service activation / 原服务启用 */
     private record BoundContext(ModIdentity identity, ModLaunchMode launchMode, UiService ui, TaskService tasks,
-            InteractionService interaction, ServerService servers, LinuxService linux, AiService ai, ModDatabase db,
-            SecretService secrets, SourceService source, LogService logs, ProcessService processes,
-            ModServices services) implements ModContext {
+                                InteractionService interaction, ServerService servers, LinuxService linux, AiService ai,
+                                ModDatabase db,
+                                SecretService secrets, FileService source, LogService logs, ProcessService processes,
+                                ModServices services) implements ModContext {
     }
 
     /** Retains host-only physical cleanup before invoking a Mod's manual original-task recovery. / 调用Mod人工原任务恢复前执行仅宿主可做的物理收尾。
@@ -374,7 +394,7 @@ public final class PlatformModContext implements ContextLease {
          * @return structured public rejection / 结构化公开拒绝 */
         private static ApiException unavailable() {
             return new ApiException(new Problem(ProblemCode.UNAVAILABLE, "MOD_NO_SCHEMA",
-                    "This Mod has no declared business schema", Map.of(), Optional.empty()));
+                "This Mod has no declared business schema", Map.of(), Optional.empty()));
         }
     }
 }

@@ -15,7 +15,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Deplo
  * @param componentIds affected component identifiers / 受影响的组件标识符
  * @param message localized explanation / 本地化说明
  */
-public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds, DeploymentLocalizedMessage message) {
+public record ComponentIssue(SeverityLevel severity, String code, List<String> componentIds,
+                             DeploymentLocalizedMessage message) {
     /**
      * Validates one component-scoped issue. / 验证一个组件范围问题。
      *
@@ -33,7 +34,7 @@ public record ComponentIssue(SeverityLevel severity, String code, List<String> c
             throw new IllegalArgumentException("invalid component issue code");
         componentIds = List.copyOf(Objects.requireNonNull(componentIds, "componentIds").stream().sorted().toList());
         if (componentIds.isEmpty()
-                || componentIds.stream().anyMatch(value -> !value.matches("[a-z0-9][a-z0-9-]{0,62}"))) {
+            || componentIds.stream().anyMatch(value -> !value.matches("[a-z0-9][a-z0-9-]{0,62}"))) {
             throw new IllegalArgumentException("component issues require bounded component identifiers");
         }
         message = Objects.requireNonNull(message, "message");

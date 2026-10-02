@@ -24,7 +24,7 @@ final class DeploymentPublicationCleanupJournal {
 
     /** Bounded JSON writer; no secret values enter this journal. / 有界JSON写入器；秘密值不进入此账本。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Original durable occupancy. / 原持久占用。 */
     private final TaskCheckpoint checkpoint;
@@ -49,7 +49,7 @@ final class DeploymentPublicationCleanupJournal {
      * @param facts original identity / 原身份
      * @throws ApiException if the original checkpoint cannot be read / 原检查点不可读取时 */
     private DeploymentPublicationCleanupJournal(TaskCheckpoint checkpoint,
-            com.fasterxml.jackson.databind.node.ObjectNode facts) throws ApiException {
+                                                com.fasterxml.jackson.databind.node.ObjectNode facts) throws ApiException {
         this.checkpoint = checkpoint;
         this.snapshot = checkpoint.snapshot();
         this.facts = facts;
@@ -65,7 +65,7 @@ final class DeploymentPublicationCleanupJournal {
      * @return occupied original cleanup journal / 已占用原清理账本
      * @throws ApiException if the original evidence cannot be confirmed / 原依据无法确认时 */
     static DeploymentPublicationCleanupJournal begin(ModContext context, TaskContext task, DeploymentUnitIdentity unit,
-            String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime) throws ApiException {
+                                                     String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime) throws ApiException {
         return begin(context, task, KEY, unit, archiveSha256, planSha256, runtime);
     }
 
@@ -80,8 +80,8 @@ final class DeploymentPublicationCleanupJournal {
      * @return occupied original component journal / 已占用原组件账本
      * @throws ApiException if persistence is unconfirmed / 持久确认不明时 */
     static DeploymentPublicationCleanupJournal begin(ModContext context, TaskContext task, String key,
-            DeploymentUnitIdentity unit, String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime)
-            throws ApiException {
+                                                     DeploymentUnitIdentity unit, String archiveSha256, String planSha256, DeploymentRuntimeDefinition runtime)
+        throws ApiException {
         Objects.requireNonNull(context);
         Objects.requireNonNull(task);
         Objects.requireNonNull(unit);
@@ -115,7 +115,7 @@ final class DeploymentPublicationCleanupJournal {
      * @throws ApiException if original task access fails / 原任务访问失败时
      * @throws IllegalArgumentException if retained facts are incomplete / 留存事实不完整时 */
     static Optional<DeploymentPublicationCleanupJournal> reopen(ModContext context, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         return reopen(context, task, KEY);
     }
 
@@ -126,7 +126,7 @@ final class DeploymentPublicationCleanupJournal {
      * @return original journal or absence / 原账本或不存在
      * @throws ApiException if original access fails / 原访问失败时 */
     static Optional<DeploymentPublicationCleanupJournal> reopen(ModContext context, TaskContext task, String key)
-            throws ApiException {
+        throws ApiException {
         var found = context.tasks().findCheckpoint(task, key);
         if (found.isEmpty())
             return Optional.empty();
@@ -135,16 +135,16 @@ final class DeploymentPublicationCleanupJournal {
         try {
             JsonNode parsed = JSON.readTree(snapshot.payload());
             if (!(parsed instanceof com.fasterxml.jackson.databind.node.ObjectNode facts)
-                    || !facts.path("version").isInt() || !java.util.Set.of(2, 3, 4).contains(facts.path("version").intValue())
-                    || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("phase").isTextual())
+                || !facts.path("version").isInt() || !java.util.Set.of(2, 3, 4).contains(facts.path("version").intValue())
+                || !task.id().toString().equals(facts.path("task").textValue()) || !facts.path("phase").isTextual())
                 throw new IllegalArgumentException("Original publication checkpoint is unsupported");
             requireBuildFacts(facts, snapshot.payload());
             DeploymentPublicationAttemptPointers.requireChild(facts);
             var journal = new DeploymentPublicationCleanupJournal(checkpoint, facts);
             journal.remoteClean = java.util.Set.of("REMOTE_CLEANUP_VERIFIED", "SESSION_CLOSED", "CLEANUP_VERIFIED")
-                    .contains(facts.path("phase").textValue());
+                .contains(facts.path("phase").textValue());
             journal.sessionClosed = java.util.Set.of("SESSION_CLOSED", "CLEANUP_VERIFIED")
-                    .contains(facts.path("phase").textValue());
+                .contains(facts.path("phase").textValue());
             return Optional.of(journal);
         } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
             throw new IllegalArgumentException("Original publication checkpoint is malformed", invalid);
@@ -165,27 +165,28 @@ final class DeploymentPublicationCleanupJournal {
         if (payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
             throw new IllegalArgumentException("Original publication checkpoint exceeds its admitted bound");
         var hashes = java.util.Set.of("buildPlan", "buildScript", "buildTools", "buildFailureEvidence", "environmentTools", "buildReviewPrevious",
-                "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent");
-        for (String field : hashes) if (facts.has(field) && (!facts.path(field).isTextual() || !facts.path(field).textValue().matches("[0-9a-f]{64}")))
-            throw new IllegalArgumentException("Original build checkpoint digest is malformed");
+            "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent");
+        for (String field : hashes)
+            if (facts.has(field) && (!facts.path(field).isTextual() || !facts.path(field).textValue().matches("[0-9a-f]{64}")))
+                throw new IllegalArgumentException("Original build checkpoint digest is malformed");
         if (facts.path("version").intValue() == 2) {
             if (hashes.stream().anyMatch(facts::has) || facts.has("buildReviewState") || facts.has("environmentRecovery") || facts.has("buildReviewAttempt"))
                 throw new IllegalArgumentException("Original checkpoint version does not contain build review pointers");
             return;
         }
         if ((facts.path("version").intValue() == 3 || facts.has("buildPlan") || facts.has("buildScript") || facts.has("buildTools"))
-                && (!facts.has("buildPlan") || !facts.has("buildScript") || !facts.has("buildTools")))
+            && (!facts.has("buildPlan") || !facts.has("buildScript") || !facts.has("buildTools")))
             throw new IllegalArgumentException("Original build dispatch binding is incomplete");
         if (facts.has("environmentRecovery") && (!facts.path("environmentRecovery").isTextual()
-                || !java.util.Set.of("MAY_HAVE_RUN", "VERIFIED").contains(facts.path("environmentRecovery").textValue())
-                || facts.path("environmentRecovery").textValue().equals("VERIFIED") != facts.has("environmentTools")))
+            || !java.util.Set.of("MAY_HAVE_RUN", "VERIFIED").contains(facts.path("environmentRecovery").textValue())
+            || facts.path("environmentRecovery").textValue().equals("VERIFIED") != facts.has("environmentTools")))
             throw new IllegalArgumentException("Original environment recovery receipt is incomplete");
         if (!facts.has("environmentRecovery") && facts.has("environmentTools"))
             throw new IllegalArgumentException("Original tool receipt lacks its recovery boundary");
         if (facts.has("buildReviewState")) {
             if (!facts.path("buildReviewState").isTextual() || !java.util.Set.of("PENDING", "CONFIRMED").contains(facts.path("buildReviewState").textValue())
-                    || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
-                    || java.util.List.of("buildReviewPrevious", "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent").stream().anyMatch(field -> !facts.has(field)))
+                || !facts.path("buildReviewAttempt").isInt() || facts.path("buildReviewAttempt").intValue() < 1 || facts.path("buildReviewAttempt").intValue() > 2
+                || java.util.List.of("buildReviewPrevious", "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent").stream().anyMatch(field -> !facts.has(field)))
                 throw new IllegalArgumentException("Original full review pointer is incomplete");
         } else if (facts.has("buildReviewAttempt") || java.util.List.of("buildReviewPrevious", "buildReviewNext", "buildReviewRootPrevious", "buildReviewRootNext", "buildReviewIntent").stream().anyMatch(facts::has))
             throw new IllegalArgumentException("Original review pointer lacks its state");
@@ -198,7 +199,7 @@ final class DeploymentPublicationCleanupJournal {
      * @return whether the physical dispatch binding was confirmed / 物理发送绑定是否确认 */
     boolean buildStarting(String plan, String script, String tools) {
         if (!facts.path("phase").asText().equals("CANDIDATE_MAY_EXIST") || !facts.path("planSha256").asText().equals(plan)
-                || !script.matches("[0-9a-f]{64}") || !tools.matches("[0-9a-f]{64}")) return false;
+            || !script.matches("[0-9a-f]{64}") || !tools.matches("[0-9a-f]{64}")) return false;
         facts.put("version", Math.max(3, facts.path("version").intValue())).put("buildPlan", plan).put("buildScript", script).put("buildTools", tools);
         facts.remove("buildFailureEvidence");
         return mark("CANDIDATE_MAY_EXIST");
@@ -220,9 +221,11 @@ final class DeploymentPublicationCleanupJournal {
     boolean actualBuild(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
         try {
             return facts.path("buildPlan").asText().equals(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan()).reviewedRevision())
-                    && facts.path("buildScript").asText().equals(digest(intent.previousScript())) && facts.path("buildTools").asText().equals(digest(intent.previousTools()))
-                    && facts.path("buildFailureEvidence").asText().equals(digest(intent.failureEvidence()));
-        } catch (java.sql.SQLException invalid) { return false; }
+                && facts.path("buildScript").asText().equals(digest(intent.previousScript())) && facts.path("buildTools").asText().equals(digest(intent.previousTools()))
+                && facts.path("buildFailureEvidence").asText().equals(digest(intent.failureEvidence()));
+        } catch (java.sql.SQLException invalid) {
+            return false;
+        }
     }
 
     /** Records a possible fixed installation effect only after full formal consent is confirmed. / 完整正式同意确认后才记录可能的固定安装效果。
@@ -230,7 +233,8 @@ final class DeploymentPublicationCleanupJournal {
      * @return whether its original effect boundary was confirmed / 原效果边界是否确认 */
     boolean recoveryStarting(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildIntent intent) {
         if (!actualBuild(intent)) return false;
-        facts.put("environmentRecovery", "MAY_HAVE_RUN"); facts.remove("environmentTools");
+        facts.put("environmentRecovery", "MAY_HAVE_RUN");
+        facts.remove("environmentTools");
         return mark("CANDIDATE_MAY_EXIST");
     }
 
@@ -238,7 +242,8 @@ final class DeploymentPublicationCleanupJournal {
      * @param tools exact observed complete binding SHA / 精确已观察完整绑定SHA
      * @return whether completion was persisted / 完成是否持久 */
     boolean recoveryObserved(String tools) {
-        if (!facts.path("environmentRecovery").asText().equals("MAY_HAVE_RUN") || !tools.matches("[0-9a-f]{64}")) return false;
+        if (!facts.path("environmentRecovery").asText().equals("MAY_HAVE_RUN") || !tools.matches("[0-9a-f]{64}"))
+            return false;
         facts.put("environmentRecovery", "VERIFIED").put("environmentTools", tools);
         return mark("CANDIDATE_MAY_EXIST");
     }
@@ -247,8 +252,11 @@ final class DeploymentPublicationCleanupJournal {
      * @param value actual input / 实际输入
      * @return exact lowercase SHA / 精确小写SHA */
     private static String digest(String value) {
-        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException invalid) { throw new IllegalStateException("JDK SHA-256 unavailable", invalid); }
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException invalid) {
+            throw new IllegalStateException("JDK SHA-256 unavailable", invalid);
+        }
     }
 
     /** Persists bounded original-to-next pointers before consuming a full formal recovery intent. / 消费完整正式恢复意图前持久化有界原、新指针。
@@ -259,13 +267,16 @@ final class DeploymentPublicationCleanupJournal {
         try {
             var before = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.previousPlan());
             var after = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(intent.nextPlan());
-            if (!facts.path("application").asText().equals(intent.unitId()) || !facts.path("planSha256").asText().equals(before.reviewedRevision())) return false;
+            if (!facts.path("application").asText().equals(intent.unitId()) || !facts.path("planSha256").asText().equals(before.reviewedRevision()))
+                return false;
             facts.put("version", Math.max(3, facts.path("version").intValue())).put("buildReviewState", "PENDING").put("buildReviewAttempt", intent.attempt())
-                    .put("buildReviewPrevious", before.reviewedRevision()).put("buildReviewNext", after.reviewedRevision())
-                    .put("buildReviewRootPrevious", intent.previousRoot()).put("buildReviewRootNext", intent.nextRoot())
-                    .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
+                .put("buildReviewPrevious", before.reviewedRevision()).put("buildReviewNext", after.reviewedRevision())
+                .put("buildReviewRootPrevious", intent.previousRoot()).put("buildReviewRootNext", intent.nextRoot())
+                .put("buildReviewIntent", gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReview.failureBinding(intent.previousPlan(), intent.previousScript(), intent.previousTools(), intent.failureEvidence()));
             return mark("CANDIDATE_MAY_EXIST");
-        } catch (java.sql.SQLException invalid) { return false; }
+        } catch (java.sql.SQLException invalid) {
+            return false;
+        }
     }
 
     /** Confirms the exact consumed formal transition before any new build send. / 任一新构建发送前确认精确已消费正式转换。
@@ -275,19 +286,23 @@ final class DeploymentPublicationCleanupJournal {
         try {
             var after = gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.nextPlan());
             if (!facts.path("buildReviewState").asText().equals("PENDING") || facts.path("buildReviewAttempt").asInt() != review.attempt()
-                    || !facts.path("buildReviewPrevious").asText().equals(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.previousPlan()).reviewedRevision())
-                    || !facts.path("buildReviewNext").asText().equals(after.reviewedRevision()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())
-                    || !facts.path("buildReviewRootPrevious").asText().equals(review.previousRoot()) || !facts.path("buildReviewRootNext").asText().equals(review.nextRoot())) return false;
+                || !facts.path("buildReviewPrevious").asText().equals(gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec.decodeDescription(review.previousPlan()).reviewedRevision())
+                || !facts.path("buildReviewNext").asText().equals(after.reviewedRevision()) || !facts.path("buildReviewIntent").asText().equals(review.failureBinding())
+                || !facts.path("buildReviewRootPrevious").asText().equals(review.previousRoot()) || !facts.path("buildReviewRootNext").asText().equals(review.nextRoot()))
+                return false;
             facts.put("planSha256", after.reviewedRevision()).put("buildReviewState", "CONFIRMED");
             return mark("CANDIDATE_MAY_EXIST");
-        } catch (java.sql.SQLException invalid) { return false; }
+        } catch (java.sql.SQLException invalid) {
+            return false;
+        }
     }
 
     /** Keeps the complete old closed operation while marking the next fixed environment action uncertain before send. / 保持完整旧关闭操作，并在发送前标记下一固定环境动作不明。
      * @param intent full formally persisted original consent / 完整正式持久原同意
      * @return whether exact pending occupancy was confirmed / 精确待定占用是否确认 */
     boolean attemptBoundary(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptIntent intent) {
-        if (!confirmed || !remoteClean || !sessionClosed || !facts.path("phase").asText().equals("SESSION_CLOSED")) return false;
+        if (!confirmed || !remoteClean || !sessionClosed || !facts.path("phase").asText().equals("SESSION_CLOSED"))
+            return false;
         if (!DeploymentPublicationAttemptPointers.pendingChild(facts, intent)) return false;
         return mark("SESSION_CLOSED");
     }
@@ -297,7 +312,7 @@ final class DeploymentPublicationCleanupJournal {
      * @return whether the physical environment observation was persisted / 物理环境观察是否已持久化 */
     boolean attemptObserved(String tools) {
         if (!facts.path("attemptState").asText().equals("PENDING") || !facts.path("attemptEnvironment").asText().equals("MAY_HAVE_RUN")
-                || !tools.matches("[0-9a-f]{64}")) return false;
+            || !tools.matches("[0-9a-f]{64}")) return false;
         facts.put("attemptEnvironment", "VERIFIED").put("attemptTools", tools);
         return mark("SESSION_CLOSED");
     }
@@ -308,9 +323,11 @@ final class DeploymentPublicationCleanupJournal {
      * @param runtime actual newly confirmed fixed backend / 实际新确认固定后端
      * @return whether the same original checkpoint now confirms the next operation / 同一原检查点是否已确认下一操作 */
     boolean attemptConfirmed(gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptReview review,
-            String plan, DeploymentRuntimeDefinition runtime) {
-        if (!confirmed || !remoteClean || !sessionClosed || !DeploymentPublicationAttemptPointers.confirmChild(facts, review, plan, runtime)) return false;
-        remoteClean = false; sessionClosed = false;
+                             String plan, DeploymentRuntimeDefinition runtime) {
+        if (!confirmed || !remoteClean || !sessionClosed || !DeploymentPublicationAttemptPointers.confirmChild(facts, review, plan, runtime))
+            return false;
+        remoteClean = false;
+        sessionClosed = false;
         return mark("CANDIDATE_MAY_EXIST");
     }
 

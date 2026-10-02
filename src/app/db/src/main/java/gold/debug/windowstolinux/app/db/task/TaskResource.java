@@ -23,7 +23,7 @@ public record TaskResource(String kind, String id, String ownerId, boolean exclu
         Objects.requireNonNull(id);
         Objects.requireNonNull(ownerId);
         if (!Set.of("MOD", "SCHEMA", "SERVER", "CONNECTION", "PROCESS", "FILE", "PAGE", "CUSTOM").contains(kind)
-                || id.isBlank() || id.length() > 4096 || ownerId.isBlank() || ownerId.length() > 512)
+            || id.isBlank() || id.length() > 4096 || ownerId.isBlank() || ownerId.length() > 512)
             throw new IllegalArgumentException("Invalid platform resource identity");
         if (kind.equals("SERVER") && !exclusive)
             throw new IllegalArgumentException("Server work requires exclusive admission");

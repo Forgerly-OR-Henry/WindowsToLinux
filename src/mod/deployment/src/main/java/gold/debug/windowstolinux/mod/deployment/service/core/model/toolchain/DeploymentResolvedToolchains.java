@@ -43,7 +43,7 @@ public record DeploymentResolvedToolchains(String catalogRevision, List<Selectio
      * @param sha256 lower-case hexadecimal SHA-256 digest / 小写十六进制 SHA-256 摘要
      */
     public record Selection(ToolchainRequirement requirement, DeploymentToolchainVersion version, String directory,
-            OriginType origin, String source, String sha256) {
+                            OriginType origin, String source, String sha256) {
         /**
          * Validates and binds the inputs required by selection.
          * <p>校验并绑定选择所需输入。
@@ -64,7 +64,7 @@ public record DeploymentResolvedToolchains(String catalogRevision, List<Selectio
             if (requirement.ecosystem() != version.ecosystem() || version.preview())
                 throw new IllegalArgumentException("selected tool must be a matching stable ecosystem");
             if (directory == null || !directory.matches("/(?:[A-Za-z0-9_+.-]+/)*[A-Za-z0-9_+.-]+")
-                    || directory.contains("/../") || directory.contains("/./") || directory.endsWith("/.."))
+                || directory.contains("/../") || directory.contains("/./") || directory.endsWith("/.."))
                 throw new IllegalArgumentException("invalid toolchain directory");
             if (source == null || source.isBlank() || source.length() > 2048 || source.chars().anyMatch(c -> c < 32))
                 throw new IllegalArgumentException("invalid toolchain source evidence");
@@ -72,6 +72,7 @@ public record DeploymentResolvedToolchains(String catalogRevision, List<Selectio
                 throw new IllegalArgumentException("toolchain digest required");
         }
     }
+
     /**
      * Validates and binds the inputs required by resolved toolchain set.
      * <p>校验并绑定已解析工具链集合所需输入。
@@ -85,8 +86,8 @@ public record DeploymentResolvedToolchains(String catalogRevision, List<Selectio
             throw new IllegalArgumentException("invalid catalog revision");
         selections = List.copyOf(selections);
         if (selections.size() > 32
-                || selections.stream().map(s -> s.requirement().ecosystem() + ":" + s.requirement().purpose())
-                        .distinct().count() != selections.size())
+            || selections.stream().map(s -> s.requirement().ecosystem() + ":" + s.requirement().purpose())
+            .distinct().count() != selections.size())
             throw new IllegalArgumentException("duplicate toolchain role");
     }
 
@@ -100,7 +101,7 @@ public record DeploymentResolvedToolchains(String catalogRevision, List<Selectio
      */
     public Optional<Selection> find(DeploymentToolchainType ecosystem, ToolchainRequirement.PurposeType purpose) {
         return selections.stream()
-                .filter(s -> s.requirement().ecosystem() == ecosystem && s.requirement().purpose() == purpose)
-                .findFirst();
+            .filter(s -> s.requirement().ecosystem() == ecosystem && s.requirement().purpose() == purpose)
+            .findFirst();
     }
 }

@@ -30,7 +30,7 @@ public final class DeploymentPreferences {
          * @throws IllegalArgumentException if either value is unsupported / 任一值不受支持时 */
         public Selection {
             if (!Set.of("STATIC", "ASSISTED", "AGENT").contains(mode)
-                    || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approval))
+                || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approval))
                 throw new IllegalArgumentException("Invalid deployment preference selection");
         }
     }
@@ -76,8 +76,8 @@ public final class DeploymentPreferences {
     private static void lock(Connection connection) throws SQLException {
         put(connection, "deployment_preferences_guard", "1");
         try (var statement = connection.prepareStatement(
-                "SELECT preference_value FROM preference WHERE preference_key='deployment_preferences_guard' FOR UPDATE");
-                var rows = statement.executeQuery()) {
+            "SELECT preference_value FROM preference WHERE preference_key='deployment_preferences_guard' FOR UPDATE");
+             var rows = statement.executeQuery()) {
             if (!rows.next() || !rows.getString(1).equals("1"))
                 throw new SQLException("Deployment preference pair lock is unavailable");
         }
@@ -90,7 +90,7 @@ public final class DeploymentPreferences {
      * @throws SQLException if the original insertion fails / 原插入失败时 */
     private static void missing(Connection connection, String key, String fallback) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO preference(preference_key,preference_value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM preference WHERE preference_key=?)")) {
+            "INSERT INTO preference(preference_key,preference_value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM preference WHERE preference_key=?)")) {
             statement.setString(1, key);
             statement.setString(2, fallback);
             statement.setString(3, key);
@@ -105,7 +105,7 @@ public final class DeploymentPreferences {
      * @throws SQLException if the expected value is missing / 预期值缺失时 */
     private static String value(Connection connection, String key) throws SQLException {
         try (var statement = connection
-                .prepareStatement("SELECT preference_value FROM preference WHERE preference_key=?")) {
+            .prepareStatement("SELECT preference_value FROM preference WHERE preference_key=?")) {
             statement.setString(1, key);
             try (var rows = statement.executeQuery()) {
                 if (!rows.next())
@@ -122,7 +122,7 @@ public final class DeploymentPreferences {
      * @throws SQLException if the original write fails / 原写入失败时 */
     private static void put(Connection connection, String key, String value) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "MERGE INTO preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)")) {
+            "MERGE INTO preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)")) {
             statement.setString(1, key);
             statement.setString(2, value);
             statement.executeUpdate();

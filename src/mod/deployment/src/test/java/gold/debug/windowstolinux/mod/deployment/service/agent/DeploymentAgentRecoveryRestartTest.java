@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -9,20 +18,20 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.main.startup.*;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
-import gold.debug.windowstolinux.mod.deployment.source.*;
+import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.api.Test;
@@ -46,12 +55,12 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                           CancelToken token) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                       CancelToken token) {
                 throw new AssertionError();
             }
 
@@ -60,11 +69,11 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken token) {
+                               CancelToken token) {
                 throw new AssertionError();
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken token) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
                 return true;
             }
         };
@@ -76,12 +85,12 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
     void restartKeepsUnknownCandidateUntilExactInactiveEvidenceArrives() throws Exception {
         try (var ssh = new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
-                    (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
+                (user, password, session) -> user.equals("root") && password.equals("fixture-password"));
             server.setCommandFactory((channel, command) -> new FramedReply());
         })) {
             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
-                    "-cp", System.getProperty("java.class.path"), getClass().getName(), "--original", root.toString(),
-                    Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
+                "-cp", System.getProperty("java.class.path"), getClass().getName(), "--original", root.toString(),
+                Integer.toString(ssh.server().getPort())).redirectErrorStream(true).start();
             try {
                 assertTrue(child.waitFor(60, TimeUnit.SECONDS));
                 String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -97,16 +106,16 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 var report = runtime.startDevelopmentMods(workspace(), pages());
                 assertTrue(report.running().isEmpty());
                 assertEquals(List.of("MOD_RECOVERY_READY"),
-                        report.problems().stream().map(Problem::eventCode).toList());
+                    report.problems().stream().map(Problem::eventCode).toList());
                 UUID id = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
                 assertEquals(TaskState.UNKNOWN,
-                        runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                    runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(0, cleanup.get());
                 assertTrue(scalar(runtime,
-                        "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
                 stage.set(1);
                 assertEquals(TaskState.UNKNOWN,
-                        runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
+                    runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(0, cleanup.get());
                 stage.set(2);
                 var settled = runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS);
@@ -115,7 +124,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 assertEquals(1, cleanup.get());
                 assertEquals(0, replay.get());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 runtime.releaseModRecovery();
             }
         }
@@ -146,33 +155,33 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
         start(runtime, true);
         var server = new ServerRef("server");
         runtime.servers().saveServerProfile(
-                ServerProfile.fromStored(
-                        new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
-                "fixture-password".toCharArray());
+            ServerProfile.fromStored(
+                new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
+            "fixture-password".toCharArray());
         var context = runtime.modContexts().get(OWNER).context();
         var handle = context.tasks().submit(new TaskRequest(DeploymentAgentWorkflow.TASK_TYPE,
-                "Constructed interrupted agent preparation", List.of(server.id()), true), task -> {
-                    String target;
-                    try (var session = context.linux().connect(server, task)) {
-                        target = DeploymentAgentWorkflow.targetDigest(server, session);
-                    }
-                    var selected = context.source().selectDirectory("Original agent source", task);
-                    var material = new DeploymentSourcePreparer(context.source()).prepare(selected, 65536, 100, task);
-                    var archive = new DeploymentSourceArchiver(context.source()).prepare(material, 65536, task);
-                    var journal = new DeploymentAgentJournal(context.db());
-                    journal.create(task,
-                            new DeploymentAgentJournal.Identity(server.id(), target, "a".repeat(64), "MANUAL_REVIEW"));
-                    journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
-                    journal.event(task, "PLAN_APPLICATION", "", "demo");
-                    journal.event(task, "PREPARE_EXECUTING", "b".repeat(64), "api");
-                    String candidate = new DeploymentRemoteWorkspace("demo-api", archive.sha256()).candidateId();
-                    journal.event(task, "CANDIDATE", "api", candidate);
-                    Files.writeString(root.resolve("original-candidate"), candidate + "\n" + task.id());
-                    journal.state(task, "UNKNOWN");
-                    return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(new Problem(ProblemCode.UNKNOWN, "CONSTRUCTED_AGENT_INTERRUPTED",
-                                    "Constructed original preparation", Map.of(), Optional.empty())));
-                });
+            "Constructed interrupted agent preparation", List.of(server.id()), true), task -> {
+            String target;
+            try (var session = context.linux().connect(server, task)) {
+                target = DeploymentAgentWorkflow.targetDigest(server, session);
+            }
+            var selected = context.file().selectDirectory("Original agent source", task);
+            var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536, 100, task);
+            var archive = new DeploymentSourceArchiver(context.file()).prepare(material, 65536, task);
+            var journal = new DeploymentAgentJournal(context.db());
+            journal.create(task,
+                new DeploymentAgentJournal.Identity(server.id(), target, "a".repeat(64), "MANUAL_REVIEW"));
+            journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
+            journal.event(task, "PLAN_APPLICATION", "", "demo");
+            journal.event(task, "PREPARE_EXECUTING", "b".repeat(64), "api");
+            String candidate = new DeploymentRemoteWorkspace("demo-api", archive.sha256()).candidateId();
+            journal.event(task, "CANDIDATE", "api", candidate);
+            Files.writeString(root.resolve("original-candidate"), candidate + "\n" + task.id());
+            journal.state(task, "UNKNOWN");
+            return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "CONSTRUCTED_AGENT_INTERRUPTED",
+                    "Constructed original preparation", Map.of(), Optional.empty())));
+        });
         for (int i = 0; i < 100 && handle.snapshot().state() != TaskState.UNKNOWN; i++)
             Thread.sleep(50);
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
@@ -181,7 +190,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
     private String response(String script) throws Exception {
         if (script.contains("sha256sum --check --status"))
             return "HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
-                    + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
+                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n";
         if (script.contains("candidate-query-task") || script.contains("candidate-cleanup-task")) {
             var original = Files.readAllLines(root.resolve("original-candidate"));
             assertTrue(script.contains("'" + original.get(0) + "'"));
@@ -195,7 +204,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
             if (stage.get() == 0)
                 return "";
             return "CANDIDATE_STATE=" + (present ? "owned" : "absent") + "\nBUILD_ACTIVE="
-                    + (stage.get() == 1 ? "yes" : "no") + "\n";
+                + (stage.get() == 1 ? "yes" : "no") + "\n";
         }
         replay.incrementAndGet();
         throw new AssertionError("Recovery attempted new work: " + script);
@@ -225,6 +234,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
         private org.apache.sshd.server.ExitCallback callback;
 
         private Thread worker;
+
         public void setInputStream(InputStream stream) {
             input = stream;
         }
@@ -244,7 +254,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
             worker = new Thread(() -> {
                 try {
                     var length = new ByteArrayOutputStream();
-                    for (int next; (next = input.read()) != '\n';) {
+                    for (int next; (next = input.read()) != '\n'; ) {
                         if (next < '0' || next > '9' || length.size() >= 8)
                             throw new IOException("Bad script frame");
                         length.write(next);

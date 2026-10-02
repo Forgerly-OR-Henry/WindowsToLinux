@@ -26,7 +26,7 @@ public record DeploymentLocalizedMessage(String key, Map<String, String> argumen
         Objects.requireNonNull(arguments, "arguments");
         LinkedHashMap<String, String> copy = new LinkedHashMap<>();
         arguments.forEach((name, value) -> copy.put(requireText(name, "argument name"),
-                Objects.requireNonNull(value, "argument value")));
+            Objects.requireNonNull(value, "argument value")));
         arguments = Map.copyOf(copy);
     }
 

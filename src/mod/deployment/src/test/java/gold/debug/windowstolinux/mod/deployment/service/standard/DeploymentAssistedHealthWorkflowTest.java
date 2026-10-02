@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -10,14 +18,14 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildEvidenceAssertions;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedBuildReviewCodec;
@@ -32,7 +40,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 /** Tests physical health rollback before a separately approved original-task operation. / 验证物理健康回滚先于另行批准的原任务操作。 */
 class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
     private final AtomicInteger language = new AtomicInteger(), independent = new AtomicInteger(),
-            recoveries = new AtomicInteger();
+        recoveries = new AtomicInteger();
 
     private final Set<String> reviewedOperations = ConcurrentHashMap.newKeySet();
 
@@ -44,6 +52,7 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
 
     private java.util.function.Consumer<ActionIntent> reviewFault = ignored -> {
     };
+
     @Override
     protected Path selectedSourceDirectory() {
         return root.resolve("input");
@@ -53,12 +62,12 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                           CancelToken token) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                       CancelToken token) {
                 throw new AssertionError();
             }
 
@@ -67,11 +76,11 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken token) {
+                               CancelToken token) {
                 throw new AssertionError();
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken token) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
                 hostApprovals.add(intent);
                 reviewFault.accept(intent);
                 return true;
@@ -87,16 +96,16 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
     @ParameterizedTest
     @CsvSource({"1,1,true", "2,1,true", "1,3,true", "2,3,true", "1,1,false", "2,1,false"})
     void restoredHealthFailureUsesDistinctOperationsAndAtMostTwoOriginalRetries(int count, int failures,
-            boolean changed) throws Exception {
+                                                                                boolean changed) throws Exception {
         source(count);
         enable();
         returnToOriginal = true;
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var actual = runtime.modContexts().get(OWNER).context();
             var peer = new DeploymentAssistedBuildPeer(false);
             peer.publicationAttempts = true;
@@ -112,30 +121,30 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                 }
             };
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("ai"))
-                            return ai;
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        try {
-                            return method.invoke(actual, args);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("ai"))
+                        return ai;
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    try {
+                        return method.invoke(actual, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var original = new AtomicReference<UUID>();
             var archives = new AtomicReference<Map<String, String>>();
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             var handle = workflow.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(),
-                    reviewer(original, archives, count, changed), true, "MANUAL_REVIEW");
+                new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(),
+                reviewer(original, archives, count, changed), true, "MANUAL_REVIEW");
             OperationResult<Void> result;
             try {
                 result = handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
             } catch (TimeoutException unfinished) {
                 throw new AssertionError(handle.snapshot() + "; retained actual evidence="
-                        + diagnostic(runtime, handle.id()) + "; last actual model facts=" + lastModelFacts.get()
-                        + "; actual sends=" + peer.commands, unfinished);
+                    + diagnostic(runtime, handle.id()) + "; last actual model facts=" + lastModelFacts.get()
+                    + "; actual sends=" + peer.commands, unfinished);
             }
             int retries = changed ? Math.min(failures, 2) : 0;
             boolean success = changed && failures == 1;
@@ -152,16 +161,16 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             assertTrue(peer.present.isEmpty());
             assertEquals(peer.sessionsOpened, peer.sessionsClosed);
             assertTrue(peer.statusReads >= count * retries,
-                    "Every retired child must receive a fresh exact status read");
+                "Every retired child must receive a fresh exact status read");
             assertEquals(retries, hostApprovals.stream()
-                    .filter(intent -> intent.type().equals("deployment.assisted.environment-recovery")).count());
+                .filter(intent -> intent.type().equals("deployment.assisted.environment-recovery")).count());
             assertEquals(changed ? retries : 1, recoveries.get());
             assertEquals(0, independent.get());
             try (var access = scope(runtime, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement();
-                    var rows = statement.executeQuery(
-                            "SELECT platform_task_id,phase,business_committed,reviewed_revision,request_payload FROM deployment_execution")) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "SELECT platform_task_id,phase,business_committed,reviewed_revision,request_payload FROM deployment_execution")) {
                 assertTrue(rows.next());
                 assertEquals(handle.id(), rows.getObject(1, UUID.class));
                 assertEquals("FINISHED", rows.getString(2));
@@ -178,9 +187,9 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                     assertTrue(request.path("attemptIntent").isNull());
                     assertTrue(request.path("attemptPendingProof").isNull());
                     gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedHealthEvidenceAssertions
-                            .verify(request, handle.id(), count, retries, archives.get(), peer.archives);
+                        .verify(request, handle.id(), count, retries, archives.get(), peer.archives);
                     gold.debug.windowstolinux.mod.deployment.db.DeploymentAssistedHealthEvidenceAssertions
-                            .verifyConfigurationPrecision(connection);
+                        .verifyConfigurationPrecision(connection);
                 }
                 assertFalse(rows.next());
             }
@@ -188,26 +197,26 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
         }
     }
 
-    private String diagnostic(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime, UUID task)
-            throws Exception {
+    private String diagnostic(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task)
+        throws Exception {
         var mapper = new ObjectMapper();
         var report = mapper.createObjectNode();
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.prepareStatement(
-                        "SELECT phase,outcome,reviewed_revision,recovery_payload,result_payload,request_payload FROM deployment_execution WHERE platform_task_id=?")) {
+             var connection = access.openConnection();
+             var statement = connection.prepareStatement(
+                 "SELECT phase,outcome,reviewed_revision,recovery_payload,result_payload,request_payload FROM deployment_execution WHERE platform_task_id=?")) {
             statement.setObject(1, task);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     var actual = report.putObject("execution");
                     actual.put("phase", rows.getString(1)).put("outcome", rows.getString(2)).put("reviewedRevision",
-                            rows.getString(3));
+                        rows.getString(3));
                     for (int column = 4; column <= 5; column++)
                         if (rows.getBytes(column) != null)
                             actual.set(column == 4 ? "recovery" : "result", mapper.readTree(rows.getBytes(column)));
                     var request = mapper.readTree(rows.getBytes(6));
                     for (String key : List.of("formatVersion", "reviewedRevision", "attemptOperation", "attemptIntent",
-                            "attemptPendingProof", "attemptTemplate", "attemptReviews", "attemptProofs"))
+                        "attemptPendingProof", "attemptTemplate", "attemptReviews", "attemptProofs"))
                         if (request.has(key))
                             actual.set(key, request.get(key));
                 }
@@ -215,8 +224,8 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
         }
         var checkpoints = report.putArray("checkpoints");
         try (var connection = runtime.persistence().database().openConnection();
-                var statement = connection.prepareStatement(
-                        "SELECT resource_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL ORDER BY resource_id")) {
+             var statement = connection.prepareStatement(
+                 "SELECT resource_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL ORDER BY resource_id")) {
             statement.setObject(1, task);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
@@ -239,23 +248,23 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private DeploymentStaticWorkflow.Reviewer reviewer(AtomicReference<UUID> taskId,
-            AtomicReference<Map<String, String>> archives, int count, boolean changed) {
+                                                       AtomicReference<Map<String, String>> archives, int count, boolean changed) {
         var corrections = new HashMap<String, Integer>();
         return new DeploymentStaticWorkflow.Reviewer() {
             public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                    List<DiscoveredProjectComponent> components, TaskContext task) {
+                                                                              List<DiscoveredProjectComponent> components, TaskContext task) {
                 assertEquals(count, components.size());
                 taskId.set(task.id());
                 var choices = new LinkedHashMap<String, DeploymentStaticWorkflow.Choice>();
                 components.forEach(component -> choices.put(component.id(),
-                        new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
+                    new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())));
                 return success(new DeploymentStaticWorkflow.Selection(
-                        count == 1 ? components.getFirst().id() : "reviewed-application", choices,
-                        count == 1 ? Optional.empty() : Optional.of(components.getFirst().id())));
+                    count == 1 ? components.getFirst().id() : "reviewed-application", choices,
+                    count == 1 ? Optional.empty() : Optional.of(components.getFirst().id())));
             }
 
             public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server, String sha,
-                    List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                         List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                 assertEquals(taskId.get(), task.id());
                 var values = new LinkedHashMap<String, DeploymentStaticWorkflow.Answers>();
                 int port = 8080;
@@ -269,22 +278,22 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                     answer.put("healthMode", "TCP");
                     answer.put("exposure", "INTERNAL");
                     var file = new DeploymentFileBinding("uploads",
-                            new DeploymentStoragePath(prompt.componentId() + "-uploads",
-                                    DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1", true),
-                            DeploymentStorageLocation.defaults(), DeploymentStorageLocation.StorageResourceType.FILE);
+                        new DeploymentStoragePath(prompt.componentId() + "-uploads",
+                            DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1", true),
+                        DeploymentStorageLocation.defaults(), DeploymentStorageLocation.StorageResourceType.FILE);
                     values.put(prompt.componentId(), new DeploymentStaticWorkflow.Answers(answer, List.of(file),
-                            new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false), false, true));
+                        new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false), false, true));
                 }
                 return success(Map.copyOf(values));
             }
 
             public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerRef server, String sha,
-                    DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
-                    TaskContext task) {
+                                                                                           DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
+                                                                                           TaskContext task) {
                 assertEquals(taskId.get(), task.id());
                 assertEquals(Set.of("primary", "secondary", "version", "jvmTarget"),
-                        prompt.fields().stream().map(field -> field.id().substring(field.id().lastIndexOf('/') + 1))
-                                .collect(java.util.stream.Collectors.toSet()));
+                    prompt.fields().stream().map(field -> field.id().substring(field.id().lastIndexOf('/') + 1))
+                        .collect(java.util.stream.Collectors.toSet()));
                 assertEquals(600, original.limits().timeoutSeconds());
                 assertTrue(original.adapterRisk());
                 assertEquals(1, original.files().size());
@@ -293,13 +302,13 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                 int attempt = corrections.merge(prompt.componentId(), 1, Integer::sum);
                 answer.put("version", changed && (!returnToOriginal || attempt == 1) ? "1.25" : "1.24");
                 return success(new DeploymentStaticWorkflow.Answers(answer, original.files(), original.limits(),
-                        original.containerRisk(), original.adapterRisk()));
+                    original.containerRisk(), original.adapterRisk()));
             }
 
             public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> tar,
-                    Map<String, DeploymentStaticWorkflow.Answers> answers,
-                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
-                    TaskContext task) {
+                                                    Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                    Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
+                                                    TaskContext task) {
                 assertEquals(taskId.get(), task.id());
                 assertEquals(count, tar.size());
                 archives.set(Map.copyOf(tar));
@@ -320,7 +329,7 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
-                    throws ApiException {
+                throws ApiException {
                 assertEquals("a".repeat(64), expected);
                 JsonNode facts;
                 try {
@@ -339,19 +348,19 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                     language.incrementAndGet();
                     if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
                         assertEquals("ROLLBACK_VERIFIED", facts.path("phase").asText(),
-                                "This fixture has successful compilation and diagnoses only a physically restored health failure");
+                            "This fixture has successful compilation and diagnoses only a physically restored health failure");
                         recoveries.incrementAndGet();
                         assertTrue(facts.path("fields").isEmpty(),
-                                "Source and human answers cannot be overwritten by AI");
+                            "Source and human answers cannot be overwritten by AI");
                         response = "{\"decision\":\"" + (stop ? "STOP" : "RETRY")
-                                + "\",\"reason\":\"Only the original human may correct typed fields\",\"suggestions\":{}}";
+                            + "\",\"reason\":\"Only the original human may correct typed fields\",\"suggestions\":{}}";
                     } else
                         response = "{\"action\":\"ADVISE\",\"sourceRevision\":\""
-                                + facts.path("sourceRevision").asText()
-                                + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep explicit human review\",\"unresolved\":[]}}";
+                            + facts.path("sourceRevision").asText()
+                            + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep explicit human review\",\"unresolved\":[]}}";
                 }
                 return success(new AiResponse(response, "controlled-purpose", "stop",
-                        new AiUsage(Optional.empty(), Optional.empty())));
+                    new AiUsage(Optional.empty(), Optional.empty())));
             }
         };
     }
@@ -364,7 +373,7 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             Files.writeString(directory.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
             Files.writeString(directory.resolve("main.go"), "package main\nfunc main() {}\n");
             Files.writeString(directory.resolve("windowstolinux-application.properties"),
-                    "version=1\nhealth.mode=TCP\n");
+                "version=1\nhealth.mode=TCP\n");
         }
     }
 

@@ -17,13 +17,13 @@ public enum DesktopUninstallFailureType {
      * <p>Desktop卸载失败类型中的决定必需分类。
      */
     DECISION_REQUIRED("windows.uninstall.decision-required", "validation", "windows.error.uninstallDecisionRequired",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * BOUNDARY INVALID classification within desktop uninstall failure type.
      * <p>Desktop卸载失败类型中的边界无效分类。
      */
     BOUNDARY_INVALID("windows.uninstall.boundary-invalid", "validation", "windows.error.uninstallBoundaryInvalid",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * TASKS ACTIVE classification within desktop uninstall failure type.
      * <p>Desktop卸载失败类型中的任务集合活跃分类。
@@ -34,7 +34,7 @@ public enum DesktopUninstallFailureType {
      * <p>Desktop卸载失败类型中的移除未完成分类。
      */
     REMOVAL_INCOMPLETE("windows.uninstall.removal-incomplete", "removal", "windows.error.uninstallRemovalIncomplete",
-            "REQUIRE_MANUAL_RECOVERY");
+        "REQUIRE_MANUAL_RECOVERY");
 
     /**
      * Stable machine-readable classification code.
@@ -148,9 +148,9 @@ public enum DesktopUninstallFailureType {
         if (message.isBlank())
             throw new IllegalArgumentException("diagnostic must not be blank");
         return new Problem(problemCode(), code, message,
-                Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
-                        "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
-                Optional.of(operation));
+            Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
+                "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
+            Optional.of(operation));
     }
 
     /** Selects the SDK category while preserving the precise event code. / 保留精确事件码并选择SDK类别。

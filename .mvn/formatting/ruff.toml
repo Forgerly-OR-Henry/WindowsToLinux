@@ -1,8 +1,0 @@
-line-length = 120
-target-version = "py312"
-
-[format]
-quote-style = "preserve"
-indent-style = "space"
-line-ending = "lf"
-docstring-code-format = false

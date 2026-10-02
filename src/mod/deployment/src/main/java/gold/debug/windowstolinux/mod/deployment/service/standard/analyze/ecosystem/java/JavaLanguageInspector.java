@@ -33,14 +33,14 @@ public final class JavaLanguageInspector {
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
         List<AnalysisEvidence> evidence = new ArrayList<>();
         Optional<Path> javaSource = source.relativeFiles().stream().filter(path -> lower(path).endsWith(".java"))
-                .findFirst();
+            .findFirst();
         if (javaSource.isPresent()) {
             ecosystems.add(LanguageEcosystemType.JAVA);
             languages.add(SourceLanguageType.JAVA);
             evidence.add(evidence("analysis.language.javaSource", javaSource.orElseThrow().toString()));
         }
         List<Path> rootJars = source.relativeFiles().stream()
-                .filter(path -> path.getNameCount() == 1 && lower(path).endsWith(".jar")).toList();
+            .filter(path -> path.getNameCount() == 1 && lower(path).endsWith(".jar")).toList();
         if (rootJars.size() == 1) {
             ecosystems.add(LanguageEcosystemType.JAVA);
         }
@@ -68,6 +68,6 @@ public final class JavaLanguageInspector {
      */
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), source,
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

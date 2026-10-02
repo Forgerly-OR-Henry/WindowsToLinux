@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreEvidence.*;
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreSteps.*;
 
@@ -12,7 +18,7 @@ import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
@@ -67,21 +73,21 @@ public final class DeploymentRestoreCoordinator {
      * @return exact reviewed target digest / 精确已审阅目标摘要
      * @throws ApiException if target scope is unavailable / 目标范围不可用时 */
     public OperationResult<String> review(DeploymentApplicationSnapshot archived, ServerRef target, String archiveSha,
-            TaskContext task) throws ApiException {
+                                          TaskContext task) throws ApiException {
         context.tasks().inspect(task);
         try {
             var archive = DeploymentArchivedRuntimeCodec.restore(archived, releases);
             var server = context.servers().get(target, task);
             try (var session = context.linux().connect(target, task)) {
                 var helper = new DeploymentManagedHelper(session, context.interaction(), target, task,
-                        archived.revisionSha256()).probe();
+                    archived.revisionSha256()).probe();
                 if (helper.outcome() != Outcome.SUCCEEDED)
                     return copy(helper);
                 var channel = new DeploymentHandoffChannel(session, context.interaction(), target, task,
-                        archived.revisionSha256());
+                    archived.revisionSha256());
                 var current = targets(archive.publication().graph(), channel);
                 return success(
-                        reviewed(archived, archiveSha, context.servers().get(target, task), session.facts(), current));
+                    reviewed(archived, archiveSha, context.servers().get(target, task), session.facts(), current));
             }
         } catch (ApiException denied) {
             throw denied;
@@ -96,19 +102,19 @@ public final class DeploymentRestoreCoordinator {
      * @return durable prepared handoff, or the original handoff with uncertainty on an exact request repeat / 持久已准备交接，或精确请求重查时携未知结果的原交接
      * @throws ApiException if original task scope is unavailable / 原任务范围不可用时 */
     public OperationResult<DeploymentHandoff> prepare(DeploymentRestoreRequest request, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         context.tasks().inspect(task);
         DeploymentRestoreState cursor = null;
         try {
             var plan = new DeploymentRestorePlan(request, releases);
             var original = ledger.findRestore(request, task);
             if (original.isPresent() && (original.orElseThrow().publicValue().state() != DeploymentHandoffState.REVIEWED
-                    || ledger.recovery(original.orElseThrow()).path("changed").asBoolean())) {
+                || ledger.recovery(original.orElseThrow()).path("changed").asBoolean())) {
                 var handoff = original.orElseThrow().publicValue();
                 return handoff.state() == DeploymentHandoffState.PREPARED
-                        ? success(handoff)
-                        : new OperationResult<>(Outcome.UNKNOWN, Optional.of(handoff), Optional
-                                .of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_PREPARATION_RECONCILE_REQUIRED")));
+                    ? success(handoff)
+                    : new OperationResult<>(Outcome.UNKNOWN, Optional.of(handoff), Optional
+                    .of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_RESTORE_PREPARATION_RECONCILE_REQUIRED")));
             }
             for (var file : plan.files)
                 DeploymentRestorePlan.verifyLocal(file.file());
@@ -117,14 +123,14 @@ public final class DeploymentRestoreCoordinator {
             var server = context.servers().get(request.target(), task);
             try (var session = context.linux().connect(request.target(), task)) {
                 var helper = new DeploymentManagedHelper(session, context.interaction(), request.target(), task,
-                        request.reviewedTargetSha256()).probe();
+                    request.reviewedTargetSha256()).probe();
                 if (helper.outcome() != Outcome.SUCCEEDED)
                     return copy(helper);
                 var channel = channel(context, session, request, task);
                 var current = targets(plan.proposal.graph(), channel);
                 if (!reviewed(request.archivedApplication(), request.archiveSha256(),
-                        context.servers().get(request.target(), task), session.facts(), current)
-                        .equals(request.reviewedTargetSha256()))
+                    context.servers().get(request.target(), task), session.facts(), current)
+                    .equals(request.reviewedTargetSha256()))
                     return failed("DEPLOYMENT_RESTORE_TARGET_CHANGED");
                 var handoff = ledger.beginRestore(request, task);
                 cursor = new DeploymentRestoreState(ledger, required(handoff.id(), task), task);
@@ -132,13 +138,13 @@ public final class DeploymentRestoreCoordinator {
                     return success(cursor.entry.publicValue());
                 if (cursor.entry.publicValue().state() != DeploymentHandoffState.REVIEWED)
                     return unknown("DEPLOYMENT_RESTORE_PREPARATION_RECONCILE_REQUIRED");
-                if (task.cancellation().requested())
+                if (task.cancelToken().requested())
                     return cancelled("DEPLOYMENT_RESTORE_CANCELLED_BEFORE_EFFECT");
                 long requiredSpace = 0;
                 for (var file : plan.files)
                     requiredSpace = Math.addExact(requiredSpace, Math.multiplyExact(file.file().byteCount(), 3));
                 if (!DeploymentHandoffChannel.receipt(send(channel, "handoff-restore-preflight",
-                        List.of(Long.toString(requiredSpace)), Duration.ofMinutes(2)), "RESTORE_SPACE_VERIFIED=1\n"))
+                    List.of(Long.toString(requiredSpace)), Duration.ofMinutes(2)), "RESTORE_SPACE_VERIFIED=1\n"))
                     return failed("DEPLOYMENT_RESTORE_TARGET_SPACE_UNCONFIRMED");
                 var begun = inputs.beginPreparation(cursor, plan, session, current, credentials, task);
                 if (begun.outcome() != Outcome.SUCCEEDED)
@@ -158,8 +164,8 @@ public final class DeploymentRestoreCoordinator {
             return retain(cursor, "DEPLOYMENT_RESTORE_PREPARE_CALL_UNKNOWN");
         } catch (Exception failure) {
             return cursor == null || !cursor.facts.path("changed").asBoolean()
-                    ? failed("DEPLOYMENT_RESTORE_INPUT_INVALID")
-                    : retain(cursor, "DEPLOYMENT_RESTORE_PREPARE_CALL_UNKNOWN");
+                ? failed("DEPLOYMENT_RESTORE_INPUT_INVALID")
+                : retain(cursor, "DEPLOYMENT_RESTORE_PREPARE_CALL_UNKNOWN");
         }
     }
 
@@ -175,7 +181,7 @@ public final class DeploymentRestoreCoordinator {
                 return failed("DEPLOYMENT_RESTORE_FINISHED_WITHOUT_ACTIVATION");
             try {
                 if (commit.finishProviderKnown(task, executions.find(task, id).orElseThrow())
-                        .outcome() != Outcome.SUCCEEDED)
+                    .outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_RESTORE_RESOURCES_UNCONFIRMED");
             } catch (Exception missing) {
                 return unknown("DEPLOYMENT_RESTORE_FORMAL_RESULT_UNCONFIRMED");
@@ -195,16 +201,16 @@ public final class DeploymentRestoreCoordinator {
             OperationResult<DeploymentActivation> businessResult;
             try (var session = context.linux().connect(request.target(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), request.target(), task,
-                        request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
                     return unknown("DEPLOYMENT_RESTORE_HELPER_UNCONFIRMED");
                 var channel = channel(context, session, request, task);
                 var publisher = publication(context, session, request, task);
                 var before = before(cursor);
                 if (!targets(plan.proposal.graph(), channel).equals(before)
-                        || !reviewed(request.archivedApplication(), request.archiveSha256(), server, session.facts(),
-                                before).equals(request.reviewedTargetSha256()))
+                    || !reviewed(request.archivedApplication(), request.archiveSha256(), server, session.facts(),
+                    before).equals(request.reviewedTargetSha256()))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_TARGET_CHANGED");
-                if (task.cancellation().requested())
+                if (task.cancelToken().requested())
                     return unknown("DEPLOYMENT_RESTORE_CANCELLED_PREPARED_DISCARD_REQUIRED");
                 cursor.save(DeploymentHandoffState.ACTIVATING);
                 var activated = activatePrepared(cursor, plan, channel);
@@ -215,12 +221,12 @@ public final class DeploymentRestoreCoordinator {
                     if (health.outcome() == Outcome.UNKNOWN)
                         return cursor.uncertain("DEPLOYMENT_RESTORE_HEALTH_UNKNOWN");
                     businessResult = recovery.compensate(cursor, plan, channel, publisher,
-                            health.problem().orElseThrow());
+                        health.problem().orElseThrow());
                     if (businessResult.outcome() == Outcome.UNKNOWN)
                         return businessResult;
                 } else {
                     var formal = commit.commitVerified(task, id,
-                            new DeploymentPublication(plan.proposal.graph(), plan.proposal.units()));
+                        new DeploymentPublication(plan.proposal.graph(), plan.proposal.units()));
                     if (formal.outcome() != Outcome.SUCCEEDED)
                         return cursor.uncertain("DEPLOYMENT_RESTORE_LOCAL_COMMIT_UNKNOWN");
                     cursor.facts.put("verifiedActive", true);
@@ -251,7 +257,7 @@ public final class DeploymentRestoreCoordinator {
             try {
                 var record = executions.find(task, id);
                 if (record.isPresent()
-                        && commit.finishProviderKnown(task, record.orElseThrow()).outcome() == Outcome.UNKNOWN)
+                    && commit.finishProviderKnown(task, record.orElseThrow()).outcome() == Outcome.UNKNOWN)
                     return unknown("DEPLOYMENT_RESTORE_FORMAL_CLEANUP_UNCONFIRMED");
             } catch (Exception uncertain) {
                 return unknown("DEPLOYMENT_RESTORE_FORMAL_CLEANUP_UNCONFIRMED");
@@ -262,7 +268,7 @@ public final class DeploymentRestoreCoordinator {
             if (cursor.facts.path("compensated").asBoolean())
                 return recovery.finishCompensated(cursor, task);
             if (cursor.facts.path("components").findValues("snapshot").stream().anyMatch(
-                    value -> value.path("attempted").asBoolean()) || cursor.facts.path("verifiedActive").asBoolean())
+                value -> value.path("attempted").asBoolean()) || cursor.facts.path("verifiedActive").asBoolean())
                 return unknown("DEPLOYMENT_RESTORE_ACTIVATION_REQUIRES_RECONCILE");
             var plan = new DeploymentRestorePlan(DeploymentRestorePlan.read(cursor.entry), releases);
             var originalExecution = executions.find(task, id);
@@ -276,7 +282,7 @@ public final class DeploymentRestoreCoordinator {
             }
             try (var session = context.linux().connect(plan.request.target(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), plan.request.target(), task,
-                        plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_HELPER_UNCONFIRMED");
                 if (!sameTarget(context, cursor, plan, session))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_TARGET_CHANGED");
@@ -288,9 +294,9 @@ public final class DeploymentRestoreCoordinator {
                 if (!cleanup.discardCandidates(cursor, plan, channel))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_DISCARD_UNKNOWN");
                 if (cursor.facts.path("executionStarted").asBoolean() && commit
-                        .completeUncommittedVerified(task, id, Outcome.CANCELLED,
-                                problem(ProblemCode.CANCELLED, "DEPLOYMENT_RESTORE_DISCARDED"))
-                        .outcome() != Outcome.CANCELLED)
+                    .completeUncommittedVerified(task, id, Outcome.CANCELLED,
+                        problem(ProblemCode.CANCELLED, "DEPLOYMENT_RESTORE_DISCARDED"))
+                    .outcome() != Outcome.CANCELLED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_FORMAL_DISCARD_UNCONFIRMED");
                 cursor.facts.put("terminalOutcome", "CANCELLED");
                 cursor.save(DeploymentHandoffState.FINISHED);
@@ -317,7 +323,7 @@ public final class DeploymentRestoreCoordinator {
             try {
                 var record = executions.find(task, id);
                 if (record.isPresent()
-                        && commit.finishProviderKnown(task, record.orElseThrow()).outcome() == Outcome.UNKNOWN)
+                    && commit.finishProviderKnown(task, record.orElseThrow()).outcome() == Outcome.UNKNOWN)
                     return unknown("DEPLOYMENT_RESTORE_FORMAL_CLEANUP_UNCONFIRMED");
                 return success(cursor.entry.publicValue());
             } catch (Exception unavailable) {
@@ -332,22 +338,22 @@ public final class DeploymentRestoreCoordinator {
                 return cursor.uncertain("DEPLOYMENT_RESTORE_ORIGINAL_TRANSFER_PENDING");
             try (var session = context.linux().connect(plan.request.target(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), plan.request.target(), task,
-                        plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_HELPER_UNCONFIRMED");
                 if (!sameTarget(context, cursor, plan, session))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_TARGET_CHANGED");
                 var channel = channel(context, session, plan.request, task);
                 var publisher = publication(context, session, plan.request, task);
                 if (cursor.facts.path("components").findValues("discardAttempted").stream()
-                        .anyMatch(value -> value.asBoolean())) {
+                    .anyMatch(value -> value.asBoolean())) {
                     for (var component : plan.proposal.graph().components()) {
                         var unit = cursor.unit(component.componentId());
                         if (!unit.path("discardAttempted").asBoolean())
                             continue;
                         if (!DeploymentHandoffChannel.receipt(
-                                send(channel, "handoff-restore-discard-status",
-                                        identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
-                                "RESTORE_DISCARDED=1\n"))
+                            send(channel, "handoff-restore-discard-status",
+                                identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
+                            "RESTORE_DISCARDED=1\n"))
                             return cursor.uncertain("DEPLOYMENT_RESTORE_DISCARD_UNKNOWN");
                         unit.put("discarded", true);
                     }
@@ -355,7 +361,7 @@ public final class DeploymentRestoreCoordinator {
                     return success(cursor.entry.publicValue());
                 }
                 boolean activationStarted = cursor.facts.path("components").findValues("snapshot").stream()
-                        .anyMatch(value -> value.path("attempted").asBoolean());
+                    .anyMatch(value -> value.path("attempted").asBoolean());
                 if (!activationStarted)
                     return reconcilePreparation(cursor, plan, channel);
                 if (cursor.facts.path("compensationAttempted").asBoolean()) {
@@ -368,29 +374,29 @@ public final class DeploymentRestoreCoordinator {
                 for (var component : plan.proposal.graph().components()) {
                     String candidate = cursor.unit(component.componentId()).path("candidate").asText();
                     if (cursor.unit(component.componentId()).path("cleanupAttempted").asBoolean()
-                            && DeploymentHandoffChannel.receipt(
-                                    send(channel, "handoff-restore-cleanup-status",
-                                            identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
-                                    "RESTORE_CLEANUP=1\n")) {
+                        && DeploymentHandoffChannel.receipt(
+                        send(channel, "handoff-restore-cleanup-status",
+                            identity(plan, cursor, component.componentId()), Duration.ofMinutes(2)),
+                        "RESTORE_CLEANUP=1\n")) {
                         cursor.unit(component.componentId()).put("cleaned", true);
                         cursor.save(DeploymentHandoffState.UNKNOWN);
                         continue;
                     }
                     if (!stepObserved(channel, cursor, plan, component.componentId(), "formal", "restore-start-formal",
-                            List.of(candidate, token(task), component.componentId())))
+                        List.of(candidate, token(task), component.componentId())))
                         return cursor.uncertain("DEPLOYMENT_RESTORE_FORMAL_STEP_UNCONFIRMED");
                     for (var input : databases(plan, component.componentId()))
                         if (!stepObserved(channel, cursor, plan, component.componentId(),
-                                "commit-" + databaseKey(input), "database-commit-candidate",
-                                databaseArguments(cursor, component, input)))
+                            "commit-" + databaseKey(input), "database-commit-candidate",
+                            databaseArguments(cursor, component, input)))
                             return cursor.uncertain("DEPLOYMENT_RESTORE_DATABASE_COMMIT_UNCONFIRMED");
                 }
                 if (health(plan, channel, publisher).outcome() != Outcome.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_HEALTH_UNCONFIRMED");
                 if (commit
-                        .commitVerified(task, id,
-                                new DeploymentPublication(plan.proposal.graph(), plan.proposal.units()))
-                        .outcome() != Outcome.SUCCEEDED)
+                    .commitVerified(task, id,
+                        new DeploymentPublication(plan.proposal.graph(), plan.proposal.units()))
+                    .outcome() != Outcome.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_LOCAL_COMMIT_UNCONFIRMED");
                 cursor.facts.put("verifiedActive", true);
                 cursor.save(DeploymentHandoffState.ACTIVE);
@@ -400,7 +406,7 @@ public final class DeploymentRestoreCoordinator {
                 cursor.save(DeploymentHandoffState.FINISHED);
             }
             if (commit.finishProviderKnown(task, executions.find(task, id).orElseThrow())
-                    .outcome() != Outcome.SUCCEEDED)
+                .outcome() != Outcome.SUCCEEDED)
                 return unknown("DEPLOYMENT_RESTORE_RESOURCES_UNCONFIRMED");
             return success(cursor.entry.publicValue());
         } catch (Exception unavailable) {
@@ -415,7 +421,7 @@ public final class DeploymentRestoreCoordinator {
      * @return confirmed prepared phase or retained uncertainty / 已确证准备阶段或留存未知
      * @throws Exception if original receipt identity or persistence is unavailable / 原回执身份或持久化不可用时 */
     private OperationResult<DeploymentHandoff> reconcilePreparation(DeploymentRestoreState cursor,
-            DeploymentRestorePlan plan, DeploymentHandoffChannel channel) throws Exception {
+                                                                    DeploymentRestorePlan plan, DeploymentHandoffChannel channel) throws Exception {
 
         var execution = executions.find(cursor.task, cursor.entry.publicValue().id());
         if (execution.isEmpty() || !execution.orElseThrow().phase().equals("EXECUTING"))
@@ -424,11 +430,11 @@ public final class DeploymentRestoreCoordinator {
             return cursor.uncertain("DEPLOYMENT_RESTORE_CURRENT_CHANGED");
         for (var component : plan.proposal.graph().components()) {
             if (!stepObserved(channel, cursor, plan, component.componentId(), "prepare", "restore-prepare",
-                    preparation(plan, cursor, component)))
+                preparation(plan, cursor, component)))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_PREPARATION_INCOMPLETE");
             for (var input : databases(plan, component.componentId()))
                 if (!stepObserved(channel, cursor, plan, component.componentId(), "prepare-" + databaseKey(input),
-                        "database-restore-candidate", databaseArguments(cursor, component, input)))
+                    "database-restore-candidate", databaseArguments(cursor, component, input)))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_DATABASE_PREPARATION_INCOMPLETE");
         }
         cursor.save(DeploymentHandoffState.PREPARED);
@@ -442,7 +448,7 @@ public final class DeploymentRestoreCoordinator {
      * @throws ApiException if original ownership, identity or kind differs / 原归属、身份或种类不符时 */
     private DeploymentHandoffLedger.Entry required(UUID id, TaskContext task) throws ApiException {
         var value = ledger.find(id, task).orElseThrow(
-                () -> new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_RESTORE_HANDOFF_ABSENT")));
+            () -> new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_RESTORE_HANDOFF_ABSENT")));
         if (!value.request().path("kind").asText().equals("RESTORE"))
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_RESTORE_KIND_CHANGED"));
         return value;

@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.app.main.mod;
 
+import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.SchemaMigration;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -7,11 +15,15 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModRestartLedger;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.*;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
-import gold.debug.windowstolinux.appapi.db.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
+import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
+import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.appapi.db.CheckResult;
+
 
 /** Owns isolated initialization or migration and retries cleanup without replaying author code. / 持有隔离初始化或迁移，只重试清理而不重放作者代码。 */
 final class ModSchemaPreparation implements AutoCloseable {
@@ -99,7 +111,7 @@ final class ModSchemaPreparation implements AutoCloseable {
      * @return validated exact target / 已验证精确目标
      * @throws Exception if execution or original cleanup fails / 执行或原清理失败时 */
     private SchemaIdentity execute(UUID intent, String contentDigest, ModRestartLedger.Preparation claimed)
-            throws Exception {
+        throws Exception {
         if (attempted)
             throw new IllegalStateException("Data preparation cannot replay author code");
         attempted = true;
@@ -172,7 +184,7 @@ final class ModSchemaPreparation implements AutoCloseable {
             try {
                 var type = Class.forName(step.className(), false, loader);
                 if (!Modifier.isPublic(type.getModifiers()) || Modifier.isAbstract(type.getModifiers())
-                        || type.isInterface() || !SchemaMigration.class.isAssignableFrom(type))
+                    || type.isInterface() || !SchemaMigration.class.isAssignableFrom(type))
                     throw rejected();
                 var migration = SchemaMigration.class.cast(type.getConstructor().newInstance());
                 migration.migrate(source, writer);
@@ -262,7 +274,7 @@ final class ModSchemaPreparation implements AutoCloseable {
     private void completeStep() throws SQLException {
         if (pendingStep != null) {
             ledger.completeStep(plan, pendingStep.step(), pendingStep.before(), pendingStep.after(),
-                    pendingStep.digest());
+                pendingStep.digest());
             pendingStep = null;
         }
     }
@@ -272,8 +284,8 @@ final class ModSchemaPreparation implements AutoCloseable {
     private ApiException sourceChanged() {
         outcome = Outcome.UNKNOWN;
         return new ApiException(new Problem(ProblemCode.UNKNOWN, "MOD_MIGRATION_SOURCE_CHANGED",
-                "Original migration source no longer matches its recorded data; reconciliation is required",
-                Map.of("ownerId", loader.manifest().id()), Optional.of(UUID.randomUUID())));
+            "Original migration source no longer matches its recorded data; reconciliation is required",
+            Map.of("ownerId", loader.manifest().id()), Optional.of(UUID.randomUUID())));
     }
 
     /** Combines author acceptance with actual read-only constraint checks. / 结合作者接受与实际只读约束检查。
@@ -282,11 +294,11 @@ final class ModSchemaPreparation implements AutoCloseable {
      * @return bounded validation receipt / 有界验证凭据
      * @throws Exception if author or platform validation fails / 作者或平台验证失败时 */
     private String validate(ModSchemaLifecycle lifecycle, SchemaAccessScope reader) throws Exception {
-        ValidationReport report;
+        CheckResult report;
         try {
             report = lifecycle.validate(reader);
             if (report == null || !report.valid()
-                    || report.businessDigest().map(v -> v.getBytes(StandardCharsets.UTF_8).length > 4096).orElse(false))
+                || report.businessDigest().map(v -> v.getBytes(StandardCharsets.UTF_8).length > 4096).orElse(false))
                 throw rejected();
         } catch (Exception | LinkageError | AssertionError failure) {
             outcome = Outcome.FAILED;
@@ -294,7 +306,7 @@ final class ModSchemaPreparation implements AutoCloseable {
         }
         String receipt = constraints(reader);
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest((receipt + "\n" + report.businessDigest().orElse("")).getBytes(StandardCharsets.UTF_8)));
+            .digest((receipt + "\n" + report.businessDigest().orElse("")).getBytes(StandardCharsets.UTF_8)));
     }
 
     /** Constructs only the fixed schema entry from its original main source. / 仅从原主来源构造固定 Schema 入口。
@@ -315,7 +327,7 @@ final class ModSchemaPreparation implements AutoCloseable {
         var type = Class.forName(className, false, loader);
         int modifiers = type.getModifiers();
         if (!loader.ownsMainClass(type) || !Modifier.isPublic(modifiers) || Modifier.isAbstract(modifiers)
-                || type.isInterface() || !ModSchemaLifecycle.class.isAssignableFrom(type))
+            || type.isInterface() || !ModSchemaLifecycle.class.isAssignableFrom(type))
             throw new ReflectiveOperationException("Main source must define a public concrete ModSchemaLifecycle");
         return ModSchemaLifecycle.class.cast(type.getConstructor().newInstance());
     }
@@ -324,11 +336,11 @@ final class ModSchemaPreparation implements AutoCloseable {
      * @return structured rejection / 结构化拒绝 */
     private ApiException rejected() {
         return new ApiException(new Problem(ProblemCode.UNAVAILABLE,
-                plan != null && plan.source().isPresent()
-                        ? "MOD_SCHEMA_MIGRATION_FAILED"
-                        : "MOD_SCHEMA_INITIALIZATION_FAILED",
-                "Data preparation failed; the original source and final target are retained for review",
-                Map.of("ownerId", loader.manifest().id()), Optional.empty()));
+            plan != null && plan.source().isPresent()
+                ? "MOD_SCHEMA_MIGRATION_FAILED"
+                : "MOD_SCHEMA_INITIALIZATION_FAILED",
+            "Data preparation failed; the original source and final target are retained for review",
+            Map.of("ownerId", loader.manifest().id()), Optional.empty()));
     }
 
     /** Reports whether cleanup left a known state that may receive a startup failure. / 报告清理是否留下可登记启动失败的已知状态。

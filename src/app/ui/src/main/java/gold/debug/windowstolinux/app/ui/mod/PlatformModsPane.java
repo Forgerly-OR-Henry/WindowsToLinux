@@ -15,10 +15,11 @@ import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
 import gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ui.i18n.LocaleBinding;
-import gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
+import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageContribution;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.OperationResult;
@@ -113,7 +114,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param showLogs opens existing platform log management / 打开既有平台日志管理
      * @param navigation actual publication and navigation owner / 实际发布及导航所有者 */
     public PlatformModsPane(PlatformModIntents service, SchemaActions schemas, DesktopComponentFactory components,
-            PageMessagePresenter messages, Runnable showLogs, ModNavigationPane navigation) {
+                            PageMessagePresenter messages, Runnable showLogs, ModNavigationPane navigation) {
         super(new BorderLayout(12, 12));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Mod management requires the EDT");
@@ -123,14 +124,14 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         this.messages = messages;
         this.navigation = navigation;
         setName("platform.mods");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         inventory.setName("mods.inventory");
         inventory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        inventory.setFixedCellHeight(com.formdev.flatlaf.util.UIScale.scale(84));
         inventory.setCellRenderer((list, value, index, selected, focus) -> {
-            var label = new DefaultListCellRenderer();
-            label.putClientProperty("html.disable", true);
             String name = value.versions().isEmpty() ? value.owner() : value.versions().getFirst().manifest().name();
-            return label.getListCellRendererComponent(list, name + " · " + value.owner(), index, selected, focus);
+            return components.inventoryCard(name, value.owner(), "", selected);
         });
         inventory.addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting())
@@ -145,28 +146,28 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         details.setLineWrap(true);
         details.setWrapStyleWord(true);
         details.setRows(9);
-        var right = new JPanel(new BorderLayout(8, 8));
+        var right = components.card(new BorderLayout(8, 8));
         right.add(enabled, BorderLayout.NORTH);
-        var facts = new JPanel(new BorderLayout(8, 8));
+        var facts = components.transparent(new BorderLayout(8, 8));
         pagePicker.setName("mods.pages");
         pagePicker.setRenderer((list, value, index, selected, focus) -> {
             var renderer = new DefaultListCellRenderer();
             renderer.putClientProperty("html.disable", true);
             return renderer.getListCellRendererComponent(list,
-                    value == null
-                            ? ""
-                            : value.spec().defaultTitle()
-                                    + (value.spec().settingsPage() ? " · " + messages.text("mods.settingsPage") : ""),
-                    index, selected, focus);
+                value == null
+                    ? ""
+                    : value.spec().defaultTitle()
+                    + (value.spec().settingsPage() ? " · " + messages.text("mods.settingsPage") : ""),
+                index, selected, focus);
         });
         pagePicker.addActionListener(event -> pageControls());
         view = new ActionControls(showLogs);
         var pageActions = new JPanel(new BorderLayout(6, 0));
-        pageActions.add(pagePicker);
-        var pageButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        pageActions.add(pagePicker, BorderLayout.NORTH);
+        var pageButtons = components.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
         pageButtons.add(view.openPage);
         pageButtons.add(view.pinPage);
-        pageActions.add(pageButtons, BorderLayout.EAST);
+        pageActions.add(pageButtons, BorderLayout.SOUTH);
         facts.add(pageActions, BorderLayout.NORTH);
         facts.add(new JScrollPane(details), BorderLayout.CENTER);
         var versionScroll = new JScrollPane(versions);
@@ -175,13 +176,42 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         versionScroll.setPreferredSize(new Dimension(420, 150));
         facts.add(versionScroll, BorderLayout.SOUTH);
         right.add(facts, BorderLayout.CENTER);
-        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(inventory), right);
-        split.setResizeWeight(0.28);
-        split.setDividerLocation(270);
-        add(split);
+        installInventoryLayout(right);
         add(view.footer, BorderLayout.SOUTH);
         navigationSubscription = navigation.onChange(this::renderPages);
         controls();
+        components.scrollPage(this);
+    }
+
+    /** Keeps both the inventory and its details usable in narrow workspaces. / 在窄工作区保留可用的清单及详情。
+     * @param right existing detail card / 原详情卡片 */
+    private void installInventoryLayout(JPanel right) {
+        var list = new JScrollPane(inventory);
+        list.setMinimumSize(new Dimension(0, 120));
+        right.setMinimumSize(new Dimension(0, 0));
+        var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, list, right);
+        split.setBorder(BorderFactory.createEmptyBorder());
+        split.setResizeWeight(0.28);
+        split.setDividerLocation(270);
+        split.setPreferredSize(new Dimension(600, 360));
+        split.addComponentListener(new java.awt.event.ComponentAdapter() {
+            /** Stacks the same views when two usable columns no longer fit. / 无法容纳两个可用列时纵排原视图。
+             * @param event current viewport size / 当前视口尺寸 */
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent event) {
+                int orientation = split.getWidth() < 650 ? JSplitPane.VERTICAL_SPLIT : JSplitPane.HORIZONTAL_SPLIT;
+                if (split.getOrientation() != orientation) {
+                    split.setOrientation(orientation);
+                    split.setPreferredSize(new Dimension(600,
+                        orientation == JSplitPane.VERTICAL_SPLIT
+                            ? 160 + right.getPreferredSize().height
+                            : Math.max(360, right.getPreferredSize().height)));
+                    split.setDividerLocation(orientation == JSplitPane.VERTICAL_SPLIT ? 150 : 270);
+                    split.revalidate();
+                }
+            }
+        });
+        add(split);
     }
 
     /** Adds installed-layout maintenance after actual installation services are composed. / 实际安装服务装配后加入安装布局维护。
@@ -233,7 +263,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             rows.clear();
             for (var value : values) {
                 if (value.operations().stream()
-                        .noneMatch(o -> o.type().equals("MIGRATE") && o.state().equals("RUNNING")))
+                    .noneMatch(o -> o.type().equals("MIGRATE") && o.state().equals("RUNNING")))
                     retained.remove(value.owner());
                 rows.addElement(value);
             }
@@ -257,29 +287,29 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         selectedVersion = value == null ? null : value.choice().version().orElse(null);
         if (value != null) {
             var text = new StringBuilder(messages.text("mods.saved",
-                    Map.of("choice", messages.text(value.choice().enabled() ? "mods.on" : "mods.off"), "version",
-                            value.choice().version().orElse("—"))));
+                Map.of("choice", messages.text(value.choice().enabled() ? "mods.on" : "mods.off"), "version",
+                    value.choice().version().orElse("—"))));
             text.append('\n').append(messages.text("mods.actual",
-                    Map.of("state", state(value.runtime()), "version", value.actual().orElse("—"))));
+                Map.of("state", state(value.runtime()), "version", value.actual().orElse("—"))));
             if (maintenance.installation != null && !value.choice().enabled() && !value.stopAcknowledged())
                 text.append('\n').append(messages.text("mods.repairNotice"));
             value.failure().ifPresent(problem -> text.append('\n').append(messages.safe(problem)));
             for (var data : value.data())
                 text.append('\n').append("Schema ").append(data.identity().schemaVersion()).append(" · ")
-                        .append(state(data.state()));
+                    .append(state(data.state()));
             for (var operation : value.operations())
                 text.append('\n')
-                        .append(messages.text(operation.request().isPresent() ? "mods.pending" : "mods.operation",
-                                Map.of("type", state(operation.type()), "state", state(operation.state()), "phase",
-                                        state(operation.phase()))));
+                    .append(messages.text(operation.request().isPresent() ? "mods.pending" : "mods.operation",
+                        Map.of("type", state(operation.type()), "state", state(operation.state()), "phase",
+                            state(operation.phase()))));
             details.setText(text.toString());
             details.setCaretPosition(0);
             var group = new ButtonGroup();
             for (var release : value.versions()) {
                 var manifest = release.manifest();
                 var radio = new JRadioButton(manifest.version() + " · "
-                        + manifest.schemaVersion().map(s -> "Schema " + s).orElse(messages.text("mods.noData")) + " · "
-                        + messages.text("mods.programState", Map.of("state", state(release.state()))));
+                    + manifest.schemaVersion().map(s -> "Schema " + s).orElse(messages.text("mods.noData")) + " · "
+                    + messages.text("mods.programState", Map.of("state", state(release.state()))));
                 radio.setName("mods.version." + manifest.version());
                 radio.putClientProperty("html.disable", true);
                 radio.setSelected(manifest.version().toString().equals(selectedVersion));
@@ -290,8 +320,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 group.add(radio);
                 versions.add(radio);
                 var data = value.data().stream()
-                        .filter(d -> manifest.schemaVersion().equals(Optional.of(d.identity().schemaVersion())))
-                        .findFirst();
+                    .filter(d -> manifest.schemaVersion().equals(Optional.of(d.identity().schemaVersion())))
+                    .findFirst();
                 if (data.isPresent() && data.get().state().equals("FAILED")) {
                     radio.setBorder(BorderFactory.createLineBorder(new Color(178, 45, 45)));
                     radio.setBorderPainted(true);
@@ -350,7 +380,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         view.progress.setVisible(busy && !locked && !closed);
         var value = inventory.getSelectedValue();
         boolean deleting = value != null
-                && value.operations().stream().anyMatch(InstalledMaintenance::deletionOperation);
+            && value.operations().stream().anyMatch(InstalledMaintenance::deletionOperation);
         boolean repairing = value != null && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL"));
         boolean maintaining = deleting || repairing;
         inventory.setEnabled(active);
@@ -358,43 +388,43 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         view.refresh.setEnabled(active);
         view.logs.setEnabled(active);
         view.save.setEnabled(
-                active && value != null && !maintaining && (!enabled.isSelected() || selectedVersion != null)
-                        && (enabled.isSelected() != value.choice().enabled()
-                                || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
+            active && value != null && !maintaining && (!enabled.isSelected() || selectedVersion != null)
+                && (enabled.isSelected() != value.choice().enabled()
+                || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
         view.cancel.setVisible(value != null && value.operations().stream().anyMatch(o -> o.request().isPresent()));
         view.cancel.setEnabled(active);
         view.reconcile.setVisible(value != null && value.operations().stream()
-                .anyMatch(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")));
+            .anyMatch(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")));
         view.reconcile.setEnabled(active);
         boolean finishing = value != null && retained.containsKey(value.owner());
         messages.bind(view.retry, finishing ? "mods.finish" : "mods.retry");
         view.retry.setVisible(finishing || value != null && value.choice().enabled() && value.versions().stream()
-                .anyMatch(v -> value.choice().version().equals(Optional.of(v.manifest().version().toString()))
-                        && value.data().stream().anyMatch(d -> d.retryable()
-                                && v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
+            .anyMatch(v -> value.choice().version().equals(Optional.of(v.manifest().version().toString()))
+                && value.data().stream().anyMatch(d -> d.retryable()
+                && v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
         view.retry.setEnabled(active);
         view.deleteVersion.setVisible(maintenance.deletion != null);
         view.deleteVersion.setEnabled(active && maintenance.deletion != null && value != null
-                && !value.choice().enabled() && value.stopAcknowledged() && !enabled.isSelected()
-                && selectedVersion != null && value.operations().isEmpty());
+            && !value.choice().enabled() && value.stopAcknowledged() && !enabled.isSelected()
+            && selectedVersion != null && value.operations().isEmpty());
         view.deleteMod.setVisible(maintenance.deletion != null);
         view.deleteMod.setEnabled(active && maintenance.deletion != null && value != null && !value.choice().enabled()
-                && value.stopAcknowledged() && !enabled.isSelected() && value.operations().isEmpty());
+            && value.stopAcknowledged() && !enabled.isSelected() && value.operations().isEmpty());
         view.reconcileDeletion.setVisible(maintenance.deletion != null && deleting);
         view.reconcileDeletion.setEnabled(active && value != null && value.operations().stream()
-                .anyMatch(o -> InstalledMaintenance.deletionOperation(o) && o.state().equals("UNKNOWN")));
+            .anyMatch(o -> InstalledMaintenance.deletionOperation(o) && o.state().equals("UNKNOWN")));
         view.repair.setVisible(maintenance.installation != null);
         view.repair.setEnabled(active && maintenance.installation != null && value != null && value.stopAcknowledged()
-                && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty()
-                && value.versions().stream().anyMatch(
-                        v -> v.manifest().version().toString().equals(selectedVersion) && v.state().equals("READY")));
+            && !enabled.isSelected() && selectedVersion != null && value.operations().isEmpty()
+            && value.versions().stream().anyMatch(
+            v -> v.manifest().version().toString().equals(selectedVersion) && v.state().equals("READY")));
         view.reconcileRepair.setVisible(maintenance.installation != null && repairing);
         view.reconcileRepair.setEnabled(active && value != null && value.operations().stream()
-                .anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")));
+            .anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")));
         view.restoreProgram.setVisible(maintenance.installation != null && repairing);
         view.restoreProgram.setEnabled(active && value != null
-                && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")
-                        && Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(o.phase())));
+            && value.operations().stream().anyMatch(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")
+            && Set.of("VALIDATED", "STAGED", "OLD_SAVED", "FILES_PUBLISHED").contains(o.phase())));
         view.programActions.setVisible(maintenance.installation != null);
         view.cleanupActions.setVisible(maintenance.installation != null && maintaining);
         for (var child : versions.getComponents())
@@ -409,13 +439,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @return source, empty for no migration, or null for cancellation / 来源，无迁移为空，取消为 null */
     private Optional<SchemaIdentity> source(ModView value, String version, boolean retry) {
         var target = value.versions().stream().filter(v -> v.manifest().version().toString().equals(version))
-                .findFirst().orElseThrow();
+            .findFirst().orElseThrow();
         var schema = target.manifest().schemaVersion();
         if (schema.isEmpty() || !retry && value.data().stream()
-                .anyMatch(d -> schema.get().equals(d.identity().schemaVersion()) && d.state().equals("READY")))
+            .anyMatch(d -> schema.get().equals(d.identity().schemaVersion()) && d.state().equals("READY")))
             return Optional.empty();
         var data = value.data().stream().filter(d -> !retry || !schema.get().equals(d.identity().schemaVersion()))
-                .toList();
+            .toList();
         if (data.isEmpty())
             return Optional.empty();
         var choices = new ArrayList<SourceChoice>();
@@ -426,21 +456,21 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         var select = new JComboBox<>(choices.toArray(SourceChoice[]::new));
         select.setName("mods.source");
         select.setRenderer(
-                (list, item, index, selected, focus) -> new DefaultListCellRenderer().getListCellRendererComponent(list,
-                        item == null
-                                ? ""
-                                : item.version() + " · Schema " + item.data().identity().schemaVersion() + " · "
-                                        + state(item.data().state()),
-                        index, selected, focus));
+            (list, item, index, selected, focus) -> new DefaultListCellRenderer().getListCellRendererComponent(list,
+                item == null
+                    ? ""
+                    : item.version() + " · Schema " + item.data().identity().schemaVersion() + " · "
+                    + state(item.data().state()),
+                index, selected, focus));
         if (value.runtime().equals("RUNNING"))
             choices.stream().filter(c -> value.actual().equals(Optional.of(c.version()))).findFirst()
-                    .ifPresent(select::setSelectedItem);
+                .ifPresent(select::setSelectedItem);
         var panel = new JPanel(new BorderLayout(8, 8));
         panel.add(messages.bind(new JLabel(), "mods.sourceNotice"), BorderLayout.NORTH);
         panel.add(select);
         long original = epoch;
         if (JOptionPane.showConfirmDialog(this, panel, messages.text("mods.sourceTitle"),
-                JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION || locked || closed || epoch != original)
+            JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION || locked || closed || epoch != original)
             return null;
         var chosen = (SourceChoice) select.getSelectedItem();
         return chosen == null ? Optional.empty() : Optional.of(chosen.data().identity());
@@ -451,12 +481,12 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param result original backend result / 原后端结果
      * @return localized actual outcome / 本地化实际结果 */
     static String repairMessage(PageMessagePresenter messages,
-            OperationResult<PlatformModReinstallation.Receipt> result) {
+                                OperationResult<PlatformModReinstallation.Receipt> result) {
         if (result.outcome() == Outcome.SUCCEEDED)
             return messages.text("mods.repaired") + " "
-                    + messages.text("originals.cleanup." + result.value().orElseThrow().originalCleanup());
+                + messages.text("originals.cleanup." + result.value().orElseThrow().originalCleanup());
         if (result.outcome() == Outcome.FAILED
-                && result.value().map(PlatformModReinstallation.Receipt::restored).orElse(false))
+            && result.value().map(PlatformModReinstallation.Receipt::restored).orElse(false))
             return messages.text("mods.restoredProgram");
         return messages.text("mods.repairPending");
     }
@@ -481,23 +511,23 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private String summary(Review review, Optional<SchemaIdentity> source) {
         var text = new StringBuilder(messages.text("mods.confirmChoice"));
         review.choices()
-                .forEach((owner, choice) -> text.append('\n').append(owner).append(" → ")
-                        .append(messages.text(choice.enabled() ? "mods.on" : "mods.off")).append(" · ")
-                        .append(choice.version().orElse("—")));
+            .forEach((owner, choice) -> text.append('\n').append(owner).append(" → ")
+                .append(messages.text(choice.enabled() ? "mods.on" : "mods.off")).append(" · ")
+                .append(choice.version().orElse("—")));
         source.ifPresent(s -> text.append('\n')
-                .append(messages.text("mods.confirmSource", Map.of("schema", s.schemaVersion()))));
+            .append(messages.text("mods.confirmSource", Map.of("schema", s.schemaVersion()))));
         if (!review.cascade().isEmpty())
             text.append('\n')
-                    .append(messages.text("mods.cascade", Map.of("owners", String.join(", ", review.cascade()))));
+                .append(messages.text("mods.cascade", Map.of("owners", String.join(", ", review.cascade()))));
         text.append('\n')
-                .append(messages.text("mods.affected", Map.of("owners", String.join(", ", review.affected()))));
+            .append(messages.text("mods.affected", Map.of("owners", String.join(", ", review.affected()))));
         return text.toString();
     }
 
     /** Reviews withdrawal of the entire original pending group. / 审阅撤销整个原待执行组。 */
     private void cancelRequest() {
         var request = inventory.getSelectedValue().operations().stream().flatMap(o -> o.request().stream()).findFirst()
-                .orElseThrow();
+            .orElseThrow();
         run(() -> service.reviewCancellation(request), review -> {
             if (confirm(messages.text("mods.confirmCancel") + "\n" + summary(review, Optional.empty())))
                 run(() -> service.apply(review, true), ignored -> completed("mods.cancelled"), true);
@@ -507,7 +537,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Explicitly validates the original unknown target without replaying migration. / 明确验证原未知目标，不重放迁移。 */
     private void reconcile() {
         var operation = inventory.getSelectedValue().operations().stream()
-                .filter(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
+            .filter(o -> o.type().equals("MIGRATE") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
         if (confirm(messages.text("mods.confirmReconcile")))
             run(() -> schemas.reconcile(operation.id()), this::outcome, true);
     }
@@ -525,10 +555,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             return;
         run(() -> schemas.review(value.owner(), source), review -> {
             String text = messages.text("mods.confirmRetry",
-                    Map.of("owner", value.owner(), "version", review.manifest().version().toString(), "schema",
-                            review.target().schemaVersion()))
-                    + source.map(s -> "\n" + messages.text("mods.confirmSource", Map.of("schema", s.schemaVersion())))
-                            .orElse("");
+                Map.of("owner", value.owner(), "version", review.manifest().version().toString(), "schema",
+                    review.target().schemaVersion()))
+                + source.map(s -> "\n" + messages.text("mods.confirmSource", Map.of("schema", s.schemaVersion())))
+                .orElse("");
             if (confirm(text))
                 executeRetry(value.owner(), review);
         });
@@ -679,25 +709,25 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             String owner = inventory.getSelectedValue().owner();
             run(() -> deletion.review(owner, version), review -> {
                 var text = new StringBuilder(review.whole()
-                        ? messages.text("mods.confirmDeleteMod",
-                                Map.of("owner", review.owner(), "versions", String.join(", ", review.versions()),
-                                        "bytes", review.bytes(), "ownedBytes", review.ownedBytes()))
-                        : messages.text("mods.confirmDeleteVersion",
-                                Map.of("owner", review.owner(), "version", review.version(), "bytes", review.bytes())));
+                    ? messages.text("mods.confirmDeleteMod",
+                    Map.of("owner", review.owner(), "versions", String.join(", ", review.versions()),
+                        "bytes", review.bytes(), "ownedBytes", review.ownedBytes()))
+                    : messages.text("mods.confirmDeleteVersion",
+                    Map.of("owner", review.owner(), "version", review.version(), "bytes", review.bytes())));
                 if (review.whole()) {
                     for (var schema : review.removedSchemas())
                         text.append('\n').append(
-                                messages.text("mods.deleteOwnedSchema", Map.of("schema", schema.schemaVersion())));
+                            messages.text("mods.deleteOwnedSchema", Map.of("schema", schema.schemaVersion())));
                     text.append('\n').append(messages.text("mods.deleteOwnedReferences",
-                            Map.of("logs", String.join(", ", review.removedLogCategories()), "pages",
-                                    String.join(", ", review.removedNavigationPages()), "removed",
-                                    review.removedSecrets().size(), "retained", review.retainedSecrets().size())));
+                        Map.of("logs", String.join(", ", review.removedLogCategories()), "pages",
+                            String.join(", ", review.removedNavigationPages()), "removed",
+                            review.removedSecrets().size(), "retained", review.retainedSecrets().size())));
                 } else
                     text.append('\n')
-                            .append(review.removedSchema()
-                                    .map(s -> messages.text("mods.deleteSchema", Map.of("schema", s.schemaVersion())))
-                                    .orElseGet(() -> messages.text("mods.keepSchema",
-                                            Map.of("versions", String.join(", ", review.retainedSchemaVersions())))));
+                        .append(review.removedSchema()
+                            .map(s -> messages.text("mods.deleteSchema", Map.of("schema", s.schemaVersion())))
+                            .orElseGet(() -> messages.text("mods.keepSchema",
+                                Map.of("versions", String.join(", ", review.retainedSchemaVersions())))));
                 for (var path : review.programs())
                     text.append('\n').append(path);
                 for (var path : review.ownedFiles())
@@ -719,7 +749,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 if (confirm(panel)) {
                     boolean selected = originals.isSelected();
                     run(() -> deletion.delete(review, selected), result -> deleted(result.outcome(), review.whole()),
-                            true);
+                        true);
                 }
             });
         }
@@ -727,11 +757,11 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         /** Continues an original accepted deletion without choosing a fresh file scope. / 继续原已接纳删除，不选择新的文件范围。 */
         private void reconcileDeletion() {
             var operation = inventory.getSelectedValue().operations().stream()
-                    .filter(o -> InstalledMaintenance.deletionOperation(o) && o.state().equals("UNKNOWN")).findFirst()
-                    .orElseThrow();
+                .filter(o -> InstalledMaintenance.deletionOperation(o) && o.state().equals("UNKNOWN")).findFirst()
+                .orElseThrow();
             if (confirm(messages.text("mods.confirmDeletionReconcile")))
                 run(() -> deletion.reconcile(operation.id()),
-                        result -> deleted(result.outcome(), operation.type().equals("DELETE_MOD")), true);
+                    result -> deleted(result.outcome(), operation.type().equals("DELETE_MOD")), true);
         }
 
         /** Recognizes the two installed cleanup operations without interpreting their recovery payload. / 识别两类安装清理操作，不解释其恢复载荷。
@@ -756,10 +786,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
             run(installation::scan, observation -> {
                 var paths = observation.originals().stream()
-                        .filter(o -> o.state().equals("INSTALLED") && o.manifest().isPresent()
-                                && o.manifest().orElseThrow().id().equals(owner)
-                                && o.manifest().orElseThrow().version().toString().equals(version))
-                        .map(PlatformModInstallation.OriginalView::file).toList();
+                    .filter(o -> o.state().equals("INSTALLED") && o.manifest().isPresent()
+                        && o.manifest().orElseThrow().id().equals(owner)
+                        && o.manifest().orElseThrow().version().toString().equals(version))
+                    .map(PlatformModInstallation.OriginalView::file).toList();
                 Path selected = null;
                 if (!paths.isEmpty()) {
                     var choices = new JComboBox<Path>();
@@ -770,13 +800,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                         var renderer = new DefaultListCellRenderer();
                         renderer.putClientProperty("html.disable", true);
                         return renderer.getListCellRendererComponent(list,
-                                value == null ? messages.text("mods.chooseRepairFile") : value.toString(), index,
-                                chosen, focus);
+                            value == null ? messages.text("mods.chooseRepairFile") : value.toString(), index,
+                            chosen, focus);
                     });
                     var panel = new JPanel(new BorderLayout(8, 8));
                     var notice = new JTextArea(
-                            messages.text("mods.chooseRepairSource", Map.of("owner", owner, "version", version)), 3,
-                            58);
+                        messages.text("mods.chooseRepairSource", Map.of("owner", owner, "version", version)), 3,
+                        58);
                     notice.setEditable(false);
                     notice.setLineWrap(true);
                     notice.setWrapStyleWord(true);
@@ -804,15 +834,15 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
             chooser.setAcceptAllFileFilterUsed(false);
             chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-                    messages.text("mods.repairFileType"), "wtlmod"));
+                messages.text("mods.repairFileType"), "wtlmod"));
             Path[] selected = {null};
             var dialog = new JDialog(SwingUtilities.getWindowAncestor(PlatformModsPane.this),
-                    messages.text("mods.chooseRepairFile"), Dialog.ModalityType.APPLICATION_MODAL);
+                messages.text("mods.chooseRepairFile"), Dialog.ModalityType.APPLICATION_MODAL);
             LocaleBinding.title(dialog, LocalizedMessage.of("mods.chooseRepairFile"), messages.catalog());
             confirmation = dialog;
             chooser.addActionListener(event -> {
                 if (JFileChooser.APPROVE_SELECTION.equals(event.getActionCommand())
-                        && chooser.getSelectedFile() != null)
+                    && chooser.getSelectedFile() != null)
                     selected[0] = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
                 dialog.dispose();
             });
@@ -836,9 +866,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         private void reviewRepair(String owner, String version, Path original) {
             run(() -> installation.reinstallation().review(owner, version, original), review -> {
                 var text = new StringBuilder(messages.text("mods.confirmRepair",
-                        Map.of("owner", owner, "version", version, "path", review.inspection().archive().toString(),
-                                "retention",
-                                messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter"))));
+                    Map.of("owner", owner, "version", version, "path", review.inspection().archive().toString(),
+                        "retention",
+                        messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter"))));
                 text.append("\n\n").append(messages.text("mods.repairOldFiles"));
                 if (review.oldFiles().isEmpty())
                     text.append('\n').append(messages.text("mods.repairNoOldFiles"));
@@ -861,7 +891,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             var operation = repairOperation();
             run(() -> installation.reinstallation().reviewRestore(operation.id()), review -> {
                 var text = new StringBuilder(messages.text("mods.confirmRestoreProgram",
-                        Map.of("owner", review.owner(), "version", review.version(), "id", review.id().toString())));
+                    Map.of("owner", review.owner(), "version", review.version(), "id", review.id().toString())));
                 if (review.discardedFiles().isEmpty())
                     text.append('\n').append(messages.text("mods.restoreNoFiles"));
                 else
@@ -875,7 +905,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
          * @return original maintenance identity / 原维护身份 */
         private OperationView repairOperation() {
             return inventory.getSelectedValue().operations().stream()
-                    .filter(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
+                .filter(o -> o.type().equals("REINSTALL") && o.state().equals("UNKNOWN")).findFirst().orElseThrow();
         }
 
         /** Refreshes saved state and original inventory after an actual repair outcome. / 实际修复结果后刷新已存状态和原包清单。
@@ -895,14 +925,14 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
         /** Explicit management actions. / 明确管理操作。 */
         private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, deleteMod,
-                reconcileDeletion;
+            reconcileDeletion;
 
         /** Explicit same-release repair and original recovery actions. / 明确同版本修复及原恢复操作。 */
         private final JButton repair, reconcileRepair, restoreProgram;
 
         /** Installed-only program and retained-operation rows. / 仅安装模式的程序及保留操作行。 */
         private final JPanel programActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0)),
-                cleanupActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            cleanupActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
 
         /** Safe operation feedback outside the retained snapshot. / 保留快照之外的安全操作反馈。 */
         private final JLabel status = new JLabel();

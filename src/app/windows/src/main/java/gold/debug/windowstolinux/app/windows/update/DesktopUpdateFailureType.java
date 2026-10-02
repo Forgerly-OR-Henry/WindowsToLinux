@@ -17,43 +17,43 @@ public enum DesktopUpdateFailureType {
      * <p>Desktop更新失败类型中的清单无效分类。
      */
     MANIFEST_INVALID("windows.update.manifest-invalid", "validation", "windows.error.updateManifestInvalid",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * SIGNATURE INVALID classification within desktop update failure type.
      * <p>Desktop更新失败类型中的签名无效分类。
      */
     SIGNATURE_INVALID("windows.update.signature-invalid", "verification", "windows.error.updateSignatureInvalid",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * VERSION REJECTED classification within desktop update failure type.
      * <p>Desktop更新失败类型中的版本已拒绝分类。
      */
     VERSION_REJECTED("windows.update.version-rejected", "verification", "windows.error.updateVersionRejected",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * ARCHITECTURE REJECTED classification within desktop update failure type.
      * <p>Desktop更新失败类型中的架构已拒绝分类。
      */
     ARCHITECTURE_REJECTED("windows.update.architecture-rejected", "verification",
-            "windows.error.updateArchitectureRejected", "REQUEST_USER_CORRECTION"),
+        "windows.error.updateArchitectureRejected", "REQUEST_USER_CORRECTION"),
     /**
      * PACKAGE INVALID classification within desktop update failure type.
      * <p>Desktop更新失败类型中的软件包无效分类。
      */
     PACKAGE_INVALID("windows.update.package-invalid", "verification", "windows.error.updatePackageInvalid",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * TRANSACTION FAILED classification within desktop update failure type.
      * <p>Desktop更新失败类型中的事务失败分类。
      */
     TRANSACTION_FAILED("windows.update.transaction-failed", "update", "windows.error.updateTransactionFailed",
-            "ROLLBACK"),
+        "ROLLBACK"),
     /**
      * ROLLBACK FAILED classification within desktop update failure type.
      * <p>Desktop更新失败类型中的回滚失败分类。
      */
     ROLLBACK_FAILED("windows.update.rollback-failed", "rollback", "windows.error.updateRollbackFailed",
-            "REQUIRE_MANUAL_RECOVERY");
+        "REQUIRE_MANUAL_RECOVERY");
 
     /**
      * Stable machine-readable classification code.
@@ -167,9 +167,9 @@ public enum DesktopUpdateFailureType {
         if (message.isBlank())
             throw new IllegalArgumentException("diagnostic must not be blank");
         return new Problem(problemCode(), code, message,
-                Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
-                        "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
-                Optional.of(operation));
+            Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
+                "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
+            Optional.of(operation));
     }
 
     /** Selects the SDK category while preserving the precise event code. / 保留精确事件码并选择SDK类别。

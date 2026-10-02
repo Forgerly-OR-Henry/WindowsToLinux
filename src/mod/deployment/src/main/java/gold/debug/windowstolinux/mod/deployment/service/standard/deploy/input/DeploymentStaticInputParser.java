@@ -9,7 +9,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
 
 /**
  * Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。
@@ -34,7 +34,7 @@ public final class DeploymentStaticInputParser {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     public static Optional<List<DeploymentDatabaseBinding>> databaseBindings(DeploymentDatabaseReviewModeType mode,
-            String input) {
+                                                                             String input) {
         mode = Objects.requireNonNull(mode, "mode");
         input = Objects.requireNonNull(input, "input").trim();
         if (input.length() > 2048 || input.chars().anyMatch(Character::isISOControl)) {
@@ -50,13 +50,13 @@ public final class DeploymentStaticInputParser {
         if (mode == DeploymentDatabaseReviewModeType.SQLITE) {
             if (values.length != 2)
                 throw new IllegalArgumentException(
-                        "SQLite binding requires database-id|application-file-path; default paths use the DB declaration with a path environment variable");
+                    "SQLite binding requires database-id|application-file-path; default paths use the DB declaration with a path environment variable");
             var file = DeploymentSqliteRequirement.fromPath(values[1].trim(), "", "");
             if (file.accessPath().isEmpty())
                 throw new IllegalArgumentException(
-                        "SQLite default paths require a reviewed application path input in windowstolinux-db.properties");
+                    "SQLite default paths require a reviewed application path input in windowstolinux-db.properties");
             return Optional.of(List.of(new DeploymentDatabaseBinding(values[0].trim(),
-                    new DeploymentDatabaseConnection.Sqlite(file.fileName(), file.location(), file.accessPath()))));
+                new DeploymentDatabaseConnection.Sqlite(file.fileName(), file.location(), file.accessPath()))));
         }
         if (values.length != 7) {
             throw new IllegalArgumentException("server database binding must contain seven fields");
@@ -72,8 +72,8 @@ public final class DeploymentStaticInputParser {
         };
         DeploymentDatabaseEngineType engine = DeploymentDatabaseEngineType.valueOf(mode.name());
         DeploymentDatabaseConnection connection = new DeploymentDatabaseConnection.Server(engine, values[1].trim(),
-                Integer.parseInt(values[2].trim()), values[3].trim(), values[4].trim(), passwordReferences.getFirst(),
-                tlsRequired);
+            Integer.parseInt(values[2].trim()), values[3].trim(), values[4].trim(), passwordReferences.getFirst(),
+            tlsRequired);
         return Optional.of(List.of(new DeploymentDatabaseBinding(values[0].trim(), connection)));
     }
 
@@ -150,7 +150,7 @@ public final class DeploymentStaticInputParser {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public static DeploymentRuntimeDefinition service(DeploymentProjectKind selected, String version, String artifact,
-            String entrypoint, DeploymentHealthCheck health) {
+                                                      String entrypoint, DeploymentHealthCheck health) {
         return switch (selected) {
             case GO_SERVICE -> new DeploymentRuntimeDefinition.GoService(version, artifact, entrypoint, health);
             case RUST_SERVICE -> new DeploymentRuntimeDefinition.RustService(version, artifact, entrypoint, health);

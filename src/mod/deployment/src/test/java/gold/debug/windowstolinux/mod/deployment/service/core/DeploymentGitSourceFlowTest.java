@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.core;
 
+import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
@@ -9,10 +22,10 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
@@ -21,7 +34,7 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPreparationJournal;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticTaskRecovery;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
@@ -67,11 +80,11 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                    new DeploymentGitReference.Branch("main"), Set.of(), 2 * 1024 * 1024, true);
+                new DeploymentGitReference.Branch("main"), Set.of(), 2 * 1024 * 1024, true);
             var flow = new DeploymentGitSourceFlow(context);
             var id = UUID.randomUUID();
             var handle = flow.submit(request, GIT, id, "Git project", Optional.empty(),
-                    Instant.parse("2026-09-28T00:00:00Z"), 2 * 1024 * 1024, 100);
+                Instant.parse("2026-09-28T00:00:00Z"), 2 * 1024 * 1024, 100);
             var result = handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
             assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
             var project = result.value().orElseThrow();
@@ -79,13 +92,13 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             assertEquals(commit, project.source().gitCommit().orElseThrow());
             assertEquals("BRANCH:main", project.source().gitRef().orElseThrow());
             var read = context.tasks().submit(
-                    new TaskRequest("git-project-read", "Read saved project", List.of(), false),
-                    task -> new OperationResult<>(Outcome.SUCCEEDED,
-                            new DeploymentProjectRepository(context.db()).find(task, id), Optional.empty()));
+                new TaskRequest("git-project-read", "Read saved project", List.of(), false),
+                task -> new OperationResult<>(Outcome.SUCCEEDED,
+                    new DeploymentProjectRepository(context.db()).find(task, id), Optional.empty()));
             assertEquals(project,
-                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow());
+                read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
     }
 
@@ -94,36 +107,36 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var handle = context.tasks().submit(new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE,
-                    "Interrupted original Git project", List.of(), true), task -> {
-                        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
-                                "Unwritten Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),
-                                request, 2 * 1024 * 1024, 100);
-                        try (var material = new DeploymentGitPreparer(context, GIT).prepare(request, 2 * 1024 * 1024,
-                                100, task, journal)) {
-                            assertNotNull(material.commit());
-                        }
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_INTERRUPTED_BEFORE_SAVE",
-                                        "Original callback was interrupted before project save", Map.of(),
-                                        Optional.empty())));
-                    });
+                "Interrupted original Git project", List.of(), true), task -> {
+                var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
+                    "Unwritten Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),
+                    request, 2 * 1024 * 1024, 100);
+                try (var material = new DeploymentGitPreparer(context, GIT).prepare(request, 2 * 1024 * 1024,
+                    100, task, journal)) {
+                    assertNotNull(material.commit());
+                }
+                return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_INTERRUPTED_BEFORE_SAVE",
+                        "Original callback was interrupted before project save", Map.of(),
+                        Optional.empty())));
+            });
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
                 Thread.onSpinWait();
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertEquals(1, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
             Files.move(repo, root.resolve("remote-unavailable"));
             var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
     }
 
@@ -144,7 +157,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
     private void runUnknownProbe(String scenario, String marker) throws Exception {
         var javaBinary = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var child = new ProcessBuilder(javaBinary.toString(), "-cp", System.getProperty("java.class.path"),
-                getClass().getName(), scenario, root.toString()).redirectErrorStream(true).start();
+            getClass().getName(), scenario, root.toString()).redirectErrorStream(true).start();
         try {
             assertTrue(child.waitFor(60, TimeUnit.SECONDS), "Original UNKNOWN child timed out");
             var output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -189,24 +202,24 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
         var runtime = open();
         {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Original static Git without receipt", List.of(), true), task -> {
-                        gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPreparationJournal
-                                .begin(context.tasks(), task,
-                                        new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
-                        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
-                                "reviewed-project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"), request,
-                                65536, 100);
-                        journal.beforeRequest();
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_RECEIPT_MISSING",
-                                        "Original receipt unavailable", Map.of(), Optional.empty())));
-                    });
+                "Original static Git without receipt", List.of(), true), task -> {
+                gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPreparationJournal
+                    .begin(context.tasks(), task,
+                        new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
+                var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
+                    "reviewed-project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"), request,
+                    65536, 100);
+                journal.beforeRequest();
+                return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_RECEIPT_MISSING",
+                        "Original receipt unavailable", Map.of(), Optional.empty())));
+            });
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
                 Thread.onSpinWait();
@@ -215,7 +228,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskState.UNKNOWN, recovered.state());
             assertEquals(2, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
         }
     }
 
@@ -223,46 +236,46 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(new DeploymentGitRemote(repo.toUri()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
         var runtime = open();
         start(runtime, true);
         var context = runtime.modContexts().get(OWNER).context();
         var handle = context.tasks().submit(
-                new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Original static Git save unknown", List.of(), true),
-                task -> {
-                    DeploymentStaticPreparationJournal.begin(context.tasks(), task,
-                            new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
-                    var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
-                            "reviewed-project", 65536, 100, task);
-                    var journal = DeploymentGitSourceJournal.find(context.tasks(), task).orElseThrow();
-                    var facts = journal.facts();
-                    var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
-                            request.remote().location(), Optional.of("DEFAULT:HEAD"),
-                            Optional.of(pinned.material().commit()), pinned.material().source().snapshot().sha256());
-                    journal.propose(new DeploymentProjectRecord(facts.project(), facts.displayName(), source,
-                            facts.observedAt(), facts.observedAt()));
-                    journal.writeStarted();
-                    assertEquals(ProblemCode.UNKNOWN, assertThrows(ApiException.class, pinned::close).problem().code());
-                    return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                            Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_SAVE_UNKNOWN",
-                                    "Original save acknowledgement unavailable", Map.of(), Optional.empty())));
-                });
+            new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Original static Git save unknown", List.of(), true),
+            task -> {
+                DeploymentStaticPreparationJournal.begin(context.tasks(), task,
+                    new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
+                var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
+                    "reviewed-project", 65536, 100, task);
+                var journal = DeploymentGitSourceJournal.find(context.tasks(), task).orElseThrow();
+                var facts = journal.facts();
+                var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
+                    request.remote().location(), Optional.of("DEFAULT:HEAD"),
+                    Optional.of(pinned.material().commit()), pinned.material().source().snapshot().sha256());
+                journal.propose(new DeploymentProjectRecord(facts.project(), facts.displayName(), source,
+                    facts.observedAt(), facts.observedAt()));
+                journal.writeStarted();
+                assertEquals(ProblemCode.UNKNOWN, assertThrows(ApiException.class, pinned::close).problem().code());
+                return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_SAVE_UNKNOWN",
+                        "Original save acknowledgement unavailable", Map.of(), Optional.empty())));
+            });
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
         while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
             Thread.onSpinWait();
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
         Files.move(repo, root.resolve("remote-unavailable"));
         assertEquals(TaskState.UNKNOWN,
-                runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS).state());
+            runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS).state());
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_project")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_project")) {
             assertTrue(rows.next());
             assertEquals(0, rows.getInt(1));
         }
         assertEquals(2, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
+            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
     }
 
     /** A late verified cancellation remains cancellation after both original preparation checkpoints settle. / 晚到的已核实取消在两个原准备检查点收尾后仍为取消。
@@ -271,30 +284,30 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
     void staticRecoveryPreservesLateGitCancellation() throws Exception {
         enable();
         var request = new DeploymentGitRequest(new DeploymentGitRemote(root.resolve("unused-repo").toUri()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var recovery = new DeploymentStaticTaskRecovery(context, new DeploymentReferenceFlow(context));
             var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
-                    "Late original Git cancellation", List.of(), true), task -> {
-                        DeploymentStaticPreparationJournal.begin(context.tasks(), task,
-                                new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
-                        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
-                                "reviewed-project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"), request,
-                                65536, 100);
-                        journal.beforeRequest();
-                        var previous = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentReferenceFlow.TASK_TYPE,
-                                TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(), List.of());
-                        assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
-                        journal.receipt(new DeploymentGitPreparer.Receipt(Outcome.CANCELLED, Optional.empty(),
-                                Optional.of(ProblemCode.CANCELLED), Optional.of("GIT_CANCELLED")));
-                        assertEquals(Outcome.CANCELLED, recovery.reconcile(previous, task).outcome());
-                        assertTrue(context.tasks().resourcesReleased(task));
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                "Late original Git cancellation", List.of(), true), task -> {
+                DeploymentStaticPreparationJournal.begin(context.tasks(), task,
+                    new gold.debug.windowstolinux.appapi.server.ServerRef("server"));
+                var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
+                    "reviewed-project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"), request,
+                    65536, 100);
+                journal.beforeRequest();
+                var previous = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentReferenceFlow.TASK_TYPE,
+                    TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(), List.of());
+                assertEquals(Outcome.UNKNOWN, recovery.reconcile(previous, task).outcome());
+                journal.receipt(new DeploymentGitPreparer.Receipt(Outcome.CANCELLED, Optional.empty(),
+                    Optional.of(ProblemCode.CANCELLED), Optional.of("GIT_CANCELLED")));
+                assertEquals(Outcome.CANCELLED, recovery.reconcile(previous, task).outcome());
+                assertTrue(context.tasks().resourcesReleased(task));
+                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
             assertEquals(Outcome.SUCCEEDED,
-                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
         }
     }
 
@@ -303,7 +316,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
         var graph = new AtomicReference<TaskRecoveryGraph>();
         var payload = new AtomicReference<String>();
         UUID prior, interrupted = UUID.randomUUID();
@@ -315,43 +328,43 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             schema = context.db().identity();
             var probe = context.tasks().submit(
-                    new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Capture original graph", List.of(), true),
-                    task -> {
-                        graph.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
-                                .orElseThrow());
-                        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
-                                "Prepared Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),
-                                request, 1024, 100);
-                        payload.set(context.tasks().findCheckpoint(task, DeploymentGitSourceJournal.KEY).orElseThrow()
-                                .snapshot().payload());
-                        journal.close();
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Capture original graph", List.of(), true),
+                task -> {
+                    graph.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
+                        .orElseThrow());
+                    var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, UUID.randomUUID(),
+                        "Prepared Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),
+                        request, 1024, 100);
+                    payload.set(context.tasks().findCheckpoint(task, DeploymentGitSourceJournal.KEY).orElseThrow()
+                        .snapshot().payload());
+                    journal.close();
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             prior = probe.id();
             assertEquals(Outcome.SUCCEEDED,
-                    probe.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                probe.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
         }
         try (var db = PlatformDatabase.open(root.resolve("data"), PROTECTION)) {
             var ledger = new TaskLedger(db);
             ledger.enqueue(interrupted, OWNER, VERSION,
-                    new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Interrupted original Git", List.of(), true),
-                    new TaskLedger.InitialClaims() {
-                        public List<TaskResource> resolve(java.sql.Connection connection) {
-                            return List.of(new TaskResource("MOD", OWNER, OWNER, false),
-                                    new TaskResource("SCHEMA", schema.generation().toString(), OWNER, false));
-                        }
+                new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Interrupted original Git", List.of(), true),
+                new TaskLedger.InitialClaims() {
+                    public List<TaskResource> resolve(java.sql.Connection connection) {
+                        return List.of(new TaskResource("MOD", OWNER, OWNER, false),
+                            new TaskResource("SCHEMA", schema.generation().toString(), OWNER, false));
+                    }
 
-                        public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection connection) {
-                            return Optional.of(graph.get());
-                        }
-                    });
+                    public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection connection) {
+                        return Optional.of(graph.get());
+                    }
+                });
             assertTrue(ledger.tryStart(interrupted));
             new TaskAuthorCheckpoint(db).begin(interrupted, OWNER, VERSION, DeploymentGitSourceJournal.KEY,
-                    payload.get().replace(prior.toString(), interrupted.toString()));
+                payload.get().replace(prior.toString(), interrupted.toString()));
             assertFalse(ledger.complete(interrupted, Outcome.UNKNOWN, "Interrupted before first Git request", false));
             try (var connection = db.openConnection();
-                    var update = connection.prepareStatement(
-                            "UPDATE mod_registry SET last_boot_id=?,last_runtime_state='UNKNOWN',actual_version=? WHERE mod_id=?")) {
+                 var update = connection.prepareStatement(
+                     "UPDATE mod_registry SET last_boot_id=?,last_runtime_state='UNKNOWN',actual_version=? WHERE mod_id=?")) {
                 update.setObject(1, boot);
                 update.setString(2, VERSION);
                 update.setString(3, OWNER);
@@ -381,7 +394,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
             runtime.releaseModRecovery();
         }
     }
@@ -391,32 +404,32 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
         var observedAt = Instant.parse("2026-09-28T00:00:00Z");
         var id = UUID.randomUUID();
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var handle = context.tasks().submit(new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE,
-                    "Lost project write acknowledgement", List.of(), true), task -> {
-                        var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, id,
-                                "Proposed Git project", Optional.empty(), observedAt, request, 2 * 1024 * 1024, 100);
-                        try (var material = new DeploymentGitPreparer(context, GIT).prepare(request, 2 * 1024 * 1024,
-                                100, task, journal)) {
-                            var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
-                                    request.remote().location(), Optional.of("DEFAULT:HEAD"),
-                                    Optional.of(material.commit()), material.source().snapshot().sha256());
-                            var next = new DeploymentProjectRecord(id, "Proposed Git project", source, observedAt,
-                                    observedAt);
-                            journal.propose(next);
-                            journal.writeStarted();
-                            new DeploymentProjectRepository(context.db()).create(task, next);
-                        }
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_LOST_WRITE_ACK",
-                                        "Original project save acknowledgement was withheld", Map.of(),
-                                        Optional.empty())));
-                    });
+                "Lost project write acknowledgement", List.of(), true), task -> {
+                var journal = DeploymentGitSourceJournal.begin(context.tasks(), task, id,
+                    "Proposed Git project", Optional.empty(), observedAt, request, 2 * 1024 * 1024, 100);
+                try (var material = new DeploymentGitPreparer(context, GIT).prepare(request, 2 * 1024 * 1024,
+                    100, task, journal)) {
+                    var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
+                        request.remote().location(), Optional.of("DEFAULT:HEAD"),
+                        Optional.of(material.commit()), material.source().snapshot().sha256());
+                    var next = new DeploymentProjectRecord(id, "Proposed Git project", source, observedAt,
+                        observedAt);
+                    journal.propose(next);
+                    journal.writeStarted();
+                    new DeploymentProjectRepository(context.db()).create(task, next);
+                }
+                return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_LOST_WRITE_ACK",
+                        "Original project save acknowledgement was withheld", Map.of(),
+                        Optional.empty())));
+            });
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
                 Thread.onSpinWait();
@@ -426,7 +439,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(Outcome.SUCCEEDED), recovered.outcome());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
     }
 
@@ -435,35 +448,35 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
         var repo = repository();
         enable();
         var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
+            new DeploymentGitReference.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
         var observed = Instant.parse("2026-09-28T00:00:00Z");
         var id = UUID.randomUUID();
         var prior = new DeploymentProjectRecord(id, "Existing local source",
-                new DeploymentProjectSource(DeploymentProjectSource.KindType.LOCAL, repo.toUri(), Optional.empty(),
-                        Optional.empty(), "a".repeat(64)),
-                observed, observed);
+            new DeploymentProjectSource(DeploymentProjectSource.KindType.LOCAL, repo.toUri(), Optional.empty(),
+                Optional.empty(), "a".repeat(64)),
+            observed, observed);
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var seed = context.tasks().submit(new TaskRequest("project-seed", "Seed project", List.of(), false),
-                    task -> {
-                        new DeploymentProjectRepository(context.db()).create(task, prior);
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                task -> {
+                    new DeploymentProjectRepository(context.db()).create(task, prior);
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             assertEquals(Outcome.SUCCEEDED,
-                    seed.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                seed.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var handle = new DeploymentGitSourceFlow(context).submit(request, GIT, id, "Conflicting Git source",
-                    Optional.empty(), observed, 2 * 1024 * 1024, 100);
+                Optional.empty(), observed, 2 * 1024 * 1024, 100);
             var result = handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
             assertEquals(Outcome.FAILED, result.outcome(), result.toString());
             var read = context.tasks().submit(
-                    new TaskRequest("project-read", "Read original project", List.of(), false),
-                    task -> new OperationResult<>(Outcome.SUCCEEDED,
-                            new DeploymentProjectRepository(context.db()).find(task, id), Optional.empty()));
+                new TaskRequest("project-read", "Read original project", List.of(), false),
+                task -> new OperationResult<>(Outcome.SUCCEEDED,
+                    new DeploymentProjectRepository(context.db()).find(task, id), Optional.empty()));
             assertEquals(prior,
-                    read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow());
+                read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).value().orElseThrow());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
     }
 }

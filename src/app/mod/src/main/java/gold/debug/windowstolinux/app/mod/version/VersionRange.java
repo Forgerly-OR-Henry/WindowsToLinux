@@ -28,7 +28,7 @@ public final class VersionRange {
      * @param includeUpper whether upper equality is accepted / 是否接受等于上界
      */
     private VersionRange(String text, SemanticVersion lower, SemanticVersion upper, boolean includeLower,
-            boolean includeUpper) {
+                         boolean includeUpper) {
         this.text = text;
         this.lower = lower;
         this.upper = upper;
@@ -58,7 +58,7 @@ public final class VersionRange {
         var upper = halves[1].isEmpty() ? null : SemanticVersion.parse(halves[1]);
         boolean includeLower = text.startsWith("["), includeUpper = text.endsWith("]");
         if (lower != null && upper != null
-                && (lower.compareTo(upper) > 0 || lower.compareTo(upper) == 0 && (!includeLower || !includeUpper)))
+            && (lower.compareTo(upper) > 0 || lower.compareTo(upper) == 0 && (!includeLower || !includeUpper)))
             throw new IllegalArgumentException("Empty version range");
         return new VersionRange(text, lower, upper, includeLower, includeUpper);
     }
@@ -73,7 +73,7 @@ public final class VersionRange {
         if (candidate.isPrerelease() && !explicitPrerelease(lower, candidate) && !explicitPrerelease(upper, candidate))
             return false;
         return (lower == null || candidate.compareTo(lower) > 0 || includeLower && candidate.compareTo(lower) == 0)
-                && (upper == null || candidate.compareTo(upper) < 0 || includeUpper && candidate.compareTo(upper) == 0);
+            && (upper == null || candidate.compareTo(upper) < 0 || includeUpper && candidate.compareTo(upper) == 0);
     }
 
     /**

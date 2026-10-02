@@ -2,9 +2,9 @@
 
 ## 文档状态与范围
 
-- 更新日期：2026-10-01。
+- 更新日期：2026-10-02（1.2 简单功能包、平台文件 API 命名及 Mod 内部自主组织同步）。
 - 状态：本文为 **1.1 完整目标规格**。S1～S5 活动源码、平台能力和官方部署 Mod 的本机适用合同已按有效实际结果合集验证，完整根测试编译已通过；S6 备份、S7 正式 APP/JAR/SDK 发行和真实远端验收暂缓；具体证据见 [开发进度](development/PHASE-1.1.md)。本文的完整能力与示例仍是验收目标，不代表当前产品已全部支持。0.x 业务行为见 [Runtime.md](Runtime.md) 和 [产品手册](PRODUCT-MANUAL.md)。
-- 当前官方部署实现已复用公开 Task/Source/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
+- 当前官方部署实现已复用公开 Task/File/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
 - 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，示例不替代实际源码与验证边界，正式 SDK 发行仍暂缓。
 - 职责：描述 Mod 的格式、行为、数据和公开能力。工程迁移、技术细化、开发步骤与验收统一见 [1.1 开发文档](development/PHASE-1.1.md#implementation)。本文不把接口示例当作已交付 SDK。
 - [开发总纲](development/DEVELOPMENT.md) · [1.1 工程主文档](development/PHASE-1.1.md) · [项目目标结构](File.md#phase-1-1-target) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)
@@ -259,7 +259,7 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 
 ### 5.1 入口与职责包
 
-目录、可选包、Maven 模块边界和标准根包名统一见 [File.md](File.md#mod-source-layout)。下表的九类包是标准职责划分，全部按需选用，不要求每个 Mod 都出现九个包；用不上的包直接省略，不创建空包。下表只维护实际使用这些包时的实现职责。
+目录、可选包、Maven 模块边界和标准根包名统一见 [File.md](File.md#mod-source-layout)。下表只规定第一层职责与平台的对应关系，全部按需选用；没有用途时省略，不创建空包。第一层之后的包名、子包层数、自有类型名及内部组织由作者决定，不强制或推荐 APP 的词表和目录模板。入口、公开 API 导出、平台权限、数据归属、任务和资源生命周期仍按实际边界检查。
 
 | 位置       | 负责内容                                                                    | 边界                                                                                                                            |
 | ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -268,17 +268,17 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 | `ai`       | 本 Mod 的提示词组织、模型输入适配、平台 AI 调用、结果解析及格式检查         | 通过 APP 公开 API 调用模型；不自行接管平台的模型配置、Provider 通信或凭据，不承担整个业务流程或直接写库。                       |
 | `ui`       | 界面布局、用户输入、展示任务状态与业务结果                                  | 经 `service` 发起业务操作，不直接读写数据库，不承载业务执行流程。                                                               |
 | `db`       | 插件数据访问、查询、存储映射、结构初始化及版本迁移                          | 经平台接口使用本 Mod 的 Schema，不携带 H2 引擎，不直接打开平台库或读写其他私有表，不跨 Mod 建外键；不反向调用 `ui` 或业务流程。 |
-| `service`  | 业务规则、用例编排、任务执行、对外契约实现及所需职责包调用                  | 按工作职责继续分包；负责业务校验、审批、执行和保存结果，不依赖具体 UI 控件。                                                    |
+| `service`  | 业务规则、用例编排、任务执行、对外契约实现及所需职责包调用                  | 由作者自主组织；负责业务校验、审批、执行和保存结果，不依赖具体 UI 控件。                                                    |
 | `linux`    | 本业务的远端动作、脚本/helper 载荷、结果解释和窄端口实现                    | 经公开 Linux/服务器/任务 API 使用主体连接，不另建 SSH 客户端，不接管指纹、凭据或独立救援；不承担完整业务流程。                  |
 | `secret`   | 本业务的秘密用途、引用校验、短期注入及业务保护格式                          | 平台凭据经 SecretService 使用，不保存 APP 主密钥；备份归档的独立密码保护属于此包，与平台凭据加密分开。                          |
-| `source`   | 本业务的来源选择、Git 固定取材、排除规则和快照使用                          | 复用公开 Source 能力和任务归属；项目解释与取材规则由 Mod 决定，平台仍持有通用读取、快照及其释放机制。                           |
-| `windows`  | 本业务的本机工具协作、素材准备和辅助操作适配                                | 复用已公开的 Source、ProcessService、交互等能力；不依赖 app/windows 私有实现，不接管 APP 更新、卸载或窗口隐私。                 |
+| `file`     | 本业务的来源选择、Git 固定取材、排除规则和快照使用                          | 复用公开 File 能力和任务归属；项目解释与取材规则由 Mod 决定，平台仍持有通用读取、快照及其释放机制。                           |
+| `windows`  | 本业务的本机工具协作、素材准备和辅助操作适配                                | 复用已公开的 File、ProcessService、交互等能力；不依赖 app/windows 私有实现，不接管 APP 更新、卸载或窗口隐私。                 |
 
-`service` 下每个包承担自己的工作，例如 `service.backup` 负责备份，`service.restore` 负责恢复，`service.migration` 组合它们完成迁移。允许按明确方向复用已有能力，不复制相同流程，也不得形成循环依赖。业务模型靠近所属业务包；数据库存储映射留在 `db`，不为分层机械增加无用途的包装类型。
+作者在第一层职责内部自行组织实现；包名和层数不替代真实的依赖与权限检查。允许复用已有能力，生产依赖不得成环；业务数据与平台或其他 Mod 私有数据仍保持归属边界。
 
-`linux`、`secret`、`source`、`windows` 与 `service` 同级，供业务流程组合使用；通用平台能力与 Mod 业务适配按此分工。新增 `windows` 职责包不等于已经新增 `appapi.windows` 接口，也不自动获得任意本机权限。入口仍为 `Mod.java`，无需为对称再创建 `main` 或嵌套插件运行器 `mod` 包。
+`linux`、`secret`、`file`、`windows` 与 `service` 同级，供业务流程组合使用；通用平台能力与 Mod 业务适配按此分工。新增 `windows` 职责包不等于已经新增 `appapi.windows` 接口，也不自动获得任意本机权限。入口仍为 `Mod.java`，无需为对称再创建 `main` 或嵌套插件运行器 `mod` 包。
 
-这里的 `service.migration` 表示业务迁移流程；Mod 自身数据库的结构初始化与版本迁移属于 `db`，由平台协调执行。H2 版本、独立 `schemaVersion`、访问和升级规则见[数据库规范](#mod-database)；源码模块、包结构和命名统一见 [File.md](File.md#mod-source-layout)。
+业务迁移与 Mod 自身数据库的结构迁移是不同职责；后者属于 `db` 并由平台协调执行，内部类和子包由作者组织。H2 版本、独立 `schemaVersion`、访问和升级规则见[数据库规范](#mod-database)；源码模块、包结构和命名统一见 [File.md](File.md#mod-source-layout)。
 
 ### 5.2 区分平台 API 与本 Mod 的 api
 
@@ -294,7 +294,7 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 | APP 平台                   | 管理模型配置与凭据，提供通用模型调用、Provider 适配、通信、超时及用量处理。                                 |
 | 本 Mod 的 `ai`             | 将自身业务输入转换为模型请求，调用平台公开 AI 接口，再解析模型结果、检查返回格式并转换为本 Mod 可用的结果。 |
 | 本 Mod 的 `service`        | 决定何时需要 AI、提供哪些业务资料，以及取得结果后是否展示、审批、执行或保存。                               |
-| 自主流程的 `service.agent` | 维护多轮决策、任务状态、工具执行、审批和失败处理，按需使用 `ai`；不把整个 Agent 流程塞进 AI 适配包。        |
+| 本 Mod 的自主业务流程 | 维护多轮决策、任务状态、工具执行、审批和失败处理，按需使用 `ai`；不把整个 Agent 流程塞进 AI 适配包。        |
 
 调用方向为 `ui → service → db` 和 `service → ai → APP 公开 API`。`ai` 与 `db` 不直接互相调用，也不反向驱动 `service`；保存 AI 结果由 `service` 组织。提示词文件随所属 JAR 的资源打包，Java `ai` 包负责加载与组织模板，无需新增分发包外置资源目录。
 
@@ -311,7 +311,7 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 
 ### 5.4 数据库与 Schema 版本（已确认、待实施）
 
-本节集中维护 1.1 面向平台和 Mod 作者的数据库规则。当前代码仍使用 SQLite，事实说明见 [APP 数据库与安全](Runtime.md#app-security-database)。
+本节集中维护面向平台和 Mod 作者的数据库规则；活动平台使用 H2，具体实现和验收边界见 [APP 数据库与安全](Runtime.md#app-security-database)。
 
 #### 平台数据库与访问边界
 
@@ -998,14 +998,14 @@ public record TaskRequest(String type, String title, List<String> serverIds,
 public record TaskSnapshot(UUID id, String ownerId, String ownerVersion, String type,
     TaskState state, Optional<Outcome> outcome, String progressText,
     Instant startedAt, Optional<Instant> endedAt, List<String> blockers) {}
-public interface CancellationToken { boolean requested(); }
+public interface CancelToken { boolean requested(); }
 public interface ResourceLease extends AutoCloseable {
     UUID id();
     @Override void close() throws ApiException;
 }
 public interface TaskContext {
     UUID id();
-    CancellationToken cancellation();
+    CancelToken cancelToken();
     void progress(String text, Optional<Double> fraction) throws ApiException;
     ResourceLease retain(String kind, String localId, String description) throws ApiException;
 }
@@ -1190,11 +1190,11 @@ public interface SchemaAccess {
     SchemaIdentity identity();
     Connection openConnection() throws SQLException;
 }
-public record ValidationReport(boolean valid, List<String> violations,
+public record CheckResult(boolean valid, List<String> violations,
     Optional<String> businessDigest) {}
 public interface ModSchemaLifecycle {
     void initialize(SchemaAccess target) throws Exception;
-    ValidationReport validate(SchemaAccess target) throws Exception;
+    CheckResult validate(SchemaAccess target) throws Exception;
 }
 public interface SchemaMigration {
     void migrate(SchemaAccess source, SchemaAccess target) throws Exception;
@@ -1444,7 +1444,7 @@ public interface AiService {
 ### 8.8 source：有界来源与快照
 
 ```java
-package gold.debug.windowstolinux.appapi.source;
+package gold.debug.windowstolinux.appapi.file;
 
 import java.net.URI;
 import java.nio.file.Path;
@@ -1453,49 +1453,49 @@ import java.util.UUID;
 import gold.debug.windowstolinux.appapi.task.ApiException;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 
-public record SourceSelection(UUID id, String displayName) {}
-public record SourceReadRequest(String relativePath, long maxBytes) {}
-public record SourceFile(String relativePath, byte[] content, String sha256) {}
-public record SourceDirectoryEntry(String relativePath, EntryType type, long byteCount) {
+public record FileSelection(UUID id, String displayName) {}
+public record FileReadRequest(String relativePath, long maxBytes) {}
+public record FileContent(String relativePath, byte[] content, String sha256) {}
+public record FileEntry(String relativePath, EntryType type, long byteCount) {
     public enum EntryType { FILE, DIRECTORY, OTHER }
 }
 public record SnapshotRequest(List<String> relativePaths, long maxTotalBytes) {}
-public interface SourceSnapshot extends AutoCloseable {
+public interface FileSnapshot extends AutoCloseable {
     UUID id();
     String sha256();
     Path directory();
     @Override void close() throws ApiException;
 }
-public interface SourceWorkspace extends AutoCloseable {
+public interface FileWorkspace extends AutoCloseable {
     UUID id();
     Path directory() throws ApiException;
-    SourceSelection selection() throws ApiException;
+    FileSelection selection() throws ApiException;
     void close() throws ApiException;
 }
-public interface SourceService {
-    URI location(SourceSelection selection, TaskContext task) throws ApiException;
-    SourceWorkspace workspace(TaskContext task) throws ApiException;
-    SourceWorkspace workspace(TaskContext task, UUID workspaceId) throws ApiException;
+public interface FileService {
+    URI location(FileSelection selection, TaskContext task) throws ApiException;
+    FileWorkspace workspace(TaskContext task) throws ApiException;
+    FileWorkspace workspace(TaskContext task, UUID workspaceId) throws ApiException;
     Optional<byte[]> readWorkspaceEvidence(TaskContext task, UUID workspaceId,
         String name, int maxBytes) throws ApiException;
     void closeTaskResources(TaskContext task) throws ApiException;
-    List<SourceDirectoryEntry> list(SourceSelection selection, String relativeDirectory,
+    List<FileEntry> list(FileSelection selection, String relativeDirectory,
             int maxEntries, TaskContext task) throws ApiException;
-    SourceSelection selectDirectory(String title, TaskContext task) throws ApiException;
-    SourceFile read(SourceSelection selection, SourceReadRequest request, TaskContext task)
+    FileSelection selectDirectory(String title, TaskContext task) throws ApiException;
+    FileContent read(FileSelection selection, FileReadRequest request, TaskContext task)
         throws ApiException;
-    SourceSnapshot snapshot(SourceSelection selection, SnapshotRequest request, TaskContext task)
+    FileSnapshot snapshot(FileSelection selection, SnapshotRequest request, TaskContext task)
         throws ApiException;
 }
 ```
 
 `list` 只列举明确目录的一层直接子项，空字符串表示选定根，其他值遵守相对目录边界；返回按原相对路径排序的不可变完整列表，不暴露用户根路径、不递归、不读取文件内容、不应用业务排除。`maxEntries` 为 1～100,000，超出则失败，不把截断列表当成功。普通文件返回观测长度，目录和 OTHER 为零；链接、Windows 联接及非常规项归 OTHER，作者自行决定拒绝或省略，不自动遍历。用户显式请求的根内链接目录仍按实际解析边界检查，根外目标拒绝。列举前后核验原目录身份和时间，取消中止；列表是名称/类型的观测，跨多次列举并非原子快照，实际冻结仍以显式文件集合为准。和 read/snapshot 一样，复制的选择 UUID、其他任务/启用、过期上下文和 EDT 访问被拒绝。
 
-`location` 仅为原用户选定目录返回规范绝对 file URI 元数据，仍核验原选择对象、原执行任务、启用状态、非 EDT 调用、取消与物理根身份；`SourceWorkspace.selection()` 必须拒绝作为长期原来源。该 URI 不能重造 `SourceSelection` 或重新授权读取，源码清单的 `list` 仍不暴露根路径。
+`location` 仅为原用户选定目录返回规范绝对 file URI 元数据，仍核验原选择对象、原执行任务、启用状态、非 EDT 调用、取消与物理根身份；`FileWorkspace.selection()` 必须拒绝作为长期原来源。该 URI 不能重造 `FileSelection` 或重新授权读取，源码清单的 `list` 仍不暴露根路径。
 
 选择由平台在 EDT 承载用户目录确认，后台调用等待交互；选择句柄绑定当前 Mod 和任务。相对路径使用 `/`，拒绝越界、绝对路径及指向根外的联接/链接；单次读取最多 8 MiB，快照最多 2 GiB/100,000 个文件，请求值可更小。快照文件集合由作者业务选择，平台不内置部署排除规则。生成到任务工作目录后冻结，摘要采用排序的路径＋长度＋文件 SHA-256，不把修改中源目录当作不可变快照；复制前后变化则失败并保留诊断。快照目录只在句柄有效期间可读，业务需要长期素材时必须另按所属数据生命周期保存。
 
-当前实现通过 `PlatformRuntime.source` 装配真实 `SourceService`，默认窗口提供可取消的目录选择器。用户选择与工作目录授权仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
+当前实现通过 `PlatformRuntime.source` 装配真实 `FileService`，默认窗口提供可取消的目录选择器。用户选择与工作目录授权仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
 
 路径保留原拼写，拒绝空段、`.`/`..`、反斜线、Windows 设备名/流名称和歧义结尾；解析后仍在选定根内的链接可读取。`.env`、`target` 等业务路径不被平台自动排除。快照清单拒绝重复路径；空清单可生成空快照。摘要按 Java 字符串自然顺序排列名称，以 `WTL-SOURCE-1\0` 开头，逐项写入大端 32 位 UTF-8 路径长度、路径字节、大端 64 位内容长度和 32 字节文件摘要，再计算 SHA-256。
 
@@ -1507,13 +1507,13 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 `workspace(task, workspaceId)` 仅在执行中首次使用作者事先持久化的 UUID；账本中同一原任务的已释放历史行也阻止复用，不以调用 UUID 接管任意目录。恢复时 `readWorkspaceEvidence` 只在原任务/所有者及 FILE 与原生容器身份核验后复制一个简单文件名的独立字节，单次上限 1 MiB，不返回路径或可写句柄；原文件确实不存在才返回空，身份或读取不明为 UNKNOWN。`closeTaskResources` 复用原物理清理，不重新选择用户源码。预选 `ProcessService.start(..., processId)` 同样只允许执行阶段首次创建，原进程清理由 `closeTaskResources` 核验原 PID、启动代次、后代和管道后释放；恢复不启动新进程。
 
-官方 deployment 已在自己的 `source` 包接入本地取材：通过原选择句柄有界发现文件，应用原部署排除规则，再调用平台 `snapshot`，分析与后续执行共用这一份冻结素材。目录排除沿用精确名称 `.git`、`.idea`、`target`、`node_modules`、`.m2`、`.gradle`、`logs`；敏感文件及扩展名按原不区分大小写规则排除，普通 `.log` 默认排除。根目录 `windowstolinux-application.properties` 最多 64 KiB，`source.include` 最多 32 个唯一相对普通文件，按实际列举的原路径精确匹配，可纳入样例日志，不能覆盖秘密、排除目录或链接边界；声明必须与实际冻结副本的摘要一致，变化则拒绝并关闭该快照。
+官方 deployment 已在自己的 `file` 包接入本地取材：通过原选择句柄有界发现文件，应用原部署排除规则，再调用平台 `snapshot`，分析与后续执行共用这一份冻结素材。目录排除沿用精确名称 `.git`、`.idea`、`target`、`node_modules`、`.m2`、`.gradle`、`logs`；敏感文件及扩展名按原不区分大小写规则排除，普通 `.log` 默认排除。根目录 `windowstolinux-application.properties` 最多 64 KiB，`source.include` 最多 32 个唯一相对普通文件，按实际列举的原路径精确匹配，可纳入样例日志，不能覆盖秘密、排除目录或链接边界；声明必须与实际冻结副本的摘要一致，变化则拒绝并关闭该快照。
 
-业务发现预算最多 100,000 个子项（包含已排除的直接子项；排除目录不继续遍历），纳入字节预算最多 2 GiB，调用方可减小；空目录得到明确空快照。名称发现按目录逐步消费，避免预先累计未处理目录的全部子项。返回素材持有原 SourceSnapshot，使用方结束后显式关闭，实际释放失败保留平台原占用及不确定结果。此闭环不把选择句柄当长期素材，也不重复实现平台文件清理。
+业务发现预算最多 100,000 个子项（包含已排除的直接子项；排除目录不继续遍历），纳入字节预算最多 2 GiB，调用方可减小；空目录得到明确空快照。名称发现按目录逐步消费，避免预先累计未处理目录的全部子项。返回素材持有原 FileSnapshot，使用方结束后显式关闭，实际释放失败保留平台原占用及不确定结果。此闭环不把选择句柄当长期素材，也不重复实现平台文件清理。
 
 官方 deployment 的归档器将同一份冻结素材写入受管可写目录，保持原 ustar/gzip 字节规则：原相对文件名排序、普通文件模式 0644、时间与所有者字段为零、不写目录条目，支持原 ustar 名称/前缀长度；超长名称明确失败。压缩输出（含 gzip 头尾）按调用方预算限制，最多 2 GiB；归档前后核对输入快照。完成后经平台再冻结 `source.tar.gz`，重新读取实际冻结字节核对长度和 SHA-256，并释放可写暂存目录后才返回。归档保留原源码快照 UUID 与清单 SHA-256，以及独立的归档压缩字节 SHA-256 和长度；规划入口同时核验原素材与这组来源关联，不要求两种摘要相等。输入素材与输出归档各自持有原快照，分别关闭。取消、归档变化及清理未知不交付成功归档，残留由原平台资源句柄收尾。
 
-官方 deployment 的 `source/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；独立项目保存入口为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。默认静态部署页面现复用同一准备器、原任务观察和检查点，在自己的 `deployment-publication` 原任务内固定 Git 素材，不另起项目保存任务。两入口均先持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；页面仅在最终来源、清单和逐组件归档确认后保存真实项目行，正式执行关联该行及固定提交。已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。准备恢复只读原检查点和最多 1 MiB 的原工作区回执，先核验原进程/FILE 资源和必要项目状态，再清理原 Source；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。静态准备恢复还须在 Git 结清后核对原静态检查点；已建立正式执行则由原发布恢复器处理。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成真实远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结现行格式 4 的已审阅项目修订，旧格式 1～3 只读。
+官方 deployment 的 `file/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；独立项目保存入口为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。默认静态部署页面现复用同一准备器、原任务观察和检查点，在自己的 `deployment-publication` 原任务内固定 Git 素材，不另起项目保存任务。两入口均先持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；页面仅在最终来源、清单和逐组件归档确认后保存真实项目行，正式执行关联该行及固定提交。已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。准备恢复只读原检查点和最多 1 MiB 的原工作区回执，先核验原进程/FILE 资源和必要项目状态，再清理原 Source；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。静态准备恢复还须在 Git 结清后核对原静态检查点；已建立正式执行则由原发布恢复器处理。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成真实远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结现行格式 4 的已审阅项目修订，旧格式 1～3 只读。
 
 默认静态页面在 NORMAL 模式惰性登记，可在本地目录和 Git 仓库之间选择；Git 输入要求明确逻辑项目名、无凭据 URL、默认分支或指定分支/标签/完整提交、原生 Git 可执行文件绝对路径，本地 `file:` 仓库还须明确允许。页面只收集输入，物理取材在原后台任务内进行；同一固定提交与冻结清单供分析及各组件归档使用，最终确认展示原 URL、所选引用和固定提交，并告知确认后保存本次来源项目。关闭或锁定会撤销未答审阅，最终确认后的原发布任务继续由平台持有；RECOVERY 模式不显示页面。页面短任务使用 `ServerService.listConfigured` 只读发现已保存的非秘密服务器摘要，游标绑定原查询任务且与已准入服务器列表区分；发现不授予连接、`get` 或引用预留权限，选定目标仍由新的 `deployment-publication` 原任务准入。秘密修订列表在独立无服务器占用的短任务中只读本 Mod 的业务标识、正修订号和原用途，不向页面交付不透明平台凭据 ID；新秘密在发布任务开始前经独立 `deployment-secret-revision` 原任务完成，发布审阅只选择已保存的精确引用。源码子树逐组件归档为去前缀 tar，保留原快照清单和各自 tar 摘要，规划时与实际组件来源根精确绑定。源码数据库声明先在原冻结素材中补全并校验；SQLite 首次初始化须另行确认组件、数据库、路径、seed、SQL 与整份冻结清单摘要，随后按该组件的实际检查摘要生成 `DatabaseSchemaReview`。单/多组件以最终受管身份生成配置和 SQLite 资源，连同原计划进入正式发布；本机 CLASS/H2 及受控 helper 证明配置和资源已持久合并，不代表真实目标机 SQLite 文件已初始化。普通数据库绑定输入不等于结构批准；服务器型数据库先完成全图本机预检，再在同一原任务内核对库存及实例、独立批准安装或替换、准备目标与冻结 SQL；受保护凭据、结构审阅、配置和绑定合入原单/多组件发布。
 
@@ -1546,7 +1546,7 @@ import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.source.SourceService;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.task.ApiException;
 import gold.debug.windowstolinux.appapi.task.InteractionService;
 import gold.debug.windowstolinux.appapi.task.LogService;
@@ -1586,7 +1586,7 @@ public interface ModContext {
     AiService ai();
     ModDatabase db();
     SecretService secrets();
-    SourceService source();
+    FileService file();
     LogService logs();
     ProcessService processes();
     ModServices services();
@@ -1601,7 +1601,7 @@ public interface ModContext {
 
 当前 `PlatformRuntime.modSession` / `PlatformModContext` 已将上述全部能力、加载器和 H2 实际状态装配到原生命周期会话。准备期间任务准入封闭；作者构造前提交 STARTING，与精确 READY Schema 的 `ever_used` 同事务记录；作者 `start` 和页面/服务发布成功后才提交 RUNNING。兼容检查、作者或发布失败保留安全诊断，原资源实际关闭后记录 FAILED；普通停止记录 STOPPED。整个过程不修改用户启用开关、选择版本、修订或重启停用确认，同一 boot 不重放普通启用。
 
-停止先封闭任务准入并检查原任务和跨 Mod 资源，再关闭作者入口、能力、页面和加载器。准备失败只撤销本次取得的资源；清理失败保留原上下文，最终状态写入失败仍保留原会话，平台不能越过它关闭数据库。重试只补未完成步骤，已成功的作者停止及物理关闭不重复执行。恢复上下文不替换普通运行状态。无 Schema 的 Mod 获得明确返回 `MOD_NO_SCHEMA` 的数据库能力，不创建空 Schema；上下文关闭后旧 JDBC 能力拒绝新调用，但已有连接仍须实际关闭。默认平台窗口中的 CLASS 验收已运行页面按钮→任务→JDBC/Source/秘密/日志→结果显示→停止；默认 CLASS 已接无数据/READY 版本的自动启动、原意图归档和逆序停止；安装、物理 Schema 准备、管理及任务恢复页已接默认入口；完整业务源码迁移仍待继续。
+停止先封闭任务准入并检查原任务和跨 Mod 资源，再关闭作者入口、能力、页面和加载器。准备失败只撤销本次取得的资源；清理失败保留原上下文，最终状态写入失败仍保留原会话，平台不能越过它关闭数据库。重试只补未完成步骤，已成功的作者停止及物理关闭不重复执行。恢复上下文不替换普通运行状态。无 Schema 的 Mod 获得明确返回 `MOD_NO_SCHEMA` 的数据库能力，不创建空 Schema；上下文关闭后旧 JDBC 能力拒绝新调用，但已有连接仍须实际关闭。默认平台窗口中的 CLASS 验收已运行页面按钮→任务→JDBC/File/秘密/日志→结果显示→停止；默认 CLASS 已接无数据/READY 版本的自动启动、原意图归档和逆序停止；安装、物理 Schema 准备、管理及任务恢复页已接默认入口；完整业务源码迁移仍待继续。
 
 `register` 只接受本 Mod 已导出包中的公开接口。`require` 校验必需依赖声明、实际运行版本、接口完整名与共享 Class 身份；取得句柄不立即占用提供方业务资源，每次 `call` 原子检查双方准入并为原任务取得提供方 Mod/Schema 占用。调用完成前不得把提供方对象、JDBC、闭包或未结束的异步操作泄漏到调用外；跨边界返回不可变快照或已登记的业务操作 ID。任务必须在调用内完成对应同步工作，后续操作凭 ID 再调用，不重入创建同服务器竞争任务。句柄只作发现入口，关闭后不可再调用。
 
@@ -1715,7 +1715,7 @@ import java.util.List;
 import java.util.Optional;
 import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
 import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.ValidationReport;
+import gold.debug.windowstolinux.appapi.db.CheckResult;
 
 public final class NotesSchema implements ModSchemaLifecycle {
     public void initialize(SchemaAccess target) throws Exception {
@@ -1723,11 +1723,11 @@ public final class NotesSchema implements ModSchemaLifecycle {
             statement.execute("CREATE TABLE note (note_id UUID PRIMARY KEY, body CHARACTER LARGE OBJECT NOT NULL)");
         }
     }
-    public ValidationReport validate(SchemaAccess target) throws Exception {
+    public CheckResult validate(SchemaAccess target) throws Exception {
         try (var connection = target.openConnection();
              var statement = connection.prepareStatement("SELECT note_id, body FROM note WHERE 1=0");
              var rows = statement.executeQuery()) {
-            return new ValidationReport(true, List.of(), Optional.empty());
+            return new CheckResult(true, List.of(), Optional.empty());
         }
     }
 }

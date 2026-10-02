@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Deplo
  * @param confidence confidence / 置信度
  */
 public record AnalysisEvidence(DeploymentLocalizedMessage subject, String source, DeploymentLocalizedMessage conclusion,
-        EvidenceConfidenceLevel confidence) {
+                               EvidenceConfidenceLevel confidence) {
     /**
      * Validates and binds the inputs required by analysis evidence.
      * <p>校验并绑定分析证据所需输入。

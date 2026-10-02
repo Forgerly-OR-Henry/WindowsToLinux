@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.mod.process;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessMessage;
+
 import java.io.*;
 import java.nio.*;
 import java.nio.charset.*;
@@ -8,7 +14,7 @@ import java.util.*;
 import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Strict version-one auxiliary-process frames, independent of task admission. / 独立于任务准入的严格第一版辅助进程帧。 */
 public final class ProcessProtocol {
@@ -17,15 +23,16 @@ public final class ProcessProtocol {
 
     /** Bounded parser rejecting ambiguous objects and trailing documents. / 拒绝歧义对象及尾随文档的有界解析器。 */
     private static final ObjectMapper JSON = JsonMapper
-            .builder(JsonFactory.builder()
-                    .streamReadConstraints(
-                            StreamReadConstraints.builder().maxNestingDepth(64).maxStringLength(MAX_BYTES).build())
-                    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
+        .builder(JsonFactory.builder()
+            .streamReadConstraints(
+                StreamReadConstraints.builder().maxNestingDepth(64).maxStringLength(MAX_BYTES).build())
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
 
     /** Exact envelope fields. / 精确封套字段。 */
     private static final Set<String> FIELDS = Set.of("protocolVersion", "processId", "taskId", "requestId", "kind",
-            "type", "payload");
+        "type", "payload");
+
     /** Prevents utility instances. / 禁止工具实例。 */
     private ProcessProtocol() {
     }
@@ -73,7 +80,7 @@ public final class ProcessProtocol {
             Objects.requireNonNull(request);
             Objects.requireNonNull(kind);
             if (type == null || type.isBlank() || type.length() > 256
-                    || type.codePoints().anyMatch(Character::isISOControl))
+                || type.codePoints().anyMatch(Character::isISOControl))
                 throw new IllegalArgumentException("Invalid process message type");
             try {
                 payload = object(payload).toString();
@@ -111,16 +118,16 @@ public final class ProcessProtocol {
             if (bytes.length == 0 || bytes.length > MAX_BYTES || bytes[bytes.length - 1] != '\n')
                 throw new IllegalArgumentException();
             String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes)).toString();
+                .decode(ByteBuffer.wrap(bytes)).toString();
             if (text.charAt(0) == '\uFEFF')
                 throw new IllegalArgumentException();
             var node = object(text);
             fields(node, FIELDS);
             if (!node.get("protocolVersion").isInt() || node.get("protocolVersion").intValue() != 1
-                    || !node.get("payload").isObject())
+                || !node.get("payload").isObject())
                 throw new IllegalArgumentException();
             return new Frame(uuid(node, "processId"), uuid(node, "taskId"), uuid(node, "requestId"),
-                    Kind.valueOf(text(node, "kind")), text(node, "type"), node.get("payload").toString());
+                Kind.valueOf(text(node, "kind")), text(node, "type"), node.get("payload").toString());
         } catch (RuntimeException | IOException invalid) {
             throw new IOException("Invalid process protocol frame");
         }
@@ -132,11 +139,11 @@ public final class ProcessProtocol {
      * @throws IOException if the wire representation exceeds its limit / 线上表示超限时 */
     public static byte[] encode(Frame frame) throws IOException {
         var node = JSON.createObjectNode().put("protocolVersion", 1).put("processId", frame.process().toString())
-                .put("taskId", frame.task().toString()).put("requestId", frame.request().toString())
-                .put("kind", frame.kind().name()).put("type", frame.type());
+            .put("taskId", frame.task().toString()).put("requestId", frame.request().toString())
+            .put("kind", frame.kind().name()).put("type", frame.type());
         node.set("payload", object(frame.payload()));
         var encoded = StandardCharsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
-                .encode(java.nio.CharBuffer.wrap(node + "\n"));
+            .encode(java.nio.CharBuffer.wrap(node + "\n"));
         if (encoded.remaining() > MAX_BYTES)
             throw new IOException("Process frame exceeds byte limit");
         byte[] bytes = new byte[encoded.remaining()];
@@ -151,8 +158,8 @@ public final class ProcessProtocol {
      * @throws IOException if either object is invalid / 任一对象无效时 */
     public static boolean equivalent(Frame first, Frame second) throws IOException {
         return first.process().equals(second.process()) && first.task().equals(second.task())
-                && first.request().equals(second.request()) && first.kind() == second.kind()
-                && first.type().equals(second.type()) && object(first.payload()).equals(object(second.payload()));
+            && first.request().equals(second.request()) && first.kind() == second.kind()
+            && first.type().equals(second.type()) && object(first.payload()).equals(object(second.payload()));
     }
 
     /** Decodes a result with the same invariants as the public Java result. / 按公开 Java 结果相同不变量解码结果。
@@ -172,11 +179,11 @@ public final class ProcessProtocol {
             if (!value.isObject() && !value.isNull())
                 throw new IllegalArgumentException();
             Optional<Problem> problem = node.get("problem").isNull()
-                    ? Optional.empty()
-                    : Optional.of(problem(node.get("problem")));
+                ? Optional.empty()
+                : Optional.of(problem(node.get("problem")));
             return new OperationResult<>(outcome,
-                    value.isNull() ? Optional.empty() : Optional.of(new ProcessMessage(frame.type(), value.toString())),
-                    problem);
+                value.isNull() ? Optional.empty() : Optional.of(new ProcessMessage(frame.type(), value.toString())),
+                problem);
         } catch (RuntimeException | IOException invalid) {
             throw new IOException("Invalid process result contract");
         }
@@ -243,7 +250,7 @@ public final class ProcessProtocol {
             context.put(entry.getKey(), entry.getValue().textValue());
         });
         return new Problem(ProblemCode.valueOf(text(node, "code")), text(node, "eventCode"), text(node, "message"),
-                context,
-                node.get("diagnosticId").isNull() ? Optional.empty() : Optional.of(uuid(node, "diagnosticId")));
+            context,
+            node.get("diagnosticId").isNull() ? Optional.empty() : Optional.of(uuid(node, "diagnosticId")));
     }
 }

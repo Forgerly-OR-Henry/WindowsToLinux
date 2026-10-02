@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -7,28 +13,29 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class TaskLedgerTest {
     @TempDir
     Path root;
+
     UUID queue(TaskLedger ledger, String owner, String... servers) throws Exception {
         var claims = new ArrayList<TaskResource>();
         claims.add(new TaskResource("MOD", owner, owner, false));
         for (var server : servers)
             claims.add(new TaskResource("SERVER", server, owner, true));
         return ledger.enqueue(UUID.randomUUID(), owner, "1.0.0",
-                new TaskRequest("fixture", "fixture", List.of(servers), true), claims);
+            new TaskRequest("fixture", "fixture", List.of(servers), true), claims);
     }
 
     long active(PlatformDatabase db, UUID task) throws Exception {
         try (var c = db.openConnection();
-                var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
+             var p = c.prepareStatement(
+                 "SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
             p.setObject(1, task);
             try (var r = p.executeQuery()) {
                 r.next();
@@ -62,7 +69,7 @@ class TaskLedgerTest {
     @Test
     void separateLedgerInstancesCannotBothAcquireTheSameServer() throws Exception {
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION);
-                var workers = Executors.newFixedThreadPool(2)) {
+             var workers = Executors.newFixedThreadPool(2)) {
             var firstLedger = new TaskLedger(db);
             var secondLedger = new TaskLedger(db);
             var first = queue(firstLedger, "one", "A");
@@ -155,7 +162,7 @@ class TaskLedgerTest {
             var ledger = new TaskLedger(db);
             var request = new TaskRequest("fixture", "fixture", List.of("A", "B"), true);
             assertThrows(SQLException.class, () -> ledger.enqueue(UUID.randomUUID(), "one", "1.0.0", request, List
-                    .of(new TaskResource("MOD", "one", "one", false), new TaskResource("SERVER", "A", "one", true))));
+                .of(new TaskResource("MOD", "one", "one", false), new TaskResource("SERVER", "A", "one", true))));
             assertTrue(ledger.queries().unfinished().isEmpty());
             var task = queue(ledger, "one", "A");
             assertTrue(ledger.tryStart(task));

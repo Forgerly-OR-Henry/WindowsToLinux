@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -8,7 +15,7 @@ import java.util.function.Supplier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
@@ -20,6 +27,7 @@ public final class DeploymentAgentProjectChannel {
      * @param buildActive whether its build is still active / 构建是否仍活动 */
     public record CandidateStatus(boolean present, boolean buildActive) {
     }
+
     /** Borrowed authenticated session and exact original task. / 借用的已认证会话与精确原任务。 */
     private final RemoteSession session;
 
@@ -52,7 +60,7 @@ public final class DeploymentAgentProjectChannel {
      * @param configurationRevision frozen model-policy revision / 冻结模型策略修订
      * @param currentRevision live task-authorized revision / 实时任务授权修订 */
     public DeploymentAgentProjectChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String configurationRevision, Supplier<String> currentRevision) {
+                                         TaskContext task, String configurationRevision, Supplier<String> currentRevision) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -78,7 +86,7 @@ public final class DeploymentAgentProjectChannel {
         if (!Set.of("ordinary", "docker", "podman").contains(engine) || engines.containsKey(workspace.candidateId()))
             throw new IllegalArgumentException("Invalid or already opened agent backend");
         String source = digest(send(render("agent-open", workspace, workspace.archiveSha256()), new byte[0],
-                Duration.ofMinutes(2), 4096), "SOURCE_REVISION");
+            Duration.ofMinutes(2), 4096), "SOURCE_REVISION");
         engines.put(workspace.candidateId(), engine);
         return source;
     }
@@ -92,13 +100,13 @@ public final class DeploymentAgentProjectChannel {
      * @return actual redacted helper output / 真实脱敏 helper 输出
      * @throws Exception on unavailable or uncertain read / 读取不可用或未知时 */
     public String read(DeploymentAgentDeliveryPort.Prepared candidate, String revision, String path, int offset,
-            int limit) throws Exception {
+                       int limit) throws Exception {
         scope(candidate, revision);
         if (!path.matches("[\\p{L}\\p{N}_. /-]{1,500}") || path.startsWith("/") || path.contains("..") || offset < 0
-                || offset > 1000000 || limit < 1 || limit > 100)
+            || offset > 1000000 || limit < 1 || limit > 100)
             throw new IllegalArgumentException("Invalid agent read page");
         var result = send(render("agent-read", candidate.workspace(), revision, path, Integer.toString(offset),
-                Integer.toString(limit)), new byte[0], Duration.ofSeconds(30), 12000);
+            Integer.toString(limit)), new byte[0], Duration.ofSeconds(30), 12000);
         knownSuccess(result);
         return result.value().orElseThrow().stdout();
     }
@@ -111,24 +119,24 @@ public final class DeploymentAgentProjectChannel {
      * @return actual bounded feedback / 真实有界反馈
      * @throws Exception on denied or unknown execution / 执行被拒绝或未知时 */
     public DeploymentAgentDeliveryPort.CommandFeedback command(DeploymentAgentDeliveryPort.Prepared candidate,
-            String revision, String script, Duration timeout) throws Exception {
+                                                               String revision, String script, Duration timeout) throws Exception {
         scope(candidate, revision);
         if (script.isBlank() || script.length() > 24000 || script.indexOf('\0') >= 0 || timeout.toSeconds() < 1
-                || timeout.toSeconds() > 7200)
+            || timeout.toSeconds() > 7200)
             throw new IllegalArgumentException("Invalid agent command budget");
         String command = render("agent-run", candidate.workspace(), revision, Long.toString(timeout.toSeconds()),
-                "1048576", engines.get(candidate.workspace().candidateId()));
+            "1048576", engines.get(candidate.workspace().candidateId()));
         var result = send(command, script.getBytes(StandardCharsets.UTF_8), timeout.plusSeconds(20), 1048576);
         if (result.outcome() == Outcome.UNKNOWN)
             return new DeploymentAgentDeliveryPort.CommandFeedback(false, false, -1, "Unknown command outcome");
         if (result.outcome() != Outcome.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                    result.outcome(), result.problem());
+                result.outcome(), result.problem());
         var output = result.value().orElseThrow();
         if (output.exitCode().isEmpty() || output.truncated())
             return new DeploymentAgentDeliveryPort.CommandFeedback(false, false, -1, "Missing command exit");
         return new DeploymentAgentDeliveryPort.CommandFeedback(true, output.exitCode().orElseThrow() == 0,
-                output.exitCode().orElseThrow(), output.stdout() + "\n" + output.stderr());
+            output.exitCode().orElseThrow(), output.stdout() + "\n" + output.stderr());
     }
 
     /** Sends a structured patch as input data, then checks actual revision. / 以输入数据发送结构化补丁，再核实真实修订。
@@ -144,20 +152,20 @@ public final class DeploymentAgentProjectChannel {
         String binding = sha256(bytes);
         try {
             var result = send(render("agent-patch", candidate.workspace(), patch.sourceRevision(), binding), bytes,
-                    Duration.ofSeconds(45), 4096);
+                Duration.ofSeconds(45), 4096);
             if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
-                    && result.value().orElseThrow().exitCode().equals(Optional.of(0)))
+                && result.value().orElseThrow().exitCode().equals(Optional.of(0)))
                 return digest(result, "SOURCE_REVISION");
             if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
-                    && result.value().orElseThrow().exitCode().isPresent()
-                    && result.value().orElseThrow().exitCode().orElseThrow() != 0
-                    && !result.value().orElseThrow().truncated()) {
+                && result.value().orElseThrow().exitCode().isPresent()
+                && result.value().orElseThrow().exitCode().orElseThrow() != 0
+                && !result.value().orElseThrow().truncated()) {
                 read(candidate, patch.sourceRevision(), patch.path(), 0, 1);
                 throw new IllegalArgumentException("Patch rejected; old source revision verified");
             }
             if (result.outcome() != Outcome.SUCCEEDED)
                 throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                        result.outcome(), result.problem());
+                    result.outcome(), result.problem());
             throw new IllegalStateException("Agent patch outcome unknown");
         } finally {
             Arrays.fill(bytes, (byte) 0);
@@ -172,8 +180,8 @@ public final class DeploymentAgentProjectChannel {
     public String seal(DeploymentAgentDeliveryPort.Prepared candidate, String revision) throws Exception {
         scope(candidate, revision);
         return digest(
-                send(render("agent-seal", candidate.workspace(), revision), new byte[0], Duration.ofMinutes(2), 4096),
-                "DIGEST");
+            send(render("agent-seal", candidate.workspace(), revision), new byte[0], Duration.ofMinutes(2), 4096),
+            "DIGEST");
     }
 
     /** Reads only the original task-owned candidate and build state. / 仅读取原任务所属候选与构建状态。
@@ -192,7 +200,7 @@ public final class DeploymentAgentProjectChannel {
     public CandidateStatus candidateStatus(UUID originalTask, DeploymentRemoteWorkspace workspace) throws Exception {
         String script = List.of(DeploymentManagedHelperBundle.PATH, "candidate-query-task", workspace.applicationId(),
                 workspace.candidateId(), Objects.requireNonNull(originalTask).toString()).stream()
-                .map(DeploymentAgentProjectChannel::quote).collect(java.util.stream.Collectors.joining(" "));
+            .map(DeploymentAgentProjectChannel::quote).collect(java.util.stream.Collectors.joining(" "));
         var result = send(script, new byte[0], Duration.ofSeconds(20), 4096, false);
         knownSuccess(result);
         return switch (result.value().orElseThrow().stdout()) {
@@ -214,10 +222,10 @@ public final class DeploymentAgentProjectChannel {
         if (!observed.present())
             return;
         var result = send(render("candidate-cleanup-task", workspace), new byte[0], Duration.ofSeconds(45), 4096,
-                false);
+            false);
         knownSuccess(result);
         if (!result.value().orElseThrow().stdout().equals("CANDIDATE_CLEANED=1\n")
-                || candidateStatus(workspace).present())
+            || candidateStatus(workspace).present())
             throw new IllegalStateException("Original candidate cleanup unconfirmed");
     }
 
@@ -236,10 +244,10 @@ public final class DeploymentAgentProjectChannel {
      * @return shell-safe fixed command / Shell 安全的固定命令 */
     private String render(String verb, DeploymentRemoteWorkspace workspace, String... arguments) {
         var values = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, verb, workspace.applicationId(),
-                workspace.candidateId(), task.id().toString()));
+            workspace.candidateId(), task.id().toString()));
         values.addAll(List.of(arguments));
         return values.stream().map(DeploymentAgentProjectChannel::quote)
-                .collect(java.util.stream.Collectors.joining(" "));
+            .collect(java.util.stream.Collectors.joining(" "));
     }
 
     /** Quotes one scalar for the fixed helper command. / 为固定 helper 命令引用一个标量。
@@ -259,7 +267,7 @@ public final class DeploymentAgentProjectChannel {
      * @return original classified result / 原分类结果
      * @throws Exception on failed approval or transport / 审批或传输失败时 */
     private OperationResult<CommandResult> send(String script, byte[] stdin, Duration timeout, long limit)
-            throws Exception {
+        throws Exception {
         return send(script, stdin, timeout, limit, true);
     }
 
@@ -272,17 +280,17 @@ public final class DeploymentAgentProjectChannel {
      * @return original classified result / 原分类结果
      * @throws Exception on review or transport failure / 审阅或传输失败时 */
     private OperationResult<CommandResult> send(String script, byte[] stdin, Duration timeout, long limit,
-            boolean effect) throws Exception {
+                                                boolean effect) throws Exception {
         if (effect)
             requireConfiguration();
         try (var request = new CommandRequest(script, stdin, timeout, limit)) {
             var intent = RemoteActions.command(server, configurationRevision, request).withSemantics(
-                    new ActionSemantics("deployment.agent.helper.v1", Set.of(new ActionTarget(server.id(),
-                            "deployment-agent", sha256(script.getBytes(StandardCharsets.UTF_8))))));
+                new ActionSemantics("deployment.agent.helper.v1", Set.of(new ActionTarget(server.id(),
+                    "deployment-agent", sha256(script.getBytes(StandardCharsets.UTF_8))))));
             var review = interaction.approve(intent, task);
             if (review.outcome() != Outcome.SUCCEEDED)
                 throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                        review.outcome(), review.problem());
+                    review.outcome(), review.problem());
             if (effect)
                 requireConfiguration();
             return session.execute(request, review.value().orElseThrow());
@@ -301,9 +309,9 @@ public final class DeploymentAgentProjectChannel {
     private static void knownSuccess(OperationResult<CommandResult> result) throws Exception {
         if (result.outcome() != Outcome.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                    result.outcome(), result.problem());
+                result.outcome(), result.problem());
         if (result.value().isEmpty() || !result.value().orElseThrow().exitCode().equals(Optional.of(0))
-                || result.value().orElseThrow().truncated())
+            || result.value().orElseThrow().truncated())
             throw new IllegalStateException("Agent helper result is not confirmed");
     }
 

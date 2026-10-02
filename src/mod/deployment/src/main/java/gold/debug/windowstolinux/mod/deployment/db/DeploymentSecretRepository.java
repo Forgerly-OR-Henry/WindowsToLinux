@@ -1,11 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.*;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Persists immutable secret metadata and exact release associations without reading plaintext. / 持久化不可变秘密元数据和精确发布关联，不读取明文。 */
@@ -40,7 +43,7 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if persisted metadata is invalid / 持久元数据无效时
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public Optional<DeploymentSecretRevision> findRevision(TaskContext task, DeploymentSecretReference reference)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         requireRevision(reference);
         try (var connection = connection(task)) {
             return readRevision(connection, reference);
@@ -55,13 +58,13 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if stored metadata is invalid / 已存元数据无效时
      * @throws ApiException if task access fails / 任务访问失败时 */
     public Optional<DeploymentSecretRevision> latestRevision(TaskContext task, String identifier, String purpose)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         new DeploymentSecretReference(identifier, 1);
         if (purpose == null || purpose.isBlank() || purpose.length() > 128)
             throw new IllegalArgumentException("Secret purpose is invalid");
         try (var connection = connection(task);
-                var statement = connection.prepareStatement(
-                        "SELECT secret_revision FROM secret_revision WHERE secret_id=? ORDER BY secret_revision DESC FETCH FIRST 1 ROW ONLY")) {
+             var statement = connection.prepareStatement(
+                 "SELECT secret_revision FROM secret_revision WHERE secret_id=? ORDER BY secret_revision DESC FETCH FIRST 1 ROW ONLY")) {
             statement.setString(1, identifier);
             try (var rows = statement.executeQuery()) {
                 if (!rows.next())
@@ -81,18 +84,18 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if storage is unavailable or the list exceeds the bound / 存储不可用或列表超过上限时
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public List<DeploymentSecretSelection> listReferences(TaskContext task, int limit)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (limit < 1 || limit > 1000)
             throw new IllegalArgumentException("Secret list limit is invalid");
         try (var connection = connection(task);
-                var statement = connection.prepareStatement(
-                        "SELECT secret_id,secret_revision,purpose FROM secret_revision WHERE purpose IS NOT NULL AND TRIM(purpose)<>'' ORDER BY secret_id,secret_revision FETCH FIRST ? ROWS ONLY")) {
+             var statement = connection.prepareStatement(
+                 "SELECT secret_id,secret_revision,purpose FROM secret_revision WHERE purpose IS NOT NULL AND TRIM(purpose)<>'' ORDER BY secret_id,secret_revision FETCH FIRST ? ROWS ONLY")) {
             statement.setInt(1, limit + 1);
             try (var rows = statement.executeQuery()) {
                 var references = new ArrayList<DeploymentSecretSelection>();
                 while (rows.next())
                     references.add(new DeploymentSecretSelection(
-                            new DeploymentSecretReference(rows.getString(1), rows.getLong(2)), rows.getString(3)));
+                        new DeploymentSecretReference(rows.getString(1), rows.getLong(2)), rows.getString(3)));
                 if (references.size() > limit)
                     throw new SQLException("Selectable secret revision list exceeds its bound");
                 return List.copyOf(references);
@@ -110,7 +113,7 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if revisions are absent or bindings conflict / 修订不存在或绑定冲突时
      * @throws ApiException if task access or transaction acknowledgement is unavailable / 任务访问或事务确认不可用时 */
     public void bindRelease(TaskContext task, String unitId, String release, List<DeploymentSecretReference> references)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         String unit = DeploymentConfigurationRepository.boundedIdentity(unitId, "unitId");
         String digest = DeploymentConfigurationRepository.boundedIdentity(release, "release");
         var expected = references(references);
@@ -126,7 +129,7 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if stored association facts are invalid / 存储关联事实无效时
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public Optional<List<DeploymentSecretReference>> findRelease(TaskContext task, String unitId, String release)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         String unit = DeploymentConfigurationRepository.boundedIdentity(unitId, "unitId");
         String digest = DeploymentConfigurationRepository.boundedIdentity(release, "release");
         try (var connection = connection(task)) {
@@ -141,11 +144,11 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if storage cannot be read / 无法读取存储时
      * @throws ApiException if task access is unavailable / 任务访问不可用时 */
     public boolean isReferenced(TaskContext task, DeploymentSecretReference reference)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         requireRevision(reference);
         try (var connection = connection(task);
-                var statement = connection.prepareStatement(
-                        "SELECT 1 FROM deployment_unit_release_secret_reference WHERE secret_id=? AND secret_revision=? FETCH FIRST 1 ROW ONLY")) {
+             var statement = connection.prepareStatement(
+                 "SELECT 1 FROM deployment_unit_release_secret_reference WHERE secret_id=? AND secret_revision=? FETCH FIRST 1 ROW ONLY")) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
             try (var rows = statement.executeQuery()) {
@@ -173,13 +176,13 @@ public final class DeploymentSecretRepository {
         if (existing.isPresent()) {
             var stored = existing.orElseThrow();
             if (!stored.credentialId().equals(revision.credentialId())
-                    || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli()
-                    || !stored.purpose().equals(revision.purpose()))
+                || stored.createdAt().toEpochMilli() != revision.createdAt().toEpochMilli()
+                || !stored.purpose().equals(revision.purpose()))
                 throw new SQLException("Secret revision metadata is immutable");
             return;
         }
         try (var statement = connection.prepareStatement(
-                "INSERT INTO secret_revision(secret_id,secret_revision,credential_id,created_at,purpose) VALUES(?,?,?,?,?)")) {
+            "INSERT INTO secret_revision(secret_id,secret_revision,credential_id,created_at,purpose) VALUES(?,?,?,?,?)")) {
             statement.setString(1, revision.reference().identifier());
             statement.setLong(2, revision.reference().revision());
             statement.setString(3, revision.credentialId());
@@ -195,16 +198,16 @@ public final class DeploymentSecretRepository {
      * @return original metadata or absent / 原元数据或不存在
      * @throws SQLException if a stored value is invalid / 存储值无效时 */
     static Optional<DeploymentSecretRevision> readRevision(Connection connection, DeploymentSecretReference reference)
-            throws SQLException {
+        throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT credential_id,created_at,purpose FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
+            "SELECT credential_id,created_at,purpose FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
             statement.setString(1, reference.identifier());
             statement.setLong(2, reference.revision());
             try (var rows = statement.executeQuery()) {
                 return rows.next()
-                        ? Optional.of(new DeploymentSecretRevision(reference, rows.getString(1),
-                                Instant.ofEpochMilli(rows.getLong(2)), Optional.ofNullable(rows.getString(3))))
-                        : Optional.empty();
+                    ? Optional.of(new DeploymentSecretRevision(reference, rows.getString(1),
+                    Instant.ofEpochMilli(rows.getLong(2)), Optional.ofNullable(rows.getString(3))))
+                    : Optional.empty();
             }
         } catch (IllegalArgumentException failure) {
             throw new SQLException("Stored secret metadata is invalid", failure);
@@ -218,7 +221,7 @@ public final class DeploymentSecretRepository {
      * @param expected complete unique secret set / 完整唯一秘密集合
      * @throws SQLException if metadata or immutable associations conflict / 元数据或不可变关联冲突时 */
     static void bindRelease(Connection connection, String unit, String release, Set<DeploymentSecretReference> expected)
-            throws SQLException {
+        throws SQLException {
         if (connection.getAutoCommit())
             throw new SQLException("Secret binding requires a business transaction");
         for (var reference : expected) {
@@ -228,7 +231,7 @@ public final class DeploymentSecretRepository {
         }
         boolean exists;
         try (var statement = connection.prepareStatement(
-                "SELECT is_secret_binding_complete FROM deployment_unit_release_binding WHERE deployment_unit_id=? AND release_sha256=? FOR UPDATE")) {
+            "SELECT is_secret_binding_complete FROM deployment_unit_release_binding WHERE deployment_unit_id=? AND release_sha256=? FOR UPDATE")) {
             statement.setString(1, unit);
             statement.setString(2, release);
             try (var row = statement.executeQuery()) {
@@ -243,16 +246,16 @@ public final class DeploymentSecretRepository {
         }
         if (!exists) {
             try (var statement = connection.prepareStatement(
-                    "INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256) VALUES(?,?)")) {
+                "INSERT INTO deployment_unit_release_binding(deployment_unit_id,release_sha256) VALUES(?,?)")) {
                 statement.setString(1, unit);
                 statement.setString(2, release);
                 statement.executeUpdate();
             }
         }
         try (var statement = connection.prepareStatement(
-                "INSERT INTO deployment_unit_release_secret_reference(deployment_unit_id,release_sha256,secret_id,secret_revision) VALUES(?,?,?,?)")) {
+            "INSERT INTO deployment_unit_release_secret_reference(deployment_unit_id,release_sha256,secret_id,secret_revision) VALUES(?,?,?,?)")) {
             for (var reference : expected.stream().sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                    .thenComparingLong(DeploymentSecretReference::revision)).toList()) {
+                .thenComparingLong(DeploymentSecretReference::revision)).toList()) {
                 statement.setString(1, unit);
                 statement.setString(2, release);
                 statement.setString(3, reference.identifier());
@@ -262,7 +265,7 @@ public final class DeploymentSecretRepository {
             statement.executeBatch();
         }
         try (var statement = connection.prepareStatement(
-                "UPDATE deployment_unit_release_binding SET is_secret_binding_complete=1 WHERE deployment_unit_id=? AND release_sha256=? AND is_secret_binding_complete=0")) {
+            "UPDATE deployment_unit_release_binding SET is_secret_binding_complete=1 WHERE deployment_unit_id=? AND release_sha256=? AND is_secret_binding_complete=0")) {
             statement.setString(1, unit);
             statement.setString(2, release);
             if (statement.executeUpdate() != 1)
@@ -277,9 +280,9 @@ public final class DeploymentSecretRepository {
      * @return complete set or unbound result / 完整集合或未绑定结果
      * @throws SQLException if persisted associations are invalid / 持久关联无效时 */
     static Optional<List<DeploymentSecretReference>> findRelease(Connection connection, String unit, String release)
-            throws SQLException {
+        throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT b.is_secret_binding_complete,r.secret_id,r.secret_revision FROM deployment_unit_release_binding b LEFT JOIN deployment_unit_release_secret_reference r ON r.deployment_unit_id=b.deployment_unit_id AND r.release_sha256=b.release_sha256 WHERE b.deployment_unit_id=? AND b.release_sha256=? ORDER BY r.secret_id,r.secret_revision")) {
+            "SELECT b.is_secret_binding_complete,r.secret_id,r.secret_revision FROM deployment_unit_release_binding b LEFT JOIN deployment_unit_release_secret_reference r ON r.deployment_unit_id=b.deployment_unit_id AND r.release_sha256=b.release_sha256 WHERE b.deployment_unit_id=? AND b.release_sha256=? ORDER BY r.secret_id,r.secret_revision")) {
             statement.setString(1, unit);
             statement.setString(2, release);
             try (var rows = statement.executeQuery()) {
@@ -325,18 +328,18 @@ public final class DeploymentSecretRepository {
      * @throws SQLException if stored metadata or associations are invalid / 存储元数据或关联无效时 */
     static void validate(Connection connection) throws SQLException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        "SELECT secret_id,secret_revision,credential_id,created_at,purpose FROM secret_revision")) {
+             var rows = statement.executeQuery(
+                 "SELECT secret_id,secret_revision,credential_id,created_at,purpose FROM secret_revision")) {
             while (rows.next())
                 new DeploymentSecretRevision(new DeploymentSecretReference(rows.getString(1), rows.getLong(2)),
-                        rows.getString(3), Instant.ofEpochMilli(rows.getLong(4)),
-                        Optional.ofNullable(rows.getString(5)));
+                    rows.getString(3), Instant.ofEpochMilli(rows.getLong(4)),
+                    Optional.ofNullable(rows.getString(5)));
         } catch (IllegalArgumentException failure) {
             throw new SQLException("Stored secret revisions are invalid", failure);
         }
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        "SELECT deployment_unit_id,release_sha256 FROM deployment_unit_release_binding")) {
+             var rows = statement.executeQuery(
+                 "SELECT deployment_unit_id,release_sha256 FROM deployment_unit_release_binding")) {
             while (rows.next())
                 findRelease(connection, rows.getString(1), rows.getString(2));
         }

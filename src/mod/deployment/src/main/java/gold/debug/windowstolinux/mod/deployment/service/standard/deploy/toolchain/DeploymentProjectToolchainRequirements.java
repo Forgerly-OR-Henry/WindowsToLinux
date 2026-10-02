@@ -54,7 +54,7 @@ public final class DeploymentProjectToolchainRequirements {
             case DeploymentRuntimeDefinition.PhpService v -> add(result, facts, PHP, v.version());
             case DeploymentRuntimeDefinition.RubyService v -> add(result, facts, RUBY, v.version());
             case DeploymentRuntimeDefinition.CmakeService ignored -> result.addAll(facts.toolchainRequirements()
-                    .stream().filter(r -> r.ecosystem() == C || r.ecosystem() == CPP).toList());
+                .stream().filter(r -> r.ecosystem() == C || r.ecosystem() == CPP).toList());
             case DeploymentRuntimeDefinition.Container ignored -> {
             }
             case DeploymentRuntimeDefinition.ManagedProcess ignored ->
@@ -62,7 +62,7 @@ public final class DeploymentProjectToolchainRequirements {
         }
         if (!runtime.workload().companions().isEmpty())
             result.addAll(facts.toolchainRequirements().stream().filter(r -> r.ecosystem() == C || r.ecosystem() == CPP)
-                    .filter(r -> !result.contains(r)).toList());
+                .filter(r -> !result.contains(r)).toList());
         return List.copyOf(result);
     }
 
@@ -77,15 +77,15 @@ public final class DeploymentProjectToolchainRequirements {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     private static void add(List<ToolchainRequirement> result, DeploymentProjectFacts facts,
-            DeploymentToolchainType ecosystem, String reviewed) {
+                            DeploymentToolchainType ecosystem, String reviewed) {
         ToolchainRequirement selected = ToolchainRequirement.declared(ecosystem, reviewed, "reviewed-runtime", BUILD);
         // Preserve an exact source patch when a form only represents its branch. Explicit different review inputs win. / 当表单仅表示版本分支时保留源码的精确补丁版本，显式不同的审阅输入优先。
         var exact = facts.toolchainRequirements().stream()
-                .filter(r -> r.ecosystem() == ecosystem && r.constraint() == ToolchainRequirement.ConstraintType.EXACT
-                        && r.version().isPresent() && selected.version().isPresent()
-                        && selected.constraint() == ToolchainRequirement.ConstraintType.SERIES
-                        && r.version().orElseThrow().branch().equals(selected.version().orElseThrow().branch()))
-                .toList();
+            .filter(r -> r.ecosystem() == ecosystem && r.constraint() == ToolchainRequirement.ConstraintType.EXACT
+                && r.version().isPresent() && selected.version().isPresent()
+                && selected.constraint() == ToolchainRequirement.ConstraintType.SERIES
+                && r.version().orElseThrow().branch().equals(selected.version().orElseThrow().branch()))
+            .toList();
         if (exact.stream().map(r -> r.version().orElseThrow().text()).distinct().count() > 1)
             throw new IllegalArgumentException("conflicting exact toolchain declarations: " + ecosystem);
         if (!exact.isEmpty()) {
@@ -93,11 +93,11 @@ public final class DeploymentProjectToolchainRequirements {
             return;
         }
         var original = facts.toolchainRequirements().stream()
-                .filter(r -> r.ecosystem() == ecosystem && r.version().isPresent() && selected.version().isPresent()
-                        && (r.version().orElseThrow().sameRelease(selected.version().orElseThrow())
-                                || selected.constraint() == ToolchainRequirement.ConstraintType.SERIES && r.version()
-                                        .orElseThrow().branch().equals(selected.version().orElseThrow().branch())))
-                .findFirst();
+            .filter(r -> r.ecosystem() == ecosystem && r.version().isPresent() && selected.version().isPresent()
+                && (r.version().orElseThrow().sameRelease(selected.version().orElseThrow())
+                || selected.constraint() == ToolchainRequirement.ConstraintType.SERIES && r.version()
+                .orElseThrow().branch().equals(selected.version().orElseThrow().branch())))
+            .findFirst();
         result.add(original.orElse(selected));
     }
 }

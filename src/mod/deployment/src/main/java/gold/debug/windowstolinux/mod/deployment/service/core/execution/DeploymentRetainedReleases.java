@@ -1,12 +1,19 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
@@ -37,7 +44,7 @@ public final class DeploymentRetainedReleases {
      * @return retained histories / 保留历史
      * @throws ApiException if evidence cannot be read / 无法读取依据时 */
     public List<DeploymentReleaseRecord> list(DeploymentApplicationRef application, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         new DeploymentApplicationReader(context.db()).find(application, task);
         try {
             return releases.list(task, application.id());
@@ -54,7 +61,7 @@ public final class DeploymentRetainedReleases {
      * @return verified complete release or uncertainty / 已核实完整发布或未知
      * @throws ApiException if original authorization or evidence fails / 原授权或依据失败时 */
     public OperationResult<String> switchRelease(DeploymentApplicationRef application, String expected, UUID selectedId,
-            TaskContext task) throws ApiException {
+                                                 TaskContext task) throws ApiException {
         context.tasks().inspect(task);
         context.servers().get(application.server(), task);
         DeploymentManagementJournal.Entry operation;
@@ -74,13 +81,13 @@ public final class DeploymentRetainedReleases {
             var publications = publications(target, to, task);
             try (var session = context.linux().connect(application.server(), task)) {
                 var helper = new DeploymentManagedHelper(session, context.interaction(), application.server(), task,
-                        target.identity().sha256()).probe();
+                    target.identity().sha256()).probe();
                 if (helper.outcome() != Outcome.SUCCEEDED)
                     return copy(helper);
                 var channel = new DeploymentHandoffChannel(session, context.interaction(), application.server(), task,
-                        target.identity().sha256());
+                    target.identity().sha256());
                 var publication = new DeploymentPublicationChannel(session, context.interaction(), application.server(),
-                        task, target.identity().sha256());
+                    task, target.identity().sha256());
                 if (operation.facts().path("compensationAttempted").asBoolean())
                     return verifyRollback(operation, from, to, channel, publication, task);
                 if (operation.phase().equals("REVIEWED")) {
@@ -98,8 +105,8 @@ public final class DeploymentRetainedReleases {
                     return copy(verified);
                 if (operation.phase().equals("FINISHED"))
                     return target.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                            ? success(target.identity().sha256())
-                            : unknown("DEPLOYMENT_RETAINED_FORMAL_CURRENT_CHANGED");
+                        ? success(target.identity().sha256())
+                        : unknown("DEPLOYMENT_RETAINED_FORMAL_CURRENT_CHANGED");
                 return finishTransition(operation, expected, target, from, to, publications, channel, task);
             }
         } catch (SQLException | NoSuchElementException | IllegalArgumentException invalid) {
@@ -120,8 +127,9 @@ public final class DeploymentRetainedReleases {
      * @param source immutable original active release / 不可变原活动发布
      * @param target immutable selected retained release / 不可变所选保留发布 */
     private record Transition(DeploymentManagementJournal.Entry operation, DeploymentReleaseRecord source,
-            DeploymentReleaseRecord target) {
+                              DeploymentReleaseRecord target) {
     }
+
     /** Reuses the original intent or records a complete conflict-free review. / 复用原意图或记录完整无冲突审阅。
      * @param application exact application / 精确应用
      * @param expected original current digest / 原当前摘要
@@ -131,7 +139,7 @@ public final class DeploymentRetainedReleases {
      * @throws SQLException if immutable release evidence differs / 不可变发布依据不符时
      * @throws ApiException if original authorization or journal fails / 原授权或日志失败时 */
     private OperationResult<Transition> reviewOperation(DeploymentApplicationRef application, String expected,
-            UUID selectedId, TaskContext task) throws SQLException, ApiException {
+                                                        UUID selectedId, TaskContext task) throws SQLException, ApiException {
         DeploymentManagementJournal.Entry operation;
         DeploymentReleaseRecord source;
         DeploymentReleaseRecord target;
@@ -140,34 +148,34 @@ public final class DeploymentRetainedReleases {
         if (prior.isPresent()) {
             operation = prior.orElseThrow();
             if (!operation.action().equals("HISTORY_SWITCH") || !operation.applicationId().equals(application.id())
-                    || !operation.server().equals(application.server()) || !operation.currentRevision().equals(expected)
-                    || !operation.facts().path("selectedId").asText().equals(selectedId.toString())
-                    || !operation.targetRevision().equals(Optional.of(target.identity().sha256())))
+                || !operation.server().equals(application.server()) || !operation.currentRevision().equals(expected)
+                || !operation.facts().path("selectedId").asText().equals(selectedId.toString())
+                || !operation.targetRevision().equals(Optional.of(target.identity().sha256())))
                 return failed("DEPLOYMENT_RETAINED_INTENT_CHANGED");
             source = releases.find(task, application.id(), UUID.fromString(operation.facts().path("sourceId").asText()))
-                    .orElseThrow();
+                .orElseThrow();
             if (operation.phase().equals("FINISHED")
-                    && operation.facts().path("terminalOutcome").asText().equals("FAILED"))
+                && operation.facts().path("terminalOutcome").asText().equals("FAILED"))
                 return failed(operation.facts().path("failureEvent").asText());
         } else {
             var current = new DeploymentApplicationReader(context.db()).find(application, task);
             if (!current.snapshot().revisionSha256().equals(expected)
-                    || target.state() != DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+                || target.state() != DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
                 return failed("DEPLOYMENT_RETAINED_REVIEW_CHANGED");
             source = releases.list(task, application.id()).stream()
-                    .filter(value -> value.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE).findFirst()
-                    .orElseThrow();
+                .filter(value -> value.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE).findFirst()
+                .orElseThrow();
             var from = releases.snapshot(source);
             var to = releases.snapshot(target);
             requireSameUnits(from, to);
             var facts = DeploymentManagementJournal.facts().put("sourceId", source.identity().id().toString())
-                    .put("selectedId", selectedId.toString());
+                .put("selectedId", selectedId.toString());
             var parts = facts.putObject("components");
             for (var component : to.graph().components())
                 parts.putObject(component.componentId()).put("snapshotAttempted", false).put("activateAttempted", false)
-                        .put("finishAttempted", false).put("finished", false);
+                    .put("finishAttempted", false).put("finished", false);
             operation = journal.begin(application.id(), application.server(), "HISTORY_SWITCH", expected,
-                    Optional.of(target.identity().sha256()), facts, task);
+                Optional.of(target.identity().sha256()), facts, task);
         }
         return success(new Transition(operation, source, target));
     }
@@ -182,9 +190,9 @@ public final class DeploymentRetainedReleases {
      * @return acknowledged snapshots or uncertainty / 已确认快照或未知
      * @throws ApiException if original evidence or approval fails / 原依据或审批失败时 */
     private OperationResult<DeploymentManagementJournal.Entry> snapshotSource(
-            DeploymentManagementJournal.Entry operation, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
-            DeploymentHandoffChannel channel, DeploymentPublicationChannel publication, TaskContext task)
-            throws ApiException {
+        DeploymentManagementJournal.Entry operation, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
+        DeploymentHandoffChannel channel, DeploymentPublicationChannel publication, TaskContext task)
+        throws ApiException {
         var originalStates = DeploymentManagementJournal.copy(operation);
         for (var component : ordered(from.graph())) {
             var current = channel.current(component, binding(from, component.componentId()).releaseSha256());
@@ -197,7 +205,7 @@ public final class DeploymentRetainedReleases {
             if (state == DeploymentRemoteRuntimeObservation.StateType.ERROR)
                 return failed("DEPLOYMENT_RETAINED_SOURCE_STATE_FAILED");
             originalStates.withObject("components").withObject(component.componentId()).put("beforeState",
-                    state.name());
+                state.name());
         }
         operation = journal.advance(operation, "REVIEWED", originalStates, task);
         for (var component : ordered(from.graph()).reversed()) {
@@ -215,18 +223,18 @@ public final class DeploymentRetainedReleases {
             facts.withObject("components").withObject(component.componentId()).put("snapshotAttempted", true);
             operation = journal.advance(operation, "EFFECTING", facts, task);
             String kind = component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
-                    ? "container"
-                    : "deployment";
+                ? "container"
+                : "deployment";
             var snapshot = channel.execute("snapshot-retained",
-                    List.of(component.unit().id(), component.unit().ownershipManifestSha256(), task.id().toString(),
-                            binding(from, component.componentId()).releaseSha256(), kind),
-                    new byte[0], Duration.ofMinutes(2), 4096);
+                List.of(component.unit().id(), component.unit().ownershipManifestSha256(), task.id().toString(),
+                    binding(from, component.componentId()).releaseSha256(), kind),
+                new byte[0], Duration.ofMinutes(2), 4096);
             String running = operation.facts().path("components").path(component.componentId()).path("beforeState")
-                    .asText().equals("RUNNING") ? "1" : "0";
+                .asText().equals("RUNNING") ? "1" : "0";
             if (!DeploymentHandoffChannel.receipt(snapshot,
-                    "SNAPSHOT_TOKEN=" + task.id() + "\nPREVIOUS=1\nPREVIOUS_RUNNING=" + running + "\nPREVIOUS_DIGEST="
-                            + binding(from, component.componentId()).releaseSha256() + "\nPREVIOUS_KIND=" + kind
-                            + "\n"))
+                "SNAPSHOT_TOKEN=" + task.id() + "\nPREVIOUS=1\nPREVIOUS_RUNNING=" + running + "\nPREVIOUS_DIGEST="
+                    + binding(from, component.componentId()).releaseSha256() + "\nPREVIOUS_KIND=" + kind
+                    + "\n"))
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_SNAPSHOT_UNKNOWN"));
         }
         return success(operation);
@@ -241,12 +249,12 @@ public final class DeploymentRetainedReleases {
      * @return acknowledged activation or uncertainty / 已确认激活或未知
      * @throws ApiException if original evidence or approval fails / 原依据或审批失败时 */
     private OperationResult<DeploymentManagementJournal.Entry> activateTarget(
-            DeploymentManagementJournal.Entry operation, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
-            DeploymentHandoffChannel channel, TaskContext task) throws ApiException {
+        DeploymentManagementJournal.Entry operation, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
+        DeploymentHandoffChannel channel, TaskContext task) throws ApiException {
         for (var component : ordered(to.graph())) {
             if (!changed(from, to, component.componentId()))
                 continue;
-            if (task.cancellation().requested())
+            if (task.cancelToken().requested())
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_CANCELLED_AFTER_SNAPSHOT"));
             var facts = DeploymentManagementJournal.copy(operation);
             facts.withObject("components").withObject(component.componentId()).put("activateAttempted", true);
@@ -272,17 +280,17 @@ public final class DeploymentRetainedReleases {
      * @return verified target or compensated failure or uncertainty / 已核实目标、已补偿失败或未知
      * @throws ApiException if original evidence or approval fails / 原依据或审批失败时 */
     private OperationResult<Void> verifyTarget(DeploymentManagementJournal.Entry operation,
-            DeploymentReleaseRecord source, DeploymentReleaseRecord target, DeploymentReleaseSnapshot from,
-            DeploymentReleaseSnapshot to, DeploymentHandoffChannel channel, DeploymentPublicationChannel publication,
-            TaskContext task) throws ApiException {
+                                               DeploymentReleaseRecord source, DeploymentReleaseRecord target, DeploymentReleaseSnapshot from,
+                                               DeploymentReleaseSnapshot to, DeploymentHandoffChannel channel, DeploymentPublicationChannel publication,
+                                               TaskContext task) throws ApiException {
         boolean allRunning = true;
         for (var component : ordered(to.graph())) {
             if (channel.current(component, binding(to, component.componentId()).releaseSha256())
-                    .outcome() != Outcome.SUCCEEDED)
+                .outcome() != Outcome.SUCCEEDED)
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_TARGET_CURRENT_UNKNOWN"));
             if (changed(from, to, component.componentId())) {
                 if (!operation.facts().path("components").path(component.componentId()).path("activateAttempted")
-                        .asBoolean(false))
+                    .asBoolean(false))
                     return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_COMPONENT_NOT_ATTEMPTED"));
                 var status = status(channel, from, to, component, task);
                 if (status.isEmpty() || !status.orElseThrow().current().equals("target"))
@@ -294,9 +302,9 @@ public final class DeploymentRetainedReleases {
             String expectedState = targetState(operation, component);
             if (!observed.value().orElseThrow().state().name().equals(expectedState)) {
                 if (source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                        && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+                    && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
                     return copy(rollback(operation, from, to, channel, publication, task,
-                            "DEPLOYMENT_RETAINED_RUNTIME_FAILED"));
+                        "DEPLOYMENT_RETAINED_RUNTIME_FAILED"));
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_COMMITTED_RUNTIME_UNKNOWN"));
             }
             if (!expectedState.equals("RUNNING")) {
@@ -305,23 +313,23 @@ public final class DeploymentRetainedReleases {
             }
             var health = publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck());
             if (health.outcome() == Outcome.FAILED
-                    && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                    && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+                && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
+                && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
                 return copy(
-                        rollback(operation, from, to, channel, publication, task, "DEPLOYMENT_RETAINED_HEALTH_FAILED"));
+                    rollback(operation, from, to, channel, publication, task, "DEPLOYMENT_RETAINED_HEALTH_FAILED"));
             if (health.outcome() != Outcome.SUCCEEDED)
                 return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_HEALTH_FAILED"));
         }
         if (!allRunning)
             return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
         var healthOwner = to.graph().components().stream()
-                .filter(value -> value.componentId().equals(to.graph().healthComponentId())).findFirst().orElseThrow();
+            .filter(value -> value.componentId().equals(to.graph().healthComponentId())).findFirst().orElseThrow();
         var wholeHealth = publication.healthCheck(healthOwner.unit(), to.graph().healthCheck());
         if (wholeHealth.outcome() == Outcome.FAILED
-                && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
-                && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+            && source.state() == DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE
+            && target.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
             return copy(rollback(operation, from, to, channel, publication, task,
-                    "DEPLOYMENT_RETAINED_APPLICATION_HEALTH_FAILED"));
+                "DEPLOYMENT_RETAINED_APPLICATION_HEALTH_FAILED"));
         if (wholeHealth.outcome() != Outcome.SUCCEEDED)
             return copy(uncertain(operation, task, "DEPLOYMENT_RETAINED_APPLICATION_HEALTH_FAILED"));
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
@@ -340,9 +348,9 @@ public final class DeploymentRetainedReleases {
      * @throws SQLException if the original formal transition conflicts / 原正式转换冲突时
      * @throws ApiException if original cleanup cannot be confirmed / 原清理无法确认时 */
     private OperationResult<String> finishTransition(DeploymentManagementJournal.Entry operation, String expected,
-            DeploymentReleaseRecord target, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
-            List<DeploymentUnitCommit> publications, DeploymentHandoffChannel channel, TaskContext task)
-            throws SQLException, ApiException {
+                                                     DeploymentReleaseRecord target, DeploymentReleaseSnapshot from, DeploymentReleaseSnapshot to,
+                                                     List<DeploymentUnitCommit> publications, DeploymentHandoffChannel channel, TaskContext task)
+        throws SQLException, ApiException {
         releases.activateRetained(task, expected, target, publications, Instant.now());
         for (var component : ordered(to.graph())) {
             if (!changed(from, to, component.componentId()))
@@ -361,12 +369,12 @@ public final class DeploymentRetainedReleases {
             var args = arguments(from, to, component, task);
             args.add(task.id().toString());
             if (!DeploymentHandoffChannel.receipt(
-                    channel.execute("finish-retained", args, new byte[0], Duration.ofMinutes(10), 1024),
-                    "FINISHED=1\n"))
+                channel.execute("finish-retained", args, new byte[0], Duration.ofMinutes(10), 1024),
+                "FINISHED=1\n"))
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_FINISH_UNKNOWN");
         }
         journal.advance(operation, "FINISHED",
-                DeploymentManagementJournal.copy(operation).put("verifiedRelease", target.identity().sha256()), task);
+            DeploymentManagementJournal.copy(operation).put("verifiedRelease", target.identity().sha256()), task);
         return success(target.identity().sha256());
     }
 
@@ -378,18 +386,18 @@ public final class DeploymentRetainedReleases {
      * @throws SQLException if retained configuration differs / 保留配置不符时
      * @throws ApiException if original configuration access fails / 原配置访问失败时 */
     private List<DeploymentUnitCommit> publications(DeploymentReleaseRecord target, DeploymentReleaseSnapshot snapshot,
-            TaskContext task) throws SQLException, ApiException {
+                                                    TaskContext task) throws SQLException, ApiException {
         var configurations = new DeploymentConfigurationRepository(context.db());
         var result = new ArrayList<DeploymentUnitCommit>();
         for (var component : snapshot.graph().components()) {
             var binding = binding(snapshot, component.componentId());
             var config = configurations.find(task, component.unit().id(), binding.configurationRevision())
-                    .orElseThrow();
+                .orElseThrow();
             if (!config.sha256().equals(binding.configurationSha256()))
                 throw new SQLException("Retained configuration differs");
             result.add(new DeploymentUnitCommit(component.unit(), component.runtime(),
-                    new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(), target.createdAt()),
-                    config, binding.secrets()));
+                new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(), target.createdAt()),
+                config, binding.secrets()));
         }
         return List.copyOf(result);
     }
@@ -399,9 +407,9 @@ public final class DeploymentRetainedReleases {
      * @param target complete selected target / 完整所选目标 */
     private static void requireSameUnits(DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target) {
         var from = source.graph().components().stream().collect(java.util.stream.Collectors
-                .toMap(DeploymentApplicationGraph.Component::componentId, DeploymentApplicationGraph.Component::unit));
+            .toMap(DeploymentApplicationGraph.Component::componentId, DeploymentApplicationGraph.Component::unit));
         var to = target.graph().components().stream().collect(java.util.stream.Collectors
-                .toMap(DeploymentApplicationGraph.Component::componentId, DeploymentApplicationGraph.Component::unit));
+            .toMap(DeploymentApplicationGraph.Component::componentId, DeploymentApplicationGraph.Component::unit));
         if (!from.equals(to))
             throw new IllegalArgumentException("Retained switch requires identical original unit identities");
     }
@@ -417,10 +425,10 @@ public final class DeploymentRetainedReleases {
      * @return verified compensated failure or uncertainty / 已核实补偿失败或未知
      * @throws ApiException if original compensation cannot be confirmed / 原补偿无法确认时 */
     private OperationResult<String> rollback(DeploymentManagementJournal.Entry operation,
-            DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target, DeploymentHandoffChannel channel,
-            DeploymentPublicationChannel publication, TaskContext task, String failureEvent) throws ApiException {
+                                             DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target, DeploymentHandoffChannel channel,
+                                             DeploymentPublicationChannel publication, TaskContext task, String failureEvent) throws ApiException {
         operation = journal.advance(operation, "EFFECTING", DeploymentManagementJournal.copy(operation)
-                .put("compensationAttempted", true).put("failureEvent", failureEvent), task);
+            .put("compensationAttempted", true).put("failureEvent", failureEvent), task);
         for (var component : ordered(target.graph()).reversed()) {
             if (!changed(source, target, component.componentId()))
                 continue;
@@ -430,8 +438,8 @@ public final class DeploymentRetainedReleases {
             var args = arguments(source, target, component, task);
             args.add(task.id().toString());
             if (!DeploymentHandoffChannel.receipt(
-                    channel.execute("rollback-retained", args, new byte[0], Duration.ofMinutes(30), 1024),
-                    "ROLLED_BACK=1\n"))
+                channel.execute("rollback-retained", args, new byte[0], Duration.ofMinutes(30), 1024),
+                "ROLLED_BACK=1\n"))
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_ROLLBACK_UNKNOWN");
             facts = DeploymentManagementJournal.copy(operation);
             facts.withObject("components").withObject(component.componentId()).put("rolledBack", true);
@@ -450,12 +458,12 @@ public final class DeploymentRetainedReleases {
      * @return verified compensated failure or uncertainty / 已核实补偿失败或未知
      * @throws ApiException if original evidence cannot be confirmed / 原依据无法确认时 */
     private OperationResult<String> verifyRollback(DeploymentManagementJournal.Entry operation,
-            DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target, DeploymentHandoffChannel channel,
-            DeploymentPublicationChannel publication, TaskContext task) throws ApiException {
+                                                   DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target, DeploymentHandoffChannel channel,
+                                                   DeploymentPublicationChannel publication, TaskContext task) throws ApiException {
         boolean allRunning = true;
         for (var component : ordered(source.graph())) {
             if (channel.current(component, binding(source, component.componentId()).releaseSha256())
-                    .outcome() != Outcome.SUCCEEDED)
+                .outcome() != Outcome.SUCCEEDED)
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_CURRENT_UNKNOWN");
             if (changed(source, target, component.componentId())) {
                 var saved = operation.facts().path("components").path(component.componentId());
@@ -463,31 +471,31 @@ public final class DeploymentRetainedReleases {
                     return uncertain(operation, task, "DEPLOYMENT_RETAINED_ROLLBACK_NOT_ATTEMPTED");
                 var observed = status(channel, source, target, component, task);
                 if (observed.isEmpty()
-                        || !observed.orElseThrow().equals(new RetainedStatus("source", "absent", "absent")))
+                    || !observed.orElseThrow().equals(new RetainedStatus("source", "absent", "absent")))
                     return uncertain(operation, task, "DEPLOYMENT_RETAINED_ROLLBACK_CLEANUP_UNKNOWN");
             }
             var state = publication.observe(component.unit(), component.reviewedRuntime());
             String expected = operation.facts().path("components").path(component.componentId()).path("beforeState")
-                    .asText();
+                .asText();
             if (state.outcome() != Outcome.SUCCEEDED || state.value().isEmpty()
-                    || !state.value().orElseThrow().state().name().equals(expected))
+                || !state.value().orElseThrow().state().name().equals(expected))
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_RUNTIME_UNKNOWN");
             if (!expected.equals("RUNNING")) {
                 allRunning = false;
                 continue;
             }
             if (publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck())
-                    .outcome() != Outcome.SUCCEEDED)
+                .outcome() != Outcome.SUCCEEDED)
                 return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_HEALTH_UNKNOWN");
         }
         var healthOwner = source.graph().components().stream()
-                .filter(value -> value.componentId().equals(source.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(value -> value.componentId().equals(source.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         if (allRunning && publication.healthCheck(healthOwner.unit(), source.graph().healthCheck())
-                .outcome() != Outcome.SUCCEEDED)
+            .outcome() != Outcome.SUCCEEDED)
             return uncertain(operation, task, "DEPLOYMENT_RETAINED_OLD_APPLICATION_HEALTH_UNKNOWN");
         journal.advance(operation, "FINISHED",
-                DeploymentManagementJournal.copy(operation).put("terminalOutcome", "FAILED"), task);
+            DeploymentManagementJournal.copy(operation).put("terminalOutcome", "FAILED"), task);
         return failed(operation.facts().path("failureEvent").asText());
     }
 
@@ -496,11 +504,11 @@ public final class DeploymentRetainedReleases {
      * @param component selected target component / 所选目标组件
      * @return exact required target state / 精确所需目标状态 */
     private static String targetState(DeploymentManagementJournal.Entry operation,
-            DeploymentApplicationGraph.Component component) {
+                                      DeploymentApplicationGraph.Component component) {
         if (component.reviewedRuntime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND)
             return "INSTALLED";
         return operation.facts().path("components").path(component.componentId()).path("beforeState").asText()
-                .equals("RUNNING") ? "RUNNING" : "STOPPED";
+            .equals("RUNNING") ? "RUNNING" : "STOPPED";
     }
 
     /** Resolves one component through its verified original unit mapping. / 通过已核实原单元映射解析一个组件。
@@ -509,7 +517,7 @@ public final class DeploymentRetainedReleases {
      * @return exact original unit binding / 精确原单元绑定 */
     private static DeploymentReleaseSnapshot.Binding binding(DeploymentReleaseSnapshot snapshot, String component) {
         var unit = snapshot.graph().components().stream().filter(value -> value.componentId().equals(component))
-                .findFirst().orElseThrow().unit().id();
+            .findFirst().orElseThrow().unit().id();
         return snapshot.bindings().stream().filter(value -> value.unitId().equals(unit)).findFirst().orElseThrow();
     }
 
@@ -519,7 +527,7 @@ public final class DeploymentRetainedReleases {
      * @param component exact component identity / 精确组件身份
      * @return whether the component release differs / 组件发布是否不同 */
     private static boolean changed(DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target,
-            String component) {
+                                   String component) {
         return !binding(source, component).releaseSha256().equals(binding(target, component).releaseSha256());
     }
 
@@ -530,10 +538,10 @@ public final class DeploymentRetainedReleases {
      * @param task authenticated original task / 已认证原任务
      * @return original mutable argument list / 原可变参数列表 */
     private static ArrayList<String> arguments(DeploymentReleaseSnapshot source, DeploymentReleaseSnapshot target,
-            DeploymentApplicationGraph.Component component, TaskContext task) {
+                                               DeploymentApplicationGraph.Component component, TaskContext task) {
         return new ArrayList<>(List.of(component.unit().id(), binding(source, component.componentId()).releaseSha256(),
-                binding(target, component.componentId()).releaseSha256(), component.unit().ownershipManifestSha256(),
-                task.id().toString()));
+            binding(target, component.componentId()).releaseSha256(), component.unit().ownershipManifestSha256(),
+            task.id().toString()));
     }
 
     /** Exact read-only retained status receipt. / 精确只读保留状态回执。
@@ -552,20 +560,20 @@ public final class DeploymentRetainedReleases {
      * @return exact status or absence of complete evidence / 精确状态或无完整依据
      * @throws ApiException if original observation approval fails / 原观察审批失败时 */
     private static Optional<RetainedStatus> status(DeploymentHandoffChannel channel, DeploymentReleaseSnapshot source,
-            DeploymentReleaseSnapshot target, DeploymentApplicationGraph.Component component, TaskContext task)
-            throws ApiException {
+                                                   DeploymentReleaseSnapshot target, DeploymentApplicationGraph.Component component, TaskContext task)
+        throws ApiException {
         var result = channel.execute("retained-status", arguments(source, target, component, task), new byte[0],
-                Duration.ofMinutes(2), 1024);
+            Duration.ofMinutes(2), 1024);
         if (result.outcome() != Outcome.SUCCEEDED || result.value().isEmpty()
-                || result.value().orElseThrow().truncated()
-                || !result.value().orElseThrow().exitCode().equals(Optional.of(0)))
+            || result.value().orElseThrow().truncated()
+            || !result.value().orElseThrow().exitCode().equals(Optional.of(0)))
             return Optional.empty();
         var match = java.util.regex.Pattern.compile(
                 "RETAINED_STATUS=1\\nCURRENT=(source|target)\\nSNAPSHOT=(owned|absent)\\nMARKER=(owned|absent)\\n")
-                .matcher(result.value().orElseThrow().stdout());
+            .matcher(result.value().orElseThrow().stdout());
         return match.matches()
-                ? Optional.of(new RetainedStatus(match.group(1), match.group(2), match.group(3)))
-                : Optional.empty();
+            ? Optional.of(new RetainedStatus(match.group(1), match.group(2), match.group(3)))
+            : Optional.empty();
     }
 
     /** Orders complete components by their declared dependencies. / 按声明依赖排列完整组件。
@@ -594,10 +602,10 @@ public final class DeploymentRetainedReleases {
      * @return retained uncertainty / 留存未知
      * @throws ApiException if uncertainty cannot be persisted / 未知无法持久化时 */
     private OperationResult<String> uncertain(DeploymentManagementJournal.Entry entry, TaskContext task, String event)
-            throws ApiException {
+        throws ApiException {
         if (!entry.phase().equals("UNKNOWN") && !entry.phase().equals("FINISHED"))
             journal.advance(entry, "UNKNOWN", DeploymentManagementJournal.copy(entry).put("uncertainEvent", event),
-                    task);
+                task);
         return unknown(event);
     }
 
@@ -631,7 +639,7 @@ public final class DeploymentRetainedReleases {
      * @return unknown original result / 未知原结果 */
     private static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Original retained operation requires reconciliation", Map.of(), Optional.empty())));
+            event, "Original retained operation requires reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Describes retained evidence conflict without revealing payloads. / 不暴露载荷地描述保留依据冲突。
@@ -639,6 +647,6 @@ public final class DeploymentRetainedReleases {
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException problem(String event) {
         return new ApiException(new Problem(ProblemCode.INCOMPATIBLE, event, "Retained release evidence differs",
-                Map.of(), Optional.empty()));
+            Map.of(), Optional.empty()));
     }
 }

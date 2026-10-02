@@ -27,19 +27,19 @@ public record DeploymentReleaseSnapshot(DeploymentApplicationGraph graph, List<B
      * @param publications verified component records / 已验证组件记录
      * @return immutable release manifest / 不可变发布清单 */
     public static DeploymentReleaseSnapshot capture(DeploymentApplicationGraph graph,
-            List<DeploymentUnitCommit> publications) {
+                                                    List<DeploymentUnitCommit> publications) {
         var records = List.copyOf(publications);
         for (var component : graph.components()) {
             var record = records.stream().filter(r -> r.unit().id().equals(component.unit().id())).findFirst()
-                    .orElseThrow();
+                .orElseThrow();
             if (!record.unit().equals(component.unit()) || !record.runtime().equals(component.runtime()))
                 throw new IllegalArgumentException("Release differs from the reviewed graph");
         }
         return new DeploymentReleaseSnapshot(graph,
-                records.stream()
-                        .map(r -> new Binding(r.unit().id(), r.release().sha256(),
-                                Math.toIntExact(r.configuration().revision()), r.configuration().sha256(), r.secrets()))
-                        .toList());
+            records.stream()
+                .map(r -> new Binding(r.unit().id(), r.release().sha256(),
+                    Math.toIntExact(r.configuration().revision()), r.configuration().sha256(), r.secrets()))
+                .toList());
     }
 
     /** Original immutable content references for one unit. / 一个单元的原不可变内容引用。
@@ -49,7 +49,7 @@ public record DeploymentReleaseSnapshot(DeploymentApplicationGraph graph, List<B
      * @param configurationSha256 original configuration digest / 原配置摘要
      * @param secrets original complete secret revision set / 原完整秘密修订集合 */
     public record Binding(String unitId, String releaseSha256, int configurationRevision, String configurationSha256,
-            List<DeploymentSecretReference> secrets) {
+                          List<DeploymentSecretReference> secrets) {
         /** Validates and canonicalizes an unordered set without altering identities. / 校验并规范化无序集合，不改变身份。
          * @param unitId exact unit identity / 精确单元身份
          * @param releaseSha256 original component release digest / 原组件发布摘要
@@ -63,9 +63,9 @@ public record DeploymentReleaseSnapshot(DeploymentApplicationGraph graph, List<B
                 if (!digest.matches("[0-9a-f]{64}"))
                     throw new IllegalArgumentException("Invalid release binding digest");
             secrets = List.copyOf(secrets).stream().sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                    .thenComparingLong(DeploymentSecretReference::revision)).toList();
+                .thenComparingLong(DeploymentSecretReference::revision)).toList();
             if (secrets.size() != new HashSet<>(secrets).size()
-                    || secrets.stream().anyMatch(s -> s.revision() > Integer.MAX_VALUE))
+                || secrets.stream().anyMatch(s -> s.revision() > Integer.MAX_VALUE))
                 throw new IllegalArgumentException("Invalid release secret set");
         }
     }

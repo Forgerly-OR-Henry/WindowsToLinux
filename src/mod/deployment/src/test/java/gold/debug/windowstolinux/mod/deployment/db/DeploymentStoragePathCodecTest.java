@@ -15,8 +15,8 @@ class DeploymentStoragePathCodecTest {
     @Test
     void roundTripsCanonicalReviewedPathsAndAnExplicitEmptyInventory() throws Exception {
         List<DeploymentStoragePath> paths = List.of(
-                new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v2", false),
-                new DeploymentStoragePath("cache/index", DeploymentStoragePath.AccessMode.READ_ONLY, "cache-v1", true));
+            new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v2", false),
+            new DeploymentStoragePath("cache/index", DeploymentStoragePath.AccessMode.READ_ONLY, "cache-v1", true));
 
         assertEquals(List.of(paths.get(1), paths.get(0)), codec.read(DeploymentCodecCompatibility.write(paths)));
         assertEquals(List.of(), codec.read(DeploymentCodecCompatibility.write(List.of())));
@@ -25,7 +25,7 @@ class DeploymentStoragePathCodecTest {
     @Test
     void rejectsUnsupportedTruncatedTrailingAndNonCanonicalDocuments() throws Exception {
         byte[] valid = DeploymentCodecCompatibility.write(List
-                .of(new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE, "data-v1", true)));
+            .of(new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE, "data-v1", true)));
         byte[] unsupported = valid.clone();
         unsupported[4] = 99;
         assertThrows(java.io.IOException.class, () -> codec.read(unsupported));
@@ -41,9 +41,9 @@ class DeploymentStoragePathCodecTest {
     @Test
     void rejectsDuplicateReviewedPathsBeforePersistence() {
         DeploymentStoragePath first = new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE,
-                "data-v1", true);
+            "data-v1", true);
         DeploymentStoragePath second = new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_ONLY,
-                "data-v2", true);
+            "data-v2", true);
 
         assertThrows(java.io.IOException.class, () -> DeploymentCodecCompatibility.write(List.of(first, second)));
     }

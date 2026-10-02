@@ -1,11 +1,17 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.util.*;
 import java.util.concurrent.CompletionStage;
 
-import gold.debug.windowstolinux.app.service.contract.spi.TaskManagement;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Routes explicit desktop actions to original tasks and the host rescue confirmation boundary. / 将明确桌面操作路由到原任务及宿主救援确认边界。 */
 public final class PlatformTaskManagement implements TaskManagement {
@@ -27,7 +33,7 @@ public final class PlatformTaskManagement implements TaskManagement {
      * @param rescue original rescue-service action after human confirmation / 人工确认后的原救援服务操作
      * @param cleanup original Mod session cleanup after task completion / 任务完成后的原 Mod 会话清理 */
     public PlatformTaskManagement(PlatformTaskRuntime tasks, DesktopSecurityService security,
-            RescueReconciliation rescue, RecoveryCleanup cleanup) {
+                                  RescueReconciliation rescue, RecoveryCleanup cleanup) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.rescue = Objects.requireNonNull(rescue);
@@ -41,12 +47,12 @@ public final class PlatformTaskManagement implements TaskManagement {
     public List<Entry> list() throws ApiException {
         requireAccess();
         return tasks.management().stream()
-                .map(entry -> rescue(entry.snapshot()) && entry.recovery() == RecoveryState.RECONCILE
-                        ? new Entry(entry.snapshot(), entry.cancellable(), RecoveryState.CONFIRM_RESCUE)
-                        : entry)
-                .sorted(Comparator.comparing((Entry entry) -> entry.snapshot().startedAt())
-                        .thenComparing(entry -> entry.snapshot().id()))
-                .toList();
+            .map(entry -> rescue(entry.snapshot()) && entry.recovery() == RecoveryState.RECONCILE
+                ? new Entry(entry.snapshot(), entry.cancellable(), RecoveryState.CONFIRM_RESCUE)
+                : entry)
+            .sorted(Comparator.comparing((Entry entry) -> entry.snapshot().startedAt())
+                .thenComparing(entry -> entry.snapshot().id()))
+            .toList();
     }
 
     /** Requests cancellation through the original handle and its actual current state. / 通过原句柄及其实际当前状态请求取消。
@@ -59,6 +65,17 @@ public final class PlatformTaskManagement implements TaskManagement {
         return tasks.requestCancellation(id);
     }
 
+    /** Preserves desktop authorization and original-callback identity. / 保留桌面授权及原回调身份。
+     * @param id original task / 原任务
+     * @return resumed original observation / 恢复后的原观察
+     * @throws ApiException if access or live waiting is unavailable / 访问或存活等待不可用时
+     */
+    @Override
+    public TaskSnapshot continueWaiting(UUID id) throws ApiException {
+        requireAccess();
+        return tasks.continueWaiting(id);
+    }
+
     /** Preserves rescue confirmation while metadata-only completion never invokes business recovery. / 保留救援确认，且仅元数据收尾绝不调用业务恢复。
      * @param id original task / 原任务
      * @param actionReconciled whether the old rescue command was explicitly checked / 是否已明确核对旧救援命令
@@ -67,11 +84,11 @@ public final class PlatformTaskManagement implements TaskManagement {
     @Override
     public CompletionStage<TaskSnapshot> reconcile(UUID id, boolean actionReconciled) throws ApiException {
         var entry = list().stream().filter(item -> item.snapshot().id().equals(id)).findFirst()
-                .orElseThrow(() -> failure(ProblemCode.NOT_FOUND, "TASK_MISSING", "Task does not exist"));
+            .orElseThrow(() -> failure(ProblemCode.NOT_FOUND, "TASK_MISSING", "Task does not exist"));
         if (rescue(entry.snapshot()) && entry.recovery() != RecoveryState.ARCHIVE_ONLY) {
             if (!actionReconciled)
                 throw failure(ProblemCode.ACCESS_DENIED, "RESCUE_RECONCILIATION_REQUIRED",
-                        "Confirm that the original rescue command is no longer running");
+                    "Confirm that the original rescue command is no longer running");
             return completed(rescue.reconcile(id));
         }
         return completed(tasks.reconcile(id));
@@ -98,7 +115,7 @@ public final class PlatformTaskManagement implements TaskManagement {
      * @return whether this is the platform rescue protocol / 是否为平台救援协议 */
     private static boolean rescue(TaskSnapshot snapshot) {
         return snapshot.ownerId().equals(PlatformTaskAdmission.PLATFORM_OWNER)
-                && snapshot.type().equals(PlatformTaskAdmission.RESCUE_TYPE);
+            && snapshot.type().equals(PlatformTaskAdmission.RESCUE_TYPE);
     }
 
     /** Requires a worker and unlocked desktop before inventory or actions. / 在清单或操作前要求工作线程及已解锁桌面。
@@ -108,7 +125,7 @@ public final class PlatformTaskManagement implements TaskManagement {
             throw new IllegalStateException("Task management requires a worker");
         try {
             security.requireUnlocked();
-        } catch (gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException denied) {
+        } catch (gold.debug.windowstolinux.app.service.error.ApplicationServiceException denied) {
             throw failure(ProblemCode.ACCESS_DENIED, "TASK_SECURITY_LOCKED", "Unlock the desktop to manage tasks");
         }
     }

@@ -21,7 +21,7 @@ class JavaLanguageInspectorTest {
     void reportsLanguageMarkersWithoutOpeningTheJar() throws Exception {
         Files.writeString(temporaryDirectory.resolve("app.jar"), "not an archive");
         SourceInspectionFacts source = new SourceInspectionFacts(1,
-                List.of(Path.of("src/App.java"), Path.of("app.jar")), "class App {}");
+            List.of(Path.of("src/App.java"), Path.of("app.jar")), "class App {}");
 
         var facts = new JavaLanguageInspector().inspect(source);
 

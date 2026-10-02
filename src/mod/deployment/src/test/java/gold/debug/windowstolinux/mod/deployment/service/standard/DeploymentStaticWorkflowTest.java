@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
@@ -12,20 +20,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.source.SourceService;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.FileService;
+
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -36,9 +44,10 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     private enum RefusalStageType {
         GRAPH_SELECTION, RUNTIME_REVIEW, UNKNOWN_DATABASE_INPUTS
     }
+
     private static final Path GIT = Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
-            .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
-            .toAbsolutePath().normalize();
+        .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
+        .toAbsolutePath().normalize();
 
     @Override
     protected Path selectedSourceDirectory() {
@@ -83,12 +92,12 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     @ParameterizedTest(name = "{0}")
     @EnumSource(RefusalStageType.class)
     void localGraphRuntimeAndUnknownDatabaseRefusalCancelTheOriginalTaskWithoutRemoteWork(RefusalStageType stage)
-            throws Exception {
+        throws Exception {
         int count = stage == RefusalStageType.GRAPH_SELECTION ? 2 : 1;
         for (int i = 0; i < count; i++) {
             Path directory = count == 1
-                    ? selectedSourceDirectory()
-                    : selectedSourceDirectory().resolve(i == 0 ? "api" : "web");
+                ? selectedSourceDirectory()
+                : selectedSourceDirectory().resolve(i == 0 ? "api" : "web");
             Files.createDirectories(directory);
             Files.writeString(directory.resolve("go.mod"), "module example.test/refusal" + i + "\n\ngo 1.24\n");
             Files.writeString(directory.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
@@ -100,77 +109,77 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var actual = runtime.modContexts().get(OWNER).context();
             var sourceCalls = new AtomicInteger();
             var snapshots = new AtomicInteger();
             var ssh = new AtomicInteger();
             var models = new AtomicInteger();
-            var source = (SourceService) Proxy.newProxyInstance(SourceService.class.getClassLoader(),
-                    new Class<?>[]{SourceService.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("selectDirectory"))
-                            sourceCalls.incrementAndGet();
-                        if (method.getName().equals("snapshot"))
-                            snapshots.incrementAndGet();
-                        try {
-                            return method.invoke(actual.source(), arguments);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
+                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("selectDirectory"))
+                        sourceCalls.incrementAndGet();
+                    if (method.getName().equals("snapshot"))
+                        snapshots.incrementAndGet();
+                    try {
+                        return method.invoke(actual.file(), arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
-                    new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
-                        ssh.incrementAndGet();
-                        throw new AssertionError("Local refusal cannot connect, observe or stage: " + method.getName());
-                    });
+                new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
+                    ssh.incrementAndGet();
+                    throw new AssertionError("Local refusal cannot connect, observe or stage: " + method.getName());
+                });
             var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(),
-                    new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
-                        models.incrementAndGet();
-                        throw new AssertionError(
-                                "Ordinary local review cannot consult model inventory or send: " + method.getName());
-                    });
+                new Class<?>[]{AiService.class}, (proxy, method, arguments) -> {
+                    models.incrementAndGet();
+                    throw new AssertionError(
+                        "Ordinary local review cannot consult model inventory or send: " + method.getName());
+                });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("source"))
-                            return source;
-                        if (method.getName().equals("linux"))
-                            return linux;
-                        if (method.getName().equals("ai"))
-                            return ai;
-                        try {
-                            return method.invoke(actual, arguments);
-                        } catch (InvocationTargetException failure) {
-                            throw failure.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("source"))
+                        return source;
+                    if (method.getName().equals("linux"))
+                        return linux;
+                    if (method.getName().equals("ai"))
+                        return ai;
+                    try {
+                        return method.invoke(actual, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
             var selected = new AtomicInteger();
             var reviewed = new AtomicInteger();
             var database = new AtomicInteger();
             var original = new java.util.concurrent.atomic.AtomicReference<UUID>();
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                        List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
+                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
                     selected.incrementAndGet();
                     original.set(task.id());
                     assertEquals(count, discovered.size());
                     assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
-                            + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
+                        + "' AND resource_kind='FILE' AND released_at IS NULL") > 0);
                     assertTrue(scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
-                            + "' AND resource_kind='CUSTOM' AND resource_id LIKE '%/checkpoint/%' AND released_at IS NULL") > 0);
+                        + "' AND resource_kind='CUSTOM' AND resource_id LIKE '%/checkpoint/%' AND released_at IS NULL") > 0);
                     if (stage == RefusalStageType.GRAPH_SELECTION)
                         return cancelled();
                     String id = discovered.getFirst().id();
                     return success(new DeploymentStaticWorkflow.Selection(id,
-                            Map.of(id, new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
-                            Optional.empty()));
+                        Map.of(id, new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of())),
+                        Optional.empty()));
                 }
 
                 public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
-                        String sha, Path directory, String applicationId,
-                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                        TaskContext task) {
+                                                                           String sha, Path directory, String applicationId,
+                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                           TaskContext task) {
                     assertEquals(RefusalStageType.UNKNOWN_DATABASE_INPUTS, stage);
                     assertEquals(original.get(), task.id());
                     database.incrementAndGet();
@@ -181,7 +190,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
-                        String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                             String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(RefusalStageType.RUNTIME_REVIEW, stage);
                     assertEquals(original.get(), task.id());
                     assertEquals(1, prompts.size());
@@ -190,15 +199,15 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentPreparedDatabase> databases,
-                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentPreparedDatabase> databases,
+                                                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Refused local fields cannot reach publication consent");
                 }
             };
             var handle = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound)).submit(
-                    new ServerRef("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
-                    Optional.empty(), reviewer);
+                new ServerRef("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
+                Optional.empty(), reviewer);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
@@ -212,12 +221,12 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             assertEquals(0, ssh.get());
             assertEquals(0, models.get());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id()
-                    + "' AND released_at IS NULL"));
+                + "' AND released_at IS NULL"));
             try (var access = scope(runtime, true);
-                    var connection = access.openConnection();
-                    var statement = connection.createStatement()) {
+                 var connection = access.openConnection();
+                 var statement = connection.createStatement()) {
                 for (String table : List.of("deployment_execution", "managed_application", "deployment_unit",
-                        "deployment_release", "deployment_project"))
+                    "deployment_release", "deployment_project"))
                     try (var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
                         assertTrue(rows.next());
                         assertEquals(0, rows.getLong(1), table);
@@ -234,70 +243,70 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var cleanupCalls = new AtomicInteger();
-            var source = (SourceService) Proxy.newProxyInstance(SourceService.class.getClassLoader(),
-                    new Class<?>[]{SourceService.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("workspace") && arguments.length == 2)
-                            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_WORKSPACE_UNCONFIRMED",
-                                    "Original workspace result is unavailable", Map.of(), Optional.empty()));
-                        if (method.getName().equals("closeTaskResources") && cleanupCalls.getAndIncrement() == 0)
-                            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_CLEANUP_UNCONFIRMED",
-                                    "Original source cleanup is unavailable", Map.of(), Optional.empty()));
-                        try {
-                            return method.invoke(original.source(), arguments);
-                        } catch (InvocationTargetException wrapped) {
-                            throw wrapped.getCause();
-                        }
-                    });
+            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
+                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("workspace") && arguments.length == 2)
+                        throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_WORKSPACE_UNCONFIRMED",
+                            "Original workspace result is unavailable", Map.of(), Optional.empty()));
+                    if (method.getName().equals("closeTaskResources") && cleanupCalls.getAndIncrement() == 0)
+                        throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_CLEANUP_UNCONFIRMED",
+                            "Original source cleanup is unavailable", Map.of(), Optional.empty()));
+                    try {
+                        return method.invoke(original.file(), arguments);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
+                    }
+                });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                    new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
-                        if (method.getName().equals("source"))
-                            return source;
-                        try {
-                            return method.invoke(original, arguments);
-                        } catch (InvocationTargetException wrapped) {
-                            throw wrapped.getCause();
-                        }
-                    });
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("source"))
+                        return source;
+                    try {
+                        return method.invoke(original, arguments);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
+                    }
+                });
             var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
             var request = new DeploymentGitRequest(new DeploymentGitRemote(root.resolve("unused-repo").toUri()),
-                    new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String manifest,
-                        List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
 
                 public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
-                        String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                             String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
 
                 public OperationResult<Boolean> confirm(ServerRef server, String manifest, Map<String, String> archives,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentPreparedDatabase> databases,
-                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
+                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentPreparedDatabase> databases,
+                                                        Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
             };
             var handle = workflow.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft("reviewed-project", 65536, 100, 65536),
-                    Optional.of(new DeploymentStaticWorkflow.GitSource(request, GIT)), reviewer);
+                new DeploymentStaticWorkflow.Draft("reviewed-project", 65536, 100, 65536),
+                Optional.of(new DeploymentStaticWorkflow.GitSource(request, GIT)), reviewer);
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
                 Thread.sleep(50);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertEquals(2, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));
             var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind IN ('CUSTOM','FILE','PROCESS') AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind IN ('CUSTOM','FILE','PROCESS') AND released_at IS NULL"));
             assertEquals(1, cleanupCalls.get(), "Recovery uses the registered unwrapped source capability");
         }
     }
@@ -309,11 +318,11 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     private void runReview(int count, boolean schema, boolean git, boolean cancelAfterConsent) throws Exception {
         for (int i = 0; i < count; i++) {
             Path project = count == 1
-                    ? selectedSourceDirectory()
-                    : selectedSourceDirectory().resolve(i == 0 ? "api" : "web");
+                ? selectedSourceDirectory()
+                : selectedSourceDirectory().resolve(i == 0 ? "api" : "web");
             Files.createDirectories(project);
             Files.writeString(project.resolve("go.mod"),
-                    "module example.test/" + (i == 0 ? "api" : "web") + "\n\ngo 1.24\n");
+                "module example.test/" + (i == 0 ? "api" : "web") + "\n\ngo 1.24\n");
             Files.writeString(project.resolve("go.sum"), "example.test/dependency v1 h1:fixture\n");
             Files.writeString(project.resolve("main.go"), "package main\nfunc main() {}\n");
             if (schema)
@@ -333,9 +342,9 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
-                    ServerProfile
-                            .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile
+                    .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var context = runtime.modContexts().get(OWNER).context();
             var reviewed = new AtomicInteger();
             var source = new java.util.concurrent.atomic.AtomicReference<String>();
@@ -347,21 +356,21 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 @Override
                 public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
-                        String sha, Path componentRoot, String applicationId,
-                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                        TaskContext task) {
+                                                                           String sha, Path componentRoot, String applicationId,
+                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                           TaskContext task) {
                     assertTrue(schema);
                     assertEquals(taskId.get(), task.id());
                     return success(Map.of("database.main.engine", "SQLITE", "database.main.path", "DEFAULT",
-                            "database.main.pathEnvironment", "DATABASE_PATH", "database.main.initialize",
-                            "schema.sql"));
+                        "database.main.pathEnvironment", "DATABASE_PATH", "database.main.initialize",
+                        "schema.sql"));
                 }
 
                 @Override
                 public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
-                        String sha,
-                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                        TaskContext task) throws Exception {
+                                                                            String sha,
+                                                                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                            TaskContext task) throws Exception {
                     assertTrue(schema);
                     assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
                     if (cancelAfterConsent) {
@@ -374,7 +383,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
 
                 @Override
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                        List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
+                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
                     assertEquals(count, discovered.size());
                     taskId.set(task.id());
                     source.set(sha);
@@ -386,15 +395,15 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                     var choices = new HashMap<String, DeploymentStaticWorkflow.Choice>();
                     for (var component : discovered)
                         choices.put(component.id(),
-                                new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of()));
+                            new DeploymentStaticWorkflow.Choice(DeploymentProjectKind.GO_SERVICE, Set.of()));
                     return success(new DeploymentStaticWorkflow.Selection(
-                            count == 1 ? discovered.getFirst().id() : "reviewed-application", choices,
-                            count == 1 ? Optional.empty() : Optional.of(discovered.getFirst().id())));
+                        count == 1 ? discovered.getFirst().id() : "reviewed-application", choices,
+                        count == 1 ? Optional.empty() : Optional.of(discovered.getFirst().id())));
                 }
 
                 @Override
                 public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
-                        String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                             String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(taskId.get(), task.id());
                     assertEquals(source.get(), sha);
                     var result = new HashMap<String, DeploymentStaticWorkflow.Answers>();
@@ -408,7 +417,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                         values.put("healthMode", "TCP");
                         values.put("exposure", "INTERNAL");
                         result.put(prompt.componentId(), new DeploymentStaticWorkflow.Answers(values, List.of(),
-                                DeploymentBuildLimits.defaultNonRoot(), false, true));
+                            DeploymentBuildLimits.defaultNonRoot(), false, true));
                         workflow.validateReview(prompt, result.get(prompt.componentId()));
                     }
                     reviewed.incrementAndGet();
@@ -417,9 +426,9 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
 
                 @Override
                 public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archiveSha,
-                        Map<String, DeploymentStaticWorkflow.Answers> answers,
-                        Map<String, DeploymentPreparedDatabase> databases,
-                        Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
+                                                        Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                        Map<String, DeploymentPreparedDatabase> databases,
+                                                        Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                     assertFalse(schema, "Schema review must block before final publication consent");
                     assertEquals(taskId.get(), task.id());
                     assertEquals(source.get(), sha);
@@ -432,14 +441,14 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
             };
             var gitInput = git
-                    ? Optional.of(new DeploymentStaticWorkflow.GitSource(
-                            new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
-                                    new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
-                            GIT))
-                    : Optional.<DeploymentStaticWorkflow.GitSource>empty();
+                ? Optional.of(new DeploymentStaticWorkflow.GitSource(
+                new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
+                    new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
+                GIT))
+                : Optional.<DeploymentStaticWorkflow.GitSource>empty();
             var handle = workflow.submit(new ServerRef("server"),
-                    new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536), gitInput,
-                    reviewer);
+                new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536), gitInput,
+                reviewer);
             if (cancelAfterConsent)
                 try {
                     assertTrue(confirmationEntered.await(20, TimeUnit.SECONDS));
@@ -454,21 +463,21 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(count, archives.get().size());
             if (git) {
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_project")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_project")) {
                     assertTrue(rows.next());
                     assertEquals(0, rows.getLong(1));
                 }
                 assertNotEquals(expectedCommit, command(selectedSourceDirectory(), "rev-parse", "HEAD"));
             }
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
             if (cancelAfterConsent)
                 try (var access = scope(runtime, true);
-                        var connection = access.openConnection();
-                        var statement = connection.createStatement();
-                        var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
+                     var connection = access.openConnection();
+                     var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_execution")) {
                     assertTrue(rows.next());
                     assertEquals(0, rows.getLong(1));
                 }
@@ -476,7 +485,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private static boolean gitReviewPresent(Optional<DeploymentStaticWorkflow.GitReview> actual, boolean expected,
-            String commit) {
+                                            String commit) {
         assertEquals(expected, actual.isPresent());
         actual.ifPresent(value -> {
             assertEquals("DEFAULT:HEAD", value.reference());
@@ -502,6 +511,6 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
 
     private static <T> OperationResult<T> cancelled() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
-                "DEPLOYMENT_STATIC_TEST_REFUSED", "Original review was refused", Map.of(), Optional.empty())));
+            "DEPLOYMENT_STATIC_TEST_REFUSED", "Original review was refused", Map.of(), Optional.empty())));
     }
 }

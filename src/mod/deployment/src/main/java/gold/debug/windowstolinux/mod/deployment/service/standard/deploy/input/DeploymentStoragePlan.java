@@ -20,7 +20,8 @@ public final class DeploymentStoragePlan {
      * @param physicalPath resolved managed path / 已解析受管路径
      * @param readOnly read-only access / 只读访问 */
     public record Resource(String id, DeploymentStorageLocation.StorageResourceType kind,
-            DeploymentStorageLocation location, String accessPath, String physicalPath, boolean readOnly) {
+                           DeploymentStorageLocation location, String accessPath, String physicalPath,
+                           boolean readOnly) {
     }
 
     /** Resolves and validates every file and SQLite directory before remote execution. / 在远端执行前解析并校验全部文件及 SQLite 目录。
@@ -29,25 +30,25 @@ public final class DeploymentStoragePlan {
      * @param runtime reviewed runtime / 已审阅运行定义
      * @return validated resource paths / 已校验资源路径 */
     public static List<Resource> resolve(String applicationId, DeploymentResourceBindings bindings,
-            DeploymentRuntimeDefinition runtime) {
+                                         DeploymentRuntimeDefinition runtime) {
         boolean container = runtime instanceof DeploymentRuntimeDefinition.Container;
         var result = new ArrayList<Resource>();
         for (var file : bindings.fileBindings())
             result.add(new Resource(file.bindingId(), file.resourceType(), file.location(), file.dataPath().path(),
-                    file.physicalPath(applicationId),
-                    file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY));
+                file.physicalPath(applicationId),
+                file.dataPath().access() == DeploymentStoragePath.AccessMode.READ_ONLY));
         for (var database : bindings.databaseBindings().orElse(List.of()))
             if (database.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
                 String physical = sqlite.physicalPath(applicationId, database.databaseId());
                 result.add(new Resource(database.databaseId(), DeploymentStorageLocation.StorageResourceType.DATABASE,
-                        sqlite.location(), sqlite.accessPath().isEmpty() ? physical : sqlite.accessPath(), physical,
-                        false));
+                    sqlite.location(), sqlite.accessPath().isEmpty() ? physical : sqlite.accessPath(), physical,
+                    false));
             }
         var ids = new HashSet<String>();
         for (var resource : result) {
             if (!ids.add(resource.id()))
                 throw new IllegalArgumentException(
-                        "storage binding identifiers must be unique across files and databases");
+                    "storage binding identifiers must be unique across files and databases");
             String access = resource.accessPath();
             if (!container && access.startsWith("/") && !access.equals(resource.physicalPath()))
                 DeploymentStorageLocation.custom(access).resolve(applicationId, resource.kind(), resource.id());
@@ -66,9 +67,9 @@ public final class DeploymentStoragePlan {
                 if (access.equals(other.accessPath()) || resource.physicalPath().equals(other.physicalPath()))
                     throw new IllegalArgumentException("storage paths conflict");
                 if (resource.kind() != DeploymentStorageLocation.StorageResourceType.DATABASE
-                        && other.kind() != DeploymentStorageLocation.StorageResourceType.DATABASE
-                        && (access.startsWith(other.accessPath() + "/")
-                                || resource.physicalPath().startsWith(other.physicalPath() + "/")))
+                    && other.kind() != DeploymentStorageLocation.StorageResourceType.DATABASE
+                    && (access.startsWith(other.accessPath() + "/")
+                    || resource.physicalPath().startsWith(other.physicalPath() + "/")))
                     throw new IllegalArgumentException("storage directory bindings must not overlap");
             }
         }

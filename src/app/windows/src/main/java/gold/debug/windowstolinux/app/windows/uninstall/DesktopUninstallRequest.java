@@ -12,7 +12,7 @@ import java.util.Optional;
  * @param dataRoot data root / 数据根目录
  */
 public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> decision, Path installRoot,
-        Path dataRoot) {
+                                      Path dataRoot) {
     /**
      * MAXIMUM PATH CHARACTERS.
      * <p>最大路径字符集合。
@@ -52,7 +52,7 @@ public record DesktopUninstallRequest(Optional<DesktopUninstallDecisionType> dec
         Path path = Objects.requireNonNull(value, field).toAbsolutePath().normalize();
         String pathText = path.toString();
         if (path.getParent() == null || pathText.length() > MAXIMUM_PATH_CHARACTERS
-                || pathText.chars().anyMatch(Character::isISOControl)) {
+            || pathText.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException(field + " is outside the supported boundary");
         }
         return path;

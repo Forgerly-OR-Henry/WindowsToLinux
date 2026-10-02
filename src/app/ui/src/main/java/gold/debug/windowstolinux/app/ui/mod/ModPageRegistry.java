@@ -1,11 +1,15 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.util.*;
 import java.util.concurrent.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 
 /** Owns staged page contributions and EDT-confined author view lifetimes. / 持有暂存页面扩展及限定在 EDT 的作者视图生命周期。 */
@@ -45,10 +49,10 @@ public final class ModPageRegistry {
      * @throws ApiException if EDT dispatch fails / EDT调度失败时 */
     public List<PageContribution> previews() throws ApiException {
         return onEdt(() -> previewHost == null
-                ? List.of()
-                : scopes.values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
-                        .filter(entry -> entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
-                        .toList());
+            ? List.of()
+            : scopes.values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
+                .filter(entry -> entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
+            .toList());
     }
 
     /** Opens only a committed preview through the CLASS host. / 仅经CLASS宿主打开已提交预览。
@@ -123,9 +127,9 @@ public final class ModPageRegistry {
      */
     public List<PageContribution> contributions() throws ApiException {
         return onEdt(() -> scopes
-                .values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
-                        .filter(entry -> !entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
-                .toList());
+            .values().stream().filter(PageScope::visible).flatMap(scope -> scope.entries.values().stream()
+                .filter(entry -> !entry.preview).map(entry -> new PageContribution(entry.key, entry.spec)))
+            .toList());
     }
 
     /** Opens an exact published page through its original owner scope. / 经原所有者作用域打开精确已发布页面。
@@ -211,7 +215,7 @@ public final class ModPageRegistry {
                         } catch (RuntimeException | LinkageError | AssertionError problem) {
                             if (failure == null)
                                 failure = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_ENVIRONMENT_FAILED",
-                                        "A page environment notification failed");
+                                    "A page environment notification failed");
                         }
             changed();
             if (failure != null)
@@ -244,7 +248,7 @@ public final class ModPageRegistry {
                     if (problem.getCause() instanceof ApiException publicFailure)
                         throw publicFailure;
                     throw failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_HOST_FAILED",
-                            "The page operation did not complete");
+                        "The page operation did not complete");
                 }
         } finally {
             if (interrupted)
@@ -336,6 +340,7 @@ public final class ModPageRegistry {
 
         /** Whether every registration and instance was actually released. / 全部登记及实例是否已实际释放。 */
         private boolean closed;
+
         /**
          * Creates an unpublished caller scope. / 创建未发布的调用方作用域。
          * @param owner exact owner identity / 精确所有者身份
@@ -402,7 +407,7 @@ public final class ModPageRegistry {
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_SCOPE_STOPPING", "Page scope is stopping");
                 if (spec.id().isBlank() || spec.id().indexOf('\0') >= 0 || entries.containsKey(spec.id()))
                     throw failure(ProblemCode.INVALID_INPUT, "PAGE_ID_INVALID",
-                            "Page identity is empty, invalid or already registered");
+                        "Page identity is empty, invalid or already registered");
                 var entry = new PageEntry(this, spec, factory, preview);
                 entries.put(spec.id(), entry);
                 if (visible())
@@ -429,10 +434,10 @@ public final class ModPageRegistry {
             onEdt(() -> {
                 if (!visible())
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_NOT_PUBLISHED",
-                            "Page scope is not available to business UI");
+                        "Page scope is not available to business UI");
                 if (environment.locked())
                     throw failure(ProblemCode.ACCESS_DENIED, "PAGE_LOCKED",
-                            "Unlock the application before opening this page");
+                        "Unlock the application before opening this page");
                 var entry = entries.get(localPageId);
                 if (entry == null || entry.preview != preview)
                     throw failure(ProblemCode.NOT_FOUND, "PAGE_NOT_FOUND", "The owner has no such page");
@@ -515,6 +520,7 @@ public final class ModPageRegistry {
 
         /** Whether an author close callback is already executing for this view. / 此视图是否已有作者关闭回调正在执行。 */
         private boolean closingView;
+
         /**
          * Stores an uninstantiated contribution. / 保存尚未实例化的扩展。
          * @param scope owning startup scope / 所属启动作用域
@@ -545,7 +551,7 @@ public final class ModPageRegistry {
             if (page != null) {
                 if (cleanupPending || pageClosed || !mounted)
                     throw failure(ProblemCode.BUSY, "PAGE_CLEANUP_PENDING",
-                            "A previous page instance still requires cleanup");
+                        "A previous page instance still requires cleanup");
                 (preview ? previewHost : host).focus(key);
                 return;
             }
@@ -560,7 +566,7 @@ public final class ModPageRegistry {
                 (preview ? previewHost : host).show(key, spec, component);
             } catch (Exception | LinkageError | AssertionError creation) {
                 var problem = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_CREATION_FAILED",
-                        "Page creation or mounting failed");
+                    "Page creation or mounting failed");
                 try {
                     closeView();
                 } catch (ApiException closing) {
@@ -593,7 +599,7 @@ public final class ModPageRegistry {
                 cleanupPending = false;
             } catch (Exception | LinkageError | AssertionError closing) {
                 throw failure(ProblemCode.BUSY, "PAGE_CLEANUP_PENDING",
-                        "Page resources or host mounting still require cleanup");
+                    "Page resources or host mounting still require cleanup");
             } finally {
                 closingView = false;
             }

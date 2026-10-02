@@ -50,25 +50,25 @@ public final class ComposerBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.PhpService php)
-                || facts.buildTool() != DeploymentBuildToolType.COMPOSER_LOCKED) {
+            || facts.buildTool() != DeploymentBuildToolType.COMPOSER_LOCKED) {
             throw new IllegalArgumentException("Composer renderer requires reviewed locked PHP inputs");
         }
         String version = php.version();
         String command = """
-                command -v php >/dev/null
-                command -v composer >/dev/null
-                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
-                test -f ./composer.json
-                test -f ./composer.lock
-                test -f ./%s
-                COMPOSER_ALLOW_SUPERUSER=0 run php "$(command -v composer)" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
-                test -f ./vendor/autoload.php
-                test -z "$(find ./vendor -xdev -type l -print -quit)"
-                printf 'ARTIFACT=%%s\n' ./vendor
-                """
-                .formatted(version, php.entrypoint());
+            command -v php >/dev/null
+            command -v composer >/dev/null
+            php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
+            test -f ./composer.json
+            test -f ./composer.lock
+            test -f ./%s
+            COMPOSER_ALLOW_SUPERUSER=0 run php "$(command -v composer)" install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative --no-plugins --no-scripts
+            test -f ./vendor/autoload.php
+            test -z "$(find ./vendor -xdev -type l -print -quit)"
+            printf 'ARTIFACT=%%s\n' ./vendor
+            """
+            .formatted(version, php.entrypoint());
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

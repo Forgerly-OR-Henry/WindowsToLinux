@@ -21,7 +21,7 @@ class PythonLanguageInspectorTest {
     void reportsExactVersionAndUniqueBoundedModulePath() throws Exception {
         Files.writeString(temporaryDirectory.resolve("pyproject.toml"), "[project]\nrequires-python = \"==3.12.*\"\n");
         SourceInspectionFacts source = new SourceInspectionFacts(2,
-                List.of(Path.of("pyproject.toml"), Path.of("src/demo/__main__.py")), "");
+            List.of(Path.of("pyproject.toml"), Path.of("src/demo/__main__.py")), "");
 
         var facts = new PythonLanguageInspector().inspect(temporaryDirectory, source);
 

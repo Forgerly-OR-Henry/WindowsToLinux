@@ -2,11 +2,12 @@ package gold.debug.windowstolinux.app.service.security;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.repository.SecurityRepository;
+import gold.debug.windowstolinux.app.db.security.SecurityRepository;
 import gold.debug.windowstolinux.app.secret.*;
-import gold.debug.windowstolinux.app.service.contract.result.*;
-import gold.debug.windowstolinux.app.service.contract.security.DesktopSecurityState;
-import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
+import gold.debug.windowstolinux.app.service.error.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.error.ApplicationServiceFailureType;
+import gold.debug.windowstolinux.app.service.security.DesktopSecurityState;
+import gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade;
 
 /** Owns session authorization, accepted task leases and exclusive security changes. / 持有会话授权、已接纳任务句柄及独占安全变更。 */
 public final class DesktopSecurityService implements SecurityApplicationFacade, AutoCloseable {
@@ -58,7 +59,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
             encrypted = vault.encryptionEnabled();
         } catch (SecretStoreException failure) {
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_UNAVAILABLE,
-                    "desktop security is unavailable", failure);
+                "desktop security is unavailable", failure);
         }
     }
 
@@ -248,7 +249,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         requireUnlocked();
         if (activeTasks() != 0)
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_BUSY,
-                    "active tasks prevent security changes");
+                "active tasks prevent security changes");
         changing = true;
     }
 
@@ -330,17 +331,17 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                 if (java.lang.reflect.Modifier.isPublic(contract.getModifiers()))
                     interfaces.add(contract);
         return type.cast(java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(),
-                interfaces.toArray(Class<?>[]::new), (proxy, method, args) -> human(() -> {
-                    try {
-                        return method.invoke(delegate, args);
-                    } catch (java.lang.reflect.InvocationTargetException failure) {
-                        if (failure.getCause() instanceof Exception cause)
-                            throw cause;
-                        if (failure.getCause() instanceof Error cause)
-                            throw cause;
-                        throw failure;
-                    }
-                })));
+            interfaces.toArray(Class<?>[]::new), (proxy, method, args) -> human(() -> {
+                try {
+                    return method.invoke(delegate, args);
+                } catch (java.lang.reflect.InvocationTargetException failure) {
+                    if (failure.getCause() instanceof Exception cause)
+                        throw cause;
+                    if (failure.getCause() instanceof Error cause)
+                        throw cause;
+                    throw failure;
+                }
+            })));
     }
 
     /** Waits for an unlocked session and discards responses crossing a lock boundary. / 等待解锁会话，丢弃跨越锁定边界的响应。
@@ -360,8 +361,8 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @return result accepted within the same unlocked generation / 在同一解锁代次内接受的结果
      */
     public <T> T human(java.util.concurrent.Callable<T> work,
-            gold.debug.windowstolinux.appapi.task.CancellationToken cancellation) {
-        for (;;) {
+                       gold.debug.windowstolinux.appapi.task.CancelToken cancellation) {
+        for (; ; ) {
             long expected;
             try {
                 synchronized (this) {
@@ -442,6 +443,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         /** Operation-owned task handle, absent in nested scopes. / 操作持有的任务句柄，嵌套作用域为空。
          */
         private final Task owned;
+
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param owned owned supplied to this boundary / 传入当前边界的owned值
          */
@@ -462,8 +464,8 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
 
     /** Retained authorization transferred explicitly to a background worker. / 显式传给后台线程的保留授权。 */
     public final class Task
-            implements
-                gold.debug.windowstolinux.app.service.contract.security.DesktopTaskAuthorization {
+        implements
+        gold.debug.windowstolinux.app.service.security.DesktopTaskAuthorization {
         /** Retained task credential handle. / 保留的任务凭据句柄。
          */
         private final CredentialVault.Session credentials;
@@ -477,6 +479,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         /** Number of executions still using this task authorization. / 仍使用任务授权的执行数。
          */
         private int executions;
+
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param credentials credentials supplied to this boundary / 传入当前边界的credentials值
          */
@@ -551,7 +554,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         }
 
         /** Releases the task key handle before reducing the active-task count. / 先释放任务密钥句柄，再减少活动任务计数。
-        */
+         */
         private void releaseCredentials() {
             credentials.close();
             active.decrementAndGet();
@@ -604,7 +607,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                     failure.addSuppressed(recovery);
                 }
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_PRIVACY_FAILED,
-                    "native recovery window privacy transition failed", failure);
+                "native recovery window privacy transition failed", failure);
         }
     }
 
@@ -615,7 +618,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         synchronized (this) {
             if (activeTasks() != 0 || changing)
                 throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_BUSY,
-                        "tasks and security changes must finish before security shutdown");
+                    "tasks and security changes must finish before security shutdown");
             closed = true;
         }
         lock();
@@ -631,7 +634,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     private static void minimumPassword(char[] password) {
         if (password.length < 8)
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_PASSWORD_INVALID,
-                    "master password needs at least eight characters");
+                "master password needs at least eight characters");
     }
 
     /** Requires matching password entries before changing security state. / 要求两次密码输入一致后才能变更安全状态。
@@ -641,7 +644,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     private static void same(char[] password, char[] confirmation) {
         if (password == null || confirmation == null || !Arrays.equals(password, confirmation))
             throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_PASSWORD_MISMATCH,
-                    "master password confirmation differs");
+                "master password confirmation differs");
     }
 
     /** Overwrites the caller-owned sensitive buffer when present. / 覆盖调用方持有的非空敏感缓冲区。

@@ -25,7 +25,7 @@ public final class DeploymentConfigurationException extends IllegalArgumentExcep
      * @return structured invalid-input failure / 结构化输入无效失败 */
     public static DeploymentConfigurationException create(String eventCode, String message) {
         return new DeploymentConfigurationException(
-                new Problem(ProblemCode.INVALID_INPUT, eventCode, message, Map.of(), Optional.empty()), null);
+            new Problem(ProblemCode.INVALID_INPUT, eventCode, message, Map.of(), Optional.empty()), null);
     }
 
     /** Reports an unavailable deterministic implementation with its original cause. / 携带原原因报告确定性实现不可用。
@@ -35,7 +35,7 @@ public final class DeploymentConfigurationException extends IllegalArgumentExcep
      * @return structured capability failure / 结构化能力失败 */
     public static DeploymentConfigurationException create(String eventCode, String message, Throwable cause) {
         return new DeploymentConfigurationException(
-                new Problem(ProblemCode.UNAVAILABLE, eventCode, message, Map.of(), Optional.empty()), cause);
+            new Problem(ProblemCode.UNAVAILABLE, eventCode, message, Map.of(), Optional.empty()), cause);
     }
 
     /** Returns the stable public failure, never a submitted value. / 返回稳定公开失败，绝不返回提交内容。

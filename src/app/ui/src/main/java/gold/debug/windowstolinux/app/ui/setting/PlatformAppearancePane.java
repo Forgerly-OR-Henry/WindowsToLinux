@@ -11,29 +11,36 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.component.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.display.DesktopDisplayConfiguration;
 import gold.debug.windowstolinux.app.ui.display.ThemeMode;
-import gold.debug.windowstolinux.app.ui.i18n.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 
 /** Persists explicit appearance choices without recreating runtime or business pages. / 持久化明确的外观选择，不重建运行器或业务页面。 */
 public final class PlatformAppearancePane extends JPanel implements AutoCloseable {
     /** Supported language choices, independent of display labels. / 独立于显示标签的受支持语言选项。 */
-    private final JComboBox<String> language = new JComboBox<>(new String[] { "zh-CN", "en" });
+    private final JComboBox<String> language = new JComboBox<>(new String[]{"zh-CN", "en"});
+
     /** Stored theme preference, including system selection. / 包含系统选项的已存主题偏好。 */
     private final JComboBox<ThemeMode> theme = new JComboBox<>(ThemeMode.values());
+
     /** Explicit preference confirmation. / 明确的偏好确认。 */
     private final JButton save;
+
     /** Current preference feedback. / 当前偏好反馈。 */
     private final JLabel status = new JLabel();
+
     /** Current message resolver. / 当前消息解析器。 */
     private final PageMessagePresenter messages;
+
     /** Original persistence operation outside the EDT. / 事件线程外的原持久化操作。 */
     private final Preferences preferences;
+
     /** Applies only a successfully persisted selection. / 仅应用成功持久化的选择。 */
     private final Consumer<DesktopDisplayConfiguration> applied;
+
     /** Privacy, lifetime and pending write gates. / 隐私、寿命和待写门禁。 */
     private boolean locked, closed, busy;
 
@@ -44,8 +51,8 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
      * @param components current component factory / 当前组件工厂
      * @param messages current message presenter / 当前消息展示器 */
     public PlatformAppearancePane(DesktopDisplayConfiguration initial, Preferences preferences,
-            Consumer<DesktopDisplayConfiguration> applied, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                                  Consumer<DesktopDisplayConfiguration> applied, DesktopComponentFactory components,
+                                  PageMessagePresenter messages) {
         super(new BorderLayout(12, 12));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Appearance controls require the EDT");
@@ -53,6 +60,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         this.preferences = Objects.requireNonNull(preferences);
         this.applied = Objects.requireNonNull(applied);
         setName("platform.appearance");
+        components.stylePage(this);
         setBorder(javax.swing.BorderFactory.createEmptyBorder(20, 24, 20, 24));
         language.setName("appearance.language");
         theme.setName("appearance.theme");
@@ -60,16 +68,20 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         theme.setSelectedItem(initial.themeMode());
         var renderer = language.getRenderer();
         language.setRenderer((list, value, index, selected, focus) -> renderer.getListCellRendererComponent(list,
-                messages.text("zh-CN".equals(value) ? "appearance.language.zh" : "appearance.language.en"), index, selected, focus));
+            messages.text("zh-CN".equals(value) ? "appearance.language.zh" : "appearance.language.en"), index,
+            selected, focus));
         messages.localize(theme, "theme.");
+        language.setPreferredSize(new java.awt.Dimension(220, 34));
+        theme.setPreferredSize(new java.awt.Dimension(220, 34));
         save = messages.bind(components.primaryButton(""), "appearance.save");
         save.setName("appearance.save");
         save.addActionListener(event -> save());
-        var fields = new JPanel(new GridBagLayout());
+        var fields = components.transparent(new GridBagLayout());
         components.addField(fields, 0, 0, messages, "field.language", language);
         components.addField(fields, 1, 0, messages, "field.appearance", theme);
-        var editor = components.transparent(new BorderLayout(12, 12));
-        editor.add(components.sectionHeading(messages, "settings.appearance.title", "settings.appearance.body"), BorderLayout.NORTH);
+        var editor = components.card(new BorderLayout(12, 12));
+        editor.add(components.sectionHeading(messages, "settings.appearance.title", "settings.appearance.body"),
+            BorderLayout.NORTH);
         editor.add(fields, BorderLayout.CENTER);
         var footer = components.transparent(new BorderLayout(12, 12));
         footer.add(save, BorderLayout.WEST);
@@ -83,11 +95,14 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         if (locked || closed || busy)
             return;
         var requested = new DesktopDisplayConfiguration((String) language.getSelectedItem(),
-                (ThemeMode) theme.getSelectedItem());
+            (ThemeMode) theme.getSelectedItem());
         busy = true;
         controls();
         messages.bind(status, "appearance.saving");
-        DesktopTaskExecutor.run(() -> { preferences.save(requested); return requested; }, value -> {
+        DesktopTaskExecutor.run(() -> {
+            preferences.save(requested);
+            return requested;
+        }, value -> {
             busy = false;
             if (!closed) {
                 applied.accept(value);
@@ -97,7 +112,7 @@ public final class PlatformAppearancePane extends JPanel implements AutoCloseabl
         }, failure -> {
             busy = false;
             if (!closed) {
-                gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.unbind(status);
+                gold.debug.windowstolinux.app.ui.language.LocaleBinding.unbind(status);
                 status.setText(messages.safe(failure));
                 controls();
             }

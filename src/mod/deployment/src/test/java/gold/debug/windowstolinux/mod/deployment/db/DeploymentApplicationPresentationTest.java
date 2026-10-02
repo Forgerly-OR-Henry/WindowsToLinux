@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.Types;
@@ -7,7 +9,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
 import org.junit.jupiter.api.Test;
@@ -36,16 +38,16 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             var before = businessBytes(runtime);
             var url = website ? Optional.of("https://demo.debug.gold/path?view=1") : Optional.<String>empty();
             assertEquals(Outcome.SUCCEEDED,
-                    await(service.edit(selected, "  本地名称  ", website ? "WEBSITE" : "APP", url)).outcome());
+                await(service.edit(selected, "  本地名称  ", website ? "WEBSITE" : "APP", url)).outcome());
             assertEquals(List.of("本地名称", website ? "WEBSITE" : "APP", url.orElse("<NULL>")),
-                    storedPresentation(runtime, "demo-web"));
+                storedPresentation(runtime, "demo-web"));
             assertEquals("本地名称", await(service.list()).value().orElseThrow().getFirst().displayName());
             var editor = await(service.presentation(selected)).value().orElseThrow();
             assertEquals(website ? "WEBSITE" : "APP", editor.category());
             assertEquals(url, editor.accessUrl());
             assertEquals(Outcome.SUCCEEDED, await(service.editName(selected, "Renamed locally")).outcome());
             assertEquals(List.of("Renamed locally", website ? "WEBSITE" : "APP", url.orElse("<NULL>")),
-                    storedPresentation(runtime, "demo-web"));
+                storedPresentation(runtime, "demo-web"));
             var inspected = new AtomicReference<DeploymentApplicationReader.ApplicationFacts>();
             assertEquals(Outcome.SUCCEEDED, await(rootTask(runtime, task -> {
                 var reader = new DeploymentApplicationReader(context(runtime).db());
@@ -59,10 +61,10 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             assertNotNull(inspected.get());
             assertEquals(before, businessBytes(runtime));
             assertEquals(url, await(service.presentation(selected)).value().orElseThrow().accessUrl(),
-                    "Name-only edit preserves the stored access override");
+                "Name-only edit preserves the stored access override");
             assertEquals(Outcome.SUCCEEDED,
-                    await(service.edit(selected, "No access override", website ? "WEBSITE" : "APP", Optional.empty()))
-                            .outcome());
+                await(service.edit(selected, "No access override", website ? "WEBSITE" : "APP", Optional.empty()))
+                    .outcome());
             assertTrue(await(service.presentation(selected)).value().orElseThrow().accessUrl().isEmpty());
             assertEquals(before, businessBytes(runtime));
             assertEquals(0, peer.reads.get());
@@ -74,7 +76,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
     @ParameterizedTest(name = "real managed editor rejection: {0}")
     @EnumSource(RejectedType.class)
     void invalidEditorInputsAndOldReviewRevisionLeaveEveryStoredBusinessFactUntouched(RejectedType rejected)
-            throws Exception {
+        throws Exception {
         enable();
         try (var ssh = ssh(); var runtime = open()) {
             start(runtime, true);
@@ -132,13 +134,13 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             var original = await(service.externalApplications()).value().orElseThrow().getFirst();
             int reads = peer.reads.get();
             assertEquals(Outcome.FAILED, await(service.editExternal(original, "App with forbidden URL", "APP",
-                    Optional.of("https://demo.debug.gold/"))).outcome());
+                Optional.of("https://demo.debug.gold/"))).outcome());
             assertEquals(Outcome.FAILED,
-                    await(service.editExternal(original, "Blank URL", "WEBSITE", Optional.of(""))).outcome());
+                await(service.editExternal(original, "Blank URL", "WEBSITE", Optional.of(""))).outcome());
             assertEquals(Outcome.FAILED, await(service.editExternal(original, "Invalid URL", "WEBSITE",
-                    Optional.of("https://user:password@demo.debug.gold/"))).outcome());
+                Optional.of("https://user:password@demo.debug.gold/"))).outcome());
             assertEquals(Outcome.SUCCEEDED, await(service.editExternal(original, "  External website  ", "WEBSITE",
-                    Optional.of("https://demo.debug.gold/"))).outcome());
+                Optional.of("https://demo.debug.gold/"))).outcome());
             var updated = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals("External website", updated.displayName());
             assertEquals("WEBSITE", updated.category());
@@ -147,7 +149,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             assertEquals(original.server(), updated.server());
             assertEquals(original.target(), updated.target());
             assertEquals(Outcome.SUCCEEDED,
-                    await(service.editExternal(updated, "External app", "APP", Optional.empty())).outcome());
+                await(service.editExternal(updated, "External app", "APP", Optional.empty())).outcome());
             var app = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals("APP", app.category());
             assertTrue(app.accessUrl().isEmpty());
@@ -159,17 +161,17 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
     }
 
     /** Reads the actual saved editor fields for the exact health unit. / 读取精确健康单元实际保存的编辑字段。 */
-    private List<String> storedPresentation(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime,
-            String unit) throws Exception {
+    private List<String> storedPresentation(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime,
+                                            String unit) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var query = connection.prepareStatement(
-                        "SELECT display_name,application_category,access_url FROM deployment_unit WHERE deployment_unit_id=?")) {
+             var connection = access.openConnection();
+             var query = connection.prepareStatement(
+                 "SELECT display_name,application_category,access_url FROM deployment_unit WHERE deployment_unit_id=?")) {
             query.setString(1, unit);
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
                 var value = List.of(rows.getString(1), rows.getString(2),
-                        Objects.toString(rows.getString(3), "<NULL>"));
+                    Objects.toString(rows.getString(3), "<NULL>"));
                 assertFalse(rows.next());
                 return value;
             }
@@ -177,18 +179,18 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
     }
 
     /** Captures actual immutable runtime, configuration, release and health records. / 捕获实际不可变运行、配置、发布与健康记录。 */
-    private List<List<String>> businessBytes(gold.debug.windowstolinux.app.main.startup.PlatformRuntime runtime)
-            throws Exception {
+    private List<List<String>> businessBytes(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime)
+        throws Exception {
         var rows = new ArrayList<List<String>>();
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement()) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement()) {
             for (String query : List.of(
-                    "SELECT deployment_unit_id,runtime_payload,current_release_sha256,current_release_published_at FROM deployment_unit ORDER BY deployment_unit_id",
-                    "SELECT application_id,release_id,release_sha256,state,runtime_payload,health_payload FROM deployment_release ORDER BY application_id,release_id",
-                    "SELECT * FROM deployment_unit_configuration_snapshot ORDER BY deployment_unit_id,configuration_revision",
-                    "SELECT * FROM deployment_unit_configuration_entry ORDER BY deployment_unit_id,configuration_revision,configuration_key",
-                    "SELECT * FROM deployment_unit_release_binding ORDER BY deployment_unit_id,release_sha256")) {
+                "SELECT deployment_unit_id,runtime_payload,current_release_sha256,current_release_published_at FROM deployment_unit ORDER BY deployment_unit_id",
+                "SELECT application_id,release_id,release_sha256,state,runtime_payload,health_payload FROM deployment_release ORDER BY application_id,release_id",
+                "SELECT * FROM deployment_unit_configuration_snapshot ORDER BY deployment_unit_id,configuration_revision",
+                "SELECT * FROM deployment_unit_configuration_entry ORDER BY deployment_unit_id,configuration_revision,configuration_key",
+                "SELECT * FROM deployment_unit_release_binding ORDER BY deployment_unit_id,release_sha256")) {
                 rows.add(List.of(query));
                 try (var result = statement.executeQuery(query)) {
                     var metadata = result.getMetaData();

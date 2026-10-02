@@ -43,17 +43,17 @@ public final class RubyBundlerDeploymentInspector implements DeploymentTypeInspe
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         String version = ServiceMetadataInspector.readIfPresent(root.resolve(".ruby-version")).trim();
         if (!version.matches("[0-9]+(?:\\.[0-9]+){1,2}(?:[-+][A-Za-z0-9._-]+)?")) {
             version = null;
         }
         String entrypoint = ServiceMetadataInspector.applicationEntrypoint(root, "config.ru");
         RubyBundlerFacts facts = new RubyBundlerFacts(version,
-                ServiceMetadataInspector.missing(root, "Gemfile", "Gemfile.lock", ".ruby-version", entrypoint));
+            ServiceMetadataInspector.missing(root, "Gemfile", "Gemfile.lock", ".ruby-version", entrypoint));
         ServiceProjectFacts shape = new ServiceProjectFacts(".ruby-version", facts.version(), "bundle",
-                ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null, facts.missingFiles());
+            ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null, facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.BUNDLER_LOCKED, languageFacts, shape, true);
+            DeploymentBuildToolType.BUNDLER_LOCKED, languageFacts, shape, true);
     }
 }

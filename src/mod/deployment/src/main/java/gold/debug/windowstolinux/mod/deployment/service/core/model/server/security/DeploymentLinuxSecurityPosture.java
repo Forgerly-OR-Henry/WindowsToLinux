@@ -13,8 +13,8 @@ import java.util.Objects;
  * @param firewallState firewall service state / 防火墙服务状态
  */
 public record DeploymentLinuxSecurityPosture(DeploymentLinuxSecurityModuleType module,
-        DeploymentLinuxSecurityState state, DeploymentLinuxFirewallKind firewall,
-        DeploymentLinuxFirewallState firewallState) {
+                                             DeploymentLinuxSecurityState state, DeploymentLinuxFirewallKind firewall,
+                                             DeploymentLinuxFirewallState firewallState) {
     /**
      * Creates a coherent posture observation. / 创建连贯的安全态势观测。
      *
@@ -34,7 +34,7 @@ public record DeploymentLinuxSecurityPosture(DeploymentLinuxSecurityModuleType m
             throw new IllegalArgumentException("SELinux must report enforcing, permissive, disabled, or unknown");
         }
         if (module == DeploymentLinuxSecurityModuleType.APPARMOR && (state == DeploymentLinuxSecurityState.ENFORCING
-                || state == DeploymentLinuxSecurityState.PERMISSIVE)) {
+            || state == DeploymentLinuxSecurityState.PERMISSIVE)) {
             throw new IllegalArgumentException("AppArmor must report enabled, disabled, or unknown");
         }
     }

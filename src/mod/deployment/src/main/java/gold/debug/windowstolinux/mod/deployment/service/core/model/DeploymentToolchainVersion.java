@@ -15,13 +15,13 @@ import java.util.regex.Pattern;
  * @param preview preview / 预览
  */
 public record DeploymentToolchainVersion(DeploymentToolchainType ecosystem, String text, List<Integer> numbers,
-        boolean preview) implements Comparable<DeploymentToolchainVersion> {
+                                         boolean preview) implements Comparable<DeploymentToolchainVersion> {
     /**
      * Pattern recognizing NUMERIC.
      * <p>用于识别数值的匹配模式。
      */
     private static final Pattern NUMERIC = Pattern
-            .compile("^(\\d{1,9}(?:[.]\\d{1,9}){0,4})([A-Za-z+_.-][A-Za-z0-9+_.-]*)?$");
+        .compile("^(\\d{1,9}(?:[.]\\d{1,9}){0,4})([A-Za-z+_.-][A-Za-z0-9+_.-]*)?$");
 
     /**
      * Validates and binds the inputs required by toolchain version.
@@ -77,7 +77,7 @@ public record DeploymentToolchainVersion(DeploymentToolchainType ecosystem, Stri
             parts.add(Integer.parseInt(part));
         String suffix = matcher.group(2);
         boolean preview = suffix != null && !suffix.matches("[+]\\d+(?:[.][0-9]+)*")
-                && !(ecosystem == DeploymentToolchainType.JAVA && suffix.matches("-b\\d+"));
+            && !(ecosystem == DeploymentToolchainType.JAVA && suffix.matches("-b\\d+"));
         return Optional.of(new DeploymentToolchainVersion(ecosystem, value, parts, preview));
     }
 
@@ -90,7 +90,7 @@ public record DeploymentToolchainVersion(DeploymentToolchainType ecosystem, Stri
     public String branch() {
         int count = Math.min(ecosystem.branchSegments(), numbers.size());
         return numbers.subList(0, count).stream().map(Object::toString)
-                .collect(java.util.stream.Collectors.joining("."));
+            .collect(java.util.stream.Collectors.joining("."));
     }
 
     /**
@@ -131,7 +131,7 @@ public record DeploymentToolchainVersion(DeploymentToolchainType ecosystem, Stri
             throw new IllegalArgumentException("cannot compare different ecosystems");
         for (int i = 0; i < Math.max(numbers.size(), other.numbers.size()); i++) {
             int comparison = Integer.compare(i < numbers.size() ? numbers.get(i) : 0,
-                    i < other.numbers.size() ? other.numbers.get(i) : 0);
+                i < other.numbers.size() ? other.numbers.get(i) : 0);
             if (comparison != 0)
                 return comparison;
         }

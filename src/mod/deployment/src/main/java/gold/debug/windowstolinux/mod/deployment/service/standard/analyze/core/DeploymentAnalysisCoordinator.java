@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 
-import gold.debug.windowstolinux.appapi.task.CancellationToken;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.DeploymentProjectAssessment;
@@ -58,7 +58,7 @@ public final class DeploymentAnalysisCoordinator {
      */
     public DeploymentAnalysisCoordinator() {
         this(new BoundedSourceInspector(), new ProjectLanguageInspector(), DeploymentTypeInspectorRegistry.defaults(),
-                new SourceMutationPolicy());
+            new SourceMutationPolicy());
     }
 
     /**
@@ -72,7 +72,7 @@ public final class DeploymentAnalysisCoordinator {
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
     DeploymentAnalysisCoordinator(BoundedSourceInspector sourceInspector, ProjectLanguageInspector languageInspector,
-            DeploymentTypeInspectorRegistry inspectors, SourceMutationPolicy mutationPolicy) {
+                                  DeploymentTypeInspectorRegistry inspectors, SourceMutationPolicy mutationPolicy) {
         this.sourceInspector = Objects.requireNonNull(sourceInspector, "sourceInspector");
         this.languageInspector = Objects.requireNonNull(languageInspector, "languageInspector");
         this.inspectors = Objects.requireNonNull(inspectors, "inspectors");
@@ -112,7 +112,7 @@ public final class DeploymentAnalysisCoordinator {
      * @return constructed or resolved deployment project assessment / 构造或解析得到的部署项目评估
      */
     public DeploymentProjectAssessment analyze(Path source, DeploymentProjectKind type,
-            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview review) {
+                                               gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview review) {
         return analyze(source, type, java.util.Optional.of(review), false, () -> false);
     }
 
@@ -130,13 +130,13 @@ public final class DeploymentAnalysisCoordinator {
      * @throws CancellationException if original cancellation is requested / 原任务请求取消时
      */
     public DeploymentProjectAssessment analyze(Path selectedSourceDirectory, DeploymentProjectKind projectType,
-            java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review,
-            boolean deferDatabase, CancellationToken cancellation) {
+                                               java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review,
+                                               boolean deferDatabase, CancelToken cancellation) {
         return analyze(selectedSourceDirectory, projectType, review, deferDatabase, cancellation,
-                selectedSourceDirectory == null
-                        ? "application"
-                        : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                                .rootName(selectedSourceDirectory));
+            selectedSourceDirectory == null
+                ? "application"
+                : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                .rootName(selectedSourceDirectory));
     }
 
     /** Analyzes physical source with a separately reviewed logical root identity. / 使用另行审阅的逻辑根身份分析物理源码。
@@ -148,8 +148,8 @@ public final class DeploymentAnalysisCoordinator {
      * @param logicalRootName original reviewed project name / 原审阅项目名称
      * @return complete typed assessment / 完整类型化评估 */
     public DeploymentProjectAssessment analyze(Path selectedSourceDirectory, DeploymentProjectKind projectType,
-            java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review,
-            boolean deferDatabase, CancellationToken cancellation, String logicalRootName) {
+                                               java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review,
+                                               boolean deferDatabase, CancelToken cancellation, String logicalRootName) {
         if (logicalRootName == null || logicalRootName.isBlank())
             throw new IllegalArgumentException("logicalRootName is required");
         requireActive(cancellation);
@@ -159,7 +159,7 @@ public final class DeploymentAnalysisCoordinator {
             return DeploymentProjectAssessment.rejected(rejections);
         }
         SourceInspectionFacts source = sourceInspector.inspect(root, rejections, cancellation)
-                .withReviewedRootName(logicalRootName);
+            .withReviewedRootName(logicalRootName);
         boolean pendingDatabase = deferDatabase && mutationPolicy.requiresReview(source);
         if (!pendingDatabase)
             mutationPolicy.validate(source, rejections, review);
@@ -168,37 +168,37 @@ public final class DeploymentAnalysisCoordinator {
         }
         try {
             var bundle = gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ApplicationBundleInspector
-                    .declaration(root);
+                .declaration(root);
             Path mainRoot = gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ApplicationBundleInspector
-                    .mainRoot(root, bundle);
+                .mainRoot(root, bundle);
             var declaredType = gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ApplicationBundleInspector
-                    .type(bundle);
+                .type(bundle);
             if (declaredType.isPresent() && declaredType.orElseThrow() != projectType)
                 throw new IOException("application build type differs from selection");
             SourceInspectionFacts mainSource = mainRoot.equals(root)
-                    ? source
-                    : sourceInspector.inspect(mainRoot, rejections, cancellation).withReviewedRootName(
-                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                                    .rootName(mainRoot));
+                ? source
+                : sourceInspector.inspect(mainRoot, rejections, cancellation).withReviewedRootName(
+                gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                    .rootName(mainRoot));
             var companionTools = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement>();
             for (Path companion : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ApplicationBundleInspector
-                    .companions(root, bundle)) {
+                .companions(root, bundle)) {
                 requireActive(cancellation);
                 var companionSource = sourceInspector.inspect(companion, rejections, cancellation).withReviewedRootName(
-                        gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                                .rootName(companion));
+                    gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                        .rootName(companion));
                 var companionFacts = inspectors.require(DeploymentProjectKind.CMAKE_SERVICE).inspect(companion,
-                        companionSource, languageInspector.inspect(companion, companionSource), rejections);
+                    companionSource, languageInspector.inspect(companion, companionSource), rejections);
                 if (companionFacts == null || !companionFacts.facts().readyForPlanning())
                     throw new IOException("companion build declaration is incomplete");
                 companionTools.addAll(
-                        new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.toolchain.ToolchainDeclarationInspector()
-                                .inspect(companion));
+                    new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.toolchain.ToolchainDeclarationInspector()
+                        .inspect(companion));
             }
             requireActive(cancellation);
             ProjectLanguageFacts languageFacts = languageInspector.inspect(mainRoot, mainSource);
             DeploymentTypeAssessment inspected = inspectors.require(Objects.requireNonNull(projectType, "projectType"))
-                    .inspect(mainRoot, mainSource, languageFacts, rejections);
+                .inspect(mainRoot, mainSource, languageFacts, rejections);
             if (inspected == null || !rejections.isEmpty()) {
                 return DeploymentProjectAssessment.rejected(rejections);
             }
@@ -206,40 +206,40 @@ public final class DeploymentAnalysisCoordinator {
                 return DeploymentProjectAssessment.recognitionPreview(inspected.facts());
             }
             companionTools.addAll(
-                    new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.toolchain.ToolchainDeclarationInspector()
-                            .inspect(mainRoot));
+                new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.toolchain.ToolchainDeclarationInspector()
+                    .inspect(mainRoot));
             inspected = new DeploymentTypeAssessment(inspected.facts().withToolchains(companionTools)
-                    .inBundle(root, root.relativize(mainRoot).toString().replace('\\', '/'), mainRoot.equals(root)
-                            ? inspected.facts().applicationId()
-                            : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
-                                    .rootApplicationId(logicalRootName)),
-                    inspected.runtimeSuggestion());
+                .inBundle(root, root.relativize(mainRoot).toString().replace('\\', '/'), mainRoot.equals(root)
+                    ? inspected.facts().applicationId()
+                    : gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ProjectIdentityResolver
+                    .rootApplicationId(logicalRootName)),
+                inspected.runtimeSuggestion());
             inspected = enrichToolchainSuggestion(inspected);
             if (pendingDatabase) {
                 var facts = inspected.facts();
                 var missing = new ArrayList<>(facts.missingInformation());
                 missing.add(DeploymentLocalizedMessage.of("analysis.db.reviewRequired"));
                 return DeploymentProjectAssessment.requiresInput(
-                        new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(
-                                facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(),
-                                facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), missing,
-                                facts.toolchainRequirements(), facts.buildDirectory()),
-                        inspected.runtimeSuggestion());
+                    new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts(
+                        facts.sourceRoot(), facts.applicationId(), facts.projectType(), facts.buildTool(),
+                        facts.support(), facts.languageFacts(), facts.evidence(), facts.conflicts(), missing,
+                        facts.toolchainRequirements(), facts.buildDirectory()),
+                    inspected.runtimeSuggestion());
             }
             requireActive(cancellation);
             return inspected.facts().readyForPlanning()
-                    ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())
-                    : DeploymentProjectAssessment.requiresInput(inspected.facts(), inspected.runtimeSuggestion());
+                ? DeploymentProjectAssessment.ready(inspected.facts(), inspected.runtimeSuggestion())
+                : DeploymentProjectAssessment.requiresInput(inspected.facts(), inspected.runtimeSuggestion());
         } catch (IOException | IllegalArgumentException exception) {
             return DeploymentProjectAssessment.rejected(List
-                    .of(rejection("DEPLOYMENT_SOURCE_READ_FAILED", "analysis.deployment.rejection.sourceReadFailed")));
+                .of(rejection("DEPLOYMENT_SOURCE_READ_FAILED", "analysis.deployment.rejection.sourceReadFailed")));
         }
     }
 
     /** Checks the original cooperative cancellation at an analysis stage boundary. / 在分析阶段边界检查原协作取消。
      * @param cancellation original task token / 原任务令牌
      * @throws CancellationException if cancellation is requested / 请求取消时 */
-    private static void requireActive(CancellationToken cancellation) {
+    private static void requireActive(CancelToken cancellation) {
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
             throw new CancellationException("Original analysis was cancelled");
     }
@@ -254,28 +254,28 @@ public final class DeploymentAnalysisCoordinator {
     private static DeploymentTypeAssessment enrichToolchainSuggestion(DeploymentTypeAssessment inspected) {
         var facts = inspected.facts();
         if (facts.projectType() != DeploymentProjectKind.SPRING_BOOT
-                && facts.projectType() != DeploymentProjectKind.KOTLIN_SERVICE)
+            && facts.projectType() != DeploymentProjectKind.KOTLIN_SERVICE)
             return inspected;
         var java = facts.toolchainRequirements().stream().filter(r -> r
                 .ecosystem() == gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType.JAVA)
-                .flatMap(r -> r.version().stream())
-                .map(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion::branch)
-                .distinct().toList();
+            .flatMap(r -> r.version().stream())
+            .map(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainVersion::branch)
+            .distinct().toList();
         if (java.size() != 1)
             return inspected;
         var previous = inspected.runtimeSuggestion();
         var values = new java.util.EnumMap<gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment.RuntimeInputType, String>(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment.RuntimeInputType.class);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment.RuntimeInputType.class);
         values.putAll(previous.values());
         values.put(facts.projectType() == DeploymentProjectKind.SPRING_BOOT
                 ? gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION
                 : gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET,
-                java.getFirst());
+            java.getFirst());
         return new DeploymentTypeAssessment(facts,
-                new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment(
-                        previous.projectType(), values, previous.suggestedHealthPort(),
-                        previous.suggestedContainerPorts(), previous.suggestedManagedVolumes(), previous.evidence(),
-                        previous.requiredUserInput()));
+            new gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment(
+                previous.projectType(), values, previous.suggestedHealthPort(),
+                previous.suggestedContainerPorts(), previous.suggestedManagedVolumes(), previous.evidence(),
+                previous.requiredUserInput()));
     }
 
     /**

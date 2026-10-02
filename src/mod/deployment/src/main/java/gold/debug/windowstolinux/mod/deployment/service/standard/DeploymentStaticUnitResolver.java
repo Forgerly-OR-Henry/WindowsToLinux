@@ -35,7 +35,7 @@ public final class DeploymentStaticUnitResolver {
      * @throws SQLException if stored identity is unavailable or conflicts / 已存身份不可用或冲突时
      * @throws ApiException if original task access is unavailable / 原任务访问不可用时 */
     public DeploymentUnitIdentity resolve(TaskContext task, String applicationId, ServerRef server)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         Objects.requireNonNull(task);
         Objects.requireNonNull(server);
         var saved = publications.findUnit(task, applicationId);
@@ -43,11 +43,11 @@ public final class DeploymentStaticUnitResolver {
             var existing = saved.orElseThrow();
             if (!existing.server().equals(server))
                 throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "service.deployment.server-conflict",
-                        "Managed application belongs to a different server", Map.of(), Optional.empty()));
+                    "Managed application belongs to a different server", Map.of(), Optional.empty()));
             if (!existing.equals(
-                    DeploymentUnitIdentity.forManaged(applicationId, server, existing.ownershipManifestSha256())))
+                DeploymentUnitIdentity.forManaged(applicationId, server, existing.ownershipManifestSha256())))
                 throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "service.deployment.identity-invalid",
-                        "Stored managed application identity needs review", Map.of(), Optional.empty()));
+                    "Stored managed application identity needs review", Map.of(), Optional.empty()));
             return existing;
         }
         byte[] ownership = new byte[32];

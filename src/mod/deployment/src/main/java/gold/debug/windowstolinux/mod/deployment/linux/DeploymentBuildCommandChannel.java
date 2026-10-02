@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
@@ -15,7 +25,7 @@ import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
@@ -52,7 +62,7 @@ public final class DeploymentBuildCommandChannel {
      * @param planRevision reviewed-plan identity, not final release identity / 已审阅计划身份，非最终发布身份
      * @param budget cumulative execution budget / 累计执行预算 */
     public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String planRevision, DeploymentBuildBudget budget) {
+                                         TaskContext task, String planRevision, DeploymentBuildBudget budget) {
         this(session, interaction, server, task, planRevision, budget, DeploymentSendGuard.NONE);
     }
 
@@ -65,7 +75,7 @@ public final class DeploymentBuildCommandChannel {
      * @param budget shared build budget / 共用构建预算
      * @param beforeSend caller-owned check / 调用方持有的核对 */
     public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String planRevision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
+                                         TaskContext task, String planRevision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -86,23 +96,23 @@ public final class DeploymentBuildCommandChannel {
      * @return original remote outcome and complete bounded receipt / 原远端结果及完整有界回执
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
-            int seconds, String javaHome) throws ApiException {
+                                                  int seconds, String javaHome) throws ApiException {
         long available = budget.remainingSeconds();
         if (available < 45)
             return timeout();
         seconds = (int) Math.min(seconds, available - 15);
         if (seconds < 30 || seconds > 7200 || !Objects.requireNonNull(branch).matches("[0-9]{1,3}(?:\\.[0-9]{1,3})?")
-                || !("-".equals(exact) || DeploymentToolchainVersion.parse(ecosystem, exact)
-                        .filter(version -> version.text().equals(exact) && !version.preview()
-                                && version.branch().equals(branch))
-                        .isPresent())
-                || javaHome == null || javaHome.length() > 2048)
+            || !("-".equals(exact) || DeploymentToolchainVersion.parse(ecosystem, exact)
+            .filter(version -> version.text().equals(exact) && !version.preview()
+                && version.branch().equals(branch))
+            .isPresent())
+            || javaHome == null || javaHome.length() > 2048)
             throw new IllegalArgumentException("Invalid fixed toolchain preparation");
         return send("deployment.toolchain.prepare.v1", "/usr/local/lib/windowstolinux/toolchains",
-                helper("prepare-toolchains",
-                        List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
-                                Integer.toString(seconds), javaHome)),
-                new byte[0], Duration.ofSeconds(seconds + 15L), 65536);
+            helper("prepare-toolchains",
+                List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
+                    Integer.toString(seconds), javaHome)),
+            new byte[0], Duration.ofSeconds(seconds + 15L), 65536);
     }
 
     /** Seals and re-probes the exact prepared binding. / 封存并回探精确已准备绑定。
@@ -116,8 +126,8 @@ public final class DeploymentBuildCommandChannel {
         if (encoded == null || !encoded.matches("[A-Za-z0-9+/=]{1,90000}"))
             throw new IllegalArgumentException("Invalid encoded binding");
         return send("deployment.toolchain.bind.v1", "/usr/local/lib/windowstolinux/toolchains",
-                helper("prepare-toolchains", List.of("bind", encoded)), new byte[0],
-                Duration.ofSeconds(Math.min(180, available)), 65536);
+            helper("prepare-toolchains", List.of("bind", encoded)), new byte[0],
+            Duration.ofSeconds(Math.min(180, available)), 65536);
     }
 
     /** Checks isolation before a source candidate is built. / 构建来源候选前检查隔离能力。
@@ -130,8 +140,8 @@ public final class DeploymentBuildCommandChannel {
         if (available < 1)
             return timeout();
         return send("deployment.build.preflight.v1", DeploymentManagedHelperBundle.PATH,
-                helper("build-preflight", List.of(engine)), new byte[0], Duration.ofSeconds(Math.min(30, available)),
-                65536);
+            helper("build-preflight", List.of(engine)), new byte[0], Duration.ofSeconds(Math.min(30, available)),
+            65536);
     }
 
     /** Runs the fixed, restricted helper through a streaming, bounded receipt. / 通过流式有界回执运行固定受限 helper。
@@ -144,8 +154,8 @@ public final class DeploymentBuildCommandChannel {
      * @return original remote outcome and compact complete receipt / 原远端结果及紧凑完整回执
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<CommandResult> build(DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits,
-            long seconds, String engine, String buildScript, List<List<String>> compatibilityGroups)
-            throws ApiException {
+                                                long seconds, String engine, String buildScript, List<List<String>> compatibilityGroups)
+        throws ApiException {
         Objects.requireNonNull(workspace);
         Objects.requireNonNull(limits);
         requireEngine(engine);
@@ -156,9 +166,9 @@ public final class DeploymentBuildCommandChannel {
             if (input.length > 1048576)
                 throw new IllegalArgumentException("Fixed build script exceeds helper limit");
             return send("deployment.build.run.v1", workspace.candidateRoot(),
-                    DeploymentBuildOutputProtocol.script(workspace, seconds, limits.maxProcesses(),
-                            limits.maxMemoryMiB(), limits.maxOutputBytes(), engine, compatibilityGroups),
-                    input, Duration.ofSeconds(seconds + 15L), 65536);
+                DeploymentBuildOutputProtocol.script(workspace, seconds, limits.maxProcesses(),
+                    limits.maxMemoryMiB(), limits.maxOutputBytes(), engine, compatibilityGroups),
+                input, Duration.ofSeconds(seconds + 15L), 65536);
         } finally {
             Arrays.fill(input, (byte) 0);
         }
@@ -170,7 +180,7 @@ public final class DeploymentBuildCommandChannel {
      * @return exact command script / 精确命令脚本 */
     private static String helper(String verb, List<String> values) {
         return shellQuote(DeploymentManagedHelperBundle.PATH) + " " + verb + " "
-                + values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(Collectors.joining(" "));
+            + values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(Collectors.joining(" "));
     }
 
     /** Quotes one fixed literal without permitting shell evaluation. / 引用固定字面量而不允许shell求值。
@@ -190,7 +200,7 @@ public final class DeploymentBuildCommandChannel {
      * @return host-observed operation / 宿主观测操作
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     OperationResult<CommandResult> send(String operation, String target, String script, byte[] input, Duration timeout,
-            long output) throws ApiException {
+                                        long output) throws ApiException {
         return send(operation, "deployment-build", target, script, input, timeout, output);
     }
 
@@ -205,14 +215,14 @@ public final class DeploymentBuildCommandChannel {
      * @return original host observation / 原宿主观测
      * @throws ApiException if admission fails before dispatch / 发送前准入失败时 */
     OperationResult<CommandResult> send(String operation, String kind, String target, String script, byte[] input,
-            Duration timeout, long output) throws ApiException {
+                                        Duration timeout, long output) throws ApiException {
         long available = budget.remainingSeconds();
         if (available < 1)
             return timeout();
         CommandRequest request = new CommandRequest(script, input,
-                Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
+            Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
         var intent = RemoteActions.command(server, planRevision, request)
-                .withSemantics(new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), kind, target))));
+            .withSemantics(new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), kind, target))));
         var grant = interaction.approve(intent, task);
         if (grant.outcome() != Outcome.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
@@ -226,11 +236,11 @@ public final class DeploymentBuildCommandChannel {
             }
         } catch (ApiException failure) {
             if (failure.problem().code() == ProblemCode.ACCESS_DENIED
-                    || failure.problem().code() == ProblemCode.INVALID_INPUT)
+                || failure.problem().code() == ProblemCode.INVALID_INPUT)
                 throw failure;
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_BUILD_DISPATCH_UNCONFIRMED",
-                            "Remote build effect is unconfirmed", Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_BUILD_DISPATCH_UNCONFIRMED",
+                    "Remote build effect is unconfirmed", Map.of(), Optional.empty())));
         }
     }
 
@@ -238,8 +248,8 @@ public final class DeploymentBuildCommandChannel {
      * @return known timeout without a remote effect / 无远端副作用的已知超时 */
     private static OperationResult<CommandResult> timeout() {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED",
-                        "Reviewed build execution budget is exhausted", Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED",
+                "Reviewed build execution budget is exhausted", Map.of(), Optional.empty())));
     }
 
     /** Rejects an engine outside the fixed helper protocol. / 拒绝固定 helper 协议之外的引擎。

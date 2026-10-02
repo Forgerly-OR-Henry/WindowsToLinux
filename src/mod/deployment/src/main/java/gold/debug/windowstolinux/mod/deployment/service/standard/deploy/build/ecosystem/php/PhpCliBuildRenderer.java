@@ -47,25 +47,25 @@ public final class PhpCliBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.PhpService php)
-                || facts.buildTool() != DeploymentBuildToolType.PHP_CLI) {
+            || facts.buildTool() != DeploymentBuildToolType.PHP_CLI) {
             throw new IllegalArgumentException("PHP CLI renderer requires reviewed dependency-free inputs");
         }
         String version = php.version();
         String command = """
-                command -v php >/dev/null
-                php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
-                test -f ./windowstolinux-php.properties
-                test -f ./%s
-                test ! -e ./composer.json
-                test ! -e ./composer.lock
-                mapfile -d '' -t sources < <(find -P . -type f -name '*.php' -print0 | LC_ALL=C sort -z)
-                test "${#sources[@]}" -ge 1
-                for source_file in "${sources[@]}"; do run php -n -l "$source_file"; done
-                test -z "$(find -P . -type l -print -quit)"
-                printf 'ARTIFACT=%%s\n' ./public
-                """.formatted(version, php.entrypoint());
+            command -v php >/dev/null
+            php -r 'printf("%%d.%%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);' | grep -Fx "${WTL_PHP_BRANCH:-%s}"
+            test -f ./windowstolinux-php.properties
+            test -f ./%s
+            test ! -e ./composer.json
+            test ! -e ./composer.lock
+            mapfile -d '' -t sources < <(find -P . -type f -name '*.php' -print0 | LC_ALL=C sort -z)
+            test "${#sources[@]}" -ge 1
+            for source_file in "${sources[@]}"; do run php -n -l "$source_file"; done
+            test -z "$(find -P . -type l -print -quit)"
+            printf 'ARTIFACT=%%s\n' ./public
+            """.formatted(version, php.entrypoint());
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.service.mod;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -11,11 +15,12 @@ import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.mod.development.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentModDiscovery;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Registers verified CLASS builds without enabling them or changing an existing selection. / 登记已核验 CLASS 构建，不启用它们或改变已有单选。 */
 public final class PlatformModCatalog {
@@ -82,7 +87,7 @@ public final class PlatformModCatalog {
         var before = build.candidate();
         var current = DevelopmentDescriptor.read(workspace, before.module().resolve("target/wtlmod-development.json"));
         if (!current.equals(before.descriptor()) || !current.manifest().json().equals(before.manifest().json())
-                || !fingerprint(before).equals(build.contentDigest()))
+            || !fingerprint(before).equals(build.contentDigest()))
             throw new IOException("The registered CLASS build changed before loading");
     }
 
@@ -94,11 +99,11 @@ public final class PlatformModCatalog {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
-                        var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
+                     var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     if (!r.next() || !boot.equals(r.getObject(1, UUID.class))
-                            || !Set.of("STARTING", "RUNNING").contains(r.getString(2)))
+                        || !Set.of("STARTING", "RUNNING").contains(r.getString(2)))
                         throw rejected(ProblemCode.UNAVAILABLE, "MOD_CATALOG_BOOT_CHANGED",
-                                "Development registration belongs to another or closed boot");
+                            "Development registration belongs to another or closed boot");
                 }
                 var candidate = build.candidate();
                 var manifest = candidate.manifest();
@@ -117,14 +122,14 @@ public final class PlatformModCatalog {
      * @throws SQLException if replacement is unsafe / 替换不安全时 */
     private static void requireReplaceable(Connection c, String owner) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT (SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND (actual_version IS NOT NULL OR last_runtime_state NOT IN ('STOPPED','FAILED')))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
+            "SELECT (SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND (actual_version IS NOT NULL OR last_runtime_state NOT IN ('STOPPED','FAILED')))+(SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
             for (int i = 1; i <= 5; i++)
                 p.setString(i, owner);
             try (var r = p.executeQuery()) {
                 r.next();
                 if (r.getLong(1) != 0)
                     throw rejected(ProblemCode.BUSY, "MOD_CATALOG_BUILD_IN_USE",
-                            "Original development evidence is still in use");
+                        "Original development evidence is still in use");
             }
         }
     }
@@ -135,7 +140,7 @@ public final class PlatformModCatalog {
      * @throws IOException if an output is redirected, unreadable or changes during hashing / 输出重定向、不可读或求摘要期间变化时 */
     private static String fingerprint(DevelopmentModDiscovery.Candidate candidate) throws IOException {
         var files = new TreeMap<String, Path>((a, b) -> Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8),
-                b.getBytes(StandardCharsets.UTF_8)));
+            b.getBytes(StandardCharsets.UTF_8)));
         add(files, candidate.descriptor().manifestPath());
         add(files, candidate.module().resolve("target/wtlmod-development.json"));
         for (Path source : candidate.descriptor().sources()) {
@@ -148,7 +153,7 @@ public final class PlatformModCatalog {
                      * @throws IOException if directory is redirected / 目录重定向时 */
                     @Override
                     public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs)
-                            throws IOException {
+                        throws IOException {
                         if (!directory.toRealPath().equals(directory))
                             throw new IOException("Compiled directory is redirected");
                         return FileVisitResult.CONTINUE;
@@ -174,21 +179,21 @@ public final class PlatformModCatalog {
             digest.update("WTL-CLASS-CONTENT-1\n".getBytes(StandardCharsets.UTF_8));
             for (var entry : files.entrySet()) {
                 var before = Files.readAttributes(entry.getValue(), BasicFileAttributes.class,
-                        LinkOption.NOFOLLOW_LINKS);
+                    LinkOption.NOFOLLOW_LINKS);
                 var content = MessageDigest.getInstance("SHA-256");
                 long length = 0;
                 try (var input = Files.newInputStream(entry.getValue())) {
                     byte[] buffer = new byte[8192];
-                    for (int n; (n = input.read(buffer)) != -1;) {
+                    for (int n; (n = input.read(buffer)) != -1; ) {
                         content.update(buffer, 0, n);
                         length += n;
                     }
                 }
                 var after = Files.readAttributes(entry.getValue(), BasicFileAttributes.class,
-                        LinkOption.NOFOLLOW_LINKS);
+                    LinkOption.NOFOLLOW_LINKS);
                 if (length != before.size() || before.size() != after.size()
-                        || !before.lastModifiedTime().equals(after.lastModifiedTime())
-                        || !Objects.equals(before.fileKey(), after.fileKey()))
+                    || !before.lastModifiedTime().equals(after.lastModifiedTime())
+                    || !Objects.equals(before.fileKey(), after.fileKey()))
                     throw new IOException("Compiled file changed during inspection");
                 byte[] name = entry.getKey().getBytes(StandardCharsets.UTF_8);
                 digest.update(ByteBuffer.allocate(4).putInt(name.length).array());
@@ -219,7 +224,7 @@ public final class PlatformModCatalog {
      * @return internal transaction signal / 内部事务信号 */
     private static SQLException rejected(ProblemCode code, String event, String message) {
         return new SQLException(message,
-                new ApiException(new Problem(code, event, message, Map.of(), Optional.empty())));
+            new ApiException(new Problem(code, event, message, Map.of(), Optional.empty())));
     }
 
     /** Preserves known refusals but never interprets uncertain storage as a proven rollback. / 保留已知拒绝，绝不把不确定存储当成已证明回滚。
@@ -228,13 +233,13 @@ public final class PlatformModCatalog {
      * @return source-specific safe evidence / 来源专属安全证据 */
     private static Problem problem(Exception failure, DevelopmentModDiscovery.Candidate candidate) {
         if (failure instanceof SQLException && failure.getSuppressed().length == 0
-                && failure.getCause() instanceof ApiException api)
+            && failure.getCause() instanceof ApiException api)
             return api.problem();
         return new Problem(failure instanceof SQLException ? ProblemCode.UNKNOWN : ProblemCode.UNAVAILABLE,
-                "MOD_DEVELOPMENT_REGISTRATION_UNCONFIRMED",
-                "Development registration could not be confirmed; reload the saved state before another attempt",
-                Map.of("ownerId", candidate.manifest().id(), "source", candidate.module().toString()),
-                Optional.of(UUID.randomUUID()));
+            "MOD_DEVELOPMENT_REGISTRATION_UNCONFIRMED",
+            "Development registration could not be confirmed; reload the saved state before another attempt",
+            Map.of("ownerId", candidate.manifest().id(), "source", candidate.module().toString()),
+            Optional.of(UUID.randomUUID()));
     }
 
     /** Keeps traversal, hashing and registration away from Swing input. / 使遍历、摘要及登记远离 Swing 输入线程。 */
@@ -278,7 +283,7 @@ public final class PlatformModCatalog {
         var manifest = candidate.manifest();
         boolean exists = false, identical = false;
         try (var p = c.prepareStatement(
-                "SELECT install_path,content_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
+            "SELECT install_path,content_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, owner);
             p.setString(2, version);
             try (var r = p.executeQuery()) {
@@ -286,11 +291,11 @@ public final class PlatformModCatalog {
                     exists = true;
                     if (!"CLASS".equals(r.getString(5)) || !"READY".equals(r.getString(6)))
                         throw rejected(ProblemCode.CONTRACT_VIOLATION, "MOD_CATALOG_SOURCE_CONFLICT",
-                                "Existing release belongs to another source or maintenance");
+                            "Existing release belongs to another source or maintenance");
                     identical = candidate.module().toString().equals(r.getString(1))
-                            && build.contentDigest().equals(r.getString(2))
-                            && manifest.schemaVersion().equals(Optional.ofNullable(r.getString(3)))
-                            && manifest.json().equals(r.getString(4));
+                        && build.contentDigest().equals(r.getString(2))
+                        && manifest.schemaVersion().equals(Optional.ofNullable(r.getString(3)))
+                        && manifest.json().equals(r.getString(4));
                 }
             }
         }
@@ -298,7 +303,7 @@ public final class PlatformModCatalog {
             requireReplaceable(c, owner);
             if (exists) {
                 try (var p = c.prepareStatement(
-                        "UPDATE mod_version SET content_sha256=?,schema_version=?,manifest_json=?,installed_at=?,install_path=? WHERE mod_id=? AND version=?")) {
+                    "UPDATE mod_version SET content_sha256=?,schema_version=?,manifest_json=?,installed_at=?,install_path=? WHERE mod_id=? AND version=?")) {
                     p.setString(1, build.contentDigest());
                     p.setString(2, manifest.schemaVersion().orElse(null));
                     p.setString(3, manifest.json());
@@ -311,7 +316,7 @@ public final class PlatformModCatalog {
                 }
             } else {
                 try (var p = c.prepareStatement(
-                        "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,state,installed_at) VALUES(?,?,?,?,?,?,'CLASS','READY',?)")) {
+                    "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,state,installed_at) VALUES(?,?,?,?,?,?,'CLASS','READY',?)")) {
                     p.setString(1, owner);
                     p.setString(2, version);
                     p.setString(3, candidate.module().toString());
@@ -340,17 +345,17 @@ public final class PlatformModCatalog {
                         versions.add(SemanticVersion.parse(r.getString(1)));
                     } catch (IllegalArgumentException invalid) {
                         throw rejected(ProblemCode.INVALID_INPUT, "MOD_CATALOG_VERSION_INVALID",
-                                "Stored release identity is invalid");
+                            "Stored release identity is invalid");
                     }
                 }
             }
         }
         String initial = Collections
-                .max(versions,
-                        Comparator.<SemanticVersion>naturalOrder().thenComparing(SemanticVersion::toString))
-                .toString();
+            .max(versions,
+                Comparator.<SemanticVersion>naturalOrder().thenComparing(SemanticVersion::toString))
+            .toString();
         try (var p = c.prepareStatement(
-                "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0")) {
+            "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0")) {
             p.setString(1, initial);
             p.setLong(2, now);
             p.setString(3, owner);

@@ -7,4 +7,5 @@ import java.nio.file.Path;
  * @param verifiedLocalFile verified local path / 已验证本地路径
  * @param byteCount verified length / 已验证长度
  * @param sha256 verified digest / 已验证摘要 */
-public record RestoreFile(String bindingId, Path verifiedLocalFile, long byteCount, String sha256) {}
+public record RestoreFile(String bindingId, Path verifiedLocalFile, long byteCount, String sha256) {
+}

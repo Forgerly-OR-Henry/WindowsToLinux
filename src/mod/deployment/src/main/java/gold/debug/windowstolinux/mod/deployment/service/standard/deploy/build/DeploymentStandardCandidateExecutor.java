@@ -1,11 +1,19 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentCandidateChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
@@ -40,7 +48,7 @@ public final class DeploymentStandardCandidateExecutor {
          * @param requiredSpace measured required bytes / 已测量所需字节
          * @param availableBytes measured target bytes / 已测量目标字节 */
         private Prepared(DeploymentStandardBuildExecutor.Prepared selection, DeploymentCandidateChannel channel,
-                long requiredSpace, long availableBytes) {
+                         long requiredSpace, long availableBytes) {
             this.selection = selection;
             this.channel = channel;
             this.requiredSpace = requiredSpace;
@@ -75,7 +83,7 @@ public final class DeploymentStandardCandidateExecutor {
          * @return complete immutable script / 完整不可变脚本 */
         public String script() {
             return DeploymentStandardBuildExecutor.script(selection.rendered.buildScript(), selection.plan.request(),
-                    selection.environment, selection.executedTools);
+                selection.environment, selection.executedTools);
         }
 
         /** Returns remaining original cumulative remote execution time. / 返回原累计远端执行剩余时间。
@@ -111,6 +119,7 @@ public final class DeploymentStandardCandidateExecutor {
             consumed = true;
         }
     }
+
     /** Existing exact build implementation. / 既有精确构建实现。 */
     private final DeploymentStandardBuildExecutor builds = new DeploymentStandardBuildExecutor();
 
@@ -129,11 +138,11 @@ public final class DeploymentStandardCandidateExecutor {
      * @return verified compressed source and installed tool identity only after a confirmed build / 仅确认构建后返回已核验压缩来源及安装工具身份
      * @throws ApiException if host admission fails before dispatch / 宿主发送前准入失败时 */
     public OperationResult<DeploymentVerifiedBuildResult> execute(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task) throws ApiException {
+                                                                  InteractionService interaction, TaskContext task) throws ApiException {
         var prepared = prepare(plan, session, interaction, task);
         return prepared.outcome() == Outcome.SUCCEEDED
-                ? build(prepared.value().orElseThrow(), session, task)
-                : withoutValue(prepared);
+            ? build(prepared.value().orElseThrow(), session, task)
+            : withoutValue(prepared);
     }
 
     /** Prepares one component and checks its source, host and tools before any candidate upload. / 在任何候选上传前准备并核对一个组件的来源、主机及工具。
@@ -144,7 +153,7 @@ public final class DeploymentStandardCandidateExecutor {
      * @return single-use prepared candidate / 一次性已准备候选
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task) throws ApiException {
+                                             InteractionService interaction, TaskContext task) throws ApiException {
         return prepare(plan, session, interaction, task, true);
     }
 
@@ -157,10 +166,10 @@ public final class DeploymentStandardCandidateExecutor {
      * @return actual prepared selection / 实际准备选择
      * @throws ApiException if original authority rejects / 原权限拒绝时 */
     public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task, boolean fallback) throws ApiException {
+                                             InteractionService interaction, TaskContext task, boolean fallback) throws ApiException {
         return prepare(plan, session, interaction, task, fallback, 0,
-                new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()), new DeploymentRemoteWorkspace(
-                        plan.request().facts().applicationId(), plan.request().archive().sha256()));
+            new DeploymentBuildBudget(plan.request().limits().timeoutSeconds()), new DeploymentRemoteWorkspace(
+                plan.request().facts().applicationId(), plan.request().archive().sha256()));
     }
 
     /** Prepares a later explicit operation without resetting source identity, branch or time. / 准备后续明确操作，不重置来源身份、分支或时间。
@@ -175,8 +184,8 @@ public final class DeploymentStandardCandidateExecutor {
      * @return confirmed actual preparation / 已确认实际准备
      * @throws ApiException if original host authority rejects / 原宿主权限拒绝时 */
     public OperationResult<Prepared> prepare(ReviewedDeploymentPlan plan, RemoteSession session,
-            InteractionService interaction, TaskContext task, boolean fallback, int branch,
-            DeploymentBuildBudget budget, DeploymentRemoteWorkspace workspace) throws ApiException {
+                                             InteractionService interaction, TaskContext task, boolean fallback, int branch,
+                                             DeploymentBuildBudget budget, DeploymentRemoteWorkspace workspace) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(session);
         Objects.requireNonNull(interaction);
@@ -191,7 +200,7 @@ public final class DeploymentStandardCandidateExecutor {
         try {
             footprint = Math.addExact(request.archive().byteCount(), request.archive().uncompressedByteCount());
             requiredSpace = Math.max(Math.multiplyExact(request.archive().byteCount(), 3),
-                    request.limits().maxWorkspaceBytes());
+                request.limits().maxWorkspaceBytes());
         } catch (ArithmeticException overflow) {
             return failedPreparation(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SOURCE_SIZE_OVERFLOW");
         }
@@ -199,19 +208,19 @@ public final class DeploymentStandardCandidateExecutor {
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_SOURCE_WORKSPACE_LIMIT");
         Objects.requireNonNull(budget);
         if (!Objects.requireNonNull(workspace).applicationId().equals(request.facts().applicationId())
-                || !workspace.archiveSha256().equals(request.archive().sha256()))
+            || !workspace.archiveSha256().equals(request.archive().sha256()))
             throw new IllegalArgumentException("Candidate operation differs from original reviewed source");
         var channel = new DeploymentCandidateChannel(session, interaction, request.server(), task,
-                rendered.value().orElseThrow().reviewedPlanSha256(), budget);
+            rendered.value().orElseThrow().reviewedPlanSha256(), budget);
         var helper = new DeploymentManagedHelper(session, interaction, request.server(), task,
-                rendered.value().orElseThrow().reviewedPlanSha256()).probe();
+            rendered.value().orElseThrow().reviewedPlanSha256()).probe();
         if (helper.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(helper);
         var facts = channel.hostFacts();
         if (facts.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(facts);
         if (DeploymentHostCompatibilityEvaluator.evaluatePlatform(facts.value().orElseThrow())
-                .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
+            .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HOST_UNSUPPORTED");
         var capacity = channel.availableBytes();
         if (capacity.outcome() != Outcome.SUCCEEDED)
@@ -228,14 +237,14 @@ public final class DeploymentStandardCandidateExecutor {
         if (preparedFacts.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(preparedFacts);
         if (DeploymentHostCompatibilityEvaluator
-                .evaluate(preparedFacts.value().orElseThrow(), request.facts(), request.runtime(), selection.tools)
-                .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
+            .evaluate(preparedFacts.value().orElseThrow(), request.facts(), request.runtime(), selection.tools)
+            .support() != DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
             return failedPreparation(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_RUNTIME_UNSUPPORTED");
         if (cancelled(task))
             return cancelledPreparation();
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new Prepared(selection, channel, requiredSpace, capacity.value().orElseThrow())),
-                Optional.empty());
+            Optional.of(new Prepared(selection, channel, requiredSpace, capacity.value().orElseThrow())),
+            Optional.empty());
     }
 
     /** Uploads and builds one already prepared original candidate exactly once. / 精确一次上传并构建已准备的原候选。
@@ -245,7 +254,7 @@ public final class DeploymentStandardCandidateExecutor {
      * @return verified candidate build / 已核实候选构建
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentVerifiedBuildResult> build(Prepared prepared, RemoteSession session,
-            TaskContext task) throws ApiException {
+                                                                TaskContext task) throws ApiException {
         return build(prepared, session, task, true);
     }
 
@@ -257,7 +266,7 @@ public final class DeploymentStandardCandidateExecutor {
      * @return actual original build outcome / 实际原构建结果
      * @throws ApiException if exact host authority rejects / 精确宿主权限拒绝时 */
     public OperationResult<DeploymentVerifiedBuildResult> build(Prepared prepared, RemoteSession session,
-            TaskContext task, boolean fallback) throws ApiException {
+                                                                TaskContext task, boolean fallback) throws ApiException {
         Objects.requireNonNull(prepared).consume(session, task);
         var selection = prepared.selection;
         var channel = prepared.channel;
@@ -288,7 +297,7 @@ public final class DeploymentStandardCandidateExecutor {
      * @return exact owned inactive candidate / 精确所属非活动候选
      * @throws ApiException if original observation is unavailable / 原观察不可用时 */
     public OperationResult<DeploymentRemoteWorkspace> verifyRetained(Prepared prepared, RemoteSession session,
-            TaskContext task) throws ApiException {
+                                                                     TaskContext task) throws ApiException {
         if (!prepared.consumed || prepared.selection.session != session || prepared.selection.task != task)
             throw new IllegalArgumentException("Retry observation does not belong to the executed original candidate");
         return prepared.channel.verify(prepared.selection.workspace, prepared.selection.plan.request().archive());
@@ -304,21 +313,21 @@ public final class DeploymentStandardCandidateExecutor {
      * @return installed actual new selection / 实际新安装选择
      * @throws ApiException if original authority refuses / 原权限拒绝时 */
     public OperationResult<Prepared> recoverSelection(Prepared previous, ReviewedDeploymentPlan plan, int branch,
-            RemoteSession session, InteractionService interaction, TaskContext task) throws ApiException {
+                                                      RemoteSession session, InteractionService interaction, TaskContext task) throws ApiException {
         if (!previous.consumed || previous.selection.session != session || previous.selection.task != task)
             throw new IllegalArgumentException("Recovery selection differs from original task or session");
         var selected = builds.prepareForUpload(plan, session, interaction, task, previous.selection.budget, branch,
-                false, previous.selection.workspace);
+            false, previous.selection.workspace);
         if (selected.outcome() != Outcome.SUCCEEDED)
             return withoutPreparedValue(selected);
         var actual = selected.value().orElseThrow();
         if (!actual.workspace.equals(previous.selection.workspace))
             throw new IllegalArgumentException("Recovery changed original candidate identity");
         var channel = new DeploymentCandidateChannel(session, interaction, plan.request().server(), task,
-                actual.rendered.reviewedPlanSha256(), actual.budget);
+            actual.rendered.reviewedPlanSha256(), actual.budget);
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new Prepared(actual, channel, previous.requiredSpace, previous.availableBytes)),
-                Optional.empty());
+            Optional.of(new Prepared(actual, channel, previous.requiredSpace, previous.availableBytes)),
+            Optional.empty());
     }
 
     /** Builds an existing verified candidate after formal review confirmation; never recreates or uploads it. / 正式审阅确认后构建已有已核候选，绝不重建或上传候选。
@@ -328,10 +337,10 @@ public final class DeploymentStandardCandidateExecutor {
      * @return actual bounded build outcome / 实际有界构建结果
      * @throws ApiException if host authority rejects / 宿主权限拒绝时 */
     public OperationResult<DeploymentVerifiedBuildResult> rebuild(Prepared prepared, RemoteSession session,
-            TaskContext task) throws ApiException {
+                                                                  TaskContext task) throws ApiException {
         prepared.consume(session, task);
         var verified = prepared.channel.verify(prepared.selection.workspace,
-                prepared.selection.plan.request().archive());
+            prepared.selection.plan.request().archive());
         if (verified.outcome() != Outcome.SUCCEEDED)
             return withoutValue(verified);
         return builds.buildPrepared(prepared.selection, verified.value().orElseThrow(), session, task, false);
@@ -357,21 +366,21 @@ public final class DeploymentStandardCandidateExecutor {
      * @return unknown result / 未知结果 */
     private static OperationResult<Prepared> unknownPreparation(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Cancels before a candidate exists. / 在候选存在前取消。
      * @return cancelled preparation / 已取消准备 */
     private static OperationResult<Prepared> cancelledPreparation() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANDIDATE_CANCELLED")));
+            Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANDIDATE_CANCELLED")));
     }
 
     /** Detects original cooperative cancellation. / 检测原协作取消。
      * @param task original task / 原任务
      * @return whether cancellation is pending / 是否待取消 */
     private static boolean cancelled(TaskContext task) {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 
     /** Preserves the exact non-success without a build value. / 保留原非成功结果而不虚构构建值。
@@ -394,14 +403,14 @@ public final class DeploymentStandardCandidateExecutor {
      * @return unknown outcome / 未知结果 */
     private static OperationResult<DeploymentVerifiedBuildResult> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Stops before candidate creation. / 在候选创建前停止。
      * @return cancelled result / 已取消结果 */
     private static OperationResult<DeploymentVerifiedBuildResult> cancelledResult() {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANDIDATE_CANCELLED")));
+            Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_CANDIDATE_CANCELLED")));
     }
 
     /** Creates a bounded non-secret result. / 创建有界且不含秘密的结果。

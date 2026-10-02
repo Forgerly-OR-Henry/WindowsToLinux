@@ -20,6 +20,7 @@ final class AiProviderDragTransfer extends TransferHandler {
 
     /** Current operation guard. / 当前操作保护。 */
     private final BooleanSupplier busy;
+
     /** Binds drag operations to one list. / 将拖动绑定到一个列表。
      * @param list owned list / 所属列表
      * @param changed reorder callback / 排序回调
@@ -59,7 +60,7 @@ final class AiProviderDragTransfer extends TransferHandler {
     @Override
     public boolean canImport(TransferSupport support) {
         return !busy.getAsBoolean() && support.isDrop() && support.getComponent() == list
-                && support.getTransferable() == exported && support.isDataFlavorSupported(DataFlavor.stringFlavor);
+            && support.getTransferable() == exported && support.isDataFlavorSupported(DataFlavor.stringFlavor);
     }
 
     /** Applies a validated drop. / 应用已校验放置。

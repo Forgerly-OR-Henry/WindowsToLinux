@@ -83,8 +83,8 @@ public final class DeploymentWorkloadCodec {
         var endpoints = new ArrayList<DeploymentEndpoint>();
         for (int n = count(input, 32); n > 0; n--)
             endpoints.add(new DeploymentEndpoint(input.readUTF(),
-                    DeploymentEndpoint.ProtocolType.valueOf(input.readUTF()), input.readUTF(), input.readInt(),
-                    input.readInt(), DeploymentEndpoint.ExposureType.valueOf(input.readUTF()), input.readUTF()));
+                DeploymentEndpoint.ProtocolType.valueOf(input.readUTF()), input.readUTF(), input.readInt(),
+                input.readInt(), DeploymentEndpoint.ExposureType.valueOf(input.readUTF()), input.readUTF()));
         var verification = readOptional(input);
         String expected = input.readUTF();
         var client = readOptional(input);
@@ -94,7 +94,7 @@ public final class DeploymentWorkloadCodec {
         var companions = new ArrayList<DeploymentCompanion>();
         for (int n = count(input, 32); n > 0; n--)
             companions.add(new DeploymentCompanion(input.readUTF(), input.readUTF(),
-                    DeploymentCompanion.BuildType.valueOf(input.readUTF()), input.readUTF(), input.readUTF()));
+                DeploymentCompanion.BuildType.valueOf(input.readUTF()), input.readUTF(), input.readUTF()));
         var workers = new ArrayList<DeploymentWorker>();
         if (hasWorkers) {
             int size = count(input, 8);
@@ -104,7 +104,7 @@ public final class DeploymentWorkloadCodec {
                 workers.add(new DeploymentWorker(input.readUTF(), readCommand(input)));
         }
         return new DeploymentWorkload(mode, reviewed, command, directory, endpoints, verification, expected, client,
-                inputs, companions, buildDirectory, workers);
+            inputs, companions, buildDirectory, workers);
     }
 
     /**

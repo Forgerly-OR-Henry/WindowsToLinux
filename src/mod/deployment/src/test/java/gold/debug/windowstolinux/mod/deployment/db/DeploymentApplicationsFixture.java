@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -11,14 +21,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 import java.util.regex.Pattern;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.LoopbackSshServer;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
@@ -33,17 +43,17 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken token) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
                 return true;
             }
 
             public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
-                    CancellationToken token) {
+                                                           CancelToken token) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
-                    CancellationToken token) {
+                                                       CancelToken token) {
                 throw new AssertionError();
             }
 
@@ -52,7 +62,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken token) {
+                               CancelToken token) {
                 throw new AssertionError();
             }
         };
@@ -61,16 +71,16 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
     LoopbackSshServer ssh() throws Exception {
         return new LoopbackSshServer(root, server -> {
             server.setPasswordAuthenticator(
-                    (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
+                (user, password, session) -> user.equals("tester") && password.equals("fixture-secret"));
             server.setCommandFactory((channel, command) -> new ScannerCommand());
         });
     }
 
     void server(PlatformRuntime runtime, int port, String username) throws Exception {
         runtime.servers().saveServerProfile(
-                gold.debug.windowstolinux.app.service.contract.profile.ServerProfile
-                        .fromStored(new StoredServerProfile("server", "127.0.0.1", port, username, "fixture-secret")),
-                "fixture-secret".toCharArray());
+            gold.debug.windowstolinux.app.service.server.ServerProfile
+                .fromStored(new StoredServerProfile("server", "127.0.0.1", port, username, "fixture-secret")),
+            "fixture-secret".toCharArray());
     }
 
     ModContext context(PlatformRuntime runtime) {
@@ -90,18 +100,18 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
     void awaitState(TaskHandle<?> handle) throws Exception {
         long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
         while (handle.snapshot().state() != TaskState.ENDED && handle.snapshot().state() != TaskState.UNKNOWN
-                && System.nanoTime() < end)
+            && System.nanoTime() < end)
             Thread.sleep(20);
         assertTrue(handle.snapshot().state() == TaskState.ENDED || handle.snapshot().state() == TaskState.UNKNOWN,
-                handle.snapshot().toString());
+            handle.snapshot().toString());
         if (peer.failure.get() != null)
             throw new AssertionError("Actual scanner peer failed", peer.failure.get());
     }
 
     <T> TaskHandle<T> rootTask(PlatformRuntime runtime, TaskWork<T> work) throws ApiException {
         return context(runtime).tasks().submit(
-                new TaskRequest("applications-test", "Actual CLASS application acceptance", List.of("server"), true),
-                work);
+            new TaskRequest("applications-test", "Actual CLASS application acceptance", List.of("server"), true),
+            work);
     }
 
     void assertNoActiveResources(PlatformRuntime runtime) throws Exception {
@@ -115,43 +125,43 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             var components = new ArrayList<DeploymentApplicationGraph.Component>();
             for (var component : original.components()) {
                 var unit = DeploymentUnitIdentity.forManaged(application + "-" + component.componentId(),
-                        new ServerRef("server"), "a".repeat(64));
+                    new ServerRef("server"), "a".repeat(64));
                 var current = component.runtime();
                 var workload = current.workload();
                 if (website && component.componentId().equals(original.healthComponentId())) {
                     workload = new DeploymentWorkload(workload.mode(), workload.reviewed(), workload.command(),
-                            workload.workingDirectory(),
-                            List.of(new DeploymentEndpoint("public-http", DeploymentEndpoint.ProtocolType.HTTP,
-                                    "0.0.0.0", 8080, 8080, DeploymentEndpoint.ExposureType.EXTERNAL,
-                                    "https://demo.debug.gold/")),
-                            workload.verification(), workload.expectedOutput(), workload.client(), workload.inputs(),
-                            workload.companions(), workload.buildDirectory(), workload.workers());
+                        workload.workingDirectory(),
+                        List.of(new DeploymentEndpoint("public-http", DeploymentEndpoint.ProtocolType.HTTP,
+                            "0.0.0.0", 8080, 8080, DeploymentEndpoint.ExposureType.EXTERNAL,
+                            "https://demo.debug.gold/")),
+                        workload.verification(), workload.expectedOutput(), workload.client(), workload.inputs(),
+                        workload.companions(), workload.buildDirectory(), workload.workers());
                 }
                 var runtimeValue = new DeploymentUnitRuntimeConfiguration(current.healthCheck(),
-                        current.userAccessUrl(), current.identityPolicy(), workload);
+                    current.userAccessUrl(), current.identityPolicy(), workload);
                 components.add(new DeploymentApplicationGraph.Component(component.componentId(), unit, runtimeValue,
-                        component.dependencies(), component.reviewedRuntime(), component.dataPaths(),
-                        component.resources()));
+                    component.dependencies(), component.reviewedRuntime(), component.dataPaths(),
+                    component.resources()));
             }
             var graph = new DeploymentApplicationGraph(application, original.healthComponentId(),
-                    original.healthCheck(), components);
+                original.healthCheck(), components);
             var publication = new DeploymentPublication(graph, publications(graph, revision, List.of()));
             UUID id = UUID.randomUUID();
             var plan = new DeploymentPublicationPlan(id, Optional.empty(), application, new ServerRef("server"),
-                    DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
-                    DeploymentOriginalPublicationCommit.references(new ServerRef("server"), publication, Map.of()),
-                    Instant.ofEpochMilli(System.currentTimeMillis()));
+                DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
+                DeploymentOriginalPublicationCommit.references(new ServerRef("server"), publication, Map.of()),
+                Instant.ofEpochMilli(System.currentTimeMillis()));
             var commit = new DeploymentOriginalPublicationCommit(context(runtime));
             commit.begin(plan, publication, task, "deployment-publication");
             assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, id, publication).outcome());
             assertEquals(Outcome.SUCCEEDED,
-                    commit.finishKnown(task,
-                            new DeploymentExecutionRepository(context(runtime).db()).find(task, id).orElseThrow())
-                            .outcome());
+                commit.finishKnown(task,
+                        new DeploymentExecutionRepository(context(runtime).db()).find(task, id).orElseThrow())
+                    .outcome());
             observed.set(new DeploymentApplicationReader(context(runtime).db())
-                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef(application,
-                            new ServerRef("server")), task)
-                    .snapshot().revisionSha256());
+                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef(application,
+                    new ServerRef("server")), task)
+                .snapshot().revisionSha256());
             return success();
         });
         assertEquals(Outcome.SUCCEEDED, await(handle).outcome());
@@ -161,8 +171,8 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
     /** Executes fixture-only database faults separately from author service capabilities. / 独立于作者服务能力执行夹具数据库故障。 */
     void schemaFault(PlatformRuntime runtime, String sql) throws Exception {
         try (var access = scope(runtime, false);
-                var connection = access.openConnection();
-                var statement = connection.createStatement()) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement()) {
             statement.execute(sql);
         }
     }
@@ -181,6 +191,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         volatile boolean managed;
 
         volatile List<String> scanIssues = List.of();
+
         String response(List<String> args) {
             if (args.equals(List.of("SCAN")))
                 reads.incrementAndGet();
@@ -200,12 +211,12 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             String identity = Base64.getEncoder().encodeToString("example.service".getBytes(StandardCharsets.UTF_8));
             String name = Base64.getEncoder().encodeToString("External service".getBytes(StandardCharsets.UTF_8));
             return "APP\tSYSTEMD\t" + identity + "\t" + fingerprint + "\t" + name + "\t" + state
-                    + (managed ? "\t0\t0\t1\n" : "\t1\t1\t0\n")
-                    + (args.equals(List.of("SCAN"))
-                            ? scanIssues.stream().map(issue -> "ISSUE\t" + issue + "\n")
-                                    .collect(java.util.stream.Collectors.joining())
-                            : "")
-                    + "END\t1\n";
+                + (managed ? "\t0\t0\t1\n" : "\t1\t1\t0\n")
+                + (args.equals(List.of("SCAN"))
+                ? scanIssues.stream().map(issue -> "ISSUE\t" + issue + "\n")
+                .collect(java.util.stream.Collectors.joining())
+                : "")
+                + "END\t1\n";
         }
     }
 
@@ -217,6 +228,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         private org.apache.sshd.server.ExitCallback callback;
 
         private Thread worker;
+
         public void setInputStream(InputStream value) {
             input = value;
         }
@@ -236,7 +248,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             worker = new Thread(() -> {
                 try {
                     var length = new ByteArrayOutputStream();
-                    for (int next; (next = input.read()) != '\n';) {
+                    for (int next; (next = input.read()) != '\n'; ) {
                         if (next < '0' || next > '9' || length.size() >= 8)
                             throw new IOException("Invalid actual frame");
                         length.write(next);
@@ -253,14 +265,14 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
                     while (matcher.find())
                         args.add(matcher.group(1));
                     try (var scanner = DeploymentExternalApplications.class
-                            .getResourceAsStream("external-applications.py")) {
+                        .getResourceAsStream("external-applications.py")) {
                         assertNotNull(scanner);
                         assertArrayEquals(scanner.readAllBytes(), input.readAllBytes(),
-                                "Actual archived Python must reach the SSH peer unchanged");
+                            "Actual archived Python must reach the SSH peer unchanged");
                     }
                     String response = peer.response(args);
                     if (args.size() == 4 && args.get(3).equals("START")
-                            && peer.loseStartAck.compareAndSet(true, false)) {
+                        && peer.loseStartAck.compareAndSet(true, false)) {
                         channel.getSession().close(true);
                         return;
                     }

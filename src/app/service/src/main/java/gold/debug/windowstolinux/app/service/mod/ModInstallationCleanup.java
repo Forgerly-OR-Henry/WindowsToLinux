@@ -6,8 +6,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.mod.installation.ModPackageReader;
-import gold.debug.windowstolinux.app.windows.filesystem.WindowsFileIdentity;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
+import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
 
 /** Reviews and removes only an explicitly accepted installation's bounded file set. / 仅审阅和移除明确接纳安装的有界文件集合。 */
 final class ModInstallationCleanup {
@@ -34,7 +34,7 @@ final class ModInstallationCleanup {
      * @return immutable exact observations in deletion order / 按删除顺序排列的不可变精确观察
      * @throws IOException if ownership, scope or bytes cannot be established / 无法确认归属、范围或字节时 */
     static List<Entry> inspect(Path stage, String stageId, Path target, String programId,
-            List<ModPackageReader.FileEntry> files) throws IOException {
+                               List<ModPackageReader.FileEntry> files) throws IOException {
         var allowed = allowed(stage, target, files);
         var result = new ArrayList<Entry>();
         for (Path root : List.of(stage, target)) {
@@ -78,7 +78,7 @@ final class ModInstallationCleanup {
             });
         }
         result.sort(Comparator.<Entry>comparingInt(entry -> Path.of(entry.path()).getNameCount()).reversed()
-                .thenComparing(Entry::path));
+            .thenComparing(Entry::path));
         return List.copyOf(result);
     }
 
@@ -91,7 +91,7 @@ final class ModInstallationCleanup {
      * @param files original package files / 原包文件
      * @throws IOException if evidence is inconsistent or out of scope / 依据不一致或越界时 */
     static void validate(List<Entry> entries, Path stage, String stageId, Path target, String programId,
-            List<ModPackageReader.FileEntry> files) throws IOException {
+                         List<ModPackageReader.FileEntry> files) throws IOException {
         var allowed = allowed(stage, target, files);
         var indexed = new HashMap<String, Entry>();
         if (entries.size() > allowed.size())
@@ -99,12 +99,12 @@ final class ModInstallationCleanup {
         for (var entry : entries) {
             Long maximum = allowed.get(entry.path());
             if (maximum == null || indexed.putIfAbsent(entry.path(), entry) != null
-                    || !entry.identity().matches("[0-9a-f]{48}") || entry.directory() != (maximum == -1)
-                    || entry.size() < 0
-                    || (entry.directory()
-                            ? entry.size() != 0 || entry.sha256() != null
-                            : entry.size() > maximum || entry.sha256() == null
-                                    || !entry.sha256().matches("[0-9a-f]{64}")))
+                || !entry.identity().matches("[0-9a-f]{48}") || entry.directory() != (maximum == -1)
+                || entry.size() < 0
+                || (entry.directory()
+                ? entry.size() != 0 || entry.sha256() != null
+                : entry.size() > maximum || entry.sha256() == null
+                || !entry.sha256().matches("[0-9a-f]{64}")))
                 throw new IOException("Invalid cancellation file evidence");
         }
         for (var entry : entries) {
@@ -134,7 +134,7 @@ final class ModInstallationCleanup {
      * @param files original package declarations / 原包声明
      * @throws IOException if cleanup is unconfirmed / 清理未确认时 */
     static void remove(List<Entry> accepted, Path stage, String stageId, Path target, String programId,
-            List<ModPackageReader.FileEntry> files) throws IOException {
+                       List<ModPackageReader.FileEntry> files) throws IOException {
         validate(accepted, stage, stageId, target, programId, files);
         var indexed = new HashMap<String, Entry>();
         accepted.forEach(entry -> indexed.put(entry.path(), entry));
@@ -145,7 +145,7 @@ final class ModInstallationCleanup {
         for (var entry : remaining) {
             Path path = Path.of(entry.path());
             for (Path ancestor = path.getParent(); indexed
-                    .containsKey(ancestor.toString()); ancestor = ancestor.getParent())
+                .containsKey(ancestor.toString()); ancestor = ancestor.getParent())
                 PlatformModInstallation.identity(ancestor, indexed.get(ancestor.toString()).identity());
             if (!entry.equals(observe(path, entry.directory() ? -1 : entry.size())))
                 throw new IOException("Cancellation file changed before deletion");
@@ -162,7 +162,7 @@ final class ModInstallationCleanup {
      * @return paths mapped to maximum file length or minus one for directories / 路径到文件最大长度的映射，目录为负一
      * @throws IOException if original file evidence is malformed / 原文件依据畸形时 */
     private static Map<String, Long> allowed(Path stage, Path target, List<ModPackageReader.FileEntry> files)
-            throws IOException {
+        throws IOException {
         var result = new HashMap<String, Long>();
         result.put(stage.toString(), -1L);
         for (Path root : List.of(stage.resolve("program"), target)) {
@@ -173,8 +173,8 @@ final class ModInstallationCleanup {
             for (var file : files) {
                 String name = file.path();
                 if ((!Set.of("mod.json", "README.md", "LICENSE", "CHANGELOG.md").contains(name)
-                        && !name.matches("(?:main|lib)/[^/\\\\:]+\\.jar")) || !names.add(name) || file.size() < 0
-                        || file.size() > ModPackageReader.MAX_BYTES)
+                    && !name.matches("(?:main|lib)/[^/\\\\:]+\\.jar")) || !names.add(name) || file.size() < 0
+                    || file.size() > ModPackageReader.MAX_BYTES)
                     throw new IOException("Invalid original cancellation scope");
                 total += file.size();
                 if (total > ModPackageReader.MAX_BYTES)
@@ -207,7 +207,7 @@ final class ModInstallationCleanup {
                 long length = 0;
                 byte[] buffer = new byte[65536];
                 try (var input = Files.newInputStream(path)) {
-                    for (int read; (read = input.read(buffer)) != -1;) {
+                    for (int read; (read = input.read(buffer)) != -1; ) {
                         length += read;
                         if (length > maximum)
                             throw new IOException("Cancellation file grew while reading");
@@ -224,7 +224,7 @@ final class ModInstallationCleanup {
         PlatformModInstallation.identity(path, identity);
         var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (!directory
-                && (before.size() != after.size() || !before.lastModifiedTime().equals(after.lastModifiedTime())))
+            && (before.size() != after.size() || !before.lastModifiedTime().equals(after.lastModifiedTime())))
             throw new IOException("Cancellation file changed during review");
         return new Entry(path.toString(), identity, directory, directory ? 0 : before.size(), hash);
     }
@@ -289,7 +289,7 @@ final class ModInstallationCleanup {
         for (var entry : entries) {
             validateEntry(entry);
             if (!installedPath(root, Path.of(entry.path()), entry.directory())
-                    || indexed.putIfAbsent(entry.path(), entry) != null)
+                || indexed.putIfAbsent(entry.path(), entry) != null)
                 throw new IOException("Invalid installed deletion path");
             total += entry.size();
             if (total > ModPackageReader.MAX_BYTES)
@@ -336,7 +336,7 @@ final class ModInstallationCleanup {
         for (var entry : ordered(remaining)) {
             Path path = Path.of(entry.path());
             for (Path parent = path.getParent(); parent != null
-                    && indexed.containsKey(parent.toString()); parent = parent.getParent())
+                && indexed.containsKey(parent.toString()); parent = parent.getParent())
                 PlatformModInstallation.identity(parent, indexed.get(parent.toString()).identity());
             if (!entry.equals(observe(path, entry.directory() ? -1 : entry.size())))
                 throw new IOException("Reviewed entry changed before deletion");
@@ -349,11 +349,11 @@ final class ModInstallationCleanup {
      * @throws IOException if invalid / 无效时 */
     static void validateEntry(Entry entry) throws IOException {
         if (entry == null || entry.path() == null || entry.identity() == null
-                || !entry.identity().matches("[0-9a-f]{48}") || entry.size() < 0
-                || entry.size() > ModPackageReader.MAX_BYTES
-                || (entry.directory()
-                        ? entry.size() != 0 || entry.sha256() != null
-                        : entry.sha256() == null || !entry.sha256().matches("[0-9a-f]{64}")))
+            || !entry.identity().matches("[0-9a-f]{48}") || entry.size() < 0
+            || entry.size() > ModPackageReader.MAX_BYTES
+            || (entry.directory()
+            ? entry.size() != 0 || entry.sha256() != null
+            : entry.sha256() == null || !entry.sha256().matches("[0-9a-f]{64}")))
             throw new IOException("Invalid physical deletion evidence");
     }
 
@@ -367,9 +367,9 @@ final class ModInstallationCleanup {
             return false;
         String name = root.relativize(path).toString().replace('\\', '/');
         return directory
-                ? Set.of("", "main", "lib").contains(name)
-                : Set.of("mod.json", "README.md", "LICENSE", "CHANGELOG.md").contains(name)
-                        || name.matches("(?:main|lib)/[^/\\\\:]+\\.jar");
+            ? Set.of("", "main", "lib").contains(name)
+            : Set.of("mod.json", "README.md", "LICENSE", "CHANGELOG.md").contains(name)
+            || name.matches("(?:main|lib)/[^/\\\\:]+\\.jar");
     }
 
     /** Orders actual children before their empty parent directories. / 将实际子项排在其空父目录前。
@@ -377,6 +377,6 @@ final class ModInstallationCleanup {
      * @return immutable deterministic deletion order / 不可变确定删除顺序 */
     static List<Entry> ordered(List<Entry> entries) {
         return entries.stream().sorted(Comparator.<Entry>comparingInt(e -> Path.of(e.path()).getNameCount()).reversed()
-                .thenComparing(Entry::path)).toList();
+            .thenComparing(Entry::path)).toList();
     }
 }

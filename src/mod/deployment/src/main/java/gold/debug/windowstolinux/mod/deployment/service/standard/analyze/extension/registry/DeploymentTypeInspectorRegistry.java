@@ -42,13 +42,13 @@ public final class DeploymentTypeInspectorRegistry {
      */
     public static DeploymentTypeInspectorRegistry defaults() {
         return new DeploymentTypeInspectorRegistry(
-                List.of(new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
-                        new JavaJdkDeploymentInspector(), new NodeServiceDeploymentInspector(),
-                        new PythonServiceDeploymentInspector(), new StaticWebDeploymentInspector(),
-                        new ContainerDeploymentInspector(), new GoModuleDeploymentInspector(),
-                        new RustCargoDeploymentInspector(), new DotNetSdkDeploymentInspector(),
-                        new KotlinServiceDeploymentInspector(), new PhpServiceDeploymentInspector(),
-                        new RubyServiceDeploymentInspector(), new CmakeDeploymentInspector(), new PreviewInspector()));
+            List.of(new SpringBootDeploymentInspector(), new JavaJarDeploymentInspector(),
+                new JavaJdkDeploymentInspector(), new NodeServiceDeploymentInspector(),
+                new PythonServiceDeploymentInspector(), new StaticWebDeploymentInspector(),
+                new ContainerDeploymentInspector(), new GoModuleDeploymentInspector(),
+                new RustCargoDeploymentInspector(), new DotNetSdkDeploymentInspector(),
+                new KotlinServiceDeploymentInspector(), new PhpServiceDeploymentInspector(),
+                new RubyServiceDeploymentInspector(), new CmakeDeploymentInspector(), new PreviewInspector()));
     }
 
     /**

@@ -29,27 +29,27 @@ class DeploymentBuildOutputProtocolTest {
         String bash = System.getProperty("managed.test.bash", "/bin/bash").replace('\\', '/');
         Path helper = temp.resolve("fake-helper.sh");
         Files.writeString(helper, """
-                #!/usr/bin/env bash
-                cat >/dev/null
-                printf '%%s\\n' 'helper notice' 'BUILD_UID=1001' 'BUILD_ENGINE=ordinary'
-                printf '%%s\\n' 'password=CrossBlockSecret' 'https://alice:UrlSecret@example.test/path'
-                printf '%%s\\n' '-----BEGIN PRIVATE KEY-----' 'VeryPrivateBody' '-----END PRIVATE KEY-----'
-                %s -I -c 'import sys; sys.stdout.buffer.write(b"p" * 700 + b"-----BEGIN PRIVATE KEY-----\\n")'
-                printf '%%s\\n' 'HiddenAfterLongPrefix' '-----END PRIVATE' 'StillPrivate' '-----END PRIVATE KEY-----'
-                %s -I -c 'import sys; sys.stdout.buffer.write(b"x" * 9000000 + b"invalid target release: 17\\n")'
-                printf '%%s\\n' 'BUILD_TOOL=GO_MODULE'
-                %s -I -c 'import sys; sys.stdout.buffer.write(b"z" * 100000)'
-                printf '\\n'
-                printf 'password=\\nSecretAtEOF'
-                """.formatted(SafeBuildScriptEnvelope.shellQuote(python), SafeBuildScriptEnvelope.shellQuote(python),
-                SafeBuildScriptEnvelope.shellQuote(python)), StandardCharsets.UTF_8);
+            #!/usr/bin/env bash
+            cat >/dev/null
+            printf '%%s\\n' 'helper notice' 'BUILD_UID=1001' 'BUILD_ENGINE=ordinary'
+            printf '%%s\\n' 'password=CrossBlockSecret' 'https://alice:UrlSecret@example.test/path'
+            printf '%%s\\n' '-----BEGIN PRIVATE KEY-----' 'VeryPrivateBody' '-----END PRIVATE KEY-----'
+            %s -I -c 'import sys; sys.stdout.buffer.write(b"p" * 700 + b"-----BEGIN PRIVATE KEY-----\\n")'
+            printf '%%s\\n' 'HiddenAfterLongPrefix' '-----END PRIVATE' 'StillPrivate' '-----END PRIVATE KEY-----'
+            %s -I -c 'import sys; sys.stdout.buffer.write(b"x" * 9000000 + b"invalid target release: 17\\n")'
+            printf '%%s\\n' 'BUILD_TOOL=GO_MODULE'
+            %s -I -c 'import sys; sys.stdout.buffer.write(b"z" * 100000)'
+            printf '\\n'
+            printf 'password=\\nSecretAtEOF'
+            """.formatted(SafeBuildScriptEnvelope.shellQuote(python), SafeBuildScriptEnvelope.shellQuote(python),
+            SafeBuildScriptEnvelope.shellQuote(python)), StandardCharsets.UTF_8);
         String command = DeploymentBuildOutputProtocol.script(new DeploymentRemoteWorkspace("demo", "a".repeat(64)),
-                300, 16, 512, 128L * 1024 * 1024, "ordinary", BuildCompatibilityPolicy.groups());
+            300, 16, 512, 128L * 1024 * 1024, "ordinary", BuildCompatibilityPolicy.groups());
         command = command.replace("exec /usr/bin/python3", "exec " + SafeBuildScriptEnvelope.shellQuote(python))
-                .replace("'" + DeploymentManagedHelperBundle.PATH + "' build-run",
-                        SafeBuildScriptEnvelope.shellQuote(bash) + " "
-                                + SafeBuildScriptEnvelope.shellQuote(helper.toString().replace('\\', '/'))
-                                + " build-run");
+            .replace("'" + DeploymentManagedHelperBundle.PATH + "' build-run",
+                SafeBuildScriptEnvelope.shellQuote(bash) + " "
+                    + SafeBuildScriptEnvelope.shellQuote(helper.toString().replace('\\', '/'))
+                    + " build-run");
         Path wrapper = temp.resolve("wrapper.sh");
         Files.writeString(wrapper, command + "\n", StandardCharsets.UTF_8);
         Process process = new ProcessBuilder(bash, wrapper.toString()).redirectErrorStream(true).start();
@@ -99,6 +99,6 @@ class DeploymentBuildOutputProtocolTest {
     void rejectsConflictingOrIncompleteReceipts() throws Exception {
         assertThrows(IllegalArgumentException.class, () -> DeploymentBuildOutputProtocol.parse("WTL_BUILD_REPORT=1\n"));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentBuildOutputProtocol.parse("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=1\n"));
+            () -> DeploymentBuildOutputProtocol.parse("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=1\n"));
     }
 }

@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+
 import java.awt.BorderLayout;
 import java.util.*;
 import java.util.concurrent.*;
@@ -9,7 +14,7 @@ import java.util.function.Consumer;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.ServerInfo;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
@@ -24,7 +29,7 @@ public final class DeploymentApplicationsPage implements ModPage {
     private final JPanel root = new JPanel(new BorderLayout(8, 8));
 
     /** Unified saved identities retaining their original management payloads. / 保留原管理载荷的统一保存身份。 */
-    private final JComboBox<DeploymentApplicationInventory.Entry> applications = new JComboBox<>();
+    private final JList<DeploymentApplicationInventory.Entry> applications = new JList<>();
 
     /** Configured authorized scan endpoints. / 已配置授权扫描端点。 */
     private final JComboBox<ServerInfo> servers = new JComboBox<>();
@@ -98,7 +103,8 @@ public final class DeploymentApplicationsPage implements ModPage {
     public JComponent create(UiEnvironment environment) {
         requireEdt();
         locale(environment);
-        var top = new JPanel(new java.awt.GridLayout(0, 1));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
+        var top = DeploymentPageStyle.form();
         applications.setName("applications.inventory");
         categories.setName("applications.category");
         serverFilter.setName("applications.serverFilter");
@@ -109,7 +115,8 @@ public final class DeploymentApplicationsPage implements ModPage {
         filters.add(serverFilter);
         top.add(filters);
         var row = new JPanel();
-        row.add(applications);
+        applications.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        applications.setFixedCellHeight(86);
         button(row, "refresh", this::refresh);
         button(row, "inspect", this::inspect);
         for (var action : DeploymentLifecycleAction.values())
@@ -126,7 +133,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         top.add(scan);
         configureRenderers();
 
-        applications.addActionListener(ignored -> {
+        applications.addListSelectionListener(ignored -> {
             if (!Boolean.TRUE.equals(applications.getClientProperty("inventory.loading")))
                 showSelection();
         });
@@ -138,13 +145,39 @@ public final class DeploymentApplicationsPage implements ModPage {
         details.setEditable(false);
         tasks.setEditable(false);
         root.add(top, BorderLayout.NORTH);
-        root.add(new JScrollPane(details), BorderLayout.CENTER);
+        var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+            DeploymentPageStyle.card("style.applications", new JScrollPane(applications)),
+            DeploymentPageStyle.card("style.details", new JScrollPane(details)));
+        applicationViews.setResizeWeight(0.4);
+        applicationViews.setPreferredSize(new java.awt.Dimension(600, 260));
+        applicationViews.setMinimumSize(new java.awt.Dimension(0, 160));
+        applicationViews.setDividerLocation(300);
+        applicationViews.setBorder(BorderFactory.createEmptyBorder());
+        applicationViews.addComponentListener(new java.awt.event.ComponentAdapter() {
+            /** Stacks inventory and details when both columns would be cramped. / 两列过窄时纵排清单与详情。
+             * @param event current size / 当前尺寸 */
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent event) {
+                int orientation = applicationViews.getWidth() < 620
+                    ? JSplitPane.VERTICAL_SPLIT
+                    : JSplitPane.HORIZONTAL_SPLIT;
+                if (applicationViews.getOrientation() != orientation) {
+                    applicationViews.setOrientation(orientation);
+                    applicationViews.setPreferredSize(
+                        new java.awt.Dimension(600, orientation == JSplitPane.VERTICAL_SPLIT ? 420 : 260));
+                    applicationViews.setDividerLocation(0.45);
+                    applicationViews.revalidate();
+                }
+            }
+        });
+        root.add(applicationViews, BorderLayout.CENTER);
         var lower = new JPanel(new BorderLayout());
         lower.add(new JScrollPane(tasks), BorderLayout.CENTER);
         var cancelRow = new JPanel();
         button(cancelRow, "cancel", this::cancel);
         lower.add(cancelRow, BorderLayout.SOUTH);
-        root.add(lower, BorderLayout.SOUTH);
+        root.add(DeploymentPageStyle.card("style.results", lower), BorderLayout.SOUTH);
+        DeploymentPageStyle.scrollPage(root);
         localize();
         refresh();
         return root;
@@ -152,20 +185,31 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     /** Binds saved identities and filters to their original localized renderers. / 为保存身份与筛选绑定原本地化呈现器。 */
     private void configureRenderers() {
-        applications.setRenderer((list, value, index, selected, focus) -> label(list,
-                value == null
-                        ? ""
-                        : value.name() + " · " + text(value.managed().isPresent() ? "managed" : "external") + " · "
-                                + value.server().id(),
-                selected));
+        applications.setCellRenderer((list, value, index, selected, focus) -> {
+            var copy = DeploymentPageStyle.form();
+            var name = new JLabel(value == null ? "" : value.name());
+            name.putClientProperty("html.disable", true);
+            name.setFont(name.getFont().deriveFont(java.awt.Font.BOLD, name.getFont().getSize2D() * 14f / 13f));
+            copy.add(name);
+            var detail = new JLabel(value == null
+                ? ""
+                : text(value.managed().isPresent() ? "managed" : "external") + " · " + value.server().id());
+            detail.putClientProperty("html.disable", true);
+            copy.add(detail);
+            var card = DeploymentPageStyle.card(null, copy);
+            card.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(
+                selected ? UIManager.getColor("Component.focusColor") : UIManager.getColor("Panel.background"), 2,
+                true), BorderFactory.createEmptyBorder(12, 14, 12, 14)));
+            return card;
+        });
         categories.setRenderer((list, value, index, selected, focus) -> label(list,
-                value == null ? "" : text(value.equals("ALL") ? "allCategories" : value), selected));
+            value == null ? "" : text(value.equals("ALL") ? "allCategories" : value), selected));
         serverFilter.setRenderer((list, value, index, selected, focus) -> label(list,
-                value == null ? text("allServers") : value.id(), selected));
+            value == null ? text("allServers") : value.id(), selected));
         servers.setRenderer(
-                (list, value, index, selected, focus) -> label(list, value == null ? "" : value.name(), selected));
+            (list, value, index, selected, focus) -> label(list, value == null ? "" : value.name(), selected));
         discovered.setRenderer((list, value, index, selected, focus) -> label(list,
-                value == null ? "" : value.name() + " · " + value.state(), selected));
+            value == null ? "" : value.name() + " · " + value.state(), selected));
 
     }
 
@@ -204,8 +248,8 @@ public final class DeploymentApplicationsPage implements ModPage {
             serverFilter.removeAllItems();
             serverFilter.addItem(null);
             values.stream().map(DeploymentApplicationInventory.Entry::server).distinct()
-                    .sorted(Comparator.comparing(gold.debug.windowstolinux.appapi.server.ServerRef::id))
-                    .forEach(serverFilter::addItem);
+                .sorted(Comparator.comparing(gold.debug.windowstolinux.appapi.server.ServerRef::id))
+                .forEach(serverFilter::addItem);
             if (values.stream().anyMatch(value -> value.server().equals(target)))
                 serverFilter.setSelectedItem(target);
             serverFilter.putClientProperty("inventory.loading", false);
@@ -217,7 +261,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                 targets.forEach(servers::addItem);
                 if (old != null)
                     servers.setSelectedItem(
-                            targets.stream().filter(value -> value.ref().equals(old.ref())).findFirst().orElse(null));
+                        targets.stream().filter(value -> value.ref().equals(old.ref())).findFirst().orElse(null));
             });
         });
         actions.execute(() -> {
@@ -226,8 +270,8 @@ public final class DeploymentApplicationsPage implements ModPage {
                 SwingUtilities.invokeLater(() -> {
                     if (!closed)
                         tasks.setText(snapshots.stream()
-                                .map(value -> value.progressText() + " · " + value.state() + " · " + value.id())
-                                .collect(java.util.stream.Collectors.joining("\n")));
+                            .map(value -> value.progressText() + " · " + value.state() + " · " + value.id())
+                            .collect(java.util.stream.Collectors.joining("\n")));
                 });
             } catch (Exception failure) {
                 showFailure();
@@ -267,15 +311,15 @@ public final class DeploymentApplicationsPage implements ModPage {
         if (selected == null)
             return;
         var edited = editor(selected.name(), selected.category(), selected.accessUrl(),
-                selected.external().isPresent());
+            selected.external().isPresent());
         if (edited == null)
             return;
         if (selected.managed().isPresent())
             run(() -> service.edit(selected.managed().orElseThrow(), edited.name(), edited.category(), edited.url()),
-                    value -> refresh());
+                value -> refresh());
         else
             run(() -> service.editExternal(selected.external().orElseThrow(), edited.name(), edited.category(),
-                    edited.url()), value -> refresh());
+                edited.url()), value -> refresh());
     }
 
     /** Presents the old and new exact association before admitting replacement under its original server. / 在原服务器下接纳替换前呈现新旧精确关联。 */
@@ -285,23 +329,23 @@ public final class DeploymentApplicationsPage implements ModPage {
         var candidate = (DeploymentExternalApplications.Discovered) discovered.getSelectedItem();
         var server = (gold.debug.windowstolinux.appapi.server.ServerInfo) servers.getSelectedItem();
         if (original == null || candidate == null || server == null || !server.ref().equals(original.server())
-                || !candidate.kind().equals(original.target().kind())
-                || !candidate.identity().equals(original.target().identity())) {
+            || !candidate.kind().equals(original.target().kind())
+            || !candidate.identity().equals(original.target().identity())) {
             details.setText(text("reattachSelection"));
             return;
         }
         run(() -> service.reviewReattachment(original, candidate), review -> {
             long view = generation.get();
             var body = new JTextArea(java.text.MessageFormat.format(text("reattachReview"), original.id(),
-                    original.target().kind(), original.target().identity(), original.target().fingerprint(),
-                    candidate.fingerprint(), review.oldEndpoint(),
-                    review.endpoint().username() + "@" + review.endpoint().host() + ":" + review.endpoint().port(),
-                    original.displayName(), original.category(), original.accessUrl().orElse("")), 14, 70);
+                original.target().kind(), original.target().identity(), original.target().fingerprint(),
+                candidate.fingerprint(), review.oldEndpoint(),
+                review.endpoint().username() + "@" + review.endpoint().host() + ":" + review.endpoint().port(),
+                original.displayName(), original.category(), original.accessUrl().orElse("")), 14, 70);
             body.setEditable(false);
             body.setLineWrap(true);
             body.setWrapStyleWord(true);
             var choice = new JOptionPane(new JScrollPane(body), JOptionPane.WARNING_MESSAGE,
-                    JOptionPane.OK_CANCEL_OPTION);
+                JOptionPane.OK_CANCEL_OPTION);
             var dialog = choice.createDialog(root, text("reattach"));
             reattachmentConfirmation = dialog;
             try {
@@ -312,8 +356,8 @@ public final class DeploymentApplicationsPage implements ModPage {
                     reattachmentConfirmation = null;
             }
             if (closed || locked || view != generation.get()
-                    || !Integer.valueOf(JOptionPane.OK_OPTION).equals(choice.getValue()) || !entry.equals(selected())
-                    || !candidate.equals(discovered.getSelectedItem()) || !server.equals(servers.getSelectedItem()))
+                || !Integer.valueOf(JOptionPane.OK_OPTION).equals(choice.getValue()) || !entry.equals(selected())
+                || !candidate.equals(discovered.getSelectedItem()) || !server.equals(servers.getSelectedItem()))
                 return;
             run(() -> service.reattach(review), value -> {
                 details.setText(text("adopted") + value);
@@ -344,13 +388,13 @@ public final class DeploymentApplicationsPage implements ModPage {
         panel.add(new JLabel(text("accessUrl")));
         panel.add(url);
         if (JOptionPane.showConfirmDialog(root, panel, text("edit"),
-                JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+            JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
             return null;
         String selected = (String) categories.getSelectedItem();
         return new EditChoice(nameField.getText(), selected,
-                selected.equals("WEBSITE") && !url.getText().isBlank()
-                        ? Optional.of(url.getText().trim())
-                        : Optional.empty());
+            selected.equals("WEBSITE") && !url.getText().isBlank()
+                ? Optional.of(url.getText().trim())
+                : Optional.empty());
     }
 
     /** Selects one exact retained release for original-task switch or rollback. / 为原任务切换或回滚选择一个精确保留发布。 */
@@ -361,16 +405,16 @@ public final class DeploymentApplicationsPage implements ModPage {
         var selected = entry.managed().orElseThrow();
         run(() -> service.history(selected.application()), histories -> {
             var choices = histories.stream()
-                    .filter(value -> value.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
-                    .map(value -> new HistoryChoice(value.identity().id(),
-                            value.createdAt() + " · " + value.identity().sha256()))
-                    .toArray(HistoryChoice[]::new);
+                .filter(value -> value.state() == DeploymentReleaseRecord.DeploymentReleaseState.RETIRED)
+                .map(value -> new HistoryChoice(value.identity().id(),
+                    value.createdAt() + " · " + value.identity().sha256()))
+                .toArray(HistoryChoice[]::new);
             if (choices.length == 0) {
                 details.append("\n" + text("noHistory"));
                 return;
             }
             var choice = (HistoryChoice) JOptionPane.showInputDialog(root, text("chooseHistory"), text("history"),
-                    JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
+                JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
             if (choice != null)
                 run(() -> service.switchRelease(selected, choice.id()), value -> refresh());
         });
@@ -402,7 +446,7 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Reads the current EDT-owned original inventory payload. / 读取当前EDT所属原清单载荷。
      * @return selected saved entry or absence / 所选保存条目或无 */
     private DeploymentApplicationInventory.Entry selected() {
-        return (DeploymentApplicationInventory.Entry) applications.getSelectedItem();
+        return (DeploymentApplicationInventory.Entry) applications.getSelectedValue();
     }
 
     /** Shows saved business category, URL and origin-specific dates without claiming live state. / 展示保存的业务类别、URL及来源时间，不宣称实时状态。 */
@@ -417,22 +461,22 @@ public final class DeploymentApplicationsPage implements ModPage {
         }
         String old = (String) details.getClientProperty("inventory.body");
         String tail = selected.key().equals(details.getClientProperty("inventory.key")) && old != null
-                && details.getText().startsWith(old) ? details.getText().substring(old.length()) : "";
+            && details.getText().startsWith(old) ? details.getText().substring(old.length()) : "";
         String body = java.text.MessageFormat.format(text("entryDetails"), selected.name(), selected.key(),
-                text(selected.managed().isPresent() ? "managed" : "external"), selected.server().id(),
-                text(selected.category()), selected.accessUrl().orElse(text("absent")),
-                selected.deployedAt().map(Object::toString).orElse(text("absent")),
-                selected.adoptedAt().map(Object::toString).orElse(text("absent")));
+            text(selected.managed().isPresent() ? "managed" : "external"), selected.server().id(),
+            text(selected.category()), selected.accessUrl().orElse(text("absent")),
+            selected.deployedAt().map(Object::toString).orElse(text("absent")),
+            selected.adoptedAt().map(Object::toString).orElse(text("absent")));
         if (selected.managed().isPresent()) {
             var managed = selected.managed().orElseThrow();
             body += "\n" + managed.state() + "\n" + managed.revisionSha256() + "\n"
-                    + managed.bindings().stream()
-                            .map(value -> value.componentId() + " · " + value.kind() + " · " + value.path())
-                            .collect(java.util.stream.Collectors.joining("\n"));
+                + managed.bindings().stream()
+                .map(value -> value.componentId() + " · " + value.kind() + " · " + value.path())
+                .collect(java.util.stream.Collectors.joining("\n"));
         } else {
             var external = selected.external().orElseThrow();
             body += "\n" + external.target().kind() + "\n" + external.target().identity() + "\n"
-                    + external.target().fingerprint() + "\n" + external.target().state();
+                + external.target().fingerprint() + "\n" + external.target().state();
         }
         details.putClientProperty("inventory.body", body);
         details.putClientProperty("inventory.key", selected.key());
@@ -444,14 +488,14 @@ public final class DeploymentApplicationsPage implements ModPage {
      * @param key original selected entry identity or absence / 原所选条目身份或无值 */
     private void filter(String key) {
         Optional<String> category = Optional.ofNullable((String) categories.getSelectedItem())
-                .filter(value -> !value.equals("ALL"));
+            .filter(value -> !value.equals("ALL"));
         var server = Optional
-                .ofNullable((gold.debug.windowstolinux.appapi.server.ServerRef) serverFilter.getSelectedItem());
+            .ofNullable((gold.debug.windowstolinux.appapi.server.ServerRef) serverFilter.getSelectedItem());
         var values = inventory.stream().filter(value -> value.matches(category, server)).toList();
         applications.putClientProperty("inventory.loading", true);
-        applications.removeAllItems();
-        values.forEach(applications::addItem);
-        applications.setSelectedItem(values.stream().filter(value -> value.key().equals(key)).findFirst().orElse(null));
+        applications.setListData(values.toArray(DeploymentApplicationInventory.Entry[]::new));
+        applications.setSelectedValue(values.stream().filter(value -> value.key().equals(key)).findFirst().orElse(null),
+            true);
         applications.putClientProperty("inventory.loading", false);
         showSelection();
     }
@@ -469,6 +513,7 @@ public final class DeploymentApplicationsPage implements ModPage {
             }
         });
     }
+
     /** Owned admission callback whose actual handle is retained by the page. / 页面保留实际句柄的所属准入回调。
      * @param <T> original task result type / 原任务结果类型 */
     private interface Submission<T> {
@@ -477,6 +522,7 @@ public final class DeploymentApplicationsPage implements ModPage {
          * @throws ApiException if admission fails / 准入失败时 */
         TaskHandle<T> submit() throws ApiException;
     }
+
     /** Performs worker admission and routes only the original completion onto the EDT. / 执行工作线程准入并仅将原完成路由到EDT。
      * @param <T> original task result type / 原任务结果类型
      * @param submission original admission callback / 原准入回调
@@ -509,7 +555,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                         completed.accept(result.value().orElseThrow());
                     else
                         details.append(
-                                "\n" + result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse(""));
+                            "\n" + result.outcome() + " · " + result.problem().map(Problem::eventCode).orElse(""));
                 }));
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(() -> {
@@ -528,6 +574,7 @@ public final class DeploymentApplicationsPage implements ModPage {
      * @param action original EDT action / 原EDT动作 */
     private void button(JPanel parent, String key, Runnable action) {
         var button = new JButton();
+        button.setName("applications." + key);
         keys.put(button, key);
         controls.add(button);
         parent.add(button);
@@ -539,12 +586,13 @@ public final class DeploymentApplicationsPage implements ModPage {
     private void locale(UiEnvironment environment) {
         locked = environment.locked();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-applications-page",
-                environment.locale());
+            environment.locale());
     }
 
     /** Applies the current locale to every original action. / 将当前语言应用到每个原动作。 */
     private void localize() {
         keys.forEach((button, key) -> button.setText(text(key)));
+        DeploymentPageStyle.refresh(root, messages);
         categories.setToolTipText(text("categoryFilter"));
         serverFilter.setToolTipText(text("serverFilter"));
         categories.getAccessibleContext().setAccessibleName(text("categoryFilter"));
@@ -553,7 +601,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         serverFilter.repaint();
         applications.repaint();
         if (selected() != null && details.getClientProperty("inventory.body") instanceof String body
-                && details.getText().startsWith(body))
+            && details.getText().startsWith(body))
             showSelection();
         availability();
     }
@@ -561,7 +609,7 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Applies current lock, submission and page-close gates to all controls. / 将当前锁、提交及页面关闭门槛应用到全部控件。 */
     private void availability() {
         controls.forEach(
-                button -> button.setEnabled(!closed && !locked && (!busy || keys.get(button).equals("cancel"))));
+            button -> button.setEnabled(!closed && !locked && (!busy || keys.get(button).equals("cancel"))));
         var selected = selected();
         keys.forEach((button, key) -> {
             if (key.equals("history"))
@@ -609,6 +657,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("EDT required");
     }
+
     /** Immutable selected retained history. / 不可变所选保留历史。
      * @param id exact original release identity / 精确原发布身份
      * @param description original display description / 原展示描述 */

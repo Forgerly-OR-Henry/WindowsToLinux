@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.app.mod.process;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ProcessMessage;
+
 import static gold.debug.windowstolinux.app.mod.process.ProcessProtocol.Kind;
 
 import java.io.*;
@@ -8,7 +16,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Owns one real child's bounded protocol transport; the host owns admission and durable leases. / 持有一个真实子进程的有界协议传输；宿主负责准入和持久占用。 */
 public final class ProcessChannel implements ManagedProcess {
@@ -81,14 +89,14 @@ public final class ProcessChannel implements ManagedProcess {
      * @throws ApiException if readiness cannot be confirmed / 无法确认就绪时 */
     public void handshake(String owner, String version, Duration timeout) throws ApiException {
         if (owner == null || owner.isBlank() || version == null || version.isBlank() || timeout == null
-                || timeout.compareTo(Duration.ofSeconds(1)) < 0 || timeout.compareTo(Duration.ofSeconds(60)) > 0)
+            || timeout.compareTo(Duration.ofSeconds(1)) < 0 || timeout.compareTo(Duration.ofSeconds(60)) > 0)
             throw error(ProblemCode.INVALID_INPUT, "PROCESS_HELLO", "Invalid process handshake");
         synchronized (this) {
             if (helloSent || stopping || failed)
                 throw error(ProblemCode.UNAVAILABLE, "PROCESS_HELLO", "Process handshake is unavailable");
             try {
                 String payload = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .writeValueAsString(Map.of("ownerId", owner, "ownerVersion", version));
+                    .writeValueAsString(Map.of("ownerId", owner, "ownerVersion", version));
                 enqueue(new ProcessProtocol.Frame(id, task, helloId, Kind.HELLO, "wtl.process", payload));
                 helloSent = true;
             } catch (IOException invalid) {
@@ -104,7 +112,7 @@ public final class ProcessChannel implements ManagedProcess {
         } catch (ExecutionException | TimeoutException unavailable) {
             fail("PROCESS_HANDSHAKE_UNCONFIRMED", false);
             throw error(ProblemCode.UNAVAILABLE, "PROCESS_HANDSHAKE_UNCONFIRMED",
-                    "Process readiness remains unconfirmed");
+                "Process readiness remains unconfirmed");
         }
     }
 
@@ -122,7 +130,7 @@ public final class ProcessChannel implements ManagedProcess {
      * @throws ApiException if admission, payload or capacity is invalid / 准入、载荷或容量无效时 */
     @Override
     public synchronized CompletionStage<OperationResult<ProcessMessage>> request(ProcessMessage message,
-            Duration timeout) throws ApiException {
+                                                                                 Duration timeout) throws ApiException {
         if (!ready.isDone() || ready.isCompletedExceptionally() || stopping || failed || !child.isAlive())
             throw error(ProblemCode.UNAVAILABLE, "PROCESS_NOT_READY", "Process is not accepting requests");
         long nanos;
@@ -202,7 +210,7 @@ public final class ProcessChannel implements ManagedProcess {
                 child.getErrorStream().close();
             } catch (IOException failure) {
                 throw error(ProblemCode.IO_FAILURE, "PROCESS_PIPE_CLOSE",
-                        "Process pipe release could not be confirmed");
+                    "Process pipe release could not be confirmed");
             }
             released = true;
         }
@@ -217,7 +225,7 @@ public final class ProcessChannel implements ManagedProcess {
             bytes = ProcessProtocol.encode(frame);
         } catch (IOException invalid) {
             throw error(ProblemCode.INVALID_INPUT, "PROCESS_FRAME_LIMIT",
-                    "Process frame cannot be encoded within its byte limit");
+                "Process frame cannot be encoded within its byte limit");
         }
         if (writerDone || !writes.offer(bytes))
             throw error(ProblemCode.BUSY, "PROCESS_WRITE_LIMIT", "Process writer is unavailable or full");
@@ -255,7 +263,8 @@ public final class ProcessChannel implements ManagedProcess {
             try {
                 child.getInputStream().transferTo(OutputStream.nullOutputStream());
             } catch (IOException ignored) {
-                /* The original protocol failure remains visible. / 原协议失败继续可见。 */ }
+                /* The original protocol failure remains visible. / 原协议失败继续可见。 */
+            }
         } finally {
             stdoutDone = true;
             synchronized (this) {
@@ -273,7 +282,7 @@ public final class ProcessChannel implements ManagedProcess {
             throw new IOException("Process identity mismatch");
         if (frame.kind() == Kind.READY) {
             if (!helloSent || !frame.request().equals(helloId) || !frame.type().equals("wtl.process")
-                    || !frame.payload().equals("{}"))
+                || !frame.payload().equals("{}"))
                 throw new IOException("Invalid readiness");
             ready.complete(null);
             return;
@@ -282,7 +291,7 @@ public final class ProcessChannel implements ManagedProcess {
             throw new IOException("Business frame before readiness");
         if (frame.kind() == Kind.STOPPED) {
             if (!stopSent || !frame.request().equals(stopId) || !frame.type().equals("wtl.process")
-                    || !frame.payload().equals("{}"))
+                || !frame.payload().equals("{}"))
                 throw new IOException("Invalid stop acknowledgement");
             stopped = true;
             return;
@@ -310,7 +319,7 @@ public final class ProcessChannel implements ManagedProcess {
             completed.remove(completed.keySet().iterator().next());
         if (result.outcome() == Outcome.UNKNOWN)
             notifyFailure(problem(ProblemCode.UNKNOWN, "PROCESS_RESULT_UNKNOWN", "Child reported an unknown outcome"),
-                    true);
+                true);
         entry.result.complete(result);
     }
 
@@ -340,7 +349,7 @@ public final class ProcessChannel implements ManagedProcess {
             exit.complete(code);
             if (code != 0)
                 notifyFailure(problem(ProblemCode.IO_FAILURE, "PROCESS_EXIT_NONZERO",
-                        "Auxiliary process exited with code " + code), false);
+                    "Auxiliary process exited with code " + code), false);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             feedback("PROCESS_EXIT_OBSERVATION", false);
@@ -357,14 +366,16 @@ public final class ProcessChannel implements ManagedProcess {
                         try {
                             requestCancel();
                         } catch (ApiException full) {
-                            /* Unsent cancellation remains pending. / 尚未发送的取消保持待处理。 */ }
+                            /* Unsent cancellation remains pending. / 尚未发送的取消保持待处理。 */
+                        }
                     }
                     for (var entry : List.copyOf(pending.values()))
                         if (System.nanoTime() - entry.started >= entry.timeout) {
                             try {
                                 cancel(entry);
                             } catch (ApiException full) {
-                                /* Retry only the unsent CANCEL, never the request. / 仅重试尚未发送的 CANCEL，从不重发请求。 */ }
+                                /* Retry only the unsent CANCEL, never the request. / 仅重试尚未发送的 CANCEL，从不重发请求。 */
+                            }
                             unknown(entry, "PROCESS_REQUEST_TIMEOUT");
                         }
                     if (stopping && System.nanoTime() - stopReported >= Duration.ofSeconds(30).toNanos()) {
@@ -450,7 +461,7 @@ public final class ProcessChannel implements ManagedProcess {
      * @param uncertain whether original requests remain unconfirmed / 原请求是否仍未确认 */
     private void feedback(String event, boolean uncertain) {
         notifyFailure(problem(ProblemCode.IO_FAILURE, event, "Auxiliary process transport requires attention"),
-                uncertain);
+            uncertain);
     }
 
     /** Preserves transport progress even if the host feedback callback fails. / 即使宿主反馈回调失败，仍保留传输进展。
@@ -478,6 +489,7 @@ public final class ProcessChannel implements ManagedProcess {
 
         /** Whether its single CANCEL entered the queue. / 单次 CANCEL 是否进入队列。 */
         private boolean cancelSent;
+
         /** Captures original request identity and deadline. / 捕获原请求身份及期限。
          * @param frame original frame / 原帧
          * @param timeout positive nanoseconds / 正的纳秒数 */

@@ -1,14 +1,20 @@
 package gold.debug.windowstolinux.app.db;
 
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.task.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +36,7 @@ class TaskRecoveryLedgerTest {
             assertEquals(List.of("FILE: sftp:original"), ledger.queries().snapshot(task).blockers());
             assertThrows(SQLException.class, () -> ledger.retain(task, resource));
             assertThrows(SQLException.class, () -> ledger.retain(task, resource,
-                    new ResourceRecovery("sftp.v1", Map.of("temporaryPath", "/other")), false));
+                new ResourceRecovery("sftp.v1", Map.of("temporaryPath", "/other")), false));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);
@@ -55,12 +61,12 @@ class TaskRecoveryLedgerTest {
             var resource = new TaskResource("FILE", "sftp:corrupt", "one", true);
             var lease = ledger.retain(task, resource);
             for (String malformed : List.of("{}", "broken", "{\"release\":\"FUTURE\"}",
-                    "{\"release\":\"EXPLICIT\",\"version\":2,\"protocol\":\"sftp.v1\",\"fields\":{\"path\":\"x\"}}",
-                    "{\"release\":\"EXPLICIT\",\"release\":\"EXPLICIT\",\"version\":1,\"protocol\":\"sftp.v1\",\"fields\":{\"path\":\"x\"}}",
-                    "{\"release\":\"EXPLICIT\"} {}")) {
+                "{\"release\":\"EXPLICIT\",\"version\":2,\"protocol\":\"sftp.v1\",\"fields\":{\"path\":\"x\"}}",
+                "{\"release\":\"EXPLICIT\",\"release\":\"EXPLICIT\",\"version\":1,\"protocol\":\"sftp.v1\",\"fields\":{\"path\":\"x\"}}",
+                "{\"release\":\"EXPLICIT\"} {}")) {
                 try (var c = db.openConnection();
-                        var p = c.prepareStatement(
-                                "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
+                     var p = c.prepareStatement(
+                         "UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
                     p.setString(1, malformed);
                     p.setObject(2, lease);
                     p.executeUpdate();
@@ -71,8 +77,8 @@ class TaskRecoveryLedgerTest {
                 assertThrows(SQLException.class, () -> ledger.retain(task, resource), malformed);
             }
             try (var c = db.openConnection();
-                    var p = c.prepareStatement(
-                            "SELECT lease_id FROM platform_task_resource WHERE task_id=? AND resource_kind='SERVER'")) {
+                 var p = c.prepareStatement(
+                     "SELECT lease_id FROM platform_task_resource WHERE task_id=? AND resource_kind='SERVER'")) {
                 p.setObject(1, task);
                 try (var rows = p.executeQuery()) {
                     assertTrue(rows.next());
@@ -94,13 +100,13 @@ class TaskRecoveryLedgerTest {
             }
             var file = new TaskResource("FILE", "sftp:rejected", "one", true);
             assertThrows(SQLException.class, () -> ledger.retain(task, file,
-                    new ResourceRecovery("sftp.v1", Map.of("path", "/temporary")), false));
+                new ResourceRecovery("sftp.v1", Map.of("path", "/temporary")), false));
             assertEquals(2, new TaskLedgerTest().active(db, task));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT reject_file");
             }
             var huge = new ResourceRecovery("sftp.v1", Map.of("one", "x".repeat(16384), "two", "x".repeat(16384),
-                    "three", "x".repeat(16384), "four", "x".repeat(16384)));
+                "three", "x".repeat(16384), "four", "x".repeat(16384)));
             assertThrows(SQLException.class, () -> ledger.retain(task, file, huge, false));
             assertEquals(2, new TaskLedgerTest().active(db, task));
             assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));

@@ -45,9 +45,9 @@ public final class DeploymentRuntimeArguments {
             case DeploymentRuntimeDefinition.PythonService python ->
                 List.of("python", python.pythonVersion(), python.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeDefinition.StaticSite staticSite -> List.of("static", staticSite.outputDirectory(),
-                    Integer.toString(httpPort(staticSite)), facts.buildTool().name());
+                Integer.toString(httpPort(staticSite)), facts.buildTool().name());
             case DeploymentRuntimeDefinition.Container ignored -> throw new IllegalArgumentException(
-                    "container runtimes require the container-specific release protocol");
+                "container runtimes require the container-specific release protocol");
             case DeploymentRuntimeDefinition.GoService service ->
                 serviceArguments("go", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeDefinition.RustService service ->
@@ -55,17 +55,17 @@ public final class DeploymentRuntimeArguments {
             case DeploymentRuntimeDefinition.DotNetService service ->
                 serviceArguments("dotnet", service.version(), service.artifactName(), service.entrypoint(), null);
             case DeploymentRuntimeDefinition.KotlinService service -> List.of("kotlin", service.jvmTarget(),
-                    service.artifactName(), service.entrypoint(), facts.buildTool().name());
+                service.artifactName(), service.entrypoint(), facts.buildTool().name());
             case DeploymentRuntimeDefinition.PhpService service -> serviceArguments(facts
                     .buildTool() == gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.PHP_CLI
-                            ? "phpcli"
-                            : "php",
-                    service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+                    ? "phpcli"
+                    : "php",
+                service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeDefinition.RubyService service -> serviceArguments(facts
                     .buildTool() == gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType.RUBY_CLI
-                            ? "rubycli"
-                            : "ruby",
-                    service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
+                    ? "rubycli"
+                    : "ruby",
+                service.version(), service.artifactName(), service.entrypoint(), service.servicePort());
             case DeploymentRuntimeDefinition.CmakeService service ->
                 List.of("cmake", service.preset(), service.target(), service.artifactName());
         };
@@ -83,7 +83,7 @@ public final class DeploymentRuntimeArguments {
      * @return the fixed service argument sequence with an optional port value / 包含可选端口值的固定服务参数序列
      */
     private static List<String> serviceArguments(String ecosystem, String version, String artifact, String entrypoint,
-            Integer port) {
+                                                 Integer port) {
         List<String> values = new ArrayList<>(List.of(ecosystem, version, artifact, entrypoint));
         if (port != null)
             values.add(Integer.toString(port));

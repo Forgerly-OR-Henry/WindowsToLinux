@@ -12,7 +12,8 @@ import java.util.*;
  * @param healthJson original versioned application health contract / 原版本化应用健康契约
  * @param createdAt original history creation time / 原历史创建时间 */
 public record DeploymentReleaseRecord(String applicationId, DeploymentReleaseIdentity identity, UUID executionId,
-        DeploymentReleaseState state, String runtimeJson, String healthJson, Instant createdAt) {
+                                      DeploymentReleaseState state, String runtimeJson, String healthJson,
+                                      Instant createdAt) {
     /** Retains original history without replacing observations with current application settings. / 保留原历史，不用当前应用设置替换观测。
      * @param applicationId original application identity / 原应用身份
      * @param identity immutable release identity / 不可变发布身份

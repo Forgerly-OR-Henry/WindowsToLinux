@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSec
  * @param value the typed value / 类型化值
  */
 public record DeploymentConfigurationEntry(String key, DeploymentConfigurationScopeType scope,
-        DeploymentConfigurationValue value) {
+                                           DeploymentConfigurationValue value) {
     /**
      * Validates and binds the inputs required by configuration entry.
      * <p>校验并绑定配置条目所需输入。
@@ -29,18 +29,18 @@ public record DeploymentConfigurationEntry(String key, DeploymentConfigurationSc
         key = Objects.requireNonNull(key, "key").trim();
         if (!key.matches("[A-Z][A-Z0-9_]{0,63}")) {
             throw DeploymentConfigurationException.create("configuration.entry.key-invalid",
-                    "Configuration keys must use uppercase environment-style identifiers");
+                "Configuration keys must use uppercase environment-style identifiers");
         }
         scope = Objects.requireNonNull(scope, "scope");
         value = Objects.requireNonNull(value, "value");
         if (key.endsWith("_PASSWORD") || key.endsWith("_SECRET") || key.endsWith("_TOKEN") || key.endsWith("_KEY")) {
             throw DeploymentConfigurationException.create("configuration.entry.secret-like-key",
-                    "Secret-like keys must use a DeploymentSecretReference");
+                "Secret-like keys must use a DeploymentSecretReference");
         }
         if ("PORT".equals(key) && (!(value instanceof DeploymentConfigurationValue.Number number) || number.value() < 1
-                || number.value() > 65535)) {
+            || number.value() > 65535)) {
             throw DeploymentConfigurationException.create("configuration.entry.port-invalid",
-                    "PORT must be an integer between 1 and 65535");
+                "PORT must be an integer between 1 and 65535");
         }
     }
 }

@@ -19,7 +19,8 @@ public final class DatabaseProjectInspector {
      * <p>用于识别JDBC 数据源声明的匹配模式。
      */
     private static final Pattern JDBC = Pattern.compile(
-            "jdbc:(postgresql|mysql|mariadb)://([^/\\s]+)/(\\$\\{[^}]+}|[A-Za-z0-9_]+)", Pattern.CASE_INSENSITIVE);
+        "jdbc:(postgresql|mysql|mariadb)://([^/\\s]+)/(\\$\\{[^}]+}|[A-Za-z0-9_]+)", Pattern.CASE_INSENSITIVE);
+
     /**
      * Collects inferred database declarations and their unresolved review findings.
      * <p>汇总推断的数据库声明及其尚未解决的审阅发现。
@@ -31,7 +32,8 @@ public final class DatabaseProjectInspector {
      * @param endpointConfirmationRequired endpoint confirmation required / 端点确认必需
      */
     public record Assessment(List<DatabaseRequirement> databases, List<String> sqlCandidates,
-            boolean schemaReviewRequired, boolean unknownDatabase, boolean endpointConfirmationRequired) {
+                             boolean schemaReviewRequired, boolean unknownDatabase,
+                             boolean endpointConfirmationRequired) {
         /**
          * Binds the supplied dependencies and state for assessment.
          * <p>为评估绑定传入的依赖及状态。
@@ -57,10 +59,11 @@ public final class DatabaseProjectInspector {
          * @param unknownDatabase unknown database / 未知数据库
          */
         public Assessment(List<DatabaseRequirement> databases, List<String> sqlCandidates, boolean schemaReviewRequired,
-                boolean unknownDatabase) {
+                          boolean unknownDatabase) {
             this(databases, sqlCandidates, schemaReviewRequired, unknownDatabase, false);
         }
     }
+
     /**
      * Reads bounded source metadata and explicit database declarations, producing database requirements, SQL candidates and unresolved review obligations without executing source.
      * <p>读取有界源码元数据及显式数据库声明，生成数据库要求、SQL 候选及未解决审阅义务，不执行源码。
@@ -86,8 +89,8 @@ public final class DatabaseProjectInspector {
                     continue;
                 Path relative = root.relativize(file);
                 if (java.util.stream.StreamSupport.stream(relative.spliterator(), false)
-                        .anyMatch(part -> Set.of("node_modules", "target", "build", "dist", ".git", ".venv", "vendor",
-                                "test", "tests", "docs", "examples").contains(part.toString())))
+                    .anyMatch(part -> Set.of("node_modules", "target", "build", "dist", ".git", ".venv", "vendor",
+                        "test", "tests", "docs", "examples").contains(part.toString())))
                     continue;
                 String name = file.getFileName().toString();
                 if (name.endsWith(".sql") && sql.size() < 64)
@@ -101,9 +104,9 @@ public final class DatabaseProjectInspector {
         }
         String text = scanned.toString();
         boolean schema = new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.contract.policy.SourceMutationPolicy()
-                .requiresReview(
-                        new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts(
-                                0, sql.stream().map(Path::of).toList(), text));
+            .requiresReview(
+                new gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts(
+                    0, sql.stream().map(Path::of).toList(), text));
         if (Files.isRegularFile(declaration)) {
             if (Files.size(declaration) > 65536)
                 throw new IOException("database declaration exceeds limits");
@@ -115,30 +118,30 @@ public final class DatabaseProjectInspector {
                     continue;
                 String prefix = "db." + id + ".";
                 DeploymentDatabaseEngineType engine = DeploymentDatabaseEngineType
-                        .valueOf(properties.getProperty(prefix + "engine", "").toUpperCase(Locale.ROOT));
+                    .valueOf(properties.getProperty(prefix + "engine", "").toUpperCase(Locale.ROOT));
                 databases.add(new DatabaseRequirement(id, engine,
-                        properties.getProperty(prefix + "version", defaultVersion(engine)),
-                        properties.getProperty(prefix + "database", ""),
-                        properties.getProperty(prefix + "username", ""),
-                        properties.getProperty(prefix + "environmentPrefix", ""),
-                        properties.getProperty(prefix + "passwordEnvironment", ""),
-                        Arrays.stream(properties.getProperty(prefix + "initialize", "").split(",")).map(String::trim)
-                                .filter(value -> !value.isEmpty()).toList(),
-                        Boolean.parseBoolean(properties.getProperty(prefix + "springDatasource", "false")),
-                        "windowstolinux-db.properties#" + prefix,
-                        engine == DeploymentDatabaseEngineType.SQLITE
-                                ? Optional.of(sqliteDeclaration(properties, prefix))
-                                : Optional.empty()));
+                    properties.getProperty(prefix + "version", defaultVersion(engine)),
+                    properties.getProperty(prefix + "database", ""),
+                    properties.getProperty(prefix + "username", ""),
+                    properties.getProperty(prefix + "environmentPrefix", ""),
+                    properties.getProperty(prefix + "passwordEnvironment", ""),
+                    Arrays.stream(properties.getProperty(prefix + "initialize", "").split(",")).map(String::trim)
+                        .filter(value -> !value.isEmpty()).toList(),
+                    Boolean.parseBoolean(properties.getProperty(prefix + "springDatasource", "false")),
+                    "windowstolinux-db.properties#" + prefix,
+                    engine == DeploymentDatabaseEngineType.SQLITE
+                        ? Optional.of(sqliteDeclaration(properties, prefix))
+                        : Optional.empty()));
             }
             if (databases.isEmpty() || databases.size() > 16
-                    || databases.stream().map(DatabaseRequirement::id).distinct().count() != databases.size())
+                || databases.stream().map(DatabaseRequirement::id).distinct().count() != databases.size())
                 throw new IOException("database declarations must be nonempty, unique and bounded");
         } else {
             var jdbc = JDBC.matcher(text);
             Set<String> observed = new LinkedHashSet<>();
             while (jdbc.find()) {
                 String family = jdbc.group(1).toUpperCase(Locale.ROOT), endpoint = jdbc.group(2),
-                        database = jdbc.group(3);
+                    database = jdbc.group(3);
                 if (!observed.add(family + ":" + endpoint + "/" + database))
                     continue;
                 // External or templated hosts need an explicit DB binding; native installation is never redirected to them. / 外部或模板主机需要显式数据库绑定，原生安装绝不重定向到这些主机。
@@ -148,25 +151,25 @@ public final class DatabaseProjectInspector {
                 String name = database.matches("[a-z][a-z0-9_]{0,62}") ? database : "";
                 boolean spring = text.contains("spring.datasource") || text.contains("spring-boot");
                 List<String> initialization = spring
-                        && Pattern.compile("(?:spring\\.sql\\.init\\.mode|sql:\\s+init:\\s+mode)\\s*[=:]\\s*always")
-                                .matcher(text).find()
-                                        ? sql.stream()
-                                                .filter(path -> Set.of("schema.sql", "data.sql")
-                                                        .contains(Path.of(path).getFileName().toString()))
-                                                .sorted(java.util.Comparator
-                                                        .comparingInt(path -> path.endsWith("data.sql") ? 1 : 0))
-                                                .toList()
-                                        : List.of();
+                    && Pattern.compile("(?:spring\\.sql\\.init\\.mode|sql:\\s+init:\\s+mode)\\s*[=:]\\s*always")
+                    .matcher(text).find()
+                    ? sql.stream()
+                    .filter(path -> Set.of("schema.sql", "data.sql")
+                        .contains(Path.of(path).getFileName().toString()))
+                    .sorted(java.util.Comparator
+                        .comparingInt(path -> path.endsWith("data.sql") ? 1 : 0))
+                    .toList()
+                    : List.of();
                 if (initialization.stream().map(path -> Path.of(path).getFileName()).distinct()
-                        .count() != initialization.size())
+                    .count() != initialization.size())
                     initialization = List.of();
                 var username = Pattern
-                        .compile("spring\\.datasource\\.username\\s*[=:]\\s*([a-z][a-z0-9_]{0,62})\\s*(?:\\n|$)")
-                        .matcher(text);
+                    .compile("spring\\.datasource\\.username\\s*[=:]\\s*([a-z][a-z0-9_]{0,62})\\s*(?:\\n|$)")
+                    .matcher(text);
                 databases.add(new DatabaseRequirement("sql" + (databases.size() + 1), engine, "", name,
-                        username.find() ? username.group(1) : "", spring ? "SPRING_DATASOURCE" : "",
-                        spring ? "SPRING_DATASOURCE_PASSWORD" : "", initialization, spring,
-                        "JDBC endpoint declaration"));
+                    username.find() ? username.group(1) : "", spring ? "SPRING_DATASOURCE" : "",
+                    spring ? "SPRING_DATASOURCE_PASSWORD" : "", initialization, spring,
+                    "JDBC endpoint declaration"));
             }
             databases.addAll(sqliteDatasources(text));
             if (Pattern.compile("(?:spring\\.(?:data\\.)?redis\\.|redis://|rediss://)").matcher(text).find()) {
@@ -177,16 +180,16 @@ public final class DatabaseProjectInspector {
                 if (host.find() && !Set.of("localhost", "127.0.0.1").contains(host.group(1)))
                     endpointConfirmation = true;
                 String prefix = text.contains("spring.data.redis.")
-                        ? "SPRING_DATA_REDIS"
-                        : text.contains("spring.redis.") ? "SPRING_REDIS" : "";
+                    ? "SPRING_DATA_REDIS"
+                    : text.contains("spring.redis.") ? "SPRING_REDIS" : "";
                 databases.add(new DatabaseRequirement("redis", DeploymentDatabaseEngineType.REDIS,
-                        defaultVersion(DeploymentDatabaseEngineType.REDIS), "", "", prefix,
-                        prefix.isEmpty() ? "" : prefix + "_PASSWORD", List.of(), false, "Redis endpoint declaration"));
+                    defaultVersion(DeploymentDatabaseEngineType.REDIS), "", "", prefix,
+                    prefix.isEmpty() ? "" : prefix + "_PASSWORD", List.of(), false, "Redis endpoint declaration"));
             }
         }
         return new Assessment(databases, sql, schema,
-                databases.isEmpty() && (schema || text.contains("sqlite") && !text.contains(":memory:")),
-                endpointConfirmation);
+            databases.isEmpty() && (schema || text.contains("sqlite") && !text.contains(":memory:")),
+            endpointConfirmation);
     }
 
     /**
@@ -200,7 +203,7 @@ public final class DatabaseProjectInspector {
     private static List<DatabaseRequirement> sqliteDatasources(String text) throws IOException {
         List<DatabaseRequirement> databases = new ArrayList<>();
         var sqlite = Pattern.compile("(?m)^\\s*spring\\.datasource\\.url\\s*[=:]\\s*jdbc:sqlite:([^\\r\\n]+)")
-                .matcher(text);
+            .matcher(text);
         Set<String> sqlitePaths = new LinkedHashSet<>();
         while (sqlite.find())
             sqlitePaths.add(sqlite.group(1).trim());
@@ -210,8 +213,8 @@ public final class DatabaseProjectInspector {
             if (path.equals(":memory:"))
                 continue;
             databases.add(new DatabaseRequirement("sqlite", DeploymentDatabaseEngineType.SQLITE, "", "", "", "", "",
-                    List.of(), true, "Spring SQLite datasource",
-                    Optional.of(DeploymentSqliteRequirement.fromPath(path, "SPRING_DATASOURCE_URL", ""))));
+                List.of(), true, "Spring SQLite datasource",
+                Optional.of(DeploymentSqliteRequirement.fromPath(path, "SPRING_DATASOURCE_URL", ""))));
         }
         return databases;
     }
@@ -226,15 +229,15 @@ public final class DatabaseProjectInspector {
      */
     private static DeploymentSqliteRequirement sqliteDeclaration(Properties properties, String prefix) {
         var file = DeploymentSqliteRequirement.fromPath(properties.getProperty(prefix + "path"),
-                properties.getProperty(prefix + "pathEnvironment", ""), properties.getProperty(prefix + "seed", ""));
+            properties.getProperty(prefix + "pathEnvironment", ""), properties.getProperty(prefix + "seed", ""));
         if (!properties.containsKey(prefix + "hostLocation"))
             return file;
         var location = new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
-                        .valueOf(properties.getProperty(prefix + "hostLocation")),
-                properties.getProperty(prefix + "hostPath", ""));
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType
+                .valueOf(properties.getProperty(prefix + "hostLocation")),
+            properties.getProperty(prefix + "hostPath", ""));
         return new DeploymentSqliteRequirement(location, file.fileName(), file.accessPath(), file.pathEnvironment(),
-                file.seedFile(), true);
+            file.seedFile(), true);
     }
 
     /**
@@ -252,15 +255,15 @@ public final class DatabaseProjectInspector {
             if (file.hostLocationExplicit() || !file.accessPath().startsWith("/"))
                 return database;
             var host = new DeploymentSqliteRequirement(
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.defaults(),
-                    file.fileName(), file.accessPath(), file.pathEnvironment(), file.seedFile(), true);
+                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.defaults(),
+                file.fileName(), file.accessPath(), file.pathEnvironment(), file.seedFile(), true);
             return new DatabaseRequirement(database.id(), database.engine(), database.version(), database.database(),
-                    database.username(), database.environmentPrefix(), database.passwordEnvironment(),
-                    database.initializationFiles(), database.springDatasource(), database.evidence(),
-                    Optional.of(host));
+                database.username(), database.environmentPrefix(), database.passwordEnvironment(),
+                database.initializationFiles(), database.springDatasource(), database.evidence(),
+                Optional.of(host));
         }).toList();
         return new Assessment(databases, assessment.sqlCandidates(), assessment.schemaReviewRequired(),
-                assessment.unknownDatabase(), assessment.endpointConfirmationRequired());
+            assessment.unknownDatabase(), assessment.endpointConfirmationRequired());
     }
 
     /**

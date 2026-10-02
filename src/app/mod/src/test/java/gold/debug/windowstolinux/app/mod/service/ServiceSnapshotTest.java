@@ -30,10 +30,10 @@ class ServiceSnapshotTest {
         var cycle = new ArrayList<>();
         cycle.add(cycle);
         for (var value : List.of(CompletableFuture.completedFuture("done"), new Object(), cycle,
-                Collections.nCopies(4097, "x"), "x".repeat(1024 * 1024 + 1)))
+            Collections.nCopies(4097, "x"), "x".repeat(1024 * 1024 + 1)))
             assertThrows(IllegalArgumentException.class, () -> ServiceSnapshot.copy(value, type -> true));
         assertThrows(IllegalArgumentException.class,
-                () -> ServiceSnapshot.copy(new Snapshot(List.of()), type -> false));
+            () -> ServiceSnapshot.copy(new Snapshot(List.of()), type -> false));
     }
 
     @Test
@@ -41,7 +41,7 @@ class ServiceSnapshotTest {
         byte[] original = new byte[16 * 1024 * 1024];
         original[0] = 7;
         var copied = (BinarySnapshot) ServiceSnapshot.copy(new BinarySnapshot(original),
-                type -> type == BinarySnapshot.class);
+            type -> type == BinarySnapshot.class);
         original[0] = 3;
         assertEquals(7, copied.runtime()[0]);
         assertNotSame(original, copied.runtime());
@@ -51,8 +51,8 @@ class ServiceSnapshotTest {
         assertNotSame(copied.runtime(), returned.runtime());
         byte[] shared = new byte[8 * 1024 * 1024 + 1];
         assertThrows(IllegalArgumentException.class,
-                () -> ServiceSnapshot.copy(List.of(new BinarySnapshot(shared), new BinarySnapshot(shared)),
-                        type -> type == BinarySnapshot.class));
+            () -> ServiceSnapshot.copy(List.of(new BinarySnapshot(shared), new BinarySnapshot(shared)),
+                type -> type == BinarySnapshot.class));
         assertThrows(IllegalArgumentException.class, () -> ServiceSnapshot.copy(new char[1], type -> true));
     }
 }

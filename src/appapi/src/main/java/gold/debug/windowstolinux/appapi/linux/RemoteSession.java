@@ -33,6 +33,15 @@ public interface RemoteSession extends AutoCloseable {
      */
     OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant) throws ApiException;
 
+    /** Uploads with an explicit conflict choice covered by the exact approval. / 按精确审批覆盖的显式冲突选择上传。
+     * @param request bounded request / 有界请求
+     * @param grant original single-use approval / 原单次审批
+     * @param choice explicit conflict decision / 明确冲突决定
+     * @return actual transfer observation / 实际传输观察
+     * @throws ApiException if approval, input or transfer fails / 审批、输入或传输失败时
+     */
+    OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException;
+
     /**
      * Receives bounded content under the reviewed task authorization. / 在已审核任务授权下接收有界内容。
      * @param request immutable capability request / 不可变的能力请求
@@ -41,6 +50,15 @@ public interface RemoteSession extends AutoCloseable {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException;
+
+    /** Downloads with an explicit conflict choice covered by the exact approval. / 按精确审批覆盖的显式冲突选择下载。
+     * @param request bounded request / 有界请求
+     * @param grant original single-use approval / 原单次审批
+     * @param choice explicit conflict decision / 明确冲突决定
+     * @return actual transfer observation / 实际传输观察
+     * @throws ApiException if approval, input or transfer fails / 审批、输入或传输失败时
+     */
+    OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException;
 
     /** Reconciles or resumes one original transfer after source and staging verification. / 核验源及暂存内容后核对或续传一次原传输。
      * @param transferId original checkpoint owned by this task / 此任务所属的原检查点

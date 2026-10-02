@@ -22,6 +22,16 @@ public interface ServerService {
      */
     PageSlice<ServerInfo> list(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
 
+    /** Reads the first bounded admitted-server page. / 读取已准入服务器的第一页有界数据。
+     * @param limit existing bounded page capacity / 现有有界页容量
+     * @param task authentic task / 真实任务
+     * @return first page under the original server-use rules / 原服务器使用规则下的第一页
+     * @throws ApiException if input or access is invalid / 输入或访问无效时
+     */
+    default PageSlice<ServerInfo> list(int limit, TaskContext task) throws ApiException {
+        return list(Optional.empty(), limit, task);
+    }
+
     /** Lists saved non-secret server summaries for selection only; actual server operations require explicit admission of the selected server. / 仅为选择列出已保存的非秘密服务器摘要；实际服务器操作仍须明确准入所选服务器。
      * @param cursor optional discovery-only cursor bound to this task / 绑定当前任务的可选发现专用游标
      * @param limit page size from one to two hundred / 一到二百之间的页容量
@@ -29,6 +39,16 @@ public interface ServerService {
      * @return bounded saved summaries without server-use authority / 不含服务器使用授权的有界摘要
      * @throws ApiException if owner, task or storage is unavailable / 所属者、任务或存储不可用时 */
     PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
+
+    /** Reads the first discovery-only page without server-use authority. / 读取仅供发现的第一页，不授予服务器使用权。
+     * @param limit existing bounded page capacity / 现有有界页容量
+     * @param task authentic task / 真实任务
+     * @return first discovery page / 第一页发现数据
+     * @throws ApiException if input or access is invalid / 输入或访问无效时
+     */
+    default PageSlice<ServerInfo> listConfigured(int limit, TaskContext task) throws ApiException {
+        return listConfigured(Optional.empty(), limit, task);
+    }
 
     /**
      * Reads the authorized non-secret configuration snapshot. / 读取授权范围内的不含秘密配置快照。

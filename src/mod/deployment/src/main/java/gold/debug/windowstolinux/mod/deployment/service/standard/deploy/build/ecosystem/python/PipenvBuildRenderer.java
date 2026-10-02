@@ -48,9 +48,9 @@ public final class PipenvBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         return PythonArchitectureBuildRenderer.render(DeploymentBuildToolType.PIPENV_LOCKED, facts, runtime, workspace,
-                limits, "pipenv", "test -f ./Pipfile\ntest -f ./Pipfile.lock\n"
-                        + "run pipenv verify\nexport PIPENV_IGNORE_VIRTUALENVS=0\nrun pipenv sync");
+            limits, "pipenv", "test -f ./Pipfile\ntest -f ./Pipfile.lock\n"
+                + "run pipenv verify\nexport PIPENV_IGNORE_VIRTUALENVS=0\nrun pipenv sync");
     }
 }

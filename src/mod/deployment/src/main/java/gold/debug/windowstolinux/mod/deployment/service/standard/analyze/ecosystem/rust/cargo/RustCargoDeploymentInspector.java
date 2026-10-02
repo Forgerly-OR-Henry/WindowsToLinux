@@ -25,14 +25,14 @@ public final class RustCargoDeploymentInspector implements DeploymentTypeInspect
      * <p>用于识别RUST版本的匹配模式。
      */
     private static final Pattern RUST_VERSION = Pattern
-            .compile("(?:channel\\s*=\\s*[\"']|^)([A-Za-z0-9][A-Za-z0-9._+-]*)[\"']?", Pattern.MULTILINE);
+        .compile("(?:channel\\s*=\\s*[\"']|^)([A-Za-z0-9][A-Za-z0-9._+-]*)[\"']?", Pattern.MULTILINE);
 
     /**
      * Pattern recognizing CRATE NAME.
      * <p>用于识别CRATE名称的匹配模式。
      */
     private static final Pattern CRATE_NAME = Pattern
-            .compile("(?m)^name\\s*=\\s*[\"']([A-Za-z0-9][A-Za-z0-9._-]{0,127})[\"']");
+        .compile("(?m)^name\\s*=\\s*[\"']([A-Za-z0-9][A-Za-z0-9._-]{0,127})[\"']");
 
     /**
      * Returns the supported project category handled by this strategy.
@@ -58,17 +58,17 @@ public final class RustCargoDeploymentInspector implements DeploymentTypeInspect
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         RustCargoFacts facts = new RustCargoFacts(
-                ServiceMetadataInspector.match(
-                        ServiceMetadataInspector.readIfPresent(root.resolve("rust-toolchain.toml")), RUST_VERSION),
-                ServiceMetadataInspector.match(ServiceMetadataInspector.readIfPresent(root.resolve("Cargo.toml")),
-                        CRATE_NAME),
-                ServiceMetadataInspector.missing(root, "Cargo.toml", "Cargo.lock", "src/main.rs",
-                        "rust-toolchain.toml"));
+            ServiceMetadataInspector.match(
+                ServiceMetadataInspector.readIfPresent(root.resolve("rust-toolchain.toml")), RUST_VERSION),
+            ServiceMetadataInspector.match(ServiceMetadataInspector.readIfPresent(root.resolve("Cargo.toml")),
+                CRATE_NAME),
+            ServiceMetadataInspector.missing(root, "Cargo.toml", "Cargo.lock", "src/main.rs",
+                "rust-toolchain.toml"));
         ServiceProjectFacts shape = new ServiceProjectFacts("Cargo.toml", facts.version(), facts.crateName(),
-                ServiceMetadataInspector.present(root, "src/main.rs") ? "src/main.rs" : null, facts.missingFiles());
+            ServiceMetadataInspector.present(root, "src/main.rs") ? "src/main.rs" : null, facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.CARGO_LOCKED, languageFacts, shape, false);
+            DeploymentBuildToolType.CARGO_LOCKED, languageFacts, shape, false);
     }
 }

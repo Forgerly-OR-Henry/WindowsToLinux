@@ -15,7 +15,7 @@ class ServiceMetadataInspectorTest {
     @Test
     void runtimeEntryDeclarationDoesNotRequireReplacingTheBundlerLaunchCommand() throws Exception {
         Files.writeString(root.resolve("windowstolinux-application.properties"),
-                "runtime.secondary=server.rb\ncommand.entrypoint=client.rb\n");
+            "runtime.secondary=server.rb\ncommand.entrypoint=client.rb\n");
         assertEquals("server.rb", ServiceMetadataInspector.applicationEntrypoint(root, "config.ru"));
     }
 
@@ -30,6 +30,6 @@ class ServiceMetadataInspectorTest {
     void rejectsDeclaredRuntimePathsOutsideTheSource() throws Exception {
         Files.writeString(root.resolve("windowstolinux-application.properties"), "runtime.secondary=../server.rb\n");
         assertThrows(IllegalArgumentException.class,
-                () -> ServiceMetadataInspector.applicationEntrypoint(root, "config.ru"));
+            () -> ServiceMetadataInspector.applicationEntrypoint(root, "config.ru"));
     }
 }

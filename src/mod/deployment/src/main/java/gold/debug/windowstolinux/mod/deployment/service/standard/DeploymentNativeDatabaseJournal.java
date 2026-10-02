@@ -27,11 +27,11 @@ public final class DeploymentNativeDatabaseJournal {
 
     /** Strict checkpoint codec. / 严格的检查点编解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Exact persisted field set. / 精确的持久字段集合。 */
     private static final Set<String> FIELDS = Set.of("formatVersion", "taskId", "serverId", "operationId", "action",
-            "targetDigest", "requestDigest", "target", "phase", "effectBoundary", "effectsObserved", "effectTargets");
+        "targetDigest", "requestDigest", "target", "phase", "effectBoundary", "effectsObserved", "effectTargets");
 
     /** Exact original checkpoint. / 精确原检查点。 */
     private final TaskCheckpoint checkpoint;
@@ -51,7 +51,8 @@ public final class DeploymentNativeDatabaseJournal {
      * @param effectsObserved whether this task may have produced a native DB effect / 本任务是否可能产生原生数据库效果
      * @param effectTargets bounded targets of settled earlier effects / 已结清先前效果的有界目标 */
     public record Facts(String serverId, UUID operationId, String action, String targetDigest, String requestDigest,
-            String target, String phase, String effectBoundary, boolean effectsObserved, List<String> effectTargets) {
+                        String target, String phase, String effectBoundary, boolean effectsObserved,
+                        List<String> effectTargets) {
         /** Requires a complete bounded original identity. / 要求完整有界原身份。
          * @param serverId exact server / 精确服务器
          * @param operationId original operation UUID / 原操作 UUID
@@ -65,21 +66,21 @@ public final class DeploymentNativeDatabaseJournal {
          * @param effectTargets settled earlier targets / 已结清先前目标 */
         public Facts {
             if (serverId == null || serverId.isBlank() || serverId.length() > 512
-                    || serverId.chars().anyMatch(value -> value < 32) || operationId == null
-                    || !Set.of("install", "start", "resume", "prepare", "initialize").contains(action)
-                    || targetDigest == null || !targetDigest.matches("[0-9a-f]{64}") || requestDigest == null
-                    || !requestDigest.matches("[0-9a-f]{64}") || target == null || target.isBlank()
-                    || target.length() > 256 || !Set.of("INTENT", "DISPATCHED", "SUCCEEDED", "FAILED").contains(phase)
-                    || !Set.of("NONE", "MAY_HAVE_RUN", "CONFIRMED").contains(effectBoundary)
-                    || "INTENT".equals(phase) && !"NONE".equals(effectBoundary)
-                    || "DISPATCHED".equals(phase) && !"MAY_HAVE_RUN".equals(effectBoundary)
-                    || "SUCCEEDED".equals(phase) && !"CONFIRMED".equals(effectBoundary)
-                    || "FAILED".equals(phase) && "CONFIRMED".equals(effectBoundary) || effectTargets == null
-                    || effectTargets.size() > 64
-                    || effectTargets.stream()
-                            .anyMatch(value -> value == null || value.isBlank() || value.length() > 256)
-                    || effectTargets.stream().mapToInt(String::length).sum() > 4096
-                    || effectsObserved != !effectTargets.isEmpty())
+                || serverId.chars().anyMatch(value -> value < 32) || operationId == null
+                || !Set.of("install", "start", "resume", "prepare", "initialize").contains(action)
+                || targetDigest == null || !targetDigest.matches("[0-9a-f]{64}") || requestDigest == null
+                || !requestDigest.matches("[0-9a-f]{64}") || target == null || target.isBlank()
+                || target.length() > 256 || !Set.of("INTENT", "DISPATCHED", "SUCCEEDED", "FAILED").contains(phase)
+                || !Set.of("NONE", "MAY_HAVE_RUN", "CONFIRMED").contains(effectBoundary)
+                || "INTENT".equals(phase) && !"NONE".equals(effectBoundary)
+                || "DISPATCHED".equals(phase) && !"MAY_HAVE_RUN".equals(effectBoundary)
+                || "SUCCEEDED".equals(phase) && !"CONFIRMED".equals(effectBoundary)
+                || "FAILED".equals(phase) && "CONFIRMED".equals(effectBoundary) || effectTargets == null
+                || effectTargets.size() > 64
+                || effectTargets.stream()
+                .anyMatch(value -> value == null || value.isBlank() || value.length() > 256)
+                || effectTargets.stream().mapToInt(String::length).sum() > 4096
+                || effectsObserved != !effectTargets.isEmpty())
                 throw new IllegalArgumentException("Incomplete native database operation identity");
             effectTargets = List.copyOf(effectTargets);
         }
@@ -105,8 +106,8 @@ public final class DeploymentNativeDatabaseJournal {
      * @return retained journal / 保留的日志
      * @throws ApiException if original persistence fails / 原持久化失败时 */
     public static DeploymentNativeDatabaseJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            UUID operationId, String action, String targetDigest, String requestDigest, String target)
-            throws ApiException {
+                                                        UUID operationId, String action, String targetDigest, String requestDigest, String target)
+        throws ApiException {
         return begin(tasks, task, server, KEY, operationId, action, targetDigest, requestDigest, target);
     }
 
@@ -123,14 +124,14 @@ public final class DeploymentNativeDatabaseJournal {
      * @return retained journal / 保留的日志
      * @throws ApiException if original persistence fails / 原持久化失败时 */
     public static DeploymentNativeDatabaseJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            String key, UUID operationId, String action, String targetDigest, String requestDigest, String target)
-            throws ApiException {
+                                                        String key, UUID operationId, String action, String targetDigest, String requestDigest, String target)
+        throws ApiException {
         checkedKey(key);
         var facts = new Facts(server.id(), operationId, action, targetDigest, requestDigest, target, "INTENT", "NONE",
-                false, List.of());
+            false, List.of());
         requireTerminalCapacity(task.id(), facts);
         return new DeploymentNativeDatabaseJournal(tasks.beginCheckpoint(task, key, encode(task.id(), facts)),
-                task.id());
+            task.id());
     }
 
     /** Finds only the exact original task checkpoint. / 仅读取精确原任务检查点。
@@ -139,7 +140,7 @@ public final class DeploymentNativeDatabaseJournal {
      * @return original journal or absence / 原日志或不存在
      * @throws ApiException if reading fails / 读取失败时 */
     public static Optional<DeploymentNativeDatabaseJournal> find(TaskService tasks, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         return find(tasks, task, KEY);
     }
 
@@ -150,7 +151,7 @@ public final class DeploymentNativeDatabaseJournal {
      * @return original journal or genuine absence / 原日志或真实不存在
      * @throws ApiException if reading fails / 读取失败时 */
     public static Optional<DeploymentNativeDatabaseJournal> find(TaskService tasks, TaskContext task, String key)
-            throws ApiException {
+        throws ApiException {
         checkedKey(key);
         var found = tasks.findCheckpoint(task, key);
         if (found.isEmpty())
@@ -182,9 +183,9 @@ public final class DeploymentNativeDatabaseJournal {
         if (!"INTENT".equals(facts.phase()))
             throw new IllegalArgumentException("Native database operation was already dispatched");
         advance(before,
-                new Facts(facts.serverId(), facts.operationId(), facts.action(), facts.targetDigest(),
-                        facts.requestDigest(), facts.target(), "DISPATCHED", "MAY_HAVE_RUN", facts.effectsObserved(),
-                        facts.effectTargets()));
+            new Facts(facts.serverId(), facts.operationId(), facts.action(), facts.targetDigest(),
+                facts.requestDigest(), facts.target(), "DISPATCHED", "MAY_HAVE_RUN", facts.effectsObserved(),
+                facts.effectTargets()));
     }
 
     /** Saves only a helper-confirmed terminal receipt of this original operation. / 仅保存此原操作由 helper 确认的终态回执。
@@ -195,13 +196,13 @@ public final class DeploymentNativeDatabaseJournal {
         var before = checkpoint.snapshot();
         var facts = decode(before.payload(), taskId);
         if (!Set.of("SUCCEEDED", "FAILED").contains(phase) || !"DISPATCHED".equals(facts.phase())
-                || "CONFIRMED".equals(boundary) != "SUCCEEDED".equals(phase))
+            || "CONFIRMED".equals(boundary) != "SUCCEEDED".equals(phase))
             throw new IllegalArgumentException("Native database terminal evidence differs");
         var targets = new ArrayList<>(facts.effectTargets());
         if (!"NONE".equals(boundary) && !targets.contains(facts.target()))
             targets.add(facts.target());
         advance(before, new Facts(facts.serverId(), facts.operationId(), facts.action(), facts.targetDigest(),
-                facts.requestDigest(), facts.target(), phase, boundary, !targets.isEmpty(), targets));
+            facts.requestDigest(), facts.target(), phase, boundary, !targets.isEmpty(), targets));
     }
 
     /** Begins the next serial operation only after the previous exact terminal was saved. / 仅在前项精确终态已保存后开始下一串行操作。
@@ -212,13 +213,13 @@ public final class DeploymentNativeDatabaseJournal {
      * @param target bounded next business target / 下一有界业务目标
      * @throws ApiException if original CAS fails / 原比较更新失败时 */
     public void next(UUID operationId, String action, String targetDigest, String requestDigest, String target)
-            throws ApiException {
+        throws ApiException {
         var before = checkpoint.snapshot();
         var prior = decode(before.payload(), taskId);
         if (!Set.of("SUCCEEDED", "FAILED").contains(prior.phase()))
             throw new IllegalArgumentException("Previous native database operation remains unresolved");
         var next = new Facts(prior.serverId(), operationId, action, targetDigest, requestDigest, target, "INTENT",
-                "NONE", prior.effectsObserved(), prior.effectTargets());
+            "NONE", prior.effectsObserved(), prior.effectTargets());
         requireTerminalCapacity(taskId, next);
         advance(before, next);
     }
@@ -247,7 +248,7 @@ public final class DeploymentNativeDatabaseJournal {
         if (!targets.contains(facts.target()))
             targets.add(facts.target());
         var terminal = new Facts(facts.serverId(), facts.operationId(), facts.action(), facts.targetDigest(),
-                facts.requestDigest(), facts.target(), "SUCCEEDED", "CONFIRMED", true, targets);
+            facts.requestDigest(), facts.target(), "SUCCEEDED", "CONFIRMED", true, targets);
         if (encode(taskId, terminal).getBytes(StandardCharsets.UTF_8).length > 12_000)
             throw new IllegalArgumentException("Native database terminal checkpoint exceeds platform limit");
     }
@@ -285,10 +286,10 @@ public final class DeploymentNativeDatabaseJournal {
         try {
             var node = JSON.readTree(payload);
             if (node == null || !node.isObject() || node.size() != FIELDS.size()
-                    || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
-                    || node.path("formatVersion").asInt() != 1
-                    || !taskId.toString().equals(node.path("taskId").textValue())
-                    || !node.path("effectsObserved").isBoolean() || !node.path("effectTargets").isArray())
+                || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
+                || node.path("formatVersion").asInt() != 1
+                || !taskId.toString().equals(node.path("taskId").textValue())
+                || !node.path("effectsObserved").isBoolean() || !node.path("effectTargets").isArray())
                 throw new IllegalArgumentException("Invalid native database checkpoint");
             var names = new java.util.HashSet<String>();
             node.fieldNames().forEachRemaining(names::add);
@@ -297,10 +298,10 @@ public final class DeploymentNativeDatabaseJournal {
             var targets = new ArrayList<String>();
             node.path("effectTargets").forEach(value -> targets.add(value.textValue()));
             return new Facts(node.path("serverId").textValue(), UUID.fromString(node.path("operationId").textValue()),
-                    node.path("action").textValue(), node.path("targetDigest").textValue(),
-                    node.path("requestDigest").textValue(), node.path("target").textValue(),
-                    node.path("phase").textValue(), node.path("effectBoundary").textValue(),
-                    node.path("effectsObserved").booleanValue(), targets);
+                node.path("action").textValue(), node.path("targetDigest").textValue(),
+                node.path("requestDigest").textValue(), node.path("target").textValue(),
+                node.path("phase").textValue(), node.path("effectBoundary").textValue(),
+                node.path("effectsObserved").booleanValue(), targets);
         } catch (IOException | NullPointerException invalid) {
             throw new IllegalArgumentException("Invalid native database checkpoint", invalid);
         }

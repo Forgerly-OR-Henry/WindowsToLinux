@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.server.LinuxD
  * @param validatedOn date of the real acceptance / 真实验收日期
  */
 public record ValidatedDeploymentTarget(LinuxDistroType distro, String version, String architecture,
-        LocalDate validatedOn) {
+                                        LocalDate validatedOn) {
     /**
      * Validates a non-secret exact target identity. / 验证非秘密的精确目标身份。
      *

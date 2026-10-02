@@ -29,9 +29,12 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.compo
  * @param isolation requested execution capabilities / 请求的执行能力
  */
 public record ComponentAnalysisRequest(String componentId, String relativeSourceRoot, DeploymentProjectKind projectType,
-        Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths, Set<Integer> ports,
-        List<String> configurationKeys, List<String> secretIdentifiers, List<DeploymentStoragePath> dataPaths,
-        Set<String> dependencies, boolean required, ComponentIsolationSpecification isolation) {
+                                       Optional<DeploymentRuntimeDefinition> runtime, List<String> artifactPaths,
+                                       Set<Integer> ports,
+                                       List<String> configurationKeys, List<String> secretIdentifiers,
+                                       List<DeploymentStoragePath> dataPaths,
+                                       Set<String> dependencies, boolean required,
+                                       ComponentIsolationSpecification isolation) {
     /**
      * Validates a bounded explicit component selection without accessing source. / 在不访问源码的情况下验证有界显式组件选择。
      *
@@ -100,7 +103,7 @@ public record ComponentAnalysisRequest(String componentId, String relativeSource
     private static String relativeRoot(String value) {
         value = Objects.requireNonNull(value, "relativeSourceRoot").trim().replace('\\', '/');
         if (!(value.equals(".") || value.matches("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")) || value.startsWith("/")
-                || value.contains("..") || value.contains("//")) {
+            || value.contains("..") || value.contains("//")) {
             throw new IllegalArgumentException("relativeSourceRoot must stay inside the selected application root");
         }
         return value;

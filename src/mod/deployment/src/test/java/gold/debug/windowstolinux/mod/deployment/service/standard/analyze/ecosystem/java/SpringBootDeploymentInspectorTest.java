@@ -24,12 +24,12 @@ class SpringBootDeploymentInspectorTest {
     @Test
     void metadataFreeMavenFallbackRetainsTheOriginalInvalidNameRejection() throws Exception {
         Path project = mavenProject("physical", "<project><build><plugins><plugin>"
-                + "<ArtifactId>spring-boot-maven-plugin</ArtifactId></plugin></plugins></build></project>");
+            + "<ArtifactId>spring-boot-maven-plugin</ArtifactId></plugin></plugins></build></project>");
         var assessment = analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT, java.util.Optional.empty(), false,
-                () -> false, "Space Name");
+            () -> false, "Space Name");
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals("APPLICATION_ID_INVALID")),
-                assessment.rejections().toString());
+            assessment.rejections().toString());
     }
 
     @Test
@@ -38,7 +38,7 @@ class SpringBootDeploymentInspectorTest {
         Files.writeString(project.resolve("mvnw"), "wrapper placeholder");
         Files.createDirectories(project.resolve(".mvn/wrapper"));
         Files.writeString(project.resolve(".mvn/wrapper/maven-wrapper.properties"),
-                "distributionUrl=https://example.test/apache-maven.zip");
+            "distributionUrl=https://example.test/apache-maven.zip");
 
         var assessment = analyze(project);
 
@@ -61,13 +61,13 @@ class SpringBootDeploymentInspectorTest {
     void acceptsACompleteGradleWrapper() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("gradle-wrapper"));
         Files.writeString(project.resolve("build.gradle.kts"),
-                "plugins { id(\"org.springframework.boot\") version \"3.5.0\" }");
+            "plugins { id(\"org.springframework.boot\") version \"3.5.0\" }");
         Files.writeString(project.resolve("gradlew"), "wrapper placeholder");
         Files.createDirectories(project.resolve("gradle/wrapper"));
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
-                "distributionUrl=https://example.test/gradle.zip");
+            "distributionUrl=https://example.test/gradle.zip");
         try (JarOutputStream output = new JarOutputStream(
-                Files.newOutputStream(project.resolve("gradle/wrapper/gradle-wrapper.jar")))) {
+            Files.newOutputStream(project.resolve("gradle/wrapper/gradle-wrapper.jar")))) {
             output.putNextEntry(new JarEntry("org/gradle/wrapper/GradleWrapperMain.class"));
             output.write(0);
             output.closeEntry();
@@ -86,18 +86,18 @@ class SpringBootDeploymentInspectorTest {
         assertRejected(conflict, "SPRING_BOOT_BUILD_AMBIGUOUS");
 
         assertRejected(mavenProject("plugin-missing", "<project><artifactId>plugin-missing</artifactId></project>"),
-                "SPRING_BOOT_PLUGIN_MISSING");
+            "SPRING_BOOT_PLUGIN_MISSING");
         assertRejected(mavenProject("war",
                 "<project><artifactId>war</artifactId><packaging>war</packaging>"
-                        + "<build><plugins><plugin><artifactId>spring-boot-maven-plugin</artifactId>"
-                        + "</plugin></plugins></build></project>"),
-                "UNSUPPORTED_WAR");
+                    + "<build><plugins><plugin><artifactId>spring-boot-maven-plugin</artifactId>"
+                    + "</plugin></plugins></build></project>"),
+            "UNSUPPORTED_WAR");
     }
 
     @Test
     void appliesMigrationSchemaExternalConfigurationAndSecretPoliciesToMaven() throws Exception {
         Path migration = mavenProject("migration", bootPom().replace("</project>",
-                "<dependencies><dependency><artifactId>flyway-core</artifactId></dependency></dependencies></project>"));
+            "<dependencies><dependency><artifactId>flyway-core</artifactId></dependency></dependencies></project>"));
         assertRejected(migration, "DATABASE_MIGRATION_DETECTED");
 
         Path schema = mavenProject("schema", bootPom());
@@ -108,13 +108,13 @@ class SpringBootDeploymentInspectorTest {
         Path configuration = mavenProject("configuration", bootPom());
         Files.createDirectories(configuration.resolve("src/main/resources"));
         Files.writeString(configuration.resolve("src/main/resources/application.yml"),
-                "spring.config.import: optional:file:./external.yml\napi-key: secret");
+            "spring.config.import: optional:file:./external.yml\napi-key: secret");
         var assessment = analyze(configuration);
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("EXTERNAL_CONFIGURATION_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("EXTERNAL_CONFIGURATION_DETECTED")));
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("APPLICATION_SECRET_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("APPLICATION_SECRET_DETECTED")));
     }
 
     @Test
@@ -123,7 +123,7 @@ class SpringBootDeploymentInspectorTest {
         Path source = root.resolve("src/main/java/example/Settings.java");
         Files.createDirectories(source.getParent());
         Files.writeString(source, "class Settings { String port = System.getenv(\"PORT\"); "
-                + "String data = System.getenv().getOrDefault(\"DATA_DIR\", \"data\"); }");
+            + "String data = System.getenv().getOrDefault(\"DATA_DIR\", \"data\"); }");
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, analyze(root).admission());
         Files.writeString(source, "class Settings { String config = System.getenv(\"SPRING_CONFIG_IMPORT\"); }");
         assertRejected(root, "EXTERNAL_CONFIGURATION_DETECTED");
@@ -136,12 +136,12 @@ class SpringBootDeploymentInspectorTest {
 
         Path gradle = Files.createDirectories(temporaryDirectory.resolve("gradle-disabled"));
         Files.writeString(gradle.resolve("build.gradle"),
-                "plugins { id 'org.springframework.boot' version '3.5.0' }\nbootJar { enabled = false }");
+            "plugins { id 'org.springframework.boot' version '3.5.0' }\nbootJar { enabled = false }");
         assertRejected(gradle, "SPRING_BOOT_EXECUTABLE_JAR_DISABLED");
     }
 
     private gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.DeploymentProjectAssessment analyze(
-            Path project) {
+        Path project) {
         return analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT);
     }
 
@@ -149,7 +149,7 @@ class SpringBootDeploymentInspectorTest {
         var assessment = analyze(project);
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream().anyMatch(reason -> reason.code().equals(code)),
-                () -> "Expected rejection " + code + " but found " + assessment.rejections());
+            () -> "Expected rejection " + code + " but found " + assessment.rejections());
     }
 
     private Path mavenProject(String name, String pom) throws Exception {
@@ -160,6 +160,6 @@ class SpringBootDeploymentInspectorTest {
 
     private static String bootPom() {
         return "<project><artifactId>demo</artifactId><build><plugins><plugin>"
-                + "<artifactId>spring-boot-maven-plugin</artifactId>" + "</plugin></plugins></build></project>";
+            + "<artifactId>spring-boot-maven-plugin</artifactId>" + "</plugin></plugins></build></project>";
     }
 }

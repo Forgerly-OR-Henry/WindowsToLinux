@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param conflicts the observed conflicting facts / 观察到的冲突事实
  */
 public record JavaJdkFacts(String sourceRoot, String mainClass, String javaVersion, List<String> sourceFiles,
-        List<String> missingItems, List<String> conflicts) {
+                           List<String> missingItems, List<String> conflicts) {
     /**
      * Makes bounded Java architecture facts immutable. / 使有界 Java 架构事实不可变。
      *

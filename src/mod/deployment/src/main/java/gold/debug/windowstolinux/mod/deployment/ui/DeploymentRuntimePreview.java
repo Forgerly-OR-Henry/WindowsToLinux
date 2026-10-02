@@ -54,10 +54,13 @@ public final class DeploymentRuntimePreview implements ModPage {
         values.put("configuration", "APP_MODE=preview");
         values.put("secrets", "");
         var fields = values.entrySet().stream().map(entry -> new DeploymentReviewField("preview/" + entry.getKey(),
-                entry.getKey(), entry.getKey(), entry.getValue(), List.of())).toList();
+            entry.getKey(), entry.getKey(), entry.getValue(), List.of())).toList();
         var prompt = new DeploymentStaticWorkflow.Prompt("preview", "preview-application", kind, values, fields);
         root.removeAll();
-        root.add(DeploymentStaticPageReviewer.runtimePreview(prompt, environment));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
+        var scroll = new JScrollPane(DeploymentStaticPageReviewer.runtimePreview(prompt, environment));
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        root.add(scroll);
         root.revalidate();
         root.repaint();
     }

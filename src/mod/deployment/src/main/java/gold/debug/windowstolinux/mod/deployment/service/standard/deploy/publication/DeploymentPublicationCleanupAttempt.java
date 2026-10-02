@@ -27,19 +27,19 @@ final class DeploymentPublicationCleanupAttempt {
      * @return whether a complete success was observed / 是否观察到完整成功
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     static boolean run(DeploymentPublicationCleanupJournal journal, String pending, Command command)
-            throws ApiException {
+        throws ApiException {
         String previous = journal.facts().path("phase").asText();
         if (!journal.mark(pending))
             return false;
         try {
             var observed = command.run();
             if ((observed.outcome() == Outcome.FAILED || observed.outcome() == Outcome.CANCELLED)
-                    && observed.value().isEmpty())
+                && observed.value().isEmpty())
                 journal.mark(previous);
             return observed.outcome() == Outcome.SUCCEEDED;
         } catch (ApiException rejected) {
             if (rejected.problem().code() == ProblemCode.ACCESS_DENIED
-                    || rejected.problem().code() == ProblemCode.INVALID_INPUT)
+                || rejected.problem().code() == ProblemCode.INVALID_INPUT)
                 journal.mark(previous);
             throw rejected;
         }

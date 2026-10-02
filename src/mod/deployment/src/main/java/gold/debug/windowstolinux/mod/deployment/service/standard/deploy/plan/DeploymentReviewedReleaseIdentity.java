@@ -32,7 +32,7 @@ public final class DeploymentReviewedReleaseIdentity {
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
     public static String bind(String reviewedIdentity,
-            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
+                              gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) {
         if (tools.selections().isEmpty())
             return reviewedIdentity;
         try {
@@ -40,8 +40,8 @@ public final class DeploymentReviewedReleaseIdentity {
             update(digest, "reviewed-release-tools-v1");
             update(digest, reviewedIdentity);
             update(digest,
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
-                            .identity(tools));
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
+                    .identity(tools));
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
@@ -63,24 +63,24 @@ public final class DeploymentReviewedReleaseIdentity {
             update(digest, request.facts().buildTool().name());
             update(digest, request.configuration().sha256());
             request.secretReferences().stream().sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                    .thenComparingLong(DeploymentSecretReference::revision)).forEach(reference -> {
-                        update(digest, reference.identifier());
-                        update(digest, Long.toString(reference.revision()));
-                    });
+                .thenComparingLong(DeploymentSecretReference::revision)).forEach(reference -> {
+                update(digest, reference.identifier());
+                update(digest, Long.toString(reference.revision()));
+            });
             request.resources().fileBindings().stream().sorted(Comparator.comparing(
                     gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentFileBinding::bindingId))
-                    .forEach(binding -> {
-                        update(digest, binding.bindingId());
-                        update(digest, binding.dataPath().path());
-                        update(digest, binding.dataPath().access().name());
-                        update(digest, binding.dataPath().schemaId());
-                        update(digest, Boolean.toString(binding.dataPath().reversible()));
-                        update(digest, binding.resourceType().name());
-                        update(digest, binding.location().type().name());
-                        update(digest, binding.location().path());
-                        update(digest, binding.seedFile());
-                        update(digest, binding.contentSha256());
-                    });
+                .forEach(binding -> {
+                    update(digest, binding.bindingId());
+                    update(digest, binding.dataPath().path());
+                    update(digest, binding.dataPath().access().name());
+                    update(digest, binding.dataPath().schemaId());
+                    update(digest, Boolean.toString(binding.dataPath().reversible()));
+                    update(digest, binding.resourceType().name());
+                    update(digest, binding.location().type().name());
+                    update(digest, binding.location().path());
+                    update(digest, binding.seedFile());
+                    update(digest, binding.contentSha256());
+                });
             databaseBindings(digest, request);
             runtime(digest, request.runtime());
             return HexFormat.of().formatHex(digest.digest());
@@ -101,7 +101,7 @@ public final class DeploymentReviewedReleaseIdentity {
         try {
             digest.update(new gold.debug.windowstolinux.mod.deployment.db.DeploymentRuntimeCodec().write(runtime));
             digest.update(new gold.debug.windowstolinux.mod.deployment.db.DeploymentHealthCodec()
-                    .write(runtime.healthCheck()));
+                .write(runtime.healthCheck()));
         } catch (java.io.IOException failure) {
             throw new IllegalArgumentException("invalid release runtime", failure);
         }

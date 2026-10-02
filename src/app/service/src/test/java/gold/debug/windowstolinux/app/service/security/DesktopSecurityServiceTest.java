@@ -7,16 +7,17 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
-import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.contract.result.ApplicationServiceException;
+import gold.debug.windowstolinux.app.service.error.ApplicationServiceException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DesktopSecurityServiceTest {
     @TempDir
     Path directory;
+
     private PlatformPersistence openPlatform() throws Exception {
         var testProtection = new DatabaseProtection() {
             public byte[] protect(byte[] clear) {
@@ -45,7 +46,7 @@ class DesktopSecurityServiceTest {
             assertFalse(security.securityState().configured());
             assertThrows(ApplicationServiceException.class, security::beginTask);
             assertThrows(ApplicationServiceException.class,
-                    () -> security.setupAndUnlock("1234567".toCharArray(), "1234567".toCharArray()));
+                () -> security.setupAndUnlock("1234567".toCharArray(), "1234567".toCharArray()));
             assertFalse(security.securityState().configured());
             char[] first = password(), second = "does not match".toCharArray();
             assertThrows(ApplicationServiceException.class, () -> security.setupAndUnlock(first, second));
@@ -133,16 +134,16 @@ class DesktopSecurityServiceTest {
             initialize(security);
             try (var task = security.beginTask()) {
                 char[] old = password(), replacement = "replacement-password".toCharArray(),
-                        repeat = replacement.clone();
+                    repeat = replacement.clone();
                 assertThrows(ApplicationServiceException.class,
-                        () -> security.changeMasterPassword(old, replacement, repeat));
+                    () -> security.changeMasterPassword(old, replacement, repeat));
                 assertArrayEquals(new char[old.length], old);
                 assertArrayEquals(new char[replacement.length], replacement);
                 assertThrows(ApplicationServiceException.class,
-                        () -> security.setCredentialEncryption(password(), false));
+                    () -> security.setCredentialEncryption(password(), false));
             }
             assertThrows(ApplicationServiceException.class,
-                    () -> security.changeMasterPassword(password(), "1234567".toCharArray(), "1234567".toCharArray()));
+                () -> security.changeMasterPassword(password(), "1234567".toCharArray(), "1234567".toCharArray()));
             security.changeMasterPassword(password(), "new-pass".toCharArray(), "new-pass".toCharArray());
             security.lock();
             assertThrows(SecretStoreException.class, () -> security.unlock(password()));

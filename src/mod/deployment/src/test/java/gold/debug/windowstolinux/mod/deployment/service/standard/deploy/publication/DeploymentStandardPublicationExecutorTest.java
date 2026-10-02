@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
@@ -14,9 +27,9 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
@@ -25,7 +38,7 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigurationRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentGraphRepository;
@@ -53,8 +66,8 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.compone
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.DeploymentReviewedReleaseIdentity;
-import gold.debug.windowstolinux.mod.deployment.source.*;
-import gold.debug.windowstolinux.mod.deployment.source.git.*;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -62,8 +75,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 /** Executes the real original publication task, source handles, H2 and host review against a controlled peer. / 用受控对等端执行真实原发布任务、来源句柄、H2和宿主审核。 */
 class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture {
     private static final Path GIT = Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
-            .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
-            .toAbsolutePath().normalize();
+        .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
+        .toAbsolutePath().normalize();
+
     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
     private enum ScenarioType {
         SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_OLD_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
@@ -87,12 +101,12 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError();
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError();
             }
 
@@ -100,13 +114,13 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 return "Controlled upload";
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 assertEquals(List.of("server-publication"), intent.serverIds());
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError();
             }
         });
@@ -127,7 +141,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if actual platform setup fails / 真实平台准备失败时 */
     @ParameterizedTest
     @EnumSource(value = ScenarioType.class, names = {"SUCCESS", "HEALTH_FAILED_ROLLBACK",
-            "HEALTH_FAILED_ROLLBACK_OLD_MODE"})
+        "HEALTH_FAILED_ROLLBACK_OLD_MODE"})
     void originalTaskPublishesOrRetainsRemoteEvidence(ScenarioType scenario) throws Exception {
         runScenario(scenario, false);
     }
@@ -283,7 +297,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param nativeDatabase whether PostgreSQL is declared / 是否声明 PostgreSQL
      * @throws Exception if the original task fails / 原任务失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase)
-            throws Exception {
+        throws Exception {
         runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, false);
     }
 
@@ -295,7 +309,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param authRetry whether first existing-target password is refused / 首次已有目标密码是否被拒
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
-            boolean authRetry) throws Exception {
+                                   boolean authRetry) throws Exception {
         runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, authRetry, false);
     }
 
@@ -308,7 +322,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param rotateStored whether second publication rejects old revision / 第二次发布是否拒绝旧修订
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
-            boolean authRetry, boolean rotateStored) throws Exception {
+                                   boolean authRetry, boolean rotateStored) throws Exception {
         runStaticWorkflow(git, sqlite, installHelper, nativeDatabase, authRetry, rotateStored, NativeInstallType.NONE);
     }
 
@@ -322,15 +336,15 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param nativeInstall controlled package scenario / 受控软件包场景
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
-            boolean authRetry, boolean rotateStored, NativeInstallType nativeInstall) throws Exception {
+                                   boolean authRetry, boolean rotateStored, NativeInstallType nativeInstall) throws Exception {
         boolean noPortNode = nativeInstall == NativeInstallType.NO_PORT_NODE;
         Files.createDirectories(selectedSourceDirectory());
         if (noPortNode) {
             Files.writeString(selectedSourceDirectory().resolve("package.json"),
-                    "{\"name\":\"service\",\"version\":\"1.0.0\",\"engines\":{\"node\":\"22\"},"
-                            + "\"scripts\":{\"build\":\"node build.js\",\"start\":\"node worker.js\"}}");
+                "{\"name\":\"service\",\"version\":\"1.0.0\",\"engines\":{\"node\":\"22\"},"
+                    + "\"scripts\":{\"build\":\"node build.js\",\"start\":\"node worker.js\"}}");
             Files.writeString(selectedSourceDirectory().resolve("package-lock.json"),
-                    "{\"name\":\"service\",\"version\":\"1.0.0\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"service\",\"version\":\"1.0.0\"}}}");
+                "{\"name\":\"service\",\"version\":\"1.0.0\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"service\",\"version\":\"1.0.0\"}}}");
             Files.writeString(selectedSourceDirectory().resolve("build.js"), "console.log('build complete');\n");
             Files.writeString(selectedSourceDirectory().resolve("worker.js"), "setInterval(() => {}, 1000);\n");
         } else {
@@ -340,17 +354,17 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
         }
         if (sqlite) {
             Files.writeString(selectedSourceDirectory().resolve("windowstolinux-db.properties"),
-                    "db=main\ndb.main.engine=SQLITE\ndb.main.path=DEFAULT\ndb.main.pathEnvironment=DB_PATH\n"
-                            + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
+                "db=main\ndb.main.engine=SQLITE\ndb.main.path=DEFAULT\ndb.main.pathEnvironment=DB_PATH\n"
+                    + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
             Files.writeString(selectedSourceDirectory().resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
             Files.write(selectedSourceDirectory().resolve("seed.db"), new byte[]{1, 2, 3});
         }
         if (nativeDatabase) {
             Files.writeString(selectedSourceDirectory().resolve("windowstolinux-db.properties"),
-                    "db=main\ndb.main.engine=POSTGRESQL\ndb.main.version=>=16\n"
-                            + "db.main.database=sampledb\ndb.main.username=sampleuser\n"
-                            + "db.main.environmentPrefix=DB\ndb.main.passwordEnvironment=DB_PASSWORD\n"
-                            + "db.main.initialize=schema.sql\n");
+                "db=main\ndb.main.engine=POSTGRESQL\ndb.main.version=>=16\n"
+                    + "db.main.database=sampledb\ndb.main.username=sampleuser\n"
+                    + "db.main.environmentPrefix=DB\ndb.main.passwordEnvironment=DB_PASSWORD\n"
+                    + "db.main.initialize=schema.sql\n");
             Files.writeString(selectedSourceDirectory().resolve("schema.sql"), "CREATE TABLE sample(id integer);\n");
         }
         if (git) {
@@ -363,34 +377,34 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             start(runtime, true);
             var server = new ServerRef("server-publication");
             runtime.servers().saveServerProfile(
-                    ServerProfile.fromStored(
-                            new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile.fromStored(
+                    new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var secretRevision = new DeploymentSecretReference("page-application", 1);
             byte[] plaintext = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5, (byte) 0xbd,
-                    0x21};
+                0x21};
             byte[] expectedPlaintext = plaintext.clone();
             var provision = new DeploymentSecretProvisionFlow(original).submitOwned(server, secretRevision,
-                    "deployment-application", Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS),
-                    task -> plaintext);
+                "deployment-application", Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS),
+                task -> plaintext);
             var saved = provision.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(Outcome.SUCCEEDED, saved.outcome(), saved.toString());
             assertArrayEquals(new byte[plaintext.length], plaintext, "Page-owned plaintext must be cleared");
             var stored = saved.value().orElseThrow();
             assertEquals(Optional.of("deployment-application"), stored.purpose());
             var inspectSecret = original.tasks().submit(
-                    new TaskRequest("page-secret-inspect", "Inspect secret", List.of(server.id()), false), task -> {
-                        var actual = new DeploymentSecretRepository(original.db()).findRevision(task, secretRevision);
-                        assertEquals(Optional.of(stored), actual);
-                        boolean matched = original.secrets().use(
-                                new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
-                                stored.purpose().orElseThrow(), task, bytes -> Arrays.equals(expectedPlaintext, bytes));
-                        assertTrue(matched, "Protected platform value must round-trip without entering Mod metadata");
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                    });
+                new TaskRequest("page-secret-inspect", "Inspect secret", List.of(server.id()), false), task -> {
+                    var actual = new DeploymentSecretRepository(original.db()).findRevision(task, secretRevision);
+                    assertEquals(Optional.of(stored), actual);
+                    boolean matched = original.secrets().use(
+                        new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
+                        stored.purpose().orElseThrow(), task, bytes -> Arrays.equals(expectedPlaintext, bytes));
+                    assertTrue(matched, "Protected platform value must round-trip without entering Mod metadata");
+                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                });
             assertEquals(Outcome.SUCCEEDED,
-                    inspectSecret.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                inspectSecret.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             Arrays.fill(expectedPlaintext, (byte) 0);
             List<String> firstSnapshot = null;
             String firstOwner = null;
@@ -407,12 +421,12 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var passwordPrompts = new AtomicInteger();
             var ownedInputs = new ArrayList<byte[]>();
             boolean chainedAuthentication = nativeInstall == NativeInstallType.AUTH_SCHEMA_APPROVED
-                    || nativeInstall == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED;
+                || nativeInstall == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED;
             boolean fullControl = nativeInstall == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED;
             for (int publication = 1; publication <= (noPortNode ? 1 : 2); publication++) {
                 final int currentPublication = publication;
                 boolean schemaReview = nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED
-                        || nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED || chainedAuthentication;
+                    || nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED || chainedAuthentication;
                 if (chainedAuthentication)
                     nativeState.adminFailuresRemaining = 1;
                 if (schemaReview) {
@@ -421,7 +435,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 }
                 if (!nativeDatabase && !noPortNode)
                     Files.writeString(selectedSourceDirectory().resolve("main.go"),
-                            "package main\nfunc main() { /* publication " + publication + " */ }\n");
+                        "package main\nfunc main() { /* publication " + publication + " */ }\n");
                 if (rotateStored && publication == 2) {
                     nativeState.authFailuresRemaining = 2;
                     nativeState.acceptRotation = true;
@@ -442,44 +456,44 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 var reviewedTask = new AtomicReference<TaskContext>();
                 var helperInstalls = new AtomicInteger();
                 var existing = peer(ScenarioType.SUCCESS, actions, sha, bytes, path, candidate, callbackEnded,
-                        noPortNode);
+                    noPortNode);
                 var session = nativeDatabase
-                        ? nativePeer(existing, original, reviewedTask, nativeState, actions, grants)
-                        : installHelper && publication == 1
-                                ? missingHelper(existing, original, reviewedTask, helperInstalls)
-                                : existing;
+                    ? nativePeer(existing, original, reviewedTask, nativeState, actions, grants)
+                    : installHelper && publication == 1
+                    ? missingHelper(existing, original, reviewedTask, helperInstalls)
+                    : existing;
                 var remoteBound = withControlledSession(original, session, runtime, ScenarioType.SUCCESS);
                 var independentReviews = new AtomicInteger();
                 var bound = fullControl
-                        ? withFullControlModels(remoteBound, reviewedTask, independentReviews)
-                        : remoteBound;
+                    ? withFullControlModels(remoteBound, reviewedTask, independentReviews)
+                    : remoteBound;
                 var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
                 var observedTask = new AtomicReference<UUID>();
                 var reviewedApplication = new AtomicReference<String>();
                 var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                     public OperationResult<Map<String, String>> databaseInputs(ServerRef exact, String componentId,
-                            String manifest, Path frozenRoot, String applicationId,
-                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                            TaskContext task) throws Exception {
+                                                                               String manifest, Path frozenRoot, String applicationId,
+                                                                               gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                               TaskContext task) throws Exception {
                         assertTrue(sqlite || nativeDatabase);
                         assertEquals(observedTask.get(), task.id());
                         assertEquals(1, assessment.databases().size());
                         if (sqlite)
                             assertEquals("seed.db",
-                                    assessment.databases().getFirst().sqlite().orElseThrow().seedFile());
+                                assessment.databases().getFirst().sqlite().orElseThrow().seedFile());
                         if (nativeDatabase)
                             nativeState.applicationId = applicationId;
                         if (nativeDatabase)
                             nativeState.sourceDigest = DeploymentNativeDatabasePreparation
-                                    .local(componentId, applicationId, manifest, frozenRoot, assessment, task)
-                                    .sourceDigest();
+                                .local(componentId, applicationId, manifest, frozenRoot, assessment, task)
+                                .sourceDigest();
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.of()), Optional.empty());
                     }
 
                     public OperationResult<Boolean> confirmSqliteInitialization(ServerRef exact, String componentId,
-                            String manifest,
-                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
-                            TaskContext task) {
+                                                                                String manifest,
+                                                                                gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                                TaskContext task) {
                         assertTrue(sqlite);
                         assertEquals(observedTask.get(), task.id());
                         assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
@@ -488,8 +502,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     @Override
                     public OperationResult<byte[]> administratorPassword(ServerRef exact,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance instance,
-                            TaskContext task) {
+                                                                         gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance instance,
+                                                                         TaskContext task) {
                         assertTrue(chainedAuthentication);
                         assertEquals(server, exact);
                         assertSame(reviewedTask.get(), task);
@@ -502,25 +516,25 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     @Override
                     public OperationResult<byte[]> applicationPassword(ServerRef exact,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
-                            TaskContext task) {
+                                                                       gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
+                                                                       TaskContext task) {
                         if (!authRetry && !rotateStored)
                             throw new AssertionError("A new owned target must use its generated and saved password");
                         int prompt = passwordPrompts.incrementAndGet();
                         assertSame(reviewedTask.get(), task);
                         byte[] owned = (prompt == 1
-                                ? "incorrect"
-                                : rotateStored && currentPublication == 2 ? "rotated-password" : "correct-password")
-                                .getBytes(StandardCharsets.UTF_8);
+                            ? "incorrect"
+                            : rotateStored && currentPublication == 2 ? "rotated-password" : "correct-password")
+                            .getBytes(StandardCharsets.UTF_8);
                         ownedInputs.add(owned);
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(owned), Optional.empty());
                     }
 
                     @Override
                     public OperationResult<Boolean> install(ServerRef exact,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
-                            TaskContext task) {
+                                                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
+                                                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
+                                                            TaskContext task) {
                         assertEquals(NativeInstallType.FIRST, nativeInstall);
                         assertEquals("postgresql-16", candidate.name());
                         assertEquals(observedTask.get(), task.id());
@@ -529,11 +543,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     @Override
                     public OperationResult<Boolean> replacement(ServerRef exact,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance previous,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
-                            TaskContext task) {
+                                                                gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance previous,
+                                                                gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate candidate,
+                                                                TaskContext task) {
                         assertTrue(nativeInstall == NativeInstallType.REPLACE
-                                || nativeInstall == NativeInstallType.PENDING);
+                            || nativeInstall == NativeInstallType.PENDING);
                         assertEquals("15.6", previous.version());
                         assertEquals("16.6", candidate.engineVersion());
                         assertEquals(observedTask.get(), task.id());
@@ -542,10 +556,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
 
                     @Override
                     public OperationResult<Boolean> restored(ServerRef exact,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance restored,
-                            TaskContext task) {
+                                                             gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance restored,
+                                                             TaskContext task) {
                         assertTrue(nativeInstall == NativeInstallType.REPLACE
-                                || nativeInstall == NativeInstallType.PENDING);
+                            || nativeInstall == NativeInstallType.PENDING);
                         assertEquals("16.6", restored.version());
                         assertEquals(observedTask.get(), task.id());
                         nativeState.restorePending = false;
@@ -553,26 +567,26 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
 
                     public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef exact, String manifest,
-                            List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                                                                                      List<DiscoveredProjectComponent> discovered, TaskContext task) {
                         assertEquals(server, exact);
                         assertEquals(1, discovered.size());
                         reviewedTask.set(task);
                         observedTask.set(task.id());
                         manifestSha.set(manifest);
                         return new OperationResult<>(Outcome.SUCCEEDED,
-                                Optional.of(new DeploymentStaticWorkflow.Selection(discovered.getFirst().id(),
-                                        Map.of(discovered.getFirst().id(),
-                                                new DeploymentStaticWorkflow.Choice(noPortNode
-                                                        ? DeploymentProjectKind.NODE_SERVICE
-                                                        : DeploymentProjectKind.GO_SERVICE, Set.of())),
-                                        Optional.empty())),
-                                Optional.empty());
+                            Optional.of(new DeploymentStaticWorkflow.Selection(discovered.getFirst().id(),
+                                Map.of(discovered.getFirst().id(),
+                                    new DeploymentStaticWorkflow.Choice(noPortNode
+                                        ? DeploymentProjectKind.NODE_SERVICE
+                                        : DeploymentProjectKind.GO_SERVICE, Set.of())),
+                                Optional.empty())),
+                            Optional.empty());
                     }
 
                     @Override
                     public OperationResult<Boolean> existingSchema(ServerRef exact, String componentId,
-                            gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
-                            String sourceDigest, TaskContext task) {
+                                                                   gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement database,
+                                                                   String sourceDigest, TaskContext task) {
                         assertTrue(schemaReview);
                         assertEquals(server, exact);
                         assertEquals(observedTask.get(), task.id());
@@ -587,23 +601,23 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             var databasePlan = DeploymentDatabasePlanJournal.find(bound.tasks(), task).orElseThrow();
                             var originalReceipt = DeploymentNativeDatabaseJournal.find(bound.tasks(), task,
                                     DeploymentNativeDatabaseJournal.KEY + "." + databasePlan.facts().keys().getFirst())
-                                    .orElseThrow().facts();
+                                .orElseThrow().facts();
                             assertEquals("initialize", originalReceipt.action());
                             assertEquals("FAILED", originalReceipt.phase());
                             assertEquals("NONE", originalReceipt.effectBoundary());
                         } catch (ApiException unavailable) {
                             throw new AssertionError("Original failed initialize receipt must remain readable",
-                                    unavailable);
+                                unavailable);
                         }
                         assertEquals(currentPublication, ++nativeState.schemaReviews);
                         return new OperationResult<>(Outcome.SUCCEEDED,
-                                Optional.of(nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED
-                                        || nativeInstall == NativeInstallType.AUTH_SCHEMA_APPROVED),
-                                Optional.empty());
+                            Optional.of(nativeInstall == NativeInstallType.EXISTING_SCHEMA_APPROVED
+                                || nativeInstall == NativeInstallType.AUTH_SCHEMA_APPROVED),
+                            Optional.empty());
                     }
 
                     public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef exact,
-                            String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
+                                                                                                 String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                         assertEquals(observedTask.get(), task.id());
                         var prompt = prompts.getFirst();
                         reviewedApplication.set(prompt.applicationId());
@@ -624,26 +638,26 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         values.put("exposure", "INTERNAL");
                         values.put("secrets", "page-application:1");
                         var answer = new DeploymentStaticWorkflow.Answers(values, List.of(),
-                                DeploymentBuildLimits.defaultNonRoot(), false, true);
+                            DeploymentBuildLimits.defaultNonRoot(), false, true);
                         workflow.validateReview(prompt, answer);
                         return new OperationResult<>(Outcome.SUCCEEDED,
-                                Optional.of(Map.of(prompt.componentId(), answer)), Optional.empty());
+                            Optional.of(Map.of(prompt.componentId(), answer)), Optional.empty());
                     }
 
                     public OperationResult<Boolean> confirm(ServerRef exact, String manifest,
-                            Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
-                            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase> databases,
-                            Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
+                                                            Map<String, String> archives, Map<String, DeploymentStaticWorkflow.Answers> answers,
+                                                            Map<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase> databases,
+                                                            Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
                         assertEquals(observedTask.get(), task.id());
                         if (sqlite) {
                             var prepared = databases.values().iterator().next();
                             var binding = prepared.bindings().getFirst();
                             var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
                             String actualPath = prepared.configuration().stream()
-                                    .filter(value -> value.key().equals("DB_PATH")).findFirst().orElseThrow().value()
-                                    .canonicalValue();
+                                .filter(value -> value.key().equals("DB_PATH")).findFirst().orElseThrow().value()
+                                .canonicalValue();
                             assertEquals(connection.physicalPath(reviewedApplication.get(), binding.databaseId()),
-                                    actualPath);
+                                actualPath);
                             assertEquals("seed.db", connection.seedFile());
                             assertEquals(List.of("schema.sql"), connection.initializationFiles());
                             assertTrue(prepared.schemaReview().orElseThrow().firstDeploymentInitializationPlanned());
@@ -658,7 +672,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                             assertEquals(expectedNativeRevision, connection.passwordReference().revision());
                             assertEquals(List.of(connection.passwordReference()), prepared.secrets());
                             assertEquals(nativeState.sourceDigest,
-                                    prepared.schemaReview().orElseThrow().inspectionSha256());
+                                prepared.schemaReview().orElseThrow().inspectionSha256());
                         } else
                             assertTrue(databases.values().stream().allMatch(value -> value.bindings().isEmpty()));
                         assertEquals(git, gitReview.isPresent());
@@ -673,14 +687,14 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     }
                 };
                 var gitInput = git
-                        ? Optional.of(new DeploymentStaticWorkflow.GitSource(
-                                new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
-                                        new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
-                                GIT))
-                        : Optional.<DeploymentStaticWorkflow.GitSource>empty();
+                    ? Optional.of(new DeploymentStaticWorkflow.GitSource(
+                    new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
+                        new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
+                    GIT))
+                    : Optional.<DeploymentStaticWorkflow.GitSource>empty();
                 var handle = workflow.submit(server,
-                        new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
-                        gitInput, reviewer, fullControl, fullControl ? "FULL_CONTROL" : "MANUAL_REVIEW");
+                    new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
+                    gitInput, reviewer, fullControl, fullControl ? "FULL_CONTROL" : "MANUAL_REVIEW");
                 if (nativeInstall == NativeInstallType.START_UNKNOWN) {
                     long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
                     while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
@@ -689,15 +703,15 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     assertTrue(actions.contains("native-start"));
                     assertFalse(actions.contains("native-prepare"));
                     assertEquals(1,
-                            scalar(runtime,
-                                    "SELECT COUNT(*) FROM platform_task_resource "
-                                            + "WHERE resource_kind='CUSTOM' AND resource_id='" + OWNER
-                                            + "/checkpoint/deployment-static-preparation' AND released_at IS NULL"));
+                        scalar(runtime,
+                            "SELECT COUNT(*) FROM platform_task_resource "
+                                + "WHERE resource_kind='CUSTOM' AND resource_id='" + OWNER
+                                + "/checkpoint/deployment-static-preparation' AND released_at IS NULL"));
                     assertTrue(
-                            scalar(runtime,
-                                    "SELECT COUNT(*) FROM platform_task_resource "
-                                            + "WHERE resource_kind='FILE' AND released_at IS NULL") > 0,
-                            "Original frozen source must remain owned while native effect is unknown");
+                        scalar(runtime,
+                            "SELECT COUNT(*) FROM platform_task_resource "
+                                + "WHERE resource_kind='FILE' AND released_at IS NULL") > 0,
+                        "Original frozen source must remain owned while native effect is unknown");
                     System.out.println("ORIGINAL_NATIVE_WORKFLOW_UNKNOWN_VERIFIED");
                     System.exit(0);
                 }
@@ -707,27 +721,27 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
                 } catch (TimeoutException unfinished) {
                     throw new AssertionError(
-                            "Static publication unfinished: " + handle.snapshot() + ", app=" + reviewedApplication.get()
-                                    + ", candidate=" + candidate.get() + ", actions=" + actions + ", resources="
-                                    + scalar(runtime,
-                                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
-                            unfinished);
+                        "Static publication unfinished: " + handle.snapshot() + ", app=" + reviewedApplication.get()
+                            + ", candidate=" + candidate.get() + ", actions=" + actions + ", resources="
+                            + scalar(runtime,
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                        unfinished);
                 }
                 if (chainedAuthentication) {
                     assertEquals(2, actions.stream().filter("native-target"::equals).count());
                     assertEquals(0, nativeState.adminFailuresRemaining);
                     for (var owned : ownedInputs)
                         assertArrayEquals(new byte[owned.length], owned,
-                                "Consumed reviewer-owned input must be cleared");
+                            "Consumed reviewer-owned input must be cleared");
                 }
                 if (nativeInstall == NativeInstallType.EXISTING_SCHEMA_REFUSED || fullControl) {
                     if (fullControl) {
                         assertTrue(independentReviews.get() > 0, "Independent fixed-action approvals actually ran");
                         try (var access = scope(runtime, true);
-                                var connection = access.openConnection();
-                                var statement = connection.createStatement();
-                                var rows = statement.executeQuery(
-                                        "SELECT preference_key,preference_value FROM preference WHERE preference_key IN ('deploy_mode','deploy_approval')")) {
+                             var connection = access.openConnection();
+                             var statement = connection.createStatement();
+                             var rows = statement.executeQuery(
+                                 "SELECT preference_key,preference_value FROM preference WHERE preference_key IN ('deploy_mode','deploy_approval')")) {
                             var choices = new HashMap<String, String>();
                             while (rows.next())
                                 choices.put(rows.getString(1), rows.getString(2));
@@ -743,7 +757,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     assertFalse(actions.contains("publish"));
                     assertEquals(0, countMod(runtime, "deployment_release"));
                     assertEquals(0,
-                            scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     break;
                 }
                 if (schemaReview) {
@@ -754,205 +768,205 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(publication, countMod(runtime, "deployment_release"));
                 assertEquals(publication * (nativeDatabase ? 2 : 1),
-                        countMod(runtime, "deployment_unit_release_secret_reference"));
+                    countMod(runtime, "deployment_unit_release_secret_reference"));
                 assertEquals(git ? publication : 0, countMod(runtime, "deployment_project"));
                 if (git)
                     assertGitSourceSaved(runtime, selectedSourceDirectory().toUri().toString(), commit,
-                            manifestSha.get());
+                        manifestSha.get());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(1, actions.stream().filter("publish"::equals).count());
                 assertEquals(1, actions.stream().filter("upload"::equals).count());
                 assertEquals(installHelper && publication == 1 ? 1 : 0, helperInstalls.get());
                 assertEquals(1, actions.stream().filter("stage-secret-page-application"::equals).count(),
-                        "The reviewed revision and protected bytes must reach the controlled stage command");
+                    "The reviewed revision and protected bytes must reach the controlled stage command");
                 if (noPortNode) {
                     var sentReleases = actions.stream().filter(value -> value.startsWith("wire-release="))
-                            .map(value -> value.substring("wire-release=".length())).toList();
+                        .map(value -> value.substring("wire-release=".length())).toList();
                     assertEquals(1, sentReleases.size());
                     String publishedRelease = sentReleases.getFirst();
                     assertNotEquals(sha.get(), publishedRelease,
-                            "The complete reviewed release identity also binds runtime, configuration and tools");
+                        "The complete reviewed release identity also binds runtime, configuration and tools");
                     assertEquals(1, actions.stream().filter("observe"::equals).count(),
-                            "Successful DAEMON publication must pass the actual typed RUNNING observation");
+                        "Successful DAEMON publication must pass the actual typed RUNNING observation");
                     var inspectionFailure = new AtomicReference<Throwable>();
                     var inspected = original.tasks().submit(new TaskRequest("node-process-publication-inspect",
-                            "Inspect original process publication", List.of(server.id()), false), task -> {
-                                try {
-                                    var graph = new DeploymentGraphRepository(original.db())
-                                            .find(task, reviewedApplication.get()).orElseThrow();
-                                    assertInstanceOf(DeploymentHealthCheck.Process.class, graph.healthCheck());
-                                    var component = graph.components().getFirst();
-                                    assertInstanceOf(DeploymentRuntimeDefinition.NodeService.class,
-                                            component.reviewedRuntime());
-                                    assertInstanceOf(DeploymentHealthCheck.Process.class,
-                                            component.runtime().healthCheck());
-                                    assertTrue(component.runtime().userAccessUrl().isEmpty());
-                                    assertEquals(22, ((DeploymentRuntimeDefinition.NodeService) component.reviewedRuntime()).nodeMajorVersion());
-                                    assertEquals(DeploymentWorkload.ExecutionMode.DAEMON, component.runtime().workload().mode());
-                                    assertTrue(component.runtime().workload().endpoints().isEmpty());
-                                    UUID applicationReleaseId;
-                                    String applicationReleaseSha;
-                                    UUID originalExecutionId;
-                                    try (var connection = original.db().openConnection(task);
-                                            var query = connection.prepareStatement(
-                                                    "SELECT u.current_release_sha256,e.outcome,r.release_sha256,e.platform_task_id,e.phase,e.business_committed,e.cleanup_complete,r.release_id,e.execution_id "
-                                                            + "FROM deployment_unit u JOIN managed_application_component c ON c.deployment_unit_id=u.deployment_unit_id "
-                                                            + "JOIN deployment_release r ON r.application_id=c.application_id "
-                                                            + "JOIN deployment_execution e ON e.execution_id=r.execution_id "
-                                                            + "WHERE u.deployment_unit_id=? AND c.application_id=? AND r.state='ACTIVE'")) {
-                                        query.setString(1, component.unit().id());
-                                        query.setString(2, graph.applicationId());
-                                        try (var rows = query.executeQuery()) {
-                                            assertTrue(rows.next());
-                                            assertEquals(publishedRelease, rows.getString(1));
-                                            assertEquals("SUCCEEDED", rows.getString(2));
-                                            applicationReleaseSha = rows.getString(3);
-                                            assertEquals(handle.id(), rows.getObject(4, UUID.class));
-                                            assertEquals("FINISHED", rows.getString(5));
-                                            assertTrue(rows.getBoolean(6));
-                                            assertTrue(rows.getBoolean(7));
-                                            applicationReleaseId = rows.getObject(8, UUID.class);
-                                            originalExecutionId = rows.getObject(9, UUID.class);
-                                            assertFalse(rows.next());
-                                        }
-                                    }
-                                    var releases = new DeploymentReleaseRepository(original.db());
-                                    var applicationRelease = releases.find(task, graph.applicationId(), applicationReleaseId).orElseThrow();
-                                    assertEquals(applicationReleaseSha, applicationRelease.identity().sha256());
-                                    assertEquals(originalExecutionId, applicationRelease.executionId());
-                                    assertEquals(DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE, applicationRelease.state());
-                                    var retained = releases.snapshot(applicationRelease);
-                                    assertEquals(graph, retained.graph());
-                                    assertEquals(1, retained.bindings().size());
-                                    assertEquals(component.unit().id(), retained.bindings().getFirst().unitId());
-                                    assertEquals(publishedRelease, retained.bindings().getFirst().releaseSha256());
-                                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(),
-                                            Optional.empty());
-                                } catch (Exception | AssertionError failed) {
-                                    inspectionFailure.set(failed);
-                                    throw failed;
+                        "Inspect original process publication", List.of(server.id()), false), task -> {
+                        try {
+                            var graph = new DeploymentGraphRepository(original.db())
+                                .find(task, reviewedApplication.get()).orElseThrow();
+                            assertInstanceOf(DeploymentHealthCheck.Process.class, graph.healthCheck());
+                            var component = graph.components().getFirst();
+                            assertInstanceOf(DeploymentRuntimeDefinition.NodeService.class,
+                                component.reviewedRuntime());
+                            assertInstanceOf(DeploymentHealthCheck.Process.class,
+                                component.runtime().healthCheck());
+                            assertTrue(component.runtime().userAccessUrl().isEmpty());
+                            assertEquals(22, ((DeploymentRuntimeDefinition.NodeService) component.reviewedRuntime()).nodeMajorVersion());
+                            assertEquals(DeploymentWorkload.ExecutionMode.DAEMON, component.runtime().workload().mode());
+                            assertTrue(component.runtime().workload().endpoints().isEmpty());
+                            UUID applicationReleaseId;
+                            String applicationReleaseSha;
+                            UUID originalExecutionId;
+                            try (var connection = original.db().openConnection(task);
+                                 var query = connection.prepareStatement(
+                                     "SELECT u.current_release_sha256,e.outcome,r.release_sha256,e.platform_task_id,e.phase,e.business_committed,e.cleanup_complete,r.release_id,e.execution_id "
+                                         + "FROM deployment_unit u JOIN managed_application_component c ON c.deployment_unit_id=u.deployment_unit_id "
+                                         + "JOIN deployment_release r ON r.application_id=c.application_id "
+                                         + "JOIN deployment_execution e ON e.execution_id=r.execution_id "
+                                         + "WHERE u.deployment_unit_id=? AND c.application_id=? AND r.state='ACTIVE'")) {
+                                query.setString(1, component.unit().id());
+                                query.setString(2, graph.applicationId());
+                                try (var rows = query.executeQuery()) {
+                                    assertTrue(rows.next());
+                                    assertEquals(publishedRelease, rows.getString(1));
+                                    assertEquals("SUCCEEDED", rows.getString(2));
+                                    applicationReleaseSha = rows.getString(3);
+                                    assertEquals(handle.id(), rows.getObject(4, UUID.class));
+                                    assertEquals("FINISHED", rows.getString(5));
+                                    assertTrue(rows.getBoolean(6));
+                                    assertTrue(rows.getBoolean(7));
+                                    applicationReleaseId = rows.getObject(8, UUID.class);
+                                    originalExecutionId = rows.getObject(9, UUID.class);
+                                    assertFalse(rows.next());
                                 }
-                            });
+                            }
+                            var releases = new DeploymentReleaseRepository(original.db());
+                            var applicationRelease = releases.find(task, graph.applicationId(), applicationReleaseId).orElseThrow();
+                            assertEquals(applicationReleaseSha, applicationRelease.identity().sha256());
+                            assertEquals(originalExecutionId, applicationRelease.executionId());
+                            assertEquals(DeploymentReleaseRecord.DeploymentReleaseState.ACTIVE, applicationRelease.state());
+                            var retained = releases.snapshot(applicationRelease);
+                            assertEquals(graph, retained.graph());
+                            assertEquals(1, retained.bindings().size());
+                            assertEquals(component.unit().id(), retained.bindings().getFirst().unitId());
+                            assertEquals(publishedRelease, retained.bindings().getFirst().releaseSha256());
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(),
+                                Optional.empty());
+                        } catch (Exception | AssertionError failed) {
+                            inspectionFailure.set(failed);
+                            throw failed;
+                        }
+                    });
                     try {
                         assertEquals(Outcome.SUCCEEDED,
-                                inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                            inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                     } catch (TimeoutException unfinished) {
                         var failure = new AssertionError("Original Node publication inspection unfinished: publication="
-                                + handle.snapshot() + ", inspection=" + inspected.snapshot() + ", originalFailure="
-                                + inspectionFailure.get() + ", actions=" + actions + ", activeResources="
-                                + scalar(runtime,
-                                        "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
-                                unfinished);
+                            + handle.snapshot() + ", inspection=" + inspected.snapshot() + ", originalFailure="
+                            + inspectionFailure.get() + ", actions=" + actions + ", activeResources="
+                            + scalar(runtime,
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                            unfinished);
                         if (inspectionFailure.get() != null)
                             failure.addSuppressed(inspectionFailure.get());
                         throw failure;
                     }
                     assertEquals(0,
-                            scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 }
                 if (sqlite) {
                     long revision = publication;
                     var inspected = original.tasks().submit(new TaskRequest("sqlite-publication-inspect",
-                            "Inspect published SQLite", List.of(server.id()), false), task -> {
-                                var graph = new DeploymentGraphRepository(original.db())
-                                        .find(task, reviewedApplication.get()).orElseThrow();
-                                var component = graph.components().getFirst();
-                                var binding = component.resources().databaseBindings().orElseThrow().getFirst();
-                                assertEquals("main", binding.databaseId());
-                                var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
-                                assertEquals("seed.db", connection.seedFile());
-                                assertEquals(List.of("schema.sql"), connection.initializationFiles());
-                                var configuration = new DeploymentConfigurationRepository(original.db())
-                                        .find(task, reviewedApplication.get(), revision).orElseThrow();
-                                assertEquals(connection.physicalPath(reviewedApplication.get(), binding.databaseId()),
-                                        configuration.requireValue("DB_PATH", DeploymentConfigurationScopeType.RUNTIME)
-                                                .canonicalValue());
-                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                            });
+                        "Inspect published SQLite", List.of(server.id()), false), task -> {
+                        var graph = new DeploymentGraphRepository(original.db())
+                            .find(task, reviewedApplication.get()).orElseThrow();
+                        var component = graph.components().getFirst();
+                        var binding = component.resources().databaseBindings().orElseThrow().getFirst();
+                        assertEquals("main", binding.databaseId());
+                        var connection = (DeploymentDatabaseConnection.Sqlite) binding.connection();
+                        assertEquals("seed.db", connection.seedFile());
+                        assertEquals(List.of("schema.sql"), connection.initializationFiles());
+                        var configuration = new DeploymentConfigurationRepository(original.db())
+                            .find(task, reviewedApplication.get(), revision).orElseThrow();
+                        assertEquals(connection.physicalPath(reviewedApplication.get(), binding.databaseId()),
+                            configuration.requireValue("DB_PATH", DeploymentConfigurationScopeType.RUNTIME)
+                                .canonicalValue());
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
                     assertEquals(Outcome.SUCCEEDED,
-                            inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                        inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                 }
                 if (nativeDatabase) {
                     assertTrue(actions.contains("native-inspect"));
                     assertTrue(actions.contains("native-start"));
                     assertEquals(
-                            (nativeInstall == NativeInstallType.FIRST || nativeInstall == NativeInstallType.REPLACE)
-                                    && publication == 1 ? 1 : 0,
-                            actions.stream().filter("native-install"::equals).count());
+                        (nativeInstall == NativeInstallType.FIRST || nativeInstall == NativeInstallType.REPLACE)
+                            && publication == 1 ? 1 : 0,
+                        actions.stream().filter("native-install"::equals).count());
                     assertEquals(
-                            (nativeInstall == NativeInstallType.REPLACE || nativeInstall == NativeInstallType.PENDING)
-                                    && publication == 1 ? 1 : 0,
-                            actions.stream().filter("native-resume"::equals).count());
+                        (nativeInstall == NativeInstallType.REPLACE || nativeInstall == NativeInstallType.PENDING)
+                            && publication == 1 ? 1 : 0,
+                        actions.stream().filter("native-resume"::equals).count());
                     assertTrue(actions.contains("native-target"));
                     assertTrue(actions.contains("native-prepare"));
                     assertTrue(actions.contains("native-initialize"));
                     assertEquals(expectedNativeRevision, countMod(runtime, "secret_revision") - 1,
-                            "Only a successful new password may add a database credential revision");
+                        "Only a successful new password may add a database credential revision");
                     if (authRetry || rotateStored && publication == 2)
                         assertEquals(2, passwordPrompts.get());
                     long revision = publication;
                     var inspected = original.tasks().submit(new TaskRequest("native-publication-inspect",
-                            "Inspect published native database", List.of(server.id()), false), task -> {
-                                var graph = new DeploymentGraphRepository(original.db())
-                                        .find(task, reviewedApplication.get()).orElseThrow();
-                                var binding = graph.components().getFirst().resources().databaseBindings().orElseThrow()
-                                        .getFirst();
-                                var connection = (DeploymentDatabaseConnection.Server) binding.connection();
-                                assertEquals("main", binding.databaseId());
-                                assertEquals("sampledb", connection.database());
-                                assertEquals(expectedNativeRevision, connection.passwordReference().revision());
-                                if (rotateStored) {
-                                    var repository = new DeploymentSecretRepository(original.db());
-                                    var initialReference = new DeploymentSecretReference(
-                                            connection.passwordReference().identifier(), 1);
-                                    var initial = repository.findRevision(task, initialReference).orElseThrow();
-                                    if (currentPublication == 1) {
-                                        firstNativeSecret.set(initial);
-                                        firstNativePasswordDigest.set(nativeState.passwordDigest);
-                                    } else {
-                                        assertEquals(firstNativeSecret.get(), initial,
-                                                "The old immutable credential revision changed");
-                                        var latest = repository.findRevision(task, connection.passwordReference())
-                                                .orElseThrow();
-                                        assertNotEquals(initial.credentialId(), latest.credentialId(),
-                                                "The corrected password must create a new protected value");
-                                        try {
-                                            boolean firstMatches = original.secrets().use(
-                                                    new SecretRef(initial.credentialId(),
-                                                            initial.purpose().orElseThrow()),
-                                                    initial.purpose().orElseThrow(), task,
-                                                    secretBytes -> firstNativePasswordDigest.get()
-                                                            .equals(DeploymentNativeDatabaseWire.digest(secretBytes)));
-                                            boolean secondMatches = original.secrets()
-                                                    .use(new SecretRef(latest.credentialId(),
-                                                            latest.purpose().orElseThrow()),
-                                                            latest.purpose().orElseThrow(), task,
-                                                            secretBytes -> Arrays.equals(
-                                                                    "rotated-password".getBytes(StandardCharsets.UTF_8),
-                                                                    secretBytes));
-                                            nativeSecretAudit.set("old=" + firstMatches + ",new=" + secondMatches);
-                                        } catch (ApiException failure) {
-                                            nativeSecretAudit.set(failure.problem().eventCode());
-                                        }
-                                    }
+                        "Inspect published native database", List.of(server.id()), false), task -> {
+                        var graph = new DeploymentGraphRepository(original.db())
+                            .find(task, reviewedApplication.get()).orElseThrow();
+                        var binding = graph.components().getFirst().resources().databaseBindings().orElseThrow()
+                            .getFirst();
+                        var connection = (DeploymentDatabaseConnection.Server) binding.connection();
+                        assertEquals("main", binding.databaseId());
+                        assertEquals("sampledb", connection.database());
+                        assertEquals(expectedNativeRevision, connection.passwordReference().revision());
+                        if (rotateStored) {
+                            var repository = new DeploymentSecretRepository(original.db());
+                            var initialReference = new DeploymentSecretReference(
+                                connection.passwordReference().identifier(), 1);
+                            var initial = repository.findRevision(task, initialReference).orElseThrow();
+                            if (currentPublication == 1) {
+                                firstNativeSecret.set(initial);
+                                firstNativePasswordDigest.set(nativeState.passwordDigest);
+                            } else {
+                                assertEquals(firstNativeSecret.get(), initial,
+                                    "The old immutable credential revision changed");
+                                var latest = repository.findRevision(task, connection.passwordReference())
+                                    .orElseThrow();
+                                assertNotEquals(initial.credentialId(), latest.credentialId(),
+                                    "The corrected password must create a new protected value");
+                                try {
+                                    boolean firstMatches = original.secrets().use(
+                                        new SecretRef(initial.credentialId(),
+                                            initial.purpose().orElseThrow()),
+                                        initial.purpose().orElseThrow(), task,
+                                        secretBytes -> firstNativePasswordDigest.get()
+                                            .equals(DeploymentNativeDatabaseWire.digest(secretBytes)));
+                                    boolean secondMatches = original.secrets()
+                                        .use(new SecretRef(latest.credentialId(),
+                                                latest.purpose().orElseThrow()),
+                                            latest.purpose().orElseThrow(), task,
+                                            secretBytes -> Arrays.equals(
+                                                "rotated-password".getBytes(StandardCharsets.UTF_8),
+                                                secretBytes));
+                                    nativeSecretAudit.set("old=" + firstMatches + ",new=" + secondMatches);
+                                } catch (ApiException failure) {
+                                    nativeSecretAudit.set(failure.problem().eventCode());
                                 }
-                                var configuration = new DeploymentConfigurationRepository(original.db())
-                                        .find(task, reviewedApplication.get(), revision).orElseThrow();
-                                assertEquals("127.0.0.1",
-                                        configuration.requireValue("DB_HOST", DeploymentConfigurationScopeType.RUNTIME)
-                                                .canonicalValue());
-                                assertEquals("sampledb",
-                                        configuration
-                                                .requireValue("DB_DATABASE", DeploymentConfigurationScopeType.RUNTIME)
-                                                .canonicalValue());
-                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                            });
+                            }
+                        }
+                        var configuration = new DeploymentConfigurationRepository(original.db())
+                            .find(task, reviewedApplication.get(), revision).orElseThrow();
+                        assertEquals("127.0.0.1",
+                            configuration.requireValue("DB_HOST", DeploymentConfigurationScopeType.RUNTIME)
+                                .canonicalValue());
+                        assertEquals("sampledb",
+                            configuration
+                                .requireValue("DB_DATABASE", DeploymentConfigurationScopeType.RUNTIME)
+                                .canonicalValue());
+                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    });
                     assertEquals(Outcome.SUCCEEDED,
-                            inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                        inspected.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                     if (rotateStored && currentPublication == 2)
                         assertEquals("old=true,new=true", nativeSecretAudit.get(),
-                                "Both immutable protected values must retain their original bytes");
+                            "Both immutable protected values must retain their original bytes");
                 }
                 var snapshots = configurationRows(runtime);
                 String owner = ownershipManifest(runtime);
@@ -994,13 +1008,13 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param manifest original frozen manifest digest / 原冻结清单摘要
      * @throws Exception if actual Mod data cannot be read / 真实 Mod 数据无法读取时 */
     private void assertGitSourceSaved(PlatformRuntime runtime, String remote, String commit, String manifest)
-            throws Exception {
+        throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT p.source_location,p.git_ref,p.git_commit,p.source_sha256 "
-                        + "FROM deployment_execution e JOIN deployment_project p ON e.project_id=p.project_id "
-                        + "ORDER BY e.created_at DESC LIMIT 1")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT p.source_location,p.git_ref,p.git_commit,p.source_sha256 "
+                 + "FROM deployment_execution e JOIN deployment_project p ON e.project_id=p.project_id "
+                 + "ORDER BY e.created_at DESC LIMIT 1")) {
             assertTrue(rows.next(), "Formal execution must retain its reviewed source project");
             assertEquals(remote, rows.getString(1));
             assertEquals("DEFAULT:HEAD", rows.getString(2));
@@ -1015,10 +1029,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if schema access fails / 模式访问失败时 */
     private List<String> configurationRows(PlatformRuntime runtime) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT configuration_revision, configuration_sha256 "
-                        + "FROM deployment_unit_configuration_snapshot ORDER BY configuration_revision")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT configuration_revision, configuration_sha256 "
+                 + "FROM deployment_unit_configuration_snapshot ORDER BY configuration_revision")) {
             var result = new ArrayList<String>();
             while (rows.next())
                 result.add(rows.getLong(1) + ":" + rows.getString(2));
@@ -1032,9 +1046,9 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if business storage fails / 业务存储失败时 */
     private String ownershipManifest(PlatformRuntime runtime) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT ownership_manifest_sha256 FROM deployment_unit")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT ownership_manifest_sha256 FROM deployment_unit")) {
             assertTrue(rows.next());
             var digest = rows.getString(1);
             assertFalse(rows.next(), "Expected one managed unit across publications");
@@ -1046,15 +1060,15 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if the controlled child cannot finish / 受控子进程无法完成时 */
     @ParameterizedTest
     @EnumSource(value = ScenarioType.class, names = {"SECOND_CONFIG_UNKNOWN", "PUBLISH_UNKNOWN",
-            "HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN", "ROLLBACK_UNKNOWN", "RETAIN_UNKNOWN"})
+        "HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN", "ROLLBACK_UNKNOWN", "RETAIN_UNKNOWN"})
     void unknownPublicationRetainsOriginalEvidenceWithoutNormalShutdown(ScenarioType scenario) throws Exception {
         var javaBinary = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var process = new ProcessBuilder(javaBinary.toString(), "-cp", System.getProperty("java.class.path"),
-                getClass().getName(), "--unknown", root.toString(), scenario.name()).redirectErrorStream(true).start();
+            getClass().getName(), "--unknown", root.toString(), scenario.name()).redirectErrorStream(true).start();
         try {
             assertTrue(process.waitFor(50, TimeUnit.SECONDS), "Isolated original-task probe timed out");
             String output = new String(process.getInputStream().readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
+                java.nio.charset.StandardCharsets.UTF_8);
             assertEquals(0, process.exitValue(), output);
             assertTrue(output.contains("ORIGINAL_UNKNOWN_VERIFIED"), output);
         } finally {
@@ -1074,7 +1088,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
     void nativeStartUnknownRetainsOriginalStaticMarkerAndSource() throws Exception {
         var javaBinary = Path.of(System.getProperty("java.home"), "bin", "java.exe");
         var process = new ProcessBuilder(javaBinary.toString(), "-cp", System.getProperty("java.class.path"),
-                getClass().getName(), "--native-unknown", root.toString()).redirectErrorStream(true).start();
+            getClass().getName(), "--native-unknown", root.toString()).redirectErrorStream(true).start();
         try {
             assertTrue(process.waitFor(55, TimeUnit.SECONDS), "Original native workflow probe timed out");
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -1134,7 +1148,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var server = new ServerRef("server-publication");
             runtime.servers().saveServerProfile(ServerProfile.fromStored(
                     new StoredServerProfile(server.id(), "127.0.0.1", recoveryPort, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                "fixture-password".toCharArray());
             var actions = new CopyOnWriteArrayList<String>();
             var archiveSha = new AtomicReference<String>();
             var archiveBytes = new AtomicLong();
@@ -1142,7 +1156,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var candidate = new AtomicReference<DeploymentRemoteWorkspace>();
             var callbackEnded = new CountDownLatch(1);
             RemoteSession session = peer(scenario, actions, archiveSha, archiveBytes, archivePath, candidate,
-                    callbackEnded);
+                callbackEnded);
             var real = runtime.modContexts().get(OWNER).context();
             var bound = withControlledSession(real, session, runtime, scenario);
             var original = new DeploymentReferenceFlow(bound);
@@ -1150,27 +1164,27 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
             var unit = DeploymentUnitIdentity.forManaged("service", server, "b".repeat(64));
             var reference = new DeploymentSecretReference("password-id", 1);
             boolean purposeCase = scenario == ScenarioType.PURPOSE_PRESENT || scenario == ScenarioType.PURPOSE_UNKNOWN
-                    || scenario == ScenarioType.PURPOSE_MISMATCH;
+                || scenario == ScenarioType.PURPOSE_MISMATCH;
             boolean purposeDefect = scenario == ScenarioType.PURPOSE_UNKNOWN
-                    || scenario == ScenarioType.PURPOSE_MISMATCH;
+                || scenario == ScenarioType.PURPOSE_MISMATCH;
             var secret = purposeCase ? purposeSecret(real, reference, scenario == ScenarioType.PURPOSE_UNKNOWN) : null;
             if (scenario == ScenarioType.PURPOSE_UNKNOWN) {
                 var choices = real.tasks().submit(
-                        new TaskRequest("legacy-secret-choices", "Legacy secret choices", List.of(), true),
-                        task -> new OperationResult<>(Outcome.SUCCEEDED,
-                                Optional.of(new DeploymentSecretRepository(real.db()).listReferences(task, 1000)),
-                                Optional.empty()));
+                    new TaskRequest("legacy-secret-choices", "Legacy secret choices", List.of(), true),
+                    task -> new OperationResult<>(Outcome.SUCCEEDED,
+                        Optional.of(new DeploymentSecretRepository(real.db()).listReferences(task, 1000)),
+                        Optional.empty()));
                 var listed = choices.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
                 assertEquals(Outcome.SUCCEEDED, listed.outcome());
                 assertTrue(listed.value().orElseThrow().stream().noneMatch(item -> item.reference().equals(reference)),
-                        "A legacy revision without its original purpose cannot be selected");
+                    "A legacy revision without its original purpose cannot be selected");
             }
             var reviewedSecret = purposeCase && scenario == ScenarioType.PURPOSE_MISMATCH
-                    ? new SecretRef(secret.id(), "deployment.wrong")
-                    : secret;
+                ? new SecretRef(secret.id(), "deployment.wrong")
+                : secret;
             var credentials = purposeCase
-                    ? Map.of(reference, reviewedSecret)
-                    : Map.<DeploymentSecretReference, SecretRef>of();
+                ? Map.of(reference, reviewedSecret)
+                : Map.<DeploymentSecretReference, SecretRef>of();
             var handle = executor.submit(unit, Optional.empty(), credentials, task -> {
                 if (recoveryPort != 22)
                     real.linux().connect(server, task);
@@ -1181,38 +1195,38 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                 archiveBytes.set(archive.byteCount());
                 archivePath.set(archive.path());
                 var analysis = new DeploymentStandardAnalyzer().analyze(material, "service",
-                        DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
+                    DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
                 var facts = analysis.value().orElseThrow().assessment().facts().orElseThrow();
                 candidate.set(new DeploymentRemoteWorkspace(facts.applicationId(), archive.sha256()));
                 assertEquals(unit.id(), facts.applicationId());
                 var request = new ReviewedDeploymentRequest(server, facts, material, archive,
-                        DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1", Instant.now(),
-                                List.of()),
-                        purposeCase ? List.of(reference) : List.of(),
-                        new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
-                        new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(), "main.go",
-                                new DeploymentHealthCheck.Tcp(8080, 10, 2)),
-                        Optional.empty(), DeploymentBuildLimits.defaultNonRoot(),
-                        new DeploymentReviewConsent(facts.applicationId(), server.id(), material.snapshot().sha256(),
-                                archive.sha256(), Instant.now()),
-                        false, true);
+                    DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1", Instant.now(),
+                        List.of()),
+                    purposeCase ? List.of(reference) : List.of(),
+                    new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+                    new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(), "main.go",
+                        new DeploymentHealthCheck.Tcp(8080, 10, 2)),
+                    Optional.empty(), DeploymentBuildLimits.defaultNonRoot(),
+                    new DeploymentReviewConsent(facts.applicationId(), server.id(), material.snapshot().sha256(),
+                        archive.sha256(), Instant.now()),
+                    false, true);
                 if (scenario == ScenarioType.SUCCESS)
                     assertReleaseIdentity(real, task, request);
                 var plan = new DeploymentStandardPlanner().plan(material, analysis.value().orElseThrow(), request,
-                        task);
+                    task);
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan.value().orElseThrow()),
-                        Optional.empty());
+                    Optional.empty());
             });
             if (purposeDefect) {
                 var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
                 assertEquals(Outcome.FAILED, result.outcome(), result.toString());
                 assertEquals(scenario == ScenarioType.PURPOSE_UNKNOWN
-                        ? "DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE"
-                        : "DEPLOYMENT_PREPARATION_INVALID", result.problem().orElseThrow().eventCode());
+                    ? "DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE"
+                    : "DEPLOYMENT_PREPARATION_INVALID", result.problem().orElseThrow().eventCode());
                 assertTrue(actions.isEmpty(), actions.toString());
                 assertEquals(0, countMod(runtime, "deployment_release"));
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 return;
             }
             assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> "Remote callback: " + handle.snapshot());
@@ -1222,11 +1236,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     result = handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
                 } catch (TimeoutException unfinished) {
                     throw new AssertionError(
-                            "Publication unfinished: " + handle.snapshot() + ", actions=" + actions + ", releases="
-                                    + countMod(runtime, "deployment_release") + ", resources="
-                                    + scalar(runtime,
-                                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
-                            unfinished);
+                        "Publication unfinished: " + handle.snapshot() + ", actions=" + actions + ", releases="
+                            + countMod(runtime, "deployment_release") + ", resources="
+                            + scalar(runtime,
+                            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"),
+                        unfinished);
                 }
                 assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(1, countMod(runtime, "deployment_release"));
@@ -1235,18 +1249,18 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     assertEquals(1, countReleaseSecrets(runtime));
                 }
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(List.of("maintenance-end", "retain", "candidate-cleanup"),
-                        actions.subList(actions.size() - 3, actions.size()));
+                    actions.subList(actions.size() - 3, actions.size()));
             } else if (scenario == ScenarioType.HEALTH_FAILED_ROLLBACK
-                    || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE) {
+                || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE) {
                 var result = handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
                 assertEquals(Outcome.FAILED, result.outcome(), result.toString());
                 assertEquals(0, countMod(runtime, "deployment_release"));
                 assertTrue(actions.contains("rollback"), actions.toString());
                 assertTrue(actions.contains("candidate-cleanup"), actions.toString());
                 assertEquals(0,
-                        scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                    scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             } else {
                 for (int attempt = 0; attempt < 200 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
                     Thread.sleep(10);
@@ -1259,37 +1273,37 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                     assertFalse(actions.contains("rollback"));
                 } else if (scenario == ScenarioType.RETAIN_UNKNOWN) {
                     assertEquals(List.of("maintenance-end", "retain"),
-                            actions.subList(actions.size() - 2, actions.size()));
+                        actions.subList(actions.size() - 2, actions.size()));
                     assertFalse(actions.contains("candidate-cleanup"));
                     assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
-                            "RETAIN_MAY_HAVE_RUN"));
+                        "RETAIN_MAY_HAVE_RUN"));
                     assertEquals(1, countExecutionOutcome(runtime, "SUCCEEDED"));
                 } else if (scenario == ScenarioType.SECOND_CONFIG_UNKNOWN) {
                     assertEquals(2, actions.stream().filter("stage-config"::equals).count());
                     assertFalse(actions.contains("snapshot"));
                     assertFalse(actions.contains("publish"));
                     assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
-                            "CANDIDATE_MAY_EXIST"));
+                        "CANDIDATE_MAY_EXIST"));
                 } else if (scenario == ScenarioType.PUBLISH_UNKNOWN) {
                     assertFalse(actions.contains("rollback"));
                     assertFalse(actions.contains("candidate-cleanup"));
                     assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
-                            "PUBLISH_MAY_HAVE_RUN"));
+                        "PUBLISH_MAY_HAVE_RUN"));
                 } else if (scenario == ScenarioType.ROLLBACK_UNKNOWN) {
                     assertTrue(actions.contains("rollback"));
                     assertFalse(actions.contains("candidate-cleanup"));
                     assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
-                            "ROLLBACK_MAY_HAVE_RUN"));
+                        "ROLLBACK_MAY_HAVE_RUN"));
                 } else {
                     assertTrue(actions.contains("rollback"));
                     assertTrue(actions.contains("candidate-cleanup"));
                     assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
-                            "REMOTE_CLEANUP_VERIFIED"));
+                        "REMOTE_CLEANUP_VERIFIED"));
                     assertEquals(1, countExecutionOutcome(runtime, "FAILED"));
                 }
             }
             assertEquals(scenario == ScenarioType.SECOND_CONFIG_UNKNOWN ? 0 : 1,
-                    actions.stream().filter("publish"::equals).count());
+                actions.stream().filter("publish"::equals).count());
             assertEquals(1, actions.stream().filter("create-candidate"::equals).count());
         } finally {
             if (!interruptedHost)
@@ -1304,26 +1318,26 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return original credential / 原凭据
      * @throws Exception if the real credential or metadata cannot be saved / 真实凭据或元数据无法保存时 */
     private SecretRef purposeSecret(ModContext context, DeploymentSecretReference reference, boolean unknownPurpose)
-            throws Exception {
+        throws Exception {
         var observed = new AtomicReference<SecretRef>();
         var setup = context.tasks()
-                .submit(new TaskRequest("secret_purpose_fixture", "Secret purpose fixture", List.of(), true), task -> {
-                    var secret = context.secrets().create("deployment.actual", new byte[]{7}, task);
-                    observed.set(secret);
-                    var reservation = context.secrets().reserve(secret, "secret:" + reference.identifier(), task);
-                    new DeploymentSecretRepository(context.db()).saveRevision(task, new DeploymentSecretRevision(
-                            reference, secret.id(), Instant.now(), Optional.of(secret.purpose())));
-                    if (unknownPurpose)
-                        try (var connection = context.db().openConnection(task);
-                                var statement = connection.prepareStatement(
-                                        "UPDATE secret_revision SET purpose=NULL WHERE secret_id=? AND secret_revision=?")) {
-                            statement.setString(1, reference.identifier());
-                            statement.setLong(2, reference.revision());
-                            assertEquals(1, statement.executeUpdate());
-                        }
-                    context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                });
+            .submit(new TaskRequest("secret_purpose_fixture", "Secret purpose fixture", List.of(), true), task -> {
+                var secret = context.secrets().create("deployment.actual", new byte[]{7}, task);
+                observed.set(secret);
+                var reservation = context.secrets().reserve(secret, "secret:" + reference.identifier(), task);
+                new DeploymentSecretRepository(context.db()).saveRevision(task, new DeploymentSecretRevision(
+                    reference, secret.id(), Instant.now(), Optional.of(secret.purpose())));
+                if (unknownPurpose)
+                    try (var connection = context.db().openConnection(task);
+                         var statement = connection.prepareStatement(
+                             "UPDATE secret_revision SET purpose=NULL WHERE secret_id=? AND secret_revision=?")) {
+                        statement.setString(1, reference.identifier());
+                        statement.setLong(2, reference.revision());
+                        assertEquals(1, statement.executeUpdate());
+                    }
+                context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
+                return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
         assertEquals(Outcome.SUCCEEDED, setup.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
         return observed.get();
     }
@@ -1334,54 +1348,54 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param request first reviewed candidate / 首个已审阅候选
      * @throws Exception if the second real frozen source cannot be inspected / 第二份真实冻结来源无法检查时 */
     private void assertReleaseIdentity(ModContext context, TaskContext task, ReviewedDeploymentRequest request)
-            throws Exception {
+        throws Exception {
         String original = DeploymentReviewedReleaseIdentity.from(request);
-        var secondSelection = context.source().selectDirectory("Same source", task);
-        try (var material = new DeploymentSourcePreparer(context.source()).prepare(secondSelection, 65536, 100, task);
-                var archive = new DeploymentSourceArchiver(context.source()).prepare(material, 65536, task)) {
+        var secondSelection = context.file().selectDirectory("Same source", task);
+        try (var material = new DeploymentSourcePreparer(context.file()).prepare(secondSelection, 65536, 100, task);
+             var archive = new DeploymentSourceArchiver(context.file()).prepare(material, 65536, task)) {
             assertNotEquals(request.material().snapshot().id(), material.snapshot().id());
             assertEquals(request.archive().sha256(), archive.sha256());
             var analysis = new DeploymentStandardAnalyzer().analyze(material, "service",
-                    DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
+                DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
             var review = new DeploymentReviewConsent(request.facts().applicationId(), request.server().id(),
-                    material.snapshot().sha256(), archive.sha256(), request.review().confirmedAt().plusSeconds(10));
+                material.snapshot().sha256(), archive.sha256(), request.review().confirmedAt().plusSeconds(10));
             var sameContent = new ReviewedDeploymentRequest(request.server(),
-                    analysis.value().orElseThrow().assessment().facts().orElseThrow(), material, archive,
-                    request.configuration(), request.secretReferences(), request.resources(), request.runtime(),
-                    request.userAccessUrl(), request.limits(), review, false, true);
+                analysis.value().orElseThrow().assessment().facts().orElseThrow(), material, archive,
+                request.configuration(), request.secretReferences(), request.resources(), request.runtime(),
+                request.userAccessUrl(), request.limits(), review, false, true);
             assertEquals(original, DeploymentReviewedReleaseIdentity.from(sameContent));
         }
         var changedConfiguration = new ReviewedDeploymentRequest(request.server(), request.facts(), request.material(),
-                request.archive(),
-                DeploymentConfigurationSnapshot.create(request.facts().applicationId(), 2, "v1", Instant.now(),
-                        List.of()),
-                request.secretReferences(), request.resources(), request.runtime(), request.userAccessUrl(),
-                request.limits(), request.review(), false, true);
+            request.archive(),
+            DeploymentConfigurationSnapshot.create(request.facts().applicationId(), 2, "v1", Instant.now(),
+                List.of()),
+            request.secretReferences(), request.resources(), request.runtime(), request.userAccessUrl(),
+            request.limits(), request.review(), false, true);
         assertNotEquals(original, DeploymentReviewedReleaseIdentity.from(changedConfiguration));
         var firstSecret = new ReviewedDeploymentRequest(request.server(), request.facts(), request.material(),
-                request.archive(), request.configuration(), List.of(new DeploymentSecretReference("db-password", 1)),
-                request.resources(), request.runtime(), request.userAccessUrl(), request.limits(), request.review(),
-                false, true);
+            request.archive(), request.configuration(), List.of(new DeploymentSecretReference("db-password", 1)),
+            request.resources(), request.runtime(), request.userAccessUrl(), request.limits(), request.review(),
+            false, true);
         var secondSecret = new ReviewedDeploymentRequest(request.server(), request.facts(), request.material(),
-                request.archive(), request.configuration(), List.of(new DeploymentSecretReference("db-password", 2)),
-                request.resources(), request.runtime(), request.userAccessUrl(), request.limits(), request.review(),
-                false, true);
+            request.archive(), request.configuration(), List.of(new DeploymentSecretReference("db-password", 2)),
+            request.resources(), request.runtime(), request.userAccessUrl(), request.limits(), request.review(),
+            false, true);
         assertNotEquals(DeploymentReviewedReleaseIdentity.from(firstSecret),
-                DeploymentReviewedReleaseIdentity.from(secondSecret));
+            DeploymentReviewedReleaseIdentity.from(secondSecret));
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod",
-                ToolchainRequirement.PurposeType.BUILD);
+            ToolchainRequirement.PurposeType.BUILD);
         var version = DeploymentToolchainVersion.parse(DeploymentToolchainType.GO, "1.24.1").orElseThrow();
         var firstTool = new DeploymentResolvedToolchains.Selection(requirement, version,
-                "/usr/local/lib/windowstolinux/toolchains/go-a", DeploymentResolvedToolchains.OriginType.MANAGED,
-                "https://official.example/go", "a".repeat(64));
+            "/usr/local/lib/windowstolinux/toolchains/go-a", DeploymentResolvedToolchains.OriginType.MANAGED,
+            "https://official.example/go", "a".repeat(64));
         var secondTool = new DeploymentResolvedToolchains.Selection(requirement, version,
-                "/usr/local/lib/windowstolinux/toolchains/go-b", DeploymentResolvedToolchains.OriginType.MANAGED,
-                "https://official.example/go", "b".repeat(64));
+            "/usr/local/lib/windowstolinux/toolchains/go-b", DeploymentResolvedToolchains.OriginType.MANAGED,
+            "https://official.example/go", "b".repeat(64));
         assertNotEquals(
-                DeploymentReviewedReleaseIdentity.bind(original,
-                        new DeploymentResolvedToolchains("catalog", List.of(firstTool))),
-                DeploymentReviewedReleaseIdentity.bind(original,
-                        new DeploymentResolvedToolchains("catalog", List.of(secondTool))));
+            DeploymentReviewedReleaseIdentity.bind(original,
+                new DeploymentResolvedToolchains("catalog", List.of(firstTool))),
+            DeploymentReviewedReleaseIdentity.bind(original,
+                new DeploymentResolvedToolchains("catalog", List.of(secondTool))));
     }
 
     /** Reads the original checkpoint before fixture-only teardown. / 在仅供夹具使用的收尾前读取原检查点。
@@ -1392,10 +1406,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return whether the original record retains the candidate / 原记录是否保留候选
      * @throws Exception if durable inspection fails / 持久检查失败时 */
     private boolean pendingCandidate(PlatformRuntime runtime, UUID task, String candidate, String phase)
-            throws Exception {
+        throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
-                var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource "
-                        + "WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL")) {
+             var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource "
+                 + "WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL")) {
             query.setObject(1, task);
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
@@ -1411,8 +1425,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws SQLException if platform evidence cannot be read / 平台依据不可读取时 */
     private static boolean originalCheckpointReleased(PlatformRuntime runtime, UUID task) throws SQLException {
         try (var connection = runtime.persistence().database().openConnection();
-                var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
-                        + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
+             var query = connection.prepareStatement("SELECT released_at FROM platform_task_resource"
+                 + " WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=?")) {
             query.setObject(1, task);
             query.setString(2, "gold.debug.windowstolinux.mod.deployment/checkpoint/deployment-publication-remote");
             try (var rows = query.executeQuery()) {
@@ -1428,8 +1442,8 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if schema access fails / Schema访问失败时 */
     private long countExecutionOutcome(PlatformRuntime runtime, String outcome) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var query = connection.prepareStatement("SELECT COUNT(*) FROM deployment_execution WHERE outcome=?")) {
+             var connection = access.openConnection();
+             var query = connection.prepareStatement("SELECT COUNT(*) FROM deployment_execution WHERE outcome=?")) {
             query.setString(1, outcome);
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
@@ -1445,11 +1459,11 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if access fails / 访问失败时 */
     private long countMod(PlatformRuntime runtime, String table) throws Exception {
         assertTrue(Set.of("deployment_release", "deployment_project", "deployment_unit_release_secret_reference",
-                "secret_revision").contains(table));
+            "secret_revision").contains(table));
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }
@@ -1461,9 +1475,9 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @throws Exception if original data cannot be read / 无法读取原数据时 */
     private long countReleaseSecrets(PlatformRuntime runtime) throws Exception {
         try (var access = scope(runtime, true);
-                var connection = access.openConnection();
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_unit_release_secret_reference")) {
+             var connection = access.openConnection();
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_unit_release_secret_reference")) {
             assertTrue(rows.next());
             return rows.getLong(1);
         }
@@ -1474,7 +1488,7 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param session controlled original session / 受控原会话
      * @return delegated context / 委托上下文 */
     private ModContext withFullControlModels(ModContext real, AtomicReference<TaskContext> originalTask,
-            AtomicInteger independentReviews) {
+                                             AtomicInteger independentReviews) {
         AiService models = new AiService() {
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertTrue(purpose == AiPurpose.LANGUAGE || purpose == AiPurpose.APPROVAL);
@@ -1496,77 +1510,77 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
                         independentReviews.incrementAndGet();
                     }
                     String output = request.purpose() == AiPurpose.APPROVAL
-                            ? "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact fixed effect only\"}"
-                            : "{\"action\":\"ADVISE\",\"sourceRevision\":\"" + facts.path("sourceRevision").textValue()
-                                    + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep deterministic inputs\",\"unresolved\":[]}}";
+                        ? "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact fixed effect only\"}"
+                        : "{\"action\":\"ADVISE\",\"sourceRevision\":\"" + facts.path("sourceRevision").textValue()
+                        + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep deterministic inputs\",\"unresolved\":[]}}";
                     return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new AiResponse(output,
-                            "controlled-independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
-                            Optional.empty());
+                        "controlled-independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
+                        Optional.empty());
                 } catch (Exception invalid) {
                     throw new AssertionError(invalid);
                 }
             }
         };
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("ai"))
-                        return models;
-                    try {
-                        return method.invoke(real, args);
-                    } catch (InvocationTargetException failed) {
-                        throw failed.getCause();
-                    }
-                });
+            (proxy, method, args) -> {
+                if (method.getName().equals("ai"))
+                    return models;
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException failed) {
+                    throw failed.getCause();
+                }
+            });
     }
 
     private ModContext withControlledSession(ModContext real, RemoteSession session, PlatformRuntime runtime,
-            ScenarioType scenario) {
+                                             ScenarioType scenario) {
         var commitRefused = new AtomicBoolean();
         LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
-                new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
-                    assertEquals("connect", method.getName());
-                    assertEquals("server-publication", ((ServerRef) args[0]).id());
-                    return session;
-                });
+            new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
+                assertEquals("connect", method.getName());
+                assertEquals("server-publication", ((ServerRef) args[0]).id());
+                return session;
+            });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("linux"))
-                        return linux;
-                    if (method.getName().equals("db") && scenario == ScenarioType.COMMIT_WINDOW)
-                        return new ModDatabase() {
-                            public gold.debug.windowstolinux.appapi.db.SchemaIdentity identity() throws ApiException {
-                                return real.db().identity();
-                            }
+            (proxy, method, args) -> {
+                if (method.getName().equals("linux"))
+                    return linux;
+                if (method.getName().equals("db") && scenario == ScenarioType.COMMIT_WINDOW)
+                    return new ModDatabase() {
+                        public gold.debug.windowstolinux.appapi.db.SchemaIdentity identity() throws ApiException {
+                            return real.db().identity();
+                        }
 
-                            public java.sql.Connection openConnection(TaskContext task)
-                                    throws ApiException, SQLException {
-                                if (originalCheckpointReleased(runtime, task.id())
-                                        && commitRefused.compareAndSet(false, true))
-                                    throw new SQLException(
-                                            "Controlled interruption before formal business transaction");
-                                return real.db().openConnection(task);
-                            }
-                        };
-                    if (method.getName().equals("interaction"))
-                        return new InteractionService() {
-                            public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                                    throws ApiException {
-                                var approved = real.interaction().approve(intent, task);
-                                approved.value().ifPresent(value -> grants.put(value, intent));
-                                return approved;
-                            }
+                        public java.sql.Connection openConnection(TaskContext task)
+                            throws ApiException, SQLException {
+                            if (originalCheckpointReleased(runtime, task.id())
+                                && commitRefused.compareAndSet(false, true))
+                                throw new SQLException(
+                                    "Controlled interruption before formal business transaction");
+                            return real.db().openConnection(task);
+                        }
+                    };
+                if (method.getName().equals("interaction"))
+                    return new InteractionService() {
+                        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
+                            throws ApiException {
+                            var approved = real.interaction().approve(intent, task);
+                            approved.value().ifPresent(value -> grants.put(value, intent));
+                            return approved;
+                        }
 
-                            public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                                    TaskContext task) throws ApiException {
-                                return real.interaction().requestText(title, prompt, secret, task);
-                            }
-                        };
-                    try {
-                        return method.invoke(real, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
+                        public OperationResult<String> requestText(String title, String prompt, boolean secret,
+                                                                   TaskContext task) throws ApiException {
+                            return real.interaction().requestText(title, prompt, secret, task);
+                        }
+                    };
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
     }
 
     /** Adds one initially missing helper to the existing controlled publication session. / 为既有受控发布会话补入一次初始缺失的 helper。
@@ -1576,38 +1590,38 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param installs actual installer dispatch count / 实际安装发送次数
      * @return borrowed controlled session / 借用受控会话 */
     private static RemoteSession missingHelper(RemoteSession existing, ModContext context,
-            AtomicReference<TaskContext> task, AtomicInteger installs) {
+                                               AtomicReference<TaskContext> task, AtomicInteger installs) {
         var closes = new AtomicInteger();
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute")) {
-                        var request = (CommandRequest) args[0];
-                        if (request.script().contains("sha256sum --check --status") && installs.get() == 0)
-                            return reply(1, "");
-                        if (request.script().contains("--noprofile")) {
-                            String input = new String(request.stdin(), StandardCharsets.UTF_8);
-                            if (input.contains("prepare_stage=platform-packages")) {
-                                installs.incrementAndGet();
-                                return reply(
-                                        "HELPER_INSTALL=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
-                                                + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
-                            }
-                            if (input.contains("bootstrap_receipt")) {
-                                var facts = DeploymentProtocolBootstrapJournal.find(context.tasks(), task.get())
-                                        .orElseThrow().facts();
-                                return reply(DeploymentHelperInstallerScript.receipt(task.get().id(),
-                                        facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
-                            }
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute")) {
+                    var request = (CommandRequest) args[0];
+                    if (request.script().contains("sha256sum --check --status") && installs.get() == 0)
+                        return reply(1, "");
+                    if (request.script().contains("--noprofile")) {
+                        String input = new String(request.stdin(), StandardCharsets.UTF_8);
+                        if (input.contains("prepare_stage=platform-packages")) {
+                            installs.incrementAndGet();
+                            return reply(
+                                "HELPER_INSTALL=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                                    + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                        }
+                        if (input.contains("bootstrap_receipt")) {
+                            var facts = DeploymentProtocolBootstrapJournal.find(context.tasks(), task.get())
+                                .orElseThrow().facts();
+                            return reply(DeploymentHelperInstallerScript.receipt(task.get().id(),
+                                facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
                         }
                     }
-                    if (method.getName().equals("close") && closes.incrementAndGet() == 1)
-                        return null;
-                    try {
-                        return method.invoke(existing, args);
-                    } catch (InvocationTargetException wrapped) {
-                        throw wrapped.getCause();
-                    }
-                });
+                }
+                if (method.getName().equals("close") && closes.incrementAndGet() == 1)
+                    return null;
+                try {
+                    return method.invoke(existing, args);
+                } catch (InvocationTargetException wrapped) {
+                    throw wrapped.getCause();
+                }
+            });
     }
 
     /** Non-secret state of one controlled native target across two source-identical publications. / 两次同源发布间一个受控原生目标的不含秘密状态。 */
@@ -1726,148 +1740,148 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param actions observed action names / 已观察动作名
      * @return borrowed combined peer / 借用组合对等端 */
     static RemoteSession nativePeer(RemoteSession existing, ModContext context, AtomicReference<TaskContext> task,
-            NativeState state, List<String> actions, Map<ApprovalGrant, ActionIntent> grants) {
+                                    NativeState state, List<String> actions, Map<ApprovalGrant, ActionIntent> grants) {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute")) {
-                        var request = (CommandRequest) args[0];
-                        String script = request.script();
-                        int offset = script.indexOf(" native-db ");
-                        if (offset >= 0) {
-                            assertTrue(grants.containsKey(args[1]));
-                            String action = script.substring(offset + " native-db ".length());
-                            actions.add("native-" + action);
-                            try (var frame = nativeFrame(request)) {
-                                assertEquals("POSTGRESQL", frame.fields.get("engine"));
-                                if (action.equals("inspect"))
-                                    return nativeReply(nativeInventory(state, ""));
-                                if (!action.equals("install"))
-                                    assertEquals("postgresql-16", frame.fields.get("instanceId"));
-                                if (!Set.of("start", "resume", "install").contains(action)) {
-                                    assertEquals("sampledb", frame.fields.get("database"));
-                                    assertEquals("sampleuser", frame.fields.get("username"));
-                                    assertEquals(state.applicationId, frame.fields.get("applicationId"));
-                                }
-                                if (action.equals("target")) {
-                                    if (state.adminFailuresRemaining > 0) {
-                                        assertFalse(frame.sensitive.containsKey("adminPassword"));
-                                        state.adminFailuresRemaining--;
-                                        return nativeReply(Map.of("status", "AUTH_REQUIRED"));
-                                    }
-                                    if (state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
-                                            || state.install == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED)
-                                        assertArrayEquals("fresh-administrator".getBytes(StandardCharsets.UTF_8),
-                                                frame.sensitive.get("adminPassword"));
-                                    return nativeReply(nativeTarget(state, ""));
-                                }
-                                if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action))
-                                    throw new AssertionError("Unexpected native action: " + action);
-                                var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task.get())
-                                        .orElseThrow();
-                                var key = plan.facts().keys().getFirst();
-                                var facts = DeploymentNativeDatabaseJournal.find(context.tasks(), task.get(),
-                                        DeploymentNativeDatabaseJournal.KEY + "." + key).orElseThrow().facts();
-                                assertEquals("DISPATCHED", facts.phase());
-                                assertEquals(action, facts.action());
-                                assertEquals(frame.digest, facts.requestDigest());
-                                byte[] password = frame.sensitive.get("applicationPassword");
-                                if (Set.of("prepare", "initialize").contains(action)) {
-                                    assertNotNull(password);
-                                    assertTrue(password.length > 0);
-                                }
-                                String digest = Set.of("prepare", "initialize").contains(action)
-                                        ? DeploymentNativeDatabaseWire.digest(password)
-                                        : "";
-                                boolean denied = action.equals("prepare") && state.authFailuresRemaining-- > 0;
-                                boolean restoreRequired = action.equals("start") && state.restorePending;
-                                boolean schemaChanged = action.equals("initialize") && state.schemaFailureRemaining > 0;
-                                if (schemaChanged) {
-                                    assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
-                                    assertArrayEquals(
-                                            "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
-                                            frame.sensitive.get("sql"));
-                                    assertEquals("false", frame.fields.get("existingApproved"));
-                                    assertFalse(state.initialized);
-                                    state.schemaFailureRemaining--;
-                                }
-                                if (action.equals("start") && state.install == NativeInstallType.START_UNKNOWN)
-                                    return unknown();
-                                if (Set.of("prepare", "initialize").contains(action) && !denied) {
-                                    if (state.passwordDigest.isEmpty() || state.acceptRotation) {
-                                        state.passwordDigest = digest;
-                                        state.acceptRotation = false;
-                                    } else
-                                        assertEquals(state.passwordDigest, digest);
-                                }
-                                if (action.equals("prepare") && !denied)
-                                    state.prepared = true;
-                                if (action.equals("initialize") && !denied && !schemaChanged) {
-                                    assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
-                                    assertEquals(state.install == NativeInstallType.EXISTING_SCHEMA_APPROVED
-                                            || state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
-                                                    ? "true"
-                                                    : "false",
-                                            frame.fields.get("existingApproved"));
-                                    assertArrayEquals(
-                                            "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
-                                            frame.sensitive.get("sql"));
-                                    state.initialized = true;
-                                }
-                                if (action.equals("install")) {
-                                    assertEquals("postgresql-16", frame.fields.get("package"));
-                                    assertEquals("16.6", frame.fields.get("engineVersion"));
-                                    if (state.install == NativeInstallType.REPLACE) {
-                                        assertEquals("true", frame.fields.get("replacementApproved"));
-                                        assertEquals("server-publication", frame.fields.get("approvedServer"));
-                                    }
-                                    state.installed = true;
-                                    state.replaced = true;
-                                    if (state.install == NativeInstallType.REPLACE)
-                                        state.restorePending = true;
-                                }
-                                if (action.equals("resume"))
-                                    state.restorePending = false;
-                                var result = new LinkedHashMap<String, String>();
-                                result.put("status",
-                                        denied
-                                                ? "AUTH_REQUIRED"
-                                                : schemaChanged
-                                                        ? "STATE_CHANGED"
-                                                        : restoreRequired ? "MANUAL_RESTORE_REQUIRED" : "OK");
-                                result.put("receipt.formatVersion", "1");
-                                result.put("receipt.operationId", facts.operationId().toString());
-                                result.put("receipt.taskId", task.get().id().toString());
-                                result.put("receipt.serverId", facts.serverId());
-                                result.put("receipt.action", facts.action());
-                                result.put("receipt.targetDigest", facts.targetDigest());
-                                result.put("receipt.requestDigest", facts.requestDigest());
-                                result.put("receipt.phase",
-                                        denied || schemaChanged || restoreRequired ? "FAILED" : "SUCCEEDED");
-                                result.put("receipt.effectBoundary",
-                                        denied || schemaChanged
-                                                ? "NONE"
-                                                : restoreRequired ? "MAY_HAVE_RUN" : "CONFIRMED");
-                                if (denied || schemaChanged || restoreRequired)
-                                    result.put("receipt.failureCode",
-                                            denied
-                                                    ? "AUTH_REQUIRED"
-                                                    : schemaChanged ? "STATE_CHANGED" : "MANUAL_RESTORE_REQUIRED");
-                                else if (action.equals("install"))
-                                    nativeInventory(state, "result.").forEach(result::put);
-                                else if (Set.of("start", "resume").contains(action))
-                                    nativeInstance(state, "result.instance.").forEach(result::put);
-                                else
-                                    nativeTarget(state, "result.").forEach(result::put);
-                                return nativeReply(result);
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute")) {
+                    var request = (CommandRequest) args[0];
+                    String script = request.script();
+                    int offset = script.indexOf(" native-db ");
+                    if (offset >= 0) {
+                        assertTrue(grants.containsKey(args[1]));
+                        String action = script.substring(offset + " native-db ".length());
+                        actions.add("native-" + action);
+                        try (var frame = nativeFrame(request)) {
+                            assertEquals("POSTGRESQL", frame.fields.get("engine"));
+                            if (action.equals("inspect"))
+                                return nativeReply(nativeInventory(state, ""));
+                            if (!action.equals("install"))
+                                assertEquals("postgresql-16", frame.fields.get("instanceId"));
+                            if (!Set.of("start", "resume", "install").contains(action)) {
+                                assertEquals("sampledb", frame.fields.get("database"));
+                                assertEquals("sampleuser", frame.fields.get("username"));
+                                assertEquals(state.applicationId, frame.fields.get("applicationId"));
                             }
+                            if (action.equals("target")) {
+                                if (state.adminFailuresRemaining > 0) {
+                                    assertFalse(frame.sensitive.containsKey("adminPassword"));
+                                    state.adminFailuresRemaining--;
+                                    return nativeReply(Map.of("status", "AUTH_REQUIRED"));
+                                }
+                                if (state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
+                                    || state.install == NativeInstallType.AUTH_SCHEMA_FULL_CONTROL_REFUSED)
+                                    assertArrayEquals("fresh-administrator".getBytes(StandardCharsets.UTF_8),
+                                        frame.sensitive.get("adminPassword"));
+                                return nativeReply(nativeTarget(state, ""));
+                            }
+                            if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action))
+                                throw new AssertionError("Unexpected native action: " + action);
+                            var plan = DeploymentDatabasePlanJournal.find(context.tasks(), task.get())
+                                .orElseThrow();
+                            var key = plan.facts().keys().getFirst();
+                            var facts = DeploymentNativeDatabaseJournal.find(context.tasks(), task.get(),
+                                DeploymentNativeDatabaseJournal.KEY + "." + key).orElseThrow().facts();
+                            assertEquals("DISPATCHED", facts.phase());
+                            assertEquals(action, facts.action());
+                            assertEquals(frame.digest, facts.requestDigest());
+                            byte[] password = frame.sensitive.get("applicationPassword");
+                            if (Set.of("prepare", "initialize").contains(action)) {
+                                assertNotNull(password);
+                                assertTrue(password.length > 0);
+                            }
+                            String digest = Set.of("prepare", "initialize").contains(action)
+                                ? DeploymentNativeDatabaseWire.digest(password)
+                                : "";
+                            boolean denied = action.equals("prepare") && state.authFailuresRemaining-- > 0;
+                            boolean restoreRequired = action.equals("start") && state.restorePending;
+                            boolean schemaChanged = action.equals("initialize") && state.schemaFailureRemaining > 0;
+                            if (schemaChanged) {
+                                assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
+                                assertArrayEquals(
+                                    "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
+                                    frame.sensitive.get("sql"));
+                                assertEquals("false", frame.fields.get("existingApproved"));
+                                assertFalse(state.initialized);
+                                state.schemaFailureRemaining--;
+                            }
+                            if (action.equals("start") && state.install == NativeInstallType.START_UNKNOWN)
+                                return unknown();
+                            if (Set.of("prepare", "initialize").contains(action) && !denied) {
+                                if (state.passwordDigest.isEmpty() || state.acceptRotation) {
+                                    state.passwordDigest = digest;
+                                    state.acceptRotation = false;
+                                } else
+                                    assertEquals(state.passwordDigest, digest);
+                            }
+                            if (action.equals("prepare") && !denied)
+                                state.prepared = true;
+                            if (action.equals("initialize") && !denied && !schemaChanged) {
+                                assertEquals(state.sourceDigest, frame.fields.get("sourceSha256"));
+                                assertEquals(state.install == NativeInstallType.EXISTING_SCHEMA_APPROVED
+                                        || state.install == NativeInstallType.AUTH_SCHEMA_APPROVED
+                                        ? "true"
+                                        : "false",
+                                    frame.fields.get("existingApproved"));
+                                assertArrayEquals(
+                                    "CREATE TABLE sample(id integer);\n\n".getBytes(StandardCharsets.UTF_8),
+                                    frame.sensitive.get("sql"));
+                                state.initialized = true;
+                            }
+                            if (action.equals("install")) {
+                                assertEquals("postgresql-16", frame.fields.get("package"));
+                                assertEquals("16.6", frame.fields.get("engineVersion"));
+                                if (state.install == NativeInstallType.REPLACE) {
+                                    assertEquals("true", frame.fields.get("replacementApproved"));
+                                    assertEquals("server-publication", frame.fields.get("approvedServer"));
+                                }
+                                state.installed = true;
+                                state.replaced = true;
+                                if (state.install == NativeInstallType.REPLACE)
+                                    state.restorePending = true;
+                            }
+                            if (action.equals("resume"))
+                                state.restorePending = false;
+                            var result = new LinkedHashMap<String, String>();
+                            result.put("status",
+                                denied
+                                    ? "AUTH_REQUIRED"
+                                    : schemaChanged
+                                    ? "STATE_CHANGED"
+                                    : restoreRequired ? "MANUAL_RESTORE_REQUIRED" : "OK");
+                            result.put("receipt.formatVersion", "1");
+                            result.put("receipt.operationId", facts.operationId().toString());
+                            result.put("receipt.taskId", task.get().id().toString());
+                            result.put("receipt.serverId", facts.serverId());
+                            result.put("receipt.action", facts.action());
+                            result.put("receipt.targetDigest", facts.targetDigest());
+                            result.put("receipt.requestDigest", facts.requestDigest());
+                            result.put("receipt.phase",
+                                denied || schemaChanged || restoreRequired ? "FAILED" : "SUCCEEDED");
+                            result.put("receipt.effectBoundary",
+                                denied || schemaChanged
+                                    ? "NONE"
+                                    : restoreRequired ? "MAY_HAVE_RUN" : "CONFIRMED");
+                            if (denied || schemaChanged || restoreRequired)
+                                result.put("receipt.failureCode",
+                                    denied
+                                        ? "AUTH_REQUIRED"
+                                        : schemaChanged ? "STATE_CHANGED" : "MANUAL_RESTORE_REQUIRED");
+                            else if (action.equals("install"))
+                                nativeInventory(state, "result.").forEach(result::put);
+                            else if (Set.of("start", "resume").contains(action))
+                                nativeInstance(state, "result.instance.").forEach(result::put);
+                            else
+                                nativeTarget(state, "result.").forEach(result::put);
+                            return nativeReply(result);
                         }
                     }
-                    try {
-                        return method.invoke(existing, args);
-                    } catch (InvocationTargetException wrapped) {
-                        throw wrapped.getCause();
-                    }
-                });
+                }
+                try {
+                    return method.invoke(existing, args);
+                } catch (InvocationTargetException wrapped) {
+                    throw wrapped.getCause();
+                }
+            });
     }
 
     /** One observed PostgreSQL inventory, including an exact package candidate. / 一份含精确软件包候选的 PostgreSQL 库存。
@@ -1896,10 +1910,10 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return instance fields / 实例字段 */
     private static Map<String, String> nativeInstance(NativeState state, String prefix) {
         return Map.of(prefix + "engine", "POSTGRESQL", prefix + "id", "postgresql-16", prefix + "version",
-                state.install == NativeInstallType.REPLACE && !state.replaced ? "15.6" : "16.6", prefix + "port",
-                "5432", prefix + "service", "postgresql.service", prefix + "dataDirectory",
-                "/var/lib/postgresql/16/main", prefix + "fingerprint", "a".repeat(64), prefix + "running",
-                Boolean.toString(!state.restorePending));
+            state.install == NativeInstallType.REPLACE && !state.replaced ? "15.6" : "16.6", prefix + "port",
+            "5432", prefix + "service", "postgresql.service", prefix + "dataDirectory",
+            "/var/lib/postgresql/16/main", prefix + "fingerprint", "a".repeat(64), prefix + "running",
+            Boolean.toString(!state.restorePending));
     }
 
     /** One target whose ownership changes only after actual controlled helper actions. / 仅在真实受控 helper 动作后变化的目标。
@@ -1943,209 +1957,209 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @param callbackEnded remote callback completion / 远端回调完成
      * @return borrowed controlled session / 借用受控会话 */
     private RemoteSession peer(ScenarioType scenario, List<String> actions, AtomicReference<String> sha,
-            AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
-            CountDownLatch callbackEnded) {
+                               AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
+                               CountDownLatch callbackEnded) {
         return peer(scenario, actions, sha, bytes, path, candidate, callbackEnded, false);
     }
 
     private RemoteSession peer(ScenarioType scenario, List<String> actions, AtomicReference<String> sha,
-            AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
-            CountDownLatch callbackEnded, boolean noPortNode) {
+                               AtomicLong bytes, AtomicReference<Path> path, AtomicReference<DeploymentRemoteWorkspace> candidate,
+                               CountDownLatch callbackEnded, boolean noPortNode) {
         var configStages = new AtomicInteger();
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("facts"))
-                        return new RemoteFacts("", "", "SHA256:fixture-host");
-                    if (method.getName().equals("close")) {
-                        callbackEnded.countDown();
-                        if (scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN)
-                            throw new IllegalStateException("Controlled original session close acknowledgement lost");
-                        return null;
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("facts"))
+                    return new RemoteFacts("", "", "SHA256:fixture-host");
+                if (method.getName().equals("close")) {
+                    callbackEnded.countDown();
+                    if (scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN)
+                        throw new IllegalStateException("Controlled original session close acknowledgement lost");
+                    return null;
+                }
+                assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
+                if (method.getName().equals("upload")) {
+                    actions.add("upload");
+                    var transfer = (TransferRequest) args[0];
+                    if (path.get() == null) {
+                        path.set(transfer.localPath());
+                        bytes.set(Files.size(transfer.localPath()));
                     }
-                    assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
-                    if (method.getName().equals("upload")) {
-                        actions.add("upload");
-                        var transfer = (TransferRequest) args[0];
-                        if (path.get() == null) {
-                            path.set(transfer.localPath());
-                            bytes.set(Files.size(transfer.localPath()));
-                        }
-                        assertEquals(path.get(), transfer.localPath());
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(bytes.get(),
-                                sha.get(), transfer.localPath(), transfer.remoteAbsolutePath())), Optional.empty());
-                    }
-                    assertEquals("execute", method.getName());
-                    var command = (CommandRequest) args[0];
-                    String script = command.script();
-                    if (script.contains("managed-helper' probe")) {
-                        actions.add("helper-probe");
-                        return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
-                                + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
-                    }
-                    if (script.contains("DISTRO_ID=")) {
-                        actions.add("host-facts");
+                    assertEquals(path.get(), transfer.localPath());
+                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(bytes.get(),
+                        sha.get(), transfer.localPath(), transfer.remoteAbsolutePath())), Optional.empty());
+                }
+                assertEquals("execute", method.getName());
+                var command = (CommandRequest) args[0];
+                String script = command.script();
+                if (script.contains("managed-helper' probe")) {
+                    actions.add("helper-probe");
+                    return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                        + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+                }
+                if (script.contains("DISTRO_ID=")) {
+                    actions.add("host-facts");
+                    return reply(
+                        "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
+                }
+                if (script.contains("stat -f -c")) {
+                    actions.add("capacity");
+                    return reply("1000000000 4096\n");
+                }
+                if (script.contains("build-preflight")) {
+                    actions.add("build-preflight");
+                    return reply("");
+                }
+                if (script.contains("prepare-toolchains 'prepare'")) {
+                    actions.add("prepare-tools");
+                    if (noPortNode)
                         return reply(
-                                "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n");
-                    }
-                    if (script.contains("stat -f -c")) {
-                        actions.add("capacity");
-                        return reply("1000000000 4096\n");
-                    }
-                    if (script.contains("build-preflight")) {
-                        actions.add("build-preflight");
-                        return reply("");
-                    }
-                    if (script.contains("prepare-toolchains 'prepare'")) {
-                        actions.add("prepare-tools");
-                        if (noPortNode)
-                            return reply(
-                                    "TOOLCHAIN=NODE|22.14.0|/usr/local/lib/windowstolinux/toolchains/versions/node-"
-                                            + "b".repeat(64) + "|MANAGED|https://official.example/node|"
-                                            + "b".repeat(64) + "\n");
-                        return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
-                                + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
-                    }
-                    if (script.contains("prepare-toolchains 'bind'")) {
-                        actions.add("bind-tools");
-                        String encoded = script.substring(script.indexOf("'bind' '") + 8);
-                        encoded = encoded.substring(0, encoded.indexOf('\''));
-                        var tools = DeploymentToolchainBindingCodec.decode(new String(
-                                Base64.getDecoder().decode(encoded), java.nio.charset.StandardCharsets.UTF_8));
-                        return reply("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(tools) + "\n");
-                    }
-                    if (script.contains("candidate-create-task")) {
-                        actions.add("create-candidate");
-                        return reply("CANDIDATE=" + candidate.get().candidateRoot() + "\n");
-                    }
-                    if (script.contains("stat -c '%s'")) {
-                        actions.add("verify-archive");
-                        return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + bytes.get() + "\nSHA256="
-                                + sha.get() + "\nOWNER=0\n");
-                    }
-                    if (script.contains("candidate-query-task")) {
-                        actions.add("query-candidate");
-                        return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n");
-                    }
-                    if (script.startsWith("exec /usr/bin/python3 -I -c ")) {
-                        actions.add("build");
-                        return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
-                                + "\nUID=1001\nENGINE=ordinary\nTOOL=" + (noPortNode ? "NPM" : "GO_MODULE")
-                                + "\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
-                    }
-                    if (script.contains("stage-config")) {
-                        actions.add("stage-config");
-                        return scenario == ScenarioType.SECOND_CONFIG_UNKNOWN && configStages.incrementAndGet() == 2
-                                ? unknown()
-                                : reply("INPUT_STAGED=1\n");
-                    }
-                    if (script.contains("stage-secret")) {
-                        actions.add("stage-secret");
-                        if (script.contains("page-application")) {
-                            assertTrue(script.contains("'page-application' '1'"),
-                                    "The original business revision must be sent unchanged");
-                            byte[] submitted = command.stdin();
-                            try {
-                                assertArrayEquals(new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5,
-                                        (byte) 0xa5, (byte) 0xbd, 0x21}, submitted);
-                            } finally {
-                                Arrays.fill(submitted, (byte) 0);
-                            }
-                            actions.add("stage-secret-page-application");
+                            "TOOLCHAIN=NODE|22.14.0|/usr/local/lib/windowstolinux/toolchains/versions/node-"
+                                + "b".repeat(64) + "|MANAGED|https://official.example/node|"
+                                + "b".repeat(64) + "\n");
+                    return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
+                        + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
+                }
+                if (script.contains("prepare-toolchains 'bind'")) {
+                    actions.add("bind-tools");
+                    String encoded = script.substring(script.indexOf("'bind' '") + 8);
+                    encoded = encoded.substring(0, encoded.indexOf('\''));
+                    var tools = DeploymentToolchainBindingCodec.decode(new String(
+                        Base64.getDecoder().decode(encoded), java.nio.charset.StandardCharsets.UTF_8));
+                    return reply("TOOLCHAIN_BINDING=" + DeploymentToolchainBindingCodec.identity(tools) + "\n");
+                }
+                if (script.contains("candidate-create-task")) {
+                    actions.add("create-candidate");
+                    return reply("CANDIDATE=" + candidate.get().candidateRoot() + "\n");
+                }
+                if (script.contains("stat -c '%s'")) {
+                    actions.add("verify-archive");
+                    return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + bytes.get() + "\nSHA256="
+                        + sha.get() + "\nOWNER=0\n");
+                }
+                if (script.contains("candidate-query-task")) {
+                    actions.add("query-candidate");
+                    return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n");
+                }
+                if (script.startsWith("exec /usr/bin/python3 -I -c ")) {
+                    actions.add("build");
+                    return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
+                        + "\nUID=1001\nENGINE=ordinary\nTOOL=" + (noPortNode ? "NPM" : "GO_MODULE")
+                        + "\nCOMPAT=0\nLIMIT=-\nCONFLICT=0\nHEAD=\nTAIL=\n");
+                }
+                if (script.contains("stage-config")) {
+                    actions.add("stage-config");
+                    return scenario == ScenarioType.SECOND_CONFIG_UNKNOWN && configStages.incrementAndGet() == 2
+                        ? unknown()
+                        : reply("INPUT_STAGED=1\n");
+                }
+                if (script.contains("stage-secret")) {
+                    actions.add("stage-secret");
+                    if (script.contains("page-application")) {
+                        assertTrue(script.contains("'page-application' '1'"),
+                            "The original business revision must be sent unchanged");
+                        byte[] submitted = command.stdin();
+                        try {
+                            assertArrayEquals(new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5,
+                                (byte) 0xa5, (byte) 0xbd, 0x21}, submitted);
+                        } finally {
+                            Arrays.fill(submitted, (byte) 0);
                         }
-                        return reply("INPUT_STAGED=1\n");
+                        actions.add("stage-secret-page-application");
                     }
-                    if (script.contains("snapshot-deployment")) {
-                        actions.add("snapshot");
-                        var taskToken = java.util.regex.Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
-                                .matcher(script);
-                        assertTrue(taskToken.find(), script);
-                        return reply(scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
-                                ? "SNAPSHOT_TOKEN=" + taskToken.group()
-                                        + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
-                                        + "\nPREVIOUS_KIND=deployment\n"
-                                : "PREVIOUS=0\n");
+                    return reply("INPUT_STAGED=1\n");
+                }
+                if (script.contains("snapshot-deployment")) {
+                    actions.add("snapshot");
+                    var taskToken = java.util.regex.Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+                        .matcher(script);
+                    assertTrue(taskToken.find(), script);
+                    return reply(scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
+                        ? "SNAPSHOT_TOKEN=" + taskToken.group()
+                        + "\nPREVIOUS=1\nPREVIOUS_RUNNING=0\nPREVIOUS_DIGEST=" + "d".repeat(64)
+                        + "\nPREVIOUS_KIND=deployment\n"
+                        : "PREVIOUS=0\n");
+                }
+                if (script.contains("publish-deployment")) {
+                    if (noPortNode) {
+                        var wire = java.util.regex.Pattern
+                            .compile("'publish-deployment' 'service' '([a-z0-9-]+)' '([0-9a-f]{64})'")
+                            .matcher(script);
+                        assertTrue(wire.find(), script);
+                        assertEquals(candidate.get().candidateId(), wire.group(1));
+                        actions.add("wire-release=" + wire.group(2));
                     }
-                    if (script.contains("publish-deployment")) {
-                        if (noPortNode) {
-                            var wire = java.util.regex.Pattern
-                                    .compile("'publish-deployment' 'service' '([a-z0-9-]+)' '([0-9a-f]{64})'")
-                                    .matcher(script);
-                            assertTrue(wire.find(), script);
-                            assertEquals(candidate.get().candidateId(), wire.group(1));
-                            actions.add("wire-release=" + wire.group(2));
-                        }
-                        actions.add("publish");
-                        if (scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_UNKNOWN
-                                || scenario == ScenarioType.RETAIN_UNKNOWN
-                                || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
-                                || scenario == ScenarioType.COMMIT_WINDOW) {
-                            var match = java.util.regex.Pattern
-                                    .compile("'publish-deployment' 'service' '[a-z0-9-]+' '([0-9a-f]{64})'")
-                                    .matcher(script);
-                            assertTrue(match.find(), script);
-                            Files.writeString(root.resolve("controlled-remote-publication"),
-                                    match.group(1) + "\n" + candidate.get().candidateId() + "\n");
-                        }
-                        return scenario == ScenarioType.PUBLISH_UNKNOWN ? unknown() : reply("PUBLISHED=1\n");
+                    actions.add("publish");
+                    if (scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_UNKNOWN
+                        || scenario == ScenarioType.RETAIN_UNKNOWN
+                        || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                        || scenario == ScenarioType.COMMIT_WINDOW) {
+                        var match = java.util.regex.Pattern
+                            .compile("'publish-deployment' 'service' '[a-z0-9-]+' '([0-9a-f]{64})'")
+                            .matcher(script);
+                        assertTrue(match.find(), script);
+                        Files.writeString(root.resolve("controlled-remote-publication"),
+                            match.group(1) + "\n" + candidate.get().candidateId() + "\n");
                     }
-                    if (script.contains("application-health")) {
-                        if (noPortNode) {
-                            var quoted = java.util.regex.Pattern.compile("'([^']*)'").matcher(script);
-                            String payload = null;
-                            while (quoted.find())
-                                payload = quoted.group(1);
-                            assertNotNull(payload, script);
-                            var fields = new String(Base64.getDecoder().decode(payload), StandardCharsets.UTF_8)
-                                    .split("\\x00", -1);
-                            assertEquals(5, fields.length);
-                            assertEquals("health-v1", fields[0]);
-                            assertEquals("PROCESS", fields[1]);
-                            assertTrue(Integer.parseInt(fields[2]) > 0);
-                            assertTrue(Integer.parseInt(fields[3]) >= 0);
-                            assertEquals("", fields[4]);
-                        }
-                        actions.add("health");
-                        return scenario == ScenarioType.HEALTH_FAILED_ROLLBACK
-                                || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
-                                || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
-                                || scenario == ScenarioType.ROLLBACK_UNKNOWN
-                                        ? reply(1, "HEALTHY=0\n")
-                                        : reply("HEALTHY=1\n");
+                    return scenario == ScenarioType.PUBLISH_UNKNOWN ? unknown() : reply("PUBLISHED=1\n");
+                }
+                if (script.contains("application-health")) {
+                    if (noPortNode) {
+                        var quoted = java.util.regex.Pattern.compile("'([^']*)'").matcher(script);
+                        String payload = null;
+                        while (quoted.find())
+                            payload = quoted.group(1);
+                        assertNotNull(payload, script);
+                        var fields = new String(Base64.getDecoder().decode(payload), StandardCharsets.UTF_8)
+                            .split("\\x00", -1);
+                        assertEquals(5, fields.length);
+                        assertEquals("health-v1", fields[0]);
+                        assertEquals("PROCESS", fields[1]);
+                        assertTrue(Integer.parseInt(fields[2]) > 0);
+                        assertTrue(Integer.parseInt(fields[3]) >= 0);
+                        assertEquals("", fields[4]);
                     }
-                    if (script.contains("inspect-runtime")) {
-                        actions.add("inspect-runtime");
-                        return reply(scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
-                                ? "KIND=ordinary\n"
-                                : "KIND=deployment\nMODE=DAEMON\n");
-                    }
-                    if (script.contains("systemctl show --property=ActiveState")) {
-                        actions.add("observe-old-ordinary");
-                        return reply("ActiveState=inactive\nSubState=dead\nResult=success\nExecMainCode=0\n"
-                                + "ExecMainStatus=0\nMainPID=0\n");
-                    }
-                    if (script.contains("observe-deployment")) {
-                        actions.add("observe");
-                        return reply(
-                                "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
-                    }
-                    if (script.contains("rollback-deployment")) {
-                        actions.add("rollback");
-                        return scenario == ScenarioType.ROLLBACK_UNKNOWN ? unknown() : reply("ROLLED_BACK=1\n");
-                    }
-                    if (script.contains("application-maintenance")) {
-                        actions.add("maintenance-end");
-                        return reply("MAINTENANCE=end\n");
-                    }
-                    if (script.contains("candidate-cleanup-task")) {
-                        actions.add("candidate-cleanup");
-                        return reply("CANDIDATE_CLEANED=1\n");
-                    }
-                    if (script.contains("'retain'")) {
-                        actions.add("retain");
-                        return scenario == ScenarioType.RETAIN_UNKNOWN ? unknown() : reply("RETAINED=1\n");
-                    }
-                    throw new AssertionError(script);
-                });
+                    actions.add("health");
+                    return scenario == ScenarioType.HEALTH_FAILED_ROLLBACK
+                        || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
+                        || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                        || scenario == ScenarioType.ROLLBACK_UNKNOWN
+                        ? reply(1, "HEALTHY=0\n")
+                        : reply("HEALTHY=1\n");
+                }
+                if (script.contains("inspect-runtime")) {
+                    actions.add("inspect-runtime");
+                    return reply(scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_OLD_MODE
+                        ? "KIND=ordinary\n"
+                        : "KIND=deployment\nMODE=DAEMON\n");
+                }
+                if (script.contains("systemctl show --property=ActiveState")) {
+                    actions.add("observe-old-ordinary");
+                    return reply("ActiveState=inactive\nSubState=dead\nResult=success\nExecMainCode=0\n"
+                        + "ExecMainStatus=0\nMainPID=0\n");
+                }
+                if (script.contains("observe-deployment")) {
+                    actions.add("observe");
+                    return reply(
+                        "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=123\n");
+                }
+                if (script.contains("rollback-deployment")) {
+                    actions.add("rollback");
+                    return scenario == ScenarioType.ROLLBACK_UNKNOWN ? unknown() : reply("ROLLED_BACK=1\n");
+                }
+                if (script.contains("application-maintenance")) {
+                    actions.add("maintenance-end");
+                    return reply("MAINTENANCE=end\n");
+                }
+                if (script.contains("candidate-cleanup-task")) {
+                    actions.add("candidate-cleanup");
+                    return reply("CANDIDATE_CLEANED=1\n");
+                }
+                if (script.contains("'retain'")) {
+                    actions.add("retain");
+                    return scenario == ScenarioType.RETAIN_UNKNOWN ? unknown() : reply("RETAINED=1\n");
+                }
+                throw new AssertionError(script);
+            });
     }
 
     /** Returns an exact successful command envelope. / 返回精确成功命令封套。
@@ -2161,13 +2175,13 @@ class DeploymentStandardPublicationExecutorTest extends DeploymentRuntimeFixture
      * @return known result / 已知结果 */
     private static OperationResult<CommandResult> reply(int exit, String output) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
     }
 
     /** Loses the original remote acknowledgement without inventing a retry. / 丢失原远端回执而不补造重试。
      * @return uncertain result / 未知结果 */
     private static OperationResult<CommandResult> unknown() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                "FIXTURE_PUBLICATION_ACK_LOST", "Controlled receipt was lost", Map.of(), Optional.empty())));
+            "FIXTURE_PUBLICATION_ACK_LOST", "Controlled receipt was lost", Map.of(), Optional.empty())));
     }
 }

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ToolchainDeclarationInspectorTest {
     @TempDir
     Path root;
+
     @Test
     void retainsOldFuturePreviewAndUnresolvedDeclarationsWithoutACatalog() throws Exception {
         Files.writeString(root.resolve("pom.xml"), "<java.version>1.8</java.version>");
@@ -23,11 +24,11 @@ class ToolchainDeclarationInspectorTest {
         var requirements = new ToolchainDeclarationInspector().inspect(root);
         assertEquals(6, requirements.size());
         assertEquals("1.8",
-                requirements.stream().filter(r -> r.ecosystem() == JAVA).findFirst().orElseThrow().declaration());
+            requirements.stream().filter(r -> r.ecosystem() == JAVA).findFirst().orElseThrow().declaration());
         assertTrue(requirements.stream().filter(r -> r.ecosystem() == NODE).findFirst().orElseThrow().version()
-                .orElseThrow().preview());
+            .orElseThrow().preview());
         assertTrue(requirements.stream().filter(r -> r.ecosystem() == PYTHON || r.ecosystem() == RUST)
-                .allMatch(r -> r.version().isEmpty()));
+            .allMatch(r -> r.version().isEmpty()));
         assertTrue(requirements.stream().allMatch(r -> !r.source().isBlank()));
     }
 }

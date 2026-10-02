@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -16,7 +25,7 @@ import gold.debug.windowstolinux.appapi.linux.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
@@ -46,7 +55,7 @@ class DeploymentBuildCommandChannelTest {
         var calls = new AtomicInteger();
         var channel = channel(true, calls);
         assertEquals(Outcome.SUCCEEDED,
-                channel.prepare(DeploymentToolchainType.JAVA, "8", "8.0.462-b08", 60, "-").outcome());
+            channel.prepare(DeploymentToolchainType.JAVA, "8", "8.0.462-b08", 60, "-").outcome());
         assertEquals(1, calls.get());
     }
 
@@ -62,16 +71,16 @@ class DeploymentBuildCommandChannelTest {
                 encoded = encoded.substring(0, encoded.indexOf('\''));
                 String binding = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
                 return reply("TOOLCHAIN_BINDING="
-                        + DeploymentToolchainBindingCodec.identity(DeploymentToolchainBindingCodec.decode(binding))
-                        + "\n");
+                    + DeploymentToolchainBindingCodec.identity(DeploymentToolchainBindingCodec.decode(binding))
+                    + "\n");
             }
             String version = script.contains("'1.24'") ? "1.24.1" : "1.25.1";
             return reply("TOOLCHAIN=GO|" + version + "|/usr/local/lib/windowstolinux/toolchains/versions/go-"
-                    + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
+                + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
         });
         var preparer = new DeploymentToolchainPreparer(channel, catalog);
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, ">=1.24.9", "go.mod",
-                ToolchainRequirement.PurposeType.BUILD);
+            ToolchainRequirement.PurposeType.BUILD);
         assertEquals(2, catalog.candidates(requirement).size());
         var first = preparer.prepare(List.of(requirement), 0, 110);
         assertEquals(Outcome.FAILED, first.outcome());
@@ -88,25 +97,25 @@ class DeploymentBuildCommandChannelTest {
     void incompleteBuildAndConflictingBindingNeverReplay() throws Exception {
         var calls = new AtomicInteger();
         var unknown = new OperationResult<CommandResult>(Outcome.UNKNOWN,
-                Optional.of(new CommandResult(Optional.empty(), "partial", "", true)),
-                Optional.of(new Problem(ProblemCode.UNKNOWN, "REMOTE_OUTPUT_TRUNCATED", "Incomplete command", Map.of(),
-                        Optional.empty())));
+            Optional.of(new CommandResult(Optional.empty(), "partial", "", true)),
+            Optional.of(new Problem(ProblemCode.UNKNOWN, "REMOTE_OUTPUT_TRUNCATED", "Incomplete command", Map.of(),
+                Optional.empty())));
         var channel = channel(true, calls, command -> unknown);
         var result = channel.build(new DeploymentRemoteWorkspace("demo", "a".repeat(64)),
-                DeploymentBuildLimits.defaultNonRoot(), 60, "ordinary", "echo fixed", List.of(List.of("marker")));
+            DeploymentBuildLimits.defaultNonRoot(), 60, "ordinary", "echo fixed", List.of(List.of("marker")));
         assertEquals(Outcome.UNKNOWN, result.outcome());
         assertEquals(1, calls.get());
 
         var bindingCalls = new AtomicInteger();
         var bindingChannel = channel(true, bindingCalls,
-                command -> command.script().contains("'bind'")
-                        ? reply("TOOLCHAIN_BINDING=" + "0".repeat(64) + "\n")
-                        : reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
-                                + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n"));
+            command -> command.script().contains("'bind'")
+                ? reply("TOOLCHAIN_BINDING=" + "0".repeat(64) + "\n")
+                : reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
+                + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n"));
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod",
-                ToolchainRequirement.PurposeType.BUILD);
+            ToolchainRequirement.PurposeType.BUILD);
         var bound = new DeploymentToolchainPreparer(bindingChannel, DeploymentToolchainCatalog.defaults())
-                .prepare(List.of(requirement), 0, 110);
+            .prepare(List.of(requirement), 0, 110);
         assertEquals(Outcome.UNKNOWN, bound.outcome());
         assertEquals("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED", bound.problem().orElseThrow().eventCode());
         assertEquals(2, bindingCalls.get());
@@ -117,15 +126,15 @@ class DeploymentBuildCommandChannelTest {
     void knownHelperUnavailableKeepsTheOriginalIncompatibleCategory() throws Exception {
         var calls = new AtomicInteger();
         var channel = channel(true, calls,
-                command -> new OperationResult<>(Outcome.FAILED,
-                        Optional.of(new CommandResult(Optional.of(1),
-                                "TOOLCHAIN_FAILURE=unavailable: missing package\n", "", false)),
-                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "REMOTE_EXIT_NONZERO", "Helper exited",
-                                Map.of(), Optional.empty()))));
+            command -> new OperationResult<>(Outcome.FAILED,
+                Optional.of(new CommandResult(Optional.of(1),
+                    "TOOLCHAIN_FAILURE=unavailable: missing package\n", "", false)),
+                Optional.of(new Problem(ProblemCode.IO_FAILURE, "REMOTE_EXIT_NONZERO", "Helper exited",
+                    Map.of(), Optional.empty()))));
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod",
-                ToolchainRequirement.PurposeType.BUILD);
+            ToolchainRequirement.PurposeType.BUILD);
         var prepared = new DeploymentToolchainPreparer(channel, DeploymentToolchainCatalog.defaults())
-                .prepare(List.of(requirement), 0, 110);
+            .prepare(List.of(requirement), 0, 110);
         assertEquals(Outcome.FAILED, prepared.outcome());
         assertEquals(ProblemCode.INCOMPATIBLE, prepared.problem().orElseThrow().code());
         assertEquals("DEPLOYMENT_TOOLCHAIN_UNSUPPORTED", prepared.problem().orElseThrow().eventCode());
@@ -146,26 +155,26 @@ class DeploymentBuildCommandChannelTest {
      * @param response controlled remote reply / 受控远端回执
      * @return fixed channel / 固定通道 */
     private static DeploymentBuildCommandChannel channel(boolean approved, AtomicInteger calls,
-            Function<CommandRequest, OperationResult<CommandResult>> response) {
+                                                         Function<CommandRequest, OperationResult<CommandResult>> response) {
         RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (!method.getName().equals("execute"))
-                        throw new AssertionError("Unexpected session method");
-                    calls.incrementAndGet();
-                    CommandRequest command = (CommandRequest) args[0];
-                    assertTrue(command.script().contains("prepare-toolchains")
-                            || command.script().contains("build-preflight")
-                            || command.script().startsWith("exec /usr/bin/python3 -I -c "));
-                    return response.apply(command);
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (!method.getName().equals("execute"))
+                    throw new AssertionError("Unexpected session method");
+                calls.incrementAndGet();
+                CommandRequest command = (CommandRequest) args[0];
+                assertTrue(command.script().contains("prepare-toolchains")
+                    || command.script().contains("build-preflight")
+                    || command.script().startsWith("exec /usr/bin/python3 -I -c "));
+                return response.apply(command);
+            });
         InteractionService interaction = new InteractionService() {
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) {
                 return approved
-                        ? new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
-                                Optional.empty())
-                        : new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                                Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "REVIEW_DECLINED", "Review declined",
-                                        Map.of(), Optional.empty())));
+                    ? new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
+                    Optional.empty())
+                    : new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "REVIEW_DECLINED", "Review declined",
+                        Map.of(), Optional.empty())));
             }
 
             public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext task) {
@@ -173,11 +182,11 @@ class DeploymentBuildCommandChannelTest {
             }
         };
         TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
-                new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
-                    throw new AssertionError("No task query expected");
-                });
+            new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
+                throw new AssertionError("No task query expected");
+            });
         return new DeploymentBuildCommandChannel(session, interaction, new ServerRef("Server-Exact"), task,
-                "a".repeat(64), new DeploymentBuildBudget(120));
+            "a".repeat(64), new DeploymentBuildBudget(120));
     }
 
     /** Returns a known complete fixed command reply. / 返回已知完整固定命令回执。
@@ -185,6 +194,6 @@ class DeploymentBuildCommandChannelTest {
      * @return successful observation / 成功观测 */
     private static OperationResult<CommandResult> reply(String stdout) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 }

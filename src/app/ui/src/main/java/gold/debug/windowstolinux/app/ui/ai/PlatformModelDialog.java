@@ -1,127 +1,115 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+import gold.debug.windowstolinux.appapi.ai.VoiceRequest;
+
 import java.awt.*;
 import java.awt.event.*;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
-import gold.debug.windowstolinux.app.ai.catalog.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
-import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
-/** Edits a model and observes its centrally owned verification task. / 编辑模型并观察中央持有的验证任务。 */
+/** Saves explicit model configuration and separately observes capability verification. / 保存明确模型配置并单独观察能力验证。 */
 final class PlatformModelDialog extends JDialog {
-    /** Exact host settings owner. / 精确宿主设置所有者。 */
+    /** Actual service or isolated preview absence. / 实际服务或隔离预览空值。 */
     private final Optional<PlatformModelService> service;
-
     /** Safe localized messages. / 安全本地化消息。 */
     private final PageMessagePresenter messages;
-
-    /** Completion refresh callback. / 完成刷新回调。 */
+    /** Inventory refresh callback. / 清单刷新回调。 */
     private final Runnable saved;
-
-    /** Original metadata or new-model identity. / 原元数据或新模型身份。 */
-    private final String id, credential;
-
-    /** Non-secret editable fields. / 非秘密可编辑字段。 */
-    private final JTextField name = new JTextField(28), endpoint = new JTextField(28), model = new JTextField(28),
-            limit = new JTextField(12);
-
-    /** Temporary input credential, cleared immediately on submission. / 提交时立即清空的临时输入凭据。 */
-    private final JPasswordField key = new JPasswordField(28);
-
-    /** Independently selected verification capability. / 独立选择的验证能力。 */
+    /** Stable model identity. / 稳定模型标识。 */
+    private final String id;
+    /** Current protected credential reference. / 当前受保护凭据引用。 */
+    private String credential;
+    /** Original editable configuration controls. / 原可编辑配置控件。 */
+    private final ModelFields fields = new ModelFields();
+    /** Independently chosen verification mode. / 独立选择的验证方式。 */
     private final JComboBox<AiCapabilityType> capability = new JComboBox<>(AiCapabilityType.values());
-
-    /** Safe outcome display. / 安全结果展示。 */
+    /** Safe operation feedback. / 安全操作反馈。 */
     private final JTextArea status = DesktopComponentFactory.outputArea();
-
-    /** Explicit test-and-save action. / 明确测试并保存操作。 */
+    /** Independent configuration action. / 独立配置操作。 */
     private final JButton save;
-
-    /** Input panel whose controls are frozen during verification. / 验证期间冻结控件的输入面板。 */
+    /** Explicit verification action. / 明确验证操作。 */
+    private final JButton verify;
+    /** Input layout frozen during accepted work. / 已接纳工作期间冻结的输入布局。 */
     private final JPanel form;
-
-    /** Pending actual task handle. / 待完成实际任务句柄。 */
+    /** Last saved form, used to reject unsaved verification drafts. / 最近保存表单，用于拒绝验证未保存草稿。 */
+    private SavedDraft stored;
+    /** Exact central task handle. / 精确中央任务句柄。 */
     private TaskHandle<Void> task;
-
-    /** Whether admission or execution remains outstanding. / 准入或执行是否仍未完成。 */
+    /** Admission, closing and retained-uncertainty flags. / 准入、关闭及保留不确定状态标志。 */
     private boolean busy, closing, unknown;
-
-    /** Observes retained uncertainty without waiting for terminal completion. / 无需等待终态完成即可观察保留的不确定状态。 */
+    /** Observer of the actual task state. / 实际任务状态观察器。 */
     private final javax.swing.Timer timer;
 
-    /** Builds the existing model form around explicit budgets and task outcomes. / 围绕明确预算及任务结果构造模型表单。
+    /** Builds the model editor around explicit save and verification actions. / 围绕明确保存与验证操作构造模型编辑器。
      * @param owner actual desktop owner / 实际桌面所有者
      * @param service actual host settings / 实际宿主设置
      * @param components themed controls / 主题控件
      * @param messages localized messages / 本地化消息
      * @param existing optional current row / 可选当前行
      * @param outputLimit explicit existing budget / 明确已有预算
-     * @param saved successful refresh callback / 成功刷新回调 */
+     * @param saved inventory refresh callback / 清单刷新回调 */
     PlatformModelDialog(Window owner, PlatformModelService service, DesktopComponentFactory components,
-            PageMessagePresenter messages, AiProviderSummary existing, OptionalInt outputLimit, Runnable saved) {
-        this(owner, Optional.of(java.util.Objects.requireNonNull(service)), components, messages, existing, outputLimit,
-                saved);
+                        PageMessagePresenter messages, AiProviderSummary existing, OptionalInt outputLimit, Runnable saved) {
+        this(owner, Optional.of(Objects.requireNonNull(service)), components, messages, existing, outputLimit, saved);
     }
 
-    /** Creates the same editor with an explicit absent capability only for isolated preview. / 仅为隔离预览以明确空能力创建同一编辑器。
-     * @param owner original UI owner / 原UI所有者
-     * @param service actual capability or explicit preview absence / 实际能力或明确预览空值
-     * @param components theme controls / 主题控件
+    /** Creates the editor with explicit service absence only for preview. / 仅为预览以明确空服务创建编辑器。
+     * @param owner original owner / 原所有者
+     * @param service capability or preview absence / 能力或预览空值
+     * @param components themed controls / 主题控件
      * @param messages localized display / 本地化显示
      * @param existing original row / 原行
      * @param outputLimit explicit budget / 明确预算
-     * @param saved actual success callback / 实际成功回调 */
+     * @param saved refresh callback / 刷新回调 */
     private PlatformModelDialog(Window owner, Optional<PlatformModelService> service,
-            DesktopComponentFactory components, PageMessagePresenter messages, AiProviderSummary existing,
-            OptionalInt outputLimit, Runnable saved) {
-        super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"),
-                ModalityType.APPLICATION_MODAL);
-        gold.debug.windowstolinux.app.ui.i18n.LocaleBinding.title(this,
-                gold.debug.windowstolinux.app.ui.i18n.LocalizedMessage
-                        .of(existing == null ? "ai.models.add" : "ai.models.edit"),
-                messages.catalog());
+                                DesktopComponentFactory components, PageMessagePresenter messages, AiProviderSummary existing,
+                                OptionalInt outputLimit, Runnable saved) {
+        super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"), ModalityType.APPLICATION_MODAL);
+        gold.debug.windowstolinux.app.ui.language.LocaleBinding.title(this,
+            gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of(existing == null ? "ai.models.add" : "ai.models.edit"),
+            messages.catalog());
         this.service = service;
         this.messages = messages;
         this.saved = saved;
         id = existing == null ? "model-" + UUID.randomUUID().toString().substring(0, 12) : existing.profile().id();
         credential = existing == null ? "ai/provider/" + id + "/api-key" : existing.profile().credentialKey();
-        setName("platform.model.editor");
         form = components.card(new GridBagLayout());
-        var fields = new JTextField[]{name, endpoint, model, key, limit};
-        var labels = new String[]{"ai.models.name", "field.aiEndpoint", "field.model", "field.apiKey",
-                "platform.models.limit"};
-        var names = new String[]{"model.name", "model.endpoint", "model.model", "model.key", "model.limit"};
-        for (int i = 0; i < fields.length; i++) {
-            fields[i].setName(names[i]);
-            components.addField(form, i, 0, messages, labels[i], fields[i]);
-        }
-        if (existing != null) {
-            name.setText(existing.name());
-            endpoint.setText(existing.profile().chatCompletionsEndpoint().toString());
-            model.setText(existing.profile().model());
-            key.putClientProperty("JTextField.placeholderText", messages.text("ai.models.keepKey"));
-        }
-        if (outputLimit.isPresent())
-            limit.setText(Integer.toString(outputLimit.getAsInt()));
+        fields.install(form, components, messages);
+        initialize(existing, outputLimit);
         capability.setName("model.capability");
         messages.localize(capability, "ai.capability.");
-        components.addField(form, 5, 0, messages, "ai.capability.label", capability);
-        save = messages.bind(components.primaryButton(""), "ai.models.testSave");
+        components.addField(form, 9, 0, messages, "ai.capability.label", capability);
+        save = messages.bind(components.primaryButton(""), "ai.models.saveConfiguration");
         save.setName("model.save");
-        save.addActionListener(event -> submit());
+        save.addActionListener(event -> saveConfiguration());
+        verify = messages.bind(components.secondaryButton(""), "ai.models.verify");
+        verify.setName("model.verify");
+        verify.addActionListener(event -> verifyCapability());
         var cancel = messages.bind(components.secondaryButton(""), "button.cancel");
         cancel.setName("model.cancel");
         cancel.addActionListener(event -> closeEditor());
         var actions = components.transparent(new FlowLayout(FlowLayout.RIGHT));
         actions.add(cancel);
+        actions.add(verify);
         actions.add(save);
         status.setName("model.status");
         status.setRows(4);
@@ -134,140 +122,245 @@ final class PlatformModelDialog extends JDialog {
         body.add(new JScrollPane(status));
         body.add(actions, BorderLayout.SOUTH);
         setContentPane(body);
-        setSize(650, 540);
-        setMinimumSize(new Dimension(600, 520));
+        setName("platform.model.editor");
+        setSize(760, 730);
+        setMinimumSize(new Dimension(650, 650));
         setLocationRelativeTo(owner);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
-            /** Delegates close through cancellation. / 通过取消处理关闭。
+            /** Closes through the original cancellation path. / 通过原取消路径关闭。
              * @param event close event / 关闭事件 */
-            @Override
-            public void windowClosing(WindowEvent event) {
-                closeEditor();
-            }
+            @Override public void windowClosing(WindowEvent event) { closeEditor(); }
         });
-        timer = new javax.swing.Timer(250, event -> {
-            if (task != null && task.snapshot().state() == TaskState.UNKNOWN) {
-                unknown = true;
-                status.setText(messages.text("platform.models.unknown"));
-                if (closing)
-                    dispose();
-            }
-        });
+        timer = new javax.swing.Timer(250, event -> observe());
         timer.start();
+        fields.observe(this::updateVerification);
+        updateVerification();
     }
 
-    /** Creates fixed model fields without holding a real provider, task or model service. / 不持有真实提供方、任务或模型服务地创建固定模型字段。
-     * @param owner isolated gallery owner / 隔离目录所有者
-     * @param components original theme controls / 原主题控件
-     * @param messages original localized display / 原本地化显示
-     * @return same editor with all real effects unavailable / 全部真实副作用不可用的同一编辑器 */
+    /** Loads saved values without assuming a chat protocol exists. / 加载保存值，不假设聊天协议存在。
+     * @param existing saved model or absent / 保存模型或空
+     * @param outputLimit explicit budget / 明确预算 */
+    private void initialize(AiProviderSummary existing, OptionalInt outputLimit) {
+        if (existing != null) {
+            fields.name.setText(existing.name());
+            fields.endpoint.setText(address(existing.profile().chatCompletionsEndpoint()));
+            fields.fileEndpoint.setText(address(existing.profile().fileTranscriptionEndpoint()));
+            fields.realtimeEndpoint.setText(address(existing.profile().realtimeTranscriptionEndpoint()));
+            fields.model.setText(existing.profile().model());
+            fields.key.putClientProperty("JTextField.placeholderText", messages.text("ai.models.keepKey"));
+            if (outputLimit.isPresent())
+                stored = new SavedDraft(existing.profile(), existing.name(), outputLimit.getAsInt());
+        }
+        if (outputLimit.isPresent()) fields.limit.setText(Integer.toString(outputLimit.getAsInt()));
+    }
+
+    /** Creates fixed fields without a real provider, task or credential. / 不持有真实提供方、任务或凭据地创建固定字段。
+     * @param owner gallery owner / 目录所有者
+     * @param components original controls / 原控件
+     * @param messages localized display / 本地化显示
+     * @return editor with real effects unavailable / 真实副作用不可用的编辑器 */
     static JDialog preview(Window owner, DesktopComponentFactory components, PageMessagePresenter messages) {
-        var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096),
-                () -> {
-                });
-        dialog.name.setText(messages.text("debug.sample.model"));
-        dialog.endpoint.setText("https://example.invalid/v1/chat/completions");
-        dialog.model.setText("preview-model");
+        var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096), () -> {});
+        dialog.fields.name.setText(messages.text("debug.sample.model"));
+        dialog.fields.endpoint.setText(messages.text("debug.sample.endpoint"));
+        dialog.fields.model.setText(messages.text("debug.sample.modelId"));
         dialog.status.setText(messages.text("debug.blocked"));
         dialog.save.setEnabled(false);
+        dialog.verify.setEnabled(false);
         return dialog;
     }
 
-    /** Captures fields and sends only explicit user-approved probe data. / 捕获字段并仅发送用户明确启动的探测数据。 */
-    private void submit() {
-        if (busy || service.isEmpty())
-            return;
+    /** Stores the configuration without issuing any network probe. / 保存配置，不发送网络探测。 */
+    private void saveConfiguration() {
+        if (busy || service.isEmpty()) return;
         char[] supplied = null;
         try {
-            var profile = new AiProviderProfile(id, URI.create(endpoint.getText().strip()), model.getText().strip(),
-                    credential);
-            int ceiling = Integer.parseInt(limit.getText().strip());
-            if (ceiling < 1 || name.getText().isBlank())
-                throw new IllegalArgumentException("Invalid model form");
-            String label = name.getText();
-            var selected = (AiCapabilityType) capability.getSelectedItem();
-            supplied = key.getPassword();
-            key.setText("");
+            var draft = draft();
+            supplied = fields.key.getPassword();
+            fields.key.setText("");
             char[] input = supplied;
             setBusy(true);
-            status.setText(messages.text("ai.models.testing"));
             DesktopTaskExecutor.run(() -> {
                 try {
-                    return service.orElseThrow().verifyAndSave(profile, label, input, selected, ceiling);
-                } finally {
-                    Arrays.fill(input, '\0');
-                }
-            }, handle -> {
-                task = handle;
-                if (closing)
-                    cancelTask();
-                handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
-                    task = null;
-                    if (!isDisplayable())
-                        return;
-                    setBusy(false);
-                    if (failure != null)
-                        status.setText(messages.text("platform.models.failed"));
-                    else if (result.outcome() == Outcome.SUCCEEDED) {
-                        saved.run();
-                        dispose();
-                    } else
-                        status.setText(result.problem().map(Problem::message).orElse(messages.text("button.cancel")));
-                    if (closing)
-                        dispose();
-                }));
-            }, failure -> {
+                    var modelService = service.orElseThrow();
+                    modelService.save(draft.profile(), draft.name(), input, draft.limit());
+                    return modelService.listAiConfigurations().stream().filter(row -> row.profile().id().equals(id))
+                        .findFirst().orElseThrow();
+                } finally { Arrays.fill(input, '\0'); }
+            }, row -> {
+                credential = row.profile().credentialKey();
+                stored = new SavedDraft(row.profile(), row.name(), draft.limit());
                 setBusy(false);
-                status.setText(messages.safe(failure));
-                if (closing)
-                    dispose();
-            });
+                saved.run();
+                status.setText(messages.text("ai.models.savedConfiguration"));
+                if (closing) dispose();
+            }, this::failed);
         } catch (Exception failure) {
-            if (supplied != null)
-                Arrays.fill(supplied, '\0');
-            setBusy(false);
+            if (supplied != null) Arrays.fill(supplied, '\0');
             status.setText(messages.text("ai.models.invalidForm"));
+        }
+    }
+
+    /** Starts one explicit saved capability check with caller-supplied audio when required. / 必要时以调用者提供的音频启动一次明确保存能力检查。 */
+    private void verifyCapability() {
+        if (busy || service.isEmpty() || !verify.isEnabled()) return;
+        var selected = (AiCapabilityType) capability.getSelectedItem();
+        String path = fields.audio.getText().strip(), expected = fields.expected.getText().strip();
+        setBusy(true);
+        unknown = false;
+        status.setText(messages.text("ai.models.testing"));
+        DesktopTaskExecutor.run(() -> {
+            VoiceRequest audio = null;
+            if (selected == AiCapabilityType.VOICE_FILE || selected == AiCapabilityType.VOICE_REALTIME) {
+                var file = Path.of(path);
+                if (!Files.isRegularFile(file) || Files.size(file) > VoiceRequest.MAX_BYTES)
+                    throw new IllegalArgumentException("Invalid voice sample");
+                byte[] bytes;
+                try (var input = Files.newInputStream(file)) { bytes = input.readNBytes(VoiceRequest.MAX_BYTES + 1); }
+                try { audio = new VoiceRequest(bytes, "verification.wav", Duration.ofSeconds(30)); }
+                finally { Arrays.fill(bytes, (byte) 0); }
+            }
+            return service.orElseThrow().verify(id, selected, audio, expected);
+        }, handle -> {
+            task = handle;
+            if (closing) cancelTask();
+            handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
+                task = null;
+                if (!isDisplayable()) return;
+                setBusy(false);
+                saved.run();
+                if (failure != null) status.setText(messages.text("platform.models.failed"));
+                else if (result.outcome() == Outcome.SUCCEEDED) dispose();
+                else status.setText(result.problem().map(Problem::message).orElse(messages.text("button.cancel")));
+                if (closing) dispose();
+            }));
+        }, this::failed);
+    }
+
+    /** Restores editor controls after a safe admission or storage failure. / 安全准入或存储失败后恢复编辑器控件。
+     * @param failure actual failure / 实际失败 */
+    private void failed(Throwable failure) {
+        setBusy(false);
+        status.setText(messages.safe(failure));
+        if (closing) dispose();
+    }
+
+    /** Captures one valid current configuration. / 捕获一个有效当前配置。
+     * @return exact visible draft / 精确可见草稿 */
+    private SavedDraft draft() {
+        var profile = new AiProviderProfile(id, uri(fields.endpoint.getText()), fields.model.getText().strip(), credential,
+            uri(fields.fileEndpoint.getText()), uri(fields.realtimeEndpoint.getText()));
+        int limit = Integer.parseInt(fields.limit.getText().strip());
+        if (limit < 1 || fields.name.getText().isBlank()) throw new IllegalArgumentException("Invalid model form");
+        return new SavedDraft(profile, fields.name.getText().strip(), limit);
+    }
+
+    /** Permits checks only against the current saved fields. / 仅允许检查当前保存字段。 */
+    private void updateVerification() {
+        boolean clean = false;
+        try { clean = stored != null && stored.equals(draft()) && fields.key.getDocument().getLength() == 0; }
+        catch (IllegalArgumentException invalid) { clean = false; }
+        verify.setEnabled(!busy && service.isPresent() && clean);
+    }
+
+    /** Observes the retained original task without replaying it. / 观察保留原任务，不重放。 */
+    private void observe() {
+        if (task != null && task.snapshot().state() == TaskState.UNKNOWN) {
+            unknown = true;
+            status.setText(messages.text("platform.models.unknown"));
+            if (closing) dispose();
         }
     }
 
     /** Cancels the real task without interrupting the UI worker. / 取消真实任务，不中断界面工作线程。 */
     private void cancelTask() {
         var current = task;
-        if (current != null)
-            DesktopTaskExecutor.run(() -> {
-                current.requestCancel();
-                return true;
-            }, ignored -> {
-            }, failure -> status.setText(messages.safe(failure)));
+        if (current != null) DesktopTaskExecutor.run(() -> { current.requestCancel(); return true; }, ignored -> {},
+            failure -> status.setText(messages.safe(failure)));
     }
 
-    /** Allows an unknown task to remain in the permanent recovery list. / 允许未知任务保留在常驻恢复列表。 */
+    /** Lets unknown work remain in the permanent recovery list. / 允许未知工作保留在常驻恢复列表。 */
     private void closeEditor() {
-        if (!busy || unknown) {
-            dispose();
-            return;
-        }
+        if (!busy || unknown) { dispose(); return; }
         closing = true;
         cancelTask();
         status.setText(messages.text("ai.models.cancelling"));
     }
 
-    /** Freezes fields while the exact submitted draft is running. / 精确提交草稿执行期间冻结字段。
+    /** Freezes inputs while the exact original operation runs. / 精确原操作执行期间冻结输入。
      * @param value whether operation is pending / 操作是否待完成 */
     private void setBusy(boolean value) {
         busy = value;
-        save.setEnabled(!value);
-        for (var child : form.getComponents())
-            child.setEnabled(!value);
+        save.setEnabled(!value && service.isPresent());
+        for (var child : form.getComponents()) child.setEnabled(!value);
+        updateVerification();
     }
 
+    /** Returns an empty display for an unconfigured protocol. / 未配置协议返回空显示。
+     * @param value optional address / 可选地址
+     * @return editable address / 可编辑地址 */
+    private static String address(URI value) { return value == null ? "" : value.toString(); }
+
+    /** Parses only explicitly supplied addresses. / 仅解析明确提供的地址。
+     * @param value visible address / 可见地址
+     * @return address or absent / 地址或空 */
+    private static URI uri(String value) { return value.isBlank() ? null : URI.create(value.strip()); }
+
     /** Stops observation and clears the credential control. / 停止观察并清空凭据控件。 */
-    @Override
-    public void dispose() {
-        if (timer != null)
-            timer.stop();
-        key.setText("");
+    @Override public void dispose() {
+        if (timer != null) timer.stop();
+        fields.key.setText("");
         super.dispose();
+    }
+
+    /** Exact stored form values. / 精确保存表单值。
+     * @param profile protocol configuration / 协议配置
+     * @param name display name / 显示名
+     * @param limit text output ceiling / 文字输出上限 */
+    private record SavedDraft(AiProviderProfile profile, String name, int limit) {}
+
+    /** Owns the editable configuration and caller-provided verification sample controls. / 持有可编辑配置及调用者提供的验证样本控件。 */
+    private static final class ModelFields {
+        /** Configuration fields and local sample inputs. / 配置字段及本地样本输入。 */
+        private final JTextField name = new JTextField(28), endpoint = new JTextField(28), fileEndpoint = new JTextField(28),
+            realtimeEndpoint = new JTextField(28), model = new JTextField(28), limit = new JTextField(12),
+            audio = new JTextField(28), expected = new JTextField(28);
+        /** Temporary credential input. / 临时凭据输入。 */
+        private final JPasswordField key = new JPasswordField(28);
+
+        /** Installs independently labelled protocol addresses and sample inputs. / 安装独立标注的协议地址及样本输入。
+         * @param form actual layout / 实际布局
+         * @param components themed controls / 主题控件
+         * @param messages localized labels / 本地化标签 */
+        private void install(JPanel form, DesktopComponentFactory components, PageMessagePresenter messages) {
+            var fields = new JTextField[]{name, endpoint, fileEndpoint, realtimeEndpoint, model, key, limit, audio, expected};
+            var labels = new String[]{"ai.models.name", "ai.models.chatEndpoint", "ai.models.fileEndpoint", "ai.models.realtimeEndpoint",
+                "field.model", "field.apiKey", "platform.models.limit", "ai.models.audio", "ai.models.expected"};
+            var names = new String[]{"model.name", "model.endpoint", "model.fileEndpoint", "model.realtimeEndpoint", "model.model",
+                "model.key", "model.limit", "model.audio", "model.expected"};
+            for (int i = 0; i < fields.length; i++) {
+                fields[i].setName(names[i]);
+                components.addField(form, i, 0, messages, labels[i], fields[i]);
+            }
+        }
+
+        /** Observes all saved configuration controls without persisting the sample path. / 观察全部保存配置控件，不持久保存样本路径。
+         * @param changed verification eligibility refresh / 验证资格刷新 */
+        private void observe(Runnable changed) {
+            var listener = new DocumentListener() {
+                /** Refreshes after insertion. / 插入后刷新。
+                 * @param event edit event / 编辑事件 */
+                @Override public void insertUpdate(DocumentEvent event) { changed.run(); }
+                /** Refreshes after removal. / 删除后刷新。
+                 * @param event edit event / 编辑事件 */
+                @Override public void removeUpdate(DocumentEvent event) { changed.run(); }
+                /** Refreshes after style changes. / 样式变化后刷新。
+                 * @param event edit event / 编辑事件 */
+                @Override public void changedUpdate(DocumentEvent event) { changed.run(); }
+            };
+            for (var field : new JTextField[]{name, endpoint, fileEndpoint, realtimeEndpoint, model, limit, key})
+                field.getDocument().addDocumentListener(listener);
+        }
     }
 }

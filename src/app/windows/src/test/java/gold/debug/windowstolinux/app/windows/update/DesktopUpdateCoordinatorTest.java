@@ -82,7 +82,7 @@ class DesktopUpdateCoordinatorTest {
             assertEquals(gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE, problem.code());
             assertEquals("DATABASE_REVIEW_CHANGED", problem.eventCode());
             var sdk = org.junit.jupiter.api.Assertions.assertInstanceOf(
-                    gold.debug.windowstolinux.appapi.task.ApiException.class, port.capabilityFailure.getCause());
+                gold.debug.windowstolinux.appapi.task.ApiException.class, port.capabilityFailure.getCause());
             assertEquals(causeId, sdk.problem().diagnosticId().orElseThrow().toString());
             assertEquals("target", problem.context().get("schema"));
             assertEquals("ROLLBACK", problem.context().get("recoveryAction"));
@@ -90,7 +90,7 @@ class DesktopUpdateCoordinatorTest {
             assertEquals(result.operationIdentity(), problem.diagnosticId().orElseThrow());
             assertEquals(preparation.operationIdentity(), result.operationIdentity());
             assertEquals(collision ? "44444444-4444-4444-4444-444444444444" : causeId,
-                    problem.context().get("causeDiagnosticId"));
+                problem.context().get("causeDiagnosticId"));
             if (collision)
                 assertEquals(causeId, problem.context().get("causeDiagnosticId." + causeId + ".0"));
             assertEquals(List.of("quiesce", "backup", "handoff", "replace", "migrate", "rollback"), port.calls);
@@ -114,7 +114,7 @@ class DesktopUpdateCoordinatorTest {
         assertEquals("77777777-7777-7777-7777-777777777777", problem.context().get("causeDiagnosticId"));
         assertEquals(preparation.operationIdentity(), problem.diagnosticId().orElseThrow());
         var sdk = org.junit.jupiter.api.Assertions.assertInstanceOf(
-                gold.debug.windowstolinux.appapi.task.ApiException.class, port.capabilityFailure.getCause());
+            gold.debug.windowstolinux.appapi.task.ApiException.class, port.capabilityFailure.getCause());
         assertEquals("OLD_PROGRAM_RESTORE_DENIED", sdk.problem().eventCode());
         assertEquals("previous-program", sdk.problem().context().get("target"));
         assertEquals("Rollback cleanup evidence", port.capabilityFailure.getSuppressed()[0].getMessage());
@@ -124,8 +124,8 @@ class DesktopUpdateCoordinatorTest {
     private DesktopUpdateVerification verification() throws Exception {
         Path packageFile = Files.writeString(temporary.resolve("update.bin"), "verified");
         return new DesktopUpdateVerification(packageFile, "release-2", DesktopReleaseVersion.parse("2.0.0"),
-                DesktopArchitectureType.X86_64, 8, "a".repeat(64), Instant.parse("2026-08-22T00:00:00Z"),
-                List.of("signature, digest, version and architecture verified"));
+            DesktopArchitectureType.X86_64, 8, "a".repeat(64), Instant.parse("2026-08-22T00:00:00Z"),
+            List.of("signature, digest, version and architecture verified"));
     }
 
     private enum UpdateFailureType {
@@ -155,7 +155,7 @@ class DesktopUpdateCoordinatorTest {
         public BackupEvidence backupCurrent(DesktopUpdateVerification update) {
             calls.add("backup");
             return new BackupEvidence("backup-1", true, true, true, true,
-                    List.of("program and SQLite backup verified"));
+                List.of("program and SQLite backup verified"));
         }
 
         @Override
@@ -163,7 +163,7 @@ class DesktopUpdateCoordinatorTest {
             calls.add("handoff");
             boolean verified = failure != UpdateFailureType.HANDOFF;
             return new HandoffEvidence(verified, verified, verified,
-                    List.of("independent updater, process state and handoff checked"));
+                List.of("independent updater, process state and handoff checked"));
         }
 
         @Override
@@ -174,25 +174,25 @@ class DesktopUpdateCoordinatorTest {
 
         @Override
         public StepEvidence validateDatabase(DesktopUpdateVerification update, BackupEvidence backup)
-                throws DesktopUpdateException {
+            throws DesktopUpdateException {
             calls.add("migrate");
             if (failure == UpdateFailureType.PUBLIC_PROBLEM) {
                 var sdk = new gold.debug.windowstolinux.appapi.task.ApiException(
-                        new gold.debug.windowstolinux.appapi.task.Problem(
-                                gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE,
-                                "DATABASE_REVIEW_CHANGED", "Reviewed schema differs",
-                                causeCollision
-                                        ? java.util.Map.of("schema", "target", "causeDiagnosticId",
-                                                "44444444-4444-4444-4444-444444444444")
-                                        : java.util.Map.of("schema", "target"),
-                                java.util.Optional
-                                        .of(java.util.UUID.fromString("33333333-3333-3333-3333-333333333333"))));
+                    new gold.debug.windowstolinux.appapi.task.Problem(
+                        gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE,
+                        "DATABASE_REVIEW_CHANGED", "Reviewed schema differs",
+                        causeCollision
+                            ? java.util.Map.of("schema", "target", "causeDiagnosticId",
+                            "44444444-4444-4444-4444-444444444444")
+                            : java.util.Map.of("schema", "target"),
+                        java.util.Optional
+                            .of(java.util.UUID.fromString("33333333-3333-3333-3333-333333333333"))));
                 capabilityFailure = DesktopUpdateException.create(DesktopUpdateFailureType.TRANSACTION_FAILED,
-                        "Wrapped public schema refusal", sdk);
+                    "Wrapped public schema refusal", sdk);
                 throw capabilityFailure;
             }
             return step(failure != UpdateFailureType.MIGRATION && failure != UpdateFailureType.ROLLBACK
-                    && failure != UpdateFailureType.PUBLIC_ROLLBACK_PROBLEM, "SQLite validation attempted");
+                && failure != UpdateFailureType.PUBLIC_ROLLBACK_PROBLEM, "SQLite validation attempted");
         }
 
         @Override
@@ -206,19 +206,19 @@ class DesktopUpdateCoordinatorTest {
             calls.add("rollback");
             if (failure == UpdateFailureType.PUBLIC_ROLLBACK_PROBLEM) {
                 var sdk = new gold.debug.windowstolinux.appapi.task.ApiException(
-                        new gold.debug.windowstolinux.appapi.task.Problem(
-                                gold.debug.windowstolinux.appapi.task.ProblemCode.ACCESS_DENIED,
-                                "OLD_PROGRAM_RESTORE_DENIED", "Original restore refusal",
-                                java.util.Map.of("target", "previous-program"), java.util.Optional
-                                        .of(java.util.UUID.fromString("77777777-7777-7777-7777-777777777777"))));
+                    new gold.debug.windowstolinux.appapi.task.Problem(
+                        gold.debug.windowstolinux.appapi.task.ProblemCode.ACCESS_DENIED,
+                        "OLD_PROGRAM_RESTORE_DENIED", "Original restore refusal",
+                        java.util.Map.of("target", "previous-program"), java.util.Optional
+                        .of(java.util.UUID.fromString("77777777-7777-7777-7777-777777777777"))));
                 capabilityFailure = DesktopUpdateException.create(DesktopUpdateFailureType.ROLLBACK_FAILED,
-                        "Rollback capability refused", sdk);
+                    "Rollback capability refused", sdk);
                 capabilityFailure.addSuppressed(new java.io.IOException("Rollback cleanup evidence"));
                 throw capabilityFailure;
             }
             boolean verified = failure != UpdateFailureType.ROLLBACK;
             return new RollbackEvidence(verified, verified, verified,
-                    List.of("old program and pre-update SQLite restored together"));
+                List.of("old program and pre-update SQLite restored together"));
         }
 
         private static StepEvidence step(boolean verified, String evidence) {

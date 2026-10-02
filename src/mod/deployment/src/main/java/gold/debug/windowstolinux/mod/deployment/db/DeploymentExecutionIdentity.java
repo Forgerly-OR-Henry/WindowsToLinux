@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param reviewedRevision original reviewed digest / 原审阅摘要
  */
 public record DeploymentExecutionIdentity(UUID executionId, UUID taskId, Optional<UUID> projectId, String applicationId,
-        ServerRef server, DeploymentExecutionMode mode, String reviewedRevision) {
+                                          ServerRef server, DeploymentExecutionMode mode, String reviewedRevision) {
     /** Validates exact immutable metadata without normalizing identifiers. / 校验精确不可变元数据，不规范化标识。
      * @param executionId business operation ID / 业务操作ID
      * @param taskId original platform task / 原平台任务

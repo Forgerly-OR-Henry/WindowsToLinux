@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ai;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -12,13 +18,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Sends bounded deployment-only JSON requests through the real platform AI capability. / 通过真实平台 AI 能力发送有界的部署专用 JSON 请求。 */
 public final class DeploymentAiJson {
     /** Parser rejecting duplicate keys. / 拒绝重复键的解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Bound platform capabilities. / 已绑定的平台能力。 */
     private final ModContext context;
@@ -69,7 +75,7 @@ public final class DeploymentAiJson {
      * @throws CapabilityOutcomeException if the platform returns a non-success outcome / 平台返回非成功结果时
      * @throws IOException if the response violates the required object format / 响应不符合对象格式时 */
     public JsonNode ask(AiPurpose purpose, String instruction, Map<String, ?> facts, TaskContext task)
-            throws ApiException, CapabilityOutcomeException, IOException {
+        throws ApiException, CapabilityOutcomeException, IOException {
         return ask(purpose, instruction, facts, context.ai().configurationRevision(purpose, task), task);
     }
 
@@ -84,7 +90,7 @@ public final class DeploymentAiJson {
      * @throws CapabilityOutcomeException for classified non-success / 分类非成功时
      * @throws IOException for invalid JSON / JSON 无效时 */
     public JsonNode ask(AiPurpose purpose, String instruction, Map<String, ?> facts, String expectedRevision,
-            TaskContext task) throws ApiException, CapabilityOutcomeException, IOException {
+                        TaskContext task) throws ApiException, CapabilityOutcomeException, IOException {
         Objects.requireNonNull(facts);
         if (facts.size() > 64 || instruction.length() > 8000)
             throw new IllegalArgumentException("AI input exceeds deployment budget");
@@ -92,7 +98,7 @@ public final class DeploymentAiJson {
         if (data.length() > 48000)
             throw new IllegalArgumentException("AI evidence exceeds deployment budget");
         var request = new AiRequest(purpose, List.of(new AiMessage(AiRole.SYSTEM, instruction, List.of()),
-                new AiMessage(AiRole.USER, data, List.of())), 1200, Duration.ofSeconds(60), true);
+            new AiMessage(AiRole.USER, data, List.of())), 1200, Duration.ofSeconds(60), true);
         OperationResult<AiResponse> result = context.ai().call(request, expectedRevision, task);
         if (result.outcome() != Outcome.SUCCEEDED)
             throw new CapabilityOutcomeException(result.outcome(), result.problem());
@@ -113,7 +119,7 @@ public final class DeploymentAiJson {
     public static String text(JsonNode node, String key, int limit) {
         JsonNode value = node.get(key);
         if (value == null || !value.isTextual() || value.textValue().isBlank() || value.textValue().length() > limit
-                || value.textValue().indexOf('\0') >= 0)
+            || value.textValue().indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid deployment AI field: " + key);
         return value.textValue();
     }

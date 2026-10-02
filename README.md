@@ -197,7 +197,8 @@ web/
 正式文档按[唯一职责](docs/development/DEVELOPMENT.md#documentation)维护，同一规则只保留一份正文，其他文档通过链接引用。开发文档仍为总纲加各期；历史证据保留原始编号，日期和版本限定其适用范围。
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程、安全边界和限制；
-- [开发总纲与文档导航](docs/development/DEVELOPMENT.md)：0.x 历史与 1.1 导航、模块演进索引、通用规则；各期主文档包含功能增量与验收；
+- [1.2 期 APP 整体调整](docs/development/PHASE-1.2.md)：最新修改讨论入口，先收录文件资源管理统一；当前为方案整理，尚未启动代码实现；
+- [开发总纲与文档导航](docs/development/DEVELOPMENT.md)：历史工程与最新开发入口、模块演进索引、通用规则；各期主文档包含功能增量与验收；
 - [项目文件结构](docs/File.md)：模块、包、依赖方向和维护规则；
 - [Mod 开发规范](docs/Mod.md)：Mod 作者契约、包格式、加载、版本、生命周期与数据迁移；
 - [APP 打包发布](docs/APP.md)：APP/JAR 发布布局、启动配置与交付验收；

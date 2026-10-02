@@ -7,8 +7,9 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Host-only diagnostic inventory, bounded record view and explicit history cleanup. / 仅宿主的诊断清单、有界记录视图及明确历史清理。 */
 public final class LogSettingsPane extends JPanel implements AutoCloseable {
@@ -44,13 +45,14 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
      * @param components themed controls / 主题控件
      * @param messages localized text / 本地化文字 */
     public LogSettingsPane(PlatformLogService service, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                           PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Log controls require the EDT");
         this.service = Objects.requireNonNull(service);
         this.messages = Objects.requireNonNull(messages);
         setName("platform.logs");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         reload = messages.bind(components.secondaryButton(""), "logs.reload");
         reload.setName("logs.reload");
@@ -118,7 +120,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
             display();
             long failed = categories.stream().filter(item -> item.problem().isPresent()).count();
             status.setText(
-                    messages.text(failed == 0 && result.unregistered().isEmpty() ? "logs.complete" : "logs.partial"));
+                messages.text(failed == 0 && result.unregistered().isEmpty() ? "logs.complete" : "logs.partial"));
             if (!locked && !result.unregistered().isEmpty())
                 records.setText(messages.text("logs.unregistered") + "\n" + String.join("\n", result.unregistered()));
             controls();
@@ -128,10 +130,10 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
     /** Displays actual confirmed counts, retaining unknown cells explicitly. / 显示实际已确认计数，明确保留未知单元格。 */
     private void display() {
         var model = new DefaultTableModel(
-                new String[]{messages.text("logs.owner"), messages.text("logs.schema"), messages.text("logs.category"),
-                        messages.text("logs.database"), messages.text("logs.databaseRemoved"),
-                        messages.text("logs.files"), messages.text("logs.filesRemoved"), messages.text("logs.result")},
-                0) {
+            new String[]{messages.text("logs.owner"), messages.text("logs.schema"), messages.text("logs.category"),
+                messages.text("logs.database"), messages.text("logs.databaseRemoved"),
+                messages.text("logs.files"), messages.text("logs.filesRemoved"), messages.text("logs.result")},
+            0) {
             /** Prevents edits to observed storage facts. / 禁止编辑已观察存储事实。
              * @param row observed row / 观察行
              * @param column observed column / 观察列
@@ -142,7 +144,10 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
             }
         };
         for (var item : categories)
-            model.addRow(new Object[]{item.target().owner(), item.target().logical(), categoryName(item.target().logical(), item.target().category(), item.target().displayName()),
+            model.addRow(
+                new Object[]{item.target().owner(), item.target().logical(),
+                    categoryName(item.target().logical(), item.target().category(),
+                        item.target().displayName()),
                     count(item.databaseAfter()), count(item.databaseRemoved()), count(item.fileAfter()),
                     count(item.fileRemoved()),
                     messages.text(item.problem().isEmpty() ? "logs.verified" : "logs.unconfirmed")});
@@ -180,11 +185,11 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
                 return;
             if (!locked) {
                 var text = new StringBuilder(view.target().owner() + " / " + view.target().logical() + " / "
-                        + view.target().category() + "\n\n");
+                    + view.target().category() + "\n\n");
                 for (var record : view.records()) {
                     text.append(java.time.Instant.ofEpochMilli(record.recordedAt())).append("  ").append(record.level())
-                            .append("  ").append(record.eventCode()).append("  ").append(record.id()).append('\n')
-                            .append(record.message()).append('\n');
+                        .append("  ").append(record.eventCode()).append("  ").append(record.id()).append('\n')
+                        .append(record.message()).append('\n');
                     if (record.details() != null)
                         text.append(record.details()).append('\n');
                     if (record.truncated())

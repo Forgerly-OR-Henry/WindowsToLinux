@@ -28,10 +28,12 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.message.Deplo
  * @param buildDirectory build directory / 构建目录
  */
 public record DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
-        DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
-        List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missingInformation,
-        List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> toolchainRequirements,
-        String buildDirectory) {
+                                     DeploymentBuildToolType buildTool, DeploymentSupportProfile support,
+                                     ProjectLanguageFacts languageFacts,
+                                     List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
+                                     List<DeploymentLocalizedMessage> missingInformation,
+                                     List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> toolchainRequirements,
+                                     String buildDirectory) {
     /**
      * Validates and binds the inputs required by deployment project facts.
      * <p>校验并绑定部署项目事实所需输入。
@@ -52,7 +54,7 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public DeploymentProjectFacts {
         buildDirectory = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand
-                .relative(buildDirectory, true);
+            .relative(buildDirectory, true);
         sourceRoot = Objects.requireNonNull(sourceRoot, "sourceRoot").toAbsolutePath().normalize();
         applicationId = Objects.requireNonNull(applicationId, "applicationId").trim();
         if (!applicationId.matches("[a-z0-9][a-z0-9-]{0,62}")) {
@@ -69,8 +71,8 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
         }
         languageFacts = Objects.requireNonNull(languageFacts, "languageFacts");
         if (projectType == DeploymentProjectKind.CMAKE_SERVICE
-                && (languageFacts.sourceLanguages().isEmpty() || languageFacts.sourceLanguages().stream().anyMatch(
-                        language -> language != SourceLanguageType.C && language != SourceLanguageType.CPP))) {
+            && (languageFacts.sourceLanguages().isEmpty() || languageFacts.sourceLanguages().stream().anyMatch(
+            language -> language != SourceLanguageType.C && language != SourceLanguageType.CPP))) {
             throw new IllegalArgumentException("CMake facts require a non-empty exact C/C++ source language set");
         }
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
@@ -95,9 +97,9 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @param requirements requirements / 要求集合
      */
     public DeploymentProjectFacts(Path root, String id, DeploymentProjectKind type, DeploymentBuildToolType tool,
-            DeploymentSupportProfile support, ProjectLanguageFacts language, List<AnalysisEvidence> evidence,
-            List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missing,
-            List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements) {
+                                  DeploymentSupportProfile support, ProjectLanguageFacts language, List<AnalysisEvidence> evidence,
+                                  List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missing,
+                                  List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements) {
         this(root, id, type, tool, support, language, evidence, conflicts, missing, requirements, "");
     }
 
@@ -112,7 +114,7 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public DeploymentProjectFacts inBundle(Path root, String directory, String bundleApplicationId) {
         return new DeploymentProjectFacts(root, bundleApplicationId, projectType, buildTool, support, languageFacts,
-                evidence, conflicts, missingInformation, toolchainRequirements, directory);
+            evidence, conflicts, missingInformation, toolchainRequirements, directory);
     }
 
     /**
@@ -129,11 +131,11 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
-            List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
-            List<DeploymentLocalizedMessage> missingInformation) {
+                                  DeploymentBuildToolType buildTool, DeploymentSupportProfile support, ProjectLanguageFacts languageFacts,
+                                  List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
+                                  List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool, support, languageFacts, evidence, conflicts,
-                missingInformation, List.of());
+            missingInformation, List.of());
     }
 
     /**
@@ -144,9 +146,9 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @return the contract with the supplied toolchains applied / 应用所提供工具链集合后的契约
      */
     public DeploymentProjectFacts withToolchains(
-            List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements) {
+        List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements) {
         return new DeploymentProjectFacts(sourceRoot, applicationId, projectType, buildTool, support, languageFacts,
-                evidence, conflicts, missingInformation, requirements, buildDirectory);
+            evidence, conflicts, missingInformation, requirements, buildDirectory);
     }
 
     /**
@@ -162,11 +164,11 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts, List<AnalysisEvidence> evidence,
-            List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missingInformation) {
+                                  DeploymentBuildToolType buildTool, ProjectLanguageFacts languageFacts, List<AnalysisEvidence> evidence,
+                                  List<DeploymentLocalizedMessage> conflicts, List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool,
-                DeploymentSupportCatalog.forArchitecture(projectType, buildTool), languageFacts, evidence, conflicts,
-                missingInformation);
+            DeploymentSupportCatalog.forArchitecture(projectType, buildTool), languageFacts, evidence, conflicts,
+            missingInformation);
     }
 
     /**
@@ -181,11 +183,11 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     public DeploymentProjectFacts(Path sourceRoot, String applicationId, DeploymentProjectKind projectType,
-            DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
-            List<DeploymentLocalizedMessage> missingInformation) {
+                                  DeploymentBuildToolType buildTool, List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> conflicts,
+                                  List<DeploymentLocalizedMessage> missingInformation) {
         this(sourceRoot, applicationId, projectType, buildTool,
-                DeploymentSupportCatalog.forArchitecture(projectType, buildTool), ProjectLanguageFacts.empty(),
-                evidence, conflicts, missingInformation);
+            DeploymentSupportCatalog.forArchitecture(projectType, buildTool), ProjectLanguageFacts.empty(),
+            evidence, conflicts, missingInformation);
     }
 
     /**
@@ -197,6 +199,6 @@ public record DeploymentProjectFacts(Path sourceRoot, String applicationId, Depl
      */
     public boolean readyForPlanning() {
         return projectType.deployable() && support.level().deployable() && conflicts.isEmpty()
-                && missingInformation.isEmpty();
+            && missingInformation.isEmpty();
     }
 }

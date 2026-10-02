@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.TaskState;
+
 import java.awt.*;
 import java.util.*;
 import java.util.List;
@@ -7,9 +10,10 @@ import java.util.List;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+
 
 /** Permanent model inventory and explicit interrupted-probe recovery. / 常驻模型清单及明确的中断探测恢复。 */
 public final class PlatformModelsPane extends JPanel implements AutoCloseable {
@@ -19,7 +23,7 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
      * @param messages current localized display / 当前本地化显示
      * @return capability-free actual editor / 不持有能力的真实编辑器 */
     public static javax.swing.JDialog preview(java.awt.Window owner, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                                              PageMessagePresenter messages) {
         return PlatformModelDialog.preview(owner, components, messages);
     }
 
@@ -50,10 +54,11 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
      * @param components themed controls / 主题控件
      * @param messages localized feedback / 本地化反馈 */
     public PlatformModelsPane(Window owner, PlatformModelService service, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                              PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         this.service = service;
         setName("platform.models");
+        components.stylePage(this);
         setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
         inventory = new AiModelInventoryPane(service, components, messages, existing -> {
             if (locked || busy || closed)
@@ -61,25 +66,25 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
             busy = true;
             inventoryLock();
             DesktopTaskExecutor.run(
-                    () -> existing == null ? OptionalInt.empty() : service.outputLimit(existing.profile().id()),
-                    limit -> {
-                        busy = false;
-                        inventoryLock();
-                        if (!locked && !closed)
-                            new PlatformModelDialog(owner, service, components, messages, existing, limit,
-                                    this::refresh).setVisible(true);
-                    }, failure -> {
-                        busy = false;
-                        inventoryLock();
-                        status.setText(messages.safe(failure));
-                    });
+                () -> existing == null ? OptionalInt.empty() : service.outputLimit(existing.profile().id()),
+                limit -> {
+                    busy = false;
+                    inventoryLock();
+                    if (!locked && !closed)
+                        new PlatformModelDialog(owner, service, components, messages, existing, limit,
+                            this::refresh).setVisible(true);
+                }, failure -> {
+                    busy = false;
+                    inventoryLock();
+                    status.setText(messages.safe(failure));
+                });
         });
         add(inventory);
         var actions = components.transparent(new FlowLayout(FlowLayout.LEFT));
         checks.setName("models.checks");
         checks.setPreferredSize(new Dimension(400, 30));
         checks.setRenderer((list, value, index, selected,
-                focus) -> new JLabel(value == null ? "" : value.progressText() + " · " + value.state()));
+                            focus) -> new JLabel(value == null ? "" : value.progressText() + " · " + value.state()));
         actions.add(checks);
         cancel = messages.bind(components.secondaryButton(""), "button.cancel");
         cancel.setName("models.cancel");
@@ -99,19 +104,19 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
                 busy = true;
                 inventoryLock();
                 DesktopTaskExecutor.run(() -> service.reconcile(selected.id()),
-                        stage -> stage.whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
-                            busy = false;
-                            inventoryLock();
-                            status.setText(failure == null
-                                    ? messages.text("platform.models.reconciled")
-                                    : messages.text("platform.models.failed"));
-                            refresh();
-                            observe();
-                        })), failure -> {
-                            busy = false;
-                            inventoryLock();
-                            status.setText(messages.safe(failure));
-                        });
+                    stage -> stage.whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
+                        busy = false;
+                        inventoryLock();
+                        status.setText(failure == null
+                            ? messages.text("platform.models.reconciled")
+                            : messages.text("platform.models.failed"));
+                        refresh();
+                        observe();
+                    })), failure -> {
+                        busy = false;
+                        inventoryLock();
+                        status.setText(messages.safe(failure));
+                    });
             }
         });
         var reload = messages.bind(components.secondaryButton(""), "server.refresh");
@@ -120,7 +125,7 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
         actions.add(cancel);
         actions.add(reconcile);
         actions.add(reload);
-        var footer = components.transparent(new BorderLayout());
+        var footer = components.card(new BorderLayout());
         footer.add(actions);
         footer.add(status, BorderLayout.SOUTH);
         add(footer, BorderLayout.SOUTH);
@@ -164,11 +169,11 @@ public final class PlatformModelsPane extends JPanel implements AutoCloseable {
         rows.forEach(checks::addItem);
         if (selected != null)
             rows.stream().filter(task -> task.id().equals(selected.id())).findFirst()
-                    .ifPresent(checks::setSelectedItem);
+                .ifPresent(checks::setSelectedItem);
         var current = (TaskSnapshot) checks.getSelectedItem();
         cancel.setEnabled(!locked && current != null && current.state() != TaskState.UNKNOWN);
         reconcile.setEnabled(!locked && !busy && current != null
-                && Set.of(TaskState.UNKNOWN, TaskState.FINISHING).contains(current.state()));
+            && Set.of(TaskState.UNKNOWN, TaskState.FINISHING).contains(current.state()));
     }
 
     /** Stops view observation without discarding accepted central tasks. / 停止视图观察，不丢弃已接纳中央任务。 */

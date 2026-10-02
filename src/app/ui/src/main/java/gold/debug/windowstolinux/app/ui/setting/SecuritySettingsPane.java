@@ -5,9 +5,9 @@ import java.util.Arrays;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.contract.security.SecurityApplicationFacade;
-import gold.debug.windowstolinux.app.ui.component.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Edits global security settings after explicit password verification. / 重新验证密码后修改全局安全设置。 */
 public final class SecuritySettingsPane extends JPanel {
@@ -26,7 +26,7 @@ public final class SecuritySettingsPane extends JPanel {
     /** Repeated password input control. / 重复密码输入控件。
      */
     private final JPasswordField current = new JPasswordField(24), replacement = new JPasswordField(24),
-            confirmation = new JPasswordField(24);
+        confirmation = new JPasswordField(24);
 
     /** Credential encryption action. / 凭据加密动作。
      */
@@ -52,13 +52,13 @@ public final class SecuritySettingsPane extends JPanel {
      * @param messages messages supplied to this boundary / 传入当前边界的messages值
      */
     public SecuritySettingsPane(SecurityApplicationFacade service, DesktopComponentFactory components,
-            PageMessagePresenter messages) {
+                                PageMessagePresenter messages) {
         super(new BorderLayout(0, 12));
         this.service = service;
         this.messages = messages;
         setOpaque(false);
         add(components.sectionHeading(messages, "security.settings", "security.settings.hint"),
-                BorderLayout.NORTH);
+            BorderLayout.NORTH);
         JPanel form = components.transparent(new GridBagLayout());
         currentRow = components.transparent(new GridBagLayout());
         components.addField(currentRow, 0, 0, messages, "security.current", current);
@@ -99,8 +99,8 @@ public final class SecuritySettingsPane extends JPanel {
         messages.bind(change, configured ? "security.change" : "security.setup");
         toggle.setVisible(configured);
         messages.bind(toggle, service.securityState().encryptionEnabled()
-                ? "security.disableEncryption"
-                : "security.enableEncryption");
+            ? "security.disableEncryption"
+            : "security.enableEncryption");
         revalidate();
         repaint();
     }
@@ -114,9 +114,9 @@ public final class SecuritySettingsPane extends JPanel {
         boolean setup = !service.securityState().configured();
         boolean enabled = !service.securityState().encryptionEnabled();
         if (encryption && !enabled
-                && JOptionPane.showConfirmDialog(this, messages.text("security.plaintext.warning"),
-                        messages.text("security.settings"), JOptionPane.OK_CANCEL_OPTION,
-                        JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
+            && JOptionPane.showConfirmDialog(this, messages.text("security.plaintext.warning"),
+            messages.text("security.settings"), JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION)
             return;
         char[] old = current.getPassword(), next = replacement.getPassword(), repeat = confirmation.getPassword();
         current.setText("");
@@ -167,7 +167,7 @@ public final class SecuritySettingsPane extends JPanel {
                     details.setWrapStyleWord(true);
                     details.setCaretPosition(0);
                     JOptionPane.showMessageDialog(SecuritySettingsPane.this, new JScrollPane(details),
-                            messages.text("security.settings"), JOptionPane.ERROR_MESSAGE);
+                        messages.text("security.settings"), JOptionPane.ERROR_MESSAGE);
                     (setup ? replacement : current).requestFocusInWindow();
                 }
             }

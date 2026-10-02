@@ -1,5 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationReceipt.*;
 
 import java.security.MessageDigest;
@@ -17,7 +26,7 @@ import gold.debug.windowstolinux.appapi.linux.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
@@ -55,7 +64,7 @@ public final class DeploymentPublicationChannel {
      * @param task original task / 原任务
      * @param planRevision original reviewed plan digest / 原已审阅计划摘要 */
     public DeploymentPublicationChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String planRevision) {
+                                        TaskContext task, String planRevision) {
         this(session, interaction, server, task, planRevision, DeploymentSendGuard.NONE);
     }
 
@@ -67,7 +76,7 @@ public final class DeploymentPublicationChannel {
      * @param planRevision reviewed plan digest / 已审阅计划摘要
      * @param beforeSend caller-owned check / 调用方持有的核对 */
     public DeploymentPublicationChannel(RemoteSession session, InteractionService interaction, ServerRef server,
-            TaskContext task, String planRevision, DeploymentSendGuard beforeSend) {
+                                        TaskContext task, String planRevision, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
@@ -85,7 +94,7 @@ public final class DeploymentPublicationChannel {
      * @return original snapshot or retained uncertainty / 原快照或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime) throws ApiException {
+                                                                     DeploymentRuntimeDefinition runtime) throws ApiException {
         requireUnit(unit);
         return evidence.snapshot(unit, runtime, task.id(), Optional.empty(), false);
     }
@@ -98,7 +107,7 @@ public final class DeploymentPublicationChannel {
      * @return exact snapshot or uncertainty / 精确快照或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent) throws ApiException {
+                                                                     DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent) throws ApiException {
         requireUnit(unit);
         return evidence.snapshot(unit, runtime, operation, expectedCurrent, true);
     }
@@ -113,12 +122,12 @@ public final class DeploymentPublicationChannel {
      * @return original snapshot or retained uncertainty / 原快照或保留未知
      * @throws ApiException if original admission rejects / 原准入拒绝时 */
     public OperationResult<DeploymentRemoteReleaseSnapshot> snapshot(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent,
-            String expectedKind, boolean expectedRunning) throws ApiException {
+                                                                     DeploymentRuntimeDefinition runtime, java.util.UUID operation, Optional<String> expectedCurrent,
+                                                                     String expectedKind, boolean expectedRunning) throws ApiException {
         Objects.requireNonNull(expectedCurrent);
         Objects.requireNonNull(expectedKind);
         if (expectedCurrent.isEmpty() && (!expectedKind.equals("none") || expectedRunning)
-                || expectedCurrent.isPresent() && !Set.of("ordinary", "deployment", "container").contains(expectedKind))
+            || expectedCurrent.isPresent() && !Set.of("ordinary", "deployment", "container").contains(expectedKind))
             throw new IllegalArgumentException("Complete confirmed previous publication facts required");
         var observed = snapshot(unit, runtime, operation, expectedCurrent);
         if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
@@ -138,7 +147,7 @@ public final class DeploymentPublicationChannel {
      * @return complete original status or retained uncertainty / 完整原状态或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
-            String candidateId, Optional<String> releaseSha256, String backend, String engine) throws ApiException {
+                                                                               String candidateId, Optional<String> releaseSha256, String backend, String engine) throws ApiException {
         requireUnit(unit);
         return evidence.originalStatus(unit, candidateId, releaseSha256, backend, engine, task.id(), false);
     }
@@ -153,7 +162,7 @@ public final class DeploymentPublicationChannel {
      * @return exact original evidence or uncertainty / 精确原证据或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<DeploymentOriginalPublicationStatus> originalStatus(DeploymentUnitIdentity unit,
-            String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation) throws ApiException {
+                                                                               String candidateId, Optional<String> releaseSha256, String backend, String engine, java.util.UUID operation) throws ApiException {
         requireUnit(unit);
         return evidence.originalStatus(unit, candidateId, releaseSha256, backend, engine, operation, true);
     }
@@ -185,13 +194,13 @@ public final class DeploymentPublicationChannel {
      * @return confirmed immutable input or uncertainty / 已确认不可变输入或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     public OperationResult<Void> stageConfiguration(DeploymentUnitIdentity unit, String configurationSha256,
-            String format, byte[] payload) throws ApiException {
+                                                    String format, byte[] payload) throws ApiException {
         requireUnit(unit);
         if (configurationSha256 == null || !configurationSha256.matches("[0-9a-f]{64}")
-                || !Set.of("systemd", "container").contains(format))
+            || !Set.of("systemd", "container").contains(format))
             throw new IllegalArgumentException("Reviewed configuration identity required");
         return stage(unit, "stage-config", "deployment.publication.config.v1",
-                List.of(unit.id(), configurationSha256, format), payload, false);
+            List.of(unit.id(), configurationSha256, format), payload, false);
     }
 
     /** Stages one original secret revision without retaining its plaintext. / 暂存一份原秘密修订而不留存其明文。
@@ -202,7 +211,7 @@ public final class DeploymentPublicationChannel {
      * @return verified digest only after exact remote staging / 仅精确远端暂存后返回已核实摘要
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     public OperationResult<String> stageSecret(DeploymentUnitIdentity unit, String identifier, long revision,
-            byte[] plaintext) throws ApiException {
+                                               byte[] plaintext) throws ApiException {
         requireUnit(unit);
         if (identifier == null || !identifier.matches("[a-z0-9][a-z0-9._-]{0,63}") || revision < 1)
             throw new IllegalArgumentException("Original secret revision required");
@@ -211,7 +220,7 @@ public final class DeploymentPublicationChannel {
             throw new IllegalArgumentException("Empty secret cannot be staged");
         var digest = sha256(plaintext);
         var observed = stage(unit, "stage-secret", "deployment.publication.secret.v1",
-                List.of(unit.id(), identifier, Long.toString(revision)), plaintext, true);
+            List.of(unit.id(), identifier, Long.toString(revision)), plaintext, true);
         return observed.outcome() == Outcome.SUCCEEDED ? success(digest) : withoutValue(observed);
     }
 
@@ -225,7 +234,7 @@ public final class DeploymentPublicationChannel {
      * @return confirmed stage or unknown / 已确认暂存或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<Void> stage(DeploymentUnitIdentity unit, String verb, String operation, List<String> prefix,
-            byte[] payload, boolean nonempty) throws ApiException {
+                                        byte[] payload, boolean nonempty) throws ApiException {
         Objects.requireNonNull(payload);
         if (payload.length > 65536 || (nonempty && payload.length == 0))
             throw new IllegalArgumentException("Immutable input exceeds helper limit");
@@ -238,7 +247,7 @@ public final class DeploymentPublicationChannel {
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
             return withoutValue(observed);
         if (!complete(observed)
-                || !Set.of("INPUT_STAGED=1\n", "INPUT_PRESENT=1\n").contains(observed.value().orElseThrow().stdout()))
+            || !Set.of("INPUT_STAGED=1\n", "INPUT_PRESENT=1\n").contains(observed.value().orElseThrow().stdout()))
             return unknown("DEPLOYMENT_INPUT_UNCONFIRMED");
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
@@ -268,20 +277,20 @@ public final class DeploymentPublicationChannel {
      * @return confirmed publication or retained uncertainty / 已确认发布或保留未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
     public OperationResult<Void> publish(DeploymentUnitIdentity unit, DeploymentProjectFacts facts,
-            DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources, String configurationSha256,
-            Map<DeploymentSecretReference, String> secrets, String candidateId, String releaseSha256,
-            String toolchainBindingSha256, boolean hasTools) throws ApiException {
+                                         DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources, String configurationSha256,
+                                         Map<DeploymentSecretReference, String> secrets, String candidateId, String releaseSha256,
+                                         String toolchainBindingSha256, boolean hasTools) throws ApiException {
         requireUnit(unit);
         Objects.requireNonNull(runtime);
         if (!(runtime instanceof DeploymentRuntimeDefinition.ManagedProcess)
-                && !(runtime instanceof DeploymentRuntimeDefinition.Container))
+            && !(runtime instanceof DeploymentRuntimeDefinition.Container))
             Objects.requireNonNull(facts);
         if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}") || releaseSha256 == null
-                || !releaseSha256.matches("[0-9a-f]{64}"))
+            || !releaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact built candidate and release required");
         var values = new java.util.ArrayList<>(
-                List.of(unit.id(), candidateId, releaseSha256, unit.ownershipManifestSha256(), "identity-v2",
-                        runtime.identityPolicy().name(), DeploymentWorkloadArguments.payload(runtime)));
+            List.of(unit.id(), candidateId, releaseSha256, unit.ownershipManifestSha256(), "identity-v2",
+                runtime.identityPolicy().name(), DeploymentWorkloadArguments.payload(runtime)));
         values.addAll(DeploymentPublicationArguments.inputs(configurationSha256, secrets));
         values.addAll(DeploymentPublicationArguments.content(unit.id(), resources));
         if (hasTools) {
@@ -295,14 +304,14 @@ public final class DeploymentPublicationChannel {
         else
             values.addAll(DeploymentRuntimeArguments.from(facts, runtime));
         var observed = send("deployment.publication.publish.v1", unit,
-                runtime instanceof DeploymentRuntimeDefinition.Container ? "publish-container" : "publish-deployment",
-                values, Duration.ofSeconds(120), 4096);
+            runtime instanceof DeploymentRuntimeDefinition.Container ? "publish-container" : "publish-deployment",
+            values, Duration.ofSeconds(120), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
             return withoutValue(observed);
         if (observed.value().isEmpty() || observed.value().orElseThrow().truncated()
-                || observed.value().orElseThrow().exitCode().isEmpty())
+            || observed.value().orElseThrow().exitCode().isEmpty())
             return unknown("DEPLOYMENT_PUBLISH_UNCONFIRMED");
         if (observed.value().orElseThrow().exitCode().orElseThrow() != 0)
             return failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_PUBLISH_FAILED");
@@ -310,7 +319,7 @@ public final class DeploymentPublicationChannel {
         final String marker = "PUBLISHED=1\n";
         int at = output.length() - marker.length();
         if (at < 0 || !output.endsWith(marker) || (at > 0 && output.charAt(at - 1) != '\n')
-                || output.indexOf("PUBLISHED=") != at)
+            || output.indexOf("PUBLISHED=") != at)
             return unknown("DEPLOYMENT_PUBLISH_RECEIPT_INVALID");
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
@@ -321,18 +330,18 @@ public final class DeploymentPublicationChannel {
      * @return confirmed health or its actual non-success / 已确认健康或实际非成功
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<Void> healthCheck(DeploymentUnitIdentity unit, DeploymentHealthCheck check)
-            throws ApiException {
+        throws ApiException {
         requireUnit(unit);
         Objects.requireNonNull(check);
         var observed = send("deployment.publication.health.v1", unit, "application-health",
-                List.of(unit.id(), unit.ownershipManifestSha256(), DeploymentWorkloadArguments.healthPayload(check)),
-                Duration.ofSeconds(check.timeoutSeconds() + 45L), 4096);
+            List.of(unit.id(), unit.ownershipManifestSha256(), DeploymentWorkloadArguments.healthPayload(check)),
+            Duration.ofSeconds(check.timeoutSeconds() + 45L), 4096);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
             return withoutValue(observed);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.value().isEmpty() || observed.value().orElseThrow().truncated()
-                || observed.value().orElseThrow().exitCode().isEmpty())
+            || observed.value().orElseThrow().exitCode().isEmpty())
             return unknown("DEPLOYMENT_HEALTH_UNCONFIRMED");
         if (observed.value().orElseThrow().exitCode().orElseThrow() != 0)
             return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HEALTH_FAILED");
@@ -347,7 +356,7 @@ public final class DeploymentPublicationChannel {
      * @return verified stopped state or uncertainty / 已核实停止状态或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     public OperationResult<Void> stopPrevious(DeploymentUnitIdentity unit, DeploymentRemoteReleaseSnapshot snapshot)
-            throws ApiException {
+        throws ApiException {
         requireUnit(unit);
         Objects.requireNonNull(snapshot);
         if (snapshot.token().isEmpty() || !snapshot.previousRunning())
@@ -359,8 +368,8 @@ public final class DeploymentPublicationChannel {
             default -> throw new IllegalArgumentException("Original runtime kind cannot be stopped");
         };
         var arguments = snapshot.previousKind().equals("ordinary")
-                ? List.of(unit.id(), "stop", unit.ownershipManifestSha256())
-                : List.of(unit.id(), "stop", unit.ownershipManifestSha256(), snapshot.previousDigest().orElseThrow());
+            ? List.of(unit.id(), "stop", unit.ownershipManifestSha256())
+            : List.of(unit.id(), "stop", unit.ownershipManifestSha256(), snapshot.previousDigest().orElseThrow());
         var observed = send("deployment.publication.stop-old.v1", unit, verb, arguments, Duration.ofSeconds(45), 4096);
         if (observed.outcome() != Outcome.SUCCEEDED) {
             if (observed.outcome() == Outcome.FAILED && observed.value().isPresent())
@@ -373,8 +382,8 @@ public final class DeploymentPublicationChannel {
         if (state.outcome() != Outcome.SUCCEEDED || state.value().isEmpty())
             return unknown("DEPLOYMENT_OLD_STOP_STATE_UNCONFIRMED");
         return state.value().orElseThrow().state() == DeploymentRemoteRuntimeObservation.StateType.STOPPED
-                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
-                : unknown("DEPLOYMENT_OLD_STOP_STATE_CHANGED");
+            ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+            : unknown("DEPLOYMENT_OLD_STOP_STATE_CHANGED");
     }
 
     /** Checks the actual owned runtime after a confirmed publish or rollback. / 在确认发布或回滚后检查实际所属运行时。
@@ -383,7 +392,7 @@ public final class DeploymentPublicationChannel {
      * @return verified state or explicit uncertainty / 已核实状态或显式未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     public OperationResult<DeploymentRemoteRuntimeObservation> observe(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition runtime) throws ApiException {
+                                                                       DeploymentRuntimeDefinition runtime) throws ApiException {
         return observeCurrent(unit, runtime);
     }
 
@@ -395,21 +404,21 @@ public final class DeploymentPublicationChannel {
      * @return confirmed lifecycle result or retained uncertainty / 已确认生命周期结果或保留未知
      * @throws ApiException if host admission fails / 宿主准入失败时 */
     public OperationResult<Void> lifecycle(DeploymentUnitIdentity unit, DeploymentRuntimeDefinition runtime,
-            String action, String expectedReleaseSha256) throws ApiException {
+                                           String action, String expectedReleaseSha256) throws ApiException {
         requireUnit(unit);
         if (expectedReleaseSha256 == null || !expectedReleaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact reviewed current release required");
         Objects.requireNonNull(runtime);
         if (!Set.of("start", "stop", "restart").contains(action)
-                || runtime.workload().mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
+            || runtime.workload().mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
             throw new IllegalArgumentException("Only a reviewed daemon lifecycle action is supported");
         var before = observe(unit, runtime);
         if (before.outcome() != Outcome.SUCCEEDED || before.value().isEmpty())
             return withoutValue(before);
         String verb = runtime instanceof DeploymentRuntimeDefinition.Container
-                ? "lifecycle-container" : "lifecycle-deployment";
+            ? "lifecycle-container" : "lifecycle-deployment";
         var observed = send("deployment.application.lifecycle.v1", unit, verb,
-                List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256), Duration.ofSeconds(45), 4096);
+            List.of(unit.id(), action, unit.ownershipManifestSha256(), expectedReleaseSha256), Duration.ofSeconds(45), 4096);
         if (observed.outcome() != Outcome.SUCCEEDED)
             return withoutValue(observed);
         if (!complete(observed) || !("LIFECYCLE=" + action + "\n").equals(observed.value().orElseThrow().stdout()))
@@ -418,10 +427,10 @@ public final class DeploymentPublicationChannel {
         if (after.outcome() != Outcome.SUCCEEDED || after.value().isEmpty())
             return unknown("DEPLOYMENT_LIFECYCLE_STATE_UNCONFIRMED");
         var expected = "stop".equals(action) ? DeploymentRemoteRuntimeObservation.StateType.STOPPED
-                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+            : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         return after.value().orElseThrow().state() == expected
-                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
-                : unknown("DEPLOYMENT_LIFECYCLE_STATE_CHANGED");
+            ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+            : unknown("DEPLOYMENT_LIFECYCLE_STATE_CHANGED");
     }
 
     /** Observes the restored old release's actual saved kind and mode. / 观测恢复的旧发布实际已保存类别和模式。
@@ -429,7 +438,7 @@ public final class DeploymentPublicationChannel {
      * @return verified restored runtime or uncertainty / 已核实恢复运行时或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     public OperationResult<DeploymentRemoteRuntimeObservation> observeRestored(DeploymentUnitIdentity unit)
-            throws ApiException {
+        throws ApiException {
         return observeCurrent(unit, null);
     }
 
@@ -439,10 +448,10 @@ public final class DeploymentPublicationChannel {
      * @return verified state or uncertainty / 已核实状态或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<DeploymentRemoteRuntimeObservation> observeCurrent(DeploymentUnitIdentity unit,
-            DeploymentRuntimeDefinition expected) throws ApiException {
+                                                                               DeploymentRuntimeDefinition expected) throws ApiException {
         requireUnit(unit);
         var inspect = send("deployment.publication.inspect.v1", unit, "inspect-runtime",
-                List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
+            List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
         if (inspect.outcome() == Outcome.FAILED && inspect.value().isEmpty())
             return withoutValue(inspect);
         if (inspect.outcome() == Outcome.CANCELLED || inspect.outcome() == Outcome.UNKNOWN)
@@ -452,9 +461,9 @@ public final class DeploymentPublicationChannel {
         String identity = inspect.value().orElseThrow().stdout();
         if (expected != null) {
             String required = expected instanceof DeploymentRuntimeDefinition.Container container
-                    ? "KIND=container\nENGINE=" + container.engine().name().toLowerCase(java.util.Locale.ROOT)
-                            + "\nMODE=" + expected.workload().mode().name() + "\n"
-                    : "KIND=deployment\nMODE=" + expected.workload().mode().name() + "\n";
+                ? "KIND=container\nENGINE=" + container.engine().name().toLowerCase(java.util.Locale.ROOT)
+                + "\nMODE=" + expected.workload().mode().name() + "\n"
+                : "KIND=deployment\nMODE=" + expected.workload().mode().name() + "\n";
             if (!required.equals(identity))
                 return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
         }
@@ -467,11 +476,11 @@ public final class DeploymentPublicationChannel {
         if ("deployment".equals(values.get("KIND")) && values.size() == 2)
             return observeNative(unit, "ON_DEMAND".equals(mode));
         if ("container".equals(values.get("KIND")) && values.size() == 3 && values.get("ENGINE") != null
-                && Set.of("docker", "podman").contains(values.get("ENGINE")))
+            && Set.of("docker", "podman").contains(values.get("ENGINE")))
             return "ON_DEMAND".equals(mode)
-                    ? success(new DeploymentRemoteRuntimeObservation(
-                            DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
-                    : observeContainer(unit, values.get("ENGINE"));
+                ? success(new DeploymentRemoteRuntimeObservation(
+                DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
+                : observeContainer(unit, values.get("ENGINE"));
         return unknown("DEPLOYMENT_RUNTIME_IDENTITY_CHANGED");
     }
 
@@ -481,9 +490,9 @@ public final class DeploymentPublicationChannel {
      * @return confirmed native state or unknown / 已确认原生状态或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<DeploymentRemoteRuntimeObservation> observeNative(DeploymentUnitIdentity unit,
-            boolean onDemand) throws ApiException {
+                                                                              boolean onDemand) throws ApiException {
         var observed = send("deployment.publication.observe.v1", unit, "observe-deployment",
-                List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
+            List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(20), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -493,14 +502,14 @@ public final class DeploymentPublicationChannel {
         String output = observed.value().orElseThrow().stdout();
         if (onDemand)
             return output.equals(
-                    "OWNER=1\nINSTALLED=1\nRUNNING=0\nENABLED=not-applicable\nQUERY_OK=1\nActiveState=inactive\nMainPID=0\n")
-                            ? success(new DeploymentRemoteRuntimeObservation(
-                                    DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
-                            : unknown("DEPLOYMENT_ON_DEMAND_OBSERVATION_INVALID");
+                "OWNER=1\nINSTALLED=1\nRUNNING=0\nENABLED=not-applicable\nQUERY_OK=1\nActiveState=inactive\nMainPID=0\n")
+                ? success(new DeploymentRemoteRuntimeObservation(
+                DeploymentRemoteRuntimeObservation.StateType.INSTALLED))
+                : unknown("DEPLOYMENT_ON_DEMAND_OBSERVATION_INVALID");
         var values = DeploymentPublicationReceipt.fields(output);
         if (!"1".equals(values.get("OWNER")) || !"1".equals(values.get("QUERY_OK"))
-                || !values.keySet().containsAll(Set.of("RUNNING", "ENABLED", "ActiveState", "SubState", "Result",
-                        "ExecMainCode", "ExecMainStatus", "MainPID")))
+            || !values.keySet().containsAll(Set.of("RUNNING", "ENABLED", "ActiveState", "SubState", "Result",
+            "ExecMainCode", "ExecMainStatus", "MainPID")))
             return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
         for (String key : List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID"))
             if (!values.get(key).matches("[A-Za-z0-9_-]{1,64}"))
@@ -509,17 +518,17 @@ public final class DeploymentPublicationChannel {
             if (!values.get(key).matches("[0-9]{1,10}"))
                 return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
         if ("failed".equals(values.get("ActiveState")) || "activating".equals(values.get("ActiveState"))
-                && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
+            && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
             return success(new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.ERROR));
         if ("1".equals(values.get("RUNNING")) && "active".equals(values.get("ActiveState"))
-                && "running".equals(values.get("SubState")) && "success".equals(values.get("Result"))
-                && values.get("MainPID").matches("[0-9]{1,10}") && !"0".equals(values.get("MainPID")))
+            && "running".equals(values.get("SubState")) && "success".equals(values.get("Result"))
+            && values.get("MainPID").matches("[0-9]{1,10}") && !"0".equals(values.get("MainPID")))
             return success(
-                    new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING));
         if ("0".equals(values.get("RUNNING")) && "inactive".equals(values.get("ActiveState"))
-                && "dead".equals(values.get("SubState")) && "0".equals(values.get("MainPID")))
+            && "dead".equals(values.get("SubState")) && "0".equals(values.get("MainPID")))
             return success(
-                    new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED));
         return unknown("DEPLOYMENT_RUNTIME_STATE_UNCONFIRMED");
     }
 
@@ -528,13 +537,13 @@ public final class DeploymentPublicationChannel {
      * @return verified old state or uncertainty / 已核实旧状态或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<DeploymentRemoteRuntimeObservation> observeOrdinary(DeploymentUnitIdentity unit)
-            throws ApiException {
+        throws ApiException {
         String script = "set -eu\nunit=" + DeploymentBuildCommandChannel.shellQuote(unit.systemdUnit()) + "\n"
-                + "systemctl show --property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,MainPID "
-                + "\"$unit\"\n";
+            + "systemctl show --property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,MainPID "
+            + "\"$unit\"\n";
         var observed = dispatch("deployment.publication.observe-restored.v1", unit,
-                new CommandRequest("/bin/bash -lc " + DeploymentBuildCommandChannel.shellQuote(script), new byte[0],
-                        Duration.ofSeconds(20), 4096));
+            new CommandRequest("/bin/bash -lc " + DeploymentBuildCommandChannel.shellQuote(script), new byte[0],
+                Duration.ofSeconds(20), 4096));
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -543,22 +552,22 @@ public final class DeploymentPublicationChannel {
             return unknown("DEPLOYMENT_RESTORED_OBSERVATION_UNCONFIRMED");
         var values = DeploymentPublicationReceipt.fields(observed.value().orElseThrow().stdout());
         if (!values.keySet()
-                .containsAll(Set.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID")))
+            .containsAll(Set.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID")))
             return unknown("DEPLOYMENT_RESTORED_OBSERVATION_INVALID");
         for (String key : List.of("ExecMainCode", "ExecMainStatus", "MainPID"))
             if (!values.get(key).matches("[0-9]{1,10}"))
                 return unknown("DEPLOYMENT_RESTORED_OBSERVATION_INVALID");
         if ("failed".equals(values.get("ActiveState")) || "activating".equals(values.get("ActiveState"))
-                && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
+            && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
             return success(new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.ERROR));
         if ("active".equals(values.get("ActiveState")) && "running".equals(values.get("SubState"))
-                && "success".equals(values.get("Result")) && !"0".equals(values.get("MainPID")))
+            && "success".equals(values.get("Result")) && !"0".equals(values.get("MainPID")))
             return success(
-                    new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING));
         if ("inactive".equals(values.get("ActiveState")) && "dead".equals(values.get("SubState"))
-                && "0".equals(values.get("MainPID")))
+            && "0".equals(values.get("MainPID")))
             return success(
-                    new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED));
         return unknown("DEPLOYMENT_RESTORED_STATE_UNCONFIRMED");
     }
 
@@ -568,29 +577,29 @@ public final class DeploymentPublicationChannel {
      * @return confirmed container state or unknown / 已确认容器状态或未知
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<DeploymentRemoteRuntimeObservation> observeContainer(DeploymentUnitIdentity unit,
-            String engine) throws ApiException {
+                                                                                 String engine) throws ApiException {
         String root = DeploymentBuildCommandChannel.shellQuote(unit.releaseRoot());
         String manifest = DeploymentBuildCommandChannel.shellQuote(unit.ownershipManifestSha256());
         String name = DeploymentBuildCommandChannel.shellQuote("windowstolinux-" + unit.id());
         String autostart = engine.equals("docker")
-                ? "docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' " + name + " 2>/dev/null || true"
-                : "if test -f "
-                        + DeploymentBuildCommandChannel.shellQuote("/etc/containers/systemd/windowstolinux-" + unit.id()
-                                + ".container.d/10-windowstolinux-autostart.conf")
-                        + "; then printf enabled; else printf no; fi";
+            ? "docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' " + name + " 2>/dev/null || true"
+            : "if test -f "
+            + DeploymentBuildCommandChannel.shellQuote("/etc/containers/systemd/windowstolinux-" + unit.id()
+            + ".container.d/10-windowstolinux-autostart.conf")
+            + "; then printf enabled; else printf no; fi";
         String script = "set -eu\nroot=" + root + "\nowner=0\n"
-                + "if [ -L \"$root/current\" ]; then current=$(readlink -f -- \"$root/current\"); "
-                + "case \"$current\" in \"$root/releases\"/[0-9a-f]*) "
-                + "if [ -f \"$current/.windowstolinux-owner\" ] && [ -f \"$current/.windowstolinux-container-engine\" ] "
-                + "&& [ \"$(cat -- \"$current/.windowstolinux-owner\")\" = " + manifest + " ] "
-                + "&& [ \"$(cat -- \"$current/.windowstolinux-container-engine\")\" = "
-                + DeploymentBuildCommandChannel.shellQuote(engine) + " ]; then owner=1; fi;; esac; fi\n" + "running=$("
-                + engine + " inspect --format '{{.State.Running}}' " + name + " 2>/dev/null || true)\nenabled=$("
-                + autostart + ")\n"
-                + "printf 'OWNER=%s\\nRUNNING=%s\\nENABLED=%s\\n' \"$owner\" \"$running\" \"$enabled\"\n";
+            + "if [ -L \"$root/current\" ]; then current=$(readlink -f -- \"$root/current\"); "
+            + "case \"$current\" in \"$root/releases\"/[0-9a-f]*) "
+            + "if [ -f \"$current/.windowstolinux-owner\" ] && [ -f \"$current/.windowstolinux-container-engine\" ] "
+            + "&& [ \"$(cat -- \"$current/.windowstolinux-owner\")\" = " + manifest + " ] "
+            + "&& [ \"$(cat -- \"$current/.windowstolinux-container-engine\")\" = "
+            + DeploymentBuildCommandChannel.shellQuote(engine) + " ]; then owner=1; fi;; esac; fi\n" + "running=$("
+            + engine + " inspect --format '{{.State.Running}}' " + name + " 2>/dev/null || true)\nenabled=$("
+            + autostart + ")\n"
+            + "printf 'OWNER=%s\\nRUNNING=%s\\nENABLED=%s\\n' \"$owner\" \"$running\" \"$enabled\"\n";
         var observed = dispatch("deployment.publication.observe.v1", unit,
-                new CommandRequest("/bin/bash -lc " + DeploymentBuildCommandChannel.shellQuote(script), new byte[0],
-                        Duration.ofSeconds(20), 4096));
+            new CommandRequest("/bin/bash -lc " + DeploymentBuildCommandChannel.shellQuote(script), new byte[0],
+                Duration.ofSeconds(20), 4096));
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -599,11 +608,11 @@ public final class DeploymentPublicationChannel {
             return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_UNCONFIRMED");
         var values = DeploymentPublicationReceipt.fields(observed.value().orElseThrow().stdout());
         if (!"1".equals(values.get("OWNER")) || values.get("RUNNING") == null
-                || !Set.of("true", "false").contains(values.get("RUNNING")) || !values.containsKey("ENABLED"))
+            || !Set.of("true", "false").contains(values.get("RUNNING")) || !values.containsKey("ENABLED"))
             return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_INVALID");
         return success(new DeploymentRemoteRuntimeObservation("true".equals(values.get("RUNNING"))
-                ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
-                : DeploymentRemoteRuntimeObservation.StateType.STOPPED));
+            ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
+            : DeploymentRemoteRuntimeObservation.StateType.STOPPED));
     }
 
     /** Rolls back only a known failed original release and requires a complete helper receipt. / 仅回滚已知失败的原发布并要求完整helper回执。
@@ -614,7 +623,7 @@ public final class DeploymentPublicationChannel {
      * @return confirmed rollback or uncertainty / 已确认回滚或未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前拒绝准入时 */
     public OperationResult<Void> rollback(DeploymentUnitIdentity unit, String releaseSha256,
-            DeploymentRemoteReleaseSnapshot snapshot, DeploymentRuntimeDefinition runtime) throws ApiException {
+                                          DeploymentRemoteReleaseSnapshot snapshot, DeploymentRuntimeDefinition runtime) throws ApiException {
         requireUnit(unit);
         if (releaseSha256 == null || !releaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact attempted release required");
@@ -622,7 +631,7 @@ public final class DeploymentPublicationChannel {
         Objects.requireNonNull(runtime);
         boolean container = runtime instanceof DeploymentRuntimeDefinition.Container;
         String verb = (container ? "rollback-container" : "rollback-deployment")
-                + (snapshot.token().isPresent() ? "" : "-first");
+            + (snapshot.token().isPresent() ? "" : "-first");
         var values = new java.util.ArrayList<>(List.of(unit.id(), releaseSha256, unit.ownershipManifestSha256()));
         snapshot.token().ifPresent(values::add);
         var observed = send("deployment.publication.rollback.v1", unit, verb, values, Duration.ofSeconds(120), 4096);
@@ -631,7 +640,7 @@ public final class DeploymentPublicationChannel {
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
             return withoutValue(observed);
         if (observed.value().isEmpty() || observed.value().orElseThrow().truncated()
-                || observed.value().orElseThrow().exitCode().isEmpty())
+            || observed.value().orElseThrow().exitCode().isEmpty())
             return unknown("DEPLOYMENT_ROLLBACK_UNCONFIRMED");
         if (observed.value().orElseThrow().exitCode().orElseThrow() != 0)
             return failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_ROLLBACK_FAILED");
@@ -639,7 +648,7 @@ public final class DeploymentPublicationChannel {
         final String marker = "ROLLED_BACK=1\n";
         int at = output.length() - marker.length();
         if (at < 0 || !output.endsWith(marker) || (at > 0 && output.charAt(at - 1) != '\n')
-                || output.indexOf("ROLLED_BACK=") != at)
+            || output.indexOf("ROLLED_BACK=") != at)
             return unknown("DEPLOYMENT_ROLLBACK_RECEIPT_INVALID");
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
     }
@@ -651,7 +660,7 @@ public final class DeploymentPublicationChannel {
     public OperationResult<Void> retain(DeploymentUnitIdentity unit) throws ApiException {
         requireUnit(unit);
         var observed = send("deployment.publication.retain.v1", unit, "retain",
-                List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(60), 4096);
+            List.of(unit.id(), unit.ownershipManifestSha256()), Duration.ofSeconds(60), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -671,8 +680,8 @@ public final class DeploymentPublicationChannel {
         if (releaseSha256 == null || !releaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact maintenance release required");
         var observed = send("deployment.publication.maintenance-end.v1", unit, "application-maintenance",
-                List.of("end", unit.id(), unit.ownershipManifestSha256(), "deployment-" + releaseSha256, releaseSha256),
-                Duration.ofSeconds(30), 4096);
+            List.of("end", unit.id(), unit.ownershipManifestSha256(), "deployment-" + releaseSha256, releaseSha256),
+            Duration.ofSeconds(30), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -692,7 +701,7 @@ public final class DeploymentPublicationChannel {
         if (candidateId == null || !candidateId.matches("[a-z0-9][a-z0-9-]{0,62}-[0-9a-f]{16}"))
             throw new IllegalArgumentException("Exact original candidate required");
         var observed = send("deployment.publication.candidate-cleanup.v1", unit, "candidate-cleanup-task",
-                List.of(unit.id(), candidateId, task.id().toString()), Duration.ofSeconds(90), 4096);
+            List.of(unit.id(), candidateId, task.id().toString()), Duration.ofSeconds(90), 4096);
         if (observed.outcome() == Outcome.FAILED && observed.value().isEmpty())
             return withoutValue(observed);
         if (observed.outcome() == Outcome.CANCELLED || observed.outcome() == Outcome.UNKNOWN)
@@ -712,7 +721,7 @@ public final class DeploymentPublicationChannel {
      * @return actual host observation / 实际宿主观测
      * @throws ApiException if admission rejects before dispatch / 发送前准入拒绝时 */
     private OperationResult<CommandResult> send(String operation, DeploymentUnitIdentity unit, String verb,
-            List<String> arguments, Duration timeout, long output) throws ApiException {
+                                                List<String> arguments, Duration timeout, long output) throws ApiException {
         return send(operation, unit, verb, arguments, timeout, output, new byte[0]);
     }
 
@@ -727,10 +736,10 @@ public final class DeploymentPublicationChannel {
      * @return actual host observation / 真实宿主观测
      * @throws ApiException if admission fails before dispatch / 发送前准入失败时 */
     private OperationResult<CommandResult> send(String operation, DeploymentUnitIdentity unit, String verb,
-            List<String> arguments, Duration timeout, long output, byte[] input) throws ApiException {
+                                                List<String> arguments, Duration timeout, long output, byte[] input) throws ApiException {
         StringBuilder script = new StringBuilder(
-                DeploymentBuildCommandChannel.shellQuote(DeploymentManagedHelperBundle.PATH)).append(' ')
-                .append(DeploymentBuildCommandChannel.shellQuote(verb));
+            DeploymentBuildCommandChannel.shellQuote(DeploymentManagedHelperBundle.PATH)).append(' ')
+            .append(DeploymentBuildCommandChannel.shellQuote(verb));
         for (String value : arguments)
             script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
         return dispatch(operation, unit, new CommandRequest(script.toString(), input, timeout, output));
@@ -743,10 +752,10 @@ public final class DeploymentPublicationChannel {
      * @return actual remote observation / 真实远端观测
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
     private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
-            CommandRequest request) throws ApiException {
+                                                    CommandRequest request) throws ApiException {
         try (request) {
             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
-                    operation, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
+                operation, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
             var grant = interaction.approve(intent, task);
             if (grant.outcome() != Outcome.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
@@ -754,12 +763,12 @@ public final class DeploymentPublicationChannel {
             try {
                 var executed = session.execute(request, grant.value().orElseThrow());
                 if (executed.outcome() == Outcome.CANCELLED
-                        || executed.outcome() == Outcome.FAILED && executed.value().isEmpty())
+                    || executed.outcome() == Outcome.FAILED && executed.value().isEmpty())
                     return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
                 return executed;
             } catch (ApiException failure) {
                 if (failure.problem().code() == ProblemCode.ACCESS_DENIED
-                        || failure.problem().code() == ProblemCode.INVALID_INPUT)
+                    || failure.problem().code() == ProblemCode.INVALID_INPUT)
                     throw failure;
                 return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
             }

@@ -23,9 +23,10 @@ class ModuleDependencyArchitectureTest {
     private static final String ROOT = "gold.debug.windowstolinux.";
 
     private static final Set<String> UI_EXECUTION_TYPES = Set.of(ROOT + "appapi.linux.LinuxService",
-            ROOT + "appapi.linux.RemoteSession", ROOT + "appapi.process.ProcessService",
-            ROOT + "appapi.process.ProcessChannel", ROOT + "appapi.source.SourceService",
-            ROOT + "appapi.secret.SecretService", ROOT + "appapi.db.ModDatabase");
+        ROOT + "appapi.linux.RemoteSession", ROOT + "appapi.task.ProcessService",
+        ROOT + "appapi.task.ManagedProcess", ROOT + "appapi.file.FileService",
+        ROOT + "appapi.file.FileWorkspace", ROOT + "appapi.secret.SecretService",
+        ROOT + "appapi.db.ModDatabase", ROOT + "appapi.db.SchemaAccess");
 
     @Test
     void productionDependenciesMatchDocumentationAndDirectPomDeclarations() throws Exception {
@@ -47,42 +48,53 @@ class ModuleDependencyArchitectureTest {
     @Test
     void forbiddenPomDependenciesAndMissingDirectDependenciesCannotPass() throws Exception {
         var allowed = documentedDependencies(
-                Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
         var declared = new HashMap<>(declaredDependencies());
         declared.put("app/ui", Set.of("app/linux"));
         assertFalse(pomViolations(allowed, declared).isEmpty());
         declared = new HashMap<>(declaredDependencies());
         var service = new HashSet<>(declared.get("app/service"));
-        service.remove("app/source");
+        service.remove("app/file");
         declared.put("app/service", service);
-        assertFalse(referenceViolations("app/service", List.of(ROOT + "app.source.snapshot.SourceWorkDirectory"),
-                allowed, declared).isEmpty());
+        assertFalse(referenceViolations("app/service", List.of(ROOT + "app.file.SourceWorkDirectory"),
+            allowed, declared).isEmpty());
     }
 
     @Test
     void fullyQualifiedReferencesCannotBypassTheUiBoundary() throws Exception {
         var allowed = documentedDependencies(
-                Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
         var declared = declaredDependencies();
         var source = ArchitectureSourceInspector.snippets(Map.of("fixture.References", """
-                package fixture;
-                class References {
-                    gold.debug.windowstolinux.app.linux.ssh.SshConnector transfer;
-                }
-                """)).getFirst();
+            package fixture;
+            class References {
+                gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector transfer;
+            }
+            """)).getFirst();
         assertFalse(referenceViolations("app/ui", source.references(), allowed, declared).isEmpty());
         assertEquals(List.of(),
-                referenceViolations("app/ui", List.of(ROOT + "appapi.task.Problem"), allowed, declared));
+            referenceViolations("app/ui", List.of(ROOT + "appapi.task.Problem"), allowed, declared));
         assertFalse(referenceViolations("app/ui", List.of(ROOT + "appapi.linux.RemoteSession"), allowed, declared)
-                .isEmpty());
+            .isEmpty());
         var indirect = ArchitectureSourceInspector.snippets(Map.of("fixture.Indirect", """
-                package fixture;
-                class Indirect {
-                    gold.debug.windowstolinux.appapi.mod.ModContext context;
-                    void run() throws gold.debug.windowstolinux.appapi.task.ApiException { var linux = context.linux(); linux.connect(null, null); }
-                }
-                """)).getFirst();
+            package fixture;
+            class Indirect {
+                gold.debug.windowstolinux.appapi.mod.ModContext context;
+                void run() throws gold.debug.windowstolinux.appapi.task.ApiException { var linux = context.linux(); linux.connect(null, null); }
+            }
+            """)).getFirst();
         assertFalse(executionCalls(indirect).isEmpty());
+        var process = ArchitectureSourceInspector.snippets(Map.of("fixture.ProcessUse", """
+            package fixture;
+            class ProcessUse {
+                void run(gold.debug.windowstolinux.appapi.mod.ModContext context,
+                    gold.debug.windowstolinux.appapi.task.TaskContext task)
+                    throws gold.debug.windowstolinux.appapi.task.ApiException {
+                    var processes = context.processes(); processes.start(null, task);
+                }
+            }
+            """)).getFirst();
+        assertFalse(executionCalls(process).isEmpty());
     }
 
     @Test
@@ -100,45 +112,59 @@ class ModuleDependencyArchitectureTest {
     }
 
     @Test
+    void modInternalFreedomCannotReachPlatformOrPrivateModImplementations() throws Exception {
+        var allowed = documentedDependencies(
+            Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md")));
+        var declared = declaredDependencies();
+        for (String reference : List.of(ROOT + "app.file.SourceWorkDirectory",
+            ROOT + "app.db.connect.PlatformDatabase", ROOT + "mod.backup.service.PrivateBackup"))
+            assertFalse(referenceViolations("mod/deployment", List.of(reference), allowed, declared).isEmpty(),
+                reference);
+        assertEquals(List.of(), referenceViolations("mod/deployment",
+            List.of(ROOT + "appapi.file.FileService", ROOT + "mod.deployment.service.impl.CustomWorkflow"),
+            allowed, declared));
+    }
+
+    @Test
     void assistedAnalysisCannotReachExecutionOrWritableSourceCapabilities() throws Exception {
         var analysis = ArchitectureSourceInspector.production().stream()
-                .filter(source -> source.path().getFileName().toString().equals("DeploymentAssistedAnalysis.java"))
-                .toList();
+            .filter(source -> source.path().getFileName().toString().equals("DeploymentAssistedAnalysis.java"))
+            .toList();
         assertEquals(1, analysis.size());
         assertTrue(assistedViolations(analysis.getFirst()).isEmpty());
         var bypass = ArchitectureSourceInspector.snippets(Map.of("fixture.Analysis", """
-                package fixture;
-                class Analysis {
-                    gold.debug.windowstolinux.appapi.mod.ModContext context;
-                    void run() { context.linux(); context.source(); context.secrets(); }
-                }
-                """)).getFirst();
+            package fixture;
+            class Analysis {
+                gold.debug.windowstolinux.appapi.mod.ModContext context;
+                void run() { context.linux(); context.file(); context.secrets(); }
+            }
+            """)).getFirst();
         assertEquals(3, assistedViolations(bypass).size());
         var browser = ArchitectureSourceInspector.production().stream()
-                .filter(source -> source.path().getFileName().toString().equals("DeploymentSourceBrowser.java"))
-                .findFirst().orElseThrow();
+            .filter(source -> source.path().getFileName().toString().equals("DeploymentSourceBrowser.java"))
+            .findFirst().orElseThrow();
         String source = Files.readString(browser.path());
         assertFalse(source.matches("(?s).*\\b(?:write|delete|move|copy|createFile|createDirectory)\\s*\\(.*"));
         assertTrue(source.contains("public List<String> list(") && source.contains("public List<String> read(")
-                && source.contains("public List<String> search("));
+            && source.contains("public List<String> search("));
     }
 
     private static List<String> assistedViolations(ArchitectureSourceInspector.JavaSource source) {
         return source.calls().stream()
-                .filter(call -> call.startsWith(ROOT + "appapi.mod.ModContext#")
-                        && !Set.of("ai", "owner").contains(call.substring(call.indexOf('#') + 1))
-                        || UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
-                .toList();
+            .filter(call -> call.startsWith(ROOT + "appapi.mod.ModContext#")
+                && !Set.of("ai", "owner").contains(call.substring(call.indexOf('#') + 1))
+                || UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
+            .toList();
     }
 
     private static List<String> executionCalls(ArchitectureSourceInspector.JavaSource source) {
         return source.calls().stream()
-                .filter(call -> UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
-                .map(call -> source.path() + " invokes an execution capability " + call).toList();
+            .filter(call -> UI_EXECUTION_TYPES.stream().anyMatch(type -> call.startsWith(type + "#")))
+            .map(call -> source.path() + " invokes an execution capability " + call).toList();
     }
 
     private static void assertAcyclic(String node, Map<String, Set<String>> graph, Set<String> stack,
-            Set<String> done) {
+                                      Set<String> done) {
         if (done.contains(node))
             return;
         assertTrue(stack.add(node), "dependency cycle: " + stack + " -> " + node);
@@ -162,7 +188,7 @@ class ModuleDependencyArchitectureTest {
     }
 
     private static List<String> referenceViolations(String owner, List<String> references,
-            Map<String, Set<String>> allowed, Map<String, Set<String>> declared) {
+                                                    Map<String, Set<String>> allowed, Map<String, Set<String>> declared) {
         List<String> violations = new ArrayList<>();
         for (String reference : references) {
             if (!reference.startsWith(ROOT))
@@ -171,12 +197,12 @@ class ModuleDependencyArchitectureTest {
             if (owner.equals(dependency))
                 continue;
             if (owner.equals("app/ui") && UI_EXECUTION_TYPES.stream()
-                    .anyMatch(type -> reference.equals(type) || reference.startsWith(type + "."))) {
+                .anyMatch(type -> reference.equals(type) || reference.startsWith(type + "."))) {
                 violations.add(owner + " directly references an execution capability " + reference);
                 continue;
             }
             if (dependency == null || !allowed.getOrDefault(owner, Set.of()).contains(dependency)
-                    || !declared.getOrDefault(owner, Set.of()).contains(dependency))
+                || !declared.getOrDefault(owner, Set.of()).contains(dependency))
                 violations.add(owner + " references " + reference + " without an allowed direct dependency");
         }
         return violations;
@@ -207,9 +233,9 @@ class ModuleDependencyArchitectureTest {
 
     private static String moduleFor(String name, Set<String> modules) {
         return modules.stream().sorted(Comparator.comparingInt(String::length).reversed())
-                .filter(module -> name.equals(ROOT + module.replace('/', '.').replace('-', '.'))
-                        || name.startsWith(ROOT + module.replace('/', '.').replace('-', '.') + "."))
-                .findFirst().orElse(null);
+            .filter(module -> name.equals(ROOT + module.replace('/', '.').replace('-', '.'))
+                || name.startsWith(ROOT + module.replace('/', '.').replace('-', '.') + "."))
+            .findFirst().orElse(null);
     }
 
     private static Map<String, Set<String>> documentedDependencies(String document) {

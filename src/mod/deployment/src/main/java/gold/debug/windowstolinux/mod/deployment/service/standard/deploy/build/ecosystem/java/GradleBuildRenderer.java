@@ -50,18 +50,18 @@ public final class GradleBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.SpringBoot)
-                || facts.buildTool() != DeploymentBuildToolType.GRADLE_WRAPPER) {
+            || facts.buildTool() != DeploymentBuildToolType.GRADLE_WRAPPER) {
             throw new IllegalArgumentException("Gradle renderer requires reviewed Spring Boot Gradle inputs");
         }
         String command = """
-                test -f ./gradlew
-                test -f ./gradle/wrapper/gradle-wrapper.properties
-                test -f ./gradle/wrapper/gradle-wrapper.jar
-                chmod 700 -- ./gradlew
-                run ./gradlew --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
-                """ + SpringBootArtifactBuildScript.verify("./build/libs");
+            test -f ./gradlew
+            test -f ./gradle/wrapper/gradle-wrapper.properties
+            test -f ./gradle/wrapper/gradle-wrapper.jar
+            chmod 700 -- ./gradlew
+            run ./gradlew --no-daemon -x test bootJar "${java_gradle_arguments[@]}"
+            """ + SpringBootArtifactBuildScript.verify("./build/libs");
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

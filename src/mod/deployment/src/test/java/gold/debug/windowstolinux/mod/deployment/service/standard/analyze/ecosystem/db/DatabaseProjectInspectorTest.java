@@ -17,10 +17,11 @@ import org.junit.jupiter.api.io.TempDir;
 class DatabaseProjectInspectorTest {
     @TempDir
     Path root;
+
     @Test
     void sqliteManifestKeepsFileInitializationWithoutServerCredentials() throws Exception {
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=initial.sql\ndb.main.seed=seed.db\n");
+            "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=initial.sql\ndb.main.seed=seed.db\n");
         var database = new DatabaseProjectInspector().inspect(root).databases().getFirst();
         assertEquals(DeploymentDatabaseEngineType.SQLITE, database.engine());
         assertEquals("", database.username());
@@ -39,8 +40,8 @@ class DatabaseProjectInspectorTest {
         Files.writeString(root.resolve("application.properties"), "spring.datasource.url=jdbc:sqlite:${DB_FILE}\n");
         database = new DatabaseProjectInspector().inspect(root).databases().getFirst();
         assertEquals(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType.UNRESOLVED,
-                database.sqlite().orElseThrow().location().type());
+            gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType.UNRESOLVED,
+            database.sqlite().orElseThrow().location().type());
     }
 
     @Test
@@ -54,7 +55,7 @@ class DatabaseProjectInspectorTest {
     @Test
     void keepsExternalEngineAndRequiresExplicitEndpointDecisionWithoutLeakingPassword() throws Exception {
         Files.writeString(root.resolve("application.properties"),
-                "spring.datasource.url=jdbc:mysql://db.example.test:3306/demo\nspring.datasource.password=top-secret\n");
+            "spring.datasource.url=jdbc:mysql://db.example.test:3306/demo\nspring.datasource.password=top-secret\n");
         var assessment = new DatabaseProjectInspector().inspect(root);
         assertEquals(DeploymentDatabaseEngineType.MYSQL, assessment.databases().getFirst().engine());
         assertTrue(assessment.endpointConfirmationRequired());
@@ -65,7 +66,7 @@ class DatabaseProjectInspectorTest {
     void ignoresTestFixtureDatabases() throws Exception {
         Files.createDirectory(root.resolve("tests"));
         Files.writeString(root.resolve("tests/fixture.properties"),
-                "spring.datasource.url=jdbc:postgresql://localhost/test");
+            "spring.datasource.url=jdbc:postgresql://localhost/test");
         assertTrue(new DatabaseProjectInspector().inspect(root).databases().isEmpty());
     }
 
@@ -73,7 +74,7 @@ class DatabaseProjectInspectorTest {
     void explicitManifestPreservesTypesVersionsAndSelectedInitialization() throws Exception {
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE example(id integer);");
         Files.writeString(root.resolve("windowstolinux-db.properties"),
-                "db=main,cache\ndb.main.engine=POSTGRESQL\ndb.main.version=>= 16\ndb.main.initialize=schema.sql\ndb.cache.engine=REDIS\n");
+            "db=main,cache\ndb.main.engine=POSTGRESQL\ndb.main.version=>= 16\ndb.main.initialize=schema.sql\ndb.cache.engine=REDIS\n");
         var result = new DatabaseProjectInspector().inspect(root);
         assertEquals(2, result.databases().size());
         assertEquals(List.of("schema.sql"), result.databases().getFirst().initializationFiles());
@@ -91,7 +92,7 @@ class DatabaseProjectInspectorTest {
         assertFalse(rejected.isEmpty());
         rejected.clear();
         var proof = new DatabaseSchemaReview(SourceMutationPolicy.inspectionDigest(inspection), Set.of("main"),
-                Set.of("schema.sql"), true, false, false);
+            Set.of("schema.sql"), true, false, false);
         policy.validate(inspection, rejected, Optional.of(proof));
         assertTrue(rejected.isEmpty());
         Files.writeString(root.resolve("new.properties"), "flyway=true");
@@ -102,11 +103,11 @@ class DatabaseProjectInspectorTest {
     @Test
     void declaredSpringInitializationOrdersSchemaBeforeDataAndRejectsAmbiguousFiles() throws Exception {
         Files.writeString(root.resolve("application.properties"),
-                "spring.datasource.url=jdbc:postgresql://localhost/demo\nspring.sql.init.mode=always\n");
+            "spring.datasource.url=jdbc:postgresql://localhost/demo\nspring.sql.init.mode=always\n");
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.writeString(root.resolve("data.sql"), "INSERT INTO sample VALUES (1);");
         assertEquals(List.of("schema.sql", "data.sql"),
-                new DatabaseProjectInspector().inspect(root).databases().getFirst().initializationFiles());
+            new DatabaseProjectInspector().inspect(root).databases().getFirst().initializationFiles());
         Files.createDirectory(root.resolve("alternate"));
         Files.writeString(root.resolve("alternate/schema.sql"), "CREATE TABLE different(id integer);");
         assertTrue(new DatabaseProjectInspector().inspect(root).databases().getFirst().initializationFiles().isEmpty());

@@ -14,7 +14,7 @@ import java.util.Optional;
  * @param semantics optional explicit business-validated operation and targets / 可选明确的经业务校验操作及目标
  */
 public record ActionIntent(String type, List<String> serverIds, String target, String revision, String exactAction,
-        String effectSummary, Optional<ActionSemantics> semantics) {
+                           String effectSummary, Optional<ActionSemantics> semantics) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param type reviewed action category / 已审核动作类别
@@ -43,7 +43,7 @@ public record ActionIntent(String type, List<String> serverIds, String target, S
      * @param exactAction complete effect / 完整副作用
      * @param effectSummary readable effect description / 可读副作用描述 */
     public ActionIntent(String type, List<String> serverIds, String target, String revision, String exactAction,
-            String effectSummary) {
+                        String effectSummary) {
         this(type, serverIds, target, revision, exactAction, effectSummary, Optional.empty());
     }
 

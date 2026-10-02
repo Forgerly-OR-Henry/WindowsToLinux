@@ -10,8 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 final class ModProgramMaintenance {
     /** Strict bounded dependency parser. / 严格有界依赖解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper()
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Prevents construction of this platform transaction helper. / 禁止构造此平台事务助手。 */
     private ModProgramMaintenance() {
@@ -32,14 +32,14 @@ final class ModProgramMaintenance {
      * @throws SQLException if any required stopping fact is unconfirmed / 任一所需停止事实未确认时 */
     static Stopped stopped(Connection c, String owner) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT enabled,selected_version,selection_initialized,revision,disable_ack_revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
+            "SELECT enabled,selected_version,selection_initialized,revision,disable_ack_revision,last_boot_id,last_runtime_state,actual_version FROM mod_registry WHERE mod_id=?")) {
             p.setString(1, owner);
             try (var r = p.executeQuery()) {
                 require(r.next() && !r.getBoolean(1) && r.getObject(5) != null && r.getLong(4) == r.getLong(5)
                         && r.getObject(6) != null && "STOPPED".equals(r.getString(7)) && r.getString(8) == null,
-                        "Whole Mod must be disabled and restart-stop acknowledged before program maintenance");
+                    "Whole Mod must be disabled and restart-stop acknowledged before program maintenance");
                 return new Stopped(r.getLong(4), r.getString(2), r.getBoolean(3),
-                        r.getObject(6, UUID.class).toString());
+                    r.getObject(6, UUID.class).toString());
             }
         }
     }
@@ -51,12 +51,12 @@ final class ModProgramMaintenance {
      * @throws SQLException if actual retained ownership prevents maintenance / 实际保留归属阻止维护时 */
     static void drained(Connection c, String owner, UUID operation) throws SQLException {
         require(count(c, "SELECT COUNT(*) FROM platform_task WHERE owner_id=?", owner) == 0,
-                "Owned task records still require final cleanup");
+            "Owned task records still require final cleanup");
         require(count(c,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=? OR resource_kind='SCHEMA' AND resource_id IN (SELECT CAST(generation AS VARCHAR) FROM mod_schema WHERE mod_id=?))",
-                owner, owner, owner) == 0, "Owned or cross-Mod resources still require release");
+            "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=? OR resource_kind='SCHEMA' AND resource_id IN (SELECT CAST(generation AS VARCHAR) FROM mod_schema WHERE mod_id=?))",
+            owner, owner, owner) == 0, "Owned or cross-Mod resources still require release");
         require(count(c, "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND (? IS NULL OR operation_id<>?)", owner,
-                operation, operation) == 0, "Other retained maintenance still requires cleanup");
+            operation, operation) == 0, "Other retained maintenance still requires cleanup");
     }
 
     /** Requires enabled consumers to be handled by the explicit cascade-disable flow. / 要求通过明确连带禁用流程处理开启的使用方。
@@ -65,7 +65,7 @@ final class ModProgramMaintenance {
      * @throws SQLException if an enabled dependent or unreadable declaration remains / 开启依赖者或不可读声明仍在时 */
     static void dependents(Connection c, String owner) throws SQLException {
         try (var p = c.prepareStatement(
-                "SELECT v.manifest_json FROM mod_registry r JOIN mod_version v ON r.mod_id=v.mod_id AND r.selected_version=v.version WHERE r.enabled AND r.mod_id<>?")) {
+            "SELECT v.manifest_json FROM mod_registry r JOIN mod_version v ON r.mod_id=v.mod_id AND r.selected_version=v.version WHERE r.enabled AND r.mod_id<>?")) {
             p.setString(1, owner);
             try (var r = p.executeQuery()) {
                 while (r.next()) {
@@ -75,12 +75,12 @@ final class ModProgramMaintenance {
                         var manifest = JSON.readTree(value);
                         require(manifest != null && manifest.isObject()
                                 && (!manifest.has("dependencies") || manifest.path("dependencies").isArray()
-                                        && manifest.path("dependencies").size() <= 128),
-                                "Enabled dependency evidence is invalid");
+                                && manifest.path("dependencies").size() <= 128),
+                            "Enabled dependency evidence is invalid");
                         for (var dependency : manifest.path("dependencies")) {
                             require(dependency.path("id").isTextual(), "Enabled dependency identity is invalid");
                             require(!owner.equals(dependency.path("id").textValue()),
-                                    "Enabled dependents must first be explicitly disabled and restarted");
+                                "Enabled dependents must first be explicitly disabled and restarted");
                         }
                     } catch (IOException invalid) {
                         throw new SQLException("Invalid enabled dependency evidence", invalid);

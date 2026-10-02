@@ -23,6 +23,7 @@ public final class DeploymentArchivedRuntimeCodec {
 
     /** Strict private metadata reader that rejects duplicate fields. / 拒绝重复字段的严格私有元数据读取器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+
     /** Prevents utility instances from carrying archive state. / 防止工具实例携带归档状态。 */
     private DeploymentArchivedRuntimeCodec() {
     }
@@ -47,26 +48,26 @@ public final class DeploymentArchivedRuntimeCodec {
      * @return bounded opaque archive bytes / 有界不透明归档字节
      * @throws IOException if complete content is invalid or exceeds the bound / 完整内容无效或超过界限时 */
     public static VersionedRuntime encode(DeploymentPublicationProposal proposal,
-            List<DeploymentSecretRevision> secrets, DeploymentReleaseRepository releases) throws IOException {
+                                          List<DeploymentSecretRevision> secrets, DeploymentReleaseRepository releases) throws IOException {
         try {
             requireSecrets(proposal, secrets);
             byte[] template = releases.archiveTemplate(proposal).getBytes(StandardCharsets.UTF_8);
             var metadata = JSON.createObjectNode().put("formatVersion", 1);
             var values = metadata.putArray("secrets");
             for (var secret : secrets.stream()
-                    .sorted(Comparator
-                            .comparing(value -> value.reference().identifier() + ":" + value.reference().revision()))
-                    .toList())
+                .sorted(Comparator
+                    .comparing(value -> value.reference().identifier() + ":" + value.reference().revision()))
+                .toList())
                 values.addObject().put("identifier", secret.reference().identifier())
-                        .put("revision", secret.reference().revision()).put("credentialId", secret.credentialId())
-                        .put("purpose", secret.purpose().orElseThrow())
-                        .put("createdAt", secret.createdAt().toEpochMilli());
+                    .put("revision", secret.reference().revision()).put("credentialId", secret.credentialId())
+                    .put("purpose", secret.purpose().orElseThrow())
+                    .put("createdAt", secret.createdAt().toEpochMilli());
             byte[] credentials = JSON.writeValueAsBytes(metadata);
             long size = MAGIC.length + 8L + template.length + credentials.length;
             if (size > LIMIT)
                 throw new IOException("Complete archived publication exceeds public bound");
             return new VersionedRuntime(3, ByteBuffer.allocate((int) size).put(MAGIC).putInt(template.length)
-                    .put(template).putInt(credentials.length).put(credentials).array());
+                .put(template).putInt(credentials.length).put(credentials).array());
         } catch (SQLException | IllegalArgumentException invalid) {
             throw new IOException("Invalid complete archived publication", invalid);
         }
@@ -79,16 +80,16 @@ public final class DeploymentArchivedRuntimeCodec {
      * @return record for the existing full release validator / 供既有完整发布校验器使用的记录
      * @throws IOException if bounds or content differ / 界限或内容不符时 */
     public static DeploymentReleaseRecord decode(String applicationId, String revision, VersionedRuntime value)
-            throws IOException {
+        throws IOException {
         var envelope = envelope(value);
         var template = parse(envelope.template());
         if (!template.path("applicationId").asText().equals(applicationId) || !template.path("runtime").isObject()
-                || !template.path("health").isObject())
+            || !template.path("health").isObject())
             throw new IOException("Archived release identity differs");
         UUID id = UUID.nameUUIDFromBytes((applicationId + "\n" + revision).getBytes(StandardCharsets.UTF_8));
         return new DeploymentReleaseRecord(applicationId, new DeploymentReleaseIdentity(id, revision), id,
-                DeploymentReleaseRecord.DeploymentReleaseState.RETIRED, template.path("runtime").toString(),
-                template.path("health").toString(), Instant.EPOCH);
+            DeploymentReleaseRecord.DeploymentReleaseState.RETIRED, template.path("runtime").toString(),
+            template.path("health").toString(), Instant.EPOCH);
     }
 
     /** Verifies all configuration content and nonsecret reference identities. / 校验全部配置内容与非秘密引用身份。
@@ -97,31 +98,31 @@ public final class DeploymentArchivedRuntimeCodec {
      * @return exact complete private restoration input / 精确完整私有恢复输入
      * @throws IOException if any archive binding or document differs / 任一归档绑定或文档不符时 */
     public static Archive restore(DeploymentApplicationSnapshot archived, DeploymentReleaseRepository releases)
-            throws IOException {
+        throws IOException {
         try {
             var envelope = envelope(archived.runtime());
             var proposal = releases.archivedTemplate(new String(envelope.template(), StandardCharsets.UTF_8),
-                    archived.revisionSha256());
+                archived.revisionSha256());
             var node = parse(envelope.credentials());
             if (!fields(node).equals(Set.of("formatVersion", "secrets"))
-                    || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
-                    || node.path("formatVersion").intValue() != 1 || !node.path("secrets").isArray()
-                    || node.path("secrets").size() > 1024)
+                || !node.path("formatVersion").isIntegralNumber() || !node.path("formatVersion").canConvertToInt()
+                || node.path("formatVersion").intValue() != 1 || !node.path("secrets").isArray()
+                || node.path("secrets").size() > 1024)
                 throw new IOException("Invalid archived secret metadata");
             var secrets = new ArrayList<DeploymentSecretRevision>();
             for (var secret : node.path("secrets")) {
                 if (!fields(secret).equals(Set.of("identifier", "revision", "credentialId", "purpose", "createdAt"))
-                        || !secret.path("revision").isIntegralNumber() || !secret.path("revision").canConvertToLong()
-                        || !secret.path("createdAt").isIntegralNumber() || !secret.path("createdAt").canConvertToLong()
-                        || !secret.path("identifier").isTextual() || !secret.path("credentialId").isTextual()
-                        || !secret.path("purpose").isTextual())
+                    || !secret.path("revision").isIntegralNumber() || !secret.path("revision").canConvertToLong()
+                    || !secret.path("createdAt").isIntegralNumber() || !secret.path("createdAt").canConvertToLong()
+                    || !secret.path("identifier").isTextual() || !secret.path("credentialId").isTextual()
+                    || !secret.path("purpose").isTextual())
                     throw new IOException("Invalid archived secret identity");
                 secrets.add(new DeploymentSecretRevision(
-                        new DeploymentSecretReference(secret.path("identifier").asText(),
-                                secret.path("revision").longValue()),
-                        secret.path("credentialId").asText(),
-                        Instant.ofEpochMilli(secret.path("createdAt").longValue()),
-                        Optional.of(secret.path("purpose").asText())));
+                    new DeploymentSecretReference(secret.path("identifier").asText(),
+                        secret.path("revision").longValue()),
+                    secret.path("credentialId").asText(),
+                    Instant.ofEpochMilli(secret.path("createdAt").longValue()),
+                    Optional.of(secret.path("purpose").asText())));
             }
             requireSecrets(proposal, secrets);
             verifyIdentity(archived, proposal.graph());
@@ -137,7 +138,7 @@ public final class DeploymentArchivedRuntimeCodec {
      * @return complete original graph and bindings / 完整原图与绑定
      * @throws IOException if archive content differs / 归档内容不符时 */
     public static DeploymentReleaseSnapshot verify(DeploymentApplicationSnapshot archived,
-            DeploymentReleaseRepository releases) throws IOException {
+                                                   DeploymentReleaseRepository releases) throws IOException {
         var archive = restore(archived, releases);
         return DeploymentReleaseSnapshot.capture(archive.publication().graph(), archive.publication().units());
     }
@@ -147,14 +148,14 @@ public final class DeploymentArchivedRuntimeCodec {
      * @param graph canonical complete original graph / 规范完整原图
      * @throws IOException if any application, server, binding or policy differs / 应用、服务器、绑定或策略不符时 */
     private static void verifyIdentity(DeploymentApplicationSnapshot archived, DeploymentApplicationGraph graph)
-            throws IOException {
+        throws IOException {
         if (!graph.applicationId().equals(archived.application().id())
-                || graph.components().stream()
-                        .anyMatch(value -> !value.unit().server().equals(archived.application().server()))
-                || !DeploymentApplicationReader.ownership(graph).equals(archived.ownershipSha256())
-                || !DeploymentApplicationReader.bindings(graph).equals(archived.bindings())
-                || !DeploymentApplicationReader.sha256(new DeploymentHealthCodec().write(graph.healthCheck()))
-                        .equals(archived.healthPolicySha256()))
+            || graph.components().stream()
+            .anyMatch(value -> !value.unit().server().equals(archived.application().server()))
+            || !DeploymentApplicationReader.ownership(graph).equals(archived.ownershipSha256())
+            || !DeploymentApplicationReader.bindings(graph).equals(archived.bindings())
+            || !DeploymentApplicationReader.sha256(new DeploymentHealthCodec().write(graph.healthCheck()))
+            .equals(archived.healthPolicySha256()))
             throw new IOException("Archived graph identity differs");
     }
 
@@ -171,11 +172,13 @@ public final class DeploymentArchivedRuntimeCodec {
         if (!required.equals(supplied))
             throw new IllegalArgumentException("Archived credentials do not cover original bindings");
     }
+
     /** Private bounded parts of one complete archive. / 完整归档的私有有界组成。
      * @param template canonical complete publication / 规范完整发布
      * @param credentials strict nonsecret credential metadata / 严格非秘密凭据元数据 */
     private record Envelope(byte[] template, byte[] credentials) {
     }
+
     /** Splits only a complete bounded format-three envelope. / 仅拆分完整有界格式三封套。
      * @param value original opaque public runtime / 原不透明公开运行时
      * @return complete private envelope parts / 完整私有封套组成

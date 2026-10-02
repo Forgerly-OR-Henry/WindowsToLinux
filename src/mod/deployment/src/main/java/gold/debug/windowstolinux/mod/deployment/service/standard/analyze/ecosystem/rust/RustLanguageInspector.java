@@ -18,6 +18,6 @@ public final class RustLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.RUST,
-                name -> name.endsWith(".rs") || name.equals("cargo.toml") ? SourceLanguageType.RUST : null);
+            name -> name.endsWith(".rs") || name.equals("cargo.toml") ? SourceLanguageType.RUST : null);
     }
 }

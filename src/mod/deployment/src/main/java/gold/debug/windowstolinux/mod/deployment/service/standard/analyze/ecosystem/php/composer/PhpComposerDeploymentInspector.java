@@ -25,7 +25,7 @@ public final class PhpComposerDeploymentInspector implements DeploymentTypeInspe
      * <p>用于识别PHP版本的匹配模式。
      */
     private static final Pattern PHP_VERSION = Pattern
-            .compile("(?s)[\"']platform[\"']\\s*:\\s*\\{[^}]*[\"']php[\"']\\s*:\\s*[\"']((?:8)\\.(?:2|3|4))[\"']");
+        .compile("(?s)[\"']platform[\"']\\s*:\\s*\\{[^}]*[\"']php[\"']\\s*:\\s*[\"']((?:8)\\.(?:2|3|4))[\"']");
 
     /**
      * Returns the supported project category handled by this strategy.
@@ -51,18 +51,18 @@ public final class PhpComposerDeploymentInspector implements DeploymentTypeInspe
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         String entrypoint = ServiceMetadataInspector.applicationEntrypoint(root, "public/index.php");
         var declaration = gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.ApplicationBundleInspector
-                .declaration(root);
+            .declaration(root);
         String declaredVersion = declaration.getProperty("runtime.version", ServiceMetadataInspector
-                .match(ServiceMetadataInspector.readIfPresent(root.resolve("composer.json")), PHP_VERSION));
+            .match(ServiceMetadataInspector.readIfPresent(root.resolve("composer.json")), PHP_VERSION));
         PhpComposerFacts facts = new PhpComposerFacts(declaredVersion,
-                ServiceMetadataInspector.missing(root, "composer.json", "composer.lock", entrypoint));
+            ServiceMetadataInspector.missing(root, "composer.json", "composer.lock", entrypoint));
         ServiceProjectFacts shape = new ServiceProjectFacts("composer.json", facts.version(),
-                java.nio.file.Files.isDirectory(root.resolve("public")) ? "public" : "source",
-                ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null, facts.missingFiles());
+            java.nio.file.Files.isDirectory(root.resolve("public")) ? "public" : "source",
+            ServiceMetadataInspector.present(root, entrypoint) ? entrypoint : null, facts.missingFiles());
         return ServiceInspectionAssembler.assemble(root, source.logicalRootName(root), projectType(),
-                DeploymentBuildToolType.COMPOSER_LOCKED, languageFacts, shape, true);
+            DeploymentBuildToolType.COMPOSER_LOCKED, languageFacts, shape, true);
     }
 }

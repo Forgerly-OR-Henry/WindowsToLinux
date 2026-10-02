@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.app.main.mod;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+
 import java.net.URL;
 import java.nio.file.Path;
 import java.sql.*;
@@ -9,16 +14,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.mod.*;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.execution.lifecycle.*;
-import gold.debug.windowstolinux.app.mod.loader.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.manifest.ModManifest;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.config.ModManifest;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Composes one boot's selected Mod graph and owns its reverse shutdown. / 装配一次启动的已选 Mod 图并持有其逆序关闭。 */
 public final class PlatformModCoordinator implements AutoCloseable {
@@ -79,8 +85,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @param api actual host API release / 实际宿主 API 版本
      * @throws SQLException if operation logging is unavailable / 操作日志不可用时 */
     public PlatformModCoordinator(PlatformModHost runtime, Path root, boolean development,
-            Map<String, ModRestartLedger.Disabled> initiallyDisabled, ModPageRegistry pages, SemanticVersion api)
-            throws SQLException {
+                                  Map<String, ModRestartLedger.Disabled> initiallyDisabled, ModPageRegistry pages, SemanticVersion api)
+        throws SQLException {
         this.runtime = Objects.requireNonNull(runtime);
         programs = new PlatformModPrograms(runtime.persistence().database(), root, development);
         this.pages = Objects.requireNonNull(pages);
@@ -111,7 +117,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         try {
             if (started || closed)
                 throw failure("@platform", "MOD_BOOT_ALREADY_ATTEMPTED",
-                        "This Mod graph cannot start again in the same boot", ProblemCode.UNAVAILABLE);
+                    "This Mod graph cannot start again in the same boot", ProblemCode.UNAVAILABLE);
             started = true;
             try {
                 for (var issue : programs.refresh())
@@ -119,7 +125,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 issues.putAll(recovery.start());
                 var ready = prepareSelections();
                 var plan = ModDependencyPlan.resolve(ready.values().stream().map(p -> p.build().manifest()).toList(),
-                        api, Runtime.version().feature());
+                    api, Runtime.version().feature());
                 for (var entry : plan.failures().entrySet())
                     reject(ready.get(entry.getKey()), entry.getValue());
                 var providers = new HashMap<String, ModClassLoader>();
@@ -127,9 +133,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     var prepared = ready.get(manifest.id());
                     if (manifest.dependencies().stream().anyMatch(d -> !providers.containsKey(d.id()))) {
                         reject(prepared,
-                                failure(manifest.id(), "MOD_PROVIDER_START_FAILED",
-                                        "A required original provider did not finish startup", ProblemCode.UNAVAILABLE)
-                                        .problem());
+                            failure(manifest.id(), "MOD_PROVIDER_START_FAILED",
+                                "A required original provider did not finish startup", ProblemCode.UNAVAILABLE)
+                                .problem());
                         continue;
                     }
                     Slot slot = null;
@@ -143,11 +149,11 @@ public final class PlatformModCoordinator implements AutoCloseable {
                         slots.put(manifest.id(), slot);
                         if (prepared.schema().isEmpty() && prepared.selection().schema() != null) {
                             slot.preparation = new ModSchemaPreparation(runtime.persistence().database(), restarts,
-                                    plan.createLoader(manifest.id(), sources, providers));
+                                plan.createLoader(manifest.id(), sources, providers));
                             var identity = slot.preparation.prepare(prepared.intent().orElseThrow(),
-                                    prepared.build().contentDigest());
+                                prepared.build().contentDigest());
                             prepared = new Prepared(prepared.selection(), Optional.of(identity), prepared.intent(),
-                                    prepared.build());
+                                prepared.build());
                             slot.prepared = prepared;
                         }
                         slot.session = runtime.modSession(loader, prepared.schema(), ModLaunchMode.NORMAL, pages, api);
@@ -162,9 +168,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
                             try {
                                 if (slot.session != null && slot.session.finalized()) {
                                     slot.unclaimed = failure instanceof SQLException
-                                            && failure.getSuppressed().length == 0
-                                            && failure.getCause() instanceof ApiException
-                                            && !currentFailure(manifest.id());
+                                        && failure.getSuppressed().length == 0
+                                        && failure.getCause() instanceof ApiException
+                                        && !currentFailure(manifest.id());
                                     if (!slot.unclaimed)
                                         confirmFailure(slot.prepared, problem);
                                 } else if (slot.session == null && runtime.modContexts().get(manifest.id()) == null) {
@@ -177,7 +183,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                                 }
                             } catch (Exception cleanup) {
                                 issues.put(manifest.id(),
-                                        problem(cleanup, manifest.id(), "MOD_START_CLEANUP_UNCONFIRMED"));
+                                    problem(cleanup, manifest.id(), "MOD_START_CLEANUP_UNCONFIRMED"));
                             }
                         }
                         continue;
@@ -220,23 +226,23 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     continue;
                 var build = programs.read(selected.owner(), selected.version());
                 if (!Objects.equals(selected.version(), build.manifest().version().toString())
-                        || !selected.manifest().equals(build.manifest().json())
-                        || !selected.digest().equals(build.contentDigest())) {
+                    || !selected.manifest().equals(build.manifest().json())
+                    || !selected.digest().equals(build.contentDigest())) {
                     reject(prepared,
-                            failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
-                                    "The selected release has no matching current program",
-                                    ProblemCode.UNAVAILABLE).problem());
+                        failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
+                            "The selected release has no matching current program",
+                            ProblemCode.UNAVAILABLE).problem());
                     continue;
                 }
                 programs.verify(build);
                 ready.put(selected.owner(),
-                        new Prepared(selected, prepared.schema(), prepared.intent(), build));
+                    new Prepared(selected, prepared.schema(), prepared.intent(), build));
             } catch (Exception | LinkageError | AssertionError failure) {
                 var issue = failure instanceof java.io.IOException
-                        ? failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
-                                "The selected program could not be verified against its original registration",
-                                ProblemCode.UNAVAILABLE).problem()
-                        : problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
+                    ? failure(selected.owner(), "MOD_SELECTED_BUILD_UNAVAILABLE",
+                    "The selected program could not be verified against its original registration",
+                    ProblemCode.UNAVAILABLE).problem()
+                    : problem(failure, selected.owner(), "MOD_STARTUP_PREPARATION_UNCONFIRMED");
                 if (prepared != null && selected.enabled())
                     reject(prepared, issue);
                 else
@@ -255,7 +261,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         try (var permission = runtime.security().enterOperation()) {
             if (!started || closed)
                 throw failure("@platform", "MOD_GRAPH_UNAVAILABLE", "Original development graph is unavailable",
-                        ProblemCode.UNAVAILABLE);
+                    ProblemCode.UNAVAILABLE);
             var retained = inspections.get(preparation);
             if (retained != null) {
                 retained.close();
@@ -267,9 +273,9 @@ public final class PlatformModCoordinator implements AutoCloseable {
             String owner = review.plan().target().ownerId();
             if (runtime.modContexts().containsKey(owner) || runtime.modSessions().containsKey(owner))
                 throw failure(owner, "MOD_RECONCILIATION_BUSY", "Original Mod session still owns resources",
-                        ProblemCode.BUSY);
+                    ProblemCode.BUSY);
             var inspection = new ModSchemaInspection(runtime.persistence().database(), ledger, review,
-                    maintenanceLoader(owner, review.version(), review.manifest(), review.digest()));
+                maintenanceLoader(owner, review.version(), review.manifest(), review.digest()));
             inspections.put(preparation, inspection);
             try {
                 var outcome = inspection.inspect();
@@ -279,7 +285,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 return outcome;
             } catch (Exception | LinkageError | AssertionError retainedFailure) {
                 throw failure(owner, "MOD_SCHEMA_RECONCILIATION_UNCONFIRMED",
-                        "Original inspection or cleanup remains; retry only its retained cleanup", ProblemCode.UNKNOWN);
+                    "Original inspection or cleanup remains; retry only its retained cleanup", ProblemCode.UNKNOWN);
             }
         } finally {
             operation.set(false);
@@ -292,7 +298,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @return concrete review for explicit execution / 供明确执行的具体审阅
      * @throws Exception if current graph, authorization or data is unavailable / 当前图、授权或数据不可用时 */
     public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview reviewSchemaRetry(String owner,
-            Optional<SchemaIdentity> source) throws Exception {
+                                                                                                      Optional<SchemaIdentity> source) throws Exception {
         enter();
         try (var permission = runtime.security().enterOperation()) {
             requireMaintenance(owner);
@@ -308,7 +314,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @return original data preparation result without business startup / 不含业务启动的原数据准备结果
      * @throws Exception if acceptance, physical release or archive remains unconfirmed / 接纳、物理释放或归档仍未确认时 */
     public Outcome retrySchema(gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review)
-            throws Exception {
+        throws Exception {
         enter();
         try (var permission = runtime.security().enterOperation()) {
             String owner = review.target().ownerId();
@@ -320,7 +326,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 return retained.outcome();
             }
             var loader = maintenanceLoader(owner, review.manifest().version().toString(), review.manifest().json(),
-                    review.contentDigest());
+                review.contentDigest());
             var preparation = new ModSchemaPreparation(runtime.persistence().database(), restarts, loader);
             retries.put(review, preparation);
             try {
@@ -342,7 +348,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                 if (unconfirmed instanceof ApiException known && unconfirmed.getSuppressed().length == 0)
                     throw known;
                 throw failure(owner, "MOD_SCHEMA_RETRY_UNCONFIRMED",
-                        "Original retry or cleanup remains; inspect its recorded state", ProblemCode.UNKNOWN);
+                    "Original retry or cleanup remains; inspect its recorded state", ProblemCode.UNKNOWN);
             }
         } finally {
             operation.set(false);
@@ -355,7 +361,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
     private void requireMaintenance(String owner) throws ApiException {
         if (!started || closed || runtime.modContexts().containsKey(owner) || runtime.modSessions().containsKey(owner))
             throw failure(owner, "MOD_MAINTENANCE_BUSY", "Original graph must be open and target resources closed",
-                    ProblemCode.BUSY);
+                ProblemCode.BUSY);
     }
 
     /** Loads one exact maintenance program using only currently running declared providers. / 仅使用当前运行的声明提供方加载一个精确维护程序。
@@ -366,13 +372,13 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @return isolated maintenance loader / 隔离维护加载器
      * @throws Exception if program or providers are unavailable / 程序或提供方不可用时 */
     private ModClassLoader maintenanceLoader(String owner, String version, String manifest, String digest)
-            throws Exception {
+        throws Exception {
         programs.refresh();
         var build = programs.read(owner, version);
         if (!version.equals(build.manifest().version().toString()) || !manifest.equals(build.manifest().json())
-                || !digest.equals(build.contentDigest()))
+            || !digest.equals(build.contentDigest()))
             throw failure(owner, "MOD_RECONCILIATION_BUILD_CHANGED", "Original validation program is unavailable",
-                    ProblemCode.UNAVAILABLE);
+                ProblemCode.UNAVAILABLE);
         programs.verify(build);
         var manifests = new ArrayList<ModManifest>();
         manifests.add(build.manifest());
@@ -400,8 +406,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
     private Prepared prepare(Selection selected) throws Exception {
         var pending = new ArrayList<UUID>();
         try (var c = runtime.persistence().database().openConnection();
-                var p = c
-                        .prepareStatement("SELECT operation_id FROM mod_operation WHERE mod_id=? AND state<>'ENDED'")) {
+             var p = c
+                 .prepareStatement("SELECT operation_id FROM mod_operation WHERE mod_id=? AND state<>'ENDED'")) {
             p.setString(1, selected.owner());
             try (var r = p.executeQuery()) {
                 while (r.next())
@@ -410,7 +416,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
         }
         if (pending.size() > 1)
             throw failure(selected.owner(), "MOD_MAINTENANCE_PENDING", "Original maintenance requires reconciliation",
-                    ProblemCode.BUSY);
+                ProblemCode.BUSY);
         Optional<SchemaIdentity> schema = Optional.empty();
         if (!pending.isEmpty()) {
             if (selected.enabled() && restarts.needsPreparation(pending.getFirst()))
@@ -425,22 +431,22 @@ public final class PlatformModCoordinator implements AutoCloseable {
             restarts.acknowledgeIdleDisabled(selected.owner(), initiallyDisabled.get(selected.owner()));
         } else if (selected.enabled() && selected.schema() != null) {
             try (var c = runtime.persistence().database().openConnection();
-                    var p = c.prepareStatement(
-                            "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+                 var p = c.prepareStatement(
+                     "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
                 p.setString(1, selected.owner());
                 p.setString(2, selected.schema());
                 try (var r = p.executeQuery()) {
                     if (!r.next() || !"READY".equals(r.getString(4)))
                         throw failure(selected.owner(), "MOD_DATA_NOT_READY",
-                                "The selected data version still requires preparation or reconciliation",
-                                ProblemCode.UNAVAILABLE);
+                            "The selected data version still requires preparation or reconciliation",
+                            ProblemCode.UNAVAILABLE);
                     var identity = new SchemaIdentity(selected.owner(), selected.schema(), r.getObject(1, UUID.class));
                     var coordinates = new SchemaCoordinates(identity);
                     if (!coordinates.physicalName().equals(r.getString(2))
-                            || !coordinates.databaseUser().equals(r.getString(3)))
+                        || !coordinates.databaseUser().equals(r.getString(3)))
                         throw failure(selected.owner(), "MOD_DATA_IDENTITY_CHANGED",
-                                "The selected data generation does not match its original identity",
-                                ProblemCode.UNAVAILABLE);
+                            "The selected data generation does not match its original identity",
+                            ProblemCode.UNAVAILABLE);
                     schema = Optional.of(identity);
                 }
             }
@@ -454,12 +460,12 @@ public final class PlatformModCoordinator implements AutoCloseable {
     private List<Selection> selections() throws SQLException {
         var result = new ArrayList<Selection>();
         try (var c = runtime.persistence().database().openConnection();
-                var p = c.createStatement();
-                var r = p.executeQuery(
-                        "SELECT r.mod_id,r.enabled,r.selected_version,v.schema_version,v.manifest_json,v.content_sha256 FROM mod_registry r LEFT JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version ORDER BY r.mod_id")) {
+             var p = c.createStatement();
+             var r = p.executeQuery(
+                 "SELECT r.mod_id,r.enabled,r.selected_version,v.schema_version,v.manifest_json,v.content_sha256 FROM mod_registry r LEFT JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=r.selected_version ORDER BY r.mod_id")) {
             while (r.next())
                 result.add(new Selection(r.getString(1), r.getBoolean(2), r.getString(3), r.getString(4),
-                        r.getString(5), r.getString(6)));
+                    r.getString(5), r.getString(6)));
         }
         return result;
     }
@@ -490,7 +496,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
             if (prepared.intent().isPresent() && prepared.schema().isEmpty() && prepared.selection().schema() != null)
                 restarts.rejectPreparation(prepared.intent().get());
             new ModActivationLedger(runtime.persistence().database(), owner, prepared.selection().version(),
-                    prepared.schema()).rejectedBeforeStart(problem);
+                prepared.schema()).rejectedBeforeStart(problem);
         }
         rejected.remove(owner);
         if (prepared.intent().isPresent())
@@ -504,8 +510,8 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @throws SQLException if evidence cannot be read / 无法读取证据时 */
     private boolean currentFailure(String owner) throws SQLException {
         try (var c = runtime.persistence().database().openConnection();
-                var p = c.prepareStatement(
-                        "SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND last_boot_id=? AND last_runtime_state='FAILED' AND actual_version IS NULL AND failure_code IS NOT NULL")) {
+             var p = c.prepareStatement(
+                 "SELECT COUNT(*) FROM mod_registry WHERE mod_id=? AND last_boot_id=? AND last_runtime_state='FAILED' AND actual_version IS NULL AND failure_code IS NOT NULL")) {
             p.setString(1, owner);
             p.setObject(2, runtime.persistence().database().bootId());
             try (var r = p.executeQuery()) {
@@ -561,7 +567,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
                     if (context != null) {
                         if (!context.ownsLoader(slot.loader))
                             throw failure(owner, "MOD_CLEANUP_OWNER_CHANGED", "Original context ownership changed",
-                                    ProblemCode.UNKNOWN);
+                                ProblemCode.UNKNOWN);
                         context.close();
                     }
                     slot.loader.close();
@@ -616,13 +622,13 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @return safe diagnostic / 安全诊断 */
     private static Problem problem(Throwable failure, String owner, String event) {
         if (failure instanceof SQLException && failure.getSuppressed().length == 0
-                && failure.getCause() instanceof ApiException api)
+            && failure.getCause() instanceof ApiException api)
             return api.problem();
         return failure instanceof ApiException api
-                ? api.problem()
-                : new Problem(ProblemCode.UNKNOWN, event,
-                        "Mod startup or cleanup could not be confirmed; inspect the retained state",
-                        Map.of("ownerId", owner), Optional.of(UUID.randomUUID()));
+            ? api.problem()
+            : new Problem(ProblemCode.UNKNOWN, event,
+            "Mod startup or cleanup could not be confirmed; inspect the retained state",
+            Map.of("ownerId", owner), Optional.of(UUID.randomUUID()));
     }
 
     /** Saved selection independent of actual code discovery. / 独立于实际代码发现的保存选择。
@@ -633,7 +639,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @param manifest saved declaration / 保存声明
      * @param digest saved actual content digest / 保存实际内容摘要 */
     private record Selection(String owner, boolean enabled, String version, String schema, String manifest,
-            String digest) {
+                             String digest) {
     }
 
     /** Exact preparation facts for this boot. / 本次启动的精确准备事实。
@@ -642,7 +648,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
      * @param intent original pending execution / 原待执行操作
      * @param build current source, absent before source validation / 当前来源，来源核验前可不存在 */
     private record Prepared(Selection selection, Optional<SchemaIdentity> schema, Optional<UUID> intent,
-            PlatformModPrograms.Program build) {
+                            PlatformModPrograms.Program build) {
     }
 
     /** Original archive obligation. / 原归档义务。
@@ -676,6 +682,7 @@ public final class PlatformModCoordinator implements AutoCloseable {
 
         /** Known rejected admission that never acquired a current activation. / 从未取得当前启用的已知被拒准入。 */
         private boolean unclaimed;
+
         /** Retains the loader before any later allocation can fail. / 在任一后续分配可能失败前保留加载器。
          * @param prepared original facts / 原事实
          * @param loader actual loader / 实际加载器 */

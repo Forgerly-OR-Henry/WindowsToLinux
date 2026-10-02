@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
  * @param hasStartScript whether a fixed start script exists / 是否存在固定启动脚本
  */
 public record NodeBuildFacts(String applicationId, DeploymentBuildToolType buildTool, List<String> lockFiles,
-        boolean hasBuildScript, boolean hasStartScript) {
+                             boolean hasBuildScript, boolean hasStartScript) {
     /**
      * Makes lockfile evidence immutable. / 使锁文件证据不可变。
      *

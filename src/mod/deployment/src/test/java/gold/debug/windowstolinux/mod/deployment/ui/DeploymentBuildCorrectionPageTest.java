@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -11,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
@@ -53,33 +57,33 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
             values.put("secrets", "");
             values.put("databaseMode", "NONE");
             var file = new DeploymentFileBinding("uploads",
-                    new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1",
-                            true),
-                    DeploymentStorageLocation.custom("/srv/reviewed-uploads"),
-                    DeploymentStorageLocation.StorageResourceType.FILE);
+                new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v1",
+                    true),
+                DeploymentStorageLocation.custom("/srv/reviewed-uploads"),
+                DeploymentStorageLocation.StorageResourceType.FILE);
             var limits = new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false);
             var original = new DeploymentStaticWorkflow.Answers(values, List.of(file), limits, true, true);
             var fields = List.of("primary", "secondary", "version", "jvmTarget").stream()
-                    .map(key -> DeploymentStaticRuntimeResolver.field("worker", key, values.get(key), List.of()))
-                    .toList();
+                .map(key -> DeploymentStaticRuntimeResolver.field("worker", key, values.get(key), List.of()))
+                .toList();
             var prompt = new DeploymentStaticWorkflow.Prompt("worker", "demo", DeploymentProjectKind.KOTLIN_SERVICE,
-                    values, fields);
+                values, fields);
             workflow.validateReview(prompt, original);
             var expected = new LinkedHashMap<>(values);
             expected.putAll(Map.of("primary", "changed.jar", "secondary", "example.ChangedMain", "version", "2.0.0",
-                    "jvmTarget", "21"));
+                "jvmTarget", "21"));
             workflow.validateReview(prompt,
-                    new DeploymentStaticWorkflow.Answers(expected, original.files(), limits, true, true));
+                new DeploymentStaticWorkflow.Answers(expected, original.files(), limits, true, true));
             var observed = new AtomicReference<OperationResult<DeploymentStaticWorkflow.Answers>>();
             var handle = context.tasks().submit(
-                    new TaskRequest("build-correction-page-test", "Original build correction", List.of(), true),
-                    task -> {
-                        var result = new DeploymentStaticPageReviewer(page.get(), page.get().viewGeneration())
-                                .reviewBuildCorrection(new ServerRef("reviewed-server"), "a".repeat(64), prompt,
-                                        original, task);
-                        observed.set(result);
-                        return result;
-                    });
+                new TaskRequest("build-correction-page-test", "Original build correction", List.of(), true),
+                task -> {
+                    var result = new DeploymentStaticPageReviewer(page.get(), page.get().viewGeneration())
+                        .reviewBuildCorrection(new ServerRef("reviewed-server"), "a".repeat(64), prompt,
+                            original, task);
+                    observed.set(result);
+                    return result;
+                });
             var dialog = awaitModal(window.get());
             SwingUtilities.invokeAndWait(() -> {
                 assertSame(window.get(), dialog.getOwner());
@@ -87,14 +91,14 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
                 assertEquals(4, controls.stream().filter(JTextField.class::isInstance).count());
                 assertEquals(0, controls.stream().filter(JCheckBox.class::isInstance).count());
                 var replacements = Map.of("primary", "changed.jar", "secondary", "example.ChangedMain", "version",
-                        "2.0.0", "jvmTarget", "21");
+                    "2.0.0", "jvmTarget", "21");
                 replacements
-                        .forEach((key,
-                                value) -> ((JTextField) controls.stream()
-                                        .filter(control -> key.equals(control.getName())).findFirst().orElseThrow())
-                                        .setText(value));
+                    .forEach((key,
+                              value) -> ((JTextField) controls.stream()
+                        .filter(control -> key.equals(control.getName())).findFirst().orElseThrow())
+                        .setText(value));
                 var option = (JOptionPane) controls.stream().filter(JOptionPane.class::isInstance).findFirst()
-                        .orElseThrow();
+                    .orElseThrow();
                 option.setValue(JOptionPane.OK_OPTION);
                 dialog.dispose();
             });
@@ -103,7 +107,7 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
                 result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             } catch (java.util.concurrent.TimeoutException failed) {
                 throw new AssertionError(
-                        "Original correction task=" + handle.snapshot() + "; callback=" + observed.get(), failed);
+                    "Original correction task=" + handle.snapshot() + "; callback=" + observed.get(), failed);
             }
             assertEquals(Outcome.SUCCEEDED, result.outcome(), result.problem().toString());
             var corrected = result.value().orElseThrow();

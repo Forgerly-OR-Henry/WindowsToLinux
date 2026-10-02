@@ -19,10 +19,10 @@ public final class SourceMutationPolicy {
      * <p>用于识别数据库迁移的匹配模式。
      */
     private static final Pattern DATABASE_MIGRATION = Pattern.compile(
-            "\\b(flyway|liquibase|alembic|prisma(?:\\s+migrate)?|knex)\\b"
-                    + "|(?:ddl-auto|hibernate\\.hbm2ddl\\.auto)\\s*[:=]\\s*(?:create(?:-drop)?|update)\\b"
-                    + "|(?:spring\\.sql\\.init\\.mode|initialization-mode|sql:\\s+init:\\s+mode)\\s*[:=]\\s*always\\b",
-            Pattern.CASE_INSENSITIVE);
+        "\\b(flyway|liquibase|alembic|prisma(?:\\s+migrate)?|knex)\\b"
+            + "|(?:ddl-auto|hibernate\\.hbm2ddl\\.auto)\\s*[:=]\\s*(?:create(?:-drop)?|update)\\b"
+            + "|(?:spring\\.sql\\.init\\.mode|initialization-mode|sql:\\s+init:\\s+mode)\\s*[:=]\\s*always\\b",
+        Pattern.CASE_INSENSITIVE);
 
     /**
      * Adds deterministic policy rejections without mutating the inspected source. / 添加确定性策略拒绝，不修改被检查源码。
@@ -42,18 +42,18 @@ public final class SourceMutationPolicy {
      * @param review review / 审阅
      */
     public void validate(SourceInspectionFacts source, List<RejectionReason> rejections,
-            java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review) {
+                         java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review) {
         if (review.filter(value -> value.inspectionSha256().equals(inspectionDigest(source)))
-                .filter(value -> !DATABASE_MIGRATION.matcher(source.scannedText()).find()
-                        || value.frameworkMigrationsDisabled())
-                .filter(value -> value.existingSchemaChangeApproved()
-                        || source.relativeFiles().stream().filter(SourceMutationPolicy::databaseChangePath).allMatch(
-                                path -> value.initializedSqlPaths().contains(path.toString().replace('\\', '/'))))
-                .isPresent())
+            .filter(value -> !DATABASE_MIGRATION.matcher(source.scannedText()).find()
+                || value.frameworkMigrationsDisabled())
+            .filter(value -> value.existingSchemaChangeApproved()
+                || source.relativeFiles().stream().filter(SourceMutationPolicy::databaseChangePath).allMatch(
+                path -> value.initializedSqlPaths().contains(path.toString().replace('\\', '/'))))
+            .isPresent())
             return;
         if (source.relativeFiles().stream().anyMatch(SourceMutationPolicy::databaseChangePath)) {
             rejections
-                    .add(rejection("AUTOMATIC_SCHEMA_MUTATION_DETECTED", "analysis.rejection.schemaMutationDetected"));
+                .add(rejection("AUTOMATIC_SCHEMA_MUTATION_DETECTED", "analysis.rejection.schemaMutationDetected"));
         }
         if (DATABASE_MIGRATION.matcher(source.scannedText()).find()) {
             rejections.add(rejection("DATABASE_MIGRATION_DETECTED", "analysis.rejection.migrationDetected"));
@@ -68,7 +68,7 @@ public final class SourceMutationPolicy {
      */
     public boolean requiresReview(SourceInspectionFacts source) {
         return source.relativeFiles().stream().anyMatch(SourceMutationPolicy::databaseChangePath)
-                || DATABASE_MIGRATION.matcher(source.scannedText()).find();
+            || DATABASE_MIGRATION.matcher(source.scannedText()).find();
     }
 
     /**
@@ -81,9 +81,9 @@ public final class SourceMutationPolicy {
     public static String inspectionDigest(SourceInspectionFacts source) {
         try {
             String content = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).sorted()
-                    .collect(java.util.stream.Collectors.joining("\n")) + "\0" + source.scannedText();
+                .collect(java.util.stream.Collectors.joining("\n")) + "\0" + source.scannedText();
             return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException failure) {
             throw new IllegalStateException(failure);
         }
@@ -107,7 +107,7 @@ public final class SourceMutationPolicy {
         for (Path parent = path.getParent(); parent != null; parent = parent.getParent()) {
             Path segment = parent.getFileName();
             if (segment != null && (segment.toString().equalsIgnoreCase("migration")
-                    || segment.toString().equalsIgnoreCase("migrations"))) {
+                || segment.toString().equalsIgnoreCase("migrations"))) {
                 return true;
             }
         }

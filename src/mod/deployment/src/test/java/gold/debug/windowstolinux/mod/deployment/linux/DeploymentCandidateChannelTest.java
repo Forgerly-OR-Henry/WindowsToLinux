@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -8,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import org.junit.jupiter.api.Test;
 
@@ -60,13 +70,13 @@ class DeploymentCandidateChannelTest {
      * @param responder fixed command responder / 固定命令回执方
      * @return original-task candidate channel / 原任务候选通道 */
     private static DeploymentCandidateChannel channel(
-            java.util.function.Function<CommandRequest, OperationResult<CommandResult>> responder) {
+        java.util.function.Function<CommandRequest, OperationResult<CommandResult>> responder) {
         var task = new TaskContext() {
             public UUID id() {
                 return UUID.fromString("11111111-1111-4111-8111-111111111111");
             }
 
-            public CancellationToken cancellation() {
+            public CancelToken cancelToken() {
                 return () -> false;
             }
 
@@ -82,22 +92,22 @@ class DeploymentCandidateChannelTest {
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext actual) {
                 assertSame(task, actual);
                 return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
-                        Optional.empty());
+                    Optional.empty());
             }
 
             public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                    TaskContext actual) {
+                                                       TaskContext actual) {
                 throw new AssertionError();
             }
         };
         RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("execute"))
-                        return responder.apply((CommandRequest) args[0]);
-                    throw new AssertionError(method.getName());
-                });
+            new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                if (method.getName().equals("execute"))
+                    return responder.apply((CommandRequest) args[0]);
+                throw new AssertionError(method.getName());
+            });
         return new DeploymentCandidateChannel(session, interaction, new ServerRef("server"), task, "f".repeat(64),
-                new DeploymentBuildBudget(3600));
+            new DeploymentBuildBudget(3600));
     }
 
     /** Returns a fixed observed process exit. / 返回固定已观测进程退出。
@@ -106,10 +116,10 @@ class DeploymentCandidateChannelTest {
      * @return complete host observation / 完整宿主观测 */
     private static OperationResult<CommandResult> reply(int exit, String stdout) {
         return new OperationResult<>(exit == 0 ? Outcome.SUCCEEDED : Outcome.FAILED,
-                Optional.of(new CommandResult(Optional.of(exit), stdout, "", false)),
-                exit == 0
-                        ? Optional.empty()
-                        : Optional.of(new Problem(ProblemCode.IO_FAILURE, "FIXTURE_EXIT", "Controlled command failed",
-                                Map.of(), Optional.empty())));
+            Optional.of(new CommandResult(Optional.of(exit), stdout, "", false)),
+            exit == 0
+                ? Optional.empty()
+                : Optional.of(new Problem(ProblemCode.IO_FAILURE, "FIXTURE_EXIT", "Controlled command failed",
+                Map.of(), Optional.empty())));
     }
 }

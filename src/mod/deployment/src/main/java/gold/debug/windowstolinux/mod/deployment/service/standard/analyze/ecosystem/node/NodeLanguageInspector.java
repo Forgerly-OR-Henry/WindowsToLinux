@@ -44,7 +44,7 @@ public final class NodeLanguageInspector {
      * <p>用于识别精确节点的匹配模式。
      */
     private static final Pattern EXACT_NODE = Pattern
-            .compile("^\\s*v?([0-9]{1,9})(?:\\.[0-9]{1,9}){0,2}(?:[-+][A-Za-z0-9._-]+)?\\s*$");
+        .compile("^\\s*v?([0-9]{1,9})(?:\\.[0-9]{1,9}){0,2}(?:[-+][A-Za-z0-9._-]+)?\\s*$");
 
     /**
      * Returns deterministic Node.js ecosystem and source facts. / 返回确定性的 Node.js 生态与源码事实。
@@ -81,21 +81,21 @@ public final class NodeLanguageInspector {
                 if (exact.matches()) {
                     values.put(LanguageFactKind.NODE_MAJOR_VERSION, exact.group(1));
                     evidence.add(
-                            evidence("analysis.deployment.runtime.evidence.nodeVersion", "package.json#engines.node"));
+                        evidence("analysis.deployment.runtime.evidence.nodeVersion", "package.json#engines.node"));
                 }
             }
         }
         source.relativeFiles().stream()
-                .filter(path -> path.getFileName().toString().startsWith("tsconfig")
-                        && path.getFileName().toString().endsWith(".json"))
-                .findFirst()
-                .ifPresent(path -> evidence.add(evidence("analysis.language.typeScriptMetadata", path.toString())));
+            .filter(path -> path.getFileName().toString().startsWith("tsconfig")
+                && path.getFileName().toString().endsWith(".json"))
+            .findFirst()
+            .ifPresent(path -> evidence.add(evidence("analysis.language.typeScriptMetadata", path.toString())));
         source.relativeFiles().stream()
-                .filter(path -> isJavaScript(path.getFileName().toString().toLowerCase(Locale.ROOT))).findFirst()
-                .ifPresent(path -> evidence.add(evidence("analysis.language.javaScriptSource", path.toString())));
+            .filter(path -> isJavaScript(path.getFileName().toString().toLowerCase(Locale.ROOT))).findFirst()
+            .ifPresent(path -> evidence.add(evidence("analysis.language.javaScriptSource", path.toString())));
         source.relativeFiles().stream()
-                .filter(path -> isTypeScript(path.getFileName().toString().toLowerCase(Locale.ROOT))).findFirst()
-                .ifPresent(path -> evidence.add(evidence("analysis.language.typeScriptSource", path.toString())));
+            .filter(path -> isTypeScript(path.getFileName().toString().toLowerCase(Locale.ROOT))).findFirst()
+            .ifPresent(path -> evidence.add(evidence("analysis.language.typeScriptSource", path.toString())));
         return new ProjectLanguageFacts(ecosystems, languages, values, evidence);
     }
 
@@ -146,6 +146,6 @@ public final class NodeLanguageInspector {
      */
     private static AnalysisEvidence evidence(String key, String source) {
         return new AnalysisEvidence(DeploymentLocalizedMessage.of(key), source,
-                DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
+            DeploymentLocalizedMessage.of("analysis.deployment.evidence.detected"), EvidenceConfidenceLevel.HIGH);
     }
 }

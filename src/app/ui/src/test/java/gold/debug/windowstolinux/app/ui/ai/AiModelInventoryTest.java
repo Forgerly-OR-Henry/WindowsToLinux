@@ -17,23 +17,29 @@ import javax.swing.*;
 
 import com.formdev.flatlaf.FlatLightLaf;
 import gold.debug.windowstolinux.app.service.ai.*;
-import gold.debug.windowstolinux.app.service.contract.spi.AiInventoryAccess;
-import gold.debug.windowstolinux.app.service.contract.profile.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.contract.result.AiProviderSummary;
-import gold.debug.windowstolinux.app.ui.component.*;
+import gold.debug.windowstolinux.app.service.ai.AiInventoryAccess;
+import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
+import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
-import gold.debug.windowstolinux.app.ui.i18n.*;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ai.catalog.*;
+import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityCheck;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityStateType;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
 import org.junit.jupiter.api.Test;
 
 class AiModelInventoryTest {
     private final DesktopComponentFactory c = new DesktopComponentFactory(ThemePalette.light());
 
     private final PageMessagePresenter messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
+
     private AiProviderSummary model(String id, int order) {
         return new AiProviderSummary(new AiProviderProfile(id, URI.create("https://example.test/v1/chat/completions"),
-                "model-" + id, "ai/" + id), id, order, 1, Optional.of(Instant.now()), Optional.of(Instant.now()));
+            "model-" + id, "ai/" + id), id, order, 1, Optional.of(Instant.now()), Optional.of(Instant.now()));
     }
 
     @Test
@@ -44,25 +50,25 @@ class AiModelInventoryTest {
             roles.put(role, List.of());
         var failSave = new AtomicBoolean();
         AiInventoryAccess service = (AiInventoryAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> {
-                    return switch (m.getName()) {
-                        case "listAiConfigurations" -> values.get();
-                        case "listAiPurpose" -> roles.get(a[0]);
-                        case "saveAiPurpose" -> {
-                            if (failSave.get())
-                                throw new java.sql.SQLException("test save failure");
-                            roles.put((AiPurposeType) a[0], (List<AiPurposeAssignment>) a[1]);
-                            yield null;
-                        }
-                        case "reorderAiProviders" -> {
-                            var prior = values.get();
-                            values.set(((List<String>) a[0]).stream().map(id -> prior.stream()
-                                    .filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow()).toList());
-                            yield null;
-                        }
-                        default -> throw new AssertionError(m);
-                    };
-                });
+            new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> {
+                return switch (m.getName()) {
+                    case "listAiConfigurations" -> values.get();
+                    case "listAiPurpose" -> roles.get(a[0]);
+                    case "saveAiPurpose" -> {
+                        if (failSave.get())
+                            throw new java.sql.SQLException("test save failure");
+                        roles.put((AiPurposeType) a[0], (List<AiPurposeAssignment>) a[1]);
+                        yield null;
+                    }
+                    case "reorderAiProviders" -> {
+                        var prior = values.get();
+                        values.set(((List<String>) a[0]).stream().map(id -> prior.stream()
+                            .filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow()).toList());
+                        yield null;
+                    }
+                    default -> throw new AssertionError(m);
+                };
+            });
         AtomicReference<AiModelInventoryPane> pane = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             FlatLightLaf.setup();
@@ -88,7 +94,7 @@ class AiModelInventoryTest {
             selected.setSelectedIndex(1);
             selected.getActionMap().get("alt UP").actionPerformed(new ActionEvent(selected, 0, "alt UP"));
             assertEquals(List.of("second", "first"),
-                    pane.get().capture().draft().stream().map(AiPurposeAssignment::profileId).toList());
+                pane.get().capture().draft().stream().map(AiPurposeAssignment::profileId).toList());
             inventory.setSelectedIndex(0);
             inventory.getActionMap().get("alt DOWN").actionPerformed(new ActionEvent(inventory, 0, "alt DOWN"));
         });
@@ -103,7 +109,7 @@ class AiModelInventoryTest {
         SwingUtilities.invokeAndWait(() -> button(pane.get(), "ai.purpose.save").doClick());
         idle();
         assertEquals(List.of("second", "first"),
-                roles.get(AiPurposeType.APPROVAL).stream().map(AiPurposeAssignment::profileId).toList());
+            roles.get(AiPurposeType.APPROVAL).stream().map(AiPurposeAssignment::profileId).toList());
         SwingUtilities.invokeAndWait(() -> {
             assertTrue(pane.get().capture().purpose().isEmpty());
             assertSame(original.get(), field(pane.get(), "inventory", JList.class));
@@ -120,12 +126,11 @@ class AiModelInventoryTest {
     @Test
     void inlineColumnsRemainEqualAndRestoreFullWidthInBothThemes() throws Exception {
         AiInventoryAccess service = (AiInventoryAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> switch (m.getName()) {
-                    case "listAiConfigurations" ->
-                        List.of(model("deployment", 0), model("review", 1), model("vision", 2));
-                    case "listAiPurpose" -> List.of(new AiPurposeAssignment("review", true));
-                    default -> throw new AssertionError(m);
-                });
+            new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> switch (m.getName()) {
+                case "listAiConfigurations" -> List.of(model("deployment", 0), model("review", 1), model("vision", 2));
+                case "listAiPurpose" -> List.of(new AiPurposeAssignment("review", true));
+                default -> throw new AssertionError(m);
+            });
         for (boolean dark : List.of(false, true)) {
             var pane = new AtomicReference<AiModelInventoryPane>();
             SwingUtilities.invokeAndWait(() -> {
@@ -134,8 +139,8 @@ class AiModelInventoryTest {
                 else
                     FlatLightLaf.setup();
                 pane.set(new AiModelInventoryPane(service,
-                        new DesktopComponentFactory(dark ? ThemePalette.dark() : ThemePalette.light()), messages, v -> {
-                        }));
+                    new DesktopComponentFactory(dark ? ThemePalette.dark() : ThemePalette.light()), messages, v -> {
+                }));
                 pane.get().refresh();
             });
             idle();
@@ -163,6 +168,54 @@ class AiModelInventoryTest {
         SwingUtilities.invokeAndWait(FlatLightLaf::setup);
     }
 
+    @Test
+    void pureVoiceRowsShowIndependentLocalizedStatesAndRequireAtLeastOneVerifiedVoiceMode() throws Exception {
+        var now = Optional.of(Instant.now());
+        var file = new AiProviderSummary(new AiProviderProfile("file", null, "voice", "ai/file",
+            URI.create("https://example.test/transcriptions"), null), "<file>", 0, 1,
+            Optional.empty(), Optional.empty(), now, Optional.empty());
+        var live = new AiProviderSummary(new AiProviderProfile("live", null, "voice", "ai/live",
+            null, URI.create("wss://example.test/realtime")), "Live", 1, 1,
+            Optional.empty(), Optional.empty(), Optional.empty(), now);
+        var rejected = new AiProviderSummary(new AiProviderProfile("rejected", null, "voice", "ai/rejected",
+            URI.create("https://example.test/transcriptions"), null), "Rejected", 2, 1,
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+            Map.of(AiCapabilityType.VOICE_FILE, new AiCapabilityCheck(AiCapabilityStateType.UNSUPPORTED,
+                "MODEL_PROBE_UNSUPPORTED", now)));
+        var rows = List.of(file, live, rejected);
+        AiInventoryAccess service = (AiInventoryAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{AiInventoryAccess.class}, (p, m, a) -> switch (m.getName()) {
+                case "listAiConfigurations" -> rows;
+                case "listAiPurpose" -> List.of();
+                default -> throw new AssertionError(m);
+            });
+        for (String language : List.of("zh-CN", "en")) {
+            var localized = new PageMessagePresenter(MessageCatalog.forLanguageTag(language));
+            var pane = new AtomicReference<AiModelInventoryPane>();
+            SwingUtilities.invokeAndWait(() -> {
+                pane.set(new AiModelInventoryPane(service, c, localized, ignored -> {}));
+                pane.get().refresh();
+            }); idle();
+            SwingUtilities.invokeAndWait(() -> {
+                pane.get().open(AiPurposeType.VOICE);
+                JList<String> inventory = field(pane.get(), "inventory", JList.class);
+                inventory.setSelectedIndex(0);
+                assertTrue(field(pane.get(), "add", JButton.class).isEnabled());
+                JLabel label = (JLabel) inventory.getCellRenderer().getListCellRendererComponent(inventory, "file", 0, false, false);
+                assertTrue(label.getText().contains("&lt;file&gt;"));
+                assertTrue(label.getText().contains(localized.text("ai.check.AVAILABLE")));
+                assertTrue(label.getText().contains(localized.text("ai.check.UNVERIFIED")));
+                inventory.setSelectedIndex(1);
+                assertTrue(field(pane.get(), "add", JButton.class).isEnabled());
+                inventory.setSelectedIndex(2);
+                assertFalse(field(pane.get(), "add", JButton.class).isEnabled());
+                label = (JLabel) inventory.getCellRenderer().getListCellRendererComponent(inventory, "rejected", 2, false, false);
+                assertTrue(label.getText().contains(localized.text("ai.check.UNSUPPORTED")));
+                assertTrue(label.getToolTipText().contains(localized.text("ai.check.reason.MODEL_PROBE_UNSUPPORTED")));
+            });
+        }
+    }
+
     private static void layout(Container root) {
         root.doLayout();
         for (var child : root.getComponents())
@@ -173,7 +226,7 @@ class AiModelInventoryTest {
     private static void render(JComponent root, String name) {
         try {
             var image = new java.awt.image.BufferedImage(root.getWidth(), root.getHeight(),
-                    java.awt.image.BufferedImage.TYPE_INT_RGB);
+                java.awt.image.BufferedImage.TYPE_INT_RGB);
             var graphics = image.createGraphics();
             graphics.setColor(UIManager.getColor("Panel.background"));
             graphics.fillRect(0, 0, root.getWidth(), root.getHeight());
@@ -189,7 +242,7 @@ class AiModelInventoryTest {
 
     private static JButton button(Container root, String name) {
         return descendants(root).filter(v -> name.equals(v.getName())).map(JButton.class::cast).findFirst()
-                .orElseThrow();
+            .orElseThrow();
     }
 
     private static <T> T field(Object target, String name, Class<T> type) {
@@ -213,6 +266,6 @@ class AiModelInventoryTest {
 
     private static Stream<Component> descendants(Container root) {
         return Stream.of(root.getComponents()).flatMap(
-                v -> v instanceof Container nested ? Stream.concat(Stream.of(v), descendants(nested)) : Stream.of(v));
+            v -> v instanceof Container nested ? Stream.concat(Stream.of(v), descendants(nested)) : Stream.of(v));
     }
 }

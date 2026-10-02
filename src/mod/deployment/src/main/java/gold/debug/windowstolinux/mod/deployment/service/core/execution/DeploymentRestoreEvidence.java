@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreSteps.*;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +18,7 @@ import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
@@ -32,7 +39,7 @@ final class DeploymentRestoreEvidence {
      * @return complete health conclusion / 完整健康结论
      * @throws ApiException if authority or remote observations are unavailable / 权限或远端观察不可用时 */
     static OperationResult<Void> health(DeploymentRestorePlan plan, DeploymentHandoffChannel channel,
-            DeploymentPublicationChannel publisher) throws ApiException {
+                                        DeploymentPublicationChannel publisher) throws ApiException {
         for (var component : plan.proposal.graph().components()) {
             var current = channel.current(component, plan.commit(component.componentId()).release().sha256());
             if (current.outcome() != Outcome.SUCCEEDED)
@@ -42,15 +49,15 @@ final class DeploymentRestoreEvidence {
                 return checked;
             var observed = publisher.observe(component.unit(), component.reviewedRuntime());
             String expected = component.reviewedRuntime().workload()
-                    .mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND ? "INSTALLED" : "RUNNING";
+                .mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND ? "INSTALLED" : "RUNNING";
             if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
                 return copy(observed);
             if (!observed.value().orElseThrow().state().name().equals(expected))
                 return failed("DEPLOYMENT_RESTORE_COMPONENT_UNHEALTHY");
         }
         var owner = plan.proposal.graph().components().stream()
-                .filter(value -> value.componentId().equals(plan.proposal.graph().healthComponentId())).findFirst()
-                .orElseThrow();
+            .filter(value -> value.componentId().equals(plan.proposal.graph().healthComponentId())).findFirst()
+            .orElseThrow();
         return publisher.healthCheck(owner.unit(), plan.proposal.graph().healthCheck());
     }
 
@@ -62,7 +69,7 @@ final class DeploymentRestoreEvidence {
      * @param current actual component current digests / 实际组件当前摘要
      * @return canonical target review digest / 规范目标审阅摘要 */
     static String reviewed(DeploymentApplicationSnapshot archived, String digest,
-            gold.debug.windowstolinux.appapi.server.ServerInfo server, RemoteFacts facts, Map<String, String> current) {
+                           gold.debug.windowstolinux.appapi.server.ServerInfo server, RemoteFacts facts, Map<String, String> current) {
         StringBuilder value = new StringBuilder(DeploymentRestorePlan.review(archived, digest, server, facts));
         new TreeMap<>(current).forEach((key, sha) -> value.append('\n').append(key).append(':').append(sha));
         return DeploymentApplicationReader.sha256(value.toString().getBytes(StandardCharsets.UTF_8));
@@ -74,18 +81,18 @@ final class DeploymentRestoreEvidence {
      * @return component current digests or explicit absence / 组件当前摘要或明确不存在
      * @throws Exception if owner, kind or current identity is unconfirmed / 所有者、种类或当前身份未确证时 */
     static Map<String, String> targets(DeploymentApplicationGraph graph, DeploymentHandoffChannel channel)
-            throws Exception {
+        throws Exception {
         var result = new TreeMap<String, String>();
         for (var component : graph.components()) {
             String kind = component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
-                    ? "container"
-                    : "deployment";
+                ? "container"
+                : "deployment";
             var response = send(channel, "managed-target-status",
-                    List.of(component.unit().id(), component.unit().ownershipManifestSha256(), kind),
-                    Duration.ofMinutes(2));
+                List.of(component.unit().id(), component.unit().ownershipManifestSha256(), kind),
+                Duration.ofMinutes(2));
             if (response.outcome() != Outcome.SUCCEEDED || response.value().isEmpty()
-                    || response.value().orElseThrow().truncated()
-                    || !response.value().orElseThrow().exitCode().equals(Optional.of(0)))
+                || response.value().orElseThrow().truncated()
+                || !response.value().orElseThrow().exitCode().equals(Optional.of(0)))
                 throw new IllegalStateException("Target identity unconfirmed");
             String text = response.value().orElseThrow().stdout();
             if (text.equals("MANAGED_TARGET=1\nPRESENT=0\nKIND=" + kind + "\nRELEASE_SHA256=-\n"))
@@ -106,7 +113,7 @@ final class DeploymentRestoreEvidence {
     static Map<String, String> before(DeploymentRestoreState cursor) {
         var values = new TreeMap<String, String>();
         cursor.facts.path("components").fields()
-                .forEachRemaining(value -> values.put(value.getKey(), value.getValue().path("beforeDigest").asText()));
+            .forEachRemaining(value -> values.put(value.getKey(), value.getValue().path("beforeDigest").asText()));
         return Map.copyOf(values);
     }
 
@@ -116,7 +123,7 @@ final class DeploymentRestoreEvidence {
      * @return original activation result / 原激活结果 */
     static DeploymentActivation activation(DeploymentRestoreState cursor, boolean cleanup) {
         return new DeploymentActivation(cursor.entry.publicValue(), "",
-                "Verified each component and the whole application against the original archived policy", cleanup);
+            "Verified each component and the whole application against the original archived policy", cleanup);
     }
 
     /** Preserves a classified original restore blocker. / 保留已分类原恢复阻碍。
@@ -125,7 +132,7 @@ final class DeploymentRestoreEvidence {
      * @return explicit restore problem / 明确恢复问题 */
     static Problem problem(ProblemCode code, String event) {
         return new Problem(code, event, "Restore requires exact original archive, target and effect evidence", Map.of(),
-                Optional.empty());
+            Optional.empty());
     }
 
     /** Returns only an observed successful payload. / 仅返回已观察成功载荷。
@@ -142,7 +149,7 @@ final class DeploymentRestoreEvidence {
      * @return known failed result / 已知失败结果 */
     static <T> OperationResult<T> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(problem(ProblemCode.INCOMPATIBLE, event)));
+            Optional.of(problem(ProblemCode.INCOMPATIBLE, event)));
     }
 
     /** Retains original uncertainty without a terminal success claim. / 保留原未知而不宣称终态成功。
@@ -151,7 +158,7 @@ final class DeploymentRestoreEvidence {
      * @return unknown result / 未知结果 */
     static <T> OperationResult<T> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Reports cancellation observed before effects. / 报告副作用前观察到的取消。
@@ -160,7 +167,7 @@ final class DeploymentRestoreEvidence {
      * @return known cancelled result / 已知取消结果 */
     static <T> OperationResult<T> cancelled(String event) {
         return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                Optional.of(problem(ProblemCode.CANCELLED, event)));
+            Optional.of(problem(ProblemCode.CANCELLED, event)));
     }
 
     /** Propagates failure evidence without discarding successful payloads. / 传递失败依据而不丢弃成功载荷。
@@ -181,9 +188,9 @@ final class DeploymentRestoreEvidence {
      * @param task authentic original task / 真实原任务
      * @return original handoff channel / 原交接频道 */
     static DeploymentHandoffChannel channel(ModContext context, RemoteSession session, DeploymentRestoreRequest request,
-            TaskContext task) {
+                                            TaskContext task) {
         return new DeploymentHandoffChannel(session, context.interaction(), request.target(), task,
-                request.reviewedTargetSha256());
+            request.reviewedTargetSha256());
     }
 
     /** Borrows the authenticated session for original runtime and immutable staging operations. / 为原运行时与不可变暂存操作借用已认证会话。
@@ -193,9 +200,9 @@ final class DeploymentRestoreEvidence {
      * @param task authentic original task / 真实原任务
      * @return original publication channel / 原发布频道 */
     static DeploymentPublicationChannel publication(ModContext context, RemoteSession session,
-            DeploymentRestoreRequest request, TaskContext task) {
+                                                    DeploymentRestoreRequest request, TaskContext task) {
         return new DeploymentPublicationChannel(session, context.interaction(), request.target(), task,
-                request.reviewedTargetSha256());
+            request.reviewedTargetSha256());
     }
 
     /** Rechecks endpoint and trust against the original before-state review. / 对照原变更前审阅复核端点与信任。
@@ -206,9 +213,9 @@ final class DeploymentRestoreEvidence {
      * @return whether the original target review still matches / 是否原目标审阅仍匹配
      * @throws ApiException if current target authorization is unavailable / 当前目标授权不可用时 */
     static boolean sameTarget(ModContext context, DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-            RemoteSession session) throws ApiException {
+                              RemoteSession session) throws ApiException {
         return reviewed(plan.request.archivedApplication(), plan.request.archiveSha256(),
-                context.servers().get(plan.request.target(), cursor.task), session.facts(), before(cursor))
-                .equals(plan.request.reviewedTargetSha256());
+            context.servers().get(plan.request.target(), cursor.task), session.facts(), before(cursor))
+            .equals(plan.request.reviewedTargetSha256());
     }
 }

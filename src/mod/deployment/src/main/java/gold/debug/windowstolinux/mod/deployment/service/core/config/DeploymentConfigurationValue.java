@@ -1,4 +1,3 @@
-
 package gold.debug.windowstolinux.mod.deployment.service.core.config;
 
 import java.util.Objects;
@@ -11,7 +10,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCon
  *  <p>类型化的非秘密配置值，不能携带 Shell 片段。
  */
 public sealed interface DeploymentConfigurationValue permits DeploymentConfigurationValue.Text,
-        DeploymentConfigurationValue.Number, DeploymentConfigurationValue.Flag {
+    DeploymentConfigurationValue.Number, DeploymentConfigurationValue.Flag {
     /**
      * Renders the canonical value used only for immutable snapshot hashing.
      *
@@ -40,9 +39,9 @@ public sealed interface DeploymentConfigurationValue permits DeploymentConfigura
         public Text {
             value = Objects.requireNonNull(value, "value").trim();
             if (value.isBlank() || value.length() > 1024 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0
-                    || value.indexOf('\0') >= 0) {
+                || value.indexOf('\0') >= 0) {
                 throw DeploymentConfigurationException.create("configuration.entry.text-invalid",
-                        "Text configuration values must be bounded single-line text");
+                    "Text configuration values must be bounded single-line text");
             }
         }
 

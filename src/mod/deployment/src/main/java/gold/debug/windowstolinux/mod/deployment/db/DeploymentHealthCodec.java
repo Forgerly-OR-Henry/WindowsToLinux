@@ -80,9 +80,9 @@ public final class DeploymentHealthCodec {
                 case 2 -> new DeploymentHealthCheck.Tcp(in.readInt(), in.readInt(), in.readInt());
                 case 3 -> new DeploymentHealthCheck.Process(in.readInt(), in.readInt());
                 case 4 -> new DeploymentHealthCheck.Command(DeploymentWorkloadCodec.readCommand(in), in.readUTF(),
-                        in.readInt());
+                    in.readInt());
                 case 5 -> new DeploymentHealthCheck.Udp(in.readInt(), in.readUTF(), in.readUTF(),
-                        DeploymentWorkloadCodec.readOptional(in), in.readInt());
+                    DeploymentWorkloadCodec.readOptional(in), in.readInt());
                 default -> throw new IOException("unsupported health kind");
             };
             if (in.read() != -1)

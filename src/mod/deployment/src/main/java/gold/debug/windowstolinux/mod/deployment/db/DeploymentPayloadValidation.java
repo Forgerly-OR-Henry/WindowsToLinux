@@ -16,14 +16,14 @@ final class DeploymentPayloadValidation {
      * @throws IOException if a payload is malformed or exceeds its format bound / 载荷格式错误或超过格式上限时 */
     static void validate(Connection connection) throws SQLException, IOException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        "SELECT runtime_payload FROM deployment_unit WHERE runtime_payload IS NOT NULL")) {
+             var rows = statement.executeQuery(
+                 "SELECT runtime_payload FROM deployment_unit WHERE runtime_payload IS NOT NULL")) {
             while (rows.next())
                 new DeploymentUnitRuntimeCodec().read(DeploymentPayloadReader.read(rows, "runtime_payload"));
         }
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        "SELECT health_check_payload FROM managed_application WHERE health_check_payload IS NOT NULL")) {
+             var rows = statement.executeQuery(
+                 "SELECT health_check_payload FROM managed_application WHERE health_check_payload IS NOT NULL")) {
             while (rows.next())
                 new DeploymentHealthCodec().read(DeploymentPayloadReader.read(rows, "health_check_payload"));
         }
@@ -36,11 +36,11 @@ final class DeploymentPayloadValidation {
      * @throws IOException if a reviewed payload lacks its required unit or is malformed / 审阅载荷缺少必需单元或格式错误时 */
     private static void components(Connection connection) throws SQLException, IOException {
         try (var statement = connection.createStatement();
-                var rows = statement.executeQuery(
-                        """
-                                SELECT u.runtime_payload,c.reviewed_runtime_payload,c.reviewed_data_paths_payload,c.reviewed_resource_bindings_payload
-                                FROM managed_application_component c JOIN deployment_unit u ON u.deployment_unit_id=c.deployment_unit_id
-                                """)) {
+             var rows = statement.executeQuery(
+                 """
+                     SELECT u.runtime_payload,c.reviewed_runtime_payload,c.reviewed_data_paths_payload,c.reviewed_resource_bindings_payload
+                     FROM managed_application_component c JOIN deployment_unit u ON u.deployment_unit_id=c.deployment_unit_id
+                     """)) {
             while (rows.next()) {
                 byte[] runtime = DeploymentPayloadReader.read(rows, "reviewed_runtime_payload");
                 if (runtime != null) {

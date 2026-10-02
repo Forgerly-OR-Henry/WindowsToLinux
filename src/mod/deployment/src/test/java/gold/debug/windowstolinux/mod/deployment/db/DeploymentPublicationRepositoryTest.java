@@ -1,5 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
@@ -10,11 +20,11 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.db.*;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.junit.jupiter.api.Test;
@@ -25,7 +35,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
     static final String PURPOSE = "deployment.configuration";
 
     DeploymentSecretRevision secret(PlatformRuntime runtime, TaskContext task, DeploymentSecretReference reference)
-            throws Exception {
+        throws Exception {
         var context = runtime.modContexts().get(OWNER).context();
         byte[] value = "fixture-value-never-in-business-payload".getBytes(StandardCharsets.UTF_8);
         SecretRef secret;
@@ -35,7 +45,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
             Arrays.fill(value, (byte) 0);
         }
         var reservation = context.secrets().reserve(secret,
-                "secret:" + reference.identifier() + ":" + reference.revision(), task);
+            "secret:" + reference.identifier() + ":" + reference.revision(), task);
         var metadata = new DeploymentSecretRevision(reference, secret.id(), OBSERVED, Optional.of(secret.purpose()));
         new DeploymentSecretRepository(context.db()).saveRevision(task, metadata);
         context.secrets().resolve(reservation.id(), ReferenceResolution.REFERENCED, task);
@@ -58,7 +68,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var reservations = new ArrayList<ServerReference>();
                 for (var component : graph.components())
                     reservations.add(context.servers().reserve(component.unit().server(),
-                            "unit:" + component.unit().id(), task));
+                        "unit:" + component.unit().id(), task));
                 var repository = new DeploymentPublicationRepository(context.db());
                 repository.saveSuccessfulApplication(task, graph, records, OBSERVED);
                 for (var reservation : reservations)
@@ -84,7 +94,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 assertEquals(metadata.get(), original);
                 context.secrets().use(new SecretRef(original.credentialId(), PURPOSE), PURPOSE, task, bytes -> {
                     assertArrayEquals("fixture-value-never-in-business-payload".getBytes(StandardCharsets.UTF_8),
-                            bytes);
+                        bytes);
                     return null;
                 });
                 return success();
@@ -133,13 +143,13 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
         var entries = DeploymentConfigurationInput.parse("ZETA=ready;PORT=8081");
         assertEquals(List.of("ZETA", "PORT"), entries.stream().map(DeploymentConfigurationEntry::key).toList());
         var records = publications(graph, 1, List.of()).stream().map(original -> new DeploymentUnitCommit(
-                original.unit(), original.runtime(), original.release(),
-                DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1", createdAt, entries),
-                original.secrets())).toList();
+            original.unit(), original.runtime(), original.release(),
+            DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1", createdAt, entries),
+            original.secrets())).toList();
         var canonicalEntries = entries.stream().sorted(Comparator.comparing(DeploymentConfigurationEntry::key)).toList();
         var canonical = records.stream().map(original -> new DeploymentUnitCommit(original.unit(), original.runtime(),
-                original.release(), DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1",
-                        Instant.ofEpochMilli(createdAt.toEpochMilli()), canonicalEntries), original.secrets())).toList();
+            original.release(), DeploymentConfigurationSnapshot.create(original.unit().id(), 1, "1",
+            Instant.ofEpochMilli(createdAt.toEpochMilli()), canonicalEntries), original.secrets())).toList();
         try (var runtime = open()) {
             start(runtime, true);
             server(runtime);
@@ -186,29 +196,29 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var repository = new DeploymentSecretRepository(runtime.modContexts().get(OWNER).context().db());
                 var original = secret(runtime, task, new DeploymentSecretReference("password", Integer.MAX_VALUE));
                 repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                        original.credentialId(), original.createdAt().plusNanos(123), original.purpose()));
+                    original.credentialId(), original.createdAt().plusNanos(123), original.purpose()));
                 assertThrows(SQLException.class,
-                        () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                                "another-opaque-id", original.createdAt(), original.purpose())));
+                    () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
+                        "another-opaque-id", original.createdAt(), original.purpose())));
                 assertThrows(SQLException.class,
-                        () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                                original.credentialId(), original.createdAt().plusMillis(1), original.purpose())));
+                    () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
+                        original.credentialId(), original.createdAt().plusMillis(1), original.purpose())));
                 assertThrows(SQLException.class,
-                        () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
-                                original.credentialId(), original.createdAt(), Optional.of("another-purpose"))));
+                    () -> repository.saveRevision(task, new DeploymentSecretRevision(original.reference(),
+                        original.credentialId(), original.createdAt(), Optional.of("another-purpose"))));
                 assertEquals(original, repository.findRevision(task, original.reference()).orElseThrow());
                 var oversized = new DeploymentSecretReference("password", (long) Integer.MAX_VALUE + 1);
                 assertThrows(IllegalArgumentException.class,
-                        () -> repository.saveRevision(task, new DeploymentSecretRevision(oversized,
-                                original.credentialId(), OBSERVED, original.purpose())));
+                    () -> repository.saveRevision(task, new DeploymentSecretRevision(oversized,
+                        original.credentialId(), OBSERVED, original.purpose())));
                 assertThrows(IllegalArgumentException.class,
-                        () -> repository.bindRelease(task, "web", "release", List.of(oversized)));
+                    () -> repository.bindRelease(task, "web", "release", List.of(oversized)));
                 assertThrows(IllegalArgumentException.class, () -> repository.bindRelease(task, "web", "release",
-                        List.of(original.reference(), original.reference())));
+                    List.of(original.reference(), original.reference())));
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM secret_revision"));
                 assertTrue(repository.findRevision(task, new DeploymentSecretReference("absent", 1)).isEmpty());
                 var opaque = new DeploymentSecretRevision(new DeploymentSecretReference("opaque", 1),
-                        " Exact/Platform..Identity ", OBSERVED, Optional.of(PURPOSE));
+                    " Exact/Platform..Identity ", OBSERVED, Optional.of(PURPOSE));
                 repository.saveRevision(task, opaque);
                 assertEquals(opaque, repository.findRevision(task, opaque.reference()).orElseThrow());
                 return success();
@@ -227,13 +237,13 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var records = new ArrayList<>(publications(graph, 1, List.of()));
                 var last = records.getLast();
                 records.set(records.size() - 1, new DeploymentUnitCommit(last.unit(), last.runtime(), last.release(),
-                        last.configuration(), List.of(new DeploymentSecretReference("absent", 1))));
+                    last.configuration(), List.of(new DeploymentSecretReference("absent", 1))));
                 var database = runtime.modContexts().get(OWNER).context().db();
                 assertThrows(SQLException.class, () -> new DeploymentPublicationRepository(database)
-                        .saveSuccessfulApplication(task, graph, records, OBSERVED));
+                    .saveSuccessfulApplication(task, graph, records, OBSERVED));
                 for (var table : List.of("deployment_unit", "deployment_unit_configuration_snapshot",
-                        "deployment_unit_configuration_entry", "deployment_unit_release_binding", "managed_application",
-                        "managed_application_component"))
+                    "deployment_unit_configuration_entry", "deployment_unit_release_binding", "managed_application",
+                    "managed_application_component"))
                     assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM " + table), table);
                 return success();
             });
@@ -257,15 +267,15 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var publication = new DeploymentPublicationRepository(database);
                 publication.saveSuccessfulApplication(task, graph, publications(graph, 1, List.of(first)), OBSERVED);
                 sql(runtime, task,
-                        "UPDATE deployment_unit SET has_display_override=1,display_name='Retained',application_category='APP',runtime_state='RUNNING',autostart_state='ENABLED',is_ownership_verified=1,observation_evidence='original',observed_at=1");
+                    "UPDATE deployment_unit SET has_display_override=1,display_name='Retained',application_category='APP',runtime_state='RUNNING',autostart_state='ENABLED',is_ownership_verified=1,observation_evidence='original',observed_at=1");
                 var nextComponents = graph.components().stream()
-                        .map(c -> new DeploymentApplicationGraph.Component(c.componentId(),
-                                new DeploymentUnitIdentity(c.unit().id(), c.unit().server(), c.unit().systemdUnit(),
-                                        c.unit().releaseRoot(), "c".repeat(64)),
-                                c.runtime(), c.dependencies(), c.reviewedRuntime(), c.dataPaths(), c.resources()))
-                        .toList();
+                    .map(c -> new DeploymentApplicationGraph.Component(c.componentId(),
+                        new DeploymentUnitIdentity(c.unit().id(), c.unit().server(), c.unit().systemdUnit(),
+                            c.unit().releaseRoot(), "c".repeat(64)),
+                        c.runtime(), c.dependencies(), c.reviewedRuntime(), c.dataPaths(), c.resources()))
+                    .toList();
                 var nextGraph = new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(),
-                        graph.healthCheck(), nextComponents);
+                    graph.healthCheck(), nextComponents);
                 var next = publications(nextGraph, 2, List.of(second));
                 publication.saveSuccessfulApplication(task, nextGraph, next, OBSERVED.plusSeconds(2));
                 verify(runtime, task, nextGraph, next);
@@ -273,12 +283,12 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var configurations = new DeploymentConfigurationRepository(database);
                 for (var component : graph.components()) {
                     assertEquals(List.of(first),
-                            secrets.findRelease(task, component.unit().id(), "a".repeat(64)).orElseThrow());
+                        secrets.findRelease(task, component.unit().id(), "a".repeat(64)).orElseThrow());
                     assertEquals(1, configurations.findRelease(task, component.unit().id(), "a".repeat(64))
-                            .orElseThrow().revision());
+                        .orElseThrow().revision());
                 }
                 assertEquals(2, count(runtime, task,
-                        "SELECT COUNT(*) FROM deployment_unit WHERE display_name='Retained' AND observation_evidence='original' AND observed_at=1"));
+                    "SELECT COUNT(*) FROM deployment_unit WHERE display_name='Retained' AND observation_evidence='original' AND observed_at=1"));
                 assertTrue(secrets.isReferenced(task, first));
                 return success();
             });
@@ -300,15 +310,15 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 publication.saveSuccessfulApplication(task, graph, original, OBSERVED);
                 var other = graph("other");
                 assertThrows(SQLException.class, () -> publication.saveSuccessfulApplication(task, other,
-                        publications(other, 2, List.of()), OBSERVED));
+                    publications(other, 2, List.of()), OBSERVED));
                 verify(runtime, task, graph, original);
                 assertTrue(new DeploymentGraphRepository(database).find(task, "other").isEmpty());
                 assertEquals(0, count(runtime, task,
-                        "SELECT COUNT(*) FROM deployment_unit_configuration_snapshot WHERE configuration_revision=2"));
+                    "SELECT COUNT(*) FROM deployment_unit_configuration_snapshot WHERE configuration_revision=2"));
                 assertEquals(0,
-                        count(runtime, task,
-                                "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE release_sha256='"
-                                        + "b".repeat(64) + "'"));
+                    count(runtime, task,
+                        "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE release_sha256='"
+                            + "b".repeat(64) + "'"));
                 return success();
             });
         }
@@ -325,8 +335,8 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var records = publications(graph, 1, List.of());
                 var database = runtime.modContexts().get(OWNER).context().db();
                 var failure = assertThrows(ApiException.class,
-                        () -> new DeploymentPublicationRepository(commitFault(database)).saveSuccessfulApplication(task,
-                                graph, records, OBSERVED));
+                    () -> new DeploymentPublicationRepository(commitFault(database)).saveSuccessfulApplication(task,
+                        graph, records, OBSERVED));
                 assertEquals(ProblemCode.UNKNOWN, failure.problem().code());
                 assertEquals("DEPLOYMENT_COMMIT_UNKNOWN", failure.problem().eventCode());
                 verify(runtime, task, graph, records);
@@ -352,9 +362,9 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                     assertThrows(SQLException.class, () -> repository.findRelease(task, "web", "release"));
                 } else {
                     sql(runtime, task,
-                            corruption.equals("identifier")
-                                    ? "UPDATE secret_revision SET secret_id='INVALID'"
-                                    : "UPDATE secret_revision SET credential_id=''");
+                        corruption.equals("identifier")
+                            ? "UPDATE secret_revision SET secret_id='INVALID'"
+                            : "UPDATE secret_revision SET credential_id=''");
                     if (corruption.equals("credential"))
                         assertThrows(SQLException.class, () -> repository.findRevision(task, reference));
                 }
@@ -362,7 +372,7 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                     var report = new DeploymentSchema().validate(scope);
                     assertFalse(report.valid());
                     assertEquals(List.of("Stored deployment secret metadata or bindings are invalid"),
-                            report.violations());
+                        report.violations());
                     assertTrue(report.businessDigest().isEmpty());
                 }
                 assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM secret_revision"));
@@ -390,17 +400,17 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
             var handles = new ArrayList<TaskHandle<Boolean>>();
             for (var reference : List.of(first, second))
                 handles.add(context.tasks().submit(
-                        new TaskRequest("secret_binding_race", "Secret binding race", List.of(), true), task -> {
-                            barrier.await(10, TimeUnit.SECONDS);
-                            boolean saved;
-                            try {
-                                repository.bindRelease(task, "web", "release", List.of(reference));
-                                saved = true;
-                            } catch (SQLException conflict) {
-                                saved = false;
-                            }
-                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(saved), Optional.empty());
-                        }));
+                    new TaskRequest("secret_binding_race", "Secret binding race", List.of(), true), task -> {
+                        barrier.await(10, TimeUnit.SECONDS);
+                        boolean saved;
+                        try {
+                            repository.bindRelease(task, "web", "release", List.of(reference));
+                            saved = true;
+                        } catch (SQLException conflict) {
+                            saved = false;
+                        }
+                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(saved), Optional.empty());
+                    }));
             int winners = 0;
             for (var handle : handles) {
                 var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
@@ -433,14 +443,14 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
         var records = publications(graph, 1, List.of());
         var repository = new DeploymentPublicationRepository(database);
         assertThrows(IllegalArgumentException.class,
-                () -> repository.saveSuccessfulApplication(null, graph, records.subList(0, 1), OBSERVED));
+            () -> repository.saveSuccessfulApplication(null, graph, records.subList(0, 1), OBSERVED));
         assertThrows(IllegalArgumentException.class, () -> repository.saveSuccessfulApplication(null, graph,
-                List.of(records.getFirst(), records.getFirst()), OBSERVED));
+            List.of(records.getFirst(), records.getFirst()), OBSERVED));
         assertThrows(IllegalArgumentException.class,
-                () -> repository.saveSuccessfulApplication(null, graph, records, OBSERVED));
+            () -> repository.saveSuccessfulApplication(null, graph, records, OBSERVED));
         assertThrows(IllegalArgumentException.class, () -> repository.findUnit(null, "web"));
         assertThrows(IllegalArgumentException.class, () -> new DeploymentSecretRepository(database).findRevision(null,
-                new DeploymentSecretReference("password", 1)));
+            new DeploymentSecretReference("password", 1)));
         assertFalse(opened.get());
         enable();
         try (var runtime = open()) {
@@ -450,22 +460,22 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var original = new DeploymentPublicationRepository(runtime.modContexts().get(OWNER).context().db());
                 original.saveSuccessfulApplication(task, graph, records, OBSERVED);
                 var changed = records.stream()
-                        .map(r -> new DeploymentUnitCommit(r.unit(), r.runtime(),
-                                new DeploymentCurrentRelease(r.unit().id(), r.release().sha256(),
-                                        r.release().publishedAt().plusMillis(1)),
-                                r.configuration(), r.secrets()))
-                        .toList();
+                    .map(r -> new DeploymentUnitCommit(r.unit(), r.runtime(),
+                        new DeploymentCurrentRelease(r.unit().id(), r.release().sha256(),
+                            r.release().publishedAt().plusMillis(1)),
+                        r.configuration(), r.secrets()))
+                    .toList();
                 assertThrows(SQLException.class,
-                        () -> original.saveSuccessfulApplication(task, graph, changed, OBSERVED));
+                    () -> original.saveSuccessfulApplication(task, graph, changed, OBSERVED));
                 var retargeted = graph.components().stream().map(c -> new DeploymentApplicationGraph.Component(
-                        c.componentId(),
-                        new DeploymentUnitIdentity(c.unit().id(), new ServerRef("other-server"), c.unit().systemdUnit(),
-                                c.unit().releaseRoot(), c.unit().ownershipManifestSha256()),
-                        c.runtime(), c.dependencies(), c.reviewedRuntime(), c.dataPaths(), c.resources())).toList();
+                    c.componentId(),
+                    new DeploymentUnitIdentity(c.unit().id(), new ServerRef("other-server"), c.unit().systemdUnit(),
+                        c.unit().releaseRoot(), c.unit().ownershipManifestSha256()),
+                    c.runtime(), c.dependencies(), c.reviewedRuntime(), c.dataPaths(), c.resources())).toList();
                 var other = new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(),
-                        graph.healthCheck(), retargeted);
+                    graph.healthCheck(), retargeted);
                 assertThrows(SQLException.class, () -> original.saveSuccessfulApplication(task, other,
-                        publications(other, 2, List.of()), OBSERVED));
+                    publications(other, 2, List.of()), OBSERVED));
                 verify(runtime, task, graph, records);
                 return success();
             });
@@ -511,17 +521,17 @@ class DeploymentPublicationRepositoryTest extends DeploymentGraphFixture {
                 var password = new DeploymentSecretReference("db-password", 1);
                 var initial = component("web", "server", List.of());
                 var databaseBinding = new DeploymentDatabaseBinding("database", new DeploymentDatabaseConnection.Server(
-                        DeploymentDatabaseEngineType.POSTGRESQL, "localhost", 5432, "demo", "app", password, true));
+                    DeploymentDatabaseEngineType.POSTGRESQL, "localhost", 5432, "demo", "app", password, true));
                 var resources = new DeploymentResourceBindings(initial.resources().fileBindings(),
-                        Optional.of(List.of(databaseBinding)));
+                    Optional.of(List.of(databaseBinding)));
                 var component = new DeploymentApplicationGraph.Component(initial.componentId(), initial.unit(),
-                        initial.runtime(), initial.dependencies(), initial.reviewedRuntime(), initial.dataPaths(),
-                        resources);
+                    initial.runtime(), initial.dependencies(), initial.reviewedRuntime(), initial.dataPaths(),
+                    resources);
                 var graph = new DeploymentApplicationGraph("application", "web", initial.runtime().healthCheck(),
-                        List.of(component));
+                    List.of(component));
                 var publication = new DeploymentPublicationRepository(runtime.modContexts().get(OWNER).context().db());
                 assertThrows(IllegalArgumentException.class, () -> publication.saveSuccessfulApplication(task, graph,
-                        publications(graph, 1, List.of()), OBSERVED));
+                    publications(graph, 1, List.of()), OBSERVED));
                 assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_unit"));
                 secret(runtime, task, password);
                 var records = publications(graph, 1, List.of(password));

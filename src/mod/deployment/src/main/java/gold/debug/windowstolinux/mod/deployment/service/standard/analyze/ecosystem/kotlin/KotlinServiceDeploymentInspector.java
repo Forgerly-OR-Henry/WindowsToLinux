@@ -53,17 +53,17 @@ public final class KotlinServiceDeploymentInspector implements DeploymentTypeIns
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         boolean nativeMetadata = ServiceMetadataInspector.present(root, "windowstolinux-kotlin.properties");
         boolean gradleMetadata = ServiceMetadataInspector.present(root, "build.gradle.kts")
-                || ServiceMetadataInspector.present(root, "gradlew");
+            || ServiceMetadataInspector.present(root, "gradlew");
         if (nativeMetadata && gradleMetadata) {
             rejections.add(new RejectionReason("KOTLIN_ARCHITECTURE_CONFLICT",
-                    DeploymentLocalizedMessage.of("analysis.kotlin.architectureConflict"), "deployment"));
+                DeploymentLocalizedMessage.of("analysis.kotlin.architectureConflict"), "deployment"));
             return null;
         }
         return nativeMetadata
-                ? kotlinc.inspect(root, source, languageFacts, rejections)
-                : gradle.inspect(root, source, languageFacts, rejections);
+            ? kotlinc.inspect(root, source, languageFacts, rejections)
+            : gradle.inspect(root, source, languageFacts, rejections);
     }
 }

@@ -47,33 +47,33 @@ public final class KotlinCompilerBuildRenderer implements DeploymentBuildRendere
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.KotlinService kotlin)
-                || facts.buildTool() != DeploymentBuildToolType.KOTLINC) {
+            || facts.buildTool() != DeploymentBuildToolType.KOTLINC) {
             throw new IllegalArgumentException("Kotlin compiler renderer requires reviewed kotlinc inputs");
         }
         String version = kotlin.version();
         String command = """
-                kotlin_compiler="$(command -v kotlinc || true)"
-                test -x "$kotlin_compiler"
-                command -v java >/dev/null
-                java -version 2>&1
-                compiler_version="${WTL_KOTLIN_VERSION:-%s}"
-                "$kotlin_compiler" -version 2>&1 | grep -F "kotlinc-jvm $compiler_version"
-                test -f ./windowstolinux-kotlin.properties
-                source_root=$(sed -n 's/^sourceRoot=//p' ./windowstolinux-kotlin.properties)
-                test -n "$source_root"
-                case "$source_root" in /*|*..*|*//*|'') exit 64 ;; esac
-                test -d "$source_root"
-                mapfile -d '' -t sources < <(find -P "$source_root" -type f -name '*.kt' -print0 | LC_ALL=C sort -z)
-                test "${#sources[@]}" -ge 1
-                mkdir -p ./.w2l/kotlin/lib
-                run "$kotlin_compiler" -jvm-target %s -include-runtime -d ./.w2l/kotlin/lib/app.jar "${sources[@]}"
-                test -f ./.w2l/kotlin/lib/app.jar
-                test ! -L ./.w2l/kotlin/lib/app.jar
-                printf 'ARTIFACT=%%s\n' ./.w2l/kotlin/lib/app.jar
-                """.formatted(version,
-                SafeBuildScriptEnvelope.shellQuote(kotlin.jvmTarget().equals("8") ? "1.8" : kotlin.jvmTarget()));
+            kotlin_compiler="$(command -v kotlinc || true)"
+            test -x "$kotlin_compiler"
+            command -v java >/dev/null
+            java -version 2>&1
+            compiler_version="${WTL_KOTLIN_VERSION:-%s}"
+            "$kotlin_compiler" -version 2>&1 | grep -F "kotlinc-jvm $compiler_version"
+            test -f ./windowstolinux-kotlin.properties
+            source_root=$(sed -n 's/^sourceRoot=//p' ./windowstolinux-kotlin.properties)
+            test -n "$source_root"
+            case "$source_root" in /*|*..*|*//*|'') exit 64 ;; esac
+            test -d "$source_root"
+            mapfile -d '' -t sources < <(find -P "$source_root" -type f -name '*.kt' -print0 | LC_ALL=C sort -z)
+            test "${#sources[@]}" -ge 1
+            mkdir -p ./.w2l/kotlin/lib
+            run "$kotlin_compiler" -jvm-target %s -include-runtime -d ./.w2l/kotlin/lib/app.jar "${sources[@]}"
+            test -f ./.w2l/kotlin/lib/app.jar
+            test ! -L ./.w2l/kotlin/lib/app.jar
+            printf 'ARTIFACT=%%s\n' ./.w2l/kotlin/lib/app.jar
+            """.formatted(version,
+            SafeBuildScriptEnvelope.shellQuote(kotlin.jvmTarget().equals("8") ? "1.8" : kotlin.jvmTarget()));
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

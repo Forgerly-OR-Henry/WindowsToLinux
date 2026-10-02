@@ -9,7 +9,7 @@ import java.util.Objects;
  *  <p>经审阅的网络、进程与隔离安装验证策略。
  */
 public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http, DeploymentHealthCheck.Tcp,
-        DeploymentHealthCheck.Process, DeploymentHealthCheck.Command, DeploymentHealthCheck.Udp {
+    DeploymentHealthCheck.Process, DeploymentHealthCheck.Command, DeploymentHealthCheck.Udp {
     /**
      * Process readiness without a network endpoint. / 无网络端口的进程就绪检查。
      *
@@ -40,7 +40,7 @@ public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http
      * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      */
     record Command(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand command,
-            String expectedOutput, int timeoutSeconds) implements DeploymentHealthCheck {
+                   String expectedOutput, int timeoutSeconds) implements DeploymentHealthCheck {
         /**
          * Validates and binds the inputs required by command.
          * <p>校验并绑定命令所需输入。
@@ -70,8 +70,8 @@ public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http
      * @param timeoutSeconds maximum waiting time in seconds / 最长等待时间，单位为秒
      */
     record Udp(int port, String requestHex, String responseHex,
-            java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand> probe,
-            int timeoutSeconds) implements DeploymentHealthCheck {
+               java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentCommand> probe,
+               int timeoutSeconds) implements DeploymentHealthCheck {
         /**
          * Validates and binds the inputs required by udp.
          * <p>校验并绑定Udp所需输入。
@@ -95,7 +95,7 @@ public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http
                 if (!requestHex.isEmpty() || !responseHex.isEmpty())
                     throw new IllegalArgumentException("mixed UDP probe modes");
             } else if (!requestHex.matches("(?:[0-9a-fA-F]{2}){1,4096}")
-                    || !responseHex.matches("(?:[0-9a-fA-F]{2}){1,4096}"))
+                || !responseHex.matches("(?:[0-9a-fA-F]{2}){1,4096}"))
                 throw new IllegalArgumentException("UDP health requires bounded request and response bytes");
             requestHex = requestHex.toLowerCase(java.util.Locale.ROOT);
             responseHex = responseHex.toLowerCase(java.util.Locale.ROOT);
@@ -110,8 +110,8 @@ public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http
     default java.util.OptionalInt portNumber() {
         return switch (this) {
             case Http http -> java.util.OptionalInt.of(http.endpoint().getPort() > 0
-                    ? http.endpoint().getPort()
-                    : "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80);
+                ? http.endpoint().getPort()
+                : "https".equalsIgnoreCase(http.endpoint().getScheme()) ? 443 : 80);
             case Tcp tcp -> java.util.OptionalInt.of(tcp.port());
             case Udp udp -> java.util.OptionalInt.of(udp.port());
             case Process ignored -> java.util.OptionalInt.empty();
@@ -158,7 +158,7 @@ public sealed interface DeploymentHealthCheck permits DeploymentHealthCheck.Http
             String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
             if (!host.equals("127.0.0.1") && !host.equals("localhost") && !host.equals("::1")) {
                 throw new IllegalArgumentException(
-                        "HTTP health endpoint must target the candidate host loopback address");
+                    "HTTP health endpoint must target the candidate host loopback address");
             }
             if (expectedStatus < 200 || expectedStatus > 399) {
                 throw new IllegalArgumentException("expectedStatus must be a successful HTTP status");

@@ -9,9 +9,11 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin;
-import gold.debug.windowstolinux.app.ui.component.*;
-import gold.debug.windowstolinux.app.ui.i18n.LocaleBinding;
-import gold.debug.windowstolinux.app.ui.diagnostic.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
 import gold.debug.windowstolinux.appapi.task.ApiException;
@@ -54,6 +56,18 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     /** Invalidates stale preference responses after lock changes. / 锁定变化后使过期偏好响应失效。 */
     private long epoch;
 
+    /** Current sidebar presentation, independent of pin preferences. / 独立于固定偏好的侧栏展示。 */
+    private boolean collapsed;
+
+    /** Applies sidebar presentation without changing saved pins. / 应用侧栏展示而不修改已存固定项。
+     * @param value whether labels are collapsed / 是否折叠文字 */
+    public void setCollapsed(boolean value) {
+        collapsed = value;
+        setOpaque(false);
+        entries.setOpaque(false);
+        render();
+    }
+
     /** Builds navigation without reading storage or constructing author views. / 构造导航，不读取存储或构造作者视图。
      * @param service actual management owner / 实际管理所有者
      * @param pages original publication registry / 原发布登记
@@ -61,7 +75,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
      * @param messages safe messages / 安全消息
      * @throws ApiException if publication observation cannot be registered / 无法登记发布观察时 */
     public ModNavigationPane(PlatformModIntents service, ModPageRegistry pages, DesktopComponentFactory components,
-            PageMessagePresenter messages) throws ApiException {
+                             PageMessagePresenter messages) throws ApiException {
         super();
         this.service = service;
         this.pages = pages;
@@ -182,16 +196,26 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         if (!locked && !closed)
             for (var pin : pins) {
                 var page = published.stream()
-                        .filter(p -> p.key().ownerId().equals(pin.ownerId()) && p.key().pageId().equals(pin.pageId()))
-                        .findFirst();
+                    .filter(p -> p.key().ownerId().equals(pin.ownerId()) && p.key().pageId().equals(pin.pageId()))
+                    .findFirst();
                 if (page.isEmpty())
                     continue;
                 var entry = page.get();
-                var button = components.secondaryButton(entry.spec().defaultTitle());
+                var button = components.secondaryButton(collapsed ? "" : entry.spec().defaultTitle());
+                button.setIcon(DesktopIcons.icon("panels-top-left", 19, button::getForeground));
+                button.putClientProperty("JComponent.minimumWidth", 0);
+                button.setMinimumSize(new java.awt.Dimension(0, com.formdev.flatlaf.util.UIScale.scale(43)));
+                button.setMaximumSize(
+                    new java.awt.Dimension(Integer.MAX_VALUE, com.formdev.flatlaf.util.UIScale.scale(43)));
+                button.setPreferredSize(new java.awt.Dimension(com.formdev.flatlaf.util.UIScale.scale(140),
+                    com.formdev.flatlaf.util.UIScale.scale(43)));
+                button.setMargin(new java.awt.Insets(8, collapsed ? 3 : 10, 8, collapsed ? 3 : 10));
+                button.setHorizontalAlignment(collapsed ? SwingConstants.CENTER : SwingConstants.LEFT);
+                button.getAccessibleContext().setAccessibleName(entry.spec().defaultTitle());
                 button.putClientProperty("html.disable", true);
                 button.putClientProperty("mod.pageKey", entry.key());
                 button.setName("mods.pinned." + entries.getComponentCount());
-                button.setToolTipText(pin.ownerId() + " · " + pin.pageId());
+                button.setToolTipText(entry.spec().defaultTitle() + " · " + pin.ownerId());
                 button.setEnabled(available());
                 button.addActionListener(event -> open(entry.key()));
                 entries.add(button);

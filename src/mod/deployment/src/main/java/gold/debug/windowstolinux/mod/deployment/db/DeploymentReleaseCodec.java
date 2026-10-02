@@ -33,23 +33,23 @@ final class DeploymentReleaseCodec {
             for (var component : snapshot.graph().components()) {
                 var unit = component.unit();
                 var binding = snapshot.bindings().stream().filter(b -> b.unitId().equals(unit.id())).findFirst()
-                        .orElseThrow();
+                    .orElseThrow();
                 var entry = components.addObject().put("componentId", component.componentId()).put("unitId", unit.id())
-                        .put("serverId", unit.server().id()).put("systemdUnit", unit.systemdUnit())
-                        .put("releaseRoot", unit.releaseRoot())
-                        .put("ownershipManifestSha256", unit.ownershipManifestSha256())
-                        .put("runtime", base64(new DeploymentUnitRuntimeCodec().write(component.runtime())))
-                        .put("reviewedRuntime", base64(new DeploymentRuntimeCodec().write(component.reviewedRuntime())))
-                        .put("dataPaths", base64(new DeploymentStoragePathCodec().write(component.dataPaths())))
-                        .put("resources", base64(new DeploymentResourceCodec().write(component.resources())))
-                        .put("releaseSha256", binding.releaseSha256())
-                        .put("configurationRevision", binding.configurationRevision())
-                        .put("configurationSha256", binding.configurationSha256());
+                    .put("serverId", unit.server().id()).put("systemdUnit", unit.systemdUnit())
+                    .put("releaseRoot", unit.releaseRoot())
+                    .put("ownershipManifestSha256", unit.ownershipManifestSha256())
+                    .put("runtime", base64(new DeploymentUnitRuntimeCodec().write(component.runtime())))
+                    .put("reviewedRuntime", base64(new DeploymentRuntimeCodec().write(component.reviewedRuntime())))
+                    .put("dataPaths", base64(new DeploymentStoragePathCodec().write(component.dataPaths())))
+                    .put("resources", base64(new DeploymentResourceCodec().write(component.resources())))
+                    .put("releaseSha256", binding.releaseSha256())
+                    .put("configurationRevision", binding.configurationRevision())
+                    .put("configurationSha256", binding.configurationSha256());
                 var dependencies = entry.putArray("dependencies");
                 component.dependencies().forEach(dependencies::add);
                 var secrets = entry.putArray("secrets");
                 binding.secrets().forEach(
-                        s -> secrets.addObject().put("identifier", s.identifier()).put("revision", s.revision()));
+                    s -> secrets.addObject().put("identifier", s.identifier()).put("revision", s.revision()));
             }
             return encode(node, LIMIT);
         } catch (IOException invalid) {
@@ -65,8 +65,8 @@ final class DeploymentReleaseCodec {
         var graph = snapshot.graph();
         try {
             return encode(object().put("formatVersion", 1).put("applicationId", graph.applicationId())
-                    .put("healthComponentId", graph.healthComponentId())
-                    .put("health", base64(new DeploymentHealthCodec().write(graph.healthCheck()))));
+                .put("healthComponentId", graph.healthComponentId())
+                .put("health", base64(new DeploymentHealthCodec().write(graph.healthCheck()))));
         } catch (IOException invalid) {
             throw new SQLException("Release health cannot be encoded", invalid);
         }
@@ -114,7 +114,7 @@ final class DeploymentReleaseCodec {
         fields(runtime, Set.of("formatVersion", "applicationId", "components"));
         fields(health, Set.of("formatVersion", "applicationId", "healthComponentId", "health"));
         if (!string(runtime, "applicationId").equals(record.applicationId())
-                || !string(health, "applicationId").equals(record.applicationId()))
+            || !string(health, "applicationId").equals(record.applicationId()))
             throw new SQLException("Release documents belong to another application");
         try {
             var components = new ArrayList<DeploymentApplicationGraph.Component>();
@@ -124,7 +124,7 @@ final class DeploymentReleaseCodec {
                 bindings.add(binding(entry));
             }
             var graph = new DeploymentApplicationGraph(record.applicationId(), string(health, "healthComponentId"),
-                    new DeploymentHealthCodec().read(binary(health, "health", 65_536)), components);
+                new DeploymentHealthCodec().read(binary(health, "health", 65_536)), components);
             var snapshot = new DeploymentReleaseSnapshot(graph, bindings);
             if (!runtime(snapshot).equals(record.runtimeJson()) || !health(snapshot).equals(record.healthJson()))
                 throw new SQLException("Release manifest is not in its canonical format");
@@ -141,9 +141,9 @@ final class DeploymentReleaseCodec {
      * @throws IOException if binary formats are invalid / 二进制格式无效时 */
     private static DeploymentApplicationGraph.Component component(JsonNode entry) throws SQLException, IOException {
         fields(entry,
-                Set.of("componentId", "unitId", "serverId", "systemdUnit", "releaseRoot", "ownershipManifestSha256",
-                        "runtime", "reviewedRuntime", "dataPaths", "resources", "dependencies", "releaseSha256",
-                        "configurationRevision", "configurationSha256", "secrets"));
+            Set.of("componentId", "unitId", "serverId", "systemdUnit", "releaseRoot", "ownershipManifestSha256",
+                "runtime", "reviewedRuntime", "dataPaths", "resources", "dependencies", "releaseSha256",
+                "configurationRevision", "configurationSha256", "secrets"));
         var dependencies = new ArrayList<String>();
         for (var dependency : array(entry, "dependencies", 64)) {
             if (!dependency.isTextual())
@@ -151,12 +151,12 @@ final class DeploymentReleaseCodec {
             dependencies.add(dependency.textValue());
         }
         var unit = new DeploymentUnitIdentity(string(entry, "unitId"), new ServerRef(string(entry, "serverId")),
-                string(entry, "systemdUnit"), string(entry, "releaseRoot"), string(entry, "ownershipManifestSha256"));
+            string(entry, "systemdUnit"), string(entry, "releaseRoot"), string(entry, "ownershipManifestSha256"));
         var runtime = new DeploymentUnitRuntimeCodec().read(binary(entry, "runtime", 1_048_576));
         return new DeploymentApplicationGraph.Component(string(entry, "componentId"), unit, runtime, dependencies,
-                new DeploymentRuntimeCodec().read(binary(entry, "reviewedRuntime", 1_048_576), runtime.healthCheck()),
-                new DeploymentStoragePathCodec().read(binary(entry, "dataPaths", 1_048_576)),
-                new DeploymentResourceCodec().read(binary(entry, "resources", 1_048_576)));
+            new DeploymentRuntimeCodec().read(binary(entry, "reviewedRuntime", 1_048_576), runtime.healthCheck()),
+            new DeploymentStoragePathCodec().read(binary(entry, "dataPaths", 1_048_576)),
+            new DeploymentResourceCodec().read(binary(entry, "resources", 1_048_576)));
     }
 
     /** Decodes the complete immutable configuration and secret references. / 解码完整不可变配置和秘密引用。
@@ -172,10 +172,10 @@ final class DeploymentReleaseCodec {
             if (!secret.path("revision").isInt())
                 throw new SQLException("Release secret revision is invalid");
             secrets.add(
-                    new DeploymentSecretReference(string(secret, "identifier"), secret.path("revision").intValue()));
+                new DeploymentSecretReference(string(secret, "identifier"), secret.path("revision").intValue()));
         }
         return new DeploymentReleaseSnapshot.Binding(string(entry, "unitId"), string(entry, "releaseSha256"),
-                entry.path("configurationRevision").intValue(), string(entry, "configurationSha256"), secrets);
+            entry.path("configurationRevision").intValue(), string(entry, "configurationSha256"), secrets);
     }
 
     /** Encodes original bytes without changing their format. / 编码原字节，不改变其格式。

@@ -20,18 +20,18 @@ class NodeBuildInspectorTest {
     void selectsEachNamedPackageManagerArchitectureFromItsLockfile() throws Exception {
         Map<String, Architecture> architectures = new LinkedHashMap<>();
         architectures.put("package-lock.json", new Architecture(DeploymentBuildToolType.NPM, null,
-                "{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"demo\"}}}"));
+            "{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"demo\"}}}"));
         architectures.put("pnpm-lock.yaml", new Architecture(DeploymentBuildToolType.PNPM, "pnpm@9.15.0",
-                "lockfileVersion: '9.0'\nsettings: {}\nimporters:\n  .: {}\n"));
+            "lockfileVersion: '9.0'\nsettings: {}\nimporters:\n  .: {}\n"));
         architectures.put("yarn.lock", new Architecture(DeploymentBuildToolType.YARN, "yarn@4.6.0",
-                "__metadata:\n  version: 8\n  cacheKey: 10c0\n"));
+            "__metadata:\n  version: 8\n  cacheKey: 10c0\n"));
 
         for (Map.Entry<String, Architecture> architecture : architectures.entrySet()) {
             String packageManager = architecture.getValue().packageManager() == null
-                    ? ""
-                    : ",\"packageManager\":\"" + architecture.getValue().packageManager() + "\"";
+                ? ""
+                : ",\"packageManager\":\"" + architecture.getValue().packageManager() + "\"";
             Files.writeString(temporaryDirectory.resolve("package.json"),
-                    "{\"name\":\"demo\"" + packageManager + ",\"scripts\":{\"build\":\"build\",\"start\":\"start\"}}");
+                "{\"name\":\"demo\"" + packageManager + ",\"scripts\":{\"build\":\"build\",\"start\":\"start\"}}");
             Path lockFile = temporaryDirectory.resolve(architecture.getKey());
             Files.writeString(lockFile, architecture.getValue().lockContent());
             NodeBuildFacts facts = new NodeBuildInspector().inspect(temporaryDirectory).orElseThrow();
@@ -44,8 +44,8 @@ class NodeBuildInspectorTest {
     @Test
     void refusesMalformedOrUnsupportedPackageManagerLocksBeforePlanning() throws Exception {
         Files.writeString(temporaryDirectory.resolve("package.json"),
-                "{\"name\":\"demo\",\"packageManager\":\"yarn@1.22.22\","
-                        + "\"scripts\":{\"build\":\"build\",\"start\":\"start\"}}");
+            "{\"name\":\"demo\",\"packageManager\":\"yarn@1.22.22\","
+                + "\"scripts\":{\"build\":\"build\",\"start\":\"start\"}}");
         Files.writeString(temporaryDirectory.resolve("yarn.lock"), "# yarn lockfile v1\n");
 
         assertTrue(new NodeBuildInspector().inspect(temporaryDirectory).orElseThrow().lockFiles().isEmpty());

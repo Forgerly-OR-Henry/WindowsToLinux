@@ -38,7 +38,7 @@ final class ComponentGraphValidator {
         for (DeploymentComponent component : components) {
             if (component.required() && component.runtime().isEmpty()) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "REQUIRED_COMPONENT_PREVIEW_ONLY",
-                        List.of(component.componentId()), "analysis.component.requiredPreview"));
+                    List.of(component.componentId()), "analysis.component.requiredPreview"));
             }
             if (component.isolation().arbitraryShell())
                 unsafe(component, issues, "ARBITRARY_SHELL_REQUIRED", "analysis.component.arbitraryShell");
@@ -51,13 +51,13 @@ final class ComponentGraphValidator {
             for (String dependency : component.dependencies()) {
                 if (dependency.equals(component.componentId())) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SELF_DEPENDENCY",
-                            List.of(component.componentId()), "analysis.component.selfDependency"));
+                        List.of(component.componentId()), "analysis.component.selfDependency"));
                 } else if (!indexed.containsKey(dependency)) {
                     issues.add(issue(ComponentIssue.SeverityLevel.REQUIRES_INPUT, "UNKNOWN_DEPENDENCY",
-                            List.of(component.componentId()), "analysis.component.unknownDependency"));
+                        List.of(component.componentId()), "analysis.component.unknownDependency"));
                 } else if (component.runtime().isPresent() && indexed.get(dependency).runtime().isEmpty()) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "DEPENDS_ON_PREVIEW_COMPONENT",
-                            List.of(component.componentId(), dependency), "analysis.component.previewDependency"));
+                        List.of(component.componentId(), dependency), "analysis.component.previewDependency"));
                 }
             }
         }
@@ -66,7 +66,7 @@ final class ComponentGraphValidator {
         Set<String> cycle = cycleMembers(indexed);
         if (!cycle.isEmpty()) {
             issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_DEPENDENCY_CYCLE",
-                    List.copyOf(cycle), "analysis.component.dependencyCycle"));
+                List.copyOf(cycle), "analysis.component.dependencyCycle"));
         }
     }
 
@@ -85,17 +85,17 @@ final class ComponentGraphValidator {
                 List<String> ids = List.of(first.componentId(), second.componentId());
                 if (overlap(first.sourceRoot(), second.sourceRoot())) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ROOT_OVERLAP", ids,
-                            "analysis.component.rootOverlap"));
+                        "analysis.component.rootOverlap"));
                 }
                 if (pathsOverlap(first.artifactPaths(), second.artifactPaths())) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_ARTIFACT_OVERLAP", ids,
-                            "analysis.component.artifactOverlap"));
+                        "analysis.component.artifactOverlap"));
                 }
                 Set<String> ports = new TreeSet<>(transportPorts(first));
                 ports.retainAll(transportPorts(second));
                 if (!ports.isEmpty()) {
                     issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "COMPONENT_PORT_CONFLICT", ids,
-                            "analysis.component.portConflict"));
+                        "analysis.component.portConflict"));
                 }
             }
         }
@@ -114,9 +114,9 @@ final class ComponentGraphValidator {
             return endpoints.stream().map(endpoint -> endpoint.portKey()).collect(java.util.stream.Collectors.toSet());
         String protocol = component.runtime().filter(runtime -> runtime
                 .healthCheck() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck.Udp)
-                .isPresent() ? "udp" : "tcp";
+            .isPresent() ? "udp" : "tcp";
         return component.ports().stream().map(port -> protocol + ":" + port)
-                .collect(java.util.stream.Collectors.toSet());
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     /**
@@ -131,24 +131,24 @@ final class ComponentGraphValidator {
         for (DeploymentComponent component : components) {
             for (DeploymentStoragePath data : component.dataPaths()) {
                 byPath.computeIfAbsent(data.path(), ignored -> new ArrayList<>())
-                        .add(Map.entry(component.componentId(), data));
+                    .add(Map.entry(component.componentId(), data));
             }
         }
         byPath.values().stream().filter(values -> values.size() > 1).forEach(values -> {
             List<String> ids = values.stream().map(Map.Entry::getKey).distinct().sorted().toList();
             if (values.stream().map(entry -> entry.getValue().schemaId()).distinct().count() > 1) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_SCHEMA_CONFLICT", ids,
-                        "analysis.component.dataSchemaConflict"));
+                    "analysis.component.dataSchemaConflict"));
             }
             List<DeploymentStoragePath> writers = values.stream().map(Map.Entry::getValue)
-                    .filter(value -> value.access() == DeploymentStoragePath.AccessMode.READ_WRITE).toList();
+                .filter(value -> value.access() == DeploymentStoragePath.AccessMode.READ_WRITE).toList();
             if (writers.size() > 1) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_MULTIPLE_WRITERS", ids,
-                        "analysis.component.dataWriters"));
+                    "analysis.component.dataWriters"));
             }
             if (writers.stream().anyMatch(value -> !value.reversible())) {
                 issues.add(issue(ComponentIssue.SeverityLevel.SAFETY_REJECTION, "SHARED_DATA_IRREVERSIBLE_WRITE", ids,
-                        "analysis.component.dataIrreversible"));
+                    "analysis.component.dataIrreversible"));
             }
         });
     }
@@ -180,7 +180,7 @@ final class ComponentGraphValidator {
      * @param cycle cycle / 环
      */
     private static void visit(String id, Map<String, DeploymentComponent> indexed, Map<String, Integer> state,
-            List<String> stack, Set<String> cycle) {
+                              List<String> stack, Set<String> cycle) {
         if (state.getOrDefault(id, 0) != 0)
             return;
         state.put(id, 1);
@@ -253,8 +253,8 @@ final class ComponentGraphValidator {
      * @return component issue from the supplied issue inputs / 根据所提供问题输入构建组件问题
      */
     private static ComponentIssue issue(ComponentIssue.SeverityLevel severity, String code, List<String> components,
-            String key) {
+                                        String key) {
         return new ComponentIssue(severity, code, components, DeploymentLocalizedMessage.of(key, "components",
-                String.join(", ", components.stream().sorted().toList())));
+            String.join(", ", components.stream().sorted().toList())));
     }
 }

@@ -18,6 +18,6 @@ public final class GoLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.GO,
-                name -> name.endsWith(".go") || name.equals("go.mod") ? SourceLanguageType.GO : null);
+            name -> name.endsWith(".go") || name.equals("go.mod") ? SourceLanguageType.GO : null);
     }
 }

@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.Reje
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeLanguageInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeServiceDeploymentInspector;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,25 +28,25 @@ class DeploymentStaticInputTest {
     @Test
     void invalidAdvancedFieldsRemainAvailableForCorrection() {
         var values = Map.of("port", "8080", "timeout", "bad", "stability", "bad", "expectedStatus", "bad",
-                "healthEndpoint", "bad", "jvmArguments", "bad", "arguments", "bad", "volumes", "bad", "accessUrl",
-                "bad");
+            "healthEndpoint", "bad", "jvmArguments", "bad", "arguments", "bad", "volumes", "bad", "accessUrl",
+            "bad");
         assertEquals(
-                java.util.stream.Stream
-                        .concat(values.keySet().stream(), java.util.stream.Stream.of("applicationDeclaration"))
-                        .map(key -> "app/" + key).collect(Collectors.toSet()),
-                resolver.corrections("app", values).stream().map(DeploymentReviewField::id)
-                        .collect(Collectors.toSet()));
+            java.util.stream.Stream
+                .concat(values.keySet().stream(), java.util.stream.Stream.of("applicationDeclaration"))
+                .map(key -> "app/" + key).collect(Collectors.toSet()),
+            resolver.corrections("app", values).stream().map(DeploymentReviewField::id)
+                .collect(Collectors.toSet()));
     }
 
     /** Retains static-site HTTP and explicit public access constraints. / 保留静态站点 HTTP 与显式公网地址约束。 */
     @Test
     void incompatibleHealthChoicesAreValidationFailuresAndCannotSilentlyLoseAnAccessUrl() {
         assertThrows(IllegalArgumentException.class, () -> resolver.runtime(DeploymentProjectKind.STATIC_SITE,
-                Map.of("port", "8080", "healthMode", "TCP", "primary", "public")));
+            Map.of("port", "8080", "healthMode", "TCP", "primary", "public")));
         assertThrows(IllegalArgumentException.class,
-                () -> resolver.health(Map.of("port", "8080", "healthMode", "invalid")));
+            () -> resolver.health(Map.of("port", "8080", "healthMode", "invalid")));
         assertThrows(IllegalArgumentException.class,
-                () -> resolver.access(Map.of("healthMode", "TCP", "accessUrl", "https://example.test"), "192.0.2.1"));
+            () -> resolver.access(Map.of("healthMode", "TCP", "accessUrl", "https://example.test"), "192.0.2.1"));
     }
 
     /** Rejects a target-local health address as a user-declared business URL. / 拒绝把目标机本地健康地址作为用户声明业务URL。
@@ -56,7 +56,7 @@ class DeploymentStaticInputTest {
         var publicUrl = java.net.URI.create("https://example.test/application");
         assertEquals(publicUrl, new DeploymentAccessUrl(publicUrl).url());
         assertThrows(IllegalArgumentException.class,
-                () -> new DeploymentAccessUrl(java.net.URI.create("http://127.0.0.1:8080/")));
+            () -> new DeploymentAccessUrl(java.net.URI.create("http://127.0.0.1:8080/")));
     }
 
     /** Retains source-backed process health when Node declares no network endpoint. / Node源码未声明网络端点时保留有源码依据的进程健康检查。
@@ -68,7 +68,7 @@ class DeploymentStaticInputTest {
         Files.writeString(root.resolve("package.json"), metadata);
         Files.writeString(root.resolve("package-lock.json"), "{\"name\":\"node-process\",\"lockfileVersion\":3}");
         var source = new SourceInspectionFacts(2, List.of(Path.of("package.json"), Path.of("package-lock.json")),
-                metadata);
+            metadata);
         var language = new NodeLanguageInspector().inspect(root, source);
         var rejected = new ArrayList<RejectionReason>();
         var assessment = new NodeServiceDeploymentInspector().inspect(root, source, language, rejected);
@@ -80,7 +80,7 @@ class DeploymentStaticInputTest {
         assertEquals("PROCESS", values.get("healthMode"));
         values.put("exposure", "INTERNAL");
         var runtime = assertInstanceOf(DeploymentRuntimeDefinition.NodeService.class,
-                resolver.runtime(DeploymentProjectKind.NODE_SERVICE, values));
+            resolver.runtime(DeploymentProjectKind.NODE_SERVICE, values));
         assertEquals(22, runtime.nodeMajorVersion());
         assertEquals(new DeploymentHealthCheck.Process(10, 5), runtime.healthCheck());
         assertTrue(runtime.workload().endpoints().isEmpty());
@@ -92,7 +92,7 @@ class DeploymentStaticInputTest {
     void selectingAManualDatabaseWithoutDetailsCanBeCompletedInTheCorrectionForm() {
         var fields = resolver.corrections("app", Map.of("databaseMode", "POSTGRESQL"));
         assertTrue(
-                fields.stream().anyMatch(field -> field.id().equals("app/databaseDetails") && field.value().isEmpty()));
+            fields.stream().anyMatch(field -> field.id().equals("app/databaseDetails") && field.value().isEmpty()));
     }
 
     /** Uses typed runtime and source references without dropping duplicate-port rejection. / 使用类型化运行与来源引用并保留重复端口拒绝。 */
@@ -102,10 +102,10 @@ class DeploymentStaticInputTest {
         assertEquals(1, DeploymentStaticInputParser.volumes("windowstolinux-data:/var/lib/demo:rw").size());
         assertEquals(java.util.List.of("--flag", "value"), DeploymentStaticInputParser.arguments("--flag value"));
         assertEquals("main",
-                ((DeploymentGitReference.Branch) DeploymentStaticInputParser.gitReference(0, "main")).value());
+            ((DeploymentGitReference.Branch) DeploymentStaticInputParser.gitReference(0, "main")).value());
         var php = (DeploymentRuntimeDefinition.PhpService) DeploymentStaticInputParser.service(
-                DeploymentProjectKind.PHP_SERVICE, "8.3", "public", "public/index.php",
-                new DeploymentHealthCheck.Tcp(8080, 10, 5));
+            DeploymentProjectKind.PHP_SERVICE, "8.3", "public", "public/index.php",
+            new DeploymentHealthCheck.Tcp(8080, 10, 5));
         assertEquals(8080, php.servicePort());
         assertThrows(IllegalArgumentException.class, () -> DeploymentStaticInputParser.ports("18080:8080;18080:8081"));
         assertThrows(IllegalArgumentException.class, () -> DeploymentStaticInputParser.gitReference(3, "main"));
@@ -115,11 +115,11 @@ class DeploymentStaticInputTest {
     @Test
     void distinguishesExplicitNoDatabaseFromOneReviewedServerDatabase() {
         assertEquals(java.util.List.of(),
-                DeploymentStaticInputParser
-                        .databaseBindings(DeploymentDatabaseReviewModeType.NONE, "ignored retained expert input")
-                        .orElseThrow());
+            DeploymentStaticInputParser
+                .databaseBindings(DeploymentDatabaseReviewModeType.NONE, "ignored retained expert input")
+                .orElseThrow());
         var bindings = DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.POSTGRESQL,
-                "primary|db.example.test|5432|shop|shop|database-password:3|required").orElseThrow();
+            "primary|db.example.test|5432|shop|shop|database-password:3|required").orElseThrow();
         assertEquals("primary", bindings.getFirst().databaseId());
         var connection = (DeploymentDatabaseConnection.Server) bindings.getFirst().connection();
         assertEquals("db.example.test", connection.host());
@@ -133,12 +133,12 @@ class DeploymentStaticInputTest {
     @Test
     void rejectsUnreviewedOrMalformedDatabaseScopes() {
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.UNREVIEWED, ""));
+            () -> DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.UNREVIEWED, ""));
         assertThrows(IllegalArgumentException.class, () -> DeploymentStaticInputParser
-                .databaseBindings(DeploymentDatabaseReviewModeType.MYSQL, "missing-fields"));
+            .databaseBindings(DeploymentDatabaseReviewModeType.MYSQL, "missing-fields"));
         assertThrows(IllegalArgumentException.class,
-                () -> DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.MARIADB,
-                        "primary|db.example.test|3306|shop|shop|database-password:1|unknown"));
+            () -> DeploymentStaticInputParser.databaseBindings(DeploymentDatabaseReviewModeType.MARIADB,
+                "primary|db.example.test|3306|shop|shop|database-password:1|unknown"));
     }
 
     /** Retains explicit typed health choices and leaves absent TCP input for human completion. / 保留显式类型化健康选择，并将缺失TCP输入留给人工补全。 */
@@ -146,17 +146,17 @@ class DeploymentStaticInputTest {
     void explicitHttpAndTcpInputsKeepTheirReviewedEndpointsWithoutGuessingMissingPorts() {
         var endpoint = java.net.URI.create("http://127.0.0.1:18080/health");
         var http = assertInstanceOf(DeploymentHealthCheck.Http.class, resolver.health(Map.of("healthMode", "HTTP",
-                "healthEndpoint", endpoint.toString(), "port", "18080", "expectedStatus", "204", "timeout", "20")));
+            "healthEndpoint", endpoint.toString(), "port", "18080", "expectedStatus", "204", "timeout", "20")));
         assertEquals(endpoint, http.endpoint());
         assertEquals(204, http.expectedStatus());
         assertEquals(20, http.timeoutSeconds());
         assertThrows(IllegalArgumentException.class, () -> resolver
-                .health(Map.of("healthMode", "HTTP", "healthEndpoint", "file:///tmp/health", "port", "18080")));
+            .health(Map.of("healthMode", "HTTP", "healthEndpoint", "file:///tmp/health", "port", "18080")));
         assertEquals(new DeploymentHealthCheck.Tcp(18081, 20, 1),
-                resolver.health(Map.of("healthMode", "TCP", "port", "18081", "timeout", "20", "stability", "1")));
+            resolver.health(Map.of("healthMode", "TCP", "port", "18081", "timeout", "20", "stability", "1")));
         var incomplete = Map.of("healthMode", "TCP", "version", "22", "exposure", "INTERNAL");
         assertTrue(resolver.missing("api", DeploymentProjectKind.NODE_SERVICE, incomplete).stream()
-                .anyMatch(field -> field.id().equals("api/port") && field.value().isEmpty()));
+            .anyMatch(field -> field.id().equals("api/port") && field.value().isEmpty()));
         assertFalse(incomplete.containsKey("port"));
         assertThrows(IllegalArgumentException.class, () -> resolver.health(incomplete));
     }
@@ -165,7 +165,7 @@ class DeploymentStaticInputTest {
     @Test
     void typedGitTagIndexRetainsItsReferenceAndRejectsUnsupportedIndexes() {
         var tag = assertInstanceOf(DeploymentGitReference.Tag.class,
-                DeploymentStaticInputParser.gitReference(1, "release-one"));
+            DeploymentStaticInputParser.gitReference(1, "release-one"));
         assertEquals("release-one", tag.value());
         for (int index : List.of(-1, 3, 9))
             assertThrows(IllegalArgumentException.class, () -> DeploymentStaticInputParser.gitReference(index, "main"));

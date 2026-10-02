@@ -85,38 +85,38 @@ public final class Mod implements ModEntrypoint {
         var deploymentApi = new DeploymentApiProvider(context);
         try {
             registrations.add(context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
-                    new DeploymentStaticTaskRecovery(context, flow)));
+                new DeploymentStaticTaskRecovery(context, flow)));
             registrations.add(context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow));
             registrations.add(context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow));
             registrations
-                    .add(context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK, pageTasks));
+                .add(context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK, pageTasks));
             registrations
-                    .add(context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK, pageTasks));
+                .add(context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK, pageTasks));
             registrations.add(context.tasks().registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, autonomous));
             registrations.add(
-                    context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
+                context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
             registrations
-                    .add(context.tasks().registerRecovery(DeploymentApplicationsService.QUERY_TASK, applicationTasks));
+                .add(context.tasks().registerRecovery(DeploymentApplicationsService.QUERY_TASK, applicationTasks));
             registrations
-                    .add(context.tasks().registerRecovery(DeploymentApplicationsService.ACTION_TASK, applicationTasks));
+                .add(context.tasks().registerRecovery(DeploymentApplicationsService.ACTION_TASK, applicationTasks));
             registrations.add(context.services().register(DeploymentApi.class, deploymentApi));
             if (context.launchMode() == ModLaunchMode.NORMAL) {
                 for (var kind : java.util.List.of(
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.GO_SERVICE,
-                        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.NODE_SERVICE))
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.GO_SERVICE,
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind.NODE_SERVICE))
                     registrations.add(context.ui().registerPreview(
-                            new PageSpec("runtime-preview-" + kind.name().toLowerCase(java.util.Locale.ROOT),
-                                    "deployment.preview.runtime", "Runtime review / 运行审阅: " + kind.name(), true),
-                            () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentRuntimePreview(kind)));
+                        new PageSpec("runtime-preview-" + kind.name().toLowerCase(java.util.Locale.ROOT),
+                            "deployment.preview.runtime", "Runtime review: " + kind.name(), true),
+                        () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentRuntimePreview(kind)));
 
                 registrations.add(context.ui().register(new PageSpec("static-deployment", "deployment.page.title",
-                        "Static / assisted deployment", false), () -> new DeploymentStaticPage(pageTasks)));
+                    "Static / assisted deployment", false), () -> new DeploymentStaticPage(pageTasks)));
                 registrations.add(context.ui().register(
-                        new PageSpec("agent-deployment", "deployment.agent.page.title", "Autonomous deployment", false),
-                        () -> new DeploymentAgentPage(autonomousPageTasks)));
+                    new PageSpec("agent-deployment", "deployment.agent.page.title", "Autonomous deployment", false),
+                    () -> new DeploymentAgentPage(autonomousPageTasks)));
                 registrations.add(context.ui().register(
-                        new PageSpec("applications", "deployment.applications.page.title", "Applications", false),
-                        () -> new DeploymentApplicationsPage(applicationTasks)));
+                    new PageSpec("applications", "deployment.applications.page.title", "Applications", false),
+                    () -> new DeploymentApplicationsPage(applicationTasks)));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);

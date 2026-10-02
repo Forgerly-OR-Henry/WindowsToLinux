@@ -48,31 +48,31 @@ public final class CargoBuildRenderer implements DeploymentBuildRenderer {
      */
     @Override
     public String render(DeploymentProjectFacts facts, DeploymentRuntimeDefinition runtime,
-            DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
+                         DeploymentRemoteWorkspace workspace, DeploymentBuildLimits limits) {
         if (!(runtime instanceof DeploymentRuntimeDefinition.RustService service)
-                || facts.buildTool() != DeploymentBuildToolType.CARGO_LOCKED) {
+            || facts.buildTool() != DeploymentBuildToolType.CARGO_LOCKED) {
             throw new IllegalArgumentException("Cargo renderer requires reviewed Rust inputs");
         }
         String artifact = SafeBuildScriptEnvelope.shellQuote(service.artifactName());
         String version = SafeBuildScriptEnvelope.shellQuote("^rustc " + service.version().replace(".", "[.]") + " ");
         String command = """
-                artifact_name=%s
-                command -v rustc >/dev/null
-                command -v cargo >/dev/null
-                if [ -n "${WTL_RUST_VERSION:-}" ]; then
-                  rustc --version | grep -F "rustc ${WTL_RUST_VERSION} "
-                else rustc --version | grep -Eq %s; fi
-                test -f ./Cargo.toml
-                test -f ./Cargo.lock
-                test -f ./rust-toolchain.toml
-                run cargo build --locked --release
-                mkdir -p ./.w2l/bin
-                test -x "./target/release/$artifact_name"
-                cp -- "./target/release/$artifact_name" "./.w2l/bin/$artifact_name"
-                test -x "./.w2l/bin/$artifact_name"
-                test ! -L "./.w2l/bin/$artifact_name"
-                printf 'ARTIFACT=%%s\n' "./.w2l/bin/$artifact_name"
-                """.formatted(artifact, version);
+            artifact_name=%s
+            command -v rustc >/dev/null
+            command -v cargo >/dev/null
+            if [ -n "${WTL_RUST_VERSION:-}" ]; then
+              rustc --version | grep -F "rustc ${WTL_RUST_VERSION} "
+            else rustc --version | grep -Eq %s; fi
+            test -f ./Cargo.toml
+            test -f ./Cargo.lock
+            test -f ./rust-toolchain.toml
+            run cargo build --locked --release
+            mkdir -p ./.w2l/bin
+            test -x "./target/release/$artifact_name"
+            cp -- "./target/release/$artifact_name" "./.w2l/bin/$artifact_name"
+            test -x "./.w2l/bin/$artifact_name"
+            test ! -L "./.w2l/bin/$artifact_name"
+            printf 'ARTIFACT=%%s\n' "./.w2l/bin/$artifact_name"
+            """.formatted(artifact, version);
         return SafeBuildScriptEnvelope.wrap(facts, workspace, limits, command);
     }
 }

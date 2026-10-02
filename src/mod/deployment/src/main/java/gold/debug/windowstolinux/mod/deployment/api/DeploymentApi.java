@@ -1,8 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.api;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.PageSlice;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.Optional;
 import java.util.UUID;
-import gold.debug.windowstolinux.appapi.task.*;
+
+
 
 /** Public deployment snapshot, lifecycle and backup handoff service. / 公开部署快照、生命周期与备份交接服务。
  * <p>The original caller must retain its own root checkpoint across the complete handoff sequence,
@@ -19,8 +25,9 @@ public interface DeploymentApi {
      * @return target revision bound to the exact archive and current host trust / 绑定精确归档及当前主机信任的目标修订
      * @throws ApiException if scope or observed target is unavailable / 范围或已观察目标不可用时 */
     OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archived,
-            gold.debug.windowstolinux.appapi.server.ServerRef target, String archiveSha256, TaskContext task)
-            throws ApiException;
+                                                gold.debug.windowstolinux.appapi.server.ServerRef target, String archiveSha256, TaskContext task)
+        throws ApiException;
+
     /** Lists persisted application summaries. / 列出持久应用摘要。
      * @param cursor continuation cursor / 续页游标
      * @param limit page limit / 页大小
@@ -28,7 +35,7 @@ public interface DeploymentApi {
      * @return one page / 一页结果
      * @throws ApiException if access fails / 访问失败时 */
     PageSlice<DeploymentApplicationSnapshot> listApplications(Optional<String> cursor, int limit, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Refreshes exact remote identity and status. / 刷新精确远端身份与状态。
      * @param application exact application / 精确应用
@@ -36,7 +43,7 @@ public interface DeploymentApi {
      * @return current observation / 当前观察
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Performs one approved managed lifecycle action. / 执行一次已批准受管生命周期动作。
      * @param application exact application / 精确应用
@@ -46,8 +53,8 @@ public interface DeploymentApi {
      * @return verified action result / 已验证动作结果
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application,
-            String expectedRevisionSha256, DeploymentLifecycleAction action, TaskContext task)
-            throws ApiException;
+                                                         String expectedRevisionSha256, DeploymentLifecycleAction action, TaskContext task)
+        throws ApiException;
 
     /** Reviews collection without a remote effect. / 无远端副作用地审阅采集。
      * @param request selected bindings / 所选绑定
@@ -55,7 +62,7 @@ public interface DeploymentApi {
      * @return durable handoff / 持久交接
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentHandoff> reviewCollection(DeploymentCollectionRequest request, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Collects the reviewed source bindings. / 采集已审阅来源绑定。
      * @param handoffId original handoff / 原交接
@@ -63,7 +70,7 @@ public interface DeploymentApi {
      * @return complete remote artifacts / 完整远端产物
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentCollection> collect(UUID handoffId, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Restores the source state changed for collection. / 恢复采集期间明确改变的来源状态。
      * @param handoffId original handoff / 原交接
@@ -78,7 +85,7 @@ public interface DeploymentApi {
      * @return durable preparation; repeating the exact original request after uncertain preparation returns the original handoff without reading local files or replaying effects / 持久准备；未知准备后精确原请求重查返回原交接，不读取本地文件或重放效果
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentHandoff> prepareRestore(DeploymentRestoreRequest request, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Activates a prepared target under its original review. / 在原审阅下激活已准备目标。
      * @param handoffId original handoff / 原交接
@@ -86,7 +93,7 @@ public interface DeploymentApi {
      * @return verified activation / 已验证激活
      * @throws ApiException if access fails / 访问失败时 */
     OperationResult<DeploymentActivation> activate(UUID handoffId, TaskContext task)
-            throws ApiException;
+        throws ApiException;
 
     /** Discards only an original unactivated candidate. / 仅丢弃原未激活候选。
      * @param handoffId original handoff / 原交接

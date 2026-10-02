@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,7 +20,7 @@ import java.util.Optional;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
@@ -48,13 +55,13 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return one verified business graph or retained uncertainty / 一个已核实业务图或保留未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     OperationResult<DeploymentPublication> publish(MultiComponentDeploymentPlan ordering,
-            Map<String, ReviewedDeploymentPlan> plans, Map<String, DeploymentUnitIdentity> units,
-            Map<DeploymentSecretReference, SecretRef> credentials, Map<String, DeploymentVerifiedBuildResult> builds,
-            String healthComponent, DeploymentHealthCheck health, RemoteSession session, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals)
-            throws ApiException {
+                                                   Map<String, ReviewedDeploymentPlan> plans, Map<String, DeploymentUnitIdentity> units,
+                                                   Map<DeploymentSecretReference, SecretRef> credentials, Map<String, DeploymentVerifiedBuildResult> builds,
+                                                   String healthComponent, DeploymentHealthCheck health, RemoteSession session, TaskContext task,
+                                                   DeploymentGraphPublicationJournal root, Map<String, DeploymentPublicationCleanupJournal> journals)
+        throws ApiException {
         if (!ordering.startOrder().equals(List.copyOf(builds.keySet()))
-                && !builds.keySet().equals(new HashSet<>(ordering.startOrder())))
+            && !builds.keySet().equals(new HashSet<>(ordering.startOrder())))
             throw new IllegalArgumentException("Complete graph builds are required");
         var channels = new HashMap<String, DeploymentPublicationChannel>();
         for (var id : ordering.startOrder())
@@ -62,7 +69,7 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_OPERATION_UNCONFIRMED");
         for (var id : ordering.startOrder())
             channels.put(id, new DeploymentPublicationChannel(session, context.interaction(), units.get(id).server(),
-                    task, journals.get(id).facts().path("planSha256").asText()));
+                task, journals.get(id).facts().path("planSha256").asText()));
         var secrets = new HashMap<String, Map<DeploymentSecretReference, String>>();
         String stagingFailure = stageAll(ordering, plans, units, credentials, channels, task, root, secrets);
         if (stagingFailure != null)
@@ -90,7 +97,7 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_STOP_UNCONFIRMED");
             if (stopped.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected, stopped
-                        .problem().orElseGet(() -> problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_STOP_FAILED")));
+                    .problem().orElseGet(() -> problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_STOP_FAILED")));
             if (!journals.get(id).mark("STOP_VERIFIED"))
                 return unknown("DEPLOYMENT_GRAPH_STOP_EVIDENCE_UNCONFIRMED");
         }
@@ -105,13 +112,13 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_BOUNDARY_UNCONFIRMED");
             affected.add(id);
             var published = channels.get(id).publish(units.get(id), request.facts(), request.runtime(),
-                    request.resources(), request.configuration().sha256(), secrets.get(id), build.candidateId(),
-                    release, build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
+                request.resources(), request.configuration().sha256(), secrets.get(id), build.candidateId(),
+                release, build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
             if (published.outcome() == Outcome.UNKNOWN || published.outcome() == Outcome.CANCELLED)
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_UNCONFIRMED");
             if (published.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected, published
-                        .problem().orElseGet(() -> problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_PUBLISH_FAILED")));
+                    .problem().orElseGet(() -> problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GRAPH_PUBLISH_FAILED")));
             if (!journals.get(id).mark("PUBLISHED_VERIFIED"))
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_EVIDENCE_UNCONFIRMED");
             var immediate = healthy(id, plans, units, channels);
@@ -119,8 +126,8 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_HEALTH_UNCONFIRMED");
             if (immediate.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                        DeploymentStandardPublicationTransaction.healthFailure(immediate, units.get(id).id()).problem().orElseGet(
-                                () -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_COMPONENT_UNHEALTHY")));
+                    DeploymentStandardPublicationTransaction.healthFailure(immediate, units.get(id).id()).problem().orElseGet(
+                        () -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_COMPONENT_UNHEALTHY")));
         }
         for (var id : ordering.healthOrder()) {
             var repeated = healthy(id, plans, units, channels);
@@ -128,16 +135,16 @@ final class DeploymentMultiComponentPublicationTransaction {
                 return unknown("DEPLOYMENT_GRAPH_RECHECK_UNCONFIRMED");
             if (repeated.outcome() == Outcome.FAILED)
                 return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                        DeploymentStandardPublicationTransaction.healthFailure(repeated, units.get(id).id()).problem()
-                                .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RECHECK_FAILED")));
+                    DeploymentStandardPublicationTransaction.healthFailure(repeated, units.get(id).id()).problem()
+                        .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RECHECK_FAILED")));
         }
         var whole = channels.get(healthComponent).healthCheck(units.get(healthComponent), health);
         if (whole.outcome() == Outcome.UNKNOWN || whole.outcome() == Outcome.CANCELLED)
             return unknown("DEPLOYMENT_GRAPH_HEALTH_GATE_UNCONFIRMED");
         if (whole.outcome() == Outcome.FAILED)
             return rollback(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
-                    DeploymentStandardPublicationTransaction.healthFailure(whole, units.get(healthComponent).id()).problem()
-                            .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_HEALTH_GATE_FAILED")));
+                DeploymentStandardPublicationTransaction.healthFailure(whole, units.get(healthComponent).id()).problem()
+                    .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_HEALTH_GATE_FAILED")));
         if (!root.verified(Outcome.SUCCEEDED, Optional.empty()))
             return unknown("DEPLOYMENT_GRAPH_VERIFIED_RESULT_UNCONFIRMED");
         finishKnown(ordering, units, builds, channels, journals, root, true, affected);
@@ -156,15 +163,15 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return absent on success or bounded failure event / 成功为空，否则为有界失败事件
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private String stageAll(MultiComponentDeploymentPlan ordering, Map<String, ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
-            Map<String, DeploymentPublicationChannel> channels, TaskContext task,
-            DeploymentGraphPublicationJournal root, Map<String, Map<DeploymentSecretReference, String>> secrets)
-            throws ApiException {
+                            Map<String, DeploymentUnitIdentity> units, Map<DeploymentSecretReference, SecretRef> credentials,
+                            Map<String, DeploymentPublicationChannel> channels, TaskContext task,
+                            DeploymentGraphPublicationJournal root, Map<String, Map<DeploymentSecretReference, String>> secrets)
+        throws ApiException {
         for (var id : ordering.startOrder()) {
             if (cancelled(task))
                 return "DEPLOYMENT_GRAPH_STAGE_CANCELLED";
             var staged = DeploymentPublicationStaging.stage(context, plans.get(id), units.get(id), credentials,
-                    channels.get(id), task);
+                channels.get(id), task);
             if (staged.outcome() != Outcome.SUCCEEDED)
                 return "DEPLOYMENT_GRAPH_INPUT_STAGE_UNCONFIRMED";
             secrets.put(id, staged.value().orElseThrow());
@@ -185,19 +192,20 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return absent on success or bounded failure event / 成功为空，否则为有界失败事件
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static String snapshotAll(MultiComponentDeploymentPlan ordering, Map<String, ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentVerifiedBuildResult> builds,
-            Map<String, DeploymentPublicationChannel> channels,
-            TaskContext task, DeploymentGraphPublicationJournal root,
-            Map<String, DeploymentPublicationCleanupJournal> journals,
-            Map<String, DeploymentRemoteReleaseSnapshot> snapshots) throws ApiException {
+                                      Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentVerifiedBuildResult> builds,
+                                      Map<String, DeploymentPublicationChannel> channels,
+                                      TaskContext task, DeploymentGraphPublicationJournal root,
+                                      Map<String, DeploymentPublicationCleanupJournal> journals,
+                                      Map<String, DeploymentRemoteReleaseSnapshot> snapshots) throws ApiException {
         for (var id : ordering.rollbackOrder()) {
             if (cancelled(task) || !journals.get(id).mark("SNAPSHOT_MAY_HAVE_RUN"))
                 return "DEPLOYMENT_GRAPH_SNAPSHOT_BOUNDARY_UNCONFIRMED";
-            var build = builds.get(id); var facts = journals.get(id).facts();
+            var build = builds.get(id);
+            var facts = journals.get(id).facts();
             var saved = build.operation().isEmpty() ? channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime())
-                    : channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime(), build.operation().orElseThrow(),
-                            facts.path("expectedDigest").asText().isEmpty() ? Optional.empty() : Optional.of(facts.path("expectedDigest").asText()),
-                            facts.path("expectedKind").asText(), facts.path("expectedRunning").booleanValue());
+                : channels.get(id).snapshot(units.get(id), plans.get(id).request().runtime(), build.operation().orElseThrow(),
+                facts.path("expectedDigest").asText().isEmpty() ? Optional.empty() : Optional.of(facts.path("expectedDigest").asText()),
+                facts.path("expectedKind").asText(), facts.path("expectedRunning").booleanValue());
             if (saved.outcome() != Outcome.SUCCEEDED || saved.value().isEmpty())
                 return "DEPLOYMENT_GRAPH_SNAPSHOT_UNCONFIRMED";
             var snapshot = saved.value().orElseThrow();
@@ -217,7 +225,7 @@ final class DeploymentMultiComponentPublicationTransaction {
             var executions = new DeploymentExecutionRepository(context.db());
             var execution = executions.findForTask(task).orElseThrow();
             executions.recordPublicationTemplate(task, execution.identity().executionId(),
-                    new DeploymentPublicationProposal(publication.graph(), publication.units()), Instant.now());
+                new DeploymentPublicationProposal(publication.graph(), publication.units()), Instant.now());
             return true;
         } catch (SQLException | ApiException | java.util.NoSuchElementException unconfirmed) {
             return false;
@@ -232,8 +240,8 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return known healthy, known failed, or unknown / 已知健康、已知失败或未知
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static OperationResult<Void> healthy(String id, Map<String, ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentPublicationChannel> channels)
-            throws ApiException {
+                                                 Map<String, DeploymentUnitIdentity> units, Map<String, DeploymentPublicationChannel> channels)
+        throws ApiException {
         var runtime = plans.get(id).request().runtime();
         var health = channels.get(id).healthCheck(units.get(id), runtime.healthCheck());
         if (health.outcome() != Outcome.SUCCEEDED)
@@ -242,12 +250,12 @@ final class DeploymentMultiComponentPublicationTransaction {
         if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
             return unknownVoid("DEPLOYMENT_GRAPH_RUNTIME_UNCONFIRMED");
         var expected = runtime.workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
-                ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
-                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+            ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
+            : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         return observed.value().orElseThrow().state() == expected
-                ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
-                : new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                        Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RUNTIME_UNHEALTHY")));
+            ? new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())
+            : new OperationResult<>(Outcome.FAILED, Optional.empty(),
+            Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RUNTIME_UNHEALTHY")));
     }
 
     /** Restores every possibly touched old runtime in inverse dependency order after only a known failure. / 仅在已知失败后按逆依赖顺序恢复每个可能受影响的旧运行时。
@@ -264,11 +272,11 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return failed only after all old states are verified / 仅全部旧状态核实后返回失败
      * @throws ApiException if host admission rejects / 宿主准入拒绝时 */
     private static OperationResult<DeploymentPublication> rollback(MultiComponentDeploymentPlan ordering,
-            Map<String, DeploymentUnitIdentity> units, Map<String, ReviewedDeploymentPlan> plans,
-            Map<String, DeploymentVerifiedBuildResult> builds, Map<String, DeploymentRemoteReleaseSnapshot> snapshots,
-            Map<String, DeploymentPublicationChannel> channels,
-            Map<String, DeploymentPublicationCleanupJournal> journals, DeploymentGraphPublicationJournal root,
-            java.util.Set<String> affected, Problem failure) throws ApiException {
+                                                                   Map<String, DeploymentUnitIdentity> units, Map<String, ReviewedDeploymentPlan> plans,
+                                                                   Map<String, DeploymentVerifiedBuildResult> builds, Map<String, DeploymentRemoteReleaseSnapshot> snapshots,
+                                                                   Map<String, DeploymentPublicationChannel> channels,
+                                                                   Map<String, DeploymentPublicationCleanupJournal> journals, DeploymentGraphPublicationJournal root,
+                                                                   java.util.Set<String> affected, Problem failure) throws ApiException {
         if (!root.mark("ROLLING_BACK"))
             return unknown("DEPLOYMENT_GRAPH_ROLLBACK_BOUNDARY_UNCONFIRMED");
         boolean manualRecovery = false;
@@ -279,7 +287,7 @@ final class DeploymentMultiComponentPublicationTransaction {
             if (!journal.rollbackStarting(failure))
                 return unknown("DEPLOYMENT_GRAPH_ROLLBACK_EVIDENCE_UNCONFIRMED");
             var restored = channels.get(id).rollback(units.get(id), release(builds.get(id), plans.get(id)),
-                    snapshots.get(id), plans.get(id).request().runtime());
+                snapshots.get(id), plans.get(id).request().runtime());
             if (restored.outcome() == Outcome.FAILED) {
                 manualRecovery = true;
                 continue;
@@ -292,8 +300,8 @@ final class DeploymentMultiComponentPublicationTransaction {
                 if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
                     return unknown("DEPLOYMENT_GRAPH_RESTORED_STATE_UNCONFIRMED");
                 if (observed.value().orElseThrow().state() == DeploymentRemoteRuntimeObservation.StateType.ERROR
-                        || snapshot.previousRunning() != (observed.value().orElseThrow()
-                                .state() == DeploymentRemoteRuntimeObservation.StateType.RUNNING))
+                    || snapshot.previousRunning() != (observed.value().orElseThrow()
+                    .state() == DeploymentRemoteRuntimeObservation.StateType.RUNNING))
                     return unknown("DEPLOYMENT_GRAPH_RESTORED_STATE_UNCONFIRMED");
             }
             if (!journal.mark("ROLLBACK_VERIFIED"))
@@ -317,39 +325,39 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @param successful whether new releases are retained / 是否留存新发布
      * @param affected components actually stopped or published / 实际停止或发布的组件 */
     private static void finishKnown(MultiComponentDeploymentPlan ordering, Map<String, DeploymentUnitIdentity> units,
-            Map<String, DeploymentVerifiedBuildResult> builds, Map<String, DeploymentPublicationChannel> channels,
-            Map<String, DeploymentPublicationCleanupJournal> journals, DeploymentGraphPublicationJournal root,
-            boolean successful, java.util.Set<String> affected) {
+                                    Map<String, DeploymentVerifiedBuildResult> builds, Map<String, DeploymentPublicationChannel> channels,
+                                    Map<String, DeploymentPublicationCleanupJournal> journals, DeploymentGraphPublicationJournal root,
+                                    boolean successful, java.util.Set<String> affected) {
         try {
             for (var id : ordering.startOrder()) {
                 var journal = journals.get(id);
                 if (!successful && !affected.contains(id)) {
                     if (!DeploymentPublicationCleanupAttempt.run(journal, "SNAPSHOT_DISCARD_MAY_HAVE_RUN",
-                            () -> builds.get(id).operation().isEmpty() ? channels.get(id).discardSnapshot(units.get(id))
-                                    : channels.get(id).discardSnapshot(units.get(id), builds.get(id).operation().orElseThrow()))
-                            || !journal.mark("SNAPSHOT_DISCARDED"))
+                        () -> builds.get(id).operation().isEmpty() ? channels.get(id).discardSnapshot(units.get(id))
+                            : channels.get(id).discardSnapshot(units.get(id), builds.get(id).operation().orElseThrow()))
+                        || !journal.mark("SNAPSHOT_DISCARDED"))
                         return;
                     continue;
                 }
                 if (!DeploymentPublicationCleanupAttempt
-                        .run(journal, "MAINTENANCE_END_MAY_HAVE_RUN",
-                                () -> channels.get(id).endMaintenance(units.get(id),
-                                        journal.facts().path("releaseSha256").asText()))
-                        || !journal.mark("MAINTENANCE_ENDED"))
+                    .run(journal, "MAINTENANCE_END_MAY_HAVE_RUN",
+                        () -> channels.get(id).endMaintenance(units.get(id),
+                            journal.facts().path("releaseSha256").asText()))
+                    || !journal.mark("MAINTENANCE_ENDED"))
                     return;
             }
             if (successful)
                 for (var id : ordering.startOrder()) {
                     var journal = journals.get(id);
                     if (!DeploymentPublicationCleanupAttempt.run(journal, "RETAIN_MAY_HAVE_RUN",
-                            () -> channels.get(id).retain(units.get(id))) || !journal.mark("RETAIN_VERIFIED"))
+                        () -> channels.get(id).retain(units.get(id))) || !journal.mark("RETAIN_VERIFIED"))
                         return;
                 }
             for (var id : ordering.startOrder()) {
                 var journal = journals.get(id);
                 if (!DeploymentPublicationCleanupAttempt.run(journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN",
-                        () -> channels.get(id).cleanupCandidate(units.get(id), builds.get(id).candidateId()))
-                        || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean())
+                    () -> channels.get(id).cleanupCandidate(units.get(id), builds.get(id).candidateId()))
+                    || !journal.mark("CANDIDATE_CLEANED") || !journal.remoteClean())
                     return;
             }
             root.mark("REMOTE_CLEANUP_VERIFIED");
@@ -367,8 +375,8 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @param health independent whole-health check / 独立整图健康检查
      * @return complete publication / 完整发布 */
     private static DeploymentPublication proposal(MultiComponentDeploymentPlan ordering,
-            Map<String, ReviewedDeploymentPlan> plans, Map<String, DeploymentUnitIdentity> units,
-            Map<String, DeploymentVerifiedBuildResult> builds, String healthComponent, DeploymentHealthCheck health) {
+                                                  Map<String, ReviewedDeploymentPlan> plans, Map<String, DeploymentUnitIdentity> units,
+                                                  Map<String, DeploymentVerifiedBuildResult> builds, String healthComponent, DeploymentHealthCheck health) {
         var components = new ArrayList<DeploymentApplicationGraph.Component>();
         var commits = new ArrayList<DeploymentUnitCommit>();
         var time = Instant.now();
@@ -376,17 +384,17 @@ final class DeploymentMultiComponentPublicationTransaction {
             var request = plans.get(id).request();
             var unit = units.get(id);
             var runtime = new DeploymentUnitRuntimeConfiguration(request.runtime().healthCheck(),
-                    request.userAccessUrl(), request.runtime().identityPolicy(), request.runtime().workload());
+                request.userAccessUrl(), request.runtime().identityPolicy(), request.runtime().workload());
             components.add(new DeploymentApplicationGraph.Component(id, unit, runtime, ordering.dependencies().get(id),
-                    request.runtime(),
-                    request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
-                    request.resources()));
+                request.runtime(),
+                request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
+                request.resources()));
             commits.add(new DeploymentUnitCommit(unit, runtime,
-                    new DeploymentCurrentRelease(unit.id(), release(builds.get(id), plans.get(id)), time),
-                    request.configuration(), request.secretReferences()));
+                new DeploymentCurrentRelease(unit.id(), release(builds.get(id), plans.get(id)), time),
+                request.configuration(), request.secretReferences()));
         }
         return new DeploymentPublication(
-                new DeploymentApplicationGraph(ordering.applicationId(), healthComponent, health, components), commits);
+            new DeploymentApplicationGraph(ordering.applicationId(), healthComponent, health, components), commits);
     }
 
     /** Derives the old content-based release domain independently of plan/task identity. / 独立于计划及任务身份派生旧内容发布域。
@@ -395,14 +403,14 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return exact release digest / 精确发布摘要 */
     private static String release(DeploymentVerifiedBuildResult build, ReviewedDeploymentPlan plan) {
         return DeploymentReviewedReleaseIdentity.bind(DeploymentReviewedReleaseIdentity.from(plan.request()),
-                build.toolchains());
+            build.toolchains());
     }
 
     /** Detects original cooperative cancellation without inventing another task. / 检测原协作取消且不伪造另一任务。
      * @param task original task / 原任务
      * @return whether cancelled / 是否取消 */
     private static boolean cancelled(TaskContext task) {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 
     /** Creates one safe bounded failure. / 创建安全有界失败。
@@ -418,7 +426,7 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return explicit unknown / 显式未知 */
     private static OperationResult<DeploymentPublication> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
     /** Returns uncertainty for a component health observation. / 返回组件健康观察的不确定性。
@@ -426,6 +434,6 @@ final class DeploymentMultiComponentPublicationTransaction {
      * @return unknown component result / 未知组件结果 */
     private static OperationResult<Void> unknownVoid(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(problem(ProblemCode.UNKNOWN, event)));
+            Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 }

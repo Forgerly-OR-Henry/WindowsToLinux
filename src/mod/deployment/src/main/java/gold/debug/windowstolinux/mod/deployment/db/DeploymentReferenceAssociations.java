@@ -1,10 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.*;
 import java.util.Objects;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Reads authoritative retained business rows for one original platform association. / 读取一个原平台关联的权威保留业务行。 */
 public final class DeploymentReferenceAssociations {
@@ -25,44 +28,44 @@ public final class DeploymentReferenceAssociations {
      * @throws SQLException if evidence is inconsistent or unavailable / 证据不一致或不可用时
      * @throws ApiException if task database access is unavailable / 任务数据库访问不可用时 */
     public AssociationState observe(TaskContext task, DeploymentExecutionIdentity identity,
-            DeploymentReferenceIntent intent) throws SQLException, ApiException {
+                                    DeploymentReferenceIntent intent) throws SQLException, ApiException {
         DeploymentReferenceKey.requireOriginal(intent, identity);
         try (var connection = database.openConnection(task)) {
             String key = intent.businessKey();
             if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SECRET) {
                 var revision = DeploymentReferenceKey.revision(intent);
                 try (var query = connection.prepareStatement(
-                        "SELECT credential_id FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
+                    "SELECT credential_id FROM secret_revision WHERE secret_id=? AND secret_revision=?")) {
                     query.setString(1, revision.identifier());
                     query.setLong(2, revision.revision());
                     try (var rows = query.executeQuery()) {
                         if (!rows.next())
                             return AssociationState.ABSENT;
                         return intent.resourceId().equals(rows.getString(1))
-                                ? AssociationState.REFERENCED
-                                : AssociationState.CONFLICT;
+                            ? AssociationState.REFERENCED
+                            : AssociationState.CONFLICT;
                     }
                 }
             }
             if (key.equals(DeploymentReferenceKey.applicationKey(identity.applicationId()))) {
                 var current = server(connection,
-                        "SELECT server_profile_id FROM managed_application WHERE application_id=?",
-                        identity.applicationId(), intent.resourceId());
+                    "SELECT server_profile_id FROM managed_application WHERE application_id=?",
+                    identity.applicationId(), intent.resourceId());
                 if (current == AssociationState.REFERENCED
-                        || retainedRelease(connection, identity.applicationId(), null, intent.resourceId()))
+                    || retainedRelease(connection, identity.applicationId(), null, intent.resourceId()))
                     return AssociationState.REFERENCED;
                 return current;
             }
             String unit = key.substring("deployment:v1:unit:".length());
             var observed = server(connection,
-                    "SELECT server_profile_id FROM deployment_unit WHERE deployment_unit_id=?", unit,
-                    intent.resourceId());
+                "SELECT server_profile_id FROM deployment_unit WHERE deployment_unit_id=?", unit,
+                intent.resourceId());
             if (observed == AssociationState.REFERENCED || retainedRelease(connection, null, unit, intent.resourceId()))
                 return AssociationState.REFERENCED;
             if (observed != AssociationState.ABSENT)
                 return observed;
             try (var query = connection.prepareStatement(
-                    "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE deployment_unit_id=?")) {
+                "SELECT COUNT(*) FROM deployment_unit_release_binding WHERE deployment_unit_id=?")) {
                 query.setString(1, unit);
                 try (var rows = query.executeQuery()) {
                     rows.next();
@@ -80,10 +83,10 @@ public final class DeploymentReferenceAssociations {
      * @return whether retained history proves this server association / 保留历史是否证明此服务器关联
      * @throws SQLException if history is malformed or unsupported / 历史无效或格式不受支持时 */
     private static boolean retainedRelease(Connection connection, String application, String unit, String server)
-            throws SQLException {
+        throws SQLException {
         String sql = application == null
-                ? "SELECT * FROM deployment_release"
-                : "SELECT * FROM deployment_release WHERE application_id=?";
+            ? "SELECT * FROM deployment_release"
+            : "SELECT * FROM deployment_release WHERE application_id=?";
         try (var query = connection.prepareStatement(sql)) {
             if (application != null)
                 query.setString(1, application);
@@ -91,7 +94,7 @@ public final class DeploymentReferenceAssociations {
                 while (rows.next()) {
                     var graph = DeploymentReleaseCodec.snapshot(DeploymentReleaseRepository.row(rows)).graph();
                     if (graph.components().stream().anyMatch(component -> component.unit().server().id().equals(server)
-                            && (unit == null || component.unit().id().equals(unit))))
+                        && (unit == null || component.unit().id().equals(unit))))
                         return true;
                 }
             }
@@ -107,7 +110,7 @@ public final class DeploymentReferenceAssociations {
      * @return matched, absent or inconsistent / 匹配、不存在或冲突
      * @throws SQLException if reading fails / 读取失败时 */
     private static AssociationState server(Connection connection, String sql, String id, String server)
-            throws SQLException {
+        throws SQLException {
         try (var query = connection.prepareStatement(sql)) {
             query.setString(1, id);
             try (var rows = query.executeQuery()) {

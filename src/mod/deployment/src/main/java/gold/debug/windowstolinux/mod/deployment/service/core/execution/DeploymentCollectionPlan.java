@@ -38,7 +38,7 @@ public final class DeploymentCollectionPlan {
      * @param maximum fixed byte limit / 固定字节上限
      * @param databaseArguments database-specific fixed arguments / 数据库专用固定参数 */
     public record ArtifactPlan(String bindingId, String componentId, String unitId, String release, String manifest,
-            String kind, String resource, String maximum, List<String> databaseArguments) {
+                               String kind, String resource, String maximum, List<String> databaseArguments) {
         /** Copies reviewed arguments. / 复制已审阅参数。
          * @param bindingId public binding / 公开绑定
          * @param componentId owner / 所属组件
@@ -87,7 +87,7 @@ public final class DeploymentCollectionPlan {
     public List<ArtifactPlan> build(ApplicationFacts data, List<String> selected) throws ApiException {
         var bindings = data.snapshot().bindings();
         if (selected.size() > 256 || selected.stream().anyMatch(value -> value == null || value.isBlank())
-                || selected.size() != new HashSet<>(selected).size())
+            || selected.size() != new HashSet<>(selected).size())
             throw invalid("DEPLOYMENT_COLLECTION_BINDINGS_INVALID");
         Set<String> chosen = Set.copyOf(selected);
         for (String id : selected) {
@@ -97,14 +97,14 @@ public final class DeploymentCollectionPlan {
         var plan = new ArrayList<ArtifactPlan>();
         for (var component : data.graph().components()) {
             var release = data.release().bindings().stream()
-                    .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
+                .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
             plan.add(new ArtifactPlan("release:" + component.componentId(), component.componentId(),
-                    component.unit().id(), release.releaseSha256(), component.unit().ownershipManifestSha256(),
-                    "release", "release", MAX_ARCHIVE, List.of()));
+                component.unit().id(), release.releaseSha256(), component.unit().ownershipManifestSha256(),
+                "release", "release", MAX_ARCHIVE, List.of()));
             if (component.reviewedRuntime().identityPolicy() == DeploymentIdentityMode.CONTAINER_NON_ROOT)
                 plan.add(new ArtifactPlan("image:" + component.componentId(), component.componentId(),
-                        component.unit().id(), release.releaseSha256(), component.unit().ownershipManifestSha256(),
-                        "oci", "image", MAX_ARCHIVE, List.of()));
+                    component.unit().id(), release.releaseSha256(), component.unit().ownershipManifestSha256(),
+                    "oci", "image", MAX_ARCHIVE, List.of()));
             for (var binding : bindings) {
                 if (!binding.componentId().equals(component.componentId()) || !chosen.contains(binding.id()))
                     continue;
@@ -112,16 +112,16 @@ public final class DeploymentCollectionPlan {
                     plan.add(database(component, release, binding));
                 else
                     plan.add(new ArtifactPlan(binding.id(), component.componentId(), component.unit().id(),
-                            release.releaseSha256(), component.unit().ownershipManifestSha256(), "file",
-                            component.resources().fileBindings().stream()
-                                    .filter(value -> binding.id()
-                                            .equals(component.componentId() + ":" + value.bindingId()))
-                                    .findFirst().orElseThrow().bindingId(),
-                            MAX_ARCHIVE, List.of()));
+                        release.releaseSha256(), component.unit().ownershipManifestSha256(), "file",
+                        component.resources().fileBindings().stream()
+                            .filter(value -> binding.id()
+                                .equals(component.componentId() + ":" + value.bindingId()))
+                            .findFirst().orElseThrow().bindingId(),
+                        MAX_ARCHIVE, List.of()));
             }
         }
         return plan.stream().sorted(Comparator.comparing(ArtifactPlan::componentId).thenComparing(ArtifactPlan::kind)
-                .thenComparing(ArtifactPlan::resource)).toList();
+            .thenComparing(ArtifactPlan::resource)).toList();
     }
 
     /** Resolves one exact reviewed database and immutable password revision. / 解析一项精确已审阅数据库及不可变密码修订。
@@ -131,34 +131,34 @@ public final class DeploymentCollectionPlan {
      * @return complete supported database plan / 完整受支持数据库计划
      * @throws ApiException if protocol or secret revision differs / 协议或秘密修订不符时 */
     private static ArtifactPlan database(DeploymentApplicationGraph.Component component,
-            gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseSnapshot.Binding release,
-            DeploymentBinding publicBinding) throws ApiException {
+                                         gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseSnapshot.Binding release,
+                                         DeploymentBinding publicBinding) throws ApiException {
         var database = component.resources().databaseBindings().orElse(List.of()).stream()
-                .filter(value -> publicBinding.id().equals(component.componentId() + ":" + value.databaseId()))
-                .findFirst().orElseThrow(() -> invalid("DEPLOYMENT_COLLECTION_DATABASE_MISSING"));
+            .filter(value -> publicBinding.id().equals(component.componentId() + ":" + value.databaseId()))
+            .findFirst().orElseThrow(() -> invalid("DEPLOYMENT_COLLECTION_DATABASE_MISSING"));
         var connection = database.connection();
         var args = new ArrayList<String>();
         if (connection instanceof DeploymentDatabaseConnection.Sqlite sqlite) {
             args.addAll(
-                    List.of("sqlite-online", "0", "0", "sqlite", database.databaseId(), sqlite.location().type().name(),
-                            sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(), sqlite.fileName()));
+                List.of("sqlite-online", "0", "0", "sqlite", database.databaseId(), sqlite.location().type().name(),
+                    sqlite.location().path().isEmpty() ? "-" : sqlite.location().path(), sqlite.fileName()));
         } else if (connection instanceof DeploymentDatabaseConnection.Server server) {
             if (server.engine() == DeploymentDatabaseEngineType.REDIS)
                 throw invalid("DEPLOYMENT_COLLECTION_REDIS_UNSUPPORTED");
             if (!release.secrets().contains(server.passwordReference()))
                 throw invalid("DEPLOYMENT_COLLECTION_DATABASE_SECRET_REVISION_CHANGED");
             String mode = server.engine() == DeploymentDatabaseEngineType.POSTGRESQL
-                    ? "postgresql-logical"
-                    : "mysql-transaction";
+                ? "postgresql-logical"
+                : "mysql-transaction";
             args.addAll(List.of(mode, "0", "0", server.engine().name().toLowerCase(java.util.Locale.ROOT),
-                    server.host(), Integer.toString(server.port()), server.database(), server.username(),
-                    server.passwordReference().identifier(), Long.toString(server.passwordReference().revision()),
-                    server.tlsRequired() ? "1" : "0"));
+                server.host(), Integer.toString(server.port()), server.database(), server.username(),
+                server.passwordReference().identifier(), Long.toString(server.passwordReference().revision()),
+                server.tlsRequired() ? "1" : "0"));
         } else
             throw invalid("DEPLOYMENT_COLLECTION_DATABASE_UNSUPPORTED");
         return new ArtifactPlan(publicBinding.id(), component.componentId(), component.unit().id(),
-                release.releaseSha256(), component.unit().ownershipManifestSha256(), "database", database.databaseId(),
-                MAX_DATABASE, args);
+            release.releaseSha256(), component.unit().ownershipManifestSha256(), "database", database.databaseId(),
+            MAX_DATABASE, args);
     }
 
     /** Refuses an unreviewed or unsupported binding before any effect. / 在任何副作用前拒绝未审阅或不支持的绑定。
@@ -166,6 +166,6 @@ public final class DeploymentCollectionPlan {
      * @return bounded original binding exception / 有界原绑定异常 */
     private static ApiException invalid(String event) {
         return new ApiException(new Problem(ProblemCode.INCOMPATIBLE, event,
-                "Selected binding has no complete reviewed collection protocol", Map.of(), Optional.empty()));
+            "Selected binding has no complete reviewed collection protocol", Map.of(), Optional.empty()));
     }
 }

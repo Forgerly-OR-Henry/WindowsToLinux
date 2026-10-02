@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CodingErrorAction;
@@ -23,7 +30,7 @@ import java.util.concurrent.CancellationException;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseResults;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
@@ -54,8 +61,8 @@ public final class DeploymentNativeDatabasePreparation {
      * @param sourceDigest actual component inspection digest / 实际组件检查摘要
      * @param sql validated per-database SQL identities / 已校验的每库 SQL 身份 */
     public record Local(String componentId, String applicationId, String manifestSha256, Path root,
-            DatabaseProjectInspector.Assessment assessment, String sourceDigest,
-            Map<String, DeploymentNativeSqlSource.Plan> sql) {
+                        DatabaseProjectInspector.Assessment assessment, String sourceDigest,
+                        Map<String, DeploymentNativeSqlSource.Plan> sql) {
         /** Copies all non-secret local evidence. / 复制全部非秘密本机依据。
          * @param componentId discovered component / 发现组件
          * @param applicationId final managed unit / 最终受管单元
@@ -78,7 +85,7 @@ public final class DeploymentNativeDatabasePreparation {
          * @return immutable native declarations / 不可变原生声明 */
         public List<DatabaseRequirement> nativeDatabases() {
             return assessment.databases().stream()
-                    .filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
+                .filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
         }
     }
 
@@ -88,8 +95,8 @@ public final class DeploymentNativeDatabasePreparation {
      * @param secrets exact immutable password references / 精确不可变密码引用
      * @param schemaReview independent source-bound approval / 独立源码绑定批准 */
     public record Prepared(List<DeploymentConfigurationEntry> configuration, List<DeploymentDatabaseBinding> bindings,
-            List<DeploymentSecretReference> secrets,
-            Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
+                           List<DeploymentSecretReference> secrets,
+                           Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
         /** Copies each published fact. / 复制每项发布事实。
          * @param configuration generated configuration / 生成配置
          * @param bindings managed bindings / 受管绑定
@@ -111,8 +118,8 @@ public final class DeploymentNativeDatabasePreparation {
      * @param newInitialized whether a new owned target was initialized / 新归属目标是否完成初始化
      * @param existingApproved whether existing schema was independently approved / 已有结构是否独立批准 */
     private record One(List<DeploymentConfigurationEntry> configuration, DeploymentDatabaseBinding binding,
-            DeploymentSecretReference reference, boolean initialized, boolean newInitialized,
-            boolean existingApproved) {
+                       DeploymentSecretReference reference, boolean initialized, boolean newInitialized,
+                       boolean existingApproved) {
     }
 
     /** Preserves original review classification without fabricating a remote result. / 保留原审阅分类，不虚构远端结果。 */
@@ -124,7 +131,7 @@ public final class DeploymentNativeDatabasePreparation {
          * @param result original refusal / 原拒绝 */
         private NativeDatabasePreparationException(OperationResult<?> result) {
             super(result.problem().orElseGet(() -> new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_CANCELLED",
-                    "Native database review was cancelled", Map.of(), Optional.empty())));
+                "Native database review was cancelled", Map.of(), Optional.empty())));
             this.result = result;
         }
     }
@@ -146,19 +153,19 @@ public final class DeploymentNativeDatabasePreparation {
      * @return source-backed local plan / 源码绑定本机计划
      * @throws java.io.IOException if a SQL source is unsafe / SQL 来源不安全时 */
     public static Local local(String componentId, String applicationId, String manifestSha256, Path root,
-            DatabaseProjectInspector.Assessment assessment, TaskContext task) throws java.io.IOException {
+                              DatabaseProjectInspector.Assessment assessment, TaskContext task) throws java.io.IOException {
         var sql = new HashMap<String, DeploymentNativeSqlSource.Plan>();
         for (var database : assessment.databases())
             if (database.engine() != DeploymentDatabaseEngineType.SQLITE)
                 sql.put(database.id(), DeploymentNativeSqlSource.plan(root, database.initializationFiles()));
         var rejected = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason>();
-        var inspected = new BoundedSourceInspector().inspect(root, rejected, task.cancellation());
-        if (task.cancellation().requested())
+        var inspected = new BoundedSourceInspector().inspect(root, rejected, task.cancelToken());
+        if (task.cancelToken().requested())
             throw new CancellationException("Native database source inspection was cancelled");
         if (!rejected.isEmpty())
             throw new IllegalArgumentException("Native database source inspection was rejected");
         return new Local(componentId, applicationId, manifestSha256, root, assessment,
-                SourceMutationPolicy.inspectionDigest(inspected), sql);
+            SourceMutationPolicy.inspectionDigest(inspected), sql);
     }
 
     /** Prepares one component's actual native targets after the whole graph passed local validation. / 整图本机校验通过后准备一组件的真实原生目标。
@@ -170,9 +177,9 @@ public final class DeploymentNativeDatabasePreparation {
      * @return fully verified native preparation or classified refusal / 完整已核实准备或分类拒绝
      * @throws Exception if original local or platform access fails / 原本机或平台访问失败时 */
     public OperationResult<Prepared> prepare(ServerRef server, DeploymentDatabasePlanJournal plan, Local local,
-            DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
+                                             DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
         if (!plan.facts().serverId().equals(server.id())
-                || !plan.facts().manifestSha256().equals(local.manifestSha256()))
+            || !plan.facts().manifestSha256().equals(local.manifestSha256()))
             throw new IllegalArgumentException("Native database plan differs from frozen source or server");
         var entries = new ArrayList<DeploymentConfigurationEntry>();
         var bindings = new ArrayList<DeploymentDatabaseBinding>();
@@ -199,17 +206,17 @@ public final class DeploymentNativeDatabasePreparation {
             return new OperationResult<>(refused.result.outcome(), Optional.empty(), refused.result.problem());
         }
         boolean spring = local.nativeDatabases().stream().filter(value -> !value.initializationFiles().isEmpty())
-                .allMatch(DatabaseRequirement::springDatasource);
+            .allMatch(DatabaseRequirement::springDatasource);
         if (local.assessment().schemaReviewRequired() && spring && !bindings.isEmpty())
             entries.addAll(disabledSpringInitialization());
         Optional<DatabaseSchemaReview> schema = local.assessment().schemaReviewRequired() && !bindings.isEmpty()
-                ? Optional.of(new DatabaseSchemaReview(local.sourceDigest(),
-                        bindings.stream().map(DeploymentDatabaseBinding::databaseId)
-                                .collect(java.util.stream.Collectors.toSet()),
-                        initialized, newInitialized, existingApproved, spring, false))
-                : Optional.empty();
+            ? Optional.of(new DatabaseSchemaReview(local.sourceDigest(),
+            bindings.stream().map(DeploymentDatabaseBinding::databaseId)
+                .collect(java.util.stream.Collectors.toSet()),
+            initialized, newInitialized, existingApproved, spring, false))
+            : Optional.empty();
         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new Prepared(entries, bindings, secrets, schema)),
-                Optional.empty());
+            Optional.empty());
     }
 
     /** Prepares one already running, precisely versioned instance and target. / 准备一个已运行且精确版本匹配的实例及目标。
@@ -224,8 +231,8 @@ public final class DeploymentNativeDatabasePreparation {
      * @return verified target and runtime facts / 已核实目标与运行事实
      * @throws Exception if original access fails / 原访问失败时 */
     private One prepareOne(ServerRef server, DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Local local,
-            DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
+                           DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Local local,
+                           DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
         Instance instance = resolveInstance(server, channel, plan, entry, local, database, review, task);
         instance = startInstance(server, channel, plan, entry, instance, database, review, task);
         var targetFields = targetFields(instance, local.applicationId(), database);
@@ -245,8 +252,8 @@ public final class DeploymentNativeDatabasePreparation {
                 admin = require(review.administratorPassword(server, instance, task));
             }
             if (target.instance().engine() != instance.engine() || !target.instance().id().equals(instance.id())
-                    || !target.applicationId().equals(local.applicationId())
-                    || !target.database().equals(database.database()) || !target.username().equals(database.username()))
+                || !target.applicationId().equals(local.applicationId())
+                || !target.database().equals(database.database()) || !target.username().equals(database.username()))
                 throw refusal("DEPLOYMENT_NATIVE_DB_TARGET_CHANGED");
             boolean createdNow = !target.exists();
             String identifier = secretIdentifier(server, local.applicationId(), database);
@@ -256,8 +263,8 @@ public final class DeploymentNativeDatabasePreparation {
                 application = generatedPassword();
                 reference = new DeploymentSecretReference(identifier, 1);
                 require(new DeploymentSecretProvisionFlow(context).saveBorrowedWithinTask(task, server,
-                        "deployment-secret-revision." + entry.key(), reference, "deployment-database",
-                        Instant.ofEpochMilli(System.currentTimeMillis()), application));
+                    "deployment-secret-revision." + entry.key(), reference, "deployment-database",
+                    Instant.ofEpochMilli(System.currentTimeMillis()), application));
                 target = preparedTarget(channel, plan, entry, targetFields, reference, application, admin);
             } else if (latest.isPresent()) {
                 var stored = latest.orElseThrow();
@@ -266,7 +273,7 @@ public final class DeploymentNativeDatabasePreparation {
                 var borrowedAdmin = admin;
                 var storedReference = reference;
                 var observed = context.secrets().use(saved, "deployment-database", task, value -> prepareTarget(channel,
-                        plan, entry, targetFields, storedReference, value, borrowedAdmin));
+                    plan, entry, targetFields, storedReference, value, borrowedAdmin));
                 if (failureCode(observed).equals("AUTH_REQUIRED") && !createdNow) {
                     reference = new DeploymentSecretReference(identifier, reference.revision() + 1);
                     while (true) {
@@ -278,8 +285,8 @@ public final class DeploymentNativeDatabasePreparation {
                     }
                     target = DeploymentNativeDatabaseResults.target(require(observed), "");
                     require(new DeploymentSecretProvisionFlow(context).saveBorrowedWithinTask(task, server,
-                            "deployment-secret-revision." + entry.key(), reference, "deployment-database",
-                            Instant.ofEpochMilli(System.currentTimeMillis()), application));
+                        "deployment-secret-revision." + entry.key(), reference, "deployment-database",
+                        Instant.ofEpochMilli(System.currentTimeMillis()), application));
                 } else
                     target = DeploymentNativeDatabaseResults.target(require(observed), "");
             } else {
@@ -294,13 +301,13 @@ public final class DeploymentNativeDatabasePreparation {
                 }
                 target = DeploymentNativeDatabaseResults.target(require(observed), "");
                 require(new DeploymentSecretProvisionFlow(context).saveBorrowedWithinTask(task, server,
-                        "deployment-secret-revision." + entry.key(), reference, "deployment-database",
-                        Instant.ofEpochMilli(System.currentTimeMillis()), application));
+                    "deployment-secret-revision." + entry.key(), reference, "deployment-database",
+                    Instant.ofEpochMilli(System.currentTimeMillis()), application));
             }
             if (!target.exists() || !target.instance().id().equals(instance.id())
-                    || target.instance().engine() != instance.engine()
-                    || !target.applicationId().equals(local.applicationId())
-                    || !target.database().equals(database.database()) || !target.username().equals(database.username()))
+                || target.instance().engine() != instance.engine()
+                || !target.applicationId().equals(local.applicationId())
+                || !target.database().equals(database.database()) || !target.username().equals(database.username()))
                 throw refusal("DEPLOYMENT_NATIVE_DB_TARGET_CHANGED");
             boolean initialized = false;
             boolean existingApproved = false;
@@ -308,22 +315,22 @@ public final class DeploymentNativeDatabasePreparation {
                 byte[] sql = local.sql().get(database.id()).load();
                 try {
                     var result = initialize(channel, plan, entry, targetFields, target, local.sourceDigest(), sql,
-                            application, reference, false, task);
+                        application, reference, false, task);
                     if (failureCode(result).equals("STATE_CHANGED") && !createdNow) {
                         confirmed(review.existingSchema(server, local.componentId(), database, local.sourceDigest(),
-                                task));
+                            task));
                         existingApproved = true;
                         result = initialize(channel, plan, entry, targetFields, target, local.sourceDigest(), sql,
-                                application, reference, true, task);
+                            application, reference, true, task);
                     }
                     target = DeploymentNativeDatabaseResults.target(require(result), "");
                     if (target.instance().engine() != instance.engine() || !target.instance().id().equals(instance.id())
-                            || !target.applicationId().equals(local.applicationId())
-                            || !target.database().equals(database.database())
-                            || !target.username().equals(database.username()))
+                        || !target.applicationId().equals(local.applicationId())
+                        || !target.database().equals(database.database())
+                        || !target.username().equals(database.username()))
                         throw refusal("DEPLOYMENT_NATIVE_DB_TARGET_CHANGED");
                     if (!"COMPLETE".equals(target.initialization())
-                            || !local.sourceDigest().equals(target.initializedSourceSha256()))
+                        || !local.sourceDigest().equals(target.initializedSourceSha256()))
                         throw refusal("DEPLOYMENT_NATIVE_DB_INITIALIZATION_UNCONFIRMED");
                     initialized = true;
                     existingApproved |= !createdNow;
@@ -332,10 +339,10 @@ public final class DeploymentNativeDatabasePreparation {
                 }
             }
             var binding = new DeploymentDatabaseBinding(database.id(),
-                    new DeploymentDatabaseConnection.Server(database.engine(), "127.0.0.1", instance.port(),
-                            database.database(), database.username(), reference, false));
+                new DeploymentDatabaseConnection.Server(database.engine(), "127.0.0.1", instance.port(),
+                    database.database(), database.username(), reference, false));
             return new One(configuration(database, instance), binding, reference, initialized,
-                    initialized && createdNow && !target.ownershipToken().isEmpty(), existingApproved);
+                initialized && createdNow && !target.ownershipToken().isEmpty(), existingApproved);
         } finally {
             Arrays.fill(admin, (byte) 0);
             Arrays.fill(application, (byte) 0);
@@ -354,19 +361,19 @@ public final class DeploymentNativeDatabasePreparation {
      * @return verified running instance / 已核实运行实例
      * @throws Exception if original start or restoration cannot complete / 原启动或恢复无法完成时 */
     private Instance startInstance(ServerRef server, DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Instance instance,
-            DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
+                                   DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Instance instance,
+                                   DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
         var start = channel.perform(
-                context.tasks(), plan, entry, "start", Map.of("engine", database.engine().name(), "instanceId",
-                        instance.id(), "fingerprint", instance.fingerprint()),
-                Map.of(), entry.componentId() + "/" + entry.databaseId());
+            context.tasks(), plan, entry, "start", Map.of("engine", database.engine().name(), "instanceId",
+                instance.id(), "fingerprint", instance.fingerprint()),
+            Map.of(), entry.componentId() + "/" + entry.databaseId());
         if (failureCode(start).equals("MANUAL_RESTORE_REQUIRED"))
             instance = awaitRestoration(server, channel, plan, entry, database, review, task);
         else {
             var started = DeploymentNativeDatabaseResults.instance(require(start), "instance.");
             if (started.engine() != instance.engine() || !started.id().equals(instance.id())
-                    || !started.fingerprint().equals(instance.fingerprint()) || !started.running()
-                    || !new DatabaseVersionRequirement(database.version()).accepts(started.version()))
+                || !started.fingerprint().equals(instance.fingerprint()) || !started.running()
+                || !new DatabaseVersionRequirement(database.version()).accepts(started.version()))
                 throw refusal("DEPLOYMENT_NATIVE_DB_INSTANCE_CHANGED");
             instance = started;
         }
@@ -385,17 +392,17 @@ public final class DeploymentNativeDatabasePreparation {
      * @return selected verified instance / 已选择核实实例
      * @throws Exception if the review or original operation cannot complete / 审阅或原操作无法完成时 */
     private Instance resolveInstance(ServerRef server, DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Local local,
-            DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
+                                     DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Local local,
+                                     DatabaseRequirement database, DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
         Inventory inventory = require(channel.inspect(database.engine()));
         if (!inventory.conflicts().isEmpty())
             throw refusal("DEPLOYMENT_NATIVE_DB_INVENTORY_CONFLICT");
         Instance previous = inventory.instances().isEmpty()
-                ? null
-                : inventory.instances().size() == 1
-                        ? inventory.instances().getFirst()
-                        : selected(inventory,
-                                require(review.choose(server, local.componentId(), database, inventory, task)));
+            ? null
+            : inventory.instances().size() == 1
+            ? inventory.instances().getFirst()
+            : selected(inventory,
+            require(review.choose(server, local.componentId(), database, inventory, task)));
         if (previous != null && new DatabaseVersionRequirement(database.version()).accepts(previous.version()))
             return previous;
         var candidate = inventory.candidate().orElseThrow(() -> refusal("DEPLOYMENT_NATIVE_DB_PACKAGE_UNAVAILABLE"));
@@ -420,9 +427,9 @@ public final class DeploymentNativeDatabasePreparation {
             fields.put("approvedServer", server.id());
         }
         var installed = DeploymentNativeDatabaseResults.inventory(require(channel.perform(context.tasks(), plan, entry,
-                "install", fields, Map.of(), entry.componentId() + "/" + entry.databaseId())), "");
+            "install", fields, Map.of(), entry.componentId() + "/" + entry.databaseId())), "");
         if (installed.engine() != database.engine() || !installed.conflicts().isEmpty()
-                || installed.instances().size() != 1)
+            || installed.instances().size() != 1)
             throw refusal("DEPLOYMENT_NATIVE_DB_INSTALL_UNCONFIRMED");
         Instance selected = installed.instances().getFirst();
         if (!new DatabaseVersionRequirement(database.version()).accepts(selected.version()))
@@ -443,17 +450,17 @@ public final class DeploymentNativeDatabasePreparation {
      * @return exact restored instance / 精确已恢复实例
      * @throws Exception if review or original operation cannot complete / 审阅或原操作无法完成时 */
     private Instance awaitRestoration(ServerRef server, DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, DatabaseRequirement database,
-            DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
+                                      DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, DatabaseRequirement database,
+                                      DeploymentNativeDatabaseReview review, TaskContext task) throws Exception {
         byte[] admin = new byte[0];
         try {
             var inventory = require(channel.inspect(database.engine()));
             if (!inventory.conflicts().isEmpty() || inventory.instances().isEmpty())
                 throw refusal("DEPLOYMENT_NATIVE_DB_RESTORE_UNCONFIRMED");
             Instance selected = inventory.instances().size() == 1
-                    ? inventory.instances().getFirst()
-                    : selected(inventory,
-                            require(review.choose(server, entry.componentId(), database, inventory, task)));
+                ? inventory.instances().getFirst()
+                : selected(inventory,
+                require(review.choose(server, entry.componentId(), database, inventory, task)));
             if (!new DatabaseVersionRequirement(database.version()).accepts(selected.version()))
                 throw refusal("DEPLOYMENT_NATIVE_DB_RESTORE_UNCONFIRMED");
             confirmed(review.restored(server, selected, task));
@@ -461,17 +468,17 @@ public final class DeploymentNativeDatabasePreparation {
             if (!fresh.conflicts().isEmpty() || fresh.instances().size() != inventory.instances().size())
                 throw refusal("DEPLOYMENT_NATIVE_DB_RESTORE_CHANGED");
             Instance restoredInstance = fresh.instances().stream()
-                    .filter(value -> value.engine() == selected.engine() && value.id().equals(selected.id()))
-                    .findFirst().orElseThrow(() -> refusal("DEPLOYMENT_NATIVE_DB_RESTORE_CHANGED"));
+                .filter(value -> value.engine() == selected.engine() && value.id().equals(selected.id()))
+                .findFirst().orElseThrow(() -> refusal("DEPLOYMENT_NATIVE_DB_RESTORE_CHANGED"));
             if (!restoredInstance.fingerprint().equals(selected.fingerprint())
-                    || !restoredInstance.version().equals(selected.version()) || !restoredInstance.running())
+                || !restoredInstance.version().equals(selected.version()) || !restoredInstance.running())
                 throw refusal("DEPLOYMENT_NATIVE_DB_RESTORE_CHANGED");
             while (true) {
                 var observed = channel.perform(context.tasks(), plan, entry, "resume",
-                        Map.of("engine", restoredInstance.engine().name(), "instanceId", restoredInstance.id(),
-                                "fingerprint", restoredInstance.fingerprint()),
-                        admin.length == 0 ? Map.of() : Map.of("adminPassword", admin),
-                        entry.componentId() + "/" + entry.databaseId());
+                    Map.of("engine", restoredInstance.engine().name(), "instanceId", restoredInstance.id(),
+                        "fingerprint", restoredInstance.fingerprint()),
+                    admin.length == 0 ? Map.of() : Map.of("adminPassword", admin),
+                    entry.componentId() + "/" + entry.databaseId());
                 if (failureCode(observed).equals("AUTH_REQUIRED")) {
                     Arrays.fill(admin, (byte) 0);
                     admin = require(review.administratorPassword(server, restoredInstance, task));
@@ -479,8 +486,8 @@ public final class DeploymentNativeDatabasePreparation {
                 }
                 var restored = DeploymentNativeDatabaseResults.instance(require(observed), "instance.");
                 if (restored.engine() != database.engine() || !restored.id().equals(restoredInstance.id())
-                        || !restored.fingerprint().equals(restoredInstance.fingerprint()) || !restored.running()
-                        || !new DatabaseVersionRequirement(database.version()).accepts(restored.version()))
+                    || !restored.fingerprint().equals(restoredInstance.fingerprint()) || !restored.running()
+                    || !new DatabaseVersionRequirement(database.version()).accepts(restored.version()))
                     throw refusal("DEPLOYMENT_NATIVE_DB_RESTORE_UNCONFIRMED");
                 return restored;
             }
@@ -507,10 +514,10 @@ public final class DeploymentNativeDatabasePreparation {
      * @param database completed requirement / 已补齐要求
      * @return immutable fields / 不可变字段 */
     private static Map<String, String> targetFields(Instance instance, String applicationId,
-            DatabaseRequirement database) {
+                                                    DatabaseRequirement database) {
         return Map.of("engine", instance.engine().name(), "instanceId", instance.id(), "fingerprint",
-                instance.fingerprint(), "applicationId", applicationId, "database", database.database(), "username",
-                database.username());
+            instance.fingerprint(), "applicationId", applicationId, "database", database.database(), "username",
+            database.username());
     }
 
     /** Prepares a target from caller-owned password bytes. / 用调用方所属密码字节准备目标。
@@ -524,15 +531,15 @@ public final class DeploymentNativeDatabasePreparation {
      * @return observed helper result / 已观察 helper 结果
      * @throws ApiException if original platform access fails / 原平台访问失败时 */
     private OperationResult<Map<String, String>> prepareTarget(DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
-            DeploymentSecretReference reference, byte[] password, byte[] administrator) throws ApiException {
+                                                               DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
+                                                               DeploymentSecretReference reference, byte[] password, byte[] administrator) throws ApiException {
         validateApplicationPassword(password);
         var actual = new HashMap<>(fields);
         actual.put("secretIdentifier", reference.identifier());
         actual.put("secretRevision", Long.toString(reference.revision()));
         return channel.perform(context.tasks(), plan, entry, "prepare", actual,
-                Map.of("applicationPassword", password, "adminPassword", administrator),
-                entry.componentId() + "/" + entry.databaseId());
+            Map.of("applicationPassword", password, "adminPassword", administrator),
+            entry.componentId() + "/" + entry.databaseId());
     }
 
     /** Requires a complete prepared target. / 要求完整已准备目标。
@@ -546,10 +553,10 @@ public final class DeploymentNativeDatabasePreparation {
      * @return verified target / 已核实目标
      * @throws Exception if result is unavailable / 结果不可用时 */
     private Target preparedTarget(DeploymentNativeDatabaseChannel channel, DeploymentDatabasePlanJournal plan,
-            DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields, DeploymentSecretReference reference,
-            byte[] password, byte[] administrator) throws Exception {
+                                  DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields, DeploymentSecretReference reference,
+                                  byte[] password, byte[] administrator) throws Exception {
         return DeploymentNativeDatabaseResults
-                .target(require(prepareTarget(channel, plan, entry, fields, reference, password, administrator)), "");
+            .target(require(prepareTarget(channel, plan, entry, fields, reference, password, administrator)), "");
     }
 
     /** Initializes only the reviewed frozen SQL using transient application bytes or scoped platform use. / 仅用短期应用字节或平台限定使用初始化已审阅冻结 SQL。
@@ -567,15 +574,15 @@ public final class DeploymentNativeDatabasePreparation {
      * @return observed helper result / 已观察 helper 结果
      * @throws Exception if original secret or remote access fails / 原秘密或远端访问失败时 */
     private OperationResult<Map<String, String>> initialize(DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
-            Target target, String sourceDigest, byte[] sql, byte[] password, DeploymentSecretReference reference,
-            boolean approved, TaskContext task) throws Exception {
+                                                            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
+                                                            Target target, String sourceDigest, byte[] sql, byte[] password, DeploymentSecretReference reference,
+                                                            boolean approved, TaskContext task) throws Exception {
         if (password.length > 0)
             return initializeWithPassword(channel, plan, entry, fields, target, sourceDigest, sql, password, approved);
         var saved = revisions.findRevision(task, reference).orElseThrow();
         return context.secrets().use(new SecretRef(saved.credentialId(), saved.purpose().orElseThrow()),
-                "deployment-database", task, value -> initializeWithPassword(channel, plan, entry, fields, target,
-                        sourceDigest, sql, value, approved));
+            "deployment-database", task, value -> initializeWithPassword(channel, plan, entry, fields, target,
+                sourceDigest, sql, value, approved));
     }
 
     /** Sends one exact SQL attempt after its source and approval fields were fixed. / 来源及批准字段固定后发送一次精确 SQL 尝试。
@@ -591,15 +598,15 @@ public final class DeploymentNativeDatabasePreparation {
      * @return observed non-secret target / 已观察非秘密目标
      * @throws ApiException if original transport fails / 原传输失败时 */
     private OperationResult<Map<String, String>> initializeWithPassword(DeploymentNativeDatabaseChannel channel,
-            DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
-            Target target, String sourceDigest, byte[] sql, byte[] password, boolean approved) throws ApiException {
+                                                                        DeploymentDatabasePlanJournal plan, DeploymentDatabasePlanJournal.Entry entry, Map<String, String> fields,
+                                                                        Target target, String sourceDigest, byte[] sql, byte[] password, boolean approved) throws ApiException {
         validateApplicationPassword(password);
         var actual = new HashMap<>(fields);
         actual.put("ownershipToken", target.ownershipToken());
         actual.put("sourceSha256", sourceDigest);
         actual.put("existingApproved", Boolean.toString(approved));
         return channel.perform(context.tasks(), plan, entry, "initialize", actual,
-                Map.of("applicationPassword", password, "sql", sql), entry.componentId() + "/" + entry.databaseId());
+            Map.of("applicationPassword", password, "sql", sql), entry.componentId() + "/" + entry.databaseId());
     }
 
     /** Reuses the previous stable business identifier derivation without encoding a password. / 复用旧稳定业务标识派生，不编码密码。
@@ -611,7 +618,7 @@ public final class DeploymentNativeDatabasePreparation {
         String source = server.id() + "/" + applicationId + "/" + database.id();
         String digest = DeploymentNativeDatabaseWire.digest(source.getBytes(StandardCharsets.UTF_8));
         return "db-" + digest.substring(0, 12) + ".env."
-                + database.passwordEnvironment().toLowerCase(Locale.ROOT).replace('_', '-');
+            + database.passwordEnvironment().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     /** Creates a strong caller-owned ASCII password for a new owned target. / 为新归属目标创建调用方持有的强 ASCII 密码。
@@ -634,14 +641,14 @@ public final class DeploymentNativeDatabasePreparation {
         var characters = CharBuffer.allocate(4_097);
         try {
             var decoder = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
             var source = ByteBuffer.wrap(borrowed);
             var decoded = decoder.decode(source, characters, true);
             if (decoded.isError() || decoded.isOverflow())
                 throw new IllegalArgumentException("Native database application password is invalid");
             var flushed = decoder.flush(characters);
             if (flushed.isError() || flushed.isOverflow() || source.hasRemaining() || characters.position() == 0
-                    || characters.position() > 4_096)
+                || characters.position() > 4_096)
                 throw new IllegalArgumentException("Native database application password is invalid");
             for (int i = 0; i < characters.position(); i++)
                 if (characters.get(i) == '\0' || characters.get(i) == '\r' || characters.get(i) == '\n')
@@ -657,7 +664,7 @@ public final class DeploymentNativeDatabasePreparation {
     private static String failureCode(OperationResult<?> result) {
         return result.problem().map(
                 problem -> problem.context().getOrDefault("failureCode", problem.context().getOrDefault("reason", "")))
-                .orElse("");
+            .orElse("");
     }
 
     /** Generates exact non-secret runtime fields for a verified local endpoint. / 为已核实本机端点生成精确非秘密运行字段。
@@ -669,13 +676,13 @@ public final class DeploymentNativeDatabasePreparation {
         String prefix = database.environmentPrefix();
         if (database.springDatasource())
             result.add(text(prefix + "_URL", "jdbc:" + database.engine().name().toLowerCase(Locale.ROOT)
-                    + "://127.0.0.1:" + instance.port() + "/" + database.database()));
+                + "://127.0.0.1:" + instance.port() + "/" + database.database()));
         else {
             result.add(text(prefix + "_HOST", "127.0.0.1"));
             result.add(number(prefix + "_PORT", instance.port()));
             result.add(database.engine() == DeploymentDatabaseEngineType.REDIS
-                    ? number(prefix + "_DATABASE", 0)
-                    : text(prefix + "_DATABASE", database.database()));
+                ? number(prefix + "_DATABASE", 0)
+                : text(prefix + "_DATABASE", database.database()));
         }
         result.add(text(prefix + "_USERNAME", database.username()));
         if (database.engine() == DeploymentDatabaseEngineType.REDIS)
@@ -688,8 +695,8 @@ public final class DeploymentNativeDatabasePreparation {
      * @return classified refusal / 已分类拒绝 */
     private static NativeDatabasePreparationException refusal(String event) {
         return new NativeDatabasePreparationException(new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Native database preparation needs review",
-                        Map.of(), Optional.empty()))));
+            Optional.of(new Problem(ProblemCode.INVALID_INPUT, event, "Native database preparation needs review",
+                Map.of(), Optional.empty()))));
     }
 
     /** Requires a successful reviewed or helper value while preserving its original classification. / 要求审阅或 helper 成功值且保留原分类。
@@ -700,8 +707,8 @@ public final class DeploymentNativeDatabasePreparation {
     private static <T> T require(OperationResult<T> result) throws NativeDatabasePreparationException {
         if (result.outcome() == Outcome.SUCCEEDED && result.value().isEmpty())
             throw new NativeDatabasePreparationException(new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_RESULT_MISSING",
-                            "Native database result is missing", Map.of(), Optional.empty()))));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_RESULT_MISSING",
+                    "Native database result is missing", Map.of(), Optional.empty()))));
         if (result.outcome() != Outcome.SUCCEEDED)
             throw new NativeDatabasePreparationException(result);
         return result.value().orElseThrow();
@@ -713,8 +720,8 @@ public final class DeploymentNativeDatabasePreparation {
     private static void confirmed(OperationResult<Boolean> result) throws NativeDatabasePreparationException {
         if (!require(result))
             throw new NativeDatabasePreparationException(new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_DECLINED",
-                            "Native database change was declined", Map.of(), Optional.empty()))));
+                Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_DECLINED",
+                    "Native database change was declined", Map.of(), Optional.empty()))));
     }
 
     /** Renders one non-secret text configuration entry. / 呈现一项非秘密文本配置。
@@ -723,7 +730,7 @@ public final class DeploymentNativeDatabasePreparation {
      * @return typed entry / 类型化条目 */
     private static DeploymentConfigurationEntry text(String key, String value) {
         return new DeploymentConfigurationEntry(key, DeploymentConfigurationScopeType.RUNTIME,
-                new DeploymentConfigurationValue.Text(value));
+            new DeploymentConfigurationValue.Text(value));
     }
 
     /** Renders one non-secret numeric configuration entry. / 呈现一项非秘密数字配置。
@@ -732,19 +739,19 @@ public final class DeploymentNativeDatabasePreparation {
      * @return typed entry / 类型化条目 */
     private static DeploymentConfigurationEntry number(String key, long value) {
         return new DeploymentConfigurationEntry(key, DeploymentConfigurationScopeType.RUNTIME,
-                new DeploymentConfigurationValue.Number(value));
+            new DeploymentConfigurationValue.Number(value));
     }
 
     /** Disables framework auto-schema changes after reviewed native SQL initialization. / 已审阅原生 SQL 初始化后关闭框架自动结构变更。
      * @return immutable safety flags / 不可变安全标记 */
     private static List<DeploymentConfigurationEntry> disabledSpringInitialization() {
         return List.of(text("SPRING_SQL_INIT_MODE", "never"),
-                new DeploymentConfigurationEntry("SPRING_FLYWAY_ENABLED", DeploymentConfigurationScopeType.RUNTIME,
-                        new DeploymentConfigurationValue.Flag(false)),
-                new DeploymentConfigurationEntry("SPRING_LIQUIBASE_ENABLED", DeploymentConfigurationScopeType.RUNTIME,
-                        new DeploymentConfigurationValue.Flag(false)),
-                text("SPRING_JPA_HIBERNATE_DDL_AUTO", "none"),
-                new DeploymentConfigurationEntry("SPRING_JPA_GENERATE_DDL", DeploymentConfigurationScopeType.RUNTIME,
-                        new DeploymentConfigurationValue.Flag(false)));
+            new DeploymentConfigurationEntry("SPRING_FLYWAY_ENABLED", DeploymentConfigurationScopeType.RUNTIME,
+                new DeploymentConfigurationValue.Flag(false)),
+            new DeploymentConfigurationEntry("SPRING_LIQUIBASE_ENABLED", DeploymentConfigurationScopeType.RUNTIME,
+                new DeploymentConfigurationValue.Flag(false)),
+            text("SPRING_JPA_HIBERNATE_DDL_AUTO", "none"),
+            new DeploymentConfigurationEntry("SPRING_JPA_GENERATE_DDL", DeploymentConfigurationScopeType.RUNTIME,
+                new DeploymentConfigurationValue.Flag(false)));
     }
 }

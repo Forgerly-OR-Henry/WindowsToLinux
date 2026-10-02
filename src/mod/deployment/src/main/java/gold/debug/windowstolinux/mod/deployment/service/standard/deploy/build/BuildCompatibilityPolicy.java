@@ -6,14 +6,15 @@ package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 final class BuildCompatibilityPolicy {
     /** Exact compatibility phrases, shared with the streaming remote summarizer. / 与远端流式摘要器共用的精确兼容性短语。 */
     private static final java.util.List<java.util.List<String>> GROUPS = java.util.List.of(
-            java.util.List.of("BUILD_COMPATIBILITY=toolchain"),
-            java.util.List.of("Unsupported class file major version"), java.util.List.of("invalid source release:"),
-            java.util.List.of("invalid target release:"), java.util.List.of("requires rustc "),
-            java.util.List.of("requires go >="), java.util.List.of("NETSDK1045"), java.util.List.of("EBADENGINE"),
-            java.util.List.of("The engine \"node\" is incompatible"), java.util.List.of("requires a different Python"),
-            java.util.List.of("Unknown Kotlin JVM target:"), java.util.List.of("Unknown JVM target version:"),
-            java.util.List.of("Your Ruby version is", "but your Gemfile specified"),
-            java.util.List.of("your php version", "does not satisfy"));
+        java.util.List.of("BUILD_COMPATIBILITY=toolchain"),
+        java.util.List.of("Unsupported class file major version"), java.util.List.of("invalid source release:"),
+        java.util.List.of("invalid target release:"), java.util.List.of("requires rustc "),
+        java.util.List.of("requires go >="), java.util.List.of("NETSDK1045"), java.util.List.of("EBADENGINE"),
+        java.util.List.of("The engine \"node\" is incompatible"), java.util.List.of("requires a different Python"),
+        java.util.List.of("Unknown Kotlin JVM target:"), java.util.List.of("Unknown JVM target version:"),
+        java.util.List.of("Your Ruby version is", "but your Gemfile specified"),
+        java.util.List.of("your php version", "does not satisfy"));
+
     /**
      * Prevents instantiation of this static contract helper.
      * <p>防止实例化当前静态契约辅助类。

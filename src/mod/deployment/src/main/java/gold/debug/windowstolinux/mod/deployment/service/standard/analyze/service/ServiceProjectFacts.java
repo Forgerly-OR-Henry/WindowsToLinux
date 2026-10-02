@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  * @param missingFiles missing files / 缺失文件集合
  */
 public record ServiceProjectFacts(String primaryMetadata, String version, String artifactName, String entrypoint,
-        List<String> missingFiles) {
+                                  List<String> missingFiles) {
     /**
      * Pattern recognizing SAFE NAME.
      * <p>用于识别安全名称的匹配模式。

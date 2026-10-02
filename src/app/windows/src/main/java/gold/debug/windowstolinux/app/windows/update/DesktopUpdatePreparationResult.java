@@ -18,8 +18,9 @@ import gold.debug.windowstolinux.appapi.task.Problem;
  * @param problem structured problem occurrence retained for safe reporting / 保留用于安全报告的结构化失败实例
  */
 public record DesktopUpdatePreparationResult(UUID operationIdentity, DesktopUpdatePreparationStatus status,
-        DesktopReleaseVersion requestedVersion, List<DesktopUpdateEvent> events, Optional<DesktopUpdateHandoff> handoff,
-        Optional<Problem> problem) {
+                                             DesktopReleaseVersion requestedVersion, List<DesktopUpdateEvent> events,
+                                             Optional<DesktopUpdateHandoff> handoff,
+                                             Optional<Problem> problem) {
     /**
      * Validates mutually exclusive handoff and problem outcomes. / 校验互斥的交接与失败结果。
      *
@@ -43,9 +44,9 @@ public record DesktopUpdatePreparationResult(UUID operationIdentity, DesktopUpda
             throw new IllegalArgumentException("update preparation requires events");
         if (status == DesktopUpdatePreparationStatus.READY_FOR_HANDOFF) {
             if (handoff.isEmpty() || problem.isPresent()
-                    || !handoff.orElseThrow().operationIdentity().equals(operationIdentity)) {
+                || !handoff.orElseThrow().operationIdentity().equals(operationIdentity)) {
                 throw new IllegalArgumentException(
-                        "ready update preparation requires its exact handoff and no problem");
+                    "ready update preparation requires its exact handoff and no problem");
             }
         } else if (handoff.isPresent() || problem.isEmpty()) {
             throw new IllegalArgumentException("rejected update preparation requires one structured problem");

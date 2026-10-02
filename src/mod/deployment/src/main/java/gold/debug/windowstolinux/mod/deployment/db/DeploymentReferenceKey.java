@@ -40,12 +40,12 @@ public final class DeploymentReferenceKey {
      * @param revision exact durable secret revision / 精确持久秘密修订
      * @return original association / 原关联 */
     public static DeploymentReferenceIntent secretRevision(ServerRef server, SecretRef secret,
-            DeploymentSecretReference revision) {
+                                                           DeploymentSecretReference revision) {
         Objects.requireNonNull(revision);
         if (revision.revision() > Integer.MAX_VALUE)
             throw new IllegalArgumentException("Secret revision exceeds H2 INTEGER range");
         return DeploymentReferenceIntent.secret(secret, PREFIX + "secret-revision:" + serverScope(server) + ":"
-                + revision.identifier() + ":" + revision.revision());
+            + revision.identifier() + ":" + revision.revision());
     }
 
     /** Derives the application key without normalizing its identity. / 不规范化身份地派生应用键。
@@ -76,7 +76,7 @@ public final class DeploymentReferenceKey {
             if (key.equals(applicationKey(applicationId)))
                 return;
             if (key.startsWith(PREFIX + "unit:")
-                    && key.equals(unit(server, key.substring((PREFIX + "unit:").length())).businessKey()))
+                && key.equals(unit(server, key.substring((PREFIX + "unit:").length())).businessKey()))
                 return;
         } else if (key.startsWith(PREFIX + "secret-revision:")) {
             var suffix = key.substring((PREFIX + "secret-revision:").length());
@@ -85,10 +85,10 @@ public final class DeploymentReferenceKey {
             if (scopeEnd > 0 && separator > scopeEnd) {
                 try {
                     var revision = new DeploymentSecretReference(suffix.substring(scopeEnd + 1, separator),
-                            Long.parseLong(suffix.substring(separator + 1)));
+                        Long.parseLong(suffix.substring(separator + 1)));
                     if (revision.revision() <= Integer.MAX_VALUE && key.equals(
-                            secretRevision(server, new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()),
-                                    revision).businessKey()))
+                        secretRevision(server, new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()),
+                            revision).businessKey()))
                         return;
                 } catch (IllegalArgumentException invalid) {
                     throw new IllegalArgumentException("Unsupported secret reference key", invalid);
@@ -106,7 +106,7 @@ public final class DeploymentReferenceKey {
         int scopeEnd = suffix.indexOf(':');
         int separator = suffix.lastIndexOf(':');
         return new DeploymentSecretReference(suffix.substring(scopeEnd + 1, separator),
-                Long.parseLong(suffix.substring(separator + 1)));
+            Long.parseLong(suffix.substring(separator + 1)));
     }
 
     /** Derives a fixed-size exact server scope for a cross-server shared credential. / 为跨服务器共享凭据派生固定长度原服务器作用域。

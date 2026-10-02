@@ -18,6 +18,6 @@ public final class RubyLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.RUBY,
-                name -> name.endsWith(".rb") || name.equals("gemfile") ? SourceLanguageType.RUBY : null);
+            name -> name.endsWith(".rb") || name.equals("gemfile") ? SourceLanguageType.RUBY : null);
     }
 }

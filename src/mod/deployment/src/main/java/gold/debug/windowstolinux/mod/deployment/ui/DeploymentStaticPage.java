@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
@@ -15,7 +21,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.appapi.server.ServerInfo;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.appapi.ui.ModPage;
 import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
@@ -26,15 +32,19 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 public final class DeploymentStaticPage implements ModPage {
     /** Related source-mode controls sharing one view lifetime. / 共用视图寿命的相关来源模式控件。 */
     private static final class ModeControls {
+        /** Owned advanced window retaining original fields. / 保留原字段的所属高级窗口。 */
+        private DeploymentPageStyle.Advanced advanced;
+
         /** Creates controls for this original page instance. / 为当前原页面实例创建控件。 */
         private ModeControls() {
         }
+
         /** Explicit bounded-assistance opt-in. / 明确有界辅助选择。 */
         private final JCheckBox assisted = new JCheckBox();
 
         /** Captured actual approval policy. / 已抓取实际审批策略。 */
         private final JComboBox<String> approval = new JComboBox<>(
-                new String[]{"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"});
+            new String[]{"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"});
 
         /** Locale-bound policy label. / 依语言变化的策略标签。 */
         private final JLabel approvalLabel = new JLabel();
@@ -68,7 +78,7 @@ public final class DeploymentStaticPage implements ModPage {
     private final AtomicLong generation = new AtomicLong();
 
     /** Root owned component. / 所属根组件。 */
-    private final JPanel root = new JPanel(new BorderLayout(8, 8));
+    private final JPanel root = new JPanel(new BorderLayout(12, 12));
 
     /** Actual platform server choices. / 实际平台服务器选择。 */
     private final JComboBox<ServerInfo> servers = new JComboBox<>();
@@ -135,13 +145,13 @@ public final class DeploymentStaticPage implements ModPage {
     public DeploymentStaticPage(DeploymentStaticPageService service) {
         this.service = java.util.Objects.requireNonNull(service);
         modeControls.preferences = new DeploymentPreferenceSelection(actions, service::savePreferences,
-                () -> new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(
-                        modeControls.assisted.isSelected() ? "ASSISTED" : "STATIC",
-                        (String) modeControls.approval.getSelectedItem()),
-                selection -> {
-                    modeControls.assisted.setSelected(selection.mode().equals("ASSISTED"));
-                    modeControls.approval.setSelectedItem(selection.approval());
-                }, detail -> status.setText(text("preferenceError") + "\n" + detail), this::policyAvailability);
+            () -> new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(
+                modeControls.assisted.isSelected() ? "ASSISTED" : "STATIC",
+                (String) modeControls.approval.getSelectedItem()),
+            selection -> {
+                modeControls.assisted.setSelected(selection.mode().equals("ASSISTED"));
+                modeControls.approval.setSelectedItem(selection.approval());
+            }, detail -> status.setText(text("preferenceError") + "\n" + detail), this::policyAvailability);
         modeControls.assisted.setName("deployment.preference.assisted");
         modeControls.approval.setName("deployment.preference.approval");
         modeControls.assisted.addActionListener(ignored -> modeControls.preferences.changed());
@@ -162,19 +172,21 @@ public final class DeploymentStaticPage implements ModPage {
     public JComponent create(UiEnvironment environment) {
         requireEdt();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-                environment.locale(),
-                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
+            environment.locale(),
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         locked = environment.locked();
-        var controls = new JPanel(new GridLayout(0, 2, 8, 8));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
+        servers.setName("deployment.server");
+        sourceName.setName("deployment.sourceName");
+        sourceMode.setName("deployment.sourceMode");
+        status.setName("deployment.status");
+        var controls = DeploymentPageStyle.form();
         serverLabel.setText(text("server"));
-        controls.add(serverLabel);
-        controls.add(servers);
+
         sourceLabel.setText(text("sourceName"));
-        controls.add(sourceLabel);
-        controls.add(sourceName);
+        DeploymentPageStyle.field(controls, sourceLabel, sourceName);
         modeControls.label.setText(text("sourceMode"));
-        controls.add(modeControls.label);
-        controls.add(sourceMode);
+        DeploymentPageStyle.field(controls, modeControls.label, sourceMode);
         gitForm = new DeploymentGitSourceForm(this);
         sourceMode.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : text("sourceMode." + value.name()));
@@ -185,6 +197,21 @@ public final class DeploymentStaticPage implements ModPage {
         });
         sourceMode.addActionListener(ignored -> updateSourceMode());
         updateSourceMode();
+        composePage(controls);
+        DeploymentPageStyle.scrollPage(root);
+        modeControls.advanced.environment(messages, locked);
+        DeploymentPageStyle.refresh(root, messages);
+        start.setEnabled(false);
+        loadPreferences();
+        loadServers();
+        secretControls.refresh(generation.get());
+        refresh();
+        return root;
+    }
+
+    /** Composes primary cards, policy and advanced controls. / 组合主要卡片、策略及高级控件。
+     * @param controls original source fields / 原来源字段 */
+    private void composePage(JPanel controls) {
         var buttons = new JPanel();
         start.setText(text("start"));
         start.addActionListener(ignored -> submit());
@@ -192,11 +219,9 @@ public final class DeploymentStaticPage implements ModPage {
         refreshButton.addActionListener(ignored -> refresh());
         buttons.add(start);
         buttons.add(refreshButton);
-        var sourceControls = new JPanel();
-        sourceControls.setLayout(new BoxLayout(sourceControls, BoxLayout.Y_AXIS));
-        sourceControls.add(controls);
-        sourceControls.add(modeControls.assisted);
-        var policyControls = new JPanel(new GridLayout(1, 2, 8, 8));
+        var targetControls = DeploymentPageStyle.form();
+        DeploymentPageStyle.field(targetControls, serverLabel, servers);
+        var policyControls = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, 10, 4));
         modeControls.assisted.setText(text("assisted"));
         modeControls.approvalLabel.setText(text("approval"));
         modeControls.approval.setRenderer((list, value, index, selected, focus) -> {
@@ -208,20 +233,24 @@ public final class DeploymentStaticPage implements ModPage {
         });
         policyControls.add(modeControls.approvalLabel);
         policyControls.add(modeControls.approval);
-        sourceControls.add(policyControls);
-        sourceControls.add(gitForm.panel());
+        policyControls.add(modeControls.assisted, 0);
+        var advancedContent = DeploymentPageStyle.form();
+        advancedContent.add(DeploymentPageStyle.card("style.git", gitForm.panel()));
         secretControls = new DeploymentStaticSecretControls(this, service);
-        sourceControls.add(secretControls.panel());
-        root.add(sourceControls, BorderLayout.NORTH);
+        advancedContent.add(DeploymentPageStyle.card(null, secretControls.panel()));
+        modeControls.advanced = new DeploymentPageStyle.Advanced(root, advancedContent);
+        buttons.add(modeControls.advanced.button());
+        start.putClientProperty("deployment.style.primary", true);
+        var top = new JPanel(new BorderLayout(0, 12));
+        top.add(DeploymentPageStyle.selections(DeploymentPageStyle.card("style.source", controls),
+            DeploymentPageStyle.card("style.server", targetControls)), BorderLayout.CENTER);
+        top.add(policyControls, BorderLayout.SOUTH);
+        root.add(top, BorderLayout.NORTH);
         status.setEditable(false);
-        root.add(new JScrollPane(status), BorderLayout.CENTER);
+        status.setLineWrap(true);
+        status.setWrapStyleWord(true);
+        root.add(DeploymentPageStyle.card("style.results", new JScrollPane(status)), BorderLayout.CENTER);
         root.add(buttons, BorderLayout.SOUTH);
-        start.setEnabled(false);
-        loadPreferences();
-        loadServers();
-        secretControls.refresh(generation.get());
-        refresh();
-        return root;
     }
 
     /** Revokes unanswered review on lock; accepted publication continues. / 锁定时撤销未答审阅；已接受发布继续。
@@ -231,8 +260,8 @@ public final class DeploymentStaticPage implements ModPage {
         requireEdt();
         locked = environment.locked();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
-                environment.locale(),
-                ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
+            environment.locale(),
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         serverLabel.setText(text("server"));
         sourceLabel.setText(text(sourceMode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
         modeControls.label.setText(text("sourceMode"));
@@ -246,8 +275,10 @@ public final class DeploymentStaticPage implements ModPage {
         refreshButton.setText(text("refresh"));
         start.setText(text("start"));
         start.setEnabled(modeControls.preferences.ready() && !closed && !locked && !pendingReview && !secretBusy
-                && servers.getSelectedItem() != null);
+            && servers.getSelectedItem() != null);
         policyAvailability();
+        modeControls.advanced.environment(messages, locked);
+        DeploymentPageStyle.refresh(root, messages);
         if (locked)
             revoke();
         else {
@@ -265,6 +296,8 @@ public final class DeploymentStaticPage implements ModPage {
     public void close() {
         requireEdt();
         closed = true;
+        if (modeControls.advanced != null)
+            modeControls.advanced.close();
         modeControls.preferences.close();
         revoke();
         secretControls.close();
@@ -330,7 +363,7 @@ public final class DeploymentStaticPage implements ModPage {
                         servers.removeAllItems();
                         result.value().orElseThrow().forEach(servers::addItem);
                         start.setEnabled(modeControls.preferences.ready() && !pendingReview && !secretBusy
-                                && servers.getItemCount() > 0);
+                            && servers.getItemCount() > 0);
                         secretControls.updateAvailability();
                     }));
                 } catch (Exception failure) {
@@ -358,7 +391,7 @@ public final class DeploymentStaticPage implements ModPage {
     private void submit() {
         requireEdt();
         if (closed || locked || pendingReview || secretBusy || !modeControls.preferences.ready()
-                || servers.getSelectedItem() == null)
+            || servers.getSelectedItem() == null)
             return;
         var server = ((ServerInfo) servers.getSelectedItem()).ref();
         var name = sourceName.getText().trim();
@@ -390,9 +423,9 @@ public final class DeploymentStaticPage implements ModPage {
                 boolean admitted = false;
                 try {
                     var handle = service.submit(server,
-                            new DeploymentStaticWorkflow.Draft(name, 2L * 1024 * 1024 * 1024, 100_000,
-                                    2L * 1024 * 1024 * 1024),
-                            git, new DeploymentStaticPageReviewer(this, view), assisted, approvalMode);
+                        new DeploymentStaticWorkflow.Draft(name, 2L * 1024 * 1024 * 1024, 100_000,
+                            2L * 1024 * 1024 * 1024),
+                        git, new DeploymentStaticPageReviewer(this, view), assisted, approvalMode);
                     admitted = true;
                     currentTask = handle;
                     if (closed || locked || generation.get() != view)
@@ -409,14 +442,14 @@ public final class DeploymentStaticPage implements ModPage {
                             recentProblem = result.problem().orElse(null);
                         refresh();
                         SwingUtilities.invokeLater(() -> start.setEnabled(modeControls.preferences.ready() && !closed
-                                && !locked && !secretBusy && servers.getItemCount() > 0));
+                            && !locked && !secretBusy && servers.getItemCount() > 0));
                     });
                     refresh();
                 } catch (Exception failure) {
                     SwingUtilities.invokeLater(() -> {
                         if (!closed && !locked && generation.get() == view)
                             status.setText(text(
-                                    failure instanceof IllegalArgumentException ? "invalidGitInput" : "submitError"));
+                                failure instanceof IllegalArgumentException ? "invalidGitInput" : "submitError"));
                         policyAvailability();
                     });
                 } finally {
@@ -427,7 +460,7 @@ public final class DeploymentStaticPage implements ModPage {
                             policyAvailability();
                         });
                         SwingUtilities.invokeLater(() -> start.setEnabled(modeControls.preferences.ready() && !closed
-                                && !locked && !secretBusy && servers.getItemCount() > 0));
+                            && !locked && !secretBusy && servers.getItemCount() > 0));
                     }
                 }
             });
@@ -446,20 +479,20 @@ public final class DeploymentStaticPage implements ModPage {
                 try {
                     var tasks = service.publications();
                     var shown = tasks.stream()
-                            .map(item -> item.id() + "  " + item.state() + "  "
-                                    + item.outcome().map(Object::toString).orElse(item.progressText()))
-                            .collect(java.util.stream.Collectors.joining("\n"));
+                        .map(item -> item.id() + "  " + item.state() + "  "
+                            + item.outcome().map(Object::toString).orElse(item.progressText()))
+                        .collect(java.util.stream.Collectors.joining("\n"));
                     SwingUtilities.invokeLater(() -> {
                         if (!closed && !locked && generation.get() == view) {
                             var problem = recentProblem;
                             String diagnostic = problem == null
-                                    ? ""
-                                    : "\n" + problem.eventCode() + ": "
-                                            + (problem.eventCode().equals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED")
-                                                    ? text("schemaReviewRequired")
-                                                    : problem.message());
+                                ? ""
+                                : "\n" + problem.eventCode() + ": "
+                                + (problem.eventCode().equals("DEPLOYMENT_SCHEMA_REVIEW_REQUIRED")
+                                ? text("schemaReviewRequired")
+                                : problem.message());
                             status.setText((shown.isEmpty() ? text("noTasks") : shown) + diagnostic + "\n"
-                                    + modeControls.preferences.diagnostic());
+                                + modeControls.preferences.diagnostic());
                         }
                     });
                 } catch (Exception failure) {
@@ -559,8 +592,8 @@ public final class DeploymentStaticPage implements ModPage {
      * @param onAccepted additional same-EDT accepted transition / 同 EDT 的附加接受转换
      * @return current approval / 当前同意 */
     private boolean approve(long view, JPanel panel, String title, TaskContext task, boolean finalReview,
-            Runnable onAccepted) {
-        if (closed || locked || generation.get() != view || task.cancellation().requested())
+                            Runnable onAccepted) {
+        if (closed || locked || generation.get() != view || task.cancelToken().requested())
             return false;
         var answer = new java.util.concurrent.CompletableFuture<Boolean>();
         SwingUtilities.invokeLater(() -> {
@@ -570,16 +603,18 @@ public final class DeploymentStaticPage implements ModPage {
             }
             JDialog owned = null;
             try {
+                DeploymentPageStyle.refresh(panel, messages);
+                panel.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
                 var scroll = new JScrollPane(panel);
                 var screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
                 scroll.setPreferredSize(new Dimension(Math.min(760, Math.max(320, screen.width - 120)),
-                        Math.min(480, Math.max(260, screen.height - 160))));
+                    Math.min(480, Math.max(260, screen.height - 160))));
                 var pane = new JOptionPane(scroll, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
                 owned = pane.createDialog(root, title);
                 dialog = owned;
                 owned.setVisible(true);
                 boolean accepted = !closed && !locked && generation.get() == view
-                        && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
+                    && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
                 if (accepted && finalReview)
                     confirmed = true;
                 if (accepted)
@@ -597,7 +632,7 @@ public final class DeploymentStaticPage implements ModPage {
         });
         try {
             while (!answer.isDone()) {
-                if (closed || locked || generation.get() != view || task.cancellation().requested()) {
+                if (closed || locked || generation.get() != view || task.cancelToken().requested()) {
                     SwingUtilities.invokeLater(this::revoke);
                     return false;
                 }
@@ -693,7 +728,7 @@ public final class DeploymentStaticPage implements ModPage {
     void secretBusy(boolean busy) {
         secretBusy = busy;
         SwingUtilities.invokeLater(() -> start
-                .setEnabled(!closed && !locked && !pendingReview && !secretBusy && servers.getSelectedItem() != null));
+            .setEnabled(!closed && !locked && !pendingReview && !secretBusy && servers.getSelectedItem() != null));
         SwingUtilities.invokeLater(secretControls::updateAvailability);
     }
 

@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.delivery;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.time.Instant;
 import java.util.*;
 
@@ -7,7 +15,7 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
@@ -16,8 +24,10 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSec
 public final class DeploymentOriginalPublicationCommit {
     /** Original platform and formal execution repository. / 原平台与正式执行仓库。 */
     private final ModContext context;
+
     /** Original formal execution evidence repository. / 原正式执行依据仓库。 */
     private final DeploymentExecutionRepository executions;
+
     /** Retained current and historical reference associations. / 保留的当前及历史引用关联。 */
     private final DeploymentReferenceAssociations associations;
 
@@ -36,7 +46,7 @@ public final class DeploymentOriginalPublicationCommit {
      * @param task original accepted task / 原接纳任务
      * @return classified actual publication / 分类真实发布 */
     public OperationResult<DeploymentPublication> execute(DeploymentPublicationPlan plan,
-            DeploymentPublication proposal, TaskWork<DeploymentPublication> work, TaskContext task) {
+                                                          DeploymentPublication proposal, TaskWork<DeploymentPublication> work, TaskContext task) {
         return execute(plan, proposal, work, task, "deployment-agent");
     }
 
@@ -48,13 +58,13 @@ public final class DeploymentOriginalPublicationCommit {
      * @param operationType caller-owned recovery type / 调用方所属恢复类型
      * @return real result or retained uncertainty / 真实结果或留存未知 */
     public OperationResult<DeploymentPublication> execute(DeploymentPublicationPlan plan,
-            DeploymentPublication proposal, TaskWork<DeploymentPublication> work, TaskContext task,
-            String operationType) {
+                                                          DeploymentPublication proposal, TaskWork<DeploymentPublication> work, TaskContext task,
+                                                          String operationType) {
         if (operationType == null || !operationType.matches("[a-z][a-z0-9_-]{0,63}"))
             throw new IllegalArgumentException("Invalid original publication operation type");
         var identity = new DeploymentExecutionIdentity(plan.executionId(), task.id(),
-                plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
-                plan.reviewedRevision());
+            plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
+            plan.reviewedRevision());
         boolean effectsStarted = false;
         try {
             begin(plan, proposal, task, operationType);
@@ -83,20 +93,20 @@ public final class DeploymentOriginalPublicationCommit {
      * @param operationType caller-owned recovery type / 调用方所属恢复类型
      * @throws Exception if identity, reservations or durable boundary cannot be confirmed / 身份、预留或持久边界无法确认时 */
     public void begin(DeploymentPublicationPlan plan, DeploymentPublication proposal, TaskContext task,
-            String operationType) throws Exception {
+                      String operationType) throws Exception {
         if (operationType == null || !operationType.matches("[a-z][a-z0-9_-]{0,63}"))
             throw new IllegalArgumentException("Invalid original publication operation type");
         if (executions.findForTask(task).isPresent())
             throw new IllegalStateException("Original publication cannot begin again");
         var identity = new DeploymentExecutionIdentity(plan.executionId(), task.id(),
-                plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
-                plan.reviewedRevision());
+            plan.project().map(DeploymentProjectRecord::id), plan.applicationId(), plan.server(), plan.mode(),
+            plan.reviewedRevision());
         executions.begin(task, identity, operationType, plan.references(), plan.project(), plan.createdAt());
         for (var intent : plan.references())
             reserve(task, identity, intent);
         executions.startEffects(task, identity.executionId(), Instant.now());
         executions.recordPublicationTemplate(task, identity.executionId(),
-                new DeploymentPublicationProposal(proposal.graph(), proposal.units()), Instant.now());
+            new DeploymentPublicationProposal(proposal.graph(), proposal.units()), Instant.now());
     }
 
     /** Commits verified original effects, or reads an exact already committed result without writing again. / 提交已核实原副作用，或不再次写入地读取精确已提交结果。
@@ -105,18 +115,18 @@ public final class DeploymentOriginalPublicationCommit {
      * @param proposal verified original immutable graph / 已核实原不可变图
      * @return confirmed formal result or retained uncertainty / 已确认正式结果或留存未知 */
     public OperationResult<DeploymentPublication> commitVerified(TaskContext task, UUID executionId,
-            DeploymentPublication proposal) {
+                                                                 DeploymentPublication proposal) {
         try {
             var record = executions.find(task, executionId).orElseThrow();
             var expected = new DeploymentPublicationProposal(proposal.graph(), proposal.units());
             if (!record.identity().taskId().equals(task.id())
-                    || !executions.publicationTemplate(record).equals(Optional.of(expected)))
+                || !executions.publicationTemplate(record).equals(Optional.of(expected)))
                 return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_PROPOSAL_CHANGED");
             boolean committed = record.phase().equals("COMMITTED") && record.businessCommitted()
-                    && record.outcome().equals(Optional.of(Outcome.SUCCEEDED));
+                && record.outcome().equals(Optional.of(Outcome.SUCCEEDED));
             if (!committed) {
                 if (!record.phase().equals("EXECUTING") || record.businessCommitted()
-                        || record.outcome().filter(value -> value != Outcome.UNKNOWN).isPresent())
+                    || record.outcome().filter(value -> value != Outcome.UNKNOWN).isPresent())
                     return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_STAGE_CHANGED");
                 executions.commitApplication(task, executionId, proposal.graph(), proposal.units(), Instant.now());
             }
@@ -124,8 +134,8 @@ public final class DeploymentOriginalPublicationCommit {
                 var intent = entry.getKey();
                 DeploymentReferenceKey.requireOriginal(intent, record.identity());
                 if (entry.getValue().isEmpty() || !entry.getValue().equals(find(task, intent))
-                        || associations.observe(task, record.identity(), intent)
-                                != DeploymentReferenceAssociations.AssociationState.REFERENCED)
+                    || associations.observe(task, record.identity(), intent)
+                    != DeploymentReferenceAssociations.AssociationState.REFERENCED)
                     return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_REFERENCE_CHANGED");
                 if (!committed)
                     resolve(task, intent, ReferenceResolution.REFERENCED);
@@ -143,24 +153,24 @@ public final class DeploymentOriginalPublicationCommit {
      * @param reason original structured reason, nullable for cancellation / 原结构化原因，取消时可空
      * @return exact known result or retained uncertainty / 精确已知结果或留存未知 */
     public OperationResult<DeploymentPublication> completeUncommittedVerified(TaskContext task, UUID executionId,
-            Outcome outcome, Problem reason) {
+                                                                              Outcome outcome, Problem reason) {
         if (!Set.of(Outcome.FAILED, Outcome.CANCELLED).contains(outcome))
             throw new IllegalArgumentException("Uncommitted completion requires a verified failure or cancellation");
         if (reason == null)
             reason = outcome == Outcome.CANCELLED
-                    ? problem(ProblemCode.CANCELLED, "DEPLOYMENT_ORIGINAL_CANCELLED")
-                    : problem(ProblemCode.CONTRACT_VIOLATION, "DEPLOYMENT_ORIGINAL_FAILURE_REASON_MISSING");
+                ? problem(ProblemCode.CANCELLED, "DEPLOYMENT_ORIGINAL_CANCELLED")
+                : problem(ProblemCode.CONTRACT_VIOLATION, "DEPLOYMENT_ORIGINAL_FAILURE_REASON_MISSING");
         try {
             var record = executions.find(task, executionId).orElseThrow();
             if (!record.identity().taskId().equals(task.id()) || record.businessCommitted()
-                    || !record.phase().equals("EXECUTING"))
+                || !record.phase().equals("EXECUTING"))
                 return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_STAGE_CHANGED");
             boolean known = record.outcome().filter(value -> value != Outcome.UNKNOWN).isPresent();
             if (known) {
                 var original = executions.problem(record);
                 if (!record.outcome().equals(Optional.of(outcome)) || original.isEmpty()
-                        || original.orElseThrow().code() != reason.code()
-                        || !original.orElseThrow().eventCode().equals(reason.eventCode()))
+                    || original.orElseThrow().code() != reason.code()
+                    || !original.orElseThrow().eventCode().equals(reason.eventCode()))
                     return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_RESULT_CHANGED");
             } else
                 executions.recordUncommittedOutcome(task, executionId, outcome, reason, Instant.now());
@@ -170,7 +180,7 @@ public final class DeploymentOriginalPublicationCommit {
                 var association = associations.observe(task, record.identity(), intent);
                 var observed = find(task, intent);
                 boolean released = known && observed.isEmpty()
-                        && association == DeploymentReferenceAssociations.AssociationState.ABSENT;
+                    && association == DeploymentReferenceAssociations.AssociationState.ABSENT;
                 if (entry.getValue().isEmpty() || !released && !entry.getValue().equals(observed))
                     return unknown(task, executionId, "DEPLOYMENT_ORIGINAL_REFERENCE_CHANGED");
                 if (known) {
@@ -191,7 +201,7 @@ public final class DeploymentOriginalPublicationCommit {
      * @param credentials exact revision-to-platform-reference map / 精确修订至平台引用映射
      * @return immutable original association set / 不可变原关联集合 */
     public static List<DeploymentReferenceIntent> references(ServerRef server, DeploymentPublication proposal,
-            Map<DeploymentSecretReference, SecretRef> credentials) {
+                                                             Map<DeploymentSecretReference, SecretRef> credentials) {
         var values = new LinkedHashSet<DeploymentReferenceIntent>();
         values.add(DeploymentReferenceKey.application(server, proposal.graph().applicationId()));
         for (var commit : proposal.units()) {
@@ -215,7 +225,7 @@ public final class DeploymentOriginalPublicationCommit {
         var verified = verifyKnownReferences(task, record);
         if (verified.outcome() != Outcome.SUCCEEDED)
             return verified;
-        context.source().closeTaskResources(task);
+        context.file().closeTaskResources(task);
         if (!context.tasks().resourcesReleased(task))
             return unknownVoid("DEPLOYMENT_AGENT_SOURCE_RETAINED");
         executions.finishCleanup(task, record.identity().executionId(), Instant.now());
@@ -242,8 +252,8 @@ public final class DeploymentOriginalPublicationCommit {
      * @throws Exception if original evidence cannot be read or resolved / 无法读取或处理原依据时 */
     private OperationResult<Void> verifyKnownReferences(TaskContext task, DeploymentExecutionRecord record) throws Exception {
         if (!record.identity().taskId().equals(task.id()) || record.outcome().isEmpty()
-                || record.outcome().orElseThrow() == Outcome.UNKNOWN
-                || record.businessCommitted() != (record.outcome().orElseThrow() == Outcome.SUCCEEDED))
+            || record.outcome().orElseThrow() == Outcome.UNKNOWN
+            || record.businessCommitted() != (record.outcome().orElseThrow() == Outcome.SUCCEEDED))
             return unknownVoid("DEPLOYMENT_AGENT_FORMAL_RESULT_UNCONFIRMED");
         var references = executions.references(record);
         for (var entry : references.entrySet()) {
@@ -254,7 +264,7 @@ public final class DeploymentOriginalPublicationCommit {
             if (association == DeploymentReferenceAssociations.AssociationState.CONFLICT)
                 return unknownVoid("DEPLOYMENT_AGENT_REFERENCE_ASSOCIATION_UNCONFIRMED");
             boolean released = !record.businessCommitted() && observed.isEmpty()
-                    && association == DeploymentReferenceAssociations.AssociationState.ABSENT;
+                && association == DeploymentReferenceAssociations.AssociationState.ABSENT;
             if (entry.getValue().isEmpty() || !released && !entry.getValue().equals(observed))
                 return unknownVoid("DEPLOYMENT_AGENT_REFERENCE_CHANGED");
             if (released)
@@ -270,7 +280,7 @@ public final class DeploymentOriginalPublicationCommit {
      * @return unknown result / 未知结果 */
     private static OperationResult<Void> unknownVoid(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(problem(ProblemCode.UNKNOWN,
-                event)));
+            event)));
     }
 
     /** Finds or reserves the exact original platform reference. / 查找或预留精确原平台引用。
@@ -279,15 +289,15 @@ public final class DeploymentOriginalPublicationCommit {
      * @param intent exact intent / 精确意图
      * @throws Exception when reservation evidence is unavailable / 预留依据不可用时 */
     private void reserve(TaskContext task, DeploymentExecutionIdentity identity, DeploymentReferenceIntent intent)
-            throws Exception {
+        throws Exception {
         Optional<UUID> existing = find(task, intent);
         UUID id = existing.orElseGet(() -> {
             try {
                 if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
                     return context.servers().reserve(new ServerRef(intent.resourceId()), intent.businessKey(), task)
-                            .id();
+                        .id();
                 return context.secrets().reserve(new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()),
-                        intent.businessKey(), task).id();
+                    intent.businessKey(), task).id();
             } catch (ApiException failure) {
                 throw new IllegalStateException("Original reference reservation unconfirmed", failure);
             }
@@ -303,9 +313,9 @@ public final class DeploymentOriginalPublicationCommit {
     private Optional<UUID> find(TaskContext task, DeploymentReferenceIntent intent) throws ApiException {
         if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
             return context.servers().findReference(new ServerRef(intent.resourceId()), intent.businessKey(), task)
-                    .map(value -> value.id());
+                .map(value -> value.id());
         return context.secrets().findReference(new SecretRef(intent.resourceId(), intent.purpose().orElseThrow()),
-                intent.businessKey(), task).map(value -> value.id());
+            intent.businessKey(), task).map(value -> value.id());
     }
 
     /** Resolves only the already recorded original reference. / 仅处理已记录原引用。
@@ -314,7 +324,7 @@ public final class DeploymentOriginalPublicationCommit {
      * @param resolution proven business association / 已证实业务关联
      * @throws Exception when original evidence cannot be confirmed / 原依据无法确认时 */
     private void resolve(TaskContext task, DeploymentReferenceIntent intent, ReferenceResolution resolution)
-            throws Exception {
+        throws Exception {
         UUID id = find(task, intent).orElseThrow(() -> new IllegalStateException("Original reference disappeared"));
         if (intent.kind() == DeploymentReferenceIntent.DeploymentReferenceKind.SERVER)
             context.servers().resolve(id, resolution, task);
@@ -329,12 +339,12 @@ public final class DeploymentOriginalPublicationCommit {
      * @return whether association was proved / 关联是否已证实
      * @throws Exception if original evidence is unavailable / 原依据不可用时 */
     private boolean resolveObserved(TaskContext task, DeploymentExecutionIdentity identity,
-            DeploymentReferenceIntent intent) throws Exception {
+                                    DeploymentReferenceIntent intent) throws Exception {
         var observed = associations.observe(task, identity, intent);
         if (observed == DeploymentReferenceAssociations.AssociationState.CONFLICT)
             return false;
         resolve(task, intent, observed == DeploymentReferenceAssociations.AssociationState.REFERENCED
-                ? ReferenceResolution.REFERENCED : ReferenceResolution.NOT_REFERENCED);
+            ? ReferenceResolution.REFERENCED : ReferenceResolution.NOT_REFERENCED);
         return true;
     }
 
@@ -359,6 +369,6 @@ public final class DeploymentOriginalPublicationCommit {
      * @return structured failure / 结构化失败 */
     private static Problem problem(ProblemCode code, String event) {
         return new Problem(code, event, "Agent publication requires original-task reconciliation", Map.of(),
-                Optional.empty());
+            Optional.empty());
     }
 }

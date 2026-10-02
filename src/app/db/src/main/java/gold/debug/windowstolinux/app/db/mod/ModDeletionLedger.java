@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.db.mod;
 
+import gold.debug.windowstolinux.appapi.task.LogCategory;
+import gold.debug.windowstolinux.appapi.task.LogLevel;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -10,12 +14,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.persistence.connection.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.persistence.repository.CredentialReferenceRepository;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Persists exact installed-release or whole-Mod deletion before unregistering verified cleanup. / 持久化精确安装版本或整 Mod 删除，核验清理后才注销。
  * File removal belongs to the installer; this ledger independently proves the registered directory is absent. / 文件由安装服务移除；本账本独立证明登记目录已不存在。 */
@@ -40,13 +44,13 @@ public final class ModDeletionLedger {
 
     /** Strict bounded recovery decoder. / 严格有界恢复解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
-            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
 
     /** Durable ordered completion checkpoints. / 持久有序完成检查点。 */
     private static final List<String> PHASES = List.of("QUIESCENT", "PROGRAM_REMOVED", "DATA_REMOVED",
-            "REFERENCES_REMOVED", "REGISTRY_REMOVED", "CLEANUP");
+        "REFERENCES_REMOVED", "REGISTRY_REMOVED", "CLEANUP");
 
     /** Binds ordinary installed packages to their original application home. / 将普通安装包绑定到原程序根。
      * @param database owned engine / 所属引擎
@@ -60,7 +64,7 @@ public final class ModDeletionLedger {
         connections = new RepositoryConnections(database::openConnection);
         logs = new LogRepository(database);
         archive = logs.register("app", Optional.empty(),
-                new LogCategory("mod_operation", "mod_operation", Optional.empty()));
+            new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
 
     /** Immutable opaque review of one exact registry snapshot. / 一个精确登记快照的不可变不透明审阅。 */
@@ -143,9 +147,9 @@ public final class ModDeletionLedger {
             if (request.version() == null)
                 return List.of();
             return request
-                    .versions().stream().filter(v -> !v.version().equals(request.version())
-                            && request.release().schema() != null && request.release().schema().equals(v.schema()))
-                    .map(Release::version).toList();
+                .versions().stream().filter(v -> !v.version().equals(request.version())
+                    && request.release().schema() != null && request.release().schema().equals(v.schema()))
+                .map(Release::version).toList();
         }
     }
 
@@ -186,18 +190,18 @@ public final class ModDeletionLedger {
         return locked(c -> {
             var before = review.request;
             require(before.equals(evidence.snapshot(c, before.owner(), before.version())),
-                    "Reviewed release or data changed");
+                "Reviewed release or data changed");
             require(files != null && files.length() <= 4 * 1024 * 1024, "Physical deletion scope exceeds bounds");
             var request = new Request(before.format(), before.home(), before.owner(), before.version(),
-                    before.ownerState(), before.versions(), before.schemas(), before.targets(), before.pins(),
-                    before.secrets(), files);
+                before.ownerState(), before.versions(), before.schemas(), before.targets(), before.pins(),
+                before.secrets(), files);
             DeletionEvidence.drained(c, request.owner(), null);
             DeletionEvidence.dependents(c, request.owner());
             for (var data : request.removals())
                 physicalSafe(c, new SchemaCoordinates(DeletionEvidence.identity(request, data)));
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
-                    "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,source_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'RUNNING','QUIESCENT',?,?,?,?,?)")) {
+                "INSERT INTO mod_operation(operation_id,mod_id,operation_type,source_version,source_schema_version,target_generation,accepted_revision,state,phase,request_json,recovery_json,archive_log_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'RUNNING','QUIESCENT',?,?,?,?,?)")) {
                 p.setObject(1, review.operation);
                 p.setString(2, request.owner());
                 p.setString(3, request.type());
@@ -214,10 +218,10 @@ public final class ModDeletionLedger {
             }
             for (var release : request.selected())
                 update(c, "UPDATE mod_version SET state='DELETE_PENDING' WHERE mod_id=? AND version=?", request.owner(),
-                        release.version());
+                    release.version());
             for (var data : request.removals())
                 update(c, "UPDATE mod_schema SET state='DELETE_PENDING' WHERE mod_id=? AND schema_version=?",
-                        request.owner(), data.version());
+                    request.owner(), data.version());
             return review.operation;
         });
     }
@@ -233,7 +237,7 @@ public final class ModDeletionLedger {
      * @param versions exact requested installed releases / 精确请求安装版本
      * @param targets original owned diagnostic categories / 原自有诊断类别 */
     public record Execution(UUID operation, String owner, String version, Path program, String phase, String state,
-            String files, List<String> versions, List<LogRepository.Target> targets) {
+                            String files, List<String> versions, List<LogRepository.Target> targets) {
     }
 
     /** Reads original evidence without granting permission to replay completed work. / 读取原证据，不授予重放已完成工作的权限。
@@ -246,8 +250,8 @@ public final class ModDeletionLedger {
             evidence.unchanged(c, row);
             var request = row.request();
             return new Execution(operation, request.owner(), request.version(), request.program(), row.phase(),
-                    row.state(), request.files(), request.selected().stream().map(Release::version).toList(),
-                    request.targets());
+                row.state(), request.files(), request.selected().stream().map(Release::version).toList(),
+                request.targets());
         });
     }
 
@@ -257,8 +261,8 @@ public final class ModDeletionLedger {
     public void unconfirmed(UUID operation) throws SQLException {
         locked(c -> {
             update(c,
-                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_DELETE_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state='RUNNING' AND outcome IS NULL",
-                    System.currentTimeMillis(), operation);
+                "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_DELETE_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state='RUNNING' AND outcome IS NULL",
+                System.currentTimeMillis(), operation);
             return null;
         });
     }
@@ -305,9 +309,9 @@ public final class ModDeletionLedger {
                 physicalAbsent(c, new SchemaCoordinates(schema));
                 for (var table : List.of("mod_server_reference", "mod_credential_reference"))
                     update(c, "DELETE FROM " + table + " WHERE mod_id=? AND schema_generation=?", schema.ownerId(),
-                            schema.generation());
-                update(c, "DELETE FROM log_category WHERE owner_id=? AND schema_generation=?", schema.ownerId(),
                         schema.generation());
+                update(c, "DELETE FROM log_category WHERE owner_id=? AND schema_generation=?", schema.ownerId(),
+                    schema.generation());
             }
             if (request.version() == null) {
                 update(c, "DELETE FROM runtime_log WHERE owner_id=?", request.owner());
@@ -316,7 +320,7 @@ public final class ModDeletionLedger {
                 for (var secret : request.secrets())
                     if (!secret.shared()) {
                         require(!DeletionEvidence.sharedSecret(c, request.owner(), secret.id()),
-                                "Credential gained a shared reference");
+                            "Credential gained a shared reference");
                         update(c, "DELETE FROM credential WHERE credential_id=?", secret.id());
                     }
             }
@@ -336,7 +340,7 @@ public final class ModDeletionLedger {
                 physicalAbsent(c, new SchemaCoordinates(schema));
                 require(noReferences(c, schema), "Removed data still has registered references");
                 update(c, "DELETE FROM mod_schema WHERE mod_id=? AND generation=?", request.owner(),
-                        schema.generation());
+                    schema.generation());
             }
             if (request.version() == null) {
                 require(noOwnerReferences(c, request.owner()), "Owned references remain");
@@ -345,8 +349,8 @@ public final class ModDeletionLedger {
                 update(c, "DELETE FROM mod_registry WHERE mod_id=?", request.owner());
             } else {
                 update(c,
-                        "UPDATE mod_registry SET selected_version=NULL,updated_at=? WHERE mod_id=? AND selected_version=?",
-                        System.currentTimeMillis(), request.owner(), request.version());
+                    "UPDATE mod_registry SET selected_version=NULL,updated_at=? WHERE mod_id=? AND selected_version=?",
+                    System.currentTimeMillis(), request.owner(), request.version());
                 update(c, "DELETE FROM mod_version WHERE mod_id=? AND version=?", request.owner(), request.version());
             }
         });
@@ -371,12 +375,12 @@ public final class ModDeletionLedger {
                 var row = active(c, operation, "CLEANUP");
                 verifyRemoved(c, row.request());
                 logs.store(c, archive,
-                        List.of(new LogRecordCodec.Record(row.archive(), System.currentTimeMillis(), "app",
-                                "mod_operation", LogLevel.INFO,
-                                row.request().version() == null ? "MOD_DELETED" : "MOD_VERSION_DELETED",
-                                "Installed Mod deletion was verified", null, row.request().owner(),
-                                row.request().version(), null, operation, Outcome.SUCCEEDED, false)),
-                        100);
+                    List.of(new LogRecordCodec.Record(row.archive(), System.currentTimeMillis(), "app",
+                        "mod_operation", LogLevel.INFO,
+                        row.request().version() == null ? "MOD_DELETED" : "MOD_VERSION_DELETED",
+                        "Installed Mod deletion was verified", null, row.request().owner(),
+                        row.request().version(), null, operation, Outcome.SUCCEEDED, false)),
+                    100);
                 update(c, "DELETE FROM mod_operation WHERE operation_id=?", operation);
                 return true;
             });
@@ -398,8 +402,8 @@ public final class ModDeletionLedger {
             DeletionEvidence.drained(c, row.request().owner(), operation);
             DeletionEvidence.dependents(c, row.request().owner());
             update(c,
-                    "UPDATE mod_operation SET state='RUNNING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=?",
-                    evidence.recovery(), System.currentTimeMillis(), operation);
+                "UPDATE mod_operation SET state='RUNNING',recovery_json=?,failure_code=NULL,failure_detail=NULL,updated_at=? WHERE operation_id=?",
+                evidence.recovery(), System.currentTimeMillis(), operation);
             return row.phase();
         });
     }
@@ -416,7 +420,7 @@ public final class ModDeletionLedger {
                 var row = active(c, operation, from);
                 action.run(c, row);
                 update(c, "UPDATE mod_operation SET phase=?,updated_at=? WHERE operation_id=?", to,
-                        System.currentTimeMillis(), operation);
+                    System.currentTimeMillis(), operation);
                 return null;
             });
         } catch (SQLException failure) {
@@ -432,8 +436,8 @@ public final class ModDeletionLedger {
         try {
             locked(c -> {
                 update(c,
-                        "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_DELETE_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state='RUNNING' AND outcome IS NULL",
-                        System.currentTimeMillis(), operation);
+                    "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_DELETE_UNCONFIRMED',failure_detail=NULL,updated_at=? WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state='RUNNING' AND outcome IS NULL",
+                    System.currentTimeMillis(), operation);
                 return null;
             });
         } catch (SQLException retaining) {
@@ -450,7 +454,7 @@ public final class ModDeletionLedger {
     private Row active(Connection c, UUID operation, String phase) throws SQLException {
         var row = evidence.load(c, operation);
         require("RUNNING".equals(row.state()) && phase.equals(row.phase())
-                && evidence.recovery().equals(row.recovery()), "Deletion does not own this boot and phase");
+            && evidence.recovery().equals(row.recovery()), "Deletion does not own this boot and phase");
         evidence.unchanged(c, row);
         DeletionEvidence.drained(c, row.request().owner(), operation);
         DeletionEvidence.dependents(c, row.request().owner());
@@ -496,7 +500,7 @@ public final class ModDeletionLedger {
             try {
                 var attrs = Files.readAttributes(current, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 require(attrs.isDirectory() && !attrs.isSymbolicLink() && !attrs.isOther(),
-                        "Installed ancestor is not an ordinary directory");
+                    "Installed ancestor is not an ordinary directory");
             } catch (NoSuchFileException absent) {
                 return;
             } catch (IOException failure) {
@@ -511,30 +515,30 @@ public final class ModDeletionLedger {
      * @throws SQLException if unrelated rights, objects or active sessions exist / 存在无关权限、对象或活动会话时 */
     private static void physicalSafe(Connection c, SchemaCoordinates coordinates) throws SQLException {
         if (count(c, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?",
-                coordinates.physicalName()) != 0)
+            coordinates.physicalName()) != 0)
             coordinates.requirePhysicalOwnership(c);
         require(count(c,
-                "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=? AND schema_name<>?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?)",
-                coordinates.databaseUser(), coordinates.databaseUser(), coordinates.physicalName(),
-                coordinates.databaseUser()) == 0, "Physical owner gained privileges, other objects or active sessions");
+            "SELECT (SELECT COUNT(*) FROM information_schema.users WHERE user_name=? AND is_admin)+(SELECT COUNT(*) FROM information_schema.schemata WHERE schema_owner=? AND schema_name<>?)+(SELECT COUNT(*) FROM information_schema.sessions WHERE LOWER(user_name)=?)",
+            coordinates.databaseUser(), coordinates.databaseUser(), coordinates.physicalName(),
+            coordinates.databaseUser()) == 0, "Physical owner gained privileges, other objects or active sessions");
         require(count(c,
                 "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE unique_constraint_schema=? AND constraint_schema<>?",
                 coordinates.physicalName(), coordinates.physicalName()) == 0,
-                "Another Schema retains a foreign key into this data");
+            "Another Schema retains a foreign key into this data");
         require(count(c,
                 "SELECT (SELECT COUNT(*) FROM information_schema.synonyms WHERE synonym_for_schema=? AND synonym_schema<>?)+(SELECT COUNT(*) FROM information_schema.columns WHERE domain_schema=? AND table_schema<>?)+(SELECT COUNT(*) FROM information_schema.domains WHERE parent_domain_schema=? AND domain_schema<>?)",
                 coordinates.physicalName(), coordinates.physicalName(), coordinates.physicalName(),
                 coordinates.physicalName(), coordinates.physicalName(), coordinates.physicalName()) == 0,
-                "Another Schema retains a synonym or domain reference into this data");
+            "Another Schema retains a synonym or domain reference into this data");
         try (var p = c.prepareStatement(
-                "SELECT grantee,grantedrole,table_schema FROM information_schema.rights WHERE grantee=? OR table_schema=?")) {
+            "SELECT grantee,grantedrole,table_schema FROM information_schema.rights WHERE grantee=? OR table_schema=?")) {
             p.setString(1, coordinates.databaseUser());
             p.setString(2, coordinates.physicalName());
             try (var r = p.executeQuery()) {
                 while (r.next())
                     require(coordinates.databaseUser().equals(r.getString(1)) && r.getString(2) == null
                             && coordinates.physicalName().equals(r.getString(3)),
-                            "Schema has external grants or an unreleased reader identity");
+                        "Schema has external grants or an unreleased reader identity");
             }
         }
     }
@@ -546,7 +550,7 @@ public final class ModDeletionLedger {
     private static void removeTables(Connection c, SchemaCoordinates coordinates) throws SQLException {
         var tables = new ArrayList<String>();
         try (var p = c.prepareStatement(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema=? ORDER BY table_name")) {
+            "SELECT table_name FROM information_schema.tables WHERE table_schema=? ORDER BY table_name")) {
             p.setString(1, coordinates.physicalName());
             try (var r = p.executeQuery()) {
                 while (r.next()) {
@@ -572,7 +576,7 @@ public final class ModDeletionLedger {
         require(count(c,
                 "SELECT (SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?)+(SELECT COUNT(*) FROM information_schema.users WHERE user_name=?)",
                 coordinates.physicalName(), coordinates.databaseUser()) == 0,
-                "Original physical Schema or owner still remains");
+            "Original physical Schema or owner still remains");
     }
 
     /** Tests retained reference and business-log registrations for one exact generation. / 检查一个精确代次的保留引用及业务日志登记。
@@ -582,8 +586,8 @@ public final class ModDeletionLedger {
      * @throws SQLException if reading fails / 读取失败时 */
     private static boolean noReferences(Connection c, SchemaIdentity schema) throws SQLException {
         return count(c,
-                "SELECT (SELECT COUNT(*) FROM mod_server_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM log_category WHERE schema_generation=?)",
-                schema.generation(), schema.generation(), schema.generation()) == 0;
+            "SELECT (SELECT COUNT(*) FROM mod_server_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE schema_generation=?)+(SELECT COUNT(*) FROM log_category WHERE schema_generation=?)",
+            schema.generation(), schema.generation(), schema.generation()) == 0;
     }
 
     /** Rechecks physical absence and exact registration cleanup before success. / 成功前再次检查物理不存在及精确登记清理。
@@ -595,17 +599,17 @@ public final class ModDeletionLedger {
         absentOwnedFiles(request);
         for (var release : request.selected())
             require(count(c, "SELECT COUNT(*) FROM mod_version WHERE mod_id=? AND version=?", request.owner(),
-                    release.version()) == 0, "Original release remains registered");
+                release.version()) == 0, "Original release remains registered");
         for (var data : request.removals()) {
             var schema = DeletionEvidence.identity(request, data);
             physicalAbsent(c, new SchemaCoordinates(schema));
             require(noReferences(c, schema)
                     && count(c, "SELECT COUNT(*) FROM mod_schema WHERE generation=?", schema.generation()) == 0,
-                    "Original data registration remains");
+                "Original data registration remains");
         }
         if (request.version() == null)
             require(count(c, "SELECT COUNT(*) FROM mod_registry WHERE mod_id=?", request.owner()) == 0
-                    && noOwnerReferences(c, request.owner()), "Removed Mod still has registrations");
+                && noOwnerReferences(c, request.owner()), "Removed Mod still has registrations");
     }
 
     /** Proves registered owner files were actually removed before losing their attribution. / 在失去归属登记前证明自有登记文件已实际移除。
@@ -627,8 +631,8 @@ public final class ModDeletionLedger {
      * @throws SQLException if reading cannot be verified / 无法核验读取时 */
     private static boolean noOwnerReferences(Connection c, String owner) throws SQLException {
         return count(c,
-                "SELECT (SELECT COUNT(*) FROM mod_server_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM log_category WHERE owner_id=?)+(SELECT COUNT(*) FROM runtime_log WHERE owner_id=?)",
-                owner, owner, owner, owner) == 0 && DeletionEvidence.ownerPins(c, owner).isEmpty();
+            "SELECT (SELECT COUNT(*) FROM mod_server_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE mod_id=?)+(SELECT COUNT(*) FROM log_category WHERE owner_id=?)+(SELECT COUNT(*) FROM runtime_log WHERE owner_id=?)",
+            owner, owner, owner, owner) == 0 && DeletionEvidence.ownerPins(c, owner).isEmpty();
     }
 
     /** Original persisted version-only request, retained solely to finish already accepted work. / 原持久单版本请求，仅用于完成已接纳工作。
@@ -642,7 +646,7 @@ public final class ModDeletionLedger {
      * @param removeSchema original last-reference decision / 原最后引用判定
      * @param files original host physical scope / 原宿主物理范围 */
     private record OriginalRequest(int format, String home, String owner, String version, Owner ownerState,
-            List<Release> versions, JsonNode schema, boolean removeSchema, String files) {
+                                   List<Release> versions, JsonNode schema, boolean removeSchema, String files) {
     }
 
     /** Quotes only registered internal identifiers. / 仅引用登记的内部标识。
@@ -702,8 +706,8 @@ public final class ModDeletionLedger {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
                 require(count(c,
-                        "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state='RUNNING'",
-                        database.bootId()) == 1, "Deletion requires the original running platform boot");
+                    "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state='RUNNING'",
+                    database.bootId()) == 1, "Deletion requires the original running platform boot");
                 result.set(work.run(c));
             }
         });
@@ -749,7 +753,7 @@ public final class ModDeletionLedger {
      * @param origin source kind / 来源类型
      * @param state original install state / 原安装状态 */
     private record Release(String version, String path, String content, String original, String schema, String manifest,
-            String origin, String state) {
+                           String origin, String state) {
         /** Applies this operation's sole version-state change. / 应用此操作唯一版本状态变更。
          * @return expected pending version / 预期待清理版本 */
         Release pending() {
@@ -767,7 +771,7 @@ public final class ModDeletionLedger {
      * @param validated original validation time / 原验证时间
      * @param digest original validation digest / 原验证摘要 */
     private record Schema(String version, String generation, String physical, String user, String state, boolean used,
-            Long validated, String digest) {
+                          Long validated, String digest) {
         /** Applies this operation's sole data-state change. / 应用此操作唯一数据状态变更。
          * @return expected pending data / 预期待清理数据 */
         Schema pending() {
@@ -788,8 +792,8 @@ public final class ModDeletionLedger {
      * @param secrets original owned credentials and shared-resource protection / 原自有凭据及共享资源保护
      * @param files original host physical scope / 原宿主物理范围 */
     private record Request(int format, String home, String owner, String version, Owner ownerState,
-            List<Release> versions, List<Schema> schemas, List<LogRepository.Target> targets,
-            List<ModNavigationPreferences.PagePin> pins, List<Secret> secrets, String files) {
+                           List<Release> versions, List<Schema> schemas, List<LogRepository.Target> targets,
+                           List<ModNavigationPreferences.PagePin> pins, List<Secret> secrets, String files) {
         /** Determines membership without allowing partial whole-owner cleanup. / 判断成员归属，不允许部分整所有者清理。
          * @param release original retained release / 原保留版本
          * @return whether selected for removal / 是否选择移除 */
@@ -807,17 +811,17 @@ public final class ModDeletionLedger {
          * @return exact removable data / 精确可移除数据 */
         List<Schema> removals() {
             return schemas.stream()
-                    .filter(data -> version == null || versions.stream()
-                            .noneMatch(release -> !selects(release) && data.version().equals(release.schema())))
-                    .toList();
+                .filter(data -> version == null || versions.stream()
+                    .noneMatch(release -> !selects(release) && data.version().equals(release.schema())))
+                .toList();
         }
 
         /** Derives the sole relational generation for a single-release request. / 派生单版本请求唯一关系代次。
          * @return generation, absent for whole-owner or retained shared data / 代次，整所有者或保留共享数据为空 */
         UUID sourceGeneration() {
             return version != null && !removals().isEmpty()
-                    ? UUID.fromString(removals().getFirst().generation())
-                    : null;
+                ? UUID.fromString(removals().getFirst().generation())
+                : null;
         }
 
         /** Returns the explicit relational operation kind. / 返回明确关系操作种类。
@@ -864,20 +868,20 @@ public final class ModDeletionLedger {
             var state = owner(c, owner);
             var versions = releases(c, owner);
             require(versions.stream().allMatch(v -> "READY".equals(v.state())),
-                    "Installed owner has pending maintenance");
+                "Installed owner has pending maintenance");
             var data = new ArrayList<Schema>();
             if (version == null) {
                 data.addAll(schemas(c, owner));
             } else {
                 var release = versions.stream().filter(v -> v.version().equals(version)).findFirst()
-                        .orElseThrow(() -> new SQLException("Installed release is absent"));
+                    .orElseThrow(() -> new SQLException("Installed release is absent"));
                 var target = schema(c, owner, release.schema());
                 if (target != null)
                     data.add(target);
             }
             return new Request(2, home.toString(), owner, version, state, versions, List.copyOf(data),
-                    version == null ? targets(c, owner) : List.of(), version == null ? ownerPins(c, owner) : List.of(),
-                    version == null ? secrets(c, owner) : List.of(), "{}");
+                version == null ? targets(c, owner) : List.of(), version == null ? ownerPins(c, owner) : List.of(),
+                version == null ? secrets(c, owner) : List.of(), "{}");
         }
 
         /** Rechecks the reviewed catalog with only this operation's confirmed changes allowed. / 复核已审阅目录，仅允许此操作已确认变更。
@@ -891,38 +895,38 @@ public final class ModDeletionLedger {
             boolean whole = request.version() == null;
             if (whole && removed) {
                 require(count(c, "SELECT COUNT(*) FROM mod_registry WHERE mod_id=?", request.owner()) == 0,
-                        "Removed owner reappeared");
+                    "Removed owner reappeared");
             } else {
                 var expectedOwner = removed && Objects.equals(request.version(), before.selected())
-                        ? new Owner(before.revision(), null, before.initialized(), before.ackBoot())
-                        : before;
+                    ? new Owner(before.revision(), null, before.initialized(), before.ackBoot())
+                    : before;
                 require(expectedOwner.equals(owner(c, request.owner())), "Accepted disabled intent changed");
             }
             var expected = request.versions().stream().filter(v -> !removed || !request.selects(v))
-                    .map(v -> !removed && request.selects(v) ? v.pending() : v).toList();
+                .map(v -> !removed && request.selects(v) ? v.pending() : v).toList();
             require(expected.equals(releases(c, request.owner())),
-                    "Installed versions or retained Schema references changed");
+                "Installed versions or retained Schema references changed");
             var expectedData = request.schemas().stream().filter(v -> !removed || !request.removals().contains(v))
-                    .map(v -> !removed && request.removals().contains(v) ? v.pending() : v).toList();
+                .map(v -> !removed && request.removals().contains(v) ? v.pending() : v).toList();
             if (whole) {
                 require(expectedData.equals(schemas(c, request.owner())), "Owned Schema catalog changed");
                 boolean referencesGone = PHASES.indexOf(row.phase()) >= PHASES.indexOf("REFERENCES_REMOVED");
                 require((referencesGone ? List.of() : request.targets()).equals(targets(c, request.owner())),
-                        "Owned log targets changed");
+                    "Owned log targets changed");
                 require((referencesGone ? List.of() : request.pins()).equals(ownerPins(c, request.owner())),
-                        "Owned navigation preferences changed");
+                    "Owned navigation preferences changed");
                 if (referencesGone) {
                     require(noOwnerReferences(c, request.owner()), "Owned references reappeared");
                     require(request.secrets().stream().filter(Secret::shared).map(Secret::id).toList()
                             .equals(CredentialReferenceRepository.ownedIdentities(c, request.owner())),
-                            "Owned credential cleanup changed");
+                        "Owned credential cleanup changed");
                 } else
                     require(request.secrets().equals(secrets(c, request.owner())),
-                            "Owned credential identities or shared references changed");
+                        "Owned credential identities or shared references changed");
             } else {
                 var actual = schema(c, request.owner(), request.release().schema());
                 require(expectedData.equals(actual == null ? List.of() : List.of(actual)),
-                        "Original Schema registration changed");
+                    "Original Schema registration changed");
             }
         }
 
@@ -944,14 +948,14 @@ public final class ModDeletionLedger {
         private static List<Release> releases(Connection c, String owner) throws SQLException {
             var values = new ArrayList<Release>();
             try (var p = c.prepareStatement(
-                    "SELECT version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? ORDER BY version")) {
+                "SELECT version,install_path,content_sha256,archive_sha256,schema_version,manifest_json,origin_kind,state FROM mod_version WHERE mod_id=? ORDER BY version")) {
                 p.setString(1, owner);
                 try (var r = p.executeQuery()) {
                     while (r.next()) {
                         require(values.size() < 1024 && r.getString(6).length() <= 1024 * 1024,
-                                "Installed catalog exceeds deletion review bounds");
+                            "Installed catalog exceeds deletion review bounds");
                         values.add(new Release(r.getString(1), r.getString(2), r.getString(3), r.getString(4),
-                                r.getString(5), r.getString(6), r.getString(7), r.getString(8)));
+                            r.getString(5), r.getString(6), r.getString(7), r.getString(8)));
                     }
                 }
             }
@@ -968,14 +972,14 @@ public final class ModDeletionLedger {
             if (version == null)
                 return null;
             try (var p = c.prepareStatement(
-                    "SELECT generation,physical_name,database_user,state,ever_used,validated_at,validation_digest FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+                "SELECT generation,physical_name,database_user,state,ever_used,validated_at,validation_digest FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
                 p.setString(1, owner);
                 p.setString(2, version);
                 try (var r = p.executeQuery()) {
                     return !r.next()
-                            ? null
-                            : new Schema(version, r.getObject(1, UUID.class).toString(), r.getString(2), r.getString(3),
-                                    r.getString(4), r.getBoolean(5), (Long) r.getObject(6), r.getString(7));
+                        ? null
+                        : new Schema(version, r.getObject(1, UUID.class).toString(), r.getString(2), r.getString(3),
+                        r.getString(4), r.getBoolean(5), (Long) r.getObject(6), r.getString(7));
                 }
             }
         }
@@ -988,7 +992,7 @@ public final class ModDeletionLedger {
         private static List<Schema> schemas(Connection c, String owner) throws SQLException {
             var values = new ArrayList<Schema>();
             try (var p = c
-                    .prepareStatement("SELECT schema_version FROM mod_schema WHERE mod_id=? ORDER BY schema_version")) {
+                .prepareStatement("SELECT schema_version FROM mod_schema WHERE mod_id=? ORDER BY schema_version")) {
                 p.setString(1, owner);
                 try (var r = p.executeQuery()) {
                     while (r.next()) {
@@ -1008,16 +1012,16 @@ public final class ModDeletionLedger {
         private static List<LogRepository.Target> targets(Connection c, String owner) throws SQLException {
             var values = new ArrayList<LogRepository.Target>();
             try (var p = c
-                    .prepareStatement("SELECT * FROM log_category WHERE owner_id=? ORDER BY logical_schema,category")) {
+                .prepareStatement("SELECT * FROM log_category WHERE owner_id=? ORDER BY logical_schema,category")) {
                 p.setString(1, owner);
                 try (var r = p.executeQuery()) {
                     while (r.next()) {
                         require(values.size() < 4096 && r.getInt("format_version") == 1,
-                                "Owned log catalog is invalid");
+                            "Owned log catalog is invalid");
                         values.add(new LogRepository.Target(r.getObject("target_key", UUID.class), owner,
-                                r.getString("logical_schema"), r.getObject("schema_generation", UUID.class),
-                                r.getString("physical_schema"), r.getString("category"), r.getString("target_table"),
-                                r.getString("display_name")));
+                            r.getString("logical_schema"), r.getObject("schema_generation", UUID.class),
+                            r.getString("physical_schema"), r.getString("category"), r.getString("target_table"),
+                            r.getString("display_name")));
                     }
                 }
             } catch (IllegalArgumentException | NullPointerException invalid) {
@@ -1032,7 +1036,7 @@ public final class ModDeletionLedger {
          * @return original owned navigation order / 原自有导航顺序
          * @throws SQLException if stored preferences cannot be verified / 无法核验已存偏好时 */
         private static List<ModNavigationPreferences.PagePin> ownerPins(Connection c, String owner)
-                throws SQLException {
+            throws SQLException {
             return ModNavigationPreferences.read(c).stream().filter(pin -> pin.ownerId().equals(owner)).toList();
         }
 
@@ -1056,8 +1060,8 @@ public final class ModDeletionLedger {
          * @throws SQLException if reference reading fails / 引用读取失败时 */
         private static boolean sharedSecret(Connection c, String owner, String id) throws SQLException {
             return count(c,
-                    "SELECT (SELECT COUNT(*) FROM server_profile WHERE credential_id=?)+(SELECT COUNT(*) FROM ai_model WHERE credential_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE credential_id=? AND mod_id<>?)",
-                    id, id, id, owner) != 0;
+                "SELECT (SELECT COUNT(*) FROM server_profile WHERE credential_id=?)+(SELECT COUNT(*) FROM ai_model WHERE credential_id=?)+(SELECT COUNT(*) FROM mod_credential_reference WHERE credential_id=? AND mod_id<>?)",
+                id, id, id, owner) != 0;
         }
 
         /** Rejects active own or cross-Mod work and all other retained maintenance. / 拒绝活动自有或跨 Mod 工作及其他全部保留维护。
@@ -1084,58 +1088,58 @@ public final class ModDeletionLedger {
             try {
                 boolean whole = request.version() == null;
                 require(request.format() == 2 && home.toString().equals(request.home()) && request.ownerState() != null
-                        && request.ownerState().revision() >= 0 && request.versions() != null
-                        && (whole || !request.versions().isEmpty()) && request.versions().size() <= 1024
-                        && request.files() != null && request.files().length() <= 4 * 1024 * 1024
-                        && request.schemas() != null && request.schemas().size() <= 1024 && request.targets() != null
-                        && request.targets().size() <= 4096 && request.pins() != null && request.pins().size() <= 1024
-                        && request.secrets() != null && request.secrets().size() <= 10000, "Invalid deletion request");
+                    && request.ownerState().revision() >= 0 && request.versions() != null
+                    && (whole || !request.versions().isEmpty()) && request.versions().size() <= 1024
+                    && request.files() != null && request.files().length() <= 4 * 1024 * 1024
+                    && request.schemas() != null && request.schemas().size() <= 1024 && request.targets() != null
+                    && request.targets().size() <= 4096 && request.pins() != null && request.pins().size() <= 1024
+                    && request.secrets() != null && request.secrets().size() <= 10000, "Invalid deletion request");
                 UUID.fromString(request.ownerState().ackBoot());
                 require(segment(request.owner()) && !Set.of("app", "@platform").contains(request.owner())
-                        && (whole || segment(request.version())), "Invalid installed path identity");
+                    && (whole || segment(request.version())), "Invalid installed path identity");
                 require(request.versions().stream().map(Release::version).distinct().count() == request.versions()
-                        .size() && request.versions().stream().allMatch(v -> "READY".equals(v.state()))
-                        && (whole || request.release() != null), "Invalid original releases");
+                    .size() && request.versions().stream().allMatch(v -> "READY".equals(v.state()))
+                    && (whole || request.release() != null), "Invalid original releases");
                 for (var release : request.selected())
                     require(segment(release.version()) && Set.of("LOCAL", "BUNDLED", "STORE").contains(release.origin())
                             && home.resolve("mod").resolve(request.owner()).resolve(release.version()).toString()
-                                    .equals(release.path()),
-                            "Only registered ordinary installed programs can be removed; CLASS sources are not install directories");
+                            .equals(release.path()),
+                        "Only registered ordinary installed programs can be removed; CLASS sources are not install directories");
                 require(request.schemas().stream().map(Schema::version).distinct().count() == request.schemas().size(),
-                        "Duplicate owned data");
+                    "Duplicate owned data");
                 for (var data : request.schemas()) {
                     var coordinates = new SchemaCoordinates(identity(request, data));
                     require(coordinates.physicalName().equals(data.physical())
                             && coordinates.databaseUser().equals(data.user())
                             && Set.of("PREPARING", "READY", "FAILED", "UNKNOWN").contains(data.state()),
-                            "Invalid original Schema ownership");
+                        "Invalid original Schema ownership");
                     require(whole || data.version().equals(request.release().schema()),
-                            "Unrelated single-version data");
+                        "Unrelated single-version data");
                 }
                 require(whole || request.schemas().size() <= 1 && request.targets().isEmpty()
-                        && request.pins().isEmpty() && request.secrets().isEmpty(), "Invalid version-only range");
+                    && request.pins().isEmpty() && request.secrets().isEmpty(), "Invalid version-only range");
                 require(request.targets().stream().map(LogRepository.Target::key).distinct().count() == request
                         .targets().size() && new HashSet<>(request.pins()).size() == request.pins().size(),
-                        "Duplicate owned references");
+                    "Duplicate owned references");
                 for (var target : request.targets()) {
                     require(target.owner().equals(request.owner()), "Foreign log ownership");
                     if (target.logical().equals("app"))
                         require(target.physical().equals("app") && target.table().equals("runtime_log")
-                                && target.category().equals("runtime")
-                                && target.generation().equals(database.generation()), "Invalid runtime log generation");
+                            && target.category().equals("runtime")
+                            && target.generation().equals(database.generation()), "Invalid runtime log generation");
                     else
                         require(request.schemas().stream()
                                 .anyMatch(v -> target.logical().equals("v" + v.version())
-                                        && target.generation().toString().equals(v.generation())
-                                        && target.physical().equals(v.physical())),
-                                "Unowned business log data");
+                                    && target.generation().toString().equals(v.generation())
+                                    && target.physical().equals(v.physical())),
+                            "Unowned business log data");
                 }
                 require(request.pins().stream().allMatch(pin -> pin.ownerId().equals(request.owner())),
-                        "Foreign navigation preference");
+                    "Foreign navigation preference");
                 require(request.secrets().stream().map(Secret::id).distinct().count() == request.secrets().size()
                         && request.secrets().stream()
-                                .allMatch(v -> CredentialReferenceRepository.ownedIdentity(request.owner(), v.id())),
-                        "Invalid owned credential identities");
+                        .allMatch(v -> CredentialReferenceRepository.ownedIdentity(request.owner(), v.id())),
+                    "Invalid owned credential identities");
             } catch (IllegalArgumentException | NullPointerException invalid) {
                 throw new SQLException("Invalid original deletion evidence", invalid);
             }
@@ -1155,37 +1159,37 @@ public final class ModDeletionLedger {
          * @throws SQLException if absent or invalid / 缺失或无效时 */
         private Row load(Connection c, UUID operation) throws SQLException {
             try (var p = c.prepareStatement(
-                    "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND outcome IS NULL")) {
+                "SELECT * FROM mod_operation WHERE operation_id=? AND operation_type IN ('DELETE_VERSION','DELETE_MOD') AND outcome IS NULL")) {
                 p.setObject(1, operation);
                 try (var r = p.executeQuery()) {
                     require(r.next(), "Original deletion evidence is absent");
                     try {
                         String value = r.getString("request_json"), recovery = r.getString("recovery_json");
                         require(value.length() <= 8 * 1024 * 1024 && recovery.length() <= 256,
-                                "Deletion evidence exceeds bounds");
+                            "Deletion evidence exceeds bounds");
                         var request = decode(value);
                         validate(request);
                         var resume = JSON.readTree(recovery);
                         require(resume != null && resume.isObject() && resume.size() == 1
                                 && resume.path("boot").isTextual() && UUID.fromString(resume.path("boot").textValue())
-                                        .toString().equals(resume.path("boot").textValue()),
-                                "Invalid deletion recovery identity");
+                                .toString().equals(resume.path("boot").textValue()),
+                            "Invalid deletion recovery identity");
                         require(request.owner().equals(r.getString("mod_id"))
                                 && Objects.equals(request.version(), r.getString("source_version"))
                                 && request.type().equals(r.getString("operation_type"))
                                 && r.getString("target_version") == null
                                 && Objects.equals(request.version() == null ? null : request.release().schema(),
-                                        r.getString("source_schema_version"))
+                                r.getString("source_schema_version"))
                                 && r.getString("target_schema_version") == null
                                 && Objects.equals(request.sourceGeneration(),
-                                        r.getObject("target_generation", UUID.class))
+                                r.getObject("target_generation", UUID.class))
                                 && r.getObject("accepted_revision") != null
                                 && request.ownerState().revision() == r.getLong("accepted_revision")
                                 && PHASES.contains(r.getString("phase"))
                                 && Set.of("RUNNING", "UNKNOWN").contains(r.getString("state")),
-                                "Original deletion identity changed");
+                            "Original deletion identity changed");
                         return new Row(request, r.getString("phase"), r.getString("state"), recovery,
-                                UUID.fromString(r.getString("archive_log_id")));
+                            UUID.fromString(r.getString("archive_log_id")));
                     } catch (IOException | IllegalArgumentException | NullPointerException invalid) {
                         throw new SQLException("Invalid retained deletion evidence", invalid);
                     }
@@ -1204,10 +1208,10 @@ public final class ModDeletionLedger {
                 var original = JSON.treeToValue(raw, OriginalRequest.class);
                 require(original.version() != null && original.versions() != null, "Invalid original version deletion");
                 var release = original.versions().stream().filter(v -> original.version().equals(v.version()))
-                        .findFirst().orElseThrow(() -> new SQLException("Original release evidence is absent"));
+                    .findFirst().orElseThrow(() -> new SQLException("Original release evidence is absent"));
                 var data = original.schema();
                 require(data != null && (data.isNull() || data.isObject() && data.size() == 7),
-                        "Invalid original data evidence");
+                    "Invalid original data evidence");
                 var schemas = new ArrayList<Schema>();
                 if (!data.isNull()) {
                     var translated = ((com.fasterxml.jackson.databind.node.ObjectNode) data).deepCopy();
@@ -1215,10 +1219,10 @@ public final class ModDeletionLedger {
                     schemas.add(JSON.treeToValue(translated, Schema.class));
                 }
                 var request = new Request(2, original.home(), original.owner(), original.version(),
-                        original.ownerState(), original.versions(), List.copyOf(schemas), List.of(), List.of(),
-                        List.of(), original.files());
+                    original.ownerState(), original.versions(), List.copyOf(schemas), List.of(), List.of(),
+                    List.of(), original.files());
                 require(original.removeSchema() == !request.removals().isEmpty(),
-                        "Original last-reference evidence differs");
+                    "Original last-reference evidence differs");
                 return request;
             }
             return JSON.treeToValue(raw, Request.class);

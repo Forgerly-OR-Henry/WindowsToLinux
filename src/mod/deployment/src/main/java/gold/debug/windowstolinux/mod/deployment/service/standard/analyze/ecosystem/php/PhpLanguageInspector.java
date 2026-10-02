@@ -18,6 +18,6 @@ public final class PhpLanguageInspector {
      */
     public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
         return SourceLanguageEvidence.collect(source, LanguageEcosystemType.PHP,
-                name -> name.endsWith(".php") || name.equals("composer.json") ? SourceLanguageType.PHP : null);
+            name -> name.endsWith(".php") || name.equals("composer.json") ? SourceLanguageType.PHP : null);
     }
 }

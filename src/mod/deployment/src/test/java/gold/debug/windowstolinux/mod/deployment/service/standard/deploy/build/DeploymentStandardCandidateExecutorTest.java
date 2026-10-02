@@ -1,5 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.InteractionService;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -9,20 +21,20 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.main.startup.PlatformRuntime;
-import gold.debug.windowstolinux.app.service.contract.profile.ServerProfile;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
-import gold.debug.windowstolinux.mod.deployment.source.*;
+import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -48,12 +60,12 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
-                    TaskSnapshot task, CancellationToken cancellation) {
+                                                           TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("Candidate target must be exclusively absent");
             }
 
             public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                                                       CancelToken cancellation) {
                 throw new AssertionError("Controlled transfer cannot stall");
             }
 
@@ -61,13 +73,13 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
                 return "Transfer";
             }
 
-            public boolean approve(ActionIntent intent, TaskSnapshot task, CancellationToken cancellation) {
+            public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 reviewed.add(intent);
                 return true;
             }
 
             public char[] text(String title, String prompt, boolean secret, TaskSnapshot task,
-                    CancellationToken cancellation) {
+                               CancelToken cancellation) {
                 throw new AssertionError("No text input expected");
             }
         });
@@ -98,9 +110,9 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var server = new ServerRef("server-candidate");
             runtime.servers().saveServerProfile(
-                    ServerProfile.fromStored(
-                            new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
-                    "fixture-password".toCharArray());
+                ServerProfile.fromStored(
+                    new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
+                "fixture-password".toCharArray());
             var archiveIdentity = new AtomicReference<String>();
             var archiveBytes = new AtomicLong();
             var archivePath = new AtomicReference<Path>();
@@ -113,114 +125,114 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
             var readyToCancel = new CountDownLatch(1);
             var releaseCancellation = new CountDownLatch(1);
             RemoteSession session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
-                    new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
-                        if (method.getName().equals("facts"))
-                            return new RemoteFacts("", "", "SHA256:fixture-host");
-                        if (method.getName().equals("upload")) {
-                            assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
-                            actions.add("upload");
-                            uploads.incrementAndGet();
-                            TransferRequest transfer = (TransferRequest) args[0];
-                            assertEquals(archivePath.get(), transfer.localPath());
-                            assertEquals(archiveBytes.get(), transfer.maxBytes());
-                            assertEquals(workspaceIdentity.get().candidateRoot() + "/mutable/source.tar.gz",
-                                    transfer.remoteAbsolutePath());
-                            if (scenario == ScenarioType.UPLOAD_UNKNOWN)
-                                return unknownTransfer();
-                            return new OperationResult<>(Outcome.SUCCEEDED,
-                                    Optional.of(new TransferResult(archiveBytes.get(), archiveIdentity.get(),
-                                            transfer.localPath(),
-                                            scenario == ScenarioType.WRONG_ENDPOINT
-                                                    ? transfer.remoteAbsolutePath() + ".other"
-                                                    : transfer.remoteAbsolutePath())),
-                                    Optional.empty());
-                        }
-                        if (!method.getName().equals("execute"))
-                            throw new AssertionError("Caller owns the original session: " + method.getName());
-                        CommandRequest command = (CommandRequest) args[0];
+                new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("facts"))
+                        return new RemoteFacts("", "", "SHA256:fixture-host");
+                    if (method.getName().equals("upload")) {
                         assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
-                        String script = command.script();
-                        if (script.contains("managed-helper' probe")) {
-                            actions.add("helper-probe");
-                            return reply("HELPER=1\nPROTOCOL=13\nSHA256="
-                                    + gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle.EXPECTED_SHA256
-                                    + "\n");
-                        }
-                        if (script.contains("DISTRO_ID=")) {
-                            actions.add("host-facts");
-                            int read = hostReads.incrementAndGet();
-                            if (scenario == ScenarioType.HOST_RECEIPT_MISSING)
-                                return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                            return reply("DISTRO_ID=ubuntu\nVERSION=24.04\nARCH="
-                                    + (scenario == ScenarioType.HOST_DRIFT && read == 2 ? "aarch64" : "x86_64")
-                                    + "\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\n"
-                                    + "SECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\n"
-                                    + "FIREWALL_STATE=active\n");
-                        }
-                        if (script.contains("stat -f -c")) {
-                            actions.add("capacity");
-                            if (scenario == ScenarioType.CAPACITY_RECEIPT_MISSING)
-                                return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-                            return reply("1000000000 4096\n");
-                        }
-                        if (script.contains("build-preflight")) {
-                            actions.add("build-preflight");
-                            return reply("");
-                        }
-                        if (script.contains("prepare-toolchains 'prepare'")) {
-                            actions.add("prepare-tools");
-                            return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
-                                    + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
-                        }
-                        if (script.contains("prepare-toolchains 'bind'")) {
-                            actions.add("bind-tools");
-                            String encoded = script.substring(script.indexOf("'bind' '") + 8);
-                            encoded = encoded.substring(0, encoded.indexOf('\''));
-                            var tools = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
-                                    .decode(new String(Base64.getDecoder().decode(encoded),
-                                            java.nio.charset.StandardCharsets.UTF_8));
-                            return reply("TOOLCHAIN_BINDING="
-                                    + gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
-                                            .identity(tools)
-                                    + "\n");
-                        }
-                        if (script.contains("candidate-create-task")) {
-                            actions.add("create-candidate");
-                            candidateCreates.incrementAndGet();
-                            if (scenario == ScenarioType.CREATE_UNKNOWN)
-                                return unknownCommand();
-                            return reply("CANDIDATE=" + workspaceIdentity.get().candidateRoot() + "\n");
-                        }
-                        if (script.contains("stat -c '%s'")) {
-                            actions.add("verify-archive");
-                            return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archiveBytes.get()
-                                    + "\nSHA256="
-                                    + (scenario == ScenarioType.VERIFY_DRIFT ? "f".repeat(64) : archiveIdentity.get())
-                                    + "\nOWNER=0\n");
-                        }
-                        if (script.contains("candidate-query-task")) {
-                            actions.add("query-candidate");
-                            return reply(scenario == ScenarioType.QUERY_FOREIGN
-                                    ? "CANDIDATE_STATE=absent\nBUILD_ACTIVE=no\n"
-                                    : "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n");
-                        }
-                        assertTrue(script.startsWith("exec /usr/bin/python3 -I -c "), script);
-                        actions.add("build");
-                        return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
-                                + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\n"
-                                + "CONFLICT=0\nHEAD=\nTAIL=\n");
-                    });
+                        actions.add("upload");
+                        uploads.incrementAndGet();
+                        TransferRequest transfer = (TransferRequest) args[0];
+                        assertEquals(archivePath.get(), transfer.localPath());
+                        assertEquals(archiveBytes.get(), transfer.maxBytes());
+                        assertEquals(workspaceIdentity.get().candidateRoot() + "/mutable/source.tar.gz",
+                            transfer.remoteAbsolutePath());
+                        if (scenario == ScenarioType.UPLOAD_UNKNOWN)
+                            return unknownTransfer();
+                        return new OperationResult<>(Outcome.SUCCEEDED,
+                            Optional.of(new TransferResult(archiveBytes.get(), archiveIdentity.get(),
+                                transfer.localPath(),
+                                scenario == ScenarioType.WRONG_ENDPOINT
+                                    ? transfer.remoteAbsolutePath() + ".other"
+                                    : transfer.remoteAbsolutePath())),
+                            Optional.empty());
+                    }
+                    if (!method.getName().equals("execute"))
+                        throw new AssertionError("Caller owns the original session: " + method.getName());
+                    CommandRequest command = (CommandRequest) args[0];
+                    assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
+                    String script = command.script();
+                    if (script.contains("managed-helper' probe")) {
+                        actions.add("helper-probe");
+                        return reply("HELPER=1\nPROTOCOL=13\nSHA256="
+                            + gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle.EXPECTED_SHA256
+                            + "\n");
+                    }
+                    if (script.contains("DISTRO_ID=")) {
+                        actions.add("host-facts");
+                        int read = hostReads.incrementAndGet();
+                        if (scenario == ScenarioType.HOST_RECEIPT_MISSING)
+                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return reply("DISTRO_ID=ubuntu\nVERSION=24.04\nARCH="
+                            + (scenario == ScenarioType.HOST_DRIFT && read == 2 ? "aarch64" : "x86_64")
+                            + "\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\n"
+                            + "SECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\n"
+                            + "FIREWALL_STATE=active\n");
+                    }
+                    if (script.contains("stat -f -c")) {
+                        actions.add("capacity");
+                        if (scenario == ScenarioType.CAPACITY_RECEIPT_MISSING)
+                            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return reply("1000000000 4096\n");
+                    }
+                    if (script.contains("build-preflight")) {
+                        actions.add("build-preflight");
+                        return reply("");
+                    }
+                    if (script.contains("prepare-toolchains 'prepare'")) {
+                        actions.add("prepare-tools");
+                        return reply("TOOLCHAIN=GO|1.24.1|/usr/local/lib/windowstolinux/toolchains/versions/go-"
+                            + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
+                    }
+                    if (script.contains("prepare-toolchains 'bind'")) {
+                        actions.add("bind-tools");
+                        String encoded = script.substring(script.indexOf("'bind' '") + 8);
+                        encoded = encoded.substring(0, encoded.indexOf('\''));
+                        var tools = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
+                            .decode(new String(Base64.getDecoder().decode(encoded),
+                                java.nio.charset.StandardCharsets.UTF_8));
+                        return reply("TOOLCHAIN_BINDING="
+                            + gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec
+                            .identity(tools)
+                            + "\n");
+                    }
+                    if (script.contains("candidate-create-task")) {
+                        actions.add("create-candidate");
+                        candidateCreates.incrementAndGet();
+                        if (scenario == ScenarioType.CREATE_UNKNOWN)
+                            return unknownCommand();
+                        return reply("CANDIDATE=" + workspaceIdentity.get().candidateRoot() + "\n");
+                    }
+                    if (script.contains("stat -c '%s'")) {
+                        actions.add("verify-archive");
+                        return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archiveBytes.get()
+                            + "\nSHA256="
+                            + (scenario == ScenarioType.VERIFY_DRIFT ? "f".repeat(64) : archiveIdentity.get())
+                            + "\nOWNER=0\n");
+                    }
+                    if (script.contains("candidate-query-task")) {
+                        actions.add("query-candidate");
+                        return reply(scenario == ScenarioType.QUERY_FOREIGN
+                            ? "CANDIDATE_STATE=absent\nBUILD_ACTIVE=no\n"
+                            : "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n");
+                    }
+                    assertTrue(script.startsWith("exec /usr/bin/python3 -I -c "), script);
+                    actions.add("build");
+                    return reply("WTL_BUILD_REPORT=1\nEXIT=0\nBYTES=0\nSHA256=" + "c".repeat(64)
+                        + "\nUID=1001\nENGINE=ordinary\nTOOL=GO_MODULE\nCOMPAT=0\nLIMIT=-\n"
+                        + "CONFLICT=0\nHEAD=\nTAIL=\n");
+                });
             var context = runtime.modContexts().get(OWNER).context();
             InteractionService hostInteraction = new InteractionService() {
                 public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                        throws ApiException {
+                    throws ApiException {
                     var result = context.interaction().approve(intent, task);
                     result.value().ifPresent(value -> grants.put(value, intent));
                     return result;
                 }
 
                 public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                        TaskContext task) throws ApiException {
+                                                           TaskContext task) throws ApiException {
                     return context.interaction().requestText(title, prompt, secret, task);
                 }
             };
@@ -228,56 +240,56 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
             var observed = new AtomicReference<OperationResult<DeploymentVerifiedBuildResult>>();
             var callbackFinished = new CountDownLatch(1);
             var handle = context.tasks().submit(
-                    new TaskRequest("deployment-standard-candidate", "Candidate source", List.of(server.id()), true),
-                    task -> {
-                        try {
-                            var selection = context.source().selectDirectory("Source", task);
-                            try (var material = new DeploymentSourcePreparer(context.source()).prepare(selection, 65536,
-                                    100, task);
-                                    var archive = new DeploymentSourceArchiver(context.source()).prepare(material,
-                                            65536, task)) {
-                                archiveIdentity.set(archive.sha256());
-                                archiveBytes.set(archive.byteCount());
-                                archivePath.set(archive.path());
-                                var analysis = new DeploymentStandardAnalyzer().analyze(material, "Reviewed Go",
-                                        DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
-                                var facts = analysis.value().orElseThrow().assessment().facts().orElseThrow();
-                                workspaceIdentity
-                                        .set(new DeploymentRemoteWorkspace(facts.applicationId(), archive.sha256()));
-                                var request = new ReviewedDeploymentRequest(server, facts, material, archive,
-                                        DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1",
-                                                Instant.now(), List.of()),
-                                        List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
-                                        new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(),
-                                                "main.go", new DeploymentHealthCheck.Tcp(8080, 10, 2)),
-                                        Optional.empty(), DeploymentBuildLimits.defaultNonRoot(),
-                                        new DeploymentReviewConsent(facts.applicationId(), server.id(),
-                                                material.snapshot().sha256(), archive.sha256(), Instant.now()),
-                                        false, true);
-                                var plan = new DeploymentStandardPlanner().plan(material,
-                                        analysis.value().orElseThrow(), request, task);
-                                if (scenario == ScenarioType.SOURCE_CLOSED)
-                                    archive.close();
-                                if (scenario == ScenarioType.CANCELLED_BEFORE_REMOTE) {
-                                    readyToCancel.countDown();
-                                    try {
-                                        assertTrue(releaseCancellation.await(10, TimeUnit.SECONDS));
-                                    } catch (InterruptedException cancelled) {
-                                        Thread.currentThread().interrupt();
-                                    }
+                new TaskRequest("deployment-standard-candidate", "Candidate source", List.of(server.id()), true),
+                task -> {
+                    try {
+                        var selection = context.file().selectDirectory("Source", task);
+                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 65536,
+                            100, task);
+                             var archive = new DeploymentSourceArchiver(context.file()).prepare(material,
+                                 65536, task)) {
+                            archiveIdentity.set(archive.sha256());
+                            archiveBytes.set(archive.byteCount());
+                            archivePath.set(archive.path());
+                            var analysis = new DeploymentStandardAnalyzer().analyze(material, "Reviewed Go",
+                                DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
+                            var facts = analysis.value().orElseThrow().assessment().facts().orElseThrow();
+                            workspaceIdentity
+                                .set(new DeploymentRemoteWorkspace(facts.applicationId(), archive.sha256()));
+                            var request = new ReviewedDeploymentRequest(server, facts, material, archive,
+                                DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1",
+                                    Instant.now(), List.of()),
+                                List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+                                new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(),
+                                    "main.go", new DeploymentHealthCheck.Tcp(8080, 10, 2)),
+                                Optional.empty(), DeploymentBuildLimits.defaultNonRoot(),
+                                new DeploymentReviewConsent(facts.applicationId(), server.id(),
+                                    material.snapshot().sha256(), archive.sha256(), Instant.now()),
+                                false, true);
+                            var plan = new DeploymentStandardPlanner().plan(material,
+                                analysis.value().orElseThrow(), request, task);
+                            if (scenario == ScenarioType.SOURCE_CLOSED)
+                                archive.close();
+                            if (scenario == ScenarioType.CANCELLED_BEFORE_REMOTE) {
+                                readyToCancel.countDown();
+                                try {
+                                    assertTrue(releaseCancellation.await(10, TimeUnit.SECONDS));
+                                } catch (InterruptedException cancelled) {
+                                    Thread.currentThread().interrupt();
                                 }
-                                var result = new DeploymentStandardCandidateExecutor()
-                                        .execute(plan.value().orElseThrow(), session, hostInteraction, task);
-                                observed.set(result);
-                                callbackFinished.countDown();
-                                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
                             }
-                        } catch (Throwable caught) {
-                            failure.set(caught);
+                            var result = new DeploymentStandardCandidateExecutor()
+                                .execute(plan.value().orElseThrow(), session, hostInteraction, task);
+                            observed.set(result);
                             callbackFinished.countDown();
-                            throw caught;
+                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
                         }
-                    });
+                    } catch (Throwable caught) {
+                        failure.set(caught);
+                        callbackFinished.countDown();
+                        throw caught;
+                    }
+                });
             if (scenario == ScenarioType.CANCELLED_BEFORE_REMOTE) {
                 assertTrue(readyToCancel.await(10, TimeUnit.SECONDS));
                 handle.requestCancel();
@@ -292,13 +304,13 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
                 assertEquals(Outcome.SUCCEEDED, observed.get().outcome(), observed.get().toString());
                 assertEquals(archiveIdentity.get(), observed.get().value().orElseThrow().archiveSha256());
                 assertEquals("1.24.1",
-                        observed.get().value().orElseThrow().toolchains().selections().getFirst().version().text());
+                    observed.get().value().orElseThrow().toolchains().selections().getFirst().version().text());
                 assertEquals(List.of("helper-probe", "host-facts", "capacity", "build-preflight", "prepare-tools",
-                        "bind-tools", "host-facts", "create-candidate", "query-candidate", "upload", "verify-archive",
-                        "build"), actions);
+                    "bind-tools", "host-facts", "create-candidate", "query-candidate", "upload", "verify-archive",
+                    "build"), actions);
                 assertEquals(1, reviewed.stream().filter(
                         value -> value.semantics().orElseThrow().operation().equals("deployment.candidate.upload.v1"))
-                        .count());
+                    .count());
             } else {
                 Outcome expectedOutcome = switch (scenario) {
                     case HOST_DRIFT, HOST_RECEIPT_MISSING, CAPACITY_RECEIPT_MISSING, SOURCE_CLOSED -> Outcome.FAILED;
@@ -329,21 +341,21 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
                     assertFalse(actions.contains("verify-archive"));
             }
             assertEquals(
-                    scenario == ScenarioType.SUCCESS || scenario == ScenarioType.CREATE_UNKNOWN
-                            || scenario == ScenarioType.UPLOAD_UNKNOWN || scenario == ScenarioType.WRONG_ENDPOINT
-                            || scenario == ScenarioType.VERIFY_DRIFT || scenario == ScenarioType.QUERY_FOREIGN ? 1 : 0,
-                    candidateCreates.get());
+                scenario == ScenarioType.SUCCESS || scenario == ScenarioType.CREATE_UNKNOWN
+                    || scenario == ScenarioType.UPLOAD_UNKNOWN || scenario == ScenarioType.WRONG_ENDPOINT
+                    || scenario == ScenarioType.VERIFY_DRIFT || scenario == ScenarioType.QUERY_FOREIGN ? 1 : 0,
+                candidateCreates.get());
             assertEquals(
-                    scenario == ScenarioType.SUCCESS || scenario == ScenarioType.UPLOAD_UNKNOWN
-                            || scenario == ScenarioType.WRONG_ENDPOINT || scenario == ScenarioType.VERIFY_DRIFT ? 1 : 0,
-                    uploads.get());
+                scenario == ScenarioType.SUCCESS || scenario == ScenarioType.UPLOAD_UNKNOWN
+                    || scenario == ScenarioType.WRONG_ENDPOINT || scenario == ScenarioType.VERIFY_DRIFT ? 1 : 0,
+                uploads.get());
             assertEquals(
-                    scenario == ScenarioType.HOST_RECEIPT_MISSING || scenario == ScenarioType.CAPACITY_RECEIPT_MISSING
-                            || scenario == ScenarioType.SOURCE_CLOSED
-                            || scenario == ScenarioType.CANCELLED_BEFORE_REMOTE ? 0 : 1,
-                    actions.stream().filter("prepare-tools"::equals).count());
+                scenario == ScenarioType.HOST_RECEIPT_MISSING || scenario == ScenarioType.CAPACITY_RECEIPT_MISSING
+                    || scenario == ScenarioType.SOURCE_CLOSED
+                    || scenario == ScenarioType.CANCELLED_BEFORE_REMOTE ? 0 : 1,
+                actions.stream().filter("prepare-tools"::equals).count());
             assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
     }
 
@@ -352,20 +364,20 @@ class DeploymentStandardCandidateExecutorTest extends DeploymentRuntimeFixture {
      * @return known success / 已知成功 */
     private static OperationResult<CommandResult> reply(String stdout) {
         return new OperationResult<>(Outcome.SUCCEEDED,
-                Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
+            Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 
     /** Returns an unconfirmed command without a fabricated receipt. / 返回无虚构回执的未知命令。
      * @return unknown command / 未知命令 */
     private static OperationResult<CommandResult> unknownCommand() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                "FIXTURE_UNKNOWN", "Controlled reply was lost", Map.of(), Optional.empty())));
+            "FIXTURE_UNKNOWN", "Controlled reply was lost", Map.of(), Optional.empty())));
     }
 
     /** Returns an unconfirmed public upload. / 返回未确认公开上传。
      * @return unknown upload / 未知上传 */
     private static OperationResult<TransferResult> unknownTransfer() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                "FIXTURE_UPLOAD_UNKNOWN", "Controlled transfer reply was lost", Map.of(), Optional.empty())));
+            "FIXTURE_UPLOAD_UNKNOWN", "Controlled transfer reply was lost", Map.of(), Optional.empty())));
     }
 }

@@ -12,9 +12,10 @@ import java.util.function.Predicate;
 public final class ServiceSnapshot {
     /** Exact trusted immutable JDK scalar classes. / 精确可信不可变 JDK 标量类。 */
     private static final Set<Class<?>> SCALARS = Set.of(String.class, Boolean.class, Byte.class, Short.class,
-            Integer.class, Long.class, Float.class, Double.class, Character.class, BigInteger.class, BigDecimal.class,
-            UUID.class, Instant.class, Duration.class, LocalDate.class, LocalTime.class, LocalDateTime.class,
-            OffsetTime.class, OffsetDateTime.class, ZonedDateTime.class, Year.class, YearMonth.class, MonthDay.class);
+        Integer.class, Long.class, Float.class, Double.class, Character.class, BigInteger.class, BigDecimal.class,
+        UUID.class, Instant.class, Duration.class, LocalDate.class, LocalTime.class, LocalDateTime.class,
+        OffsetTime.class, OffsetDateTime.class, ZonedDateTime.class, Year.class, YearMonth.class, MonthDay.class);
+
     /** Prevents utility construction. / 禁止工具构造。 */
     private ServiceSnapshot() {
     }
@@ -37,7 +38,7 @@ public final class ServiceSnapshot {
      * @return detached value / 分离值
      * @throws ReflectiveOperationException if reconstruction fails / 重建失败时 */
     private static Object copy(Object value, Predicate<Class<?>> publicType, IdentityHashMap<Object, Boolean> visiting,
-            int[] budget, int depth) throws ReflectiveOperationException {
+                               int[] budget, int depth) throws ReflectiveOperationException {
         if (--budget[0] < 0 || depth > 64)
             throw new IllegalArgumentException("Service value exceeds graph limits");
         if (value == null)
@@ -50,8 +51,8 @@ public final class ServiceSnapshot {
             return bytes.clone();
         }
         if (SCALARS.contains(type) || value instanceof Enum<?> item && publicType.test(item.getDeclaringClass())
-                || value instanceof Path path && path.getFileSystem() == FileSystems.getDefault()
-                        && type.getClassLoader() == null) {
+            || value instanceof Path path && path.getFileSystem() == FileSystems.getDefault()
+            && type.getClassLoader() == null) {
             budget[1] -= value.toString().getBytes(StandardCharsets.UTF_8).length;
             if (budget[1] < 0)
                 throw new IllegalArgumentException("Service value exceeds byte budget");
@@ -62,8 +63,8 @@ public final class ServiceSnapshot {
         try {
             if (value instanceof Optional<?> optional)
                 return optional.isEmpty()
-                        ? Optional.empty()
-                        : Optional.ofNullable(copy(optional.get(), publicType, visiting, budget, depth + 1));
+                    ? Optional.empty()
+                    : Optional.ofNullable(copy(optional.get(), publicType, visiting, budget, depth + 1));
             if (value instanceof List<?> list) {
                 if (list.size() > budget[0])
                     throw new IllegalArgumentException("Service list exceeds its budget");

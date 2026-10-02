@@ -6,8 +6,8 @@ import java.nio.file.*;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.bootstrap.DatabaseProtection;
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +27,7 @@ class PlatformDatabaseTest {
             return protect(encrypted);
         }
     };
+
     long count(PlatformDatabase database, String sql) throws Exception {
         try (var c = database.openConnection(); var s = c.createStatement(); var r = s.executeQuery(sql)) {
             assertTrue(r.next());
@@ -36,32 +37,32 @@ class PlatformDatabaseTest {
 
     @Test
     void schemaOwnerCredentialsRemainCompatibleWithExistingUsersAcrossRestart() throws Exception {
-        var coordinates = new gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates(
-                new gold.debug.windowstolinux.appapi.db.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
+        var coordinates = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
+            new gold.debug.windowstolinux.appapi.db.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
         UUID generation;
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
-                var original = gold.debug.windowstolinux.app.db.bootstrap.DatabaseBootstrap.load(root, TEST_PROTECTION);
-                var connection = database.openConnection()) {
+             var original = gold.debug.windowstolinux.app.db.init.DatabaseBootstrap.load(root, TEST_PROTECTION);
+             var connection = database.openConnection()) {
             generation = database.generation();
             String originalPassword = original.derive("WTL-SCHEMA-OWNER-1\0" + coordinates.databaseUser());
             try (var statement = connection
-                    .prepareStatement("CREATE USER " + coordinates.databaseUser() + " PASSWORD ?")) {
+                .prepareStatement("CREATE USER " + coordinates.databaseUser() + " PASSWORD ?")) {
                 statement.setString(1, originalPassword);
                 statement.execute();
             }
             try (var statement = connection.createStatement()) {
                 statement.execute(
-                        "CREATE SCHEMA " + coordinates.physicalName() + " AUTHORIZATION " + coordinates.databaseUser());
+                    "CREATE SCHEMA " + coordinates.physicalName() + " AUTHORIZATION " + coordinates.databaseUser());
                 statement.execute("CREATE TABLE " + coordinates.physicalName() + ".retained(marker VARCHAR)");
                 statement.execute("INSERT INTO " + coordinates.physicalName() + ".retained VALUES('original')");
             }
             assertEquals(originalPassword, database.schemaPassword(coordinates.databaseUser()));
         }
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
-                var connection = database.openInternalConnection(coordinates.physicalName(), coordinates.databaseUser(),
-                        database.schemaPassword(coordinates.databaseUser()), "original-owner");
-                var statement = connection.createStatement();
-                var rows = statement.executeQuery("SELECT marker FROM retained")) {
+             var connection = database.openInternalConnection(coordinates.physicalName(), coordinates.databaseUser(),
+                 database.schemaPassword(coordinates.databaseUser()), "original-owner");
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT marker FROM retained")) {
             assertEquals(generation, database.generation());
             assertTrue(rows.next());
             assertEquals("original", rows.getString(1));
@@ -74,14 +75,14 @@ class PlatformDatabaseTest {
             byte[] wrapped = "中".repeat(16).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             byte[] nonce = "中".repeat(4).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             try (var p = c.prepareStatement(
-                    "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)")) {
+                "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)")) {
                 p.setBytes(1, wrapped);
                 p.setBytes(2, nonce);
                 p.setBytes(3, new byte[16]);
                 assertEquals(1, p.executeUpdate());
             }
             try (var p = c.prepareStatement(
-                    "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('fixture','AES256_GCM_V1',?,?)")) {
+                "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('fixture','AES256_GCM_V1',?,?)")) {
                 p.setBytes(1, "中".repeat(6).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 p.setBytes(2, nonce);
                 assertEquals(1, p.executeUpdate());
@@ -103,7 +104,7 @@ class PlatformDatabaseTest {
             firstBoot = database.bootId();
             database.started();
             assertEquals(20, count(database,
-                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'"));
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'"));
             try (var c = database.openConnection(); var s = c.createStatement()) {
                 s.execute("INSERT INTO desktop_preference VALUES('test','retained')");
             }
@@ -113,7 +114,7 @@ class PlatformDatabaseTest {
             assertEquals(generation, database.generation());
             assertNotEquals(firstBoot, database.bootId());
             assertEquals(1, count(database,
-                    "SELECT COUNT(*) FROM desktop_preference WHERE preference_key='test' AND preference_value='retained'"));
+                "SELECT COUNT(*) FROM desktop_preference WHERE preference_key='test' AND preference_value='retained'"));
         }
         assertEquals("unmodified legacy data", Files.readString(sqlite));
     }
@@ -163,8 +164,8 @@ class PlatformDatabaseTest {
         bytes[0] ^= 1;
         Files.write(access, bytes);
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
-                var c = database.openConnection();
-                var p = c.prepareStatement("UPDATE app_state SET database_generation=? WHERE singleton_id=1")) {
+             var c = database.openConnection();
+             var p = c.prepareStatement("UPDATE app_state SET database_generation=? WHERE singleton_id=1")) {
             p.setObject(1, UUID.randomUUID());
             p.executeUpdate();
         }
@@ -190,8 +191,8 @@ class PlatformDatabaseTest {
     @Test
     void priorUnfinishedTasksRemainUnknownAfterRestart() throws Exception {
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
-                var c = database.openConnection();
-                var p = c.prepareStatement("INSERT INTO platform_task VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+             var c = database.openConnection();
+             var p = c.prepareStatement("INSERT INTO platform_task VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
             p.setObject(1, UUID.randomUUID());
             p.setString(2, "example.mod");
             p.setString(3, "1.0.0");
@@ -210,9 +211,9 @@ class PlatformDatabaseTest {
             assertEquals(1, p.executeUpdate());
         }
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
-                var c = database.openConnection();
-                var s = c.createStatement();
-                var r = s.executeQuery("SELECT state,outcome,ended_at,recovery_json,boot_id FROM platform_task")) {
+             var c = database.openConnection();
+             var s = c.createStatement();
+             var r = s.executeQuery("SELECT state,outcome,ended_at,recovery_json,boot_id FROM platform_task")) {
             assertTrue(r.next());
             assertEquals("UNKNOWN", r.getString(1));
             assertNull(r.getString(2));

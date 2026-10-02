@@ -6,15 +6,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 
-import gold.debug.windowstolinux.app.db.entity.StoredServerIdentity;
-import gold.debug.windowstolinux.app.db.entity.StoredServerProfile;
-import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceException;
-import gold.debug.windowstolinux.app.db.failure.DesktopPersistenceFailureType;
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.error.DesktopPersistenceException;
+import gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DesktopPersistenceIntegrationTest {
-    @TempDir Path temporaryDirectory;
+    @TempDir
+    Path temporaryDirectory;
 
     @Test
     void storesOnlyTheLastRemoteObservationAsHistory() throws Exception {
@@ -55,26 +56,27 @@ class DesktopPersistenceIntegrationTest {
     void classifiesUnavailableDirectoryCorruptionLockAndRollbackFailure() throws Exception {
         var unavailable = Files.writeString(temporaryDirectory.resolve("not-a-directory"), "fixture");
         assertEvent(DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
-                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(unavailable)));
+            assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(unavailable)));
         var corrupt = temporaryDirectory.resolve("corrupt");
-        try (var ignored = DatabaseTestFixture.open(corrupt)) { }
+        try (var ignored = DatabaseTestFixture.open(corrupt)) {
+        }
         var bytes = Files.readAllBytes(corrupt.resolve("platform.mv.db"));
         Files.write(corrupt.resolve("platform.mv.db"), new byte[4096]);
         assertEvent(DesktopPersistenceFailureType.DATABASE_CORRUPTED,
-                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(corrupt)));
+            assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(corrupt)));
         assertArrayEquals(new byte[4096], Files.readAllBytes(corrupt.resolve("platform.mv.db")));
         assertFalse(Arrays.equals(bytes, Files.readAllBytes(corrupt.resolve("platform.mv.db"))));
         var locked = temporaryDirectory.resolve("locked");
         try (var original = DatabaseTestFixture.open(locked)) {
             assertEvent(DesktopPersistenceFailureType.DATABASE_LOCKED,
-                    assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(locked)));
+                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(locked)));
             assertEquals(0, original.database().openConnections());
         }
         var primary = new java.sql.SQLException("fixture transaction failure");
         var rollback = new java.sql.SQLException("fixture rollback failure");
         primary.addSuppressed(rollback);
         var failure = DesktopPersistenceException.create(DesktopPersistenceFailureType.ROLLBACK_FAILED,
-                "The actual rollback cannot be confirmed", primary);
+            "The actual rollback cannot be confirmed", primary);
         assertEvent(DesktopPersistenceFailureType.ROLLBACK_FAILED, failure);
         assertSame(primary, failure.getCause());
         assertSame(rollback, failure.getCause().getSuppressed()[0]);

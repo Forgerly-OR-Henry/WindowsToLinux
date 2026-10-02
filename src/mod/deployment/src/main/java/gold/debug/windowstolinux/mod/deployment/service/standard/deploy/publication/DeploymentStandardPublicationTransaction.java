@@ -1,5 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Comparator;
@@ -12,7 +19,7 @@ import java.util.Optional;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationProposal;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentUnitCommit;
@@ -46,8 +53,8 @@ public final class DeploymentStandardPublicationTransaction {
      * @return verified business publication or explicit unknown / 已核实业务发布或显式未知
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
     public OperationResult<DeploymentPublication> publish(ReviewedDeploymentPlan plan, DeploymentUnitIdentity unit,
-            DeploymentVerifiedBuildResult build, Map<DeploymentSecretReference, SecretRef> credentials,
-            RemoteSession session, TaskContext task, DeploymentPublicationCleanupJournal journal) throws ApiException {
+                                                          DeploymentVerifiedBuildResult build, Map<DeploymentSecretReference, SecretRef> credentials,
+                                                          RemoteSession session, TaskContext task, DeploymentPublicationCleanupJournal journal) throws ApiException {
         Objects.requireNonNull(plan);
         Objects.requireNonNull(unit);
         Objects.requireNonNull(build);
@@ -56,49 +63,49 @@ public final class DeploymentStandardPublicationTransaction {
         Objects.requireNonNull(journal);
         var request = plan.request();
         if (!unit.server().equals(request.server()) || !unit.id().equals(request.facts().applicationId())
-                || !build.archiveSha256().equals(request.archive().sha256())
-                || !credentials.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
+            || !build.archiveSha256().equals(request.archive().sha256())
+            || !credentials.keySet().equals(new java.util.HashSet<>(request.secretReferences())))
             throw new IllegalArgumentException("Publication differs from the original reviewed candidate");
         var channel = new DeploymentPublicationChannel(session, context.interaction(), request.server(), task,
-                ReviewedPlanIdentity.from(request));
+            ReviewedPlanIdentity.from(request));
         if (!DeploymentPublicationOperationBinding.confirmed(context, task, build, journal))
             return unknown("DEPLOYMENT_PUBLICATION_OPERATION_UNCONFIRMED");
         var staged = DeploymentPublicationStaging.stage(context, plan, unit, credentials, channel, task);
         if (staged.outcome() != Outcome.SUCCEEDED)
             return staged.outcome() == Outcome.FAILED
-                    ? new OperationResult<>(Outcome.FAILED, Optional.empty(), staged.problem())
-                    : uncertain(staged, "DEPLOYMENT_INPUT_STAGE_UNCONFIRMED");
+                ? new OperationResult<>(Outcome.FAILED, Optional.empty(), staged.problem())
+                : uncertain(staged, "DEPLOYMENT_INPUT_STAGE_UNCONFIRMED");
         var digests = staged.value().orElseThrow();
         if (!journal.mark("SNAPSHOT_MAY_HAVE_RUN"))
             return unknown("DEPLOYMENT_SNAPSHOT_BOUNDARY_UNCONFIRMED");
         var saved = build.operation().isEmpty() ? channel.snapshot(unit, request.runtime())
-                : channel.snapshot(unit, request.runtime(), build.operation().orElseThrow(),
-                        journal.facts().path("expectedDigest").asText().isEmpty() ? Optional.empty()
-                                : Optional.of(journal.facts().path("expectedDigest").asText()),
-                        journal.facts().path("expectedKind").asText(), journal.facts().path("expectedRunning").booleanValue());
+            : channel.snapshot(unit, request.runtime(), build.operation().orElseThrow(),
+            journal.facts().path("expectedDigest").asText().isEmpty() ? Optional.empty()
+                : Optional.of(journal.facts().path("expectedDigest").asText()),
+            journal.facts().path("expectedKind").asText(), journal.facts().path("expectedRunning").booleanValue());
         if (saved.outcome() != Outcome.SUCCEEDED)
             return uncertain(saved, "DEPLOYMENT_SNAPSHOT_UNCONFIRMED");
         var snapshot = saved.value().orElseThrow();
         if (!journal.snapshot(snapshot))
             return unknown("DEPLOYMENT_SNAPSHOT_EVIDENCE_UNCONFIRMED");
         String releaseSha256 = DeploymentReviewedReleaseIdentity.bind(DeploymentReviewedReleaseIdentity.from(request),
-                build.toolchains());
+            build.toolchains());
         var runtime = new DeploymentUnitRuntimeConfiguration(request.runtime().healthCheck(), request.userAccessUrl(),
-                request.runtime().identityPolicy(), request.runtime().workload());
+            request.runtime().identityPolicy(), request.runtime().workload());
         var component = new DeploymentApplicationGraph.Component(unit.id(), unit, runtime, List.of(), request.runtime(),
-                request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
-                request.resources());
+            request.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
+            request.resources());
         var graph = new DeploymentApplicationGraph(unit.id(), unit.id(), request.runtime().healthCheck(),
-                List.of(component));
+            List.of(component));
         var commit = new DeploymentUnitCommit(unit, runtime,
-                new DeploymentCurrentRelease(unit.id(), releaseSha256, Instant.now()), request.configuration(),
-                request.secretReferences());
+            new DeploymentCurrentRelease(unit.id(), releaseSha256, Instant.now()), request.configuration(),
+            request.secretReferences());
         var proposed = new DeploymentPublication(graph, List.of(commit));
         try {
             var execution = new DeploymentExecutionRepository(context.db()).findForTask(task).orElseThrow();
             new DeploymentExecutionRepository(context.db()).recordPublicationTemplate(task,
-                    execution.identity().executionId(), new DeploymentPublicationProposal(graph, List.of(commit)),
-                    Instant.now());
+                execution.identity().executionId(), new DeploymentPublicationProposal(graph, List.of(commit)),
+                Instant.now());
         } catch (SQLException | ApiException | java.util.NoSuchElementException unconfirmed) {
             return unknown("DEPLOYMENT_PUBLICATION_TEMPLATE_UNCONFIRMED");
         }
@@ -107,13 +114,13 @@ public final class DeploymentStandardPublicationTransaction {
         if (!journal.publishing(releaseSha256))
             return unknown("DEPLOYMENT_PUBLICATION_EVIDENCE_UNCONFIRMED");
         var published = channel.publish(unit, request.facts(), request.runtime(), request.resources(),
-                request.configuration().sha256(), digests, build.candidateId(), releaseSha256,
-                build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
+            request.configuration().sha256(), digests, build.candidateId(), releaseSha256,
+            build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
         if (published.outcome() == Outcome.UNKNOWN || published.outcome() == Outcome.CANCELLED)
             return uncertain(published, "DEPLOYMENT_PUBLISH_UNCONFIRMED");
         if (published.outcome() == Outcome.FAILED)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
-                    journal, published);
+                journal, published);
         journal.mark("PUBLISHED_VERIFIED");
         if (cancelled(task))
             return unknown("DEPLOYMENT_PUBLISHED_AFTER_CANCEL");
@@ -122,17 +129,17 @@ public final class DeploymentStandardPublicationTransaction {
             return uncertain(health, "DEPLOYMENT_HEALTH_UNCONFIRMED");
         if (health.outcome() == Outcome.FAILED)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
-                    journal, healthFailure(health, unit.id()));
+                journal, healthFailure(health, unit.id()));
         var observed = channel.observe(unit, request.runtime());
         if (observed.outcome() != Outcome.SUCCEEDED)
             return uncertain(observed, "DEPLOYMENT_RUNTIME_UNCONFIRMED");
         var state = observed.value().orElseThrow().state();
         var expected = request.runtime().workload().mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND
-                ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
-                : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
+            ? DeploymentRemoteRuntimeObservation.StateType.INSTALLED
+            : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         if (state != expected)
             return rollback(channel, unit, build.candidateId(), releaseSha256, snapshot, request.runtime(), task,
-                    journal, healthFailure(failed("DEPLOYMENT_RUNTIME_UNHEALTHY"), unit.id()));
+                journal, healthFailure(failed("DEPLOYMENT_RUNTIME_UNHEALTHY"), unit.id()));
         if (!journal.verifiedBusiness(Outcome.SUCCEEDED, Optional.empty()))
             return unknown("DEPLOYMENT_VERIFIED_PUBLICATION_UNCONFIRMED");
         finishKnown(channel, unit, build.candidateId(), releaseSha256, true, journal);
@@ -152,13 +159,13 @@ public final class DeploymentStandardPublicationTransaction {
      * @return known failure only after verified recovery / 仅核实恢复后返回已知失败
      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
     private static OperationResult<DeploymentPublication> rollback(DeploymentPublicationChannel channel,
-            DeploymentUnitIdentity unit, String candidateId, String releaseSha256,
-            DeploymentRemoteReleaseSnapshot snapshot, DeploymentRuntimeDefinition runtime, TaskContext task,
-            DeploymentPublicationCleanupJournal journal, OperationResult<?> failure) throws ApiException {
+                                                                   DeploymentUnitIdentity unit, String candidateId, String releaseSha256,
+                                                                   DeploymentRemoteReleaseSnapshot snapshot, DeploymentRuntimeDefinition runtime, TaskContext task,
+                                                                   DeploymentPublicationCleanupJournal journal, OperationResult<?> failure) throws ApiException {
         if (cancelled(task))
             return unknown("DEPLOYMENT_ROLLBACK_BLOCKED_BY_CANCEL");
         var originalFailure = failure.problem().orElseGet(() -> new Problem(ProblemCode.IO_FAILURE,
-                "DEPLOYMENT_KNOWN_FAILURE", "Reviewed release failed", Map.of(), Optional.empty()));
+            "DEPLOYMENT_KNOWN_FAILURE", "Reviewed release failed", Map.of(), Optional.empty()));
         if (!journal.rollbackStarting(originalFailure))
             return unknown("DEPLOYMENT_ROLLBACK_EVIDENCE_UNCONFIRMED");
         var restored = channel.rollback(unit, releaseSha256, snapshot, runtime);
@@ -170,11 +177,11 @@ public final class DeploymentStandardPublicationTransaction {
                 return uncertain(observed, "DEPLOYMENT_RESTORED_STATE_UNCONFIRMED");
             var state = observed.value().orElseThrow().state();
             if (snapshot.previousRunning() != (state == DeploymentRemoteRuntimeObservation.StateType.RUNNING)
-                    || state == DeploymentRemoteRuntimeObservation.StateType.ERROR)
+                || state == DeploymentRemoteRuntimeObservation.StateType.ERROR)
                 return unknown("DEPLOYMENT_RESTORED_STATE_CHANGED");
         }
         if (!journal.mark("ROLLBACK_VERIFIED")
-                || !journal.verifiedBusiness(Outcome.FAILED, Optional.of(originalFailure)))
+            || !journal.verifiedBusiness(Outcome.FAILED, Optional.of(originalFailure)))
             return unknown("DEPLOYMENT_VERIFIED_ROLLBACK_UNCONFIRMED");
         finishKnown(channel, unit, candidateId, releaseSha256, false, journal);
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(originalFailure));
@@ -188,11 +195,11 @@ public final class DeploymentStandardPublicationTransaction {
      * @param successful whether the new release was verified / 新发布是否已核实
      * @param journal durable pending cleanup / 持久待清理依据 */
     private static void finishKnown(DeploymentPublicationChannel channel, DeploymentUnitIdentity unit,
-            String candidateId, String releaseSha256, boolean successful, DeploymentPublicationCleanupJournal journal) {
+                                    String candidateId, String releaseSha256, boolean successful, DeploymentPublicationCleanupJournal journal) {
         try {
             if (!journal.mark("MAINTENANCE_END_MAY_HAVE_RUN")
-                    || channel.endMaintenance(unit, releaseSha256).outcome() != Outcome.SUCCEEDED
-                    || !journal.mark("MAINTENANCE_ENDED"))
+                || channel.endMaintenance(unit, releaseSha256).outcome() != Outcome.SUCCEEDED
+                || !journal.mark("MAINTENANCE_ENDED"))
                 return;
             if (successful) {
                 if (!journal.mark("RETAIN_MAY_HAVE_RUN") || channel.retain(unit).outcome() != Outcome.SUCCEEDED)
@@ -201,7 +208,7 @@ public final class DeploymentStandardPublicationTransaction {
                     return;
             }
             if (!journal.mark("CANDIDATE_CLEANUP_MAY_HAVE_RUN")
-                    || channel.cleanupCandidate(unit, candidateId).outcome() != Outcome.SUCCEEDED)
+                || channel.cleanupCandidate(unit, candidateId).outcome() != Outcome.SUCCEEDED)
                 return;
             if (!journal.mark("CANDIDATE_CLEANED"))
                 return;
@@ -217,9 +224,9 @@ public final class DeploymentStandardPublicationTransaction {
      * @return retained uncertainty / 保留未知 */
     private static OperationResult<DeploymentPublication> uncertain(OperationResult<?> observed, String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                observed.problem().filter(problem -> problem.code() == ProblemCode.UNKNOWN)
-                        .or(() -> Optional.of(new Problem(ProblemCode.UNKNOWN, event, "Remote release may have changed",
-                                Map.of(), Optional.empty()))));
+            observed.problem().filter(problem -> problem.code() == ProblemCode.UNKNOWN)
+                .or(() -> Optional.of(new Problem(ProblemCode.UNKNOWN, event, "Remote release may have changed",
+                    Map.of(), Optional.empty()))));
     }
 
     /** Reports a verified failed service after observation. / 观测后报告已核实的失败服务。
@@ -227,7 +234,7 @@ public final class DeploymentStandardPublicationTransaction {
      * @return known failure / 已知失败 */
     private static OperationResult<Void> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
-                event, "Reviewed release did not reach its required state", Map.of(), Optional.empty())));
+            event, "Reviewed release did not reach its required state", Map.of(), Optional.empty())));
     }
 
     /** Marks an actually known health failure as eligible for restored-state review. / 将实际已知健康失败标记为可作恢复状态审阅。
@@ -236,7 +243,8 @@ public final class DeploymentStandardPublicationTransaction {
      * @return exact failure with its bounded eligibility / 带有界资格的精确失败 */
     static OperationResult<Void> healthFailure(OperationResult<?> observed, String unit) {
         var failure = observed.problem().orElseGet(() -> failed("DEPLOYMENT_RUNTIME_UNHEALTHY").problem().orElseThrow());
-        var facts = new HashMap<>(failure.context()); facts.put("publicationHealthFailure", unit);
+        var facts = new HashMap<>(failure.context());
+        facts.put("publicationHealthFailure", unit);
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(failure.code(), failure.eventCode(), failure.message(), facts, failure.diagnosticId())));
     }
 
@@ -245,13 +253,13 @@ public final class DeploymentStandardPublicationTransaction {
      * @return unknown outcome / 未知结果 */
     private static OperationResult<DeploymentPublication> unknown(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Remote publication requires original-task reconciliation", Map.of(), Optional.empty())));
+            event, "Remote publication requires original-task reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Checks original cooperative cancellation. / 检查原协作取消。
      * @param task original task / 原任务
      * @return whether cancellation is requested / 是否已请求取消 */
     private static boolean cancelled(TaskContext task) {
-        return task.cancellation().requested() || Thread.currentThread().isInterrupted();
+        return task.cancelToken().requested() || Thread.currentThread().isInterrupted();
     }
 }

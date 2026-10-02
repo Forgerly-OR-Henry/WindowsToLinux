@@ -30,11 +30,11 @@ class DeploymentAnalysisCoordinatorTest {
     void acceptsACompleteGradleSpringBootProjectWithoutRunningItsWrapper() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("gradle-service"));
         Files.writeString(project.resolve("build.gradle.kts"),
-                "plugins { id(\"org.springframework.boot\") version \"3.5.0\" }");
+            "plugins { id(\"org.springframework.boot\") version \"3.5.0\" }");
         Files.writeString(project.resolve("gradlew"), "this script must not run");
         Files.createDirectories(project.resolve("gradle/wrapper"));
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
-                "distributionUrl=https://example.test/gradle.zip");
+            "distributionUrl=https://example.test/gradle.zip");
         writeGradleWrapperJar(project.resolve("gradle/wrapper/gradle-wrapper.jar"));
 
         var assessment = analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT);
@@ -50,13 +50,13 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("gradlew"), "this script must not run");
         Files.createDirectories(project.resolve("gradle/wrapper"));
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
-                "distributionUrl=https://example.test/gradle.zip");
+            "distributionUrl=https://example.test/gradle.zip");
 
         var assessment = analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT);
 
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
-                .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
+            .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
     }
 
     @Test
@@ -66,43 +66,43 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(project.resolve("gradlew"), "this script must not run");
         Files.createDirectories(project.resolve("gradle/wrapper"));
         Files.writeString(project.resolve("gradle/wrapper/gradle-wrapper.properties"),
-                "distributionUrl=https://example.test/gradle.zip");
+            "distributionUrl=https://example.test/gradle.zip");
         Files.write(project.resolve("gradle/wrapper/gradle-wrapper.jar"), new byte[]{0});
 
         var assessment = analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT);
 
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
-                .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
+            .anyMatch(message -> message.key().equals("analysis.deployment.missing.gradleWrapper")));
     }
 
     @Test
     void scansGroovyGradleScriptsForAutomaticDatabaseMigrationTools() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("gradle-migration"));
         Files.writeString(project.resolve("build.gradle"), """
-                plugins { id 'org.springframework.boot' version '3.5.0' }
-                dependencies { implementation 'org.flywaydb:flyway-core:11.0.0' }
-                """);
+            plugins { id 'org.springframework.boot' version '3.5.0' }
+            dependencies { implementation 'org.flywaydb:flyway-core:11.0.0' }
+            """);
 
         var assessment = analyzer.analyze(project, DeploymentProjectKind.SPRING_BOOT);
 
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
     }
 
     @Test
     void requiresLockfileAndFixedScriptsForNodeInsteadOfExecutingPackageJson() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("node-service"));
         Files.writeString(project.resolve("package.json"), """
-                {"name":"demo-node","scripts":{"build":"unsafe build content","start":"unsafe start content"}}
-                """);
+            {"name":"demo-node","scripts":{"build":"unsafe build content","start":"unsafe start content"}}
+            """);
 
         var assessment = analyzer.analyze(project, DeploymentProjectKind.NODE_SERVICE);
 
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertTrue(assessment.facts().orElseThrow().missingInformation().stream()
-                .anyMatch(message -> message.key().equals("analysis.deployment.missing.nodeLockfile")));
+            .anyMatch(message -> message.key().equals("analysis.deployment.missing.nodeLockfile")));
     }
 
     @Test
@@ -115,15 +115,15 @@ class DeploymentAnalysisCoordinatorTest {
 
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("MULTI_CONTAINER_COMPOSE_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("MULTI_CONTAINER_COMPOSE_DETECTED")));
     }
 
     @Test
     void rejectsDatabaseMutationArtifactsForEveryDeploymentType() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("node-database-change"));
         Files.writeString(project.resolve("package.json"), """
-                {"name":"demo-node","scripts":{"build":"build","start":"start"},"dependencies":{"prisma":"1.0"}}
-                """);
+            {"name":"demo-node","scripts":{"build":"build","start":"start"},"dependencies":{"prisma":"1.0"}}
+            """);
         Files.writeString(project.resolve("package-lock.json"), npmLock("demo-node"));
         Files.createDirectories(project.resolve("database/migrations"));
         Files.writeString(project.resolve("database/migrations/001.sql"), "create table demo (id bigint)");
@@ -132,9 +132,9 @@ class DeploymentAnalysisCoordinatorTest {
 
         assertEquals(DeploymentAdmissionStatus.REJECTED, assessment.admission());
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("DATABASE_MIGRATION_DETECTED")));
         assertTrue(assessment.rejections().stream()
-                .anyMatch(reason -> reason.code().equals("AUTOMATIC_SCHEMA_MUTATION_DETECTED")));
+            .anyMatch(reason -> reason.code().equals("AUTOMATIC_SCHEMA_MUTATION_DETECTED")));
     }
 
     @Test
@@ -143,49 +143,49 @@ class DeploymentAnalysisCoordinatorTest {
         Files.writeString(javaJar.resolve("application.jar"), "opaque binary content");
         Path node = Files.createDirectories(temporaryDirectory.resolve("node"));
         Files.writeString(node.resolve("package.json"), """
-                {"name":"demo-node","scripts":{"build":"build","start":"start"}}
-                """);
+            {"name":"demo-node","scripts":{"build":"build","start":"start"}}
+            """);
         Files.writeString(node.resolve("package-lock.json"), npmLock("demo-node"));
         Path python = Files.createDirectories(temporaryDirectory.resolve("python"));
         Files.writeString(python.resolve("pyproject.toml"), "[project]\nname = \"demo-python\"\n");
         Files.writeString(python.resolve("requirements.lock"),
-                "example==1.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
+            "example==1.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
         Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static"));
         Files.writeString(staticSite.resolve("index.html"), "<!doctype html>");
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-ready"));
         Files.writeString(container.resolve("Dockerfile"), "FROM alpine@sha256:" + "a".repeat(64));
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                analyzer.analyze(javaJar, DeploymentProjectKind.JAVA_JAR).admission());
+            analyzer.analyze(javaJar, DeploymentProjectKind.JAVA_JAR).admission());
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                analyzer.analyze(node, DeploymentProjectKind.NODE_SERVICE).admission());
+            analyzer.analyze(node, DeploymentProjectKind.NODE_SERVICE).admission());
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                analyzer.analyze(python, DeploymentProjectKind.PYTHON_SERVICE).admission());
+            analyzer.analyze(python, DeploymentProjectKind.PYTHON_SERVICE).admission());
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                analyzer.analyze(staticSite, DeploymentProjectKind.STATIC_SITE).admission());
+            analyzer.analyze(staticSite, DeploymentProjectKind.STATIC_SITE).admission());
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
-                analyzer.analyze(container, DeploymentProjectKind.DOCKERFILE_CONTAINER).admission());
+            analyzer.analyze(container, DeploymentProjectKind.DOCKERFILE_CONTAINER).admission());
     }
 
     @Test
     void infersOnlyExactRuntimeMetadataAndLeavesRangesForHumanReview() throws Exception {
         Path node = Files.createDirectories(temporaryDirectory.resolve("node-exact"));
         Files.writeString(node.resolve("package.json"), """
-                {"name":"demo-node","engines":{"node":"22"},"scripts":{"build":"unsafe","start":"unsafe"}}
-                """);
+            {"name":"demo-node","engines":{"node":"22"},"scripts":{"build":"unsafe","start":"unsafe"}}
+            """);
         Files.writeString(node.resolve("package-lock.json"), npmLock("node-exact"));
         var exact = analyzer.analyze(node, DeploymentProjectKind.NODE_SERVICE).runtimeSuggestion().orElseThrow();
         assertEquals("22", exact.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).orElseThrow());
 
         Path ranged = Files.createDirectories(temporaryDirectory.resolve("node-range"));
         Files.writeString(ranged.resolve("package.json"), """
-                {"name":"range-node","engines":{"node":">=20"},"scripts":{"build":"unsafe","start":"unsafe"}}
-                """);
+            {"name":"range-node","engines":{"node":">=20"},"scripts":{"build":"unsafe","start":"unsafe"}}
+            """);
         Files.writeString(ranged.resolve("package-lock.json"), npmLock("range-node"));
         var unresolved = analyzer.analyze(ranged, DeploymentProjectKind.NODE_SERVICE).runtimeSuggestion().orElseThrow();
         assertTrue(unresolved.value(DeploymentRuntimeAssessment.RuntimeInputType.NODE_MAJOR_VERSION).isEmpty());
         assertTrue(unresolved.requiredUserInput().stream()
-                .anyMatch(message -> message.key().equals("analysis.deployment.runtime.nodeVersion")));
+            .anyMatch(message -> message.key().equals("analysis.deployment.runtime.nodeVersion")));
     }
 
     @Test
@@ -196,49 +196,49 @@ class DeploymentAnalysisCoordinatorTest {
         manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "example.Main");
         manifest.getMainAttributes().putValue("Build-Jdk-Spec", "21");
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(java.resolve("service.jar")),
-                manifest)) {
+            manifest)) {
             // A manifest-only JAR is sufficient because inference never invokes or loads it. / 仅含清单的 JAR 已足够，因为推导绝不调用或加载它。
         }
         var javaSuggestion = analyzer.analyze(java, DeploymentProjectKind.JAVA_JAR).runtimeSuggestion().orElseThrow();
         assertEquals("service.jar",
-                javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).orElseThrow());
+            javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_JAR_PATH).orElseThrow());
         assertEquals("example.Main",
-                javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).orElseThrow());
+            javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_MAIN_CLASS).orElseThrow());
         assertEquals("21",
-                javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).orElseThrow());
+            javaSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.JAVA_VERSION).orElseThrow());
 
         Path python = Files.createDirectories(temporaryDirectory.resolve("python-inference/src/demo"));
         Files.writeString(python.getParent().getParent().resolve("pyproject.toml"), """
-                [project]
-                name = "demo"
-                requires-python = "==3.12.*"
-                """);
+            [project]
+            name = "demo"
+            requires-python = "==3.12.*"
+            """);
         Files.writeString(python.getParent().getParent().resolve("requirements.lock"),
-                "demo==1 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+            "demo==1 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         Files.writeString(python.resolve("__main__.py"), "raise SystemExit(0)");
         var pythonSuggestion = analyzer.analyze(python.getParent().getParent(), DeploymentProjectKind.PYTHON_SERVICE)
-                .runtimeSuggestion().orElseThrow();
+            .runtimeSuggestion().orElseThrow();
         assertEquals("3.12",
-                pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION).orElseThrow());
+            pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_VERSION).orElseThrow());
         assertEquals("demo",
-                pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT).orElseThrow());
+            pythonSuggestion.value(DeploymentRuntimeAssessment.RuntimeInputType.PYTHON_ENTRYPOINT).orElseThrow());
 
         Path staticSite = Files.createDirectories(temporaryDirectory.resolve("static-inference"));
         Files.writeString(staticSite.resolve("package.json"), """
-                {"name":"site","scripts":{"build":"vite build"}}
-                """);
+            {"name":"site","scripts":{"build":"vite build"}}
+            """);
         Files.writeString(staticSite.resolve("package-lock.json"), "{}");
         Files.writeString(staticSite.resolve("vite.config.js"), "export default { build: { outDir: 'public-site' } }");
         var staticSuggestion = analyzer.analyze(staticSite, DeploymentProjectKind.STATIC_SITE).runtimeSuggestion()
-                .orElseThrow();
+            .orElseThrow();
         assertEquals("public-site", staticSuggestion
-                .value(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY).orElseThrow());
+            .value(DeploymentRuntimeAssessment.RuntimeInputType.STATIC_OUTPUT_DIRECTORY).orElseThrow());
 
         Path container = Files.createDirectories(temporaryDirectory.resolve("container-inference"));
         Files.writeString(container.resolve("Dockerfile"),
-                "FROM alpine@sha256:" + "a".repeat(64) + "\nEXPOSE 8080 8443/tcp\nVOLUME /var/lib/demo");
+            "FROM alpine@sha256:" + "a".repeat(64) + "\nEXPOSE 8080 8443/tcp\nVOLUME /var/lib/demo");
         var containerSuggestion = analyzer.analyze(container, DeploymentProjectKind.DOCKERFILE_CONTAINER)
-                .runtimeSuggestion().orElseThrow();
+            .runtimeSuggestion().orElseThrow();
         assertEquals(Map.of(8080, 8080, 8443, 8443), containerSuggestion.suggestedContainerPorts());
         assertEquals("/var/lib/demo", containerSuggestion.suggestedManagedVolumes().getFirst().containerPath());
     }
@@ -247,8 +247,8 @@ class DeploymentAnalysisCoordinatorTest {
     void recognitionPreviewReportsEveryCandidateLanguageWithoutCreatingADeploymentPath() throws Exception {
         Path project = Files.createDirectories(temporaryDirectory.resolve("recognition-preview"));
         for (String file : new String[]{"main.go", "main.rs", "Program.cs", "Main.kt", "index.php", "app.rb",
-                "native.c", "native.cpp", "Main.scala", "core.clj", "app.ex", "main.dart", "init.lua", "worker.pl",
-                "main.swift", "install.sh"}) {
+            "native.c", "native.cpp", "Main.scala", "core.clj", "app.ex", "main.dart", "init.lua", "worker.pl",
+            "main.swift", "install.sh"}) {
             Files.writeString(project.resolve(file), "static marker only");
         }
 
@@ -260,10 +260,10 @@ class DeploymentAnalysisCoordinatorTest {
         assertEquals(DeploymentSupportLevel.RECOGNITION_PREVIEW, facts.support().level());
         assertTrue(!facts.readyForPlanning());
         assertTrue(facts.languageFacts().sourceLanguages().containsAll(java.util.Set.of(SourceLanguageType.GO,
-                SourceLanguageType.RUST, SourceLanguageType.CSHARP, SourceLanguageType.KOTLIN, SourceLanguageType.PHP,
-                SourceLanguageType.RUBY, SourceLanguageType.C, SourceLanguageType.CPP, SourceLanguageType.SCALA,
-                SourceLanguageType.CLOJURE, SourceLanguageType.ELIXIR, SourceLanguageType.DART, SourceLanguageType.LUA,
-                SourceLanguageType.PERL, SourceLanguageType.SWIFT, SourceLanguageType.SHELL)));
+            SourceLanguageType.RUST, SourceLanguageType.CSHARP, SourceLanguageType.KOTLIN, SourceLanguageType.PHP,
+            SourceLanguageType.RUBY, SourceLanguageType.C, SourceLanguageType.CPP, SourceLanguageType.SCALA,
+            SourceLanguageType.CLOJURE, SourceLanguageType.ELIXIR, SourceLanguageType.DART, SourceLanguageType.LUA,
+            SourceLanguageType.PERL, SourceLanguageType.SWIFT, SourceLanguageType.SHELL)));
         assertTrue(assessment.runtimeSuggestion().isEmpty());
     }
 
@@ -280,7 +280,7 @@ class DeploymentAnalysisCoordinatorTest {
 
     private static String npmLock(String name) {
         return "{\"name\":\"" + name + "\",\"lockfileVersion\":3,\"requires\":true," + "\"packages\":{\"\":{\"name\":\""
-                + name + "\"}}}";
+            + name + "\"}}}";
     }
 
     private static void writeGradleWrapperJar(Path path) throws Exception {

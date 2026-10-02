@@ -55,8 +55,8 @@ public final class DeploymentRuntimeCodec {
         try (DataOutputStream output = new DataOutputStream(bytes)) {
             output.writeInt(MAGIC);
             output.writeByte(runtime instanceof DeploymentRuntimeDefinition.ManagedProcess
-                    ? 7
-                    : runtime.workload().workers().isEmpty() ? VERSION : 6);
+                ? 7
+                : runtime.workload().workers().isEmpty() ? VERSION : 6);
             output.writeByte(type(runtime));
             output.writeUTF(runtime.identityPolicy().name());
             writePayload(output, runtime);
@@ -96,7 +96,7 @@ public final class DeploymentRuntimeCodec {
             DeploymentIdentityMode policy = DeploymentIdentityMode.valueOf(input.readUTF());
             DeploymentRuntimeDefinition runtime = readPayload(input, type, healthCheck).withIdentityPolicy(policy);
             runtime = runtime.withWorkload(
-                    DeploymentWorkloadCodec.read(input, version == 7 ? input.readBoolean() : version == 6));
+                DeploymentWorkloadCodec.read(input, version == 7 ? input.readBoolean() : version == 6));
             if (input.read() != -1) {
                 throw new IOException("reviewed runtime document contains trailing data");
             }
@@ -210,32 +210,32 @@ public final class DeploymentRuntimeCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static DeploymentRuntimeDefinition readPayload(DataInputStream input, int type,
-            DeploymentHealthCheck health) throws IOException {
+                                                           DeploymentHealthCheck health) throws IOException {
         return switch (type) {
             case 15 -> new DeploymentRuntimeDefinition.ManagedProcess(health, DeploymentIdentityMode.SYSTEMD_STATIC,
-                    gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.unspecified());
+                gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.unspecified());
             case 1 -> new DeploymentRuntimeDefinition.SpringBoot(input.readUTF(), health);
             case 2 -> new DeploymentRuntimeDefinition.JavaJar(input.readUTF(), input.readUTF(), input.readUTF(),
-                    readStrings(input), readStrings(input), health);
+                readStrings(input), readStrings(input), health);
             case 3 -> new DeploymentRuntimeDefinition.JavaSource(input.readUTF(), input.readUTF(), input.readUTF(),
-                    readStrings(input), readStrings(input), health);
+                readStrings(input), readStrings(input), health);
             case 4 -> new DeploymentRuntimeDefinition.NodeService(input.readInt(), health);
             case 5 -> new DeploymentRuntimeDefinition.PythonService(input.readUTF(), input.readUTF(), health);
             case 6 -> new DeploymentRuntimeDefinition.StaticSite(input.readUTF(), optionalVersion(input.readInt()),
-                    http(health));
+                http(health));
             case 7 -> readContainer(input, health);
             case 8 ->
                 new DeploymentRuntimeDefinition.GoService(input.readUTF(), input.readUTF(), input.readUTF(), health);
             case 9 ->
                 new DeploymentRuntimeDefinition.RustService(input.readUTF(), input.readUTF(), input.readUTF(), health);
             case 10 -> new DeploymentRuntimeDefinition.DotNetService(input.readUTF(), input.readUTF(), input.readUTF(),
-                    health);
+                health);
             case 11 -> new DeploymentRuntimeDefinition.KotlinService(input.readUTF(), input.readUTF(), input.readUTF(),
-                    input.readUTF(), health);
+                input.readUTF(), health);
             case 12 -> new DeploymentRuntimeDefinition.PhpService(input.readUTF(), input.readUTF(), input.readUTF(),
-                    input.readInt(), health);
+                input.readInt(), health);
             case 13 -> new DeploymentRuntimeDefinition.RubyService(input.readUTF(), input.readUTF(), input.readUTF(),
-                    input.readInt(), health);
+                input.readInt(), health);
             case 14 ->
                 new DeploymentRuntimeDefinition.CmakeService(input.readUTF(), input.readUTF(), input.readUTF(), health);
             default -> throw new IOException("reviewed runtime document type is unsupported");
@@ -251,11 +251,11 @@ public final class DeploymentRuntimeCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeContainer(DataOutputStream output, DeploymentRuntimeDefinition.Container value)
-            throws IOException {
+        throws IOException {
         output.writeByte(value.engine() == DeploymentRuntimeDefinition.ContainerEngineType.DOCKER ? 1 : 2);
         writeCount(output, value.publishedPorts().size());
         for (Map.Entry<Integer, Integer> port : value.publishedPorts().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).toList()) {
+            .sorted(Map.Entry.comparingByKey()).toList()) {
             output.writeInt(port.getKey());
             output.writeInt(port.getValue());
         }
@@ -277,7 +277,7 @@ public final class DeploymentRuntimeCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static DeploymentRuntimeDefinition.Container readContainer(DataInputStream input,
-            DeploymentHealthCheck health) throws IOException {
+                                                                       DeploymentHealthCheck health) throws IOException {
         DeploymentRuntimeDefinition.ContainerEngineType engine = switch (input.readUnsignedByte()) {
             case 1 -> DeploymentRuntimeDefinition.ContainerEngineType.DOCKER;
             case 2 -> DeploymentRuntimeDefinition.ContainerEngineType.PODMAN;
@@ -292,7 +292,7 @@ public final class DeploymentRuntimeCodec {
         List<DeploymentRuntimeDefinition.ManagedVolume> volumes = new ArrayList<>();
         for (int count = readCount(input); count > 0; count--) {
             volumes.add(new DeploymentRuntimeDefinition.ManagedVolume(input.readUTF(), input.readUTF(),
-                    readBoolean(input)));
+                readBoolean(input)));
         }
         return new DeploymentRuntimeDefinition.Container(engine, ports, volumes, health);
     }
@@ -308,7 +308,7 @@ public final class DeploymentRuntimeCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeService(DataOutputStream output, String version, String artifact, String entrypoint)
-            throws IOException {
+        throws IOException {
         output.writeUTF(version);
         output.writeUTF(artifact);
         output.writeUTF(entrypoint);

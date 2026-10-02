@@ -117,7 +117,7 @@ public final class DesktopUpdateHandoffCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeVerification(DataOutputStream output, DesktopUpdateVerification update)
-            throws IOException {
+        throws IOException {
         output.writeUTF(update.packageFile().toString());
         output.writeUTF(update.releaseId());
         output.writeUTF(update.version().toString());
@@ -146,7 +146,7 @@ public final class DesktopUpdateHandoffCodec {
         String packageSha256 = input.readUTF();
         Instant verifiedAt = Instant.ofEpochSecond(input.readLong(), input.readInt());
         return new DesktopUpdateVerification(packageFile, releaseId, version, architecture, packageBytes, packageSha256,
-                verifiedAt, readTexts(input));
+            verifiedAt, readTexts(input));
     }
 
     /**
@@ -158,7 +158,7 @@ public final class DesktopUpdateHandoffCodec {
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private static void writeBackup(DataOutputStream output, DesktopUpdatePort.BackupEvidence backup)
-            throws IOException {
+        throws IOException {
         output.writeUTF(backup.backupToken());
         output.writeBoolean(backup.programBackedUp());
         output.writeBoolean(backup.databaseBackedUp());
@@ -177,7 +177,7 @@ public final class DesktopUpdateHandoffCodec {
      */
     private static DesktopUpdatePort.BackupEvidence readBackup(DataInputStream input) throws IOException {
         return new DesktopUpdatePort.BackupEvidence(input.readUTF(), input.readBoolean(), input.readBoolean(),
-                input.readBoolean(), input.readBoolean(), readTexts(input));
+            input.readBoolean(), input.readBoolean(), readTexts(input));
     }
 
     /**
@@ -210,7 +210,7 @@ public final class DesktopUpdateHandoffCodec {
         List<DesktopUpdateEvent> events = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
             events.add(new DesktopUpdateEvent(DesktopUpdateState.valueOf(input.readUTF()), input.readBoolean(),
-                    input.readUTF()));
+                input.readUTF()));
         }
         return List.copyOf(events);
     }

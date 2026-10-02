@@ -1,5 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
@@ -20,7 +28,7 @@ import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 import gold.debug.windowstolinux.appapi.server.ServerInfo;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 
 /** Scans and adopts exact external services without claiming deployment ownership or rewriting their files. / 扫描并接管精确外部服务，不冒充部署归属或重写其文件。 */
@@ -46,7 +54,7 @@ public final class DeploymentExternalApplications {
      * @param category local category / 本地类别
      * @param accessUrl optional website link / 可选网站链接 */
     public record Registered(String id, ServerRef server, Discovered target, String displayName, String category,
-            Optional<String> accessUrl) {
+                             Optional<String> accessUrl) {
     }
 
     /** Lists saved registrations without claiming a fresh remote observation. / 列出保存的登记，不宣称新远端观察。
@@ -57,22 +65,22 @@ public final class DeploymentExternalApplications {
         DeploymentSchema.requireIdentity(context.db().identity());
         var result = new ArrayList<Registered>();
         try (var connection = context.db().openConnection(task);
-                var query = connection.prepareStatement(
-                        "SELECT * FROM external_application ORDER BY external_application_id LIMIT 10001");
-                var rows = query.executeQuery()) {
+             var query = connection.prepareStatement(
+                 "SELECT * FROM external_application ORDER BY external_application_id LIMIT 10001");
+             var rows = query.executeQuery()) {
             while (rows.next()) {
                 if (result.size() == 10000)
                     throw unknown("DEPLOYMENT_EXTERNAL_LIST_LIMIT");
                 var target = new Discovered(rows.getString("runtime_type"), rows.getString("runtime_identity"),
-                        rows.getString("identity_fingerprint"), rows.getString("detected_name"),
-                        rows.getString("runtime_state"), false, rows.getInt("can_start") == 1,
-                        rows.getInt("can_stop") == 1);
+                    rows.getString("identity_fingerprint"), rows.getString("detected_name"),
+                    rows.getString("runtime_state"), false, rows.getInt("can_start") == 1,
+                    rows.getInt("can_stop") == 1);
                 boolean override = rows.getInt("has_display_override") == 1;
                 result.add(new Registered(rows.getString("external_application_id"),
-                        new ServerRef(rows.getString("server_profile_id")), target,
-                        override ? rows.getString("display_name") : target.name(),
-                        override ? rows.getString("application_category") : "APP",
-                        Optional.ofNullable(rows.getString("access_url"))));
+                    new ServerRef(rows.getString("server_profile_id")), target,
+                    override ? rows.getString("display_name") : target.name(),
+                    override ? rows.getString("application_category") : "APP",
+                    Optional.ofNullable(rows.getString("access_url"))));
             }
             return List.copyOf(result);
         } catch (SQLException failure) {
@@ -89,23 +97,23 @@ public final class DeploymentExternalApplications {
      * @return saved name / 已存名称
      * @throws ApiException if transaction identity is unknown / 事务身份未知时 */
     public OperationResult<String> edit(Registered original, String name, String category, Optional<String> url,
-            TaskContext task) throws ApiException {
+                                        TaskContext task) throws ApiException {
         if (name == null || name.isBlank() || name.length() > 160 || name.indexOf('\0') >= 0 || name.indexOf('\n') >= 0
-                || name.indexOf('\r') >= 0 || !java.util.Set.of("APP", "WEBSITE").contains(category))
+            || name.indexOf('\r') >= 0 || !java.util.Set.of("APP", "WEBSITE").contains(category))
             return failed("DEPLOYMENT_EXTERNAL_PRESENTATION_INVALID");
         if (url.isPresent()) {
             if (!category.equals("WEBSITE"))
                 return failed("DEPLOYMENT_EXTERNAL_URL_NOT_APPLICABLE");
             try {
                 new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentAccessUrl(
-                        java.net.URI.create(url.orElseThrow()));
+                    java.net.URI.create(url.orElseThrow()));
             } catch (IllegalArgumentException invalid) {
                 return failed("DEPLOYMENT_EXTERNAL_URL_INVALID");
             }
         }
         try (var connection = context.db().openConnection(task);
-                var update = connection.prepareStatement(
-                        "UPDATE external_application SET has_display_override=1,display_name=?,application_category=?,access_url=? WHERE external_application_id=? AND server_profile_id=? AND identity_fingerprint=?")) {
+             var update = connection.prepareStatement(
+                 "UPDATE external_application SET has_display_override=1,display_name=?,application_category=?,access_url=? WHERE external_application_id=? AND server_profile_id=? AND identity_fingerprint=?")) {
             update.setString(1, name.trim());
             update.setString(2, category);
             update.setString(3, url.orElse(null));
@@ -130,7 +138,7 @@ public final class DeploymentExternalApplications {
      * @param canStart whether start is supported / 是否支持启动
      * @param canStop whether stop is supported / 是否支持停止 */
     public record Discovered(String kind, String identity, String fingerprint, String name, String state,
-            boolean managed, boolean canStart, boolean canStop) {
+                             boolean managed, boolean canStart, boolean canStop) {
         /** Validates the fixed scan protocol. / 校验固定扫描协议。
          * @param kind runtime kind / 运行类别
          * @param identity exact identity / 精确身份
@@ -142,8 +150,8 @@ public final class DeploymentExternalApplications {
          * @param canStop stop capability / 停止能力 */
         public Discovered {
             if (!java.util.Set.of("SYSTEMD", "DOCKER").contains(kind) || identity == null || identity.isBlank()
-                    || identity.length() > 256 || fingerprint == null || !fingerprint.matches("[0-9a-f]{64}")
-                    || name == null || name.length() > 2048 || state == null || state.length() > 32)
+                || identity.length() > 256 || fingerprint == null || !fingerprint.matches("[0-9a-f]{64}")
+                || name == null || name.length() > 2048 || state == null || state.length() > 32)
                 throw new IllegalArgumentException("Invalid scanned external application");
         }
     }
@@ -188,7 +196,7 @@ public final class DeploymentExternalApplications {
      * @param oldEndpoint original saved endpoint / 原保存端点
      * @param rowDigest digest of all original row fields / 全部原行字段摘要 */
     public record Reattachment(Registered original, Discovered candidate, ServerInfo endpoint, String oldEndpoint,
-            String rowDigest) {
+                               String rowDigest) {
     }
 
     /** Reads a reattachment review without changing either registration or references. / 读取重新绑定审阅，不改变登记或引用。
@@ -198,7 +206,7 @@ public final class DeploymentExternalApplications {
      * @return complete original review / 完整原审阅
      * @throws ApiException if selection, observation or occupancy differs / 选择、观察或占用不符时 */
     public OperationResult<Reattachment> reviewReattachment(Registered original, Discovered candidate, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         return new Registration().review(original, candidate, task);
     }
 
@@ -224,9 +232,9 @@ public final class DeploymentExternalApplications {
          * @return immutable review or known refusal / 不可变审阅或已知拒绝
          * @throws ApiException if original persistence cannot be read / 原持久状态无法读取时 */
         private OperationResult<Reattachment> review(Registered original, Discovered candidate, TaskContext task)
-                throws ApiException {
+            throws ApiException {
             if (!original.target().kind().equals(candidate.kind())
-                    || !original.target().identity().equals(candidate.identity()) || candidate.managed())
+                || !original.target().identity().equals(candidate.identity()) || candidate.managed())
                 return failed("DEPLOYMENT_EXTERNAL_REATTACH_SELECTION");
             var row = identity(original.server(), candidate, task);
             if (row.isEmpty() || !selected(original, row.orElseThrow()))
@@ -234,16 +242,16 @@ public final class DeploymentExternalApplications {
             if (!quiet(original.id(), task))
                 return failed("DEPLOYMENT_EXTERNAL_OCCUPIED");
             var fresh = invoke(original.server(),
-                    List.of(candidate.kind(), candidate.identity(), candidate.fingerprint(), "REFRESH_STATUS"), task);
+                List.of(candidate.kind(), candidate.identity(), candidate.fingerprint(), "REFRESH_STATUS"), task);
             if (fresh.outcome() != Outcome.SUCCEEDED)
                 return copy(fresh);
             if (fresh.value().orElseThrow().applications().size() != 1
-                    || !sameIdentity(candidate, fresh.value().orElseThrow().applications().getFirst())
-                    || fresh.value().orElseThrow().applications().getFirst().managed())
+                || !sameIdentity(candidate, fresh.value().orElseThrow().applications().getFirst())
+                || fresh.value().orElseThrow().applications().getFirst().managed())
                 return failed("DEPLOYMENT_EXTERNAL_IDENTITY_CHANGED");
             var info = context.servers().get(original.server(), task);
             return success(new Reattachment(original, candidate, info, endpoint(row.orElseThrow()),
-                    digest(row.orElseThrow())));
+                digest(row.orElseThrow())));
         }
 
         /** Reuses an exact confirmed row or journals one explicit replacement before any write. / 复用精确确证行，或在写入前记录一次明确替换。
@@ -254,14 +262,14 @@ public final class DeploymentExternalApplications {
          * @return original registration conclusion / 原登记结论
          * @throws ApiException if persistence or references are uncertain / 持久化或引用未知时 */
         private OperationResult<String> register(ServerRef server, Discovered candidate,
-                Optional<Reattachment> replacement, TaskContext task) throws ApiException {
+                                                 Optional<Reattachment> replacement, TaskContext task) throws ApiException {
             var prior = journal.find(task);
             if (prior.isPresent()) {
                 var original = prior.orElseThrow();
                 if (!original.action().equals("EXTERNAL_ADOPT") || !original.server().equals(server)
-                        || !original.currentRevision().equals(candidate.fingerprint())
-                        || !original.facts().path("kind").asText().equals(candidate.kind())
-                        || !original.facts().path("identity").asText().equals(candidate.identity()))
+                    || !original.currentRevision().equals(candidate.fingerprint())
+                    || !original.facts().path("kind").asText().equals(candidate.kind())
+                    || !original.facts().path("identity").asText().equals(candidate.identity()))
                     return failed("DEPLOYMENT_EXTERNAL_TASK_CHANGED");
                 return recover(original, task);
             }
@@ -270,26 +278,26 @@ public final class DeploymentExternalApplications {
             if (existing.isPresent() && replacement.isEmpty()) {
                 var row = existing.orElseThrow();
                 if (!row.path("identity_fingerprint").asText().equals(candidate.fingerprint())
-                        || !sameEndpoint(row, info))
+                    || !sameEndpoint(row, info))
                     return failed("DEPLOYMENT_EXTERNAL_REATTACH_REQUIRED");
                 if (!quiet(row.path("external_application_id").asText(), task))
                     return failed("DEPLOYMENT_EXTERNAL_OCCUPIED");
             }
             if (replacement.isPresent()
-                    && (existing.isEmpty() || !selected(replacement.orElseThrow().original(), existing.orElseThrow())
-                            || !digest(existing.orElseThrow()).equals(replacement.orElseThrow().rowDigest())
-                            || !endpoint(existing.orElseThrow()).equals(replacement.orElseThrow().oldEndpoint())
-                            || !sameEndpoint(info, replacement.orElseThrow().endpoint())
-                            || !replacement.orElseThrow().original().server().equals(server)
-                            || !sameIdentity(candidate, replacement.orElseThrow().candidate())))
+                && (existing.isEmpty() || !selected(replacement.orElseThrow().original(), existing.orElseThrow())
+                || !digest(existing.orElseThrow()).equals(replacement.orElseThrow().rowDigest())
+                || !endpoint(existing.orElseThrow()).equals(replacement.orElseThrow().oldEndpoint())
+                || !sameEndpoint(info, replacement.orElseThrow().endpoint())
+                || !replacement.orElseThrow().original().server().equals(server)
+                || !sameIdentity(candidate, replacement.orElseThrow().candidate())))
                 return failed("DEPLOYMENT_EXTERNAL_REATTACH_STALE");
             var fresh = invoke(server,
-                    List.of(candidate.kind(), candidate.identity(), candidate.fingerprint(), "REFRESH_STATUS"), task);
+                List.of(candidate.kind(), candidate.identity(), candidate.fingerprint(), "REFRESH_STATUS"), task);
             if (fresh.outcome() != Outcome.SUCCEEDED)
                 return copy(fresh);
             if (fresh.value().orElseThrow().applications().size() != 1
-                    || !sameIdentity(candidate, fresh.value().orElseThrow().applications().getFirst())
-                    || fresh.value().orElseThrow().applications().getFirst().managed())
+                || !sameIdentity(candidate, fresh.value().orElseThrow().applications().getFirst())
+                || fresh.value().orElseThrow().applications().getFirst().managed())
                 return failed("DEPLOYMENT_EXTERNAL_IDENTITY_CHANGED");
             info = context.servers().get(server, task);
             if (existing.isPresent() && replacement.isEmpty()) {
@@ -298,12 +306,12 @@ public final class DeploymentExternalApplications {
                 String id = existing.orElseThrow().path("external_application_id").asText();
                 var ref = context.servers().findReference(server, "deployment.external." + id, task);
                 return ref.isPresent()
-                        && ref.orElseThrow().state() == gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE
-                                ? success(id)
-                                : unknownResult("DEPLOYMENT_EXTERNAL_RESERVATION_UNCONFIRMED");
+                    && ref.orElseThrow().state() == gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE
+                    ? success(id)
+                    : unknownResult("DEPLOYMENT_EXTERNAL_RESERVATION_UNCONFIRMED");
             }
             return publish(server, fresh.value().orElseThrow().applications().getFirst(), info, existing, replacement,
-                    task);
+                task);
         }
 
         /** Captures the old reference and exact approval before reserving a new identity. / 在预留新身份前捕获旧引用及精确审批。
@@ -316,42 +324,42 @@ public final class DeploymentExternalApplications {
          * @return registered conclusion / 登记结论
          * @throws ApiException if original evidence or write is unknown / 原依据或写入未知时 */
         private OperationResult<String> publish(ServerRef server, Discovered observed, ServerInfo info,
-                Optional<ObjectNode> previous, Optional<Reattachment> replacement, TaskContext task)
-                throws ApiException {
+                                                Optional<ObjectNode> previous, Optional<Reattachment> replacement, TaskContext task)
+            throws ApiException {
             String id = "external:"
-                    + UUID.nameUUIDFromBytes(("deployment-external-v1\n" + task.id()).getBytes(StandardCharsets.UTF_8));
+                + UUID.nameUUIDFromBytes(("deployment-external-v1\n" + task.id()).getBytes(StandardCharsets.UTF_8));
             var facts = DeploymentManagementJournal.facts().put("kind", observed.kind())
-                    .put("identity", observed.identity()).put("fingerprint", observed.fingerprint())
-                    .put("host", info.host()).put("port", info.port()).put("username", info.username())
-                    .put("registrationId", id).put("businessKey", "deployment.external." + id);
+                .put("identity", observed.identity()).put("fingerprint", observed.fingerprint())
+                .put("host", info.host()).put("port", info.port()).put("username", info.username())
+                .put("registrationId", id).put("businessKey", "deployment.external." + id);
             if (previous.isPresent()) {
                 var old = previous.orElseThrow();
                 String oldId = old.path("external_application_id").asText();
                 if (replacement.isEmpty() || !sameEndpoint(info, replacement.orElseThrow().endpoint())
-                        || !quiet(oldId, task))
+                    || !quiet(oldId, task))
                     return failed("DEPLOYMENT_EXTERNAL_REATTACH_STALE");
                 var oldRef = context.servers().findReference(server, "deployment.external." + oldId, task);
                 if (oldRef.isEmpty() || oldRef.orElseThrow()
-                        .state() != gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE)
+                    .state() != gold.debug.windowstolinux.appapi.server.ReferenceState.ACTIVE)
                     return unknownResult("DEPLOYMENT_EXTERNAL_RESERVATION_UNCONFIRMED");
                 facts.set("previousRow", old.deepCopy());
                 facts.put("previousReferenceId", oldRef.orElseThrow().id().toString());
                 var intent = new ActionIntent("deployment.external.reattach", List.of(server.id()), oldId, digest(old),
-                        facts.toString(),
-                        "Replace only this reviewed local registration and clear its local presentation");
+                    facts.toString(),
+                    "Replace only this reviewed local registration and clear its local presentation");
                 var approval = context.interaction().approve(intent, task);
                 if (approval.outcome() != Outcome.SUCCEEDED)
                     return copy(approval);
                 var current = identity(server, observed, task);
                 if (current.isEmpty() || !current.orElseThrow().equals(old)
-                        || !sameEndpoint(info, context.servers().get(server, task)) || !quiet(oldId, task))
+                    || !sameEndpoint(info, context.servers().get(server, task)) || !quiet(oldId, task))
                     return failed("DEPLOYMENT_EXTERNAL_REATTACH_STALE");
             }
             var operation = journal.begin(id, server, "EXTERNAL_ADOPT", observed.fingerprint(), Optional.empty(), facts,
-                    task);
+                task);
             var reference = context.servers().reserve(server, facts.path("businessKey").asText(), task);
             operation = journal.advance(operation, "RESERVED",
-                    DeploymentManagementJournal.copy(operation).put("referenceId", reference.id().toString()), task);
+                DeploymentManagementJournal.copy(operation).put("referenceId", reference.id().toString()), task);
             operation = journal.advance(operation, "INSERTING", DeploymentManagementJournal.copy(operation), task);
             try {
                 insert(operation, observed, info, previous, task);
@@ -372,7 +380,7 @@ public final class DeploymentExternalApplications {
          * @param task authenticated original action / 已认证原动作
          * @throws SQLException if exact transaction or acknowledgement fails / 精确事务或回执失败时 */
         private void insert(DeploymentManagementJournal.Entry operation, Discovered observed, ServerInfo info,
-                Optional<ObjectNode> previous, TaskContext task) throws SQLException {
+                            Optional<ObjectNode> previous, TaskContext task) throws SQLException {
             try (var connection = context.db().openConnection(task)) {
                 connection.setAutoCommit(false);
                 try {
@@ -380,7 +388,7 @@ public final class DeploymentExternalApplications {
                         var old = previous.orElseThrow();
                         String id = old.path("external_application_id").asText();
                         try (var query = connection.prepareStatement(
-                                "SELECT * FROM external_application WHERE external_application_id=? FOR UPDATE")) {
+                            "SELECT * FROM external_application WHERE external_application_id=? FOR UPDATE")) {
                             query.setString(1, id);
                             try (var rows = query.executeQuery()) {
                                 if (!rows.next() || !row(rows).equals(old) || rows.next())
@@ -390,7 +398,7 @@ public final class DeploymentExternalApplications {
                         if (!quiet(connection, id, task))
                             throw new SQLException("Original registration is occupied");
                         try (var delete = connection.prepareStatement(
-                                "DELETE FROM external_application WHERE external_application_id=? AND identity_fingerprint=?")) {
+                            "DELETE FROM external_application WHERE external_application_id=? AND identity_fingerprint=?")) {
                             delete.setString(1, id);
                             delete.setString(2, old.path("identity_fingerprint").asText());
                             if (delete.executeUpdate() != 1)
@@ -398,7 +406,7 @@ public final class DeploymentExternalApplications {
                         }
                     }
                     try (var insert = connection.prepareStatement(
-                            "INSERT INTO external_application(external_application_id,server_profile_id,runtime_type,runtime_identity,identity_fingerprint,bound_host,bound_ssh_port,bound_username,runtime_state,can_start,can_stop,detected_name,adopted_at,observed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+                        "INSERT INTO external_application(external_application_id,server_profile_id,runtime_type,runtime_identity,identity_fingerprint,bound_host,bound_ssh_port,bound_username,runtime_state,can_start,can_stop,detected_name,adopted_at,observed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
                         insert.setString(1, operation.applicationId());
                         insert.setString(2, operation.server().id());
                         insert.setString(3, observed.kind());
@@ -436,36 +444,36 @@ public final class DeploymentExternalApplications {
          * @return confirmed original ID or retained uncertainty / 确认原ID或留存未知
          * @throws ApiException if reference resolution is uncertain / 引用核对未知时 */
         private OperationResult<String> recover(DeploymentManagementJournal.Entry operation, TaskContext task)
-                throws ApiException {
+            throws ApiException {
             var facts = operation.facts();
             String id = facts.path("registrationId").asText();
             var reference = context.servers().findReference(operation.server(), facts.path("businessKey").asText(),
-                    task);
+                task);
             if (reference.isEmpty()
-                    || !reference.orElseThrow().id().toString().equals(facts.path("referenceId").asText()))
+                || !reference.orElseThrow().id().toString().equals(facts.path("referenceId").asText()))
                 return unknownResult("DEPLOYMENT_EXTERNAL_RESERVATION_UNCONFIRMED");
             try (var connection = context.db().openConnection(task)) {
                 try (var query = connection
-                        .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
+                    .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
                     query.setString(1, id);
                     try (var rows = query.executeQuery()) {
                         if (!rows.next())
                             return unknownResult("DEPLOYMENT_EXTERNAL_REGISTRATION_ABSENT");
                         var actual = row(rows);
                         if (!actual.path("server_profile_id").asText().equals(operation.server().id())
-                                || !actual.path("runtime_type").asText().equals(facts.path("kind").asText())
-                                || !actual.path("runtime_identity").asText().equals(facts.path("identity").asText())
-                                || !actual.path("identity_fingerprint").asText().equals(operation.currentRevision())
-                                || !actual.path("bound_host").asText().equals(facts.path("host").asText())
-                                || !actual.path("bound_ssh_port").asText().equals(facts.path("port").asText())
-                                || !actual.path("bound_username").asText().equals(facts.path("username").asText())
-                                || rows.next())
+                            || !actual.path("runtime_type").asText().equals(facts.path("kind").asText())
+                            || !actual.path("runtime_identity").asText().equals(facts.path("identity").asText())
+                            || !actual.path("identity_fingerprint").asText().equals(operation.currentRevision())
+                            || !actual.path("bound_host").asText().equals(facts.path("host").asText())
+                            || !actual.path("bound_ssh_port").asText().equals(facts.path("port").asText())
+                            || !actual.path("bound_username").asText().equals(facts.path("username").asText())
+                            || rows.next())
                             return unknownResult("DEPLOYMENT_EXTERNAL_REGISTRATION_CONFLICT");
                     }
                 }
                 if (facts.has("previousRow")) {
                     try (var query = connection.prepareStatement(
-                            "SELECT external_application_id FROM external_application WHERE external_application_id=?")) {
+                        "SELECT external_application_id FROM external_application WHERE external_application_id=?")) {
                         query.setString(1, facts.path("previousRow").path("external_application_id").asText());
                         try (var rows = query.executeQuery()) {
                             if (rows.next())
@@ -498,11 +506,11 @@ public final class DeploymentExternalApplications {
          * @return complete old row or absence / 完整旧行或不存在
          * @throws ApiException if original row cannot be read / 无法读取原行时 */
         private Optional<ObjectNode> identity(ServerRef server, Discovered candidate, TaskContext task)
-                throws ApiException {
+            throws ApiException {
             DeploymentSchema.requireIdentity(context.db().identity());
             try (var connection = context.db().openConnection(task);
-                    var query = connection.prepareStatement(
-                            "SELECT * FROM external_application WHERE server_profile_id=? AND runtime_type=? AND runtime_identity=?")) {
+                 var query = connection.prepareStatement(
+                     "SELECT * FROM external_application WHERE server_profile_id=? AND runtime_type=? AND runtime_identity=?")) {
                 query.setString(1, server.id());
                 query.setString(2, candidate.kind());
                 query.setString(3, candidate.identity());
@@ -538,14 +546,14 @@ public final class DeploymentExternalApplications {
         private boolean selected(Registered original, ObjectNode row) {
             boolean override = row.path("has_display_override").asText().equals("1");
             return original.id().equals(row.path("external_application_id").asText())
-                    && original.server().id().equals(row.path("server_profile_id").asText())
-                    && original.target().kind().equals(row.path("runtime_type").asText())
-                    && original.target().identity().equals(row.path("runtime_identity").asText())
-                    && original.target().fingerprint().equals(row.path("identity_fingerprint").asText())
-                    && original.displayName().equals(row.path(override ? "display_name" : "detected_name").asText())
-                    && original.category().equals(override ? row.path("application_category").asText() : "APP")
-                    && original.accessUrl().equals(Optional
-                            .ofNullable(row.path("access_url").isNull() ? null : row.path("access_url").asText()));
+                && original.server().id().equals(row.path("server_profile_id").asText())
+                && original.target().kind().equals(row.path("runtime_type").asText())
+                && original.target().identity().equals(row.path("runtime_identity").asText())
+                && original.target().fingerprint().equals(row.path("identity_fingerprint").asText())
+                && original.displayName().equals(row.path(override ? "display_name" : "detected_name").asText())
+                && original.category().equals(override ? row.path("application_category").asText() : "APP")
+                && original.accessUrl().equals(Optional
+                .ofNullable(row.path("access_url").isNull() ? null : row.path("access_url").asText()));
         }
 
         /** Requires no other unclosed original management operation on the old row. / 要求旧行不存在其他未结束原管理操作。
@@ -569,7 +577,7 @@ public final class DeploymentExternalApplications {
          * @throws SQLException if the query fails / 查询失败时 */
         private boolean quiet(java.sql.Connection connection, String id, TaskContext task) throws SQLException {
             try (var query = connection.prepareStatement(
-                    "SELECT operation_id FROM deployment_management_operation WHERE application_id=? AND phase<>'FINISHED' AND platform_task_id<>?")) {
+                "SELECT operation_id FROM deployment_management_operation WHERE application_id=? AND phase<>'FINISHED' AND platform_task_id<>?")) {
                 query.setString(1, id);
                 query.setObject(2, task.id());
                 try (var rows = query.executeQuery()) {
@@ -584,7 +592,7 @@ public final class DeploymentExternalApplications {
         private String digest(ObjectNode row) {
             try {
                 return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(row.toString().getBytes(StandardCharsets.UTF_8)));
+                    .digest(row.toString().getBytes(StandardCharsets.UTF_8)));
             } catch (java.security.NoSuchAlgorithmException impossible) {
                 throw new IllegalStateException(impossible);
             }
@@ -595,7 +603,7 @@ public final class DeploymentExternalApplications {
          * @return exact account, host and port / 精确账号、主机及端口 */
         private String endpoint(ObjectNode row) {
             return row.path("bound_username").asText() + "@" + row.path("bound_host").asText() + ":"
-                    + row.path("bound_ssh_port").asText();
+                + row.path("bound_ssh_port").asText();
         }
 
         /** Compares stored endpoint fields against current platform configuration. / 对比保存端点字段与当前平台配置。
@@ -604,8 +612,8 @@ public final class DeploymentExternalApplications {
          * @return whether the actual endpoint is unchanged / 实际端点是否未变 */
         private boolean sameEndpoint(ObjectNode row, ServerInfo info) {
             return row.path("bound_host").asText().equals(info.host())
-                    && row.path("bound_ssh_port").asText().equals(Integer.toString(info.port()))
-                    && row.path("bound_username").asText().equals(info.username());
+                && row.path("bound_ssh_port").asText().equals(Integer.toString(info.port()))
+                && row.path("bound_username").asText().equals(info.username());
         }
 
         /** Keeps endpoint and trust identity fixed between review and actual approval. / 在审阅与实际审批之间保持端点及信任身份不变。
@@ -614,8 +622,8 @@ public final class DeploymentExternalApplications {
          * @return whether the authenticated target remains exact / 已认证目标是否仍精确 */
         private boolean sameEndpoint(ServerInfo actual, ServerInfo reviewed) {
             return actual.ref().equals(reviewed.ref()) && actual.host().equals(reviewed.host())
-                    && actual.port() == reviewed.port() && actual.username().equals(reviewed.username())
-                    && actual.trustedFingerprint().equals(reviewed.trustedFingerprint());
+                && actual.port() == reviewed.port() && actual.username().equals(reviewed.username())
+                && actual.trustedFingerprint().equals(reviewed.trustedFingerprint());
         }
     }
 
@@ -632,10 +640,10 @@ public final class DeploymentExternalApplications {
         var prior = journal.find(task);
         var info = context.servers().get(stored.server(), task);
         if (!info.host().equals(stored.host()) || info.port() != stored.port()
-                || !info.username().equals(stored.username()))
+            || !info.username().equals(stored.username()))
             return prior.isPresent() && java.util.Set.of("EFFECTING", "UNKNOWN").contains(prior.orElseThrow().phase())
-                    ? unknownResult("DEPLOYMENT_EXTERNAL_SERVER_CHANGED")
-                    : failed("DEPLOYMENT_EXTERNAL_SERVER_CHANGED");
+                ? unknownResult("DEPLOYMENT_EXTERNAL_SERVER_CHANGED")
+                : failed("DEPLOYMENT_EXTERNAL_SERVER_CHANGED");
         DeploymentManagementJournal.Entry operation = null;
         boolean readOnlyReconcile = false;
         if (!action.equals("REFRESH_STATUS")) {
@@ -646,14 +654,14 @@ public final class DeploymentExternalApplications {
             readOnlyReconcile = !operation.phase().equals("REVIEWED");
             if (!readOnlyReconcile)
                 operation = journal.advance(operation, "EFFECTING",
-                        DeploymentManagementJournal.copy(operation).put("attempted", true), task);
+                    DeploymentManagementJournal.copy(operation).put("attempted", true), task);
         }
         var result = invoke(stored.server(), List.of(stored.target().kind(), stored.target().identity(),
-                stored.target().fingerprint(), readOnlyReconcile ? "REFRESH_STATUS" : action), task);
+            stored.target().fingerprint(), readOnlyReconcile ? "REFRESH_STATUS" : action), task);
         if (result.outcome() != Outcome.SUCCEEDED) {
             return operation == null
-                    ? copy(result)
-                    : unverified(operation, "DEPLOYMENT_EXTERNAL_EFFECT_UNVERIFIED", task);
+                ? copy(result)
+                : unverified(operation, "DEPLOYMENT_EXTERNAL_EFFECT_UNVERIFIED", task);
         }
         if (result.value().orElseThrow().applications().size() != 1)
             return unverified(operation, "DEPLOYMENT_EXTERNAL_RESPONSE_INVALID", task);
@@ -661,12 +669,12 @@ public final class DeploymentExternalApplications {
         if (!sameIdentity(stored.target(), value) || value.managed())
             return unverified(operation, "DEPLOYMENT_EXTERNAL_IDENTITY_CHANGED", task);
         if (readOnlyReconcile && (!operation.facts().path("attempted").asBoolean(false)
-                || action.equals("RESTART") && !operation.phase().equals("FINISHED")
-                || action.equals("START") && !value.state().equals("RUNNING")
-                || action.equals("STOP") && !value.state().equals("STOPPED")))
+            || action.equals("RESTART") && !operation.phase().equals("FINISHED")
+            || action.equals("START") && !value.state().equals("RUNNING")
+            || action.equals("STOP") && !value.state().equals("STOPPED")))
             return unknownResult("DEPLOYMENT_EXTERNAL_EFFECT_UNVERIFIED");
         if (operation != null && (action.equals("STOP") && !value.state().equals("STOPPED")
-                || !action.equals("STOP") && !value.state().equals("RUNNING")))
+            || !action.equals("STOP") && !value.state().equals("RUNNING")))
             return unverified(operation, "DEPLOYMENT_EXTERNAL_EFFECT_UNVERIFIED", task);
         return persistObservation(stored, id, value, operation, readOnlyReconcile, task);
     }
@@ -679,31 +687,31 @@ public final class DeploymentExternalApplications {
      * @return original durable intent or known refusal / 原持久意图或已知拒绝
      * @throws ApiException if original authorization or evidence fails / 原授权或依据失败时 */
     private OperationResult<DeploymentManagementJournal.Entry> beginAction(Stored stored, String id, String action,
-            TaskContext task) throws ApiException {
+                                                                           TaskContext task) throws ApiException {
         DeploymentManagementJournal.Entry operation = null;
         var prior = journal.find(task);
         if (prior.isPresent()) {
             operation = prior.orElseThrow();
             if (!operation.applicationId().equals(id) || !operation.server().equals(stored.server())
-                    || !operation.action().equals("EXTERNAL_" + action)
-                    || !operation.currentRevision().equals(stored.target().fingerprint()))
+                || !operation.action().equals("EXTERNAL_" + action)
+                || !operation.currentRevision().equals(stored.target().fingerprint()))
                 return failed("DEPLOYMENT_EXTERNAL_TASK_CHANGED");
         }
         if (operation == null) {
             var preflight = invoke(stored.server(), List.of(stored.target().kind(), stored.target().identity(),
-                    stored.target().fingerprint(), "REFRESH_STATUS"), task);
+                stored.target().fingerprint(), "REFRESH_STATUS"), task);
             if (preflight.outcome() != Outcome.SUCCEEDED)
                 return copy(preflight);
             if (preflight.value().orElseThrow().applications().size() != 1
-                    || !sameIdentity(stored.target(), preflight.value().orElseThrow().applications().getFirst())
-                    || preflight.value().orElseThrow().applications().getFirst().managed())
+                || !sameIdentity(stored.target(), preflight.value().orElseThrow().applications().getFirst())
+                || preflight.value().orElseThrow().applications().getFirst().managed())
                 return failed("DEPLOYMENT_EXTERNAL_IDENTITY_CHANGED");
             var facts = DeploymentManagementJournal.facts()
-                    .put("before", preflight.value().orElseThrow().applications().getFirst().state())
-                    .put("kind", stored.target().kind()).put("identity", stored.target().identity())
-                    .put("fingerprint", stored.target().fingerprint()).put("attempted", false);
+                .put("before", preflight.value().orElseThrow().applications().getFirst().state())
+                .put("kind", stored.target().kind()).put("identity", stored.target().identity())
+                .put("fingerprint", stored.target().fingerprint()).put("attempted", false);
             operation = journal.begin(id, stored.server(), "EXTERNAL_" + action, stored.target().fingerprint(),
-                    Optional.empty(), facts, task);
+                Optional.empty(), facts, task);
         }
         return success(operation);
     }
@@ -718,12 +726,12 @@ public final class DeploymentExternalApplications {
      * @return persisted original observation or uncertainty / 持久化原观察或未知
      * @throws ApiException if original commit cannot be confirmed / 原提交无法确认时 */
     private OperationResult<Discovered> persistObservation(Stored stored, String id, Discovered value,
-            DeploymentManagementJournal.Entry operation, boolean readOnlyReconcile, TaskContext task)
-            throws ApiException {
+                                                           DeploymentManagementJournal.Entry operation, boolean readOnlyReconcile, TaskContext task)
+        throws ApiException {
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var update = connection.prepareStatement(
-                        "UPDATE external_application SET runtime_state=?,can_start=?,can_stop=?,detected_name=?,observed_at=? WHERE external_application_id=? AND identity_fingerprint=?")) {
+             var update = connection.prepareStatement(
+                 "UPDATE external_application SET runtime_state=?,can_start=?,can_stop=?,detected_name=?,observed_at=? WHERE external_application_id=? AND identity_fingerprint=?")) {
             update.setString(1, value.state());
             update.setInt(2, value.canStart() ? 1 : 0);
             update.setInt(3, value.canStop() ? 1 : 0);
@@ -738,7 +746,7 @@ public final class DeploymentExternalApplications {
         }
         if (operation != null && !operation.phase().equals("FINISHED"))
             journal.advance(operation, "FINISHED", DeploymentManagementJournal.copy(operation)
-                    .put("after", value.state()).put("reconciledReadOnly", readOnlyReconcile), task);
+                .put("after", value.state()).put("reconciledReadOnly", readOnlyReconcile), task);
         return success(value);
     }
 
@@ -749,7 +757,7 @@ public final class DeploymentExternalApplications {
      * @return retained uncertainty or known query refusal / 留存未知或已知查询拒绝
      * @throws ApiException if original uncertainty cannot be persisted / 原未知无法持久化时 */
     private OperationResult<Discovered> unverified(DeploymentManagementJournal.Entry operation, String event,
-            TaskContext task) throws ApiException {
+                                                   TaskContext task) throws ApiException {
         if (operation == null)
             return failed(event);
         if (!operation.phase().equals("FINISHED"))
@@ -765,18 +773,18 @@ public final class DeploymentExternalApplications {
     private Stored stored(String id, TaskContext task) throws ApiException {
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task);
-                var query = connection
-                        .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
+             var query = connection
+                 .prepareStatement("SELECT * FROM external_application WHERE external_application_id=?")) {
             query.setString(1, id);
             try (var rows = query.executeQuery()) {
                 if (!rows.next())
                     throw new SQLException("External application is absent");
                 return new Stored(new ServerRef(rows.getString("server_profile_id")), rows.getString("bound_host"),
-                        rows.getInt("bound_ssh_port"), rows.getString("bound_username"),
-                        new Discovered(rows.getString("runtime_type"), rows.getString("runtime_identity"),
-                                rows.getString("identity_fingerprint"), rows.getString("detected_name"),
-                                rows.getString("runtime_state"), false, rows.getInt("can_start") == 1,
-                                rows.getInt("can_stop") == 1));
+                    rows.getInt("bound_ssh_port"), rows.getString("bound_username"),
+                    new Discovered(rows.getString("runtime_type"), rows.getString("runtime_identity"),
+                        rows.getString("identity_fingerprint"), rows.getString("detected_name"),
+                        rows.getString("runtime_state"), false, rows.getInt("can_start") == 1,
+                        rows.getInt("can_stop") == 1));
             }
         } catch (SQLException failure) {
             throw unknown("DEPLOYMENT_EXTERNAL_REGISTRATION_UNAVAILABLE");
@@ -790,7 +798,7 @@ public final class DeploymentExternalApplications {
      * @return complete original scanner receipt or failure / 完整原扫描回执或失败
      * @throws ApiException if archived scanner, session or approval fails / 归档扫描器、会话或审批失败时 */
     private OperationResult<Scan> invoke(ServerRef server, List<String> arguments, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var resource = getClass().getResourceAsStream("external-applications.py");
         if (resource == null)
             throw unknown("DEPLOYMENT_EXTERNAL_SCANNER_MISSING");
@@ -803,9 +811,9 @@ public final class DeploymentExternalApplications {
         if (script.length > 16384)
             throw unknown("DEPLOYMENT_EXTERNAL_SCANNER_OVERSIZE");
         String command = "exec python3 - " + arguments.stream().map(DeploymentExternalApplications::quote)
-                .collect(java.util.stream.Collectors.joining(" "));
+            .collect(java.util.stream.Collectors.joining(" "));
         try (var session = context.linux().connect(server, task);
-                var request = new CommandRequest(command, script, Duration.ofSeconds(110), 1_048_576)) {
+             var request = new CommandRequest(command, script, Duration.ofSeconds(110), 1_048_576)) {
             var intent = RemoteActions.command(server, "deployment-external-v1", request);
             var grant = context.interaction().approve(intent, task);
             if (grant.outcome() != Outcome.SUCCEEDED)
@@ -839,7 +847,7 @@ public final class DeploymentExternalApplications {
             String[] fields = line.split("\t", -1);
             if (fields.length == 9 && fields[0].equals("APP")) {
                 apps.add(new Discovered(fields[1], decode(fields[2]), fields[3], decode(fields[4]), fields[5],
-                        bit(fields[8]), bit(fields[6]), bit(fields[7])));
+                    bit(fields[8]), bit(fields[6]), bit(fields[7])));
             } else if (fields.length == 2 && fields[0].equals("ISSUE")) {
                 issues.add(fields[1]);
             } else if (fields.length == 2 && fields[0].equals("END") && Integer.parseInt(fields[1]) == apps.size()) {
@@ -883,7 +891,7 @@ public final class DeploymentExternalApplications {
      * @return whether exact immutable identities match / 精确不可变身份是否匹配 */
     private static boolean sameIdentity(Discovered left, Discovered right) {
         return left.kind().equals(right.kind()) && left.identity().equals(right.identity())
-                && left.fingerprint().equals(right.fingerprint());
+            && left.fingerprint().equals(right.fingerprint());
     }
 
     /** Copies an upstream non-success. / 复制上游非成功结果。
@@ -908,7 +916,7 @@ public final class DeploymentExternalApplications {
      * @return known original failure / 已知原失败 */
     private static <T> OperationResult<T> failed(String event) {
         return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
-                event, "External application identity changed or cannot be used", Map.of(), Optional.empty())));
+            event, "External application identity changed or cannot be used", Map.of(), Optional.empty())));
     }
 
     /** Returns uncertainty without another registration or remote effect. / 不再次登记或发送远端副作用地返回未知。
@@ -917,7 +925,7 @@ public final class DeploymentExternalApplications {
      * @return retained original uncertainty / 留存原未知 */
     private static <T> OperationResult<T> unknownResult(String event) {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
-                event, "Original external application requires reconciliation", Map.of(), Optional.empty())));
+            event, "Original external application requires reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Retains uncertain remote or business effects. / 保留未确认的远端或业务效果。
@@ -925,7 +933,7 @@ public final class DeploymentExternalApplications {
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException unknown(String event) {
         return new ApiException(new Problem(ProblemCode.UNKNOWN, event,
-                "External application result requires reconciliation", Map.of(), Optional.empty()));
+            "External application result requires reconciliation", Map.of(), Optional.empty()));
     }
 
     /** Original endpoint and target retained inside deployment only. / 仅在部署内部保留的原端点与目标。

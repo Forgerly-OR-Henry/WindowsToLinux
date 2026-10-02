@@ -1,5 +1,18 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.TaskWork;
+
 import java.sql.SQLException;
 import java.util.*;
 
@@ -7,7 +20,7 @@ import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Owns persisted permission preference and ephemeral scopes for host-launched workflows. / 持有持久权限偏好及宿主启动流程的临时作用域。 */
 public final class PlatformAuthorizationService implements AutoCloseable {
@@ -34,7 +47,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
      * @param security current-user boundary / 当前用户边界
      * @param tasks original task authority / 原任务授权方 */
     public PlatformAuthorizationService(PlatformPersistence persistence, DesktopSecurityService security,
-            PlatformTaskRuntime tasks) {
+                                        PlatformTaskRuntime tasks) {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
         this.tasks = Objects.requireNonNull(tasks);
@@ -87,7 +100,21 @@ public final class PlatformAuthorizationService implements AutoCloseable {
      * @return one observed decision tied to its original scope / 绑定原作用域的一次观测决定
      * @throws ApiException if ownership, scope or human review fails / 归属、作用域或人工审核失败时 */
     Permit review(String owner, String version, ActionIntent intent, TaskContext task, HumanReview human)
-            throws ApiException {
+        throws ApiException {
+        return review(owner, version, intent, task, human, false);
+    }
+
+    /** Applies ordinary scope validation with an unconditional explicit human decision. / 在常规作用域校验中要求无条件明确人工决定。
+     * @param owner owner / 所有者
+     * @param version release / 发布版本
+     * @param intent exact intent / 精确意图
+     * @param task original task / 原任务
+     * @param human actual review / 实际审核
+     * @param forceHuman whether every call requires a fresh human confirmation / 是否每次都要求新人工确认
+     * @return original scope decision / 原作用域决定
+     * @throws ApiException if validation fails / 校验失败时 */
+    Permit review(String owner, String version, ActionIntent intent, TaskContext task, HumanReview human, boolean forceHuman)
+        throws ApiException {
         tasks.requireExecuting(task, owner, version);
         Scope scope;
         synchronized (this) {
@@ -102,15 +129,15 @@ public final class PlatformAuthorizationService implements AutoCloseable {
                 return new Permit(task, scope, human.approve());
             var semantics = intent.semantics().orElseThrow();
             var servers = semantics.targets().stream().map(target -> target.serverId())
-                    .collect(java.util.stream.Collectors.toSet());
+                .collect(java.util.stream.Collectors.toSet());
             if (!servers.equals(Set.copyOf(intent.serverIds())) || !scope.targets.containsAll(semantics.targets()))
                 throw failure(ProblemCode.ACCESS_DENIED, "AUTHORIZATION_TARGET",
-                        "Operation targets differ from the launched workflow");
+                    "Operation targets differ from the launched workflow");
             var key = new SemanticKey(intent.type(), semantics);
-            boolean approved = scope.mode == AuthorizationMode.FULL
-                    || scope.mode == AuthorizationMode.GENERAL && scope.approved.contains(key) || human.approve();
+            boolean approved = forceHuman ? human.approve() : scope.mode == AuthorizationMode.FULL
+                || scope.mode == AuthorizationMode.GENERAL && scope.approved.contains(key) || human.approve();
             scope.validate(task, owner, version);
-            if (approved && scope.mode == AuthorizationMode.GENERAL)
+            if (approved && !forceHuman && scope.mode == AuthorizationMode.GENERAL)
                 scope.approved.add(key);
             return new Permit(task, scope, approved);
         }
@@ -123,7 +150,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
     void validate(Permit permit, TaskContext task) throws ApiException {
         if (!permit.approved || permit.task != task)
             throw failure(ProblemCode.ACCESS_DENIED, "AUTHORIZATION_IDENTITY",
-                    "Permission belongs to another operation");
+                "Permission belongs to another operation");
         if (permit.scope != null)
             synchronized (permit.scope) {
                 permit.scope.validate(task, permit.scope.owner, permit.scope.version);
@@ -145,7 +172,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
             Objects.requireNonNull(work);
             targets = Set.copyOf(targets);
             if (targets.isEmpty() || targets.size() > 128 || !targets.stream().map(target -> target.serverId())
-                    .collect(java.util.stream.Collectors.toSet()).equals(Set.copyOf(request.serverIds())))
+                .collect(java.util.stream.Collectors.toSet()).equals(Set.copyOf(request.serverIds())))
                 throw new IllegalArgumentException("Workflow targets must match the complete admitted server set");
         }
     }
@@ -192,7 +219,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
                         tasks.requireServer(task, owner, version, target.serverId());
                     if (scopes.putIfAbsent(task, scope) != null)
                         throw failure(ProblemCode.CONTRACT_VIOLATION, "WORKFLOW_SCOPE_EXISTS",
-                                "Original task already owns a workflow");
+                            "Original task already owns a workflow");
                 }
                 try (scope) {
                     return launch.work().run(task);
@@ -234,7 +261,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
          * @param mode captured policy / 已捕获策略
          * @param targets resolved targets / 已解析目标 */
         private Scope(TaskContext task, String owner, String version, AuthorizationMode mode,
-                Set<ActionTarget> targets) {
+                      Set<ActionTarget> targets) {
             this.task = task;
             this.owner = owner;
             this.version = version;
@@ -250,9 +277,9 @@ public final class PlatformAuthorizationService implements AutoCloseable {
         private void validate(TaskContext task, String owner, String version) throws ApiException {
             var original = tasks.requireContext(task);
             if (ended || this.task != task || !this.owner.equals(original.ownerId())
-                    || !this.version.equals(original.ownerVersion()))
+                || !this.version.equals(original.ownerVersion()))
                 throw failure(ProblemCode.ACCESS_DENIED, "WORKFLOW_SCOPE_ENDED",
-                        "Original workflow scope is unavailable");
+                    "Original workflow scope is unavailable");
             tasks.requireExecuting(task, owner, version);
         }
 
@@ -283,6 +310,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
 
         /** Whether approval was established. / 是否已建立批准。 */
         private final boolean approved;
+
         /** Retains the actual decision identities. / 保留实际决定身份。
          * @param task original task / 原任务
          * @param scope optional original scope / 可选原作用域

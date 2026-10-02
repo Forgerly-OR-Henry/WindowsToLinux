@@ -28,7 +28,7 @@ public final class DeploymentDatabasePlanJournal {
 
     /** Strict bounded checkpoint codec. / 严格有界检查点编解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     /** Exact original checkpoint. / 精确原检查点。 */
     private final TaskCheckpoint checkpoint;
@@ -45,7 +45,7 @@ public final class DeploymentDatabasePlanJournal {
          * @param databaseId exact database ID / 精确数据库 ID */
         public Entry {
             if (componentId == null || !componentId.matches("[a-z0-9][a-z0-9-]{0,62}") || databaseId == null
-                    || !databaseId.matches("[a-z][a-z0-9-]{0,31}"))
+                || !databaseId.matches("[a-z][a-z0-9-]{0,31}"))
                 throw new IllegalArgumentException("Invalid planned database identity");
         }
 
@@ -75,7 +75,7 @@ public final class DeploymentDatabasePlanJournal {
             Objects.requireNonNull(manifestSha256);
             keys = List.copyOf(keys);
             if (serverId.isBlank() || serverId.length() > 512 || serverId.chars().anyMatch(Character::isISOControl)
-                    || !manifestSha256.matches("[0-9a-f]{64}") || keys.size() > 256)
+                || !manifestSha256.matches("[0-9a-f]{64}") || keys.size() > 256)
                 throw new IllegalArgumentException("Invalid database plan facts");
             String previous = "";
             for (String key : keys) {
@@ -103,7 +103,7 @@ public final class DeploymentDatabasePlanJournal {
      * @return original plan journal / 原计划日志
      * @throws ApiException if original persistence fails / 原持久化失败时 */
     public static DeploymentDatabasePlanJournal begin(TaskService tasks, TaskContext task, ServerRef server,
-            String manifestSha256, List<Entry> entries) throws ApiException {
+                                                      String manifestSha256, List<Entry> entries) throws ApiException {
         if (entries.size() > 256 || new HashSet<>(entries).size() != entries.size())
             throw new IllegalArgumentException("Duplicate or excessive planned database target");
         var keys = entries.stream().map(Entry::key).sorted().toList();
@@ -120,7 +120,7 @@ public final class DeploymentDatabasePlanJournal {
      * @return original plan or genuine absence / 原计划或真实不存在
      * @throws ApiException if lookup fails / 查找失败时 */
     public static Optional<DeploymentDatabasePlanJournal> find(TaskService tasks, TaskContext task)
-            throws ApiException {
+        throws ApiException {
         var found = tasks.findCheckpoint(task, KEY);
         if (found.isEmpty())
             return Optional.empty();
@@ -149,7 +149,7 @@ public final class DeploymentDatabasePlanJournal {
     private static String encode(UUID taskId, Facts facts) {
         try {
             return JSON.writeValueAsString(
-                    new Payload(1, taskId.toString(), facts.serverId(), facts.manifestSha256(), facts.keys()));
+                new Payload(1, taskId.toString(), facts.serverId(), facts.manifestSha256(), facts.keys()));
         } catch (IOException impossible) {
             throw new IllegalStateException("Database plan encoding failed", impossible);
         }
@@ -163,8 +163,8 @@ public final class DeploymentDatabasePlanJournal {
         try {
             var node = JSON.readTree(payload);
             if (node == null || !node.isObject() || node.size() != 5 || !node.path("formatVersion").isInt()
-                    || node.path("formatVersion").asInt() != 1
-                    || !taskId.toString().equals(node.path("taskId").textValue()) || !node.path("keys").isArray())
+                || node.path("formatVersion").asInt() != 1
+                || !taskId.toString().equals(node.path("taskId").textValue()) || !node.path("keys").isArray())
                 throw new IllegalArgumentException("Invalid database plan checkpoint");
             var names = new HashSet<String>();
             node.fieldNames().forEachRemaining(names::add);
@@ -188,6 +188,6 @@ public final class DeploymentDatabasePlanJournal {
      * @param manifestSha256 frozen manifest digest / 冻结清单摘要
      * @param keys planned child addresses / 计划子项地址 */
     private record Payload(int formatVersion, String taskId, String serverId, String manifestSha256,
-            List<String> keys) {
+                           List<String> keys) {
     }
 }

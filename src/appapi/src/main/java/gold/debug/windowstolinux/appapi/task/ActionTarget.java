@@ -14,7 +14,7 @@ public record ActionTarget(String serverId, String kind, String id) {
     public ActionTarget {
         Objects.requireNonNull(serverId, "serverId");
         if (kind == null || !kind.matches("[a-z][a-z0-9_.-]{0,127}") || id == null || id.isBlank() || id.length() > 4096
-                || id.codePoints().anyMatch(Character::isISOControl))
+            || id.codePoints().anyMatch(Character::isISOControl))
             throw new IllegalArgumentException("Invalid resolved action target");
     }
 }

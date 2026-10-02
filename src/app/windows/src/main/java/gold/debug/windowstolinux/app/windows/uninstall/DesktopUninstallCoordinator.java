@@ -42,30 +42,30 @@ public final class DesktopUninstallCoordinator {
         List<DesktopUninstallEvent> events = new ArrayList<>();
         if (request.decision().isEmpty()) {
             Problem required = DesktopUninstallFailureType.DECISION_REQUIRED.problem(operation,
-                    "uninstall requires an explicit data and credential decision");
+                "uninstall requires an explicit data and credential decision");
             events.add(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, false, required.message()));
             return new DesktopUninstallPreparationResult(operation, DesktopUninstallPreparationStatus.DECISION_REQUIRED,
-                    events, Optional.empty(), Optional.of(required));
+                events, Optional.empty(), Optional.of(required));
         }
         DesktopUninstallDecisionType decision = request.decision().orElseThrow();
         events.add(new DesktopUninstallEvent(DesktopUninstallState.DECISION_VALIDATED, true,
-                decision == DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS
-                        ? "user explicitly chose to retain local data and credentials"
-                        : "user explicitly chose to delete managed local data and credentials"));
+            decision == DesktopUninstallDecisionType.KEEP_DATA_AND_CREDENTIALS
+                ? "user explicitly chose to retain local data and credentials"
+                : "user explicitly chose to delete managed local data and credentials"));
         try {
             DesktopUninstallPort.StepEvidence stopped = port.stopOwnedTasks(request);
             require(stopped.completed() && stopped.verified(), DesktopUninstallFailureType.TASKS_ACTIVE,
-                    "application-owned tasks could not be stopped and verified");
+                "application-owned tasks could not be stopped and verified");
             events.add(success(DesktopUninstallState.TASKS_STOPPED, stopped.evidence()));
             DesktopUninstallHandoff handoff = new DesktopUninstallHandoff(operation, request, events);
             return new DesktopUninstallPreparationResult(operation, DesktopUninstallPreparationStatus.READY_FOR_HANDOFF,
-                    events, Optional.of(handoff), Optional.empty());
+                events, Optional.of(handoff), Optional.empty());
         } catch (Exception exception) {
             Problem failure = recovery(bind(failure(exception), operation), "NONE", "NOT_ATTEMPTED");
             events.add(new DesktopUninstallEvent(DesktopUninstallState.TASKS_STOPPED, false, failure.message()));
             return new DesktopUninstallPreparationResult(operation,
-                    DesktopUninstallPreparationStatus.PRECONDITION_REJECTED, events, Optional.empty(),
-                    Optional.of(failure));
+                DesktopUninstallPreparationStatus.PRECONDITION_REJECTED, events, Optional.empty(),
+                Optional.of(failure));
         }
     }
 
@@ -86,17 +86,17 @@ public final class DesktopUninstallCoordinator {
         try {
             DesktopUninstallPort.HandoffEvidence worker = port.verifyIndependentWorker(handoff);
             require(worker.independentWorkerVerified() && worker.mainProcessExited() && worker.handoffAuthenticated(),
-                    DesktopUninstallFailureType.BOUNDARY_INVALID,
-                    "independent uninstall worker, main process exit or handoff authenticity is unverified");
+                DesktopUninstallFailureType.BOUNDARY_INVALID,
+                "independent uninstall worker, main process exit or handoff authenticity is unverified");
             events.add(success(DesktopUninstallState.INDEPENDENT_WORKER_VERIFIED, worker.evidence()));
 
             state = DesktopUninstallState.BOUNDARIES_VERIFIED;
             DesktopUninstallPort.BoundaryEvidence boundaries = port.verifyManagedBoundaries(request);
             boolean deleteData = decision == DesktopUninstallDecisionType.DELETE_DATA_AND_CREDENTIALS;
             boolean completeBoundary = boundaries.jpackageLayoutVerified() && boundaries.installMarkerVerified()
-                    && (!deleteData || boundaries.dataMarkerVerified());
+                && (!deleteData || boundaries.dataMarkerVerified());
             require(completeBoundary, DesktopUninstallFailureType.BOUNDARY_INVALID,
-                    "jpackage or data marker ownership is incomplete");
+                "jpackage or data marker ownership is incomplete");
             events.add(success(DesktopUninstallState.BOUNDARIES_VERIFIED, boundaries.evidence()));
 
             List<String> residuals = new ArrayList<>();
@@ -113,21 +113,21 @@ public final class DesktopUninstallCoordinator {
             }
             if (!residuals.isEmpty()) {
                 Problem incomplete = recovery(
-                        DesktopUninstallFailureType.REMOVAL_INCOMPLETE.problem(operation,
-                                "one or more exact managed uninstall targets remain"),
-                        "REQUIRE_MANUAL_RECOVERY", "FAILED");
+                    DesktopUninstallFailureType.REMOVAL_INCOMPLETE.problem(operation,
+                        "one or more exact managed uninstall targets remain"),
+                    "REQUIRE_MANUAL_RECOVERY", "FAILED");
                 return result(operation, DesktopUninstallStatus.COMPLETED_WITH_RESIDUALS, events, residuals, retained,
-                        Optional.of(incomplete));
+                    Optional.of(incomplete));
             }
             DesktopUninstallStatus status = deleteData
-                    ? DesktopUninstallStatus.SUCCEEDED_DATA_DELETED
-                    : DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED;
+                ? DesktopUninstallStatus.SUCCEEDED_DATA_DELETED
+                : DesktopUninstallStatus.SUCCEEDED_DATA_RETAINED;
             return result(operation, status, events, List.of(), retained, Optional.empty());
         } catch (Exception exception) {
             Problem failure = recovery(bind(failure(exception), operation), "NONE", "NOT_ATTEMPTED");
             events.add(new DesktopUninstallEvent(state, false, failure.message()));
             return result(operation, DesktopUninstallStatus.PRECONDITION_REJECTED, events, List.of(), List.of(),
-                    Optional.of(failure));
+                Optional.of(failure));
         }
     }
 
@@ -141,7 +141,7 @@ public final class DesktopUninstallCoordinator {
      * @param residuals residuals / 残留集合
      */
     private static void addRemoval(List<DesktopUninstallEvent> events, DesktopUninstallState state,
-            DesktopUninstallPort.RemovalEvidence removal, List<String> residuals) {
+                                   DesktopUninstallPort.RemovalEvidence removal, List<String> residuals) {
         residuals.addAll(removal.residualItems());
         boolean succeeded = removal.completed() && removal.verified() && removal.residualItems().isEmpty();
         events.add(new DesktopUninstallEvent(state, succeeded, joined(removal.evidence())));
@@ -160,8 +160,8 @@ public final class DesktopUninstallCoordinator {
      * @return desktop uninstall result from the supplied result inputs / 根据所提供结果输入构建Desktop卸载结果
      */
     private static DesktopUninstallResult result(UUID operation, DesktopUninstallStatus status,
-            List<DesktopUninstallEvent> events, List<String> residuals, List<String> retained,
-            Optional<Problem> failure) {
+                                                 List<DesktopUninstallEvent> events, List<String> residuals, List<String> retained,
+                                                 Optional<Problem> failure) {
         return new DesktopUninstallResult(operation, status, events, residuals, retained, failure);
     }
 
@@ -175,7 +175,7 @@ public final class DesktopUninstallCoordinator {
      * @throws DesktopUninstallException if the desktop uninstall boundary rejects the operation / Desktop卸载边界拒绝当前操作时
      */
     private static void require(boolean condition, DesktopUninstallFailureType type, String diagnostic)
-            throws DesktopUninstallException {
+        throws DesktopUninstallException {
         if (!condition)
             throw DesktopUninstallException.create(type, diagnostic);
     }
@@ -195,7 +195,7 @@ public final class DesktopUninstallCoordinator {
         if (exception instanceof DesktopUninstallException uninstall)
             return uninstall.problem();
         return DesktopUninstallException.create(DesktopUninstallFailureType.BOUNDARY_INVALID,
-                "unexpected desktop uninstall boundary failure", exception).problem();
+            "unexpected desktop uninstall boundary failure", exception).problem();
     }
 
     /**

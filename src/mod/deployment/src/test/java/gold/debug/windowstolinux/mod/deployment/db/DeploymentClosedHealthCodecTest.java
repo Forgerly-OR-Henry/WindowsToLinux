@@ -16,8 +16,8 @@ class DeploymentClosedHealthCodecTest {
     @Test
     void roundTripsBothClosedHealthStrategies() throws Exception {
         for (DeploymentHealthCheck health : java.util.List.of(
-                new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:8080/health"), 204, 15),
-                new DeploymentHealthCheck.Tcp(8080, 20, 3)))
+            new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:8080/health"), 204, 15),
+            new DeploymentHealthCheck.Tcp(8080, 20, 3)))
             assertEquals(health, codec.read(codec.write(health)));
     }
 

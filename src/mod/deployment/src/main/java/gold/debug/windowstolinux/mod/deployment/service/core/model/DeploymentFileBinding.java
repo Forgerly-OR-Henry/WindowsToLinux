@@ -16,8 +16,9 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSto
  * @param contentSha256 content sha 256 / 内容SHA256
  */
 public record DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath,
-        DeploymentStorageLocation location, DeploymentStorageLocation.StorageResourceType resourceType, String seedFile,
-        String contentSha256) {
+                                    DeploymentStorageLocation location,
+                                    DeploymentStorageLocation.StorageResourceType resourceType, String seedFile,
+                                    String contentSha256) {
     /**
      * Validates the identity and exact reviewed logical path. / 校验身份及精确审阅逻辑路径。
      *
@@ -32,7 +33,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentStoragePath data
      */
     public DeploymentFileBinding {
         seedFile = gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSqliteRequirement
-                .relativeSourceFile(seedFile);
+            .relativeSourceFile(seedFile);
         contentSha256 = Objects.requireNonNull(contentSha256);
         if (resourceType == DeploymentStorageLocation.StorageResourceType.CONFIGURATION) {
             if (seedFile.isEmpty() || !contentSha256.matches("[a-f0-9]{64}"))
@@ -46,7 +47,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentStoragePath data
         if (resourceType == DeploymentStorageLocation.StorageResourceType.DATABASE)
             throw new IllegalArgumentException("databases require an explicit database binding");
         if (resourceType == DeploymentStorageLocation.StorageResourceType.CONFIGURATION
-                && dataPath.access() != DeploymentStoragePath.AccessMode.READ_ONLY)
+            && dataPath.access() != DeploymentStoragePath.AccessMode.READ_ONLY)
             throw new IllegalArgumentException("configuration bindings must be read-only");
     }
 
@@ -60,7 +61,7 @@ public record DeploymentFileBinding(String bindingId, DeploymentStoragePath data
      * @param resourceType resource type / 资源类型
      */
     public DeploymentFileBinding(String bindingId, DeploymentStoragePath dataPath, DeploymentStorageLocation location,
-            DeploymentStorageLocation.StorageResourceType resourceType) {
+                                 DeploymentStorageLocation.StorageResourceType resourceType) {
         this(bindingId, dataPath, location, resourceType, "", "");
     }
 
@@ -74,8 +75,8 @@ public record DeploymentFileBinding(String bindingId, DeploymentStoragePath data
     public String physicalPath(String applicationId) {
         String root = location.resolve(applicationId, resourceType, bindingId);
         return resourceType == DeploymentStorageLocation.StorageResourceType.CONFIGURATION
-                ? root + "/revisions/" + contentSha256 + "/value"
-                : root;
+            ? root + "/revisions/" + contentSha256 + "/value"
+            : root;
     }
 
     /**

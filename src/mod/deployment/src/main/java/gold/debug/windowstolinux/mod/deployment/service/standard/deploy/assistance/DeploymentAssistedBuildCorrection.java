@@ -1,7 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+
 import java.util.Map;
-import gold.debug.windowstolinux.appapi.task.*;
+
+
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan;
 
 /** Reopens only the four typed technical fields after a physically confirmed build failure. / 物理确认构建失败后仅重开四项类型化技术字段。 */
@@ -20,15 +25,19 @@ public interface DeploymentAssistedBuildCorrection {
      * @param previousInputs original four input values / 原四项输入值
      * @param nextInputs newly confirmed four values / 新确认四项值
      * @param catalogBranch reviewed fixed catalog branch / 已审阅固定目录分支 */
-    record Correction(ReviewedDeploymentPlan plan, Map<String, String> previousInputs, Map<String, String> nextInputs, int catalogBranch) {
+    record Correction(ReviewedDeploymentPlan plan, Map<String, String> previousInputs, Map<String, String> nextInputs,
+                      int catalogBranch) {
         /** Copies exact typed answers and refuses unbounded tool candidates. / 复制精确类型化答案并拒绝无界工具候选。
          * @param plan actual new plan / 实际新计划
          * @param previousInputs original four values / 原四项值
          * @param nextInputs newly reviewed values / 新审阅值
          * @param catalogBranch fixed zero or one branch / 固定零或一分支 */
         public Correction {
-            java.util.Objects.requireNonNull(plan); previousInputs = Map.copyOf(previousInputs); nextInputs = Map.copyOf(nextInputs);
-            if (catalogBranch < 0 || catalogBranch > 1) throw new IllegalArgumentException("Only original fixed catalog branches are supported");
+            java.util.Objects.requireNonNull(plan);
+            previousInputs = Map.copyOf(previousInputs);
+            nextInputs = Map.copyOf(nextInputs);
+            if (catalogBranch < 0 || catalogBranch > 1)
+                throw new IllegalArgumentException("Only original fixed catalog branches are supported");
         }
     }
 }

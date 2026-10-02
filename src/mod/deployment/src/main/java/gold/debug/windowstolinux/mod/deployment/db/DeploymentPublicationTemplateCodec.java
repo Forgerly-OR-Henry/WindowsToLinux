@@ -37,7 +37,7 @@ final class DeploymentPublicationTemplateCodec {
             throw new SQLException("Publication template requires one complete executable graph");
         var snapshot = DeploymentReleaseSnapshot.capture(publication.graph(), publication.units());
         var node = object().put("formatVersion", count == 1 ? 1 : 2).put("applicationId",
-                publication.graph().applicationId());
+            publication.graph().applicationId());
         if (count == 1)
             node.put("publishedAt", publication.units().getFirst().release().publishedAt().toEpochMilli());
         node.set("runtime", parse(DeploymentReleaseCodec.runtime(snapshot), DeploymentReleaseCodec.LIMIT));
@@ -48,9 +48,9 @@ final class DeploymentPublicationTemplateCodec {
         } else {
             var units = node.putArray("units");
             for (var unit : publication.units().stream()
-                    .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList()) {
+                .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList()) {
                 var entry = units.addObject().put("unitId", unit.unit().id()).put("publishedAt",
-                        unit.release().publishedAt().toEpochMilli());
+                    unit.release().publishedAt().toEpochMilli());
                 configuration(entry.putObject("configuration"), unit.configuration());
             }
         }
@@ -61,9 +61,9 @@ final class DeploymentPublicationTemplateCodec {
      * @param configuration target JSON object / 目标JSON对象
      * @param config immutable reviewed configuration / 不可变已审阅配置 */
     static void configuration(com.fasterxml.jackson.databind.node.ObjectNode configuration,
-            DeploymentConfigurationSnapshot config) {
+                              DeploymentConfigurationSnapshot config) {
         configuration.put("revision", config.revision()).put("schemaVersion", config.schemaVersion())
-                .put("createdAt", config.createdAt().toEpochMilli()).put("sha256", config.sha256());
+            .put("createdAt", config.createdAt().toEpochMilli()).put("sha256", config.sha256());
         var entries = configuration.putArray("entries");
         for (var entry : config.entries()) {
             var value = entries.addObject().put("key", entry.key()).put("scope", entry.scope().name());
@@ -99,10 +99,10 @@ final class DeploymentPublicationTemplateCodec {
         String health = node.path("health").toString();
         var identity = new DeploymentReleaseIdentity(executionId, DeploymentReleaseCodec.digest(runtime, health));
         var retained = new DeploymentReleaseRecord(applicationId, identity, executionId,
-                DeploymentReleaseRecord.DeploymentReleaseState.CANDIDATE, runtime, health, Instant.EPOCH);
+            DeploymentReleaseRecord.DeploymentReleaseState.CANDIDATE, runtime, health, Instant.EPOCH);
         var snapshot = DeploymentReleaseCodec.snapshot(retained);
         if (snapshot.bindings().size() != snapshot.graph().components().size() || snapshot.bindings().size() < 1
-                || snapshot.bindings().size() > 16 || (version == 1) != (snapshot.bindings().size() == 1))
+            || snapshot.bindings().size() > 16 || (version == 1) != (snapshot.bindings().size() == 1))
             throw new SQLException("Publication template must contain one complete executable graph");
         try {
             Map<String, JsonNode> entries;
@@ -116,13 +116,13 @@ final class DeploymentPublicationTemplateCodec {
                 for (var entry : list) {
                     fields(entry, Set.of("unitId", "publishedAt", "configuration"));
                     if (!entry.path("publishedAt").canConvertToLong()
-                            || mapped.putIfAbsent(string(entry, "unitId"), entry) != null)
+                        || mapped.putIfAbsent(string(entry, "unitId"), entry) != null)
                         throw new SQLException("Publication unit identity or time is invalid");
                 }
                 entries = Map.copyOf(mapped);
             }
             var components = snapshot.graph().components().stream()
-                    .collect(Collectors.toMap(value -> value.unit().id(), value -> value));
+                .collect(Collectors.toMap(value -> value.unit().id(), value -> value));
             if (entries.size() != snapshot.bindings().size() || !entries.keySet().equals(components.keySet()))
                 throw new SQLException("Publication units differ from original graph");
             var units = new ArrayList<DeploymentUnitCommit>();
@@ -131,12 +131,12 @@ final class DeploymentPublicationTemplateCodec {
                 var entry = entries.get(binding.unitId());
                 var config = configuration(entry.path("configuration"), binding.unitId());
                 if (binding.configurationRevision() != config.revision()
-                        || !binding.configurationSha256().equals(config.sha256()))
+                    || !binding.configurationSha256().equals(config.sha256()))
                     throw new SQLException("Publication configuration differs from original graph");
                 units.add(new DeploymentUnitCommit(component.unit(), component.runtime(),
-                        new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(),
-                                Instant.ofEpochMilli(entry.path("publishedAt").longValue())),
-                        config, binding.secrets()));
+                    new DeploymentCurrentRelease(component.unit().id(), binding.releaseSha256(),
+                        Instant.ofEpochMilli(entry.path("publishedAt").longValue())),
+                    config, binding.secrets()));
             }
             var result = new DeploymentPublicationProposal(snapshot.graph(), List.copyOf(units));
             if (!encodeTemplate(result).equals(text))
@@ -153,7 +153,7 @@ final class DeploymentPublicationTemplateCodec {
      * @return verified immutable configuration / 已核实不可变配置
      * @throws SQLException if fields, values or digest differ / 字段、值或摘要不符时 */
     static DeploymentConfigurationSnapshot configuration(JsonNode node, String applicationId)
-            throws SQLException {
+        throws SQLException {
         fields(node, Set.of("revision", "schemaVersion", "createdAt", "sha256", "entries"));
         if (!node.path("revision").canConvertToLong() || !node.path("createdAt").canConvertToLong())
             throw new SQLException("Publication configuration time or revision is invalid");
@@ -177,11 +177,11 @@ final class DeploymentPublicationTemplateCodec {
                     default -> throw new SQLException("Publication configuration type is invalid");
                 };
                 entries.add(new DeploymentConfigurationEntry(string(item, "key"),
-                        DeploymentConfigurationScopeType.valueOf(string(item, "scope")), value));
+                    DeploymentConfigurationScopeType.valueOf(string(item, "scope")), value));
             }
             return new DeploymentConfigurationSnapshot(applicationId, node.path("revision").longValue(),
-                    string(node, "schemaVersion"), Instant.ofEpochMilli(node.path("createdAt").longValue()), entries,
-                    string(node, "sha256"));
+                string(node, "schemaVersion"), Instant.ofEpochMilli(node.path("createdAt").longValue()), entries,
+                string(node, "sha256"));
         } catch (IllegalArgumentException invalid) {
             throw new SQLException("Publication configuration is invalid", invalid);
         }

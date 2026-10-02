@@ -14,7 +14,7 @@ import java.util.UUID;
  * @param outcome observed business result independent of resource release / 独立于资源释放的已观察业务结果
  */
 public record LogEvent(LogLevel level, String eventCode, String message, Optional<String> details,
-        Optional<UUID> taskId, Optional<UUID> operationId, Optional<Outcome> outcome) {
+                       Optional<UUID> taskId, Optional<UUID> operationId, Optional<Outcome> outcome) {
     /**
      * Validates the immutable boundary value and copies mutable input. / 校验不可变边界值并复制可变输入。
      * @param level diagnostic severity / 诊断严重程度

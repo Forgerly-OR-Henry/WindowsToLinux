@@ -53,17 +53,17 @@ public final class PhpServiceDeploymentInspector implements DeploymentTypeInspec
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         boolean nativeMetadata = ServiceMetadataInspector.present(root, "windowstolinux-php.properties");
         boolean composerMetadata = ServiceMetadataInspector.present(root, "composer.json")
-                || ServiceMetadataInspector.present(root, "composer.lock");
+            || ServiceMetadataInspector.present(root, "composer.lock");
         if (nativeMetadata && composerMetadata) {
             rejections.add(new RejectionReason("PHP_ARCHITECTURE_CONFLICT",
-                    DeploymentLocalizedMessage.of("analysis.php.architectureConflict"), "deployment"));
+                DeploymentLocalizedMessage.of("analysis.php.architectureConflict"), "deployment"));
             return null;
         }
         return nativeMetadata
-                ? phpCli.inspect(root, source, languageFacts, rejections)
-                : composer.inspect(root, source, languageFacts, rejections);
+            ? phpCli.inspect(root, source, languageFacts, rejections)
+            : composer.inspect(root, source, languageFacts, rejections);
     }
 }

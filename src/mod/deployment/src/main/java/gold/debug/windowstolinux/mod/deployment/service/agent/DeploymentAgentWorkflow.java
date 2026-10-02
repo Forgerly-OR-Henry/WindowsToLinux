@@ -1,5 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import gold.debug.windowstolinux.appapi.task.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.*;
@@ -9,14 +21,14 @@ import gold.debug.windowstolinux.appapi.ai.AiPurpose;
 import gold.debug.windowstolinux.appapi.linux.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
-import gold.debug.windowstolinux.mod.deployment.source.*;
-import gold.debug.windowstolinux.mod.deployment.source.git.DeploymentGitRequest;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
 
 /** Owns one independent agent task and reconciles only its original durable effects. / 持有一项独立自主任务并仅核对其原持久效果。 */
 public final class DeploymentAgentWorkflow implements TaskRecovery {
@@ -39,7 +51,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param sourceEntries discovery limit / 发现上限
      * @param archiveBytes archive limit / 归档上限 */
     public record Request(Map<String, String> requirements, String approvalMode, long sourceBytes, int sourceEntries,
-            long archiveBytes) {
+                          long archiveBytes) {
         /** Freezes the exact user choice. / 冻结精确用户选择。
          * @param requirements bounded constraints / 有界约束
          * @param approvalMode chosen policy / 所选策略
@@ -49,9 +61,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         public Request {
             requirements = Map.copyOf(requirements);
             if (requirements.size() > 64 || requirements.toString().length() > 8000
-                    || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode) || sourceBytes < 1
-                    || sourceBytes > 2L * 1024 * 1024 * 1024 || sourceEntries < 1 || sourceEntries > 100_000
-                    || archiveBytes < 1 || archiveBytes > 2L * 1024 * 1024 * 1024)
+                || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode) || sourceBytes < 1
+                || sourceBytes > 2L * 1024 * 1024 * 1024 || sourceEntries < 1 || sourceEntries > 100_000
+                || archiveBytes < 1 || archiveBytes > 2L * 1024 * 1024 * 1024)
                 throw new IllegalArgumentException("Invalid agent task request");
         }
     }
@@ -86,47 +98,47 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return observable original task / 可观察原任务
      * @throws ApiException on failed task admission / 任务准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerRef server, Request request)
-            throws ApiException {
+        throws ApiException {
         Objects.requireNonNull(request);
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment", List.of(server.id()), true),
-                task -> {
-                    var saved = saveSelection(request, task);
-                    if (saved.isPresent())
-                        return finishKnown(saved.orElseThrow(), task);
-                    final String configuration;
-                    try {
-                        configuration = admittedConfiguration(server, request, task);
-                    } catch (ApiException failure) {
-                        return finishKnown(failed(task, false, failure), task);
-                    }
-                    final DeploymentSourceMaterial material;
-                    try {
-                        var selection = context.source().selectDirectory("Autonomous deployment source", task);
-                        material = new DeploymentSourcePreparer(context.source()).prepare(selection,
-                                request.sourceBytes(), request.sourceEntries(), task);
-                    } catch (ApiException failure) {
-                        return finishKnown(failed(task, false, failure), task);
-                    }
-                    DeploymentSourceArchive archive = null;
-                    OperationResult<DeploymentAgentDeliveryPort.Published> result = null;
-                    try {
-                        archive = new DeploymentSourceArchiver(context.source()).prepare(material,
-                                request.archiveBytes(), task);
-                        result = execute(server, request, material, archive, Optional.empty(), configuration, task);
-                    } catch (ApiException failure) {
-                        result = failed(task, false, failure);
-                    } finally {
-                        if (result != null && result.outcome() != Outcome.UNKNOWN) {
-                            try {
-                                if (archive != null)
-                                    archive.close();
-                            } finally {
-                                material.close();
-                            }
+            task -> {
+                var saved = saveSelection(request, task);
+                if (saved.isPresent())
+                    return finishKnown(saved.orElseThrow(), task);
+                final String configuration;
+                try {
+                    configuration = admittedConfiguration(server, request, task);
+                } catch (ApiException failure) {
+                    return finishKnown(failed(task, false, failure), task);
+                }
+                final DeploymentSourceMaterial material;
+                try {
+                    var selection = context.file().selectDirectory("Autonomous deployment source", task);
+                    material = new DeploymentSourcePreparer(context.file()).prepare(selection,
+                        request.sourceBytes(), request.sourceEntries(), task);
+                } catch (ApiException failure) {
+                    return finishKnown(failed(task, false, failure), task);
+                }
+                DeploymentSourceArchive archive = null;
+                OperationResult<DeploymentAgentDeliveryPort.Published> result = null;
+                try {
+                    archive = new DeploymentSourceArchiver(context.file()).prepare(material,
+                        request.archiveBytes(), task);
+                    result = execute(server, request, material, archive, Optional.empty(), configuration, task);
+                } catch (ApiException failure) {
+                    result = failed(task, false, failure);
+                } finally {
+                    if (result != null && result.outcome() != Outcome.UNKNOWN) {
+                        try {
+                            if (archive != null)
+                                archive.close();
+                        } finally {
+                            material.close();
                         }
                     }
-                    return finishKnown(result, task);
-                });
+                }
+                return finishKnown(result, task);
+            });
     }
 
     /** Starts a reviewed pinned Git source under the same original agent task. / 在同一自主原任务下启动经审核固定 Git 来源。
@@ -138,50 +150,50 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return observable original task / 可观察原任务
      * @throws ApiException on failed task admission / 任务准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerRef server, Request request,
-            DeploymentGitRequest git, Path executable, String projectName) throws ApiException {
+                                                                       DeploymentGitRequest git, Path executable, String projectName) throws ApiException {
         Objects.requireNonNull(git);
         return context.tasks()
-                .submit(new TaskRequest(TASK_TYPE, "Autonomous Git deployment", List.of(server.id()), true), task -> {
-                    var saved = saveSelection(request, task);
-                    if (saved.isPresent())
-                        return finishKnown(saved.orElseThrow(), task);
-                    final String configuration;
-                    try {
-                        configuration = admittedConfiguration(server, request, task);
-                    } catch (ApiException failure) {
-                        return finishKnown(failed(task, false, failure), task);
+            .submit(new TaskRequest(TASK_TYPE, "Autonomous Git deployment", List.of(server.id()), true), task -> {
+                var saved = saveSelection(request, task);
+                if (saved.isPresent())
+                    return finishKnown(saved.orElseThrow(), task);
+                final String configuration;
+                try {
+                    configuration = admittedConfiguration(server, request, task);
+                } catch (ApiException failure) {
+                    return finishKnown(failed(task, false, failure), task);
+                }
+                var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(git, executable,
+                    projectName, request.sourceBytes(), request.sourceEntries(), task);
+                OperationResult<DeploymentAgentDeliveryPort.Published> result = null;
+                boolean publicationStarted = false;
+                try {
+                    var selected = pinned.material();
+                    String facts = "remote=" + selected.remote().location() + "\nreference=" + pinned.reference()
+                        + "\ncommit=" + selected.commit() + "\nsource=" + selected.source().snapshot().sha256();
+                    var intent = new ActionIntent("deployment.agent.git-source", List.of(server.id()), projectName,
+                        selected.source().snapshot().sha256(), facts,
+                        "Review exact pinned Git source before autonomous deployment");
+                    var review = context.interaction().approve(intent, task);
+                    if (review.outcome() != Outcome.SUCCEEDED) {
+                        result = new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
+                        return result;
                     }
-                    var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(git, executable,
-                            projectName, request.sourceBytes(), request.sourceEntries(), task);
-                    OperationResult<DeploymentAgentDeliveryPort.Published> result = null;
-                    boolean publicationStarted = false;
-                    try {
-                        var selected = pinned.material();
-                        String facts = "remote=" + selected.remote().location() + "\nreference=" + pinned.reference()
-                                + "\ncommit=" + selected.commit() + "\nsource=" + selected.source().snapshot().sha256();
-                        var intent = new ActionIntent("deployment.agent.git-source", List.of(server.id()), projectName,
-                                selected.source().snapshot().sha256(), facts,
-                                "Review exact pinned Git source before autonomous deployment");
-                        var review = context.interaction().approve(intent, task);
-                        if (review.outcome() != Outcome.SUCCEEDED) {
-                            result = new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
-                            return result;
-                        }
-                        DeploymentProjectRecord project = pinned.save();
-                        publicationStarted = true;
-                        result = execute(server, request, selected.source(), selected.archive(), Optional.of(project),
-                                configuration, task);
-                    } finally {
-                        if (!publicationStarted || result != null && result.outcome() != Outcome.UNKNOWN) {
-                            try {
-                                pinned.close();
-                            } finally {
-                                pinned.material().source().close();
-                            }
+                    DeploymentProjectRecord project = pinned.save();
+                    publicationStarted = true;
+                    result = execute(server, request, selected.source(), selected.archive(), Optional.of(project),
+                        configuration, task);
+                } finally {
+                    if (!publicationStarted || result != null && result.outcome() != Outcome.UNKNOWN) {
+                        try {
+                            pinned.close();
+                        } finally {
+                            pinned.material().source().close();
                         }
                     }
-                    return finishKnown(result, task);
-                });
+                }
+                return finishKnown(result, task);
+            });
     }
 
     /** Runs the complete agent against one frozen source and original authenticated target. / 在一份冻结来源及原认证目标上运行完整自主任务。
@@ -194,21 +206,21 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param task original task / 原任务
      * @return observed publication / 已观察发布 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> execute(ServerRef server, Request request,
-            DeploymentSourceMaterial material, DeploymentSourceArchive archive,
-            Optional<DeploymentProjectRecord> project, String configuration, TaskContext task) {
+                                                                           DeploymentSourceMaterial material, DeploymentSourceArchive archive,
+                                                                           Optional<DeploymentProjectRecord> project, String configuration, TaskContext task) {
         boolean created = false;
         var control = new DeploymentAgentControl();
         try {
             var source = new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256());
             if (!configuration.equals(admittedConfiguration(server, request, task)))
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED",
-                        "Original agent configuration changed before execution", Map.of("task", task.id().toString()),
-                        Optional.of(task.id())));
+                    "Original agent configuration changed before execution", Map.of("task", task.id().toString()),
+                    Optional.of(task.id())));
             try (var remote = context.linux().connect(server, task)) {
                 String target = targetDigest(server, remote);
                 journal.create(task,
-                        new DeploymentAgentJournal.Identity(server.id(), target, configuration, request.approvalMode()),
-                        Optional.of(physicalTarget(context.servers().get(server, task))));
+                    new DeploymentAgentJournal.Identity(server.id(), target, configuration, request.approvalMode()),
+                    Optional.of(physicalTarget(context.servers().get(server, task))));
                 created = true;
                 if (controls.putIfAbsent(task.id(), control) != null)
                     throw new IllegalStateException("Original agent worker already exists");
@@ -222,9 +234,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                     }
                 };
                 try (var tools = new DeploymentAgentRemoteTools(context, remote, context.interaction(), server, task,
-                        archive, configuration, current, journal, project)) {
+                    archive, configuration, current, journal, project)) {
                     var session = new DeploymentAgentSession(context, task, server, request.requirements(), source,
-                            tools, journal, request.approvalMode(), configuration, current, control);
+                        tools, journal, request.approvalMode(), configuration, current, control);
                     var result = session.run();
                     if (result.outcome() == Outcome.FAILED)
                         journal.state(task, "FAILED");
@@ -244,11 +256,11 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param task original task / 原任务
      * @return same known result or retained uncertainty / 相同已知结果或保留未知 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> finishKnown(
-            OperationResult<DeploymentAgentDeliveryPort.Published> result, TaskContext task) {
+        OperationResult<DeploymentAgentDeliveryPort.Published> result, TaskContext task) {
         if (result.outcome() == Outcome.UNKNOWN)
             return result;
         try {
-            context.source().closeTaskResources(task);
+            context.file().closeTaskResources(task);
             var executions = new DeploymentExecutionRepository(context.db());
             var formal = executions.findForTask(task);
             if (formal.isEmpty())
@@ -266,8 +278,8 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return classified unknown publication / 分类未知发布 */
     private static OperationResult<DeploymentAgentDeliveryPort.Published> unknownPublished() {
         return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_FINAL_CLEANUP_UNCONFIRMED",
-                        "Original cleanup requires reconciliation", Map.of(), Optional.empty())));
+            Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_FINAL_CLEANUP_UNCONFIRMED",
+                "Original cleanup requires reconciliation", Map.of(), Optional.empty())));
     }
 
     /** Classifies original failures without replaying possibly started work. / 在不重放可能已启动工作的前提下分类原失败。
@@ -276,11 +288,11 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param failure actual failure / 实际失败
      * @return retained classified result / 留存分类结果 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> failed(TaskContext task, boolean created,
-            Exception failure) {
+                                                                          Exception failure) {
         Outcome outcome = failure instanceof IllegalArgumentException || failure instanceof SecurityException
-                || failure instanceof IllegalStateException || failure instanceof java.io.IOException
-                        ? Outcome.FAILED
-                        : Outcome.UNKNOWN;
+            || failure instanceof IllegalStateException || failure instanceof java.io.IOException
+            ? Outcome.FAILED
+            : Outcome.UNKNOWN;
         Optional<Problem> original = Optional.empty();
         if (failure instanceof DeploymentAiJson.CapabilityOutcomeException classified) {
             outcome = classified.outcome();
@@ -290,15 +302,15 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         } else if (failure instanceof ApiException api) {
             original = Optional.of(api.problem());
             outcome = api.problem().code() == ProblemCode.CANCELLED
-                    ? Outcome.CANCELLED
-                    : api.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
+                ? Outcome.CANCELLED
+                : api.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
         }
         try {
             if (created) {
                 var events = journal.events(task);
                 if (!DeploymentAgentJournal.effectsSettled(events)
-                        || events.stream().anyMatch(event -> event.type().equals("CANDIDATE"))
-                                && events.stream().noneMatch(event -> event.type().equals("DELIVERY_RESULT")))
+                    || events.stream().anyMatch(event -> event.type().equals("CANDIDATE"))
+                    && events.stream().noneMatch(event -> event.type().equals("DELIVERY_RESULT")))
                     outcome = Outcome.UNKNOWN;
                 journal.state(task, switch (outcome) {
                     case SUCCEEDED -> "SUCCEEDED";
@@ -315,11 +327,11 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
             problem = null;
         if (problem == null)
             problem = new Problem(
-                    outcome == Outcome.CANCELLED
-                            ? ProblemCode.CANCELLED
-                            : outcome == Outcome.FAILED ? ProblemCode.IO_FAILURE : ProblemCode.UNKNOWN,
-                    "DEPLOYMENT_AGENT_STOPPED", "Autonomous deployment requires original-task review", Map.of(),
-                    Optional.empty());
+                outcome == Outcome.CANCELLED
+                    ? ProblemCode.CANCELLED
+                    : outcome == Outcome.FAILED ? ProblemCode.IO_FAILURE : ProblemCode.UNKNOWN,
+                "DEPLOYMENT_AGENT_STOPPED", "Autonomous deployment requires original-task review", Map.of(),
+                Optional.empty());
         return new OperationResult<>(outcome, Optional.empty(), Optional.of(problem));
     }
 
@@ -346,9 +358,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
             }
             journal.event(originalTask, "INSPECT_RESULT", Long.toString(inspection.orElseThrow().id()), facts);
             return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_INSPECTED_UNKNOWN",
-                            "Inspection preserves UNKNOWN; recovery requires another explicit original task request",
-                            Map.of(), Optional.empty())));
+                Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_INSPECTED_UNKNOWN",
+                    "Inspection preserves UNKNOWN; recovery requires another explicit original task request",
+                    Map.of(), Optional.empty())));
         }
         return new DeploymentAgentRecovery(context, journal).reconcile(originalTask, saved.orElseThrow());
     }
@@ -359,8 +371,8 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return no-payload result / 无载荷结果 */
     private static OperationResult<Void> result(Outcome outcome, ProblemCode code) {
         return new OperationResult<>(outcome, Optional.empty(),
-                Optional.of(new Problem(code, "DEPLOYMENT_AGENT_RECONCILED",
-                        "Original agent task result was reconciled", Map.of(), Optional.empty())));
+            Optional.of(new Problem(code, "DEPLOYMENT_AGENT_RECONCILED",
+                "Original agent task result was reconciled", Map.of(), Optional.empty())));
     }
 
     /** Retains uncertainty without replay. / 不重放地保留不确定性。
@@ -375,7 +387,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     private static String hash(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         } catch (java.security.NoSuchAlgorithmException unavailable) {
             throw new IllegalStateException("SHA-256 unavailable", unavailable);
         }
@@ -408,19 +420,19 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param task authentic original task / 真实原任务
      * @return classified save failure or no failure / 分类保存失败或无失败 */
     private Optional<OperationResult<DeploymentAgentDeliveryPort.Published>> saveSelection(Request request,
-            TaskContext task) {
+                                                                                           TaskContext task) {
         try {
             new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).save(task,
-                    new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("AGENT",
-                            request.approvalMode()));
+                new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("AGENT",
+                    request.approvalMode()));
             return Optional.empty();
         } catch (ApiException unavailable) {
             return Optional.of(failed(task, false, unavailable));
         } catch (java.sql.SQLException unavailable) {
             return Optional.of(new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PREFERENCE_SAVE_FAILED",
-                            "Deployment preferences could not be saved", Map.of("task", task.id().toString()),
-                            Optional.of(task.id())))));
+                Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PREFERENCE_SAVE_FAILED",
+                    "Deployment preferences could not be saved", Map.of("task", task.id().toString()),
+                    Optional.of(task.id())))));
         }
     }
 
@@ -434,10 +446,10 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         context.servers().get(server, task);
         String configuration = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
         if (!configuration.matches("[0-9a-f]{64}") || !request.approvalMode().equals("MANUAL_REVIEW")
-                && !configuration.equals(context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
+            && !configuration.equals(context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED",
-                    "Original agent model purposes do not share an authorized configuration",
-                    Map.of("task", task.id().toString()), Optional.of(task.id())));
+                "Original agent model purposes do not share an authorized configuration",
+                Map.of("task", task.id().toString()), Optional.of(task.id())));
         return configuration;
     }
 }

@@ -17,25 +17,25 @@ public enum WindowsWorkspaceFailureType {
      * <p>Windows工作区失败类型中的目录不可用分类。
      */
     DIRECTORY_UNAVAILABLE("windows.workspace.directory-unavailable", "workspace", "windows.error.workspaceUnavailable",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * DIRECTORY NOT WRITABLE classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的目录未可写分类。
      */
     DIRECTORY_NOT_WRITABLE("windows.workspace.not-writable", "workspace", "windows.error.workspaceNotWritable",
-            "REQUEST_USER_CORRECTION"),
+        "REQUEST_USER_CORRECTION"),
     /**
      * CAPACITY INSUFFICIENT classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的容量不足分类。
      */
     CAPACITY_INSUFFICIENT("windows.workspace.capacity-insufficient", "workspace",
-            "windows.error.workspaceCapacityInsufficient", "REQUEST_USER_CORRECTION"),
+        "windows.error.workspaceCapacityInsufficient", "REQUEST_USER_CORRECTION"),
     /**
      * APPLICATION ID INVALID classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的应用标识无效分类。
      */
     APPLICATION_ID_INVALID("windows.workspace.application-id-invalid", "validation",
-            "windows.error.applicationIdInvalid", "REQUEST_USER_CORRECTION"),
+        "windows.error.applicationIdInvalid", "REQUEST_USER_CORRECTION"),
     /**
      * ARCHIVE FAILED classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的归档失败分类。
@@ -46,19 +46,19 @@ public enum WindowsWorkspaceFailureType {
      * <p>Windows工作区失败类型中的备份素材工作区失败分类。
      */
     BACKUP_MATERIAL_WORKSPACE_FAILED("windows.workspace.backup-material-failed", "backup",
-            "windows.error.backupMaterialWorkspaceFailed", "CLEANUP"),
+        "windows.error.backupMaterialWorkspaceFailed", "CLEANUP"),
     /**
      * RESTORE WORKSPACE FAILED classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的恢复工作区失败分类。
      */
     RESTORE_WORKSPACE_FAILED("windows.workspace.restore-failed", "restore", "windows.error.restoreWorkspaceFailed",
-            "CLEANUP"),
+        "CLEANUP"),
     /**
      * HANDOFF INVALID classification within windows workspace failure type.
      * <p>Windows工作区失败类型中的交接无效分类。
      */
     HANDOFF_INVALID("windows.workspace.handoff-invalid", "handoff", "windows.error.workspaceHandoffInvalid",
-            "REQUEST_USER_CORRECTION");
+        "REQUEST_USER_CORRECTION");
 
     /**
      * Stable machine-readable classification code.
@@ -172,9 +172,9 @@ public enum WindowsWorkspaceFailureType {
         if (message.isBlank())
             throw new IllegalArgumentException("diagnostic must not be blank");
         return new Problem(problemCode(), code, message,
-                Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
-                        "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
-                Optional.of(operation));
+            Map.of("domain", domain(), "phase", phase, "messageKey", messageKey, "severity", severity(),
+                "recoveryAction", recoveryAction, "recoveryDisposition", "NOT_ATTEMPTED"),
+            Optional.of(operation));
     }
 
     /** Selects the SDK category while preserving the precise event code. / 保留精确事件码并选择SDK类别。

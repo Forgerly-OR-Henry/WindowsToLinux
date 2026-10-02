@@ -34,7 +34,7 @@ class JavaJarManifestInspectorTest {
     void retainsFutureVersionWhileRejectingMalformedEntryAndArchive() throws Exception {
         writeJar("example.Main; command", "99");
         assertEquals(java.util.Map.of(LanguageFactKind.JAVA_VERSION, "99"),
-                inspector.inspect(root, Path.of("app.jar")).values());
+            inspector.inspect(root, Path.of("app.jar")).values());
         Files.writeString(root.resolve("app.jar"), "invalid archive");
         assertTrue(inspector.inspect(root, Path.of("app.jar")).values().isEmpty());
     }

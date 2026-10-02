@@ -43,25 +43,25 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * <p>用于识别外部配置的匹配模式。
      */
     private static final Pattern EXTERNAL_CONFIG = Pattern.compile(
-            "spring\\.config\\.(import|location|additional-location)|SPRING_CONFIG_(IMPORT|LOCATION|ADDITIONAL_LOCATION)"
-                    + "|spring\\.application\\.json",
-            Pattern.CASE_INSENSITIVE);
+        "spring\\.config\\.(import|location|additional-location)|SPRING_CONFIG_(IMPORT|LOCATION|ADDITIONAL_LOCATION)"
+            + "|spring\\.application\\.json",
+        Pattern.CASE_INSENSITIVE);
 
     /**
      * Pattern recognizing APPLICATION SECRET.
      * <p>用于识别应用秘密的匹配模式。
      */
     private static final Pattern APPLICATION_SECRET = Pattern
-            .compile("(?i)(password|secret|api[_-]?key|access[_-]?key|token)\\s*[:=]"
-                    + "|@Value\\s*\\(\\s*\\\"?\\$\\{[^}]*?(password|secret|key|token)[^}]*}");
+        .compile("(?i)(password|secret|api[_-]?key|access[_-]?key|token)\\s*[:=]"
+            + "|@Value\\s*\\(\\s*\\\"?\\$\\{[^}]*?(password|secret|key|token)[^}]*}");
 
     /**
      * Pattern recognizing disabled Spring Boot JAR packaging.
      * <p>用于识别已禁用 Spring Boot JAR 打包的匹配模式。
      */
     private static final Pattern DISABLED_BOOT_JAR = Pattern
-            .compile("(?is)bootJar(?:\\s*\\{[^}]*enabled\\s*=\\s*false|\\.enabled\\s*=\\s*false)"
-                    + "|<artifactId>\\s*spring-boot-maven-plugin\\s*</artifactId>.*?<skip>\\s*true\\s*</skip>");
+        .compile("(?is)bootJar(?:\\s*\\{[^}]*enabled\\s*=\\s*false|\\.enabled\\s*=\\s*false)"
+            + "|<artifactId>\\s*spring-boot-maven-plugin\\s*</artifactId>.*?<skip>\\s*true\\s*</skip>");
 
     /**
      * Bound maven build inspector collaborator for maven.
@@ -97,20 +97,20 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      */
     @Override
     public DeploymentTypeAssessment inspect(Path root, SourceInspectionFacts source, ProjectLanguageFacts languageFacts,
-            List<RejectionReason> rejections) throws IOException {
+                                            List<RejectionReason> rejections) throws IOException {
         boolean hasMaven = BoundedMetadataInspector.regular(root.resolve("pom.xml"));
         boolean hasGradle = BoundedMetadataInspector.regular(root.resolve("build.gradle"))
-                || BoundedMetadataInspector.regular(root.resolve("build.gradle.kts"));
+            || BoundedMetadataInspector.regular(root.resolve("build.gradle.kts"));
         if (hasMaven == hasGradle) {
             rejections.add(rejection(hasMaven ? "SPRING_BOOT_BUILD_AMBIGUOUS" : "SPRING_BOOT_BUILD_MISSING",
-                    hasMaven
-                            ? "analysis.deployment.rejection.springBootBuildAmbiguous"
-                            : "analysis.deployment.rejection.springBootBuildMissing"));
+                hasMaven
+                    ? "analysis.deployment.rejection.springBootBuildAmbiguous"
+                    : "analysis.deployment.rejection.springBootBuildMissing"));
             return null;
         }
         BuildInspection build = hasMaven
-                ? inspectMaven(root, rejections, source.logicalRootName(root))
-                : inspectGradle(root, rejections, source.logicalRootName(root));
+            ? inspectMaven(root, rejections, source.logicalRootName(root))
+            : inspectGradle(root, rejections, source.logicalRootName(root));
         if (build == null) {
             return null;
         }
@@ -123,10 +123,10 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
             return null;
         }
         DeploymentProjectFacts facts = new DeploymentProjectFacts(root, build.applicationId(), projectType(),
-                build.buildTool(), languageFacts, build.evidence(), List.of(), build.missingInformation());
+            build.buildTool(), languageFacts, build.evidence(), List.of(), build.missingInformation());
         DeploymentRuntimeAssessment suggestion = new DeploymentRuntimeAssessment(projectType(), Map.of(),
-                Optional.empty(), Map.of(), List.of(), List.of(),
-                List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
+            Optional.empty(), Map.of(), List.of(), List.of(),
+            List.of(DeploymentLocalizedMessage.of("analysis.deployment.runtime.health")));
         return new DeploymentTypeAssessment(facts, suggestion);
     }
 
@@ -154,24 +154,24 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         boolean hasMavenWrapper = BoundedMetadataInspector.regular(root.resolve("mvnw"));
         boolean hasWindowsMavenWrapper = BoundedMetadataInspector.regular(root.resolve("mvnw.cmd"));
         boolean wrapper = hasMavenWrapper
-                && BoundedMetadataInspector.regular(root.resolve(".mvn/wrapper/maven-wrapper.properties"));
+            && BoundedMetadataInspector.regular(root.resolve(".mvn/wrapper/maven-wrapper.properties"));
         DeploymentBuildToolType tool = wrapper ? DeploymentBuildToolType.MAVEN_WRAPPER : DeploymentBuildToolType.MAVEN;
         List<AnalysisEvidence> evidence = new ArrayList<>();
         evidence.add(evidence("analysis.evidence.mavenEntry", "pom.xml", "analysis.evidence.rootPomRead"));
         evidence.add(evidence("analysis.evidence.springBootPlugin", "pom.xml",
-                build.springBootPlugin()
-                        ? "analysis.evidence.springBootPluginDetected"
-                        : "analysis.evidence.notDetected"));
+            build.springBootPlugin()
+                ? "analysis.evidence.springBootPluginDetected"
+                : "analysis.evidence.notDetected"));
         String wrapperSource = wrapper
-                ? "mvnw + .mvn/wrapper/maven-wrapper.properties"
-                : hasMavenWrapper ? "mvnw" : hasWindowsMavenWrapper ? "mvnw.cmd" : "source tree";
+            ? "mvnw + .mvn/wrapper/maven-wrapper.properties"
+            : hasMavenWrapper ? "mvnw" : hasWindowsMavenWrapper ? "mvnw.cmd" : "source tree";
         String wrapperConclusion = wrapper
-                ? "analysis.evidence.wrapper.usable"
-                : hasMavenWrapper
-                        ? "analysis.evidence.wrapper.configurationMissing"
-                        : hasWindowsMavenWrapper
-                                ? "analysis.evidence.wrapper.windowsOnly"
-                                : "analysis.evidence.notDetected";
+            ? "analysis.evidence.wrapper.usable"
+            : hasMavenWrapper
+            ? "analysis.evidence.wrapper.configurationMissing"
+            : hasWindowsMavenWrapper
+            ? "analysis.evidence.wrapper.windowsOnly"
+            : "analysis.evidence.notDetected";
         evidence.add(evidence("analysis.evidence.mavenWrapper", wrapperSource, wrapperConclusion));
         return new BuildInspection(build.applicationName(), tool, build.pomText(), evidence, List.of());
     }
@@ -187,7 +187,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
     private BuildInspection inspectGradle(Path root, List<RejectionReason> rejections, String logicalRootName)
-            throws IOException {
+        throws IOException {
         Optional<GradleBuildFacts> inspected = gradle.inspect(root, rejections, logicalRootName);
         if (inspected.isEmpty()) {
             return null;
@@ -195,15 +195,15 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         GradleBuildFacts build = inspected.orElseThrow();
         if (!BOOT_PLUGIN.matcher(build.text()).find()) {
             rejections.add(
-                    rejection("SPRING_BOOT_PLUGIN_MISSING", "analysis.deployment.rejection.gradleBootPluginMissing"));
+                rejection("SPRING_BOOT_PLUGIN_MISSING", "analysis.deployment.rejection.gradleBootPluginMissing"));
         }
         List<DeploymentLocalizedMessage> missing = build.usableWrapper()
-                ? List.of()
-                : List.of(DeploymentLocalizedMessage.of("analysis.deployment.missing.gradleWrapper"));
+            ? List.of()
+            : List.of(DeploymentLocalizedMessage.of("analysis.deployment.missing.gradleWrapper"));
         return new BuildInspection(build.applicationId(), DeploymentBuildToolType.GRADLE_WRAPPER, build.text(),
-                List.of(evidence("analysis.deployment.evidence.gradleBuild", build.script().getFileName().toString(),
-                        "analysis.deployment.evidence.detected")),
-                missing);
+            List.of(evidence("analysis.deployment.evidence.gradleBuild", build.script().getFileName().toString(),
+                "analysis.deployment.evidence.detected")),
+            missing);
     }
 
     /**
@@ -215,7 +215,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
      */
     private static void inspectCommonPolicy(String buildText, SourceInspectionFacts source,
-            List<RejectionReason> rejections) {
+                                            List<RejectionReason> rejections) {
         String scannedText = source.scannedText();
         if (EXTERNAL_CONFIG.matcher(scannedText).find()) {
             rejections.add(rejection("EXTERNAL_CONFIGURATION_DETECTED", "analysis.rejection.externalConfig"));
@@ -225,7 +225,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
         }
         if (DISABLED_BOOT_JAR.matcher(buildText).find()) {
             rejections.add(rejection("SPRING_BOOT_EXECUTABLE_JAR_DISABLED",
-                    "analysis.deployment.rejection.springBootExecutableJarDisabled"));
+                "analysis.deployment.rejection.springBootExecutableJarDisabled"));
         }
     }
 
@@ -252,7 +252,8 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @param missingInformation required explicit user input / 所需的显式用户输入
      */
     private record BuildInspection(String applicationId, DeploymentBuildToolType buildTool, String buildText,
-            List<AnalysisEvidence> evidence, List<DeploymentLocalizedMessage> missingInformation) {
+                                   List<AnalysisEvidence> evidence,
+                                   List<DeploymentLocalizedMessage> missingInformation) {
         /**
          * Binds the supplied dependencies and state for build inspection.
          * <p>为构建检查绑定传入的依赖及状态。
@@ -268,6 +269,7 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
             missingInformation = List.copyOf(missingInformation);
         }
     }
+
     /**
      * Binds a static source observation to its localized conclusion and confidence.
      * <p>将静态源码观测与本地化结论及置信度绑定。
@@ -278,11 +280,11 @@ public final class SpringBootDeploymentInspector implements DeploymentTypeInspec
      * @return constructed or resolved analysis evidence / 构造或解析得到的分析证据
      */
     private static gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence evidence(
-            String subject, String source, String conclusion) {
+        String subject, String source, String conclusion) {
         return new gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.AnalysisEvidence(
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
-                source,
-                gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
-                gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(subject),
+            source,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage.of(conclusion),
+            gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.EvidenceConfidenceLevel.HIGH);
     }
 }

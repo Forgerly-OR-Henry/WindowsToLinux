@@ -1,15 +1,20 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.TaskRequest;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.persistence.connection.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.execution.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.*;
+
 
 /** Resolves task ownership from the current boot's authoritative platform registry. / 根据当前启动的权威平台登记解析任务归属。 */
 public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admission {
@@ -17,7 +22,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
     public static final String PLATFORM_OWNER = "@platform";
 
     /** Host rescue protocol allowed to use the fixed read-only SSH verification. / 允许使用固定只读 SSH 复核的宿主救援协议。 */
-    public static final String RESCUE_TYPE = gold.debug.windowstolinux.app.db.task.BrowserRecoveryArchival.TASK_TYPE;
+    public static final String RESCUE_TYPE = gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryArchival.TASK_TYPE;
 
     /** Exact boot whose running Mod instances may accept business. / 可以接纳业务的运行 Mod 实例所属精确启动。 */
     private final UUID bootId;
@@ -55,7 +60,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      */
     @Override
     public List<TaskResource> claims(Connection connection, String ownerId, String version, TaskRequest request)
-            throws ApiException, SQLException {
+        throws ApiException, SQLException {
         if (connection.getAutoCommit())
             throw new SQLException("Task admission requires a platform transaction");
         Optional<SchemaIdentity> schema = Optional.empty();
@@ -63,10 +68,10 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             if (platformVersion == null || !platformVersion.equals(version))
                 throw unavailable("PLATFORM_VERSION", "The host task does not match the running application release");
             try (var statement = connection
-                    .prepareStatement("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1");
-                    var rows = statement.executeQuery()) {
+                .prepareStatement("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1");
+                 var rows = statement.executeQuery()) {
                 if (!rows.next() || !bootId.equals(rows.getObject(1, UUID.class))
-                        || !"RUNNING".equals(rows.getString(2)))
+                    || !"RUNNING".equals(rows.getString(2)))
                     throw unavailable("PLATFORM_NOT_RUNNING", "The platform has not completed startup");
             }
         } else {
@@ -76,14 +81,14 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
         var claims = new ArrayList<TaskResource>();
         claims.add(new TaskResource("MOD", ownerId, ownerId, false));
         schema.ifPresent(
-                identity -> claims.add(new TaskResource("SCHEMA", identity.generation().toString(), ownerId, false)));
+            identity -> claims.add(new TaskResource("SCHEMA", identity.generation().toString(), ownerId, false)));
         try (var statement = connection.prepareStatement(
-                "SELECT s.host,s.ssh_port,s.username,s.credential_id FROM server_profile s JOIN credential c ON c.credential_id=s.credential_id WHERE s.server_profile_id=?")) {
+            "SELECT s.host,s.ssh_port,s.username,s.credential_id FROM server_profile s JOIN credential c ON c.credential_id=s.credential_id WHERE s.server_profile_id=?")) {
             for (var id : request.serverIds()) {
                 statement.setString(1, id);
                 try (var rows = statement.executeQuery()) {
                     if (!rows.next() || rows.getString(1).isBlank() || rows.getInt(2) < 1 || rows.getInt(2) > 65535
-                            || rows.getString(3).isBlank() || rows.getString(4).isBlank())
+                        || rows.getString(3).isBlank() || rows.getString(4).isBlank())
                         throw unavailable("SERVER_NOT_AVAILABLE", "A requested saved server is unavailable");
                 }
                 claims.add(new TaskResource("SERVER", id, ownerId, true));
@@ -101,12 +106,12 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @throws SQLException if graph state cannot be read / 无法读取图状态时 */
     @Override
     public Optional<TaskRecoveryGraph> recoveryGraph(Connection connection, String ownerId, String version)
-            throws ApiException, SQLException {
+        throws ApiException, SQLException {
         if (connection.getAutoCommit())
             throw new SQLException("Recovery capture requires a platform admission transaction");
         return ownerId.equals(PLATFORM_OWNER)
-                ? Optional.empty()
-                : Optional.of(requireRunningGraph(connection, ownerId, version));
+            ? Optional.empty()
+            : Optional.of(requireRunningGraph(connection, ownerId, version));
     }
 
     /** Rechecks every declared provider's actual state before accepting new consumer work. / 接纳使用方新工作前重新检查每个声明提供方的实际状态。
@@ -117,7 +122,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @throws SQLException if the graph cannot be read / 无法读取图时
      * @throws ApiException if any original provider is unavailable or incompatible / 任一原提供方不可用或不兼容时 */
     private TaskRecoveryGraph requireRunningGraph(Connection connection, String owner, String version)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         var remaining = new ArrayDeque<Map.Entry<String, String>>();
         remaining.add(Map.entry(owner, version));
         var visited = new HashSet<String>();
@@ -126,30 +131,30 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             var selected = remaining.removeFirst();
             if (!visited.add(selected.getKey()))
                 continue;
-            gold.debug.windowstolinux.app.mod.manifest.ModManifest manifest;
+            gold.debug.windowstolinux.app.mod.config.ModManifest manifest;
             try (var statement = connection.prepareStatement(
-                    "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version,v.manifest_json,v.content_sha256 FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
+                "SELECT r.enabled,r.selected_version,r.actual_version,r.last_runtime_state,r.last_boot_id,v.state,v.schema_version,v.manifest_json,v.content_sha256 FROM mod_registry r JOIN mod_version v ON v.mod_id=r.mod_id AND v.version=? WHERE r.mod_id=?")) {
                 statement.setString(1, selected.getValue());
                 statement.setString(2, selected.getKey());
                 try (var rows = statement.executeQuery()) {
                     if (!rows.next() || !rows.getBoolean(1) || !selected.getValue().equals(rows.getString(2))
-                            || !selected.getValue().equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
-                            || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
+                        || !selected.getValue().equals(rows.getString(3)) || !"RUNNING".equals(rows.getString(4))
+                        || !bootId.equals(rows.getObject(5, UUID.class)) || !"READY".equals(rows.getString(6)))
                         throw unavailable(
-                                selected.getKey().equals(owner) ? "MOD_NOT_RUNNING" : "MOD_PROVIDER_NOT_RUNNING",
-                                "The consumer or a required original provider is not running in this boot");
+                            selected.getKey().equals(owner) ? "MOD_NOT_RUNNING" : "MOD_PROVIDER_NOT_RUNNING",
+                            "The consumer or a required original provider is not running in this boot");
                     try {
-                        manifest = gold.debug.windowstolinux.app.mod.manifest.ManifestReader
-                                .read(rows.getString(8).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        manifest = gold.debug.windowstolinux.app.mod.config.ManifestReader
+                            .read(rows.getString(8).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         if (!manifest.id().equals(selected.getKey())
-                                || !manifest.version().toString().equals(selected.getValue())
-                                || !manifest.schemaVersion().equals(Optional.ofNullable(rows.getString(7))))
+                            || !manifest.version().toString().equals(selected.getValue())
+                            || !manifest.schemaVersion().equals(Optional.ofNullable(rows.getString(7))))
                             throw new IllegalArgumentException("Original declaration identity changed");
                         releases.add(new TaskRecoveryGraph.Release(selected.getKey(), selected.getValue(),
-                                rows.getString(9), schema(connection, selected.getKey(), rows.getString(7))));
+                            rows.getString(9), schema(connection, selected.getKey(), rows.getString(7))));
                     } catch (java.io.IOException | IllegalArgumentException malformed) {
                         throw unavailable("MOD_RUNNING_GRAPH_UNVERIFIED",
-                                "The original running dependency graph cannot be verified");
+                            "The original running dependency graph cannot be verified");
                     }
                 }
             }
@@ -159,15 +164,15 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                     try (var r = p.executeQuery()) {
                         if (!r.next() || r.getString(1) == null)
                             throw unavailable("MOD_PROVIDER_NOT_RUNNING",
-                                    "A required original provider is unavailable");
+                                "A required original provider is unavailable");
                         String actual = r.getString(1);
                         try {
                             if (!dependency.versionRange()
-                                    .contains(gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(actual)))
+                                .contains(gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(actual)))
                                 throw new IllegalArgumentException("Provider release is outside its declared range");
                         } catch (IllegalArgumentException incompatible) {
                             throw unavailable("MOD_PROVIDER_INCOMPATIBLE",
-                                    "A required original provider does not match its declared release range");
+                                "A required original provider does not match its declared release range");
                         }
                         remaining.add(Map.entry(dependency.id(), actual));
                     }
@@ -185,11 +190,11 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @throws SQLException if state cannot be read / 无法读取状态时
      * @throws ApiException if the original data is unavailable or inconsistent / 原数据不可用或不一致时 */
     private static Optional<SchemaIdentity> schema(Connection connection, String owner, String version)
-            throws SQLException, ApiException {
+        throws SQLException, ApiException {
         if (version == null)
             return Optional.empty();
         try (var statement = connection.prepareStatement(
-                "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
+            "SELECT generation,physical_name,database_user,state FROM mod_schema WHERE mod_id=? AND schema_version=?")) {
             statement.setString(1, owner);
             statement.setString(2, version);
             try (var rows = statement.executeQuery()) {
@@ -198,7 +203,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                 var identity = new SchemaIdentity(owner, version, rows.getObject(1, UUID.class));
                 var coordinates = new SchemaCoordinates(identity);
                 if (!coordinates.physicalName().equals(rows.getString(2))
-                        || !coordinates.databaseUser().equals(rows.getString(3)))
+                    || !coordinates.databaseUser().equals(rows.getString(3)))
                     throw unavailable("SCHEMA_IDENTITY", "The registered data identity does not match its owner");
                 return Optional.of(identity);
             }
@@ -212,11 +217,11 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @throws ApiException if the owner is affected or scope cannot be verified / 所有者受影响或范围无法核验时 */
     private static void requireNoPendingIntent(Connection connection, String owner) throws SQLException, ApiException {
         var json = new com.fasterxml.jackson.databind.ObjectMapper()
-                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
         try (var statement = connection.prepareStatement(
-                "SELECT mod_id,request_json FROM mod_operation WHERE operation_type IN ('ENABLE','DISABLE','SWITCH') AND state<>'ENDED'");
-                var rows = statement.executeQuery()) {
+            "SELECT mod_id,request_json FROM mod_operation WHERE operation_type IN ('ENABLE','DISABLE','SWITCH') AND state<>'ENDED'");
+             var rows = statement.executeQuery()) {
             while (rows.next()) {
                 String stored = rows.getString(2);
                 try {
@@ -224,13 +229,13 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                         throw new IllegalArgumentException();
                     var request = json.readTree(stored);
                     if (!request.path("formatVersion").isInt() || request.path("formatVersion").intValue() != 1
-                            || !rows.getString(1).equals(request.path("ownerId").asText())
-                            || !request.path("affected").isArray())
+                        || !rows.getString(1).equals(request.path("ownerId").asText())
+                        || !request.path("affected").isArray())
                         throw new IllegalArgumentException();
                     var affected = new HashSet<String>();
                     for (var item : request.path("affected"))
                         if (!item.isTextual() || item.textValue().isBlank() || item.textValue().length() > 512
-                                || !affected.add(item.textValue()))
+                            || !affected.add(item.textValue()))
                             throw new IllegalArgumentException();
                     if (!affected.contains(rows.getString(1)))
                         throw new IllegalArgumentException();
@@ -238,7 +243,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                         throw unavailable("MOD_RESTART_PENDING", "This Mod is affected by a retained restart request");
                 } catch (java.io.IOException | IllegalArgumentException invalid) {
                     throw unavailable("MOD_INTENT_UNVERIFIED",
-                            "The retained restart admission scope cannot be verified");
+                        "The retained restart admission scope cannot be verified");
                 }
             }
         }

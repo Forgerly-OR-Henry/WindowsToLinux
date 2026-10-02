@@ -1,9 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
+import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.OperationResult;
+
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.*;
+
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentSendGuard;
 
 /** Rechecks the assisted binding immediately before every actual SSH dispatch. / 每次真实 SSH 发送前立即复核辅助绑定。
@@ -39,6 +43,19 @@ record DeploymentAssistedSession(RemoteSession original, DeploymentSendGuard gua
         return original.upload(request, grant);
     }
 
+    /** Preserves the guard and explicit upload conflict policy. / 保留发送门禁及显式上传冲突策略。
+     * @param request original request / 原请求
+     * @param grant actual approval / 实际审批
+     * @param choice exact choice / 精确选择
+     * @return actual result / 实际结果
+     * @throws ApiException on drift or failure / 漂移或失败时
+     */
+    @Override
+    public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+        guard.verify();
+        return original.upload(request, grant, choice);
+    }
+
     /** Checks then downloads original content. / 检查后下载原内容。
      * @param request exact transfer / 精确传输
      * @param grant actual grant / 实际授权
@@ -48,6 +65,19 @@ record DeploymentAssistedSession(RemoteSession original, DeploymentSendGuard gua
     public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException {
         guard.verify();
         return original.download(request, grant);
+    }
+
+    /** Preserves the guard and explicit download conflict policy. / 保留发送门禁及显式下载冲突策略。
+     * @param request original request / 原请求
+     * @param grant actual approval / 实际审批
+     * @param choice exact choice / 精确选择
+     * @return actual result / 实际结果
+     * @throws ApiException on drift or failure / 漂移或失败时
+     */
+    @Override
+    public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+        guard.verify();
+        return original.download(request, grant, choice);
     }
 
     /** Checks then resumes only the original transfer. / 检查后仅续传原传输。
