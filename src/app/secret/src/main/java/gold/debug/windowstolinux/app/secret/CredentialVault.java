@@ -172,7 +172,10 @@ public final class CredentialVault {
         }
     }
 
-    /** A scoped secret capability; closing the final handle clears the key. / 限定秘密能力，最后一个句柄关闭时清理密钥。 */
+    /**
+     * A scoped secret capability whose own monitor serializes operations and close. The shared key monitor protects
+     * reference changes and final wiping. / 限定秘密能力，自身监视器保证操作与关闭互斥；共享密钥监视器保护引用变化及最终清零。
+     */
     public final class Session implements SecretStore {
         /** Shared reference-counted key material. / 共享引用计数密钥材料。
          */
@@ -196,7 +199,7 @@ public final class CredentialVault {
          * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
          */
         public Session fork() {
-            synchronized (material) {
+            synchronized (this) {
                 requireOpen();
                 return new Session(material);
             }
@@ -209,7 +212,7 @@ public final class CredentialVault {
          */
         @Override
         public Optional<char[]> read(String id) throws SecretStoreException {
-            synchronized (material) {
+            synchronized (this) {
                 requireOpen();
                 validateId(id);
                 try {
@@ -233,7 +236,7 @@ public final class CredentialVault {
          */
         @Override
         public void save(String id, char[] value) throws SecretStoreException {
-            synchronized (material) {
+            synchronized (this) {
                 requireOpen();
                 validateId(id);
                 try {
@@ -276,7 +279,7 @@ public final class CredentialVault {
          */
         @Override
         public boolean delete(String id) throws SecretStoreException {
-            synchronized (material) {
+            synchronized (this) {
                 requireOpen();
                 validateId(id);
                 try {
@@ -294,7 +297,7 @@ public final class CredentialVault {
          */
         @Override
         public void transaction(StoreWork work) throws SecretStoreException, SQLException {
-            synchronized (material) {
+            synchronized (this) {
                 requireOpen();
                 try {
                     repository.transaction(() -> {
@@ -314,11 +317,13 @@ public final class CredentialVault {
          */
         @Override
         public void close() {
-            synchronized (material) {
+            synchronized (this) {
                 if (!closed) {
                     closed = true;
-                    if (--material.references == 0)
-                        Arrays.fill(material.key, (byte) 0);
+                    synchronized (material) {
+                        if (--material.references == 0)
+                            Arrays.fill(material.key, (byte) 0);
+                    }
                 }
             }
         }
