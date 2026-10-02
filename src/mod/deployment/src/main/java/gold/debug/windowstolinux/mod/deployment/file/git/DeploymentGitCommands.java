@@ -12,8 +12,6 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
-
-
 /** Runs fixed Git argv inside the worker and waits for the original process, observed descendants and pipes. / 在 worker 内运行固定 Git 参数并等待原进程、已观察后代及管道退出。 */
 final class DeploymentGitCommands {
     /** Exact native Git executable. / 精确原生 Git 可执行文件。 */

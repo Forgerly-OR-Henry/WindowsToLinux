@@ -426,7 +426,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
-            runtime.releaseModRecovery();
+            runtime.modRecovery().release();
         }
     }
 

@@ -12,7 +12,6 @@ import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 
-
 /** Durable agent-only state and action evidence, independent of standard deployment. / 独立于标准部署的持久自主任务状态与动作依据。 */
 public final class DeploymentAgentJournal {
     /** Original owner-bound database. / 原所有者绑定的数据库。 */

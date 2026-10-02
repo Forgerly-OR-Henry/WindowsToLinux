@@ -59,12 +59,14 @@ class SftpTransferTest {
                     false);
                 assertEquals(Outcome.SUCCEEDED, download.outcome(), download.toString());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
-                assertEquals(Outcome.CANCELLED,
-                    transfer(connection, received, "/nested/二进制 file.bin", bytes.length, digest(bytes), false)
-                        .outcome());
-                assertEquals(Outcome.CANCELLED,
-                    transfer(connection, source, "/nested/二进制 file.bin", bytes.length, digest(bytes), true)
-                        .outcome());
+                var skippedDownload = transfer(connection, received, "/nested/二进制 file.bin", bytes.length,
+                    digest(bytes), false);
+                assertEquals(Outcome.FAILED, skippedDownload.outcome());
+                assertEquals("SFTP_CONFLICT_SKIPPED", skippedDownload.problem().orElseThrow().eventCode());
+                var skippedUpload = transfer(connection, source, "/nested/二进制 file.bin", bytes.length,
+                    digest(bytes), true);
+                assertEquals(Outcome.FAILED, skippedUpload.outcome());
+                assertEquals("SFTP_CONFLICT_SKIPPED", skippedUpload.problem().orElseThrow().eventCode());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
                 Path empty = Files.write(directory.resolve("empty"), new byte[0]);
                 assertEquals(Outcome.SUCCEEDED,

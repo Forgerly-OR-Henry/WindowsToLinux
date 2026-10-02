@@ -10,8 +10,6 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.function.BooleanSupplier;
 
-
-
 /** Fetches one exact ref, validates tree features and checks out its immutable commit. / 抓取一个精确引用、验证树特性并检出不可变提交。 */
 final class DeploymentGitCheckout {
     /** Prevents utility instances. / 禁止工具实例。 */

@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Coordinates real SQL and emergency diagnostics independently of business outcomes. / 独立于业务结果协调真实 SQL 及应急诊断。 */
 public final class PlatformLogService implements AutoCloseable {
     /** Validated category persistence. / 已校验类别持久化。 */

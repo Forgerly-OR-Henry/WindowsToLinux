@@ -28,7 +28,6 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
 import gold.debug.windowstolinux.app.windows.file.WindowsFilePublication;
 
-
 /** Installs reviewed local originals through durable phases without enabling or executing author code. / 经持久阶段安装已审阅本地原包，不启用或执行作者代码。 */
 public final class PlatformModInstallation implements AutoCloseable {
     /** Original package inventory under this service monitor. / 此服务同步锁下的原包清单。 */
@@ -907,9 +906,9 @@ public final class PlatformModInstallation implements AutoCloseable {
      * @param checkpoint physical evidence / 物理依据
      * @param archive fixed archive identity / 固定归档身份
      * @param created original timestamp / 原时间戳
-     * @param cancellation accepted cancellation scope or absent / 已接纳撤销范围或缺省 */
+     * @param cancelToken accepted cancellation scope or absent / 已接纳撤销范围或缺省 */
     private record Pending(UUID id, ModPackageReader.Inspection inspection, Request request, String json, String phase,
-                           Checkpoint checkpoint, UUID archive, long created, Cancellation cancellation) {
+                           Checkpoint checkpoint, UUID archive, long created, Cancellation cancelToken) {
     }
 
     /** Original installation records on the same locked transaction. / 在同一已锁事务上的原安装记录。 */

@@ -39,6 +39,7 @@ class PlatformSourceWorkspaceTest {
     Path root;
 
     gold.debug.windowstolinux.app.service.file.PlatformFileAccess source(PlatformRuntime runtime) {
+        PlatformSourceServiceTest.rejectUnexpectedFileApproval(runtime);
         runtime.setSourcePicker((title, task, cancel) -> {
             throw new AssertionError("No directory selection expected");
         });

@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -134,6 +135,106 @@ class BrowserRecoveryEvidenceTest {
             session.close();
             worker.join(5000);
             assertFalse(worker.isAlive());
+        }
+    }
+
+    @Test
+    void cancellationBetweenStopCheckAndBrowserCapabilityRetainsOriginalProblem() throws Exception {
+        for (boolean bound : List.of(false, true))
+            cancellationAtCapability(bound, problem(ProblemCode.CANCELLED, "TASK_CANCELLED"), null);
+    }
+
+    @Test
+    void cancellationDoesNotHideOriginalIoOrCleanupFailure() throws Exception {
+        cancellationAtCapability(false, problem(ProblemCode.IO_FAILURE, "BROWSER_CONNECTION_LOST"), null);
+        cancellationAtCapability(false, problem(ProblemCode.CANCELLED, "TASK_CANCELLED"),
+            new BrowserRecoveryException(BrowserRecoveryException.ReasonType.CLEANUP_FAILED,
+                new IllegalStateException("private cleanup details")));
+    }
+
+    private static void cancellationAtCapability(boolean bound, Problem original,
+                                                 BrowserRecoveryException cleanupFailure) throws Exception {
+        var cancelled = new AtomicBoolean();
+        var waiting = new CountDownLatch(1);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var id = UUID.randomUUID();
+        var task = new TaskContext() {
+            public UUID id() {
+                return id;
+            }
+
+            public CancelToken cancelToken() {
+                return cancelled::get;
+            }
+
+            public void progress(String text, Optional<Double> fraction) {
+                fail("No task progress in core");
+            }
+
+            public ResourceLease retain(String kind, String localId, String description) {
+                throw new AssertionError("Physical ownership belongs to the browser adapter");
+            }
+        };
+        var browser = new Browser() {
+            private boolean failAfterCancellation() {
+                assertFalse(cancelled.get(), "The capability must begin after the final stop check");
+                entered.countDown();
+                try {
+                    assertTrue(release.await(5, TimeUnit.SECONDS), "Cancellation barrier was not released");
+                } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Cooperative cancellation must not interrupt the capability", failure);
+                }
+                assertTrue(cancelled.get());
+                throw new BrowserRecoveryException(BrowserRecoveryException.ReasonType.OPERATION_FAILED,
+                    new ApiException(original));
+            }
+
+            public boolean available() {
+                return bound || failAfterCancellation();
+            }
+
+            public boolean valid(long generation) {
+                return bound ? failAfterCancellation() : super.valid(generation);
+            }
+
+            public void close() {
+                if (cleanupFailure != null)
+                    throw cleanupFailure;
+                super.close();
+            }
+        };
+        var session = new BrowserRecoverySession(browser, null,
+            () -> RecoveryProbeResult.failed(problem(ProblemCode.IO_FAILURE, "SSH_CONNECTION_FAILED")), snapshot -> {
+            if (snapshot.state() == BrowserRecoverySnapshot.State.WAITING_TERMINAL)
+                waiting.countDown();
+        }, TARGET, task);
+        var worker = new Thread(session, "recovery-cancellation-boundary-" + id);
+        worker.start();
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS));
+            if (bound)
+                session.bindTerminal("terminal", "server", true, false);
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            cancelled.set(true);
+            release.countDown();
+            session.awaitCleanup(5000);
+            var snapshot = session.snapshot();
+            assertEquals(id.toString(), snapshot.id());
+            assertEquals(cleanupFailure == null && original.code() == ProblemCode.CANCELLED
+                ? BrowserRecoverySnapshot.State.CANCELLED : BrowserRecoverySnapshot.State.FAILED, snapshot.state());
+            assertSame(cleanupFailure == null ? original : cleanupFailure.problem(), snapshot.failure().orElseThrow());
+            assertEquals(cleanupFailure != null ? "cleanupIncomplete"
+                : original.code() == ProblemCode.CANCELLED ? "cancelled" : "browserUnavailable", snapshot.messageCode());
+            assertEquals(cleanupFailure == null, browser.closed);
+            assertFalse(worker.isInterrupted());
+        } finally {
+            cancelled.set(true);
+            release.countDown();
+            session.close();
+            worker.join(5000);
+            assertFalse(worker.isAlive(), "The original recovery worker must exit");
         }
     }
 

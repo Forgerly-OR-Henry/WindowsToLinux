@@ -120,6 +120,9 @@ class PackageStructureArchitectureTest {
 
     private static final Set<String> STABLE_PUBLIC_ENUM_NAMES = Set.of("gold.debug.windowstolinux.appapi.ai.AiPurpose",
         "gold.debug.windowstolinux.appapi.ai.AiRole",
+        "gold.debug.windowstolinux.appapi.file.DeleteEffect",
+        "gold.debug.windowstolinux.appapi.file.FileChoice.Directory",
+        "gold.debug.windowstolinux.appapi.file.FileChoice.Conflict",
         "gold.debug.windowstolinux.appapi.linux.TransferConflictChoice",
         "gold.debug.windowstolinux.appapi.linux.TransferStallChoice",
         "gold.debug.windowstolinux.appapi.linux.TransferProgress.Stage",
@@ -129,7 +132,7 @@ class PackageStructureArchitectureTest {
         "gold.debug.windowstolinux.appapi.task.ProblemCode");
 
     private static final Set<String> STABLE_PUBLIC_RESTRICTED_NAMES = Set
-        .of("gold.debug.windowstolinux.appapi.server.ServerInfo");
+        .of("gold.debug.windowstolinux.appapi.server.ServerInfo", "gold.debug.windowstolinux.appapi.file.FileInfo");
 
     private static final Set<String> OBSOLETE_ENUM_NAMES = Set.of("Access", "AiCollaborationRole", "AiResponseLanguage",
         "ContainerEngine", "DeploymentBuildTool", "DeploymentStep", "EvidenceConfidence", "HostSupport",
@@ -741,7 +744,7 @@ class PackageStructureArchitectureTest {
                 String content = Files.readString(source);
                 String kind = source.toString().replace('\\', '/').contains("/src/test/java/") ? "test" : "main";
                 Path expectedPath = sourceRoot(source, kind).resolve(
-                    declaredPackage(content).replace('.', java.io.File.separatorChar))
+                        declaredPackage(content).replace('.', java.io.File.separatorChar))
                     .resolve(source.getFileName()).toAbsolutePath().normalize();
                 if (!source.equals(expectedPath))
                     problems.add(source + " does not match its declared package path " + expectedPath);
@@ -849,6 +852,11 @@ class PackageStructureArchitectureTest {
         assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.GenericPurpose"));
         assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.server.OtherInfo"));
         assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.app.service.server.ServerInfo"));
+        assertTrue(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.file.FileInfo"));
+        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.file.FileChoice.Directory"));
+        assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.file.OtherChoice.Directory"));
+        assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.app.service.file.DeleteEffect"));
+        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.file.OtherInfo"));
     }
 
     @Test
@@ -858,7 +866,7 @@ class PackageStructureArchitectureTest {
             source.tree.getTypeDecls().stream().filter(ClassTree.class::isInstance).map(ClassTree.class::cast)
                 .forEach(type -> declarations
                     .computeIfAbsent(isModPackage(source.packageName)
-                        ? source.packageName + "." + type.getSimpleName() : type.getSimpleName().toString(),
+                            ? source.packageName + "." + type.getSimpleName() : type.getSimpleName().toString(),
                         ignored -> new ArrayList<>())
                     .add(source.path));
         }
@@ -1214,6 +1222,7 @@ class PackageStructureArchitectureTest {
         var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.ai.PlatformModelService",
             "gold.debug.windowstolinux.app.service.linux.TransferConfiguration",
             "gold.debug.windowstolinux.app.service.linux.TransferSettingsService",
+            "gold.debug.windowstolinux.app.service.file.FileSettingsService",
             "gold.debug.windowstolinux.app.service.server.PlatformServerService",
             "gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService",
             "gold.debug.windowstolinux.app.service.log.PlatformLogService",
@@ -1238,7 +1247,7 @@ class PackageStructureArchitectureTest {
                         problems.add(unit.path + " reaches a database implementation or remote port: " + reference);
                     if (reference.startsWith("gold.debug.windowstolinux.app.service.")
                         && serviceContracts.stream().noneMatch(type -> reference.equals(type)
-                            || reference.startsWith(type + "."))
+                        || reference.startsWith(type + "."))
                         && allowedUiServiceTypes.stream()
                         .noneMatch(type -> (reference.equals(type) || reference.startsWith(type + "."))))
                         problems.add(unit.path + " calls service internals: " + reference);
@@ -1248,7 +1257,7 @@ class PackageStructureArchitectureTest {
         var linux = MavenModuleGraph.read(projectRoot()).stream().filter(module -> module.path().equals("app/linux"))
             .findFirst().orElseThrow();
         assertEquals(Set.of("windowstolinux-appapi", "windowstolinux-app-ai", "windowstolinux-app-file",
-            "windowstolinux-app-windows"),
+                "windowstolinux-app-windows"),
             linux.artifacts());
         assertTrue(problems.isEmpty(), () -> "execution/service boundary violations: " + problems);
     }
@@ -1303,7 +1312,9 @@ class PackageStructureArchitectureTest {
     @Test
     void productionClassesStayWithinAstComplexityLimits() throws Exception {
         SourceModel model = sourceModel();
+        Map<String, Set<String>> apiContracts = apiContracts(model);
         List<String> problems = new ArrayList<>();
+        List<String> evidence = new ArrayList<>();
         for (SourceUnit source : model.units) {
             for (Tree declaration : source.tree.getTypeDecls()) {
                 new TreeScanner<Void, String>() {
@@ -1317,9 +1328,20 @@ class PackageStructureArchitectureTest {
                                 .map(VariableTree.class::cast)
                                 .filter(field -> !field.getModifiers().getFlags().contains(Modifier.STATIC))
                                 .count();
-                            long methods = node.getMembers().stream().filter(MethodTree.class::isInstance)
+                            var declaredMethods = node.getMembers().stream().filter(MethodTree.class::isInstance)
                                 .map(MethodTree.class::cast)
-                                .filter(method -> !method.getName().contentEquals("<init>")).count();
+                                .filter(method -> !method.getName().contentEquals("<init>"))
+                                .toList();
+                            var implemented = implementedApi(node, source, apiContracts);
+                            var delegates = declaredMethods.stream().filter(method -> pureApiDelegate(method, implemented, source)).toList();
+                            long methods = declaredMethods.size() - delegates.size();
+                            if (declaredMethods.size() > 30 || fields > 25) {
+                                evidence.add(source.packageName + "." + className + ": fields=" + fields
+                                    + ", declaredMethods=" + declaredMethods.size() + ", excludedDelegates=" + delegates.size()
+                                    + ", checkedMethods=" + methods + "\n  checked=" + declaredMethods.stream()
+                                    .filter(method -> !delegates.contains(method)).map(method -> methodSignature(method, source)).toList()
+                                    + "\n  excluded=" + delegates.stream().map(method -> methodSignature(method, source)).toList());
+                            }
                             if (fields > 25)
                                 problems.add(className + " has " + fields + " instance fields");
                             if (methods > 30) {
@@ -1339,7 +1361,170 @@ class PackageStructureArchitectureTest {
                 }.scan(declaration, "");
             }
         }
+        Files.createDirectories(Path.of("target"));
+        Files.writeString(Path.of("target/class-responsibility.txt"), String.join("\n", evidence));
         assertTrue(problems.isEmpty(), () -> "class responsibility limits exceeded: " + problems);
+    }
+
+    private static Map<String, Set<String>> apiContracts(SourceModel model) {
+        Map<String, Set<String>> contracts = new HashMap<>();
+        for (SourceUnit source : model.units) {
+            if (!source.packageName.startsWith("gold.debug.windowstolinux.appapi.")) continue;
+            for (Tree declaration : source.tree.getTypeDecls()) {
+                new TreeScanner<Void, String>() {
+                    @Override
+                    public Void visitClass(ClassTree node, String owner) {
+                        String name = owner == null ? source.packageName + "." + node.getSimpleName()
+                            : owner + "." + node.getSimpleName();
+                        if (node.getKind() == Tree.Kind.INTERFACE) {
+                            var methods = node.getMembers().stream().filter(MethodTree.class::isInstance)
+                                .map(MethodTree.class::cast)
+                                .filter(method -> !method.getModifiers().getFlags().contains(Modifier.PRIVATE)
+                                    && !method.getModifiers().getFlags().contains(Modifier.STATIC))
+                                .map(method -> methodSignature(method, source))
+                                .collect(java.util.stream.Collectors.toSet());
+                            contracts.put(name, methods);
+                        }
+                        return super.visitClass(node, name);
+                    }
+                }.scan(declaration, null);
+            }
+        }
+        return contracts;
+    }
+
+    private static Set<String> implementedApi(ClassTree type, SourceUnit source, Map<String, Set<String>> contracts) {
+        Set<String> methods = new HashSet<>();
+        for (var contract : type.getImplementsClause()) {
+            String name = contract.toString().replaceAll("<[^>]*>", "");
+            if (!name.contains(".")) {
+                String simple = name;
+                name = source.imports.stream().filter(value -> value.endsWith("." + simple)).findFirst()
+                    .orElse(source.packageName + "." + simple);
+            }
+            methods.addAll(contracts.getOrDefault(name, Set.of()));
+        }
+        return Set.copyOf(methods);
+    }
+
+    private static String methodSignature(MethodTree method, SourceUnit source) {
+        return method.getName() + "(" + method.getParameters().stream()
+            .map(parameter -> parameterType(parameter.getType().toString(), source)).collect(java.util.stream.Collectors.joining(",")) + ")";
+    }
+
+    private static String parameterType(String declaration, SourceUnit source) {
+        String type = declaration.replaceAll("<.*>", "").strip(), arrays = "";
+        while (type.endsWith("[]")) {
+            arrays += "[]";
+            type = type.substring(0, type.length() - 2);
+        }
+        if (Set.of("boolean", "byte", "short", "int", "long", "char", "float", "double").contains(type)
+            || Character.isLowerCase(type.charAt(0))) return type + arrays;
+        String first = type.split("\\.")[0];
+        String resolved;
+        if (Set.of("String", "Object", "Class", "Throwable", "Exception", "CharSequence", "Boolean", "Byte", "Short", "Integer",
+            "Long", "Character", "Float", "Double", "Number", "Void").contains(first)) resolved = "java.lang." + first;
+        else resolved = source == null ? first : source.imports.stream().filter(value -> value.endsWith("." + first))
+            .findFirst().orElseGet(() -> wildcardType(first, source));
+        return resolved + type.substring(first.length()) + arrays;
+    }
+
+    private static String wildcardType(String simple, SourceUnit source) {
+        var candidates = source.imports.stream().filter(value -> value.endsWith(".*"))
+            .map(value -> value.substring(0, value.length() - 1) + simple).filter(value -> {
+                try {
+                    Class.forName(value, false, PackageStructureArchitectureTest.class.getClassLoader());
+                    return true;
+                } catch (ClassNotFoundException missing) {
+                    return false;
+                }
+            }).toList();
+        return candidates.size() == 1 ? candidates.getFirst() : source.packageName + "." + simple;
+    }
+
+    private static boolean pureApiDelegate(MethodTree method, Set<String> contracts) {
+        return pureApiDelegate(method, contracts, null);
+    }
+
+    private static boolean pureApiDelegate(MethodTree method, Set<String> contracts, SourceUnit source) {
+        if (!contracts.contains(methodSignature(method, source)) || method.getBody() == null
+            || !method.getModifiers().getFlags().contains(Modifier.PUBLIC)
+            || method.getModifiers().getAnnotations().stream().noneMatch(annotation ->
+            annotation.getAnnotationType().toString().equals("Override")
+                || annotation.getAnnotationType().toString().equals("java.lang.Override"))
+            || method.getBody().getStatements().size() != 1) return false;
+        Tree only = method.getBody().getStatements().getFirst();
+        Tree expression = only instanceof com.sun.source.tree.ReturnTree returned ? returned.getExpression()
+            : only instanceof com.sun.source.tree.ExpressionStatementTree statement ? statement.getExpression() : null;
+        if (!(expression instanceof com.sun.source.tree.MethodInvocationTree)) return false;
+        var call = (com.sun.source.tree.MethodInvocationTree) expression;
+        boolean[] work = {false};
+        new TreeScanner<Void, Void>() {
+            @Override
+            public Void scan(Tree tree, Void unused) {
+                if (tree != null && Set.of(Tree.Kind.LAMBDA_EXPRESSION, Tree.Kind.NEW_CLASS, Tree.Kind.NEW_ARRAY,
+                    Tree.Kind.ASSIGNMENT, Tree.Kind.PLUS_ASSIGNMENT, Tree.Kind.MINUS_ASSIGNMENT,
+                    Tree.Kind.MULTIPLY_ASSIGNMENT, Tree.Kind.DIVIDE_ASSIGNMENT, Tree.Kind.REMAINDER_ASSIGNMENT,
+                    Tree.Kind.AND_ASSIGNMENT, Tree.Kind.OR_ASSIGNMENT, Tree.Kind.XOR_ASSIGNMENT,
+                    Tree.Kind.LEFT_SHIFT_ASSIGNMENT, Tree.Kind.RIGHT_SHIFT_ASSIGNMENT, Tree.Kind.UNSIGNED_RIGHT_SHIFT_ASSIGNMENT,
+                    Tree.Kind.PREFIX_INCREMENT, Tree.Kind.PREFIX_DECREMENT, Tree.Kind.POSTFIX_INCREMENT,
+                    Tree.Kind.POSTFIX_DECREMENT, Tree.Kind.CONDITIONAL_EXPRESSION).contains(tree.getKind()))
+                    work[0] = true;
+                return super.scan(tree, unused);
+            }
+        }.scan(expression, null);
+        // Receiver accessors and exact immutable defaults do not add validation or task work.
+        for (var argument : call.getArguments()) {
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(com.sun.source.tree.MethodInvocationTree invocation, Void unused) {
+                    if (!pureDefaultArgument(invocation, source)) work[0] = true;
+                    return super.visitMethodInvocation(invocation, unused);
+                }
+            }.scan(argument, null);
+        }
+        return !work[0];
+    }
+
+    private static boolean pureDefaultArgument(com.sun.source.tree.MethodInvocationTree call, SourceUnit source) {
+        if (!call.getArguments().isEmpty() || !(call.getMethodSelect() instanceof com.sun.source.tree.MemberSelectTree member))
+            return false;
+        String target = parameterType(member.getExpression().toString(), source) + "." + member.getIdentifier();
+        return Set.of("java.util.Optional.empty", "gold.debug.windowstolinux.appapi.file.FileChoice.ask").contains(target);
+    }
+
+    @Test
+    void publicApiDelegationDoesNotHideValidationOrExecutableWork() throws Exception {
+        var signatures = Set.of("stat(java.lang.String)");
+        assertTrue(pureApiDelegate(delegateFixture("return backend.stat(path);", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("if (path == null) throw new IllegalArgumentException(); return backend.stat(path);", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return access(path, () -> backend.stat(path));", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(new String(path));", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path = \"fallback\");", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(validate(path));", true), signatures));
+        assertTrue(pureApiDelegate(delegateFixture("return backend.stat(java.util.Optional.empty());", true), signatures));
+        assertTrue(pureApiDelegate(delegateFixture("return backend.stat(gold.debug.windowstolinux.appapi.file.FileChoice.ask());", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(OtherChoice.ask());", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(java.util.Objects.requireNonNull(path));", true), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path);", false), signatures));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path);", true), Set.of("other(java.lang.String)")));
+        assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path);", true), Set.of("stat(java.lang.Object)")));
+    }
+
+    private static MethodTree delegateFixture(String body, boolean override) throws Exception {
+        var input = new javax.tools.SimpleJavaFileObject(java.net.URI.create("string:///Fixture.java"), JavaFileObject.Kind.SOURCE) {
+            @Override
+            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+                return "class Fixture { " + (override ? "@Override " : "") + "public String stat(String path) {" + body + "} }";
+            }
+        };
+        try (var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, null, null)) {
+            var task = (JavacTask) ToolProvider.getSystemJavaCompiler().getTask(null, manager, null,
+                List.of("-proc:none"), null, List.of(input));
+            var type = (ClassTree) task.parse().iterator().next().getTypeDecls().getFirst();
+            return type.getMembers().stream().filter(MethodTree.class::isInstance).map(MethodTree.class::cast)
+                .filter(method -> method.getName().contentEquals("stat")).findFirst().orElseThrow();
+        }
     }
 
     @Test

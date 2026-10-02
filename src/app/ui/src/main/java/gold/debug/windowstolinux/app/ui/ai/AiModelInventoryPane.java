@@ -552,7 +552,8 @@ final class AiModelInventoryPane extends JPanel {
         for (var capability : AiCapabilityType.values()) {
             details.append(capabilityLabel(model, capability));
             var check = model.checks().get(capability);
-            if (!check.reason().isEmpty()) details.append(" · ").append(escape(messages.text("ai.check.reason." + check.reason())));
+            if (!check.reason().isEmpty())
+                details.append(" · ").append(escape(messages.text("ai.check.reason." + check.reason())));
             details.append("<br>");
         }
         return details.append("</html>").toString();

@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
 
-
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -192,8 +191,9 @@ class ModTest extends DeploymentRuntimeFixture {
 
     @Test
     void foreignOwnerAndUnsupportedVersionAreRejectedBeforeJdbcAccess() {
-        for (var identity : List.of(new SchemaIdentity("example.other", "1", UUID.randomUUID()),
-            new SchemaIdentity(OWNER, "3", UUID.randomUUID()))) {
+        String unsupportedVersion = Integer.toString(Integer.parseInt(DeploymentSchema.VERSION) + 1);
+        for (var identity : List.of(new SchemaIdentity("example.other", DeploymentSchema.VERSION, UUID.randomUUID()),
+            new SchemaIdentity(OWNER, unsupportedVersion, UUID.randomUUID()))) {
             SchemaAccess access = new SchemaAccess() {
                 public SchemaIdentity identity() {
                     return identity;

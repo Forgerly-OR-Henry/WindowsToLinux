@@ -196,16 +196,14 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertTrue(scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
                 if (boundary.equals("BUILD")) {
-                    var unknown = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                        TimeUnit.SECONDS);
+                    var unknown = DeploymentPublicationAcceptanceFixture.reconcileReady(runtime, handle);
                     assertEquals(TaskState.UNKNOWN, unknown.state());
                 } else {
                     assertTrue(faultInstalled.get());
                     assertReviewBoundary(runtime, boundary);
                     if (!boundary.equals("FORMAL")) {
                         int commands = peer.commands.size();
-                        var unknown = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                            TimeUnit.SECONDS);
+                        var unknown = DeploymentPublicationAcceptanceFixture.reconcileReady(runtime, handle);
                         assertEquals(TaskState.UNKNOWN, unknown.state());
                         assertEquals(commands, peer.commands.size(),
                             "An unconfirmed formal checkpoint cannot admit remote observation or cleanup");
@@ -218,7 +216,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(uploaded, peer.uploads);
                 assertFalse(peer.present.isEmpty());
                 peer.active = false;
-                var ended = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+                var ended = DeploymentPublicationAcceptanceFixture.reconcileReady(runtime, handle);
                 assertEquals(TaskState.ENDED, ended.state());
                 assertEquals(Optional.of(Outcome.FAILED), ended.outcome());
                 assertEquals(builds, peer.builds);
@@ -566,6 +564,26 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
     private AiService models(boolean stop) {
         return new AiService() {
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+                throw new AssertionError("Voice is outside this fixture");
+            }
+
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertTrue(Set.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL).contains(purpose));
                 return "a".repeat(64);

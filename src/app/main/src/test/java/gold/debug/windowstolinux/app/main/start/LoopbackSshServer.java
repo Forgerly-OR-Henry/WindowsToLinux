@@ -51,7 +51,8 @@ public final class LoopbackSshServer implements AutoCloseable {
     public LoopbackSshServer(Path directory, Consumer<SshServer> configure) throws Exception {
         exceptions = new BackgroundExceptionScope();
         try {
-            group = AsynchronousChannelGroup.withThreadPool(ThreadUtils.noClose(io));
+            // This group owns the actual executor; its await must observe physical callback termination.
+            group = AsynchronousChannelGroup.withThreadPool(io);
             server.setHost("127.0.0.1");
             server.setPort(0);
             server.setScheduledExecutorService(timer, false);

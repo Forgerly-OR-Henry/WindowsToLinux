@@ -10,7 +10,6 @@ import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.CommandRequest;
 
-
 /** Sends script bytes separately from the command's unchanged binary input. / 将脚本字节与命令的原始二进制输入分开传送。 */
 final class SshCommandFrame implements AutoCloseable {
     /** Maximum script and input size, applied independently before dispatch. / 发送前分别应用的脚本及输入容量上限。 */

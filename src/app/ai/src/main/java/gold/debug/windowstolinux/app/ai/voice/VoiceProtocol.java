@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.app.ai.voice;
 import java.io.IOException;
 import java.net.URI;
 import java.util.*;
+
 import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
 import gold.debug.windowstolinux.appapi.ai.*;
@@ -12,12 +13,16 @@ import gold.debug.windowstolinux.appapi.task.*;
 public final class VoiceProtocol {
     /** Maximum bytes of one provider event or file response. / 单个提供方事件或文件响应字节上限。 */
     public static final int MAX_RESPONSE_BYTES = 1_048_576;
+
     /** Strict shared JSON parser. / 严格共用 JSON 解析器。 */
     static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder().streamReadConstraints(
         StreamReadConstraints.builder().maxNestingDepth(16).maxStringLength(MAX_RESPONSE_BYTES)
             .maxNumberLength(32).build()).build()).enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-    private VoiceProtocol() { }
+
+    /** Prevents instances of shared protocol rules. / 禁止实例化共用协议规则。 */
+    private VoiceProtocol() {
+    }
 
     /** Checks the configured WebSocket URL; only intent=transcription may appear in its query. / 检查已配置 WebSocket 地址；查询参数只允许 intent=transcription。
      * @param endpoint complete configured endpoint / 已配置完整端点 */
@@ -55,9 +60,21 @@ public final class VoiceProtocol {
         return new VoiceResponse(text, modelId, List.of());
     }
 
-    /** Recognizes only explicit protocol incompatibility codes. / 只识别协议明确不兼容错误码。 */
+    /** Recognizes only explicit protocol incompatibility codes. / 只识别协议明确不兼容错误码。
+     * @param error bounded provider error object / 有界提供方错误对象
+     * @return whether the provider explicitly rejected support / 提供方是否明确拒绝支持 */
     static boolean unsupported(JsonNode error) {
         return Set.of("unsupported_model", "unsupported_audio", "unsupported_value").contains(error.path("code").asText());
+    }
+
+    /** Validates a bounded bearer value before allocating transport resources. / 分配传输资源前校验有界 Bearer 值。
+     * @param key temporary captured bearer characters / 临时捕获的 Bearer 字符 */
+    static void validateKey(char[] key) {
+        if (key == null || key.length == 0 || key.length > 4096)
+            throw new IllegalArgumentException("Invalid voice credential");
+        for (char value : key)
+            if (value < 0x21 || value > 0x7e)
+                throw new IllegalArgumentException("Invalid voice credential");
     }
 
     /** Safe diagnostic without audio, transcripts or credentials. / 不含音频、转写或凭据的安全诊断。
@@ -69,7 +86,7 @@ public final class VoiceProtocol {
      * @param confirmed already confirmed parts / 已确认片段
      * @return classified result / 已分类结果 */
     public static OperationResult<VoiceResponse> failure(Outcome outcome, ProblemCode code, String event,
-        String message, String modelId, Optional<VoiceResponse> confirmed) {
+                                                         String message, String modelId, Optional<VoiceResponse> confirmed) {
         return new OperationResult<>(outcome, confirmed, Optional.of(
             new Problem(code, event, message, Map.of("modelId", modelId), Optional.empty())));
     }

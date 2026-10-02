@@ -68,6 +68,8 @@ class PlatformModMigrationTest {
                     package example.provider.db;
                     import java.nio.file.*;
                     import java.sql.*;
+                    import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+                    import gold.debug.windowstolinux.appapi.db.SchemaMigration;
                     
                     public final class %s implements SchemaMigration {
                         public void migrate(SchemaAccess source, SchemaAccess target) throws Exception {

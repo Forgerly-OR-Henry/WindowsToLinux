@@ -8,7 +8,6 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-
 import org.junit.jupiter.api.Test;
 
 class ProcessProtocolTest {

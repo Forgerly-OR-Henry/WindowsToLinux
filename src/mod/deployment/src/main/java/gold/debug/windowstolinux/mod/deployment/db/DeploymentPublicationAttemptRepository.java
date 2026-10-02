@@ -14,7 +14,6 @@ import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 
-
 /** Advances bounded operation consent through the same original row lock and reserved formal execution. / 经同一原行锁及已预留正式执行推进有界操作同意。 */
 public final class DeploymentPublicationAttemptRepository {
     /** Existing original execution transaction owner. / 既有原执行事务所有者。 */

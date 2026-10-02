@@ -174,15 +174,35 @@ class RunModeResolverTest {
     }
 
     @Test
-    void publicDetectionUsesTheDbModuleEvenWhenCalledFromMainTests() throws Exception {
+    void publicDetectionRequiresConsistentSourcesWithoutChoosingFallbackData() throws Exception {
         Path dbSource = Path.of(gold.debug.windowstolinux.app.db.connect.PlatformDatabase.class.getProtectionDomain()
             .getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
-        // Maven test uses classes; verify packages upstream modules before loading this test.
+        Path mainSource = Path.of(RunModeResolver.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+            .toAbsolutePath().normalize();
         boolean packaged = Files.isRegularFile(dbSource);
+        if (packaged != Files.isRegularFile(mainSource)) {
+            assertEquals(RunModeResolver.RunMode.RUN_UNKNOWN, RunModeResolver.detect());
+            assertThrows(IllegalStateException.class, RunModeResolver::resolve);
+            return;
+        }
         assertEquals(packaged ? RunModeResolver.RunMode.RUN_JAR : RunModeResolver.RunMode.RUN_CLASS,
             RunModeResolver.detect());
         Path expectedHome = packaged ? dbSource.getParent() : dbSource.getParent().getParent();
         assertEquals(expectedHome.resolve("data"), RunModeResolver.resolveDataDirectory());
+    }
+
+    @Test
+    void rejectsMixedStartupSourcesEvenWhenTheDatabaseJarLayoutIsRecognized() throws Exception {
+        Path jarHome = Files.createDirectories(temporaryDirectory.resolve("jar-home"));
+        Path databaseJar = Files.createFile(jarHome.resolve("DB.jar"));
+        Path mainJar = Files.createFile(jarHome.resolve("MAIN.jar"));
+        Path mainClasses = Files.createDirectories(temporaryDirectory.resolve("main/target/classes"));
+        var packaged = RunModeResolver.resolveStartupFromEvidence(Optional.empty(), Optional.of(databaseJar),
+            Optional.of(mainJar), Optional.empty()).orElseThrow();
+        assertEquals(RunModeResolver.RunMode.RUN_JAR, packaged.mode());
+        assertEquals(jarHome.resolve("data"), packaged.dataDirectory());
+        assertTrue(RunModeResolver.resolveStartupFromEvidence(Optional.empty(), Optional.of(databaseJar),
+            Optional.of(mainClasses), Optional.empty()).isEmpty());
     }
 
     private Path createJpackageLayout(String name) throws Exception {

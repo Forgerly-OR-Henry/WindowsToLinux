@@ -63,6 +63,7 @@ class PlatformModRecoveryGraphTest {
                 import java.nio.file.*;
                 import java.util.*;
                 import gold.debug.windowstolinux.appapi.mod.*;
+                import gold.debug.windowstolinux.appapi.task.*;
                 
                 import gold.debug.windowstolinux.appapi.ui.*;
                 public final class Mod implements ModEntrypoint {
@@ -158,7 +159,7 @@ class PlatformModRecoveryGraphTest {
     PlatformTaskManagement management(PlatformRuntime runtime) {
         return new PlatformTaskManagement(runtime.tasks(), runtime.security(), id -> {
             throw new AssertionError("Not a rescue task");
-        }, runtime::releaseModRecovery);
+        }, runtime.modRecovery()::release);
     }
 
     TaskSnapshot reconcile(PlatformRuntime runtime, UUID task) throws Exception {
@@ -182,7 +183,7 @@ class PlatformModRecoveryGraphTest {
                 }
             }
         }
-        runtime.releaseModRecovery();
+        runtime.modRecovery().release();
         runtime.close();
     }
 
@@ -331,7 +332,7 @@ class PlatformModRecoveryGraphTest {
                 "SELECT COUNT(*) FROM mod_operation WHERE phase='VERIFIED'"));
             assertEquals("UNKNOWN", PlatformModCoordinatorTest.state(runtime, C));
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT fixture_recovery_archive");
-            runtime.releaseModRecovery();
+            runtime.modRecovery().release();
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertEquals(1,
                 fixture.actions().stream().filter(value -> value.equals(C + ":stop:RECOVERY_FINISHED")).count());

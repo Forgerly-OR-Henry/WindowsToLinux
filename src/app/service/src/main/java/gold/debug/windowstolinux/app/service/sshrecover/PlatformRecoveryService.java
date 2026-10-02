@@ -34,7 +34,6 @@ import gold.debug.windowstolinux.app.service.server.*;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.server.ServerRef;
 
-
 /** Owns independent browser rescue on central platform tasks with retained exact resource cleanup. / 在中央平台任务中持有独立浏览器救援及精确原资源清理。 */
 public final class PlatformRecoveryService implements AutoCloseable {
     /** Stable original-task protocol, also restricting fixed host SSH verification. / 稳定原任务协议，同时限定宿主固定 SSH 复核。 */
@@ -253,8 +252,9 @@ public final class PlatformRecoveryService implements AutoCloseable {
             var profile = ServerProfile
                 .fromStored(persistence.servers().findServerProfile(selected.id()).orElseThrow());
             if (!profile.equals(selected))
-                throw new ApiException(problem(ProblemCode.INVALID_INPUT, "RESCUE_SERVER_CHANGED",
-                    "The saved server changed after selection; check the current configuration again"));
+                return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(problem(
+                    ProblemCode.INVALID_INPUT, "RESCUE_SERVER_CHANGED",
+                    "The saved server changed after selection; check the current configuration again")));
             browser = new TaskBrowserSession(persistence.database(), runtime, task,
                 PlatformTaskAdmission.PLATFORM_OWNER, version, security::observeLock);
             try {

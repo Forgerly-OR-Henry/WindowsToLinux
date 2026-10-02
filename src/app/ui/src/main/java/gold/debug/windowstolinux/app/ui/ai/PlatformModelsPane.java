@@ -14,7 +14,6 @@ import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
-
 /** Permanent model inventory and explicit interrupted-probe recovery. / 常驻模型清单及明确的中断探测恢复。 */
 public final class PlatformModelsPane extends JPanel implements AutoCloseable {
     /** Opens the actual model editor with fixed isolated values and no service capability. / 以固定隔离值及空服务能力打开真实模型编辑器。

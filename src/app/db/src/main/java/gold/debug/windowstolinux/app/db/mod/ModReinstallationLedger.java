@@ -18,7 +18,6 @@ import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
 
-
 /** Owns same-release replacement checkpoints without modifying Mod data or user choices. / 持有同版本替换检查点，不修改 Mod 数据或用户选择。 */
 public final class ModReinstallationLedger {
     /** Original database and boot authority. / 原数据库及启动权限。 */

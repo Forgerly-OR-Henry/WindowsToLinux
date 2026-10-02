@@ -24,7 +24,6 @@ import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.appapi.db.CheckResult;
 
-
 /** Owns isolated initialization or migration and retries cleanup without replaying author code. / 持有隔离初始化或迁移，只重试清理而不重放作者代码。 */
 final class ModSchemaPreparation implements AutoCloseable {
     /** Original physical engine. / 原物理引擎。 */

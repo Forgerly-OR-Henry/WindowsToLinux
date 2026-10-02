@@ -83,7 +83,7 @@ class PlatformModelServiceTest {
     }
 
     static TaskHandle<Void> saveAndVerify(PlatformModelService service, AiProviderProfile profile, String name,
-        char[] key, AiCapabilityType capability, int outputLimit) throws Exception {
+                                          char[] key, AiCapabilityType capability, int outputLimit) throws Exception {
         service.save(profile, name, key, outputLimit);
         return service.verify(profile.id(), capability, null, "");
     }

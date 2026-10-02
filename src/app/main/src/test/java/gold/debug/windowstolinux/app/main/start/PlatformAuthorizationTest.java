@@ -241,7 +241,10 @@ class PlatformAuthorizationTest {
                                     digest("new".getBytes(java.nio.charset.StandardCharsets.UTF_8)), true)
                                 .withSemantics(new ActionSemantics("application.upload", Set.of(APP))), task)
                             .value().orElseThrow();
-                        assertEquals(Outcome.CANCELLED, session.upload(transfer, grant).outcome());
+                        var skipped = session.upload(transfer, grant);
+                        assertEquals(Outcome.FAILED, skipped.outcome());
+                        assertEquals("SFTP_CONFLICT_SKIPPED", skipped.problem().orElseThrow().eventCode());
+                        assertFalse(task.cancelToken().requested());
                     }
                     return success(null);
                 }));

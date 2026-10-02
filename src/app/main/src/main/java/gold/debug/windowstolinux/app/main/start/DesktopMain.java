@@ -182,6 +182,7 @@ public final class DesktopMain {
         window.installModels(models);
         window.installTransfers(runtime.transfers());
         window.installAuthorization(runtime.authorization());
+        window.installFileSettings(runtime.fileSettings());
         window.installAppearance(appearance, requested -> {
             try (var authorized = runtime.security().beginTask()) {
                 authorized.execute(() -> {
@@ -193,7 +194,7 @@ public final class DesktopMain {
         });
         window.installLogs(runtime.logs());
         window.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(runtime.tasks(),
-            runtime.security(), id -> recovery.reconcile(id, true), runtime::releaseModRecovery));
+            runtime.security(), id -> recovery.reconcile(id, true), runtime.modRecovery()::release));
         return window;
     }
 
@@ -215,7 +216,7 @@ public final class DesktopMain {
             @Override
             public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review(String owner,
                                                                                                    java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
-                return runtime.reviewModSchemaRetry(owner, source);
+                return runtime.modRecovery().review(owner, source);
             }
 
             /** Delegates only the confirmed original retry. / 仅委派已确认原重试。
@@ -225,7 +226,7 @@ public final class DesktopMain {
             @Override
             public gold.debug.windowstolinux.appapi.task.Outcome retry(
                 gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
-                return runtime.retryModSchema(review);
+                return runtime.modRecovery().retry(review);
             }
 
             /** Delegates original read-only reconciliation. / 委派原只读核对。
@@ -234,7 +235,7 @@ public final class DesktopMain {
              * @throws Exception if unconfirmed / 未确认时 */
             @Override
             public gold.debug.windowstolinux.appapi.task.Outcome reconcile(java.util.UUID operation) throws Exception {
-                return runtime.reconcileModSchema(operation);
+                return runtime.modRecovery().reconcile(operation);
             }
         };
         onEdt(() -> {

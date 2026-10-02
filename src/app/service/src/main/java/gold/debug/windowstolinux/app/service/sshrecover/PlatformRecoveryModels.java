@@ -16,7 +16,6 @@ import gold.debug.windowstolinux.app.linux.ssh.recover.TerminalObservation;
 import gold.debug.windowstolinux.app.service.ai.PlatformAiService;
 import gold.debug.windowstolinux.appapi.ai.*;
 
-
 /** Uses the original platform task and configured model budgets for rescue advice. / 使用原平台任务及已配置模型预算提供救援建议。 */
 public final class PlatformRecoveryModels implements RecoveryModels {
     /** Actual task-bound model capability. / 实际任务绑定模型能力。 */

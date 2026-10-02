@@ -8,8 +8,6 @@ import gold.debug.windowstolinux.appapi.task.TaskContext;
 import java.util.Optional;
 import java.util.UUID;
 
-
-
 /** Public deployment snapshot, lifecycle and backup handoff service. / 公开部署快照、生命周期与备份交接服务。
  * <p>The original caller must retain its own root checkpoint across the complete handoff sequence,
  * close it only after FINISHED, and retain it on UNKNOWN for original-task reconciliation.

@@ -144,6 +144,50 @@ public final class DeploymentAssistedScope implements ModContext {
     @Override
     public AiService ai() {
         return new AiService() {
+            /** Rejects audio outside the frozen text/vision assisted decision budget. / 拒绝冻结文字与视觉辅助决策预算之外的音频。
+             * @param request audio request / 音频请求
+             * @param supplied original task / 原任务
+             * @return no audio dispatch / 不发送音频
+             * @throws ApiException because this workflow did not admit audio / 此流程未准入音频 */
+            public OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                throw voiceDenied();
+            }
+
+            /** Rejects audio regardless of a caller-supplied revision. / 无论调用方提供何修订均拒绝音频。
+             * @param request audio request / 音频请求
+             * @param expected caller revision / 调用方修订
+             * @param supplied original task / 原任务
+             * @return no audio dispatch / 不发送音频
+             * @throws ApiException because audio was not admitted / 音频未准入 */
+            public OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expected, TaskContext supplied) throws ApiException {
+                return call(request, supplied);
+            }
+
+            /** Rejects realtime resources outside the assisted workflow scope. / 拒绝辅助流程作用域以外的实时资源。
+             * @param options audio budgets / 音频预算
+             * @param listener audio events / 音频事件
+             * @param supplied original task / 原任务
+             * @return no realtime session / 不创建实时会话
+             * @throws ApiException because audio was not admitted / 音频未准入 */
+            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
+                TaskContext supplied) throws ApiException {
+                sameTask(supplied);
+                verify();
+                throw voiceDenied();
+            }
+
+            /** Explains the exact missing admission without exposing business data. / 不暴露业务数据地说明精确未准入范围。
+             * @return denied capability / 拒绝能力 */
+            private ApiException voiceDenied() {
+                return new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
+                    "DEPLOYMENT_ASSISTED_VOICE_SCOPE", "Assisted deployment admits only its frozen text and vision decisions", Map.of(), Optional.empty()));
+            }
+
             /** Verifies the usable purpose and frozen whole route. / 验证可用用途和冻结整路由。
              * @param purpose required purpose / 必需用途
              * @param supplied original task / 原任务

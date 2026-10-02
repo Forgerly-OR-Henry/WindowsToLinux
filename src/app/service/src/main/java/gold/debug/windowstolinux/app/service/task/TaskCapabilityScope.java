@@ -15,7 +15,6 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Tracks synchronous platform capability work until its physical and durable release. / 跟踪同步平台能力操作，直至物理和持久释放完成。 */
 public final class TaskCapabilityScope implements AutoCloseable {
     /** Current task authority. / 当前任务授权方。 */

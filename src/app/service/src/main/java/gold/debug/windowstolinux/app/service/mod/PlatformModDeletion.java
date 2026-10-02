@@ -22,7 +22,6 @@ import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Deletes reviewed installed releases or complete owners through original durable and physical scopes. / 经原持久及物理范围删除已审阅安装版本或完整所有者。 */
 public final class PlatformModDeletion implements AutoCloseable {
     /** Original trusted application home. / 原可信程序根。 */

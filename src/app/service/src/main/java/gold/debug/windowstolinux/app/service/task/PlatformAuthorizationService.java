@@ -21,7 +21,6 @@ import javax.swing.SwingUtilities;
 import gold.debug.windowstolinux.app.db.PlatformPersistence;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 
-
 /** Owns persisted permission preference and ephemeral scopes for host-launched workflows. / 持有持久权限偏好及宿主启动流程的临时作用域。 */
 public final class PlatformAuthorizationService implements AutoCloseable {
     /** Separate from business AI-review preferences. / 独立于业务 AI 审批偏好。 */

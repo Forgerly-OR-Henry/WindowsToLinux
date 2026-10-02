@@ -21,7 +21,6 @@ import gold.debug.windowstolinux.app.linux.ssh.recover.TerminalObservation;
 import gold.debug.windowstolinux.app.linux.ssh.recover.TerminalTarget;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
-
 /** Keeps an isolated browser in its original central task until physical and durable cleanup finish. / 将隔离浏览器保留在原中央任务，直到物理及持久清理完成。 */
 public final class TaskBrowserSession implements BrowserTerminalSession {
     /** Exact host browser resource namespace. / 精确宿主浏览器资源命名空间。 */

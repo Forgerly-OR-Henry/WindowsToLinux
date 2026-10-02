@@ -18,7 +18,6 @@ import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.ui.error.FailureReportRecord;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 
-
 /**
  * Routes bounded host failures through the existing database or startup emergency queue. / 将有界宿主失败送入既有数据库或启动应急队列。
  */

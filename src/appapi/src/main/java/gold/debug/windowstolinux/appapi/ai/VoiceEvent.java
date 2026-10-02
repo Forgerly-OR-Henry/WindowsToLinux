@@ -11,9 +11,16 @@ import java.util.Objects;
  * @param text delta or complete final text / 增量或完整最终文字 */
 public record VoiceEvent(String segmentId, int contentIndex, long sequence, long inputOrder,
                          boolean finalResult, String text) {
-    /** Checks bounded, unambiguous event identity. / 检查有界且明确的事件身份。 */
+    /** Checks bounded, unambiguous event identity. / 检查有界且明确的事件身份。
+     * @param segmentId provider input identity / 提供方输入身份
+     * @param contentIndex item content part / 项内内容片段
+     * @param sequence delivery sequence / 投递序号
+     * @param inputOrder original input sequence / 原输入次序
+     * @param finalResult confirmed final marker / 已确认定稿标记
+     * @param text bounded transcript observation / 有界转写观测 */
     public VoiceEvent {
-        Objects.requireNonNull(segmentId); Objects.requireNonNull(text);
+        Objects.requireNonNull(segmentId);
+        Objects.requireNonNull(text);
         if (segmentId.isBlank() || segmentId.length() > 256 || contentIndex < 0
             || sequence < 0 || inputOrder < 0 || text.length() > 262_144)
             throw new IllegalArgumentException("Invalid voice observation");

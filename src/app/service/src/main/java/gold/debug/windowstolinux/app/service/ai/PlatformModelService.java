@@ -189,7 +189,9 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                     persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
                 });
             }
-        } finally { Arrays.fill(suppliedKey, '\0'); }
+        } finally {
+            Arrays.fill(suppliedKey, '\0');
+        }
     }
 
     /** Verifies one saved capability using its exact configuration revision. / 使用精确配置修订验证一项已保存能力。
@@ -201,7 +203,8 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @throws Exception if admission or credential capture fails / 准入或凭据捕获失败时 */
     public TaskHandle<Void> verify(String id, AiCapabilityType capability, VoiceRequest audio, String expected)
         throws Exception {
-        settings(); Objects.requireNonNull(capability);
+        settings();
+        Objects.requireNonNull(capability);
         var observed = current(id).orElseThrow(() -> new IllegalArgumentException("Save the model before verification"));
         boolean voice = capability == AiCapabilityType.VOICE_FILE || capability == AiCapabilityType.VOICE_REALTIME;
         if (voice && (audio == null || expected == null || expected.isBlank() || expected.length() > 4096))
@@ -236,12 +239,20 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                             return failed(ProblemCode.UNKNOWN, "MODEL_SAVE_UNKNOWN", "The verification commit must be reconciled before continuing");
                         }
                         return result;
-                    } finally { Arrays.fill(key, '\0'); }
+                    } finally {
+                        Arrays.fill(key, '\0');
+                    }
                 });
-            submitted = true; handles.put(handle.id(), handle);
-            handle.completion().whenComplete((result, failure) -> { Arrays.fill(key, '\0'); handles.remove(handle.id()); });
+            submitted = true;
+            handles.put(handle.id(), handle);
+            handle.completion().whenComplete((result, failure) -> {
+                Arrays.fill(key, '\0');
+                handles.remove(handle.id());
+            });
             return handle;
-        } finally { if (!submitted) Arrays.fill(key, '\0'); }
+        } finally {
+            if (!submitted) Arrays.fill(key, '\0');
+        }
     }
 
     /** Sends only the explicitly selected protocol and checks its actual output. / 仅发送明确所选协议并核对实际输出。
@@ -254,7 +265,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param task original executing task / 原执行任务
      * @return actual classified outcome / 实际分类结果 */
     private OperationResult<Void> probe(StoredAiProviderConfiguration observed, AiCapabilityType capability,
-        VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
+                                        VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
         try {
             if (capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION) {
                 var challenge = ModelCapabilityProbe.create(capability == AiCapabilityType.VISION, ceiling);
@@ -265,12 +276,16 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                     return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
             } else {
                 OperationResult<VoiceResponse> result;
-                if (capability == AiCapabilityType.VOICE_FILE) result = ai.probeVoice(observed.profile(), key, audio, task);
+                if (capability == AiCapabilityType.VOICE_FILE)
+                    result = ai.probeVoice(observed.profile(), key, audio, task);
                 else {
                     byte[] pcm = audio.pcm();
-                    try { result = ai.probeRealtime(observed.profile(), key,
-                        new VoiceOptions(audio.timeout(), 1_048_576), pcm, task); }
-                    finally { Arrays.fill(pcm, (byte) 0); }
+                    try {
+                        result = ai.probeRealtime(observed.profile(), key,
+                            new VoiceOptions(audio.timeout(), 1_048_576), pcm, task);
+                    } finally {
+                        Arrays.fill(pcm, (byte) 0);
+                    }
                 }
                 if (result.outcome() != Outcome.SUCCEEDED)
                     return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
@@ -282,13 +297,17 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
         } catch (ApiException failure) {
             return new OperationResult<>(failure.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
                 Optional.empty(), Optional.of(failure.problem()));
+        } catch (java.io.IOException failure) {
+            return failed(ProblemCode.IO_FAILURE, "MODEL_PROBE_INPUT", "The local capability challenge could not be generated");
         }
     }
 
     /** Normalizes harmless transcript whitespace. / 规范化无害的转写空白。
      * @param value transcript text / 转写文字
      * @return normalized text / 规范文字 */
-    private static String normalized(String value) { return value.strip().replaceAll("\\s+", " "); }
+    private static String normalized(String value) {
+        return value.strip().replaceAll("\\s+", " ");
+    }
 
     /** Stores fixed safe reason keys, never provider bodies or transcripts. / 保存固定安全原因键，不保存提供方正文或转写。
      * @param result actual probe outcome / 实际验证结果

@@ -53,18 +53,27 @@ public final class AiProfileRepository {
                     try (var insert = c.prepareStatement("INSERT INTO ai_model(model_id,credential_id,endpoint_url,"
                         + "file_endpoint_url,realtime_endpoint_url,model_name,display_name,display_order) "
                         + "VALUES(?,?,?,?,?,?,?,(SELECT COALESCE(MAX(display_order),-1)+1 FROM ai_model))")) {
-                        insert.setString(1, profile.id()); insert.setString(2, profile.credentialKey());
-                        insert.setString(3, profile.endpoint()); insert.setString(4, profile.fileEndpoint());
-                        insert.setString(5, profile.realtimeEndpoint()); insert.setString(6, profile.model());
-                        insert.setString(7, name.strip()); insert.executeUpdate();
+                        insert.setString(1, profile.id());
+                        insert.setString(2, profile.credentialKey());
+                        insert.setString(3, profile.endpoint());
+                        insert.setString(4, profile.fileEndpoint());
+                        insert.setString(5, profile.realtimeEndpoint());
+                        insert.setString(6, profile.model());
+                        insert.setString(7, name.strip());
+                        insert.executeUpdate();
                     }
                 } else {
                     try (var update = c.prepareStatement("UPDATE ai_model SET configuration_revision=?,credential_id=?,"
                         + "endpoint_url=?,file_endpoint_url=?,realtime_endpoint_url=?,model_name=?,display_name=? WHERE model_id=?")) {
-                        update.setLong(1, revision); update.setString(2, profile.credentialKey());
-                        update.setString(3, profile.endpoint()); update.setString(4, profile.fileEndpoint());
-                        update.setString(5, profile.realtimeEndpoint()); update.setString(6, profile.model());
-                        update.setString(7, name.strip()); update.setString(8, profile.id()); update.executeUpdate();
+                        update.setLong(1, revision);
+                        update.setString(2, profile.credentialKey());
+                        update.setString(3, profile.endpoint());
+                        update.setString(4, profile.fileEndpoint());
+                        update.setString(5, profile.realtimeEndpoint());
+                        update.setString(6, profile.model());
+                        update.setString(7, name.strip());
+                        update.setString(8, profile.id());
+                        update.executeUpdate();
                     }
                 }
                 for (var capability : AiCapabilityType.values())
@@ -79,7 +88,7 @@ public final class AiProfileRepository {
      * @param capability actual protocol / 实际协议
      * @return whether prior evidence remains applicable / 原证据是否仍适用 */
     private static boolean unaffected(StoredAiProviderProfile old, StoredAiProviderProfile current,
-        AiCapabilityType capability) {
+                                      AiCapabilityType capability) {
         if (!old.model().equals(current.model()) || !old.credentialKey().equals(current.credentialKey())) return false;
         return switch (capability) {
             case TEXT, VISION -> old.endpoint().equals(current.endpoint());
@@ -104,7 +113,7 @@ public final class AiProfileRepository {
      * @param capability checked capability / 已检查能力
      * @throws SQLException if commit fails / 提交失败时 */
     public void saveVerified(StoredAiProviderProfile profile, String name, Instant verifiedAt,
-        AiCapabilityType capability) throws SQLException {
+                             AiCapabilityType capability) throws SQLException {
         connections.transaction(() -> {
             saveConfiguration(profile, name);
             try (var c = connections.open()) {
@@ -121,7 +130,7 @@ public final class AiProfileRepository {
      * @param verifiedAt actual probe time / 实际验证时间
      * @throws SQLException if configuration changed or storage failed / 配置变化或存储失败时 */
     public void recordVerification(StoredAiProviderProfile expected, long expectedRevision,
-        AiCapabilityType capability, Instant verifiedAt) throws SQLException {
+                                   AiCapabilityType capability, Instant verifiedAt) throws SQLException {
         recordVerification(expected, expectedRevision, capability,
             new AiCapabilityCheck(AiCapabilityStateType.AVAILABLE, "", Optional.of(verifiedAt)));
     }
@@ -133,7 +142,7 @@ public final class AiProfileRepository {
      * @param check safe classified result / 安全分类结果
      * @throws SQLException if the probe became stale or commit failed / 验证过期或提交失败时 */
     public void recordVerification(StoredAiProviderProfile expected, long expectedRevision,
-        AiCapabilityType capability, AiCapabilityCheck check) throws SQLException {
+                                   AiCapabilityType capability, AiCapabilityCheck check) throws SQLException {
         connections.transaction(() -> {
             try (var c = connections.open()) {
                 RepositoryConnections.lockPlatformState(c);
@@ -155,8 +164,10 @@ public final class AiProfileRepository {
      * @return fixed safe SQL prefix / 固定安全SQL前缀 */
     static String capabilityPrefix(AiCapabilityType capability) {
         return switch (Objects.requireNonNull(capability)) {
-            case TEXT -> "text"; case VISION -> "vision";
-            case VOICE_FILE -> "voice_file"; case VOICE_REALTIME -> "voice_realtime";
+            case TEXT -> "text";
+            case VISION -> "vision";
+            case VOICE_FILE -> "voice_file";
+            case VOICE_REALTIME -> "voice_realtime";
         };
     }
 
@@ -174,7 +185,8 @@ public final class AiProfileRepository {
             + "," + prefix + "_verified_at=?," + prefix + "_state=?," + prefix + "_reason=? WHERE model_id=?")) {
             if (check.checkedAt().isPresent()) statement.setLong(1, check.checkedAt().orElseThrow().toEpochMilli());
             else statement.setNull(1, Types.BIGINT);
-            statement.setString(2, check.state().name()); statement.setString(3, check.reason());
+            statement.setString(2, check.state().name());
+            statement.setString(3, check.reason());
             statement.setString(4, id);
             if (statement.executeUpdate() != 1) throw new SQLException("Model no longer exists");
         }
@@ -309,7 +321,8 @@ public final class AiProfileRepository {
                 if (previous.isPresent() && previous.getAsInt() != tokens) {
                     try (var update = connection.prepareStatement(
                         "UPDATE ai_model SET configuration_revision=configuration_revision+1 WHERE model_id=?")) {
-                        update.setString(1, id); update.executeUpdate();
+                        update.setString(1, id);
+                        update.executeUpdate();
                     }
                     for (var capability : AiCapabilityType.values()) {
                         AiCapabilityCheck check = capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION
@@ -452,7 +465,7 @@ public final class AiProfileRepository {
             var checkedAt = verifiedAt(rows, prefix);
             checks.put(capability, checkedAt.isEmpty() ? AiCapabilityCheck.unverified()
                 : new AiCapabilityCheck(AiCapabilityStateType.valueOf(rows.getString(prefix + "_state")),
-                    rows.getString(prefix + "_reason"), checkedAt));
+                rows.getString(prefix + "_reason"), checkedAt));
         }
         return new StoredAiProviderConfiguration(provider(rows), rows.getString("display_name"),
             rows.getInt("display_order"), rows.getLong("configuration_revision"), Optional.empty(), Optional.empty(),

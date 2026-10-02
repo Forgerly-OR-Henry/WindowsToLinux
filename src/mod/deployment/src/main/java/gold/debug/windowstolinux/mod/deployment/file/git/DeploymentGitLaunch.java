@@ -13,7 +13,6 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.mod.ModIdentity;
 
-
 /** Resolves only this Mod's code, private JSON libraries and the public API for its worker. / 仅为 worker 解析本 Mod 代码、私有 JSON 库及公开 API。 */
 final class DeploymentGitLaunch {
     /** Prevents utility construction. / 禁止构造工具实例。 */

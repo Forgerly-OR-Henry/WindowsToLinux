@@ -260,8 +260,8 @@ class PlatformInstalledModGraphTest {
         try (var runtime = fixture.open(true)) {
             assertTrue(start(runtime, false).running().isEmpty());
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
-            var review = runtime.reviewModSchemaRetry(P, Optional.empty());
-            assertEquals(Outcome.FAILED, runtime.retryModSchema(review));
+            var review = runtime.modRecovery().review(P, Optional.empty());
+            assertEquals(Outcome.FAILED, runtime.modRecovery().retry(review));
             assertFalse(fixture.actions().stream().anyMatch(a -> a.endsWith(":construct")));
         }
         assertEquals(2, fixture.actions().stream().filter("schema:initialize"::equals).count());

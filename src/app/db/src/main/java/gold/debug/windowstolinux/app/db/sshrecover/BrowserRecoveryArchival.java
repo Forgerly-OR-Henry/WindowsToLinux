@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 
-
 /** Archives rescue state only inside its original central task transaction. / 仅在原中央任务事务内归档救援状态。 */
 public final class BrowserRecoveryArchival {
     /** Exact host protocol owning the rescue journal. / 持有救援记录的精确宿主协议。 */
@@ -60,7 +59,7 @@ public final class BrowserRecoveryArchival {
      * @param task original fully drained known result / 原完全排空的已知结果
      * @throws SQLException if ownership, summary or cleanup cannot be confirmed / 归属、摘要或清理无法确认时 */
     public static void archive(PlatformDatabase database, Connection c, LogRepository.Target target, UUID archive,
-                        TaskSnapshot task) throws SQLException {
+                               TaskSnapshot task) throws SQLException {
         if (c.getAutoCommit() || task.state() != TaskState.ENDED)
             throw new SQLException("Rescue archival requires the original terminal transaction");
         try (var p = c.prepareStatement(

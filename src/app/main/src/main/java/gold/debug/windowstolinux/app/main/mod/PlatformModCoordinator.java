@@ -25,7 +25,6 @@ import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
 
-
 /** Composes one boot's selected Mod graph and owns its reverse shutdown. / 装配一次启动的已选 Mod 图并持有其逆序关闭。 */
 public final class PlatformModCoordinator implements AutoCloseable {
     /** Actual platform and original capability factories. / 实际平台及原能力工厂。 */

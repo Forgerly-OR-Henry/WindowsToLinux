@@ -22,12 +22,16 @@ public record AiCapabilityCheck(AiCapabilityStateType state, String reason, Opti
             || state == AiCapabilityStateType.UNVERIFIED && !reason.isEmpty())
             throw new IllegalArgumentException("Invalid capability evidence");
     }
+
     /** Creates an absent capability conclusion. / 创建未验证的能力结论。
      * @return no current evidence / 无当前证据 */
     public static AiCapabilityCheck unverified() {
         return new AiCapabilityCheck(AiCapabilityStateType.UNVERIFIED, "", Optional.empty());
     }
+
     /** Reports whether the actual probe passed. / 判断实际验证是否通过。
      * @return available capability / 可用能力 */
-    public boolean available() { return state == AiCapabilityStateType.AVAILABLE; }
+    public boolean available() {
+        return state == AiCapabilityStateType.AVAILABLE;
+    }
 }

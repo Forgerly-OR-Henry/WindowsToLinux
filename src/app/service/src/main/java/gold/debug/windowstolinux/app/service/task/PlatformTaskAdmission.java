@@ -15,7 +15,6 @@ import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Resolves task ownership from the current boot's authoritative platform registry. / 根据当前启动的权威平台登记解析任务归属。 */
 public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admission {
     /** Reserved platform identity outside the valid Mod identifier syntax. / 不属于合法 Mod 标识语法的保留平台身份。 */

@@ -31,7 +31,6 @@ import gold.debug.windowstolinux.app.mod.process.ProcessChannel;
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
-
 /** Task-bound real auxiliary processes with durable creation facts and proven physical release. / 具有持久创建事实及已证明物理释放的任务绑定真实辅助进程。 */
 public final class PlatformProcessService implements ProcessService, AutoCloseable {
     /** Host-owned process resource namespace. / 宿主持有进程资源命名空间。 */
@@ -123,7 +122,7 @@ public final class PlatformProcessService implements ProcessService, AutoCloseab
                 children.add(owned);
             }
             var retained = owned;
-            tasks.authorized(task, owner, version, () -> {
+            tasks.callbacks().authorized(task, owner, version, () -> {
                 var command = new ArrayList<String>();
                 command.add(spec.executable().toString());
                 command.addAll(spec.arguments());

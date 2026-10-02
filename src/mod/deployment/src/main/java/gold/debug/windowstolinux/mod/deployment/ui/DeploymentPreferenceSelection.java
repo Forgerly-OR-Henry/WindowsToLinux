@@ -16,7 +16,6 @@ import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
-
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection;
 
 /** Persists explicit view edits without writing initialization or locale changes. / 持久化明确视图编辑，不写初始化或语言变化。 */

@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -131,6 +132,7 @@ class PlatformModelsWindowTest {
                 assertEquals(128,
                     service.outputLimit(service.listAiConfigurations().getFirst().profile().id()).orElseThrow());
                 assertTrue(service.listAiPurpose(AiPurposeType.DEPLOYMENT).isEmpty());
+                await(() -> named(frame, "ai.open.DEPLOYMENT").isEnabled());
                 onEdt(() -> {
                     ((JList<?>) named(frame, "ai.inventory")).setSelectedIndex(0);
                     ((JButton) named(frame, "ai.open.DEPLOYMENT")).doClick(0);
@@ -347,7 +349,7 @@ class PlatformModelsWindowTest {
                     ((JTextField) named(editor, "model.name")).setText("纯语音模型");
                     ((JTextField) named(editor, "model.fileEndpoint")).setText(endpoint.uri().toString());
                     ((JTextField) named(editor, "model.model")).setText("speech-model");
-                    ((JTextField) named(editor, "model.limit")).setText("128");
+                    assertTrue(((JTextField) named(editor, "model.limit")).getText().isBlank());
                     ((JPasswordField) named(editor, "model.key")).setText("voice-key");
                     ((JTextField) named(editor, "model.audio")).setText(sample.toString());
                     ((JTextField) named(editor, "model.expected")).setText("local speech");
@@ -363,6 +365,13 @@ class PlatformModelsWindowTest {
                 assertNull(row.profile().chatCompletionsEndpoint());
                 assertFalse(row.verified(AiPurposeType.VOICE));
                 onEdt(() -> {
+                    var protocol = (JComboBox<?>) named(editor, "model.capability");
+                    protocol.setSelectedItem(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.TEXT);
+                    assertFalse(named(editor, "model.verify").isEnabled(), "Pure voice configuration has no text protocol");
+                    protocol.setSelectedItem(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.VOICE_REALTIME);
+                    assertFalse(named(editor, "model.verify").isEnabled(), "Unconfigured realtime protocol cannot be probed");
+                    protocol.setSelectedItem(gold.debug.windowstolinux.app.ai.model.AiCapabilityType.VOICE_FILE);
+                    assertTrue(named(editor, "model.verify").isEnabled());
                     ((JTextField) named(editor, "model.fileEndpoint")).setText(endpoint.uri() + "/draft");
                     assertFalse(named(editor, "model.verify").isEnabled());
                     ((JTextField) named(editor, "model.fileEndpoint")).setText(endpoint.uri().toString());
@@ -375,6 +384,7 @@ class PlatformModelsWindowTest {
                 assertEquals(1, endpoint.calls.get());
                 assertTrue(service.listAiConfigurations().getFirst().verified(AiPurposeType.VOICE));
                 assertTrue(service.listAiPurpose(AiPurposeType.VOICE).isEmpty());
+                await(() -> named(frame, "ai.open.VOICE").isEnabled());
                 onEdt(() -> {
                     ((JList<?>) named(frame, "ai.inventory")).setSelectedIndex(0);
                     ((JButton) named(frame, "ai.open.VOICE")).doClick(0);
@@ -391,7 +401,8 @@ class PlatformModelsWindowTest {
             } finally {
                 onEdt(() -> {
                     if (dialog("platform.model.editor") != null) dialog("platform.model.editor").dispose();
-                    frame.dispose(); return null;
+                    frame.dispose();
+                    return null;
                 });
             }
         }

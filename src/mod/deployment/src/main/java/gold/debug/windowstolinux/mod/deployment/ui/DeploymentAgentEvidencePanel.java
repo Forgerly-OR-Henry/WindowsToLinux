@@ -13,7 +13,6 @@ import java.util.function.Supplier;
 
 import javax.swing.*;
 
-
 import gold.debug.windowstolinux.mod.deployment.service.agent.*;
 
 /** Displays original evidence and explicit safe-boundary controls without holding task capabilities. / 展示原依据及明确安全边界控件，不持有任务能力。 */

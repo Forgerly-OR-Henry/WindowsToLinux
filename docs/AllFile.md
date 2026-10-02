@@ -1,10 +1,10 @@
 # WindowsToLinux 全文件架构索引
 
-> 状态：S1～S5 活动源码迁移与首次完整根测试编译已完成；以下按当前根 Maven 活动模块及实际文件生成。本机功能按有效实际结果合集验证，源码索引不代表真实远端验收。
+> 状态：按当前根 Maven 活动模块及实际文件生成，包含 1.2 新增和迁移的生产文件；整体实施与本机验收状态见开发文档，源码索引不代表真实远端验收。
 > 范围：根与活动模块的 Maven 描述、Mod 描述、非测试 Java 源及运行资源；测试、编译产物、退出活动图的旧 shared/web 与冻结 history-src 不纳入。
 > 排序：Maven 描述置顶，其余同级按名称排序；模块的 resources 目录置后。
 > 粒度：Java 文件说明与文件同名的顶级主类型；路径省略重复的 Maven 源码、资源与项目域名前缀。实际模块、包结构与维护规则见 [File.md](File.md)。
-> 边界：S6 备份 Mod 与 S7 发行打包仍暂缓；部署 helper 保留的底层备份协议资源不等于备份 Mod 已迁移。
+> 边界：1.1 的备份 Mod 与正式发行打包仍暂缓；部署 helper 保留的底层备份协议资源不等于备份 Mod 已迁移。
 
 ```text
 WindowsToLinux/
@@ -12,77 +12,85 @@ WindowsToLinux/
 └─ src/  # 当前活动源码模块
    ├─ app/  # APP 平台模块分组
    │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  ├─ ai/  # 模型协议与传输
+   │  ├─ ai/  # AI 配置及调用
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ catalog/  # 配置目录值
+   │  │  ├─ http/  # HTTP 请求与响应
+   │  │  │  ├─ LimitedHttpBodySubscriber.java  # 在分配完整正文前拒绝超大响应
+   │  │  │  ├─ ModelHttpCall.java  # 持有一个不重放的 HTTP 模型请求及其实际客户端关闭
+   │  │  │  └─ ModelMessageCodec.java  # 编码通用模型消息并校验提供者信封，不包含业务策略
+   │  │  ├─ model/  # 模型能力、证据和用途
+   │  │  │  ├─ AiCapabilityCheck.java  # 单项能力的安全证据，不含提供方载荷
+   │  │  │  ├─ AiCapabilityStateType.java  # 独立能力验证结果
    │  │  │  ├─ AiCapabilityType.java  # 分别验证的模型输入能力
    │  │  │  ├─ AiPurposeAssignment.java  # 一个有序用途成员，位置由所属列表确定
-   │  │  │  └─ AiPurposeType.java  # 与清单展示顺序无关的独立调用用途
-   │  │  ├─ execution/  # 执行协议
-   │  │  │  └─ protocol/  # 固定执行协议
-   │  │  │     ├─ ModelCapabilityProbe.java  # 不含部署业务事实的全新文字或图像挑战
-   │  │  │     └─ ModelMessageCodec.java  # 编码通用模型消息并校验提供者信封，不包含业务策略
-   │  │  ├─ recovery/  # 原任务恢复
+   │  │  │  ├─ AiPurposeType.java  # 与清单展示顺序无关的独立调用用途
+   │  │  │  └─ ModelCapabilityProbe.java  # 不含部署业务事实的全新文字或图像挑战
+   │  │  ├─ sshrecover/  # SSH 独立救援
    │  │  │  ├─ RecoveryAction.java  # 单条建议命令，由服务负责批准
    │  │  │  └─ RecoveryProtocol.java  # 持有严格救援提示及结果解析，不执行任何建议动作
-   │  │  └─ transport/  # 传输实现
-   │  │     ├─ LimitedHttpBodySubscriber.java  # 在分配完整正文前拒绝超大响应
-   │  │     └─ ModelHttpCall.java  # 持有一个不重放的 HTTP 模型请求及其实际客户端关闭
+   │  │  └─ voice/  # 音频转写及实时会话
+   │  │     ├─ VoiceHttpCall.java  # 一个真实 multipart 转写请求，未知状态后不重放
+   │  │     ├─ VoiceProtocol.java  # 不含业务路由的有界 OpenAI 转写协议值
+   │  │     ├─ VoiceSocketSession.java  # 具有有序提交、有界队列及明确终态清理的 OpenAI 转写会话
+   │  │     └─ VoiceTranscript.java  # 由所属会话锁保护的提交身份及有界转写组装
    │  ├─ db/  # 数据库实现
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ bootstrap/  # 引导与首次准备
+   │  │  ├─ ai/  # AI 配置及调用
+   │  │  │  ├─ AiProfileRepository.java  # 在一行中保存模型连接、能力及路由状态
+   │  │  │  ├─ AiPurposeRepository.java  # 在模型行维护独立用途成员及顺序
+   │  │  │  ├─ StoredAiProviderConfiguration.java  # 同一模型绑定修订的分协议能力
+   │  │  │  └─ StoredAiProviderProfile.java  # 同一模型的可选协议地址及不透明凭据引用
+   │  │  ├─ connect/  # 物理连接与访问
+   │  │  │  ├─ ManagedJdbcConnection.java  # 追踪 JDBC 所有权，不暴露物理驱动句柄
+   │  │  │  ├─ PlatformDatabase.java  # 持有唯一嵌入式 H2 引擎及受保护引导材料
+   │  │  │  ├─ PlatformSchemaInventory.java  # 仅使用同一固定引擎正式DDL比较APP数据结构的实际结构
+   │  │  │  ├─ RepositoryConnections.java  # 在嵌套平台仓库事务间共享一个所属连接
+   │  │  │  └─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
+   │  │  ├─ error/  # 结构化错误与安全诊断
+   │  │  │  ├─ DesktopPersistenceException.java  # 结构化桌面持久化失败
+   │  │  │  └─ DesktopPersistenceFailureType.java  # 桌面持久化失败分类
+   │  │  ├─ file/  # 文件能力与取材
+   │  │  │  └─ FileRepository.java  # 所有者/任务限定的持久文件操作及链接关联
+   │  │  ├─ init/  # 引导与首次准备
    │  │  │  ├─ DatabaseBootstrap.java  # 持有受保护引导字节，不将缺失或损坏状态转换为新数据库
    │  │  │  └─ DatabaseProtection.java  # 宿主注入的当前用户保护能力，独立于数据库实现
-   │  │  ├─ entity/  # 持久记录
-   │  │  │  ├─ StoredAiProviderConfiguration.java  # 精确模型修订的清单元数据及能力证据
-   │  │  │  ├─ StoredAiProviderProfile.java  # 命名的非秘密 AI 提供者元数据；仅持久化其不透明的凭据存储键
-   │  │  │  ├─ StoredCredential.java  # 不透明凭据字节，使用后清理本地副本，包括明文格式
-   │  │  │  ├─ StoredSecurityProfile.java  # 持久密码验证信息和包装密钥，不含明文数据密钥
-   │  │  │  ├─ StoredServerIdentity.java  # 目标服务器及其可信 SSH 主机密钥的非秘密身份
-   │  │  │  ├─ StoredServerObservation.java  # 最近一次明确连接检查，不含凭据
-   │  │  │  └─ StoredServerProfile.java  # 非秘密桌面连接元数据；密码或密钥保留在 app/secret 中
-   │  │  ├─ execution/  # 执行协议
-   │  │  │  └─ schema/  # Schema准备
-   │  │  │     ├─ SchemaAccessScope.java  # 持有准备阶段连接及可选的只读验证凭据
-   │  │  │     ├─ SchemaCoordinates.java  # 将精确逻辑身份编码为有界的 H2 数据结构及所有者名称
-   │  │  │     ├─ SchemaProvisioner.java  # 创建明确登记的 Mod 数据结构，不接管已有数据库对象
-   │  │  │     ├─ SchemaSnapshot.java  # 对 H2 原生结构及行计算指纹，不创建导出文件或日志
-   │  │  │     └─ SchemaValidation.java  # 使用与作者验证相同的受限读取身份复核持久表约束
-   │  │  ├─ failure/  # 失败分类
-   │  │  │  ├─ DesktopPersistenceException.java  # 结构化桌面持久化失败
-   │  │  │  └─ DesktopPersistenceFailureType.java  # 桌面 SQLite 持久化持有的失败类型
    │  │  ├─ log/  # 所属日志
    │  │  │  ├─ EmergencyLogs.java  # 具有已核验暂存及同目录原子发布的有界类别文件
    │  │  │  ├─ LogRecordCodec.java  # 与应急存储共用的有界脱敏记录格式
    │  │  │  └─ LogRepository.java  # 持有登记标准日志表及原子写入和保留
-   │  │  ├─ mod/  # 官方 Mod 分组
+   │  │  ├─ mod/  # Mod 安装与生命周期
    │  │  │  ├─ ModActivationLedger.java  # 记录一次实际启用，不改变用户开关或版本选择
-   │  │  │  ├─ ModDeletionLedger.java  # 持久化精确安装版本或整 Mod 删除，核验清理后才注销。 File removal belongs to the installer; this ledger independently proves the registered directory is absent. / 文件由安装服务移除；本账本独立证明登记目录已不存在
+   │  │  │  ├─ ModDeletionLedger.java  # 持久化精确安装版本或整 Mod 删除，核验清理后才注销
    │  │  │  ├─ ModNavigationPreferences.java  # 在用户选择及整 Mod 清理间共用严格导航持久化
    │  │  │  ├─ ModProgramMaintenance.java  # 安装程序替换与删除共用的已停止所有者准入
    │  │  │  ├─ ModRecoveryLedger.java  # 在任务生命期之外保留原恢复会话
    │  │  │  ├─ ModReinstallationLedger.java  # 持有同版本替换检查点，不修改 Mod 数据或用户选择
    │  │  │  ├─ ModRestartLedger.java  # 根据原持久事实应用重启意图和明确数据重试
    │  │  │  └─ ModSchemaReconciliation.java  # 核对原未知数据，不运行迁移或改变用户选择
-   │  │  ├─ persistence/  # 持久化入口
-   │  │  │  ├─ connection/  # 物理连接
-   │  │  │  │  ├─ ManagedJdbcConnection.java  # 追踪 JDBC 所有权，不暴露物理驱动句柄
-   │  │  │  │  ├─ PlatformDatabase.java  # 持有唯一嵌入式 H2 引擎及受保护引导材料
-   │  │  │  │  ├─ PlatformSchemaInventory.java  # 仅使用同一固定引擎正式DDL比较APP数据结构的实际结构
-   │  │  │  │  └─ RepositoryConnections.java  # 在嵌套平台仓库事务间共享一个所属连接
-   │  │  │  └─ repository/  # 仓库访问
-   │  │  │     ├─ AiProfileRepository.java  # 在一行中保存模型连接、能力及路由状态
-   │  │  │     ├─ AiPurposeRepository.java  # 在模型行维护独立用途成员及顺序
-   │  │  │     ├─ BrowserRecoveryRepository.java  # 仅保存状态码及命令摘要，不保存终端内容
-   │  │  │     ├─ CredentialReferenceRepository.java  # 持久化 Mod 所属凭据关联，不暴露受保护值
-   │  │  │     ├─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
-   │  │  │     ├─ RepositoryTransactionExecutor.java  # 由聚焦仓库使用的共享事务原语
-   │  │  │     ├─ SecurityRepository.java  # 持久化不透明安全记录及原子凭据归属变更
-   │  │  │     ├─ ServerProfileRepository.java  # 保存连接元数据和绑定端点的认证信任
-   │  │  │     └─ ServerReferenceRepository.java  # 保存代次所属服务器引用，不检查私有业务记录
    │  │  ├─ PlatformPersistence.java  # 在受保护 H2 引擎上装配平台所属配置仓库
-   │  │  ├─ task/  # 任务与资源账本
+   │  │  ├─ schema/  # Schema 准备与管理
+   │  │  │  ├─ SchemaAccessScope.java  # 持有准备阶段连接及可选的只读验证凭据
+   │  │  │  ├─ SchemaCoordinates.java  # 将精确逻辑身份编码为有界的 H2 数据结构及所有者名称
+   │  │  │  ├─ SchemaProvisioner.java  # 创建明确登记的 Mod 数据结构，不接管已有数据库对象
+   │  │  │  ├─ SchemaSnapshot.java  # 对 H2 原生结构及行计算指纹，不创建导出文件或日志
+   │  │  │  └─ SchemaValidation.java  # 使用与作者验证相同的受限读取身份复核持久表约束
+   │  │  ├─ security/  # 安全认证与保护
+   │  │  │  ├─ CredentialReferenceRepository.java  # 持久化 Mod 所属凭据关联，不暴露受保护值
+   │  │  │  ├─ SecurityRepository.java  # 持久化不透明安全记录及原子凭据归属变更
+   │  │  │  ├─ StoredCredential.java  # 不透明凭据字节，使用后清理本地副本，包括明文格式
+   │  │  │  └─ StoredSecurityProfile.java  # 持久密码验证信息和包装密钥，不含明文数据密钥
+   │  │  ├─ server/  # 服务器配置及引用
+   │  │  │  ├─ ServerProfileRepository.java  # 保存连接元数据和绑定端点的认证信任
+   │  │  │  ├─ ServerReferenceRepository.java  # 保存代次所属服务器引用，不检查私有业务记录
+   │  │  │  ├─ StoredServerIdentity.java  # 目标服务器及其可信 SSH 主机密钥的非秘密身份
+   │  │  │  ├─ StoredServerObservation.java  # 最近一次明确连接检查，不含凭据
+   │  │  │  └─ StoredServerProfile.java  # 非秘密桌面连接元数据；密码或密钥保留在 app/secret 中
+   │  │  ├─ setting/  # 平台偏好设置
+   │  │  │  └─ DesktopPreferenceRepository.java  # 保存小型非秘密桌面偏好
+   │  │  ├─ sshrecover/  # SSH 独立救援
    │  │  │  ├─ BrowserRecoveryArchival.java  # 仅在原中央任务事务内归档救援状态
+   │  │  │  └─ BrowserRecoveryRepository.java  # 仅保存状态码及命令摘要，不保存终端内容
+   │  │  ├─ task/  # 任务执行与资源收尾
    │  │  │  ├─ DependencyRecovery.java  # 一次同步依赖调用的精确提供方及保留数据代次
    │  │  │  ├─ ProcessRecovery.java  # 独立于业务结果的精确进程创建检查点
    │  │  │  ├─ ResourceRecovery.java  # 与显式占用原子保存的有界宿主恢复事实
@@ -92,48 +100,67 @@ WindowsToLinux/
    │  │  │  ├─ TaskResource.java  # 由平台适配器确定归属的内部资源申请
    │  │  │  └─ TaskResourceObservation.java  # 对任务收尾所用相同显式资源判据进行只读观察
    │  │  └─ resources/  # 随附运行资源
-   │  │     └─ schema/  # Schema准备
+   │  │     └─ schema/  # Schema 准备与管理
    │  │        ├─ desktop.sql  # 当前模块的数据库结构与权限脚本
    │  │        └─ platform-v1.sql  # 当前模块的数据库结构与权限脚本
-   │  ├─ linux/  # Linux能力
+   │  ├─ file/  # 统一文件与链接能力
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ recovery/  # 原任务恢复
-   │  │  │  ├─ BrowserLaunchObserver.java  # 将浏览器创建绑定到宿主持有的持久资源事实
-   │  │  │  ├─ BrowserProcess.java  # 标识一个实际浏览器进程，不授予向其发信号的权限
-   │  │  │  ├─ BrowserRecoveryException.java  # 报告浏览器阶段失败，不复制页面、命令或终端内容
-   │  │  │  ├─ BrowserRecoverySession.java  # 带可撤销精确动作确认的串行 Linux 救援状态机
-   │  │  │  ├─ BrowserRecoverySnapshot.java  # 临时界面状态，命令内容不得记录日志或持久化
-   │  │  │  ├─ BrowserTerminalSession.java  # 浏览器能力限定在用户选定的单一终端
-   │  │  │  ├─ PlaywrightDriver.java  # 保留原 Playwright 连接及原生驱动，直到证实退出
-   │  │  │  ├─ PlaywrightTerminalSession.java  # 在单一串行事件线程上持有全部 Playwright 对象
-   │  │  │  ├─ RecoveryModels.java  # 向救援控制器提供临时观测及建议结果
-   │  │  │  ├─ RecoveryProbeResult.java  # 保留原始失败实例的类型化 SSH 准入结果
-   │  │  │  ├─ RecoverySessionState.java  # 工作线程持有状态，快照不含原始终端证据
-   │  │  │  ├─ RecoveryTarget.java  # 标识已准入救援端点，不含凭据或业务配置
-   │  │  │  ├─ TerminalObservation.java  # 临时终端证据，图片不得进入记录
-   │  │  │  └─ TerminalTarget.java  # 不透明终端选择，地址不含凭据、查询和片段
-   │  │  └─ ssh/  # SSH传输
-   │  │     ├─ SftpDestination.java  # 选择并发布目标，在暂存期间完整保留旧文件
-   │  │     ├─ SftpProgress.java  # 仅计算已完成文件字节，从无进展计时中排除人工等待
-   │  │     ├─ SftpTransfer.java  # 暂存一个已审核普通文件，仅在内容验证后发布
-   │  │     ├─ SshCommandExecution.java  # 持有一次已发送 SSH 通道、有界输出及输入发送线程的实际生命周期
-   │  │     ├─ SshCommandFrame.java  # 将脚本字节与命令的原始二进制输入分开传送
-   │  │     ├─ SshConnector.java  # 持有平台 SSH 客户端，不引入部署代码或环境凭据
-   │  │     ├─ SshEndpoint.java  # 精确的平台服务器身份及认证端点
-   │  │     ├─ SshOutputCapture.java  # 持续排空两条 SSH 流，同时只保留共享限额内的前缀
-   │  │     ├─ TransferConflictResolver.java  # 宿主持有的明确同名决定，独立于操作授权
-   │  │     ├─ TransferJournal.java  # 首次暂存文件变更前必需的宿主日志
-   │  │     ├─ TransferPlan.java  # 暂存一次原传输前持久化的不可变观测
-   │  │     └─ TransferProgressListener.java  # 不暴露物理工作线程的宿主所属进度发布
-   │  ├─ main/  # 平台装配与入口
+   │  │  ├─ FileBackend.java  # 主机原语，审批、链接及目录规则归统一引擎
+   │  │  ├─ FileContentPublication.java  # 负责已描述的精确文件职责
+   │  │  ├─ FileCopyPlan.java  # 副作用前捕获精确复制位置、冲突选择及登记链接依赖
+   │  │  ├─ FileCopyRun.java  # 负责已描述的精确文件职责
+   │  │  ├─ FileEngine.java  # 有界文件操作、不跟随遍历、精确计划及持久副作用依据
+   │  │  ├─ FileJournal.java  # 持久副作用前依据及有界所有者链接登记
+   │  │  ├─ FileLinkMaintenance.java  # 文件副作用前保留的精确原链接及移动目标依据
+   │  │  ├─ FileMaintenanceRun.java  # 仅对移动目标仍可证明的未完成原链接重新授权
+   │  │  ├─ FileRecycleReceipt.java  # 标识实际可恢复对象及可选独立恢复元数据
+   │  │  ├─ FrozenSourceWork.java  # 持有一个任务本地快照及可核验清理标记
+   │  │  ├─ LocalFileBackend.java  # 当前进程账户文件访问，不附加全局根限制
+   │  │  ├─ SelectedDirectory.java  # 仅读取一个已确认目录中明确命名的普通文件
+   │  │  └─ SourceWorkDirectory.java  # 持有任务本地文件容器及其持久物理身份
+   │  ├─ linux/  # Linux 与受管远程能力
+   │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
+   │  │  ├─ sftp/  # 受管文件传输
+   │  │  │  ├─ SftpDestination.java  # 选择并发布目标，在暂存期间完整保留旧文件
+   │  │  │  ├─ SftpFileBackend.java  # 原认证受管 SSH 通道上的文件原语
+   │  │  │  ├─ SftpProgress.java  # 仅计算已完成文件字节，从无进展计时中排除人工等待
+   │  │  │  ├─ SftpTransfer.java  # 暂存一个已审核普通文件，仅在内容验证后发布
+   │  │  │  ├─ TransferConflictResolver.java  # 宿主持有的明确同名决定，独立于操作授权
+   │  │  │  ├─ TransferJournal.java  # 首次暂存文件变更前必需的宿主日志
+   │  │  │  ├─ TransferPlan.java  # 暂存一次原传输前持久化的不可变观测
+   │  │  │  └─ TransferProgressListener.java  # 不暴露物理工作线程的宿主所属进度发布
+   │  │  └─ ssh/  # 受管 SSH
+   │  │     ├─ connect/  # 物理连接与访问
+   │  │     │  ├─ ClientIoLifecycle.java  # 独立于 SSHD 逻辑关闭凭据持有真实客户端 I/O 群组
+   │  │     │  ├─ SshCommandExecution.java  # 持有一次已发送 SSH 通道、有界输出及输入发送线程的实际生命周期
+   │  │     │  ├─ SshCommandFrame.java  # 将脚本字节与命令的原始二进制输入分开传送
+   │  │     │  ├─ SshConnector.java  # 持有平台 SSH 客户端，不引入部署代码或环境凭据
+   │  │     │  ├─ SshEndpoint.java  # 精确的平台服务器身份及认证端点
+   │  │     │  └─ SshOutputCapture.java  # 持续排空两条 SSH 流，同时只保留共享限额内的前缀
+   │  │     └─ recover/  # 所属功能分组
+   │  │        ├─ BrowserLaunchObserver.java  # 将浏览器创建绑定到宿主持有的持久资源事实
+   │  │        ├─ BrowserProcess.java  # 标识一个实际浏览器进程，不授予向其发信号的权限
+   │  │        ├─ BrowserRecoveryException.java  # 报告浏览器阶段失败，不复制页面、命令或终端内容
+   │  │        ├─ BrowserRecoverySession.java  # 带可撤销精确动作确认的串行 Linux 救援状态机
+   │  │        ├─ BrowserRecoverySnapshot.java  # 临时界面状态，命令内容不得记录日志或持久化
+   │  │        ├─ BrowserTerminalSession.java  # 浏览器能力限定在用户选定的单一终端
+   │  │        ├─ PlaywrightDriver.java  # 保留原 Playwright 连接及原生驱动，直到证实退出
+   │  │        ├─ PlaywrightTerminalSession.java  # 在单一串行事件线程上持有全部 Playwright 对象
+   │  │        ├─ RecoveryModels.java  # 向救援控制器提供临时观测及建议结果
+   │  │        ├─ RecoveryProbeResult.java  # 保留原始失败实例的类型化 SSH 准入结果
+   │  │        ├─ RecoverySessionState.java  # 工作线程持有状态，快照不含原始终端证据
+   │  │        ├─ RecoveryTarget.java  # 标识已准入救援端点，不含凭据或业务配置
+   │  │        ├─ TerminalObservation.java  # 临时终端证据，图片不得进入记录
+   │  │        └─ TerminalTarget.java  # 不透明终端选择，地址不含凭据、查询和片段
+   │  ├─ main/  # 平台装配入口
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
    │  │  ├─ AppMain.java  # 桌面应用入口
-   │  │  ├─ diagnostic/  # 专属诊断
+   │  │  ├─ error/  # 结构化错误与安全诊断
    │  │  │  ├─ DesktopFailureReportStore.java  # 将有界宿主失败送入既有数据库或启动应急队列
    │  │  │  ├─ DesktopStartupException.java  # 阻止桌面安全启动的结构化失败
    │  │  │  ├─ DesktopSystemFailureType.java  # 持有的桌面进程失败类型
    │  │  │  └─ DesktopUncaughtFailureBoundary.java  # 桌面未捕获失败的最终进程边界
-   │  │  ├─ mod/  # 官方 Mod 分组
+   │  │  ├─ mod/  # Mod 安装与生命周期
    │  │  │  ├─ ModSchemaInspection.java  # 持有一次明确只读检查，仅重试其原清理
    │  │  │  ├─ ModSchemaPreparation.java  # 持有隔离初始化或迁移，只重试清理而不重放作者代码
    │  │  │  ├─ PlatformModContext.java  # 持有一次实际 Mod 启用的完整能力及暂存扩展
@@ -141,40 +168,39 @@ WindowsToLinux/
    │  │  │  ├─ PlatformModHost.java  # 向 Mod 装配提供已有平台能力，不依赖启动实现
    │  │  │  └─ PlatformModRecovery.java  # 在普通启动装配前持有隔离的原发布恢复组
    │  │  ├─ runtime/  # 运行时观察
-   │  │  │  ├─ RunModeResolver.java  # 已解析的运行时布局。未知布局被刻意设计为不可表示，从而防止调用方静默回退到工作目录
+   │  │  │  ├─ RunModeResolver.java  # 模式按 DB 模块、jpackage 模式按 EXE 解析固定 data 目录
    │  │  │  └─ RuntimePathResolver.java  # 定位并验证受支持的开发、JAR 与 jpackage 文件系统布局
-   │  │  ├─ startup/  # 平台启动
+   │  │  ├─ start/  # 程序入口与启动
    │  │  │  ├─ DesktopMain.java  # 使用固定路径、当前用户保护及 H2 的生产平台引导
    │  │  │  ├─ PlatformBuildIdentity.java  # 读取编译后的启动身份并落实阻塞生命周期边界
    │  │  │  └─ PlatformRuntime.java  # 为一次桌面启动持有平台存储、任务执行及安全会话
    │  │  └─ resources/  # 随附运行资源
    │  │     └─ build.properties  # 当前模块的固定配置或语言资源
-   │  ├─ mod/  # 官方 Mod 分组
+   │  ├─ mod/  # Mod 安装与生命周期
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ development/  # CLASS开发支持
+   │  │  ├─ config/  # 类型化配置
+   │  │  │  ├─ ManifestReader.java  # 严格读取有界 UTF-8 作者清单，不加载作者类
+   │  │  │  └─ ModManifest.java  # 已解析的作者元数据，独立于安装意图及运行状态
+   │  │  ├─ dev/  # 开发模式运行
    │  │  │  ├─ DevelopmentDescriptor.java  # 使用相同显式输入摘要读取及生成构建所属 CLASS 来源
    │  │  │  ├─ DevelopmentModDiscovery.java  # 发现当前已编译 Mod 声明，不执行任何作者代码
    │  │  │  └─ MavenDevelopmentInputs.java  # 编译前捕获 Maven 已解析模型，不重新解析依赖声明
-   │  │  ├─ execution/  # 执行协议
-   │  │  │  └─ lifecycle/  # 生命周期
-   │  │  │     ├─ ModDependencyPlan.java  # 在加载代码前检查已选且启用的版本，不改变用户意图
-   │  │  │     └─ ModRuntimeSession.java  # 启用一个已准备的 Mod，并保留部分停止归属直至实际清理
-   │  │  ├─ installation/  # 安装与原包处理
+   │  │  ├─ install/  # Mod 安装与打包
    │  │  │  ├─ ModPackageReader.java  # 读取并暂存原包，不加载作者类或改变已安装状态
    │  │  │  ├─ ModPackageTool.java  # 执行构建所属 CLASS 描述生成，不加载作者代码
    │  │  │  └─ ModZip.java  # 约束 ZIP 元数据及嵌套视图，不展开内嵌归档
-   │  │  ├─ loader/  # 类加载
+   │  │  ├─ load/  # 所属功能分组
    │  │  │  ├─ ModClassLoader.java  # 共享声明的公开类型，同时将作者代码与宿主实现隔离
    │  │  │  ├─ ModClassShape.java  # 不定义类、不访问方法体地读取声明元数据
    │  │  │  ├─ ModCodeInspection.java  # 原包与编译来源共用的有界入口及导出静态准入
    │  │  │  └─ ModEntryFactory.java  # 仅在启用期间检查公开形状与来源后构造入口
-   │  │  ├─ manifest/  # Mod描述解析
-   │  │  │  ├─ ManifestReader.java  # 严格读取有界 UTF-8 作者清单，不加载作者类
-   │  │  │  └─ ModManifest.java  # 已解析的作者元数据，独立于安装意图及运行状态
    │  │  ├─ process/  # 受管进程
    │  │  │  ├─ ProcessChannel.java  # 持有一个真实子进程的有界协议传输；宿主负责准入和持久占用
    │  │  │  └─ ProcessProtocol.java  # 独立于任务准入的严格第一版辅助进程帧
-   │  │  ├─ service/  # 用例服务
+   │  │  ├─ run/  # Mod 执行生命周期
+   │  │  │  ├─ ModDependencyPlan.java  # 在加载代码前检查已选且启用的版本，不改变用户意图
+   │  │  │  └─ ModRuntimeSession.java  # 启用一个已准备的 Mod，并保留部分停止归属直至实际清理
+   │  │  ├─ service/  # 平台业务服务
    │  │  │  └─ ServiceSnapshot.java  # 复制有界服务值，不让活动提供方资源跨越调用
    │  │  ├─ version/  # 版本比较
    │  │  │  ├─ SemanticVersion.java  # 比较规范 SemVer 发布版本，避免整数溢出且不接收构建元数据
@@ -183,50 +209,45 @@ WindowsToLinux/
    │  │     └─ META-INF/  # Java标准元数据
    │  │        └─ maven/  # maven 语言或工具链构建职责
    │  │           └─ plugin.xml  # 当前模块的随附运行资源
-   │  ├─ secret/  # 秘密引用
+   │  ├─ secret/  # 秘密存储及授权
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
    │  │  ├─ CredentialVault.java  # 使用仅内存引用计数密钥句柄的统一数据库凭据库
    │  │  ├─ crypto/  # 密码学保护
    │  │  │  └─ PasswordKeyCrypto.java  # 第一版主密码包装及凭据认证加密
-   │  │  ├─ SecretStore.java  # 平台凭据边界。调用方收到副本，并且必须在使用后清除
+   │  │  ├─ SecretStore.java  # 平台凭据边界
    │  │  ├─ SecretStoreException.java  # 报告凭据失败，不复制秘密输入或提供方消息
    │  │  └─ SecretStoreFailureType.java  # 使用平台公开词汇表达凭据失败
-   │  ├─ service/  # 用例服务
+   │  ├─ service/  # 平台业务服务
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ ai/  # 模型协议与传输
+   │  │  ├─ ai/  # AI 配置及调用
+   │  │  │  ├─ AiInventoryAccess.java  # 平台非秘密模型清单及明确用途选择
+   │  │  │  ├─ AiProviderProfile.java  # 同一模型及明确配置的分协议端点
+   │  │  │  ├─ AiProviderSummary.java  # 同一模型绑定修订的分协议能力
    │  │  │  ├─ PlatformAiService.java  # 经冻结用途选择及原任务凭据路由通用模型调用
    │  │  │  └─ PlatformModelService.java  # 持有已验证模型配置及明确用途选择
-   │  │  ├─ contract/  # 契约值
-   │  │  │  ├─ definition/  # 配置定义
-   │  │  │  │  ├─ RecoverySnapshot.java  # 临时界面状态，命令内容不得记录日志或持久化
-   │  │  │  │  └─ RecoveryTerminal.java  # 提供可选救援终端，不泄漏浏览器实现类型
-   │  │  │  ├─ profile/  # 配置档案
-   │  │  │  │  ├─ AiProviderProfile.java  # 命名的非秘密 AI 提供者元数据，运行顺序由全局调用链负责
-   │  │  │  │  ├─ ServerProfile.java  # 已保存的非秘密桌面连接资料
-   │  │  │  │  └─ ServerSummary.java  # 服务器卡片及带时间的连接证据，不含凭据
-   │  │  │  ├─ result/  # 执行结果
-   │  │  │  │  ├─ AiProviderSummary.java  # 不含凭据明文且能力证据独立的清单行
-   │  │  │  │  ├─ ApplicationServiceException.java  # 桌面应用服务边界的非受检结构化失败
-   │  │  │  │  └─ ApplicationServiceFailureType.java  # 桌面应用服务边界抛出的稳定失败
-   │  │  │  ├─ security/  # 安全与授权
-   │  │  │  │  ├─ DesktopSecurityState.java  # 不含秘密的桌面授权状态
-   │  │  │  │  ├─ DesktopTaskAuthorization.java  # 持有跨工作线程的已授权桌面操作
-   │  │  │  │  └─ SecurityApplicationFacade.java  # 安全边界只暴露状态和密码操作，不暴露密钥
-   │  │  │  ├─ spi/  # 扩展契约
-   │  │  │  │  ├─ AiInventoryAccess.java  # 平台非秘密模型清单及明确用途选择
-   │  │  │  │  ├─ ServerProfileEditor.java  # 保存平台连接设置，不调用部署或远端准备
-   │  │  │  │  ├─ SourceDirectoryPicker.java  # 原任务目录选择的宿主回调契约
-   │  │  │  │  └─ TaskManagement.java  # 宿主任务清单及明确原任务操作
-   │  │  │  └─ SshRecoverySession.java  # 控制一次救援，不暴露浏览器和持久化内部对象
-   │  │  ├─ database/  # 原生数据库协议
+   │  │  ├─ db/  # 数据库实现
    │  │  │  └─ TaskModDatabase.java  # 将所属业务 JDBC 直接连接到原始任务的资源账本
-   │  │  ├─ linux/  # Linux能力
+   │  │  ├─ error/  # 结构化错误与安全诊断
+   │  │  │  ├─ ApplicationServiceException.java  # 桌面应用服务边界的非受检结构化失败
+   │  │  │  └─ ApplicationServiceFailureType.java  # 桌面应用服务边界抛出的稳定失败
+   │  │  ├─ file/  # 文件能力与取材
+   │  │  │  ├─ FileBackendAccess.java  # 平台专有的任务绑定本机或既有受管 SSH 文件通道访问
+   │  │  │  ├─ FileDeletionReview.java  # 签发授权前独立校验实际删除事实及 AI 决定
+   │  │  │  ├─ FileDirectoryPicker.java  # 原任务目录选择的宿主回调契约
+   │  │  │  ├─ FileInteraction.java  # 保持调用方审批和任务等待的平台交互
+   │  │  │  ├─ FileOperationRecovery.java  # 核对原物理依据，仅修复已证明的链接元数据
+   │  │  │  ├─ FileSettingsService.java  # 在既有桌面偏好中保存可选删除说明
+   │  │  │  ├─ FileTransfers.java  # 将单个预先计划的普通文件接入既有持久传输状态机
+   │  │  │  ├─ PlatformFileAccess.java  # 将用户所选文件及所属快照绑定到原 Mod 任务
+   │  │  │  ├─ PlatformFileCoordinator.java  # 实际审批、持久化及受管传输接通的任务授权通用文件服务
+   │  │  │  └─ PlatformFileInteraction.java  # 将文件决定、可选说明及等待接入真实宿主授权
+   │  │  ├─ linux/  # Linux 与受管远程能力
    │  │  │  ├─ PlatformLinuxService.java  # 将已保存服务器及已审核副作用接入真实任务所属 SSH 资源
    │  │  │  ├─ TransferConfiguration.java  # 每个逻辑网络操作只捕获一次的非秘密平台阈值
    │  │  │  └─ TransferSettingsService.java  # 保存独立平台传输偏好，不保留任务授权或检查点
    │  │  ├─ log/  # 所属日志
    │  │  │  └─ PlatformLogService.java  # 独立于业务结果协调真实 SQL 及应急诊断
-   │  │  ├─ mod/  # 官方 Mod 分组
+   │  │  ├─ mod/  # Mod 安装与生命周期
    │  │  │  ├─ ModHostLease.java  # 将实际任务准入门及暂存宿主扩展绑定到一次 Mod 启用
    │  │  │  ├─ ModInstallationCleanup.java  # 仅审阅和移除明确接纳安装的有界文件集合
    │  │  │  ├─ ModOwnedCleanup.java  # 不跟随链接地审阅整所有者安装程序及明确归属辅助文件
@@ -239,57 +260,53 @@ WindowsToLinux/
    │  │  │  └─ PlatformModServices.java  # 具有启用发布及逐调用任务归属的共用实际服务登记器
    │  │  ├─ process/  # 受管进程
    │  │  │  └─ PlatformProcessService.java  # 具有持久创建事实及已证明物理释放的任务绑定真实辅助进程
-   │  │  ├─ recovery/  # 原任务恢复
+   │  │  ├─ secret/  # 秘密存储及授权
+   │  │  │  └─ PlatformSecretService.java  # 经已接纳任务提供所有者绑定的受保护字节及代次所属引用
+   │  │  ├─ security/  # 安全认证与保护
+   │  │  │  ├─ DesktopSecurityService.java  # 持有会话授权、已接纳任务句柄及独占安全变更
+   │  │  │  ├─ DesktopSecurityState.java  # 不含秘密的桌面授权状态
+   │  │  │  ├─ DesktopTaskAuthorization.java  # 持有跨工作线程的已授权桌面操作
+   │  │  │  └─ SecurityApplicationFacade.java  # 安全边界只暴露状态和密码操作，不暴露密钥
+   │  │  ├─ server/  # 服务器配置及引用
+   │  │  │  ├─ PlatformServerAccess.java  # 提供任务已准入服务器观测及精确代次持久引用
+   │  │  │  ├─ PlatformServerService.java  # 管理平台服务器设置及任务所属认证检查，不依赖部署代码
+   │  │  │  ├─ ServerProfile.java  # 已保存的非秘密桌面连接资料
+   │  │  │  ├─ ServerProfileEditor.java  # 保存平台连接设置，不调用部署或远端准备
+   │  │  │  └─ ServerSummary.java  # 服务器卡片及带时间的连接证据，不含凭据
+   │  │  ├─ sshrecover/  # SSH 独立救援
    │  │  │  ├─ PlatformRecoveryModels.java  # 使用原平台任务及已配置模型预算提供救援建议
    │  │  │  ├─ PlatformRecoveryService.java  # 在中央平台任务中持有独立浏览器救援及精确原资源清理
    │  │  │  ├─ RecoveryProbeAdapter.java  # 将原平台异常分类为Linux所属救援证据
+   │  │  │  ├─ RecoverySnapshot.java  # 临时界面状态，命令内容不得记录日志或持久化
+   │  │  │  ├─ RecoveryTerminal.java  # 提供可选救援终端，不泄漏浏览器实现类型
+   │  │  │  ├─ SshRecoverySession.java  # 控制一次救援，不暴露浏览器和持久化内部对象
    │  │  │  └─ TaskBrowserSession.java  # 将隔离浏览器保留在原中央任务，直到物理及持久清理完成
-   │  │  ├─ secret/  # 秘密引用
-   │  │  │  └─ PlatformSecretService.java  # 经已接纳任务提供所有者绑定的受保护字节及代次所属引用
-   │  │  ├─ security/  # 安全与授权
-   │  │  │  └─ DesktopSecurityService.java  # 持有会话授权、已接纳任务句柄及独占安全变更
-   │  │  ├─ server/  # 服务器引用
-   │  │  │  ├─ PlatformServerAccess.java  # 提供任务已准入服务器观测及精确代次持久引用
-   │  │  │  └─ PlatformServerService.java  # 管理平台服务器设置及任务所属认证检查，不依赖部署代码
-   │  │  ├─ source/  # 受管取材
-   │  │  │  └─ PlatformSourceAccess.java  # 将用户所选文件及所属快照绑定到原 Mod 任务
-   │  │  └─ task/  # 任务与资源账本
+   │  │  └─ task/  # 任务执行与资源收尾
    │  │     ├─ HostTaskRecovery.java  # 核验已知宿主协议消失的进程内资源
    │  │     ├─ PlatformAuthorizationService.java  # 持有持久权限偏好及宿主启动流程的临时作用域
    │  │     ├─ PlatformInteractionService.java  # 持有调用方绑定的人工审核及单次授权，不持久化秘密输入
    │  │     ├─ PlatformTaskAdmission.java  # 根据当前启动的权威平台登记解析任务归属
    │  │     ├─ PlatformTaskManagement.java  # 将明确桌面操作路由到原任务及宿主救援确认边界
    │  │     ├─ PlatformTaskRuntime.java  # 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属
-   │  │     └─ TaskCapabilityScope.java  # 跟踪同步平台能力操作，直至物理和持久释放完成
-   │  ├─ source/  # 受管取材
+   │  │     ├─ TaskCapabilityScope.java  # 跟踪同步平台能力操作，直至物理和持久释放完成
+   │  │     └─ TaskManagement.java  # 宿主任务清单及明确原任务操作
+   │  ├─ ui/  # Swing 界面
    │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ boundary/  # 准入与发送边界
-   │  │  │  └─ SelectedDirectory.java  # 仅读取一个已确认目录中明确命名的普通文件
-   │  │  └─ snapshot/  # 原快照
-   │  │     ├─ FrozenSourceWork.java  # 持有一个任务本地快照及可核验清理标记
-   │  │     └─ SourceWorkDirectory.java  # 持有任务本地文件容器及其持久物理身份
-   │  ├─ ui/  # Swing页面
-   │  │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  │  ├─ ai/  # 模型协议与传输
+   │  │  ├─ ai/  # AI 配置及调用
    │  │  │  ├─ AiInventoryState.java  # 外观变化时保留的非秘密内联编辑状态
    │  │  │  ├─ AiModelInventoryPane.java  # 内联编辑用途时保持原模型清单可见
    │  │  │  ├─ AiProviderDragTransfer.java  # 只调整一个模型列表顺序，不转移用途成员
-   │  │  │  ├─ PlatformModelDialog.java  # 编辑模型并观察中央持有的验证任务
+   │  │  │  ├─ PlatformModelDialog.java  # 保存明确模型配置并单独观察能力验证
    │  │  │  └─ PlatformModelsPane.java  # 常驻模型清单及明确的中断探测恢复
-   │  │  ├─ component/  # 组件事实
+   │  │  ├─ control/  # 通用界面控件
    │  │  │  ├─ DesktopComponentFactory.java  # 按所选桌面主题及共享视觉约定创建 Swing 控件
-   │  │  │  ├─ WrappingFlowLayout.java  # 按可用宽度测量换行操作区
    │  │  │  ├─ DesktopIcons.java  # 跟随主题的内置 SVG 图标
-   │  │  │  ├─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
-   │  │  │  ├─ DesktopTaskHandle.java  # 通过中断其工作线程取消单个任务，完成回调等待资源清理
    │  │  │  ├─ DesktopThemeBindings.java  # 更新已有主题控件时保留明确的配色角色
    │  │  │  ├─ RoundedCard.java  # 共用的可缩放圆角表面
-   │  │  │  └─ WorkflowLaunchButton.java  # 捕获实际选定流程及目标作用域的宿主启动控件
-   │  │  ├─ diagnostic/  # 专属诊断
-   │  │  │  ├─ DesktopFailurePresenter.java  # 将任务失败转换为安全的本地化 UI 文本和报告引用
-   │  │  │  ├─ FailureReportRecord.java  # 本地诊断尽力写入的结果
-   │  │  │  ├─ FailureReportStore.java  # 面向 UI 的安全本地诊断报告窄边界
-   │  │  │  └─ PageMessagePresenter.java  # 独立页面控制器共享的本地化与诊断格式化
+   │  │  │  └─ WrappingFlowLayout.java  # 按可用宽度测量换行操作区
+   │  │  ├─ debug/  # 所属功能分组
+   │  │  │  ├─ UiDebugDialog.java  # 不持有生产写入、SSH或模型能力的仅CLASS固定数据目录
+   │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ display/  # 界面展示
    │  │  │  ├─ DesktopComboBoxUi.java  # 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制
    │  │  │  ├─ DesktopDisplayConfiguration.java  # 在桌面设置页面选择的可持久化显示偏好
@@ -297,37 +314,45 @@ WindowsToLinux/
    │  │  │  ├─ SystemThemeResolver.java  # 读取 Windows 应用外观偏好，但不写入系统注册表
    │  │  │  ├─ ThemeMode.java  # 用户可选择的桌面外观偏好
    │  │  │  └─ ThemePalette.java  # 单个生效浅色或深色外观使用的不可变应用颜色
-   │  │  ├─ i18n/  # 双语文本
+   │  │  ├─ error/  # 结构化错误与安全诊断
+   │  │  │  ├─ DesktopFailurePresenter.java  # 将任务失败转换为安全的本地化 UI 文本和报告引用
+   │  │  │  ├─ FailureReportRecord.java  # 本地诊断尽力写入的结果
+   │  │  │  ├─ FailureReportStore.java  # 面向 UI 的安全本地诊断报告窄边界
+   │  │  │  └─ PageMessagePresenter.java  # 独立页面控制器共享的本地化与诊断格式化
+   │  │  ├─ language/  # 语言资源与切换
    │  │  │  ├─ LocaleBinding.java  # 显式绑定展示文本的语言，不解释用户输入
-   │  │  │  ├─ LocalizedMessage.java  # 校验并绑定本地化消息所需输入
+   │  │  │  ├─ LocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
    │  │  │  └─ MessageCatalog.java  # 从区域设置资源包解析应用消息键和非递归命名占位符
-   │  │  ├─ mod/  # 官方 Mod 分组
+   │  │  ├─ mod/  # Mod 安装与生命周期
+   │  │  │  ├─ ExtensionPagePane.java  # 挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项
    │  │  │  ├─ ModNavigationPane.java  # 仅展示明确固定且当前已发布的页面身份
    │  │  │  ├─ ModOriginalsPane.java  # 管理明确发现的原包及其原中断安装
    │  │  │  ├─ ModPageRegistry.java  # 持有暂存页面扩展及限定在 EDT 的作者视图生命周期
    │  │  │  └─ PlatformModsPane.java  # 经原宿主管理 Mod 已存选择及明确数据维护
-   │  │  ├─ recovery/  # 原任务恢复
-   │  │  │  ├─ SshRecoveryDialog.java  # 非模态人工登录交接及精确命令批准
-   │  │  │  └─ TaskRecoveryPane.java  # 保留任务检查及明确原任务取消或核对
-   │  │  ├─ server/  # 服务器引用
+   │  │  ├─ server/  # 服务器配置及引用
    │  │  │  ├─ PlatformServersPane.java  # 带显式任务恢复的常驻配置及仅认证 SSH 页面
    │  │  │  └─ ServerProfileDialog.java  # 独立服务器配置编辑窗口，连接检查是单独动作
-   │  │  ├─ setting/  # 所属设置
+   │  │  ├─ setting/  # 平台偏好设置
    │  │  │  ├─ AuthorizationSettingsPane.java  # 独立于 AI 审批，仅编辑持久平台策略
+   │  │  │  ├─ FileSettingsPane.java  # 仅编辑可选说明偏好，保留持久确认及隐私门禁
    │  │  │  ├─ LogSettingsPane.java  # 仅宿主的诊断清单、有界记录视图及明确历史清理
    │  │  │  ├─ PlatformAppearancePane.java  # 持久化明确的外观选择，不重建运行器或业务页面
    │  │  │  ├─ SecuritySettingsPane.java  # 重新验证密码后修改全局安全设置
-   │  │  │  ├─ TransferSettingsPane.java  # 使用持久化已确认值的常驻平台阈值编辑器
-   │  │  │  ├─ UiDebugDialog.java  # 不持有生产写入、SSH或模型能力的仅CLASS固定数据目录
-   │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
-   │  │  ├─ shell/  # Shell执行
+   │  │  │  └─ TransferSettingsPane.java  # 使用持久化已确认值的常驻平台阈值编辑器
+   │  │  ├─ sshrecover/  # SSH 独立救援
+   │  │  │  └─ SshRecoveryDialog.java  # 非模态人工登录交接及精确命令批准
+   │  │  ├─ task/  # 任务执行与资源收尾
+   │  │  │  ├─ DesktopTaskExecutor.java  # 运行后台操作并将完成结果返回 Swing 事件线程
+   │  │  │  ├─ DesktopTaskHandle.java  # 通过中断其工作线程取消单个任务，完成回调等待资源清理
+   │  │  │  ├─ TaskInteractionPresenter.java  # 在平台隐私窗口所属对话框内呈现完整任务审核
+   │  │  │  ├─ TaskRecoveryPane.java  # 保留任务检查及明确原任务取消或核对
+   │  │  │  └─ WorkflowLaunchButton.java  # 捕获实际选定流程及目标作用域的宿主启动控件
+   │  │  ├─ window/  # 窗口装配与生命周期
    │  │  │  ├─ DesktopLockController.java  # 统一遮挡桌面外壳和所有从属窗口
-   │  │  │  ├─ ExtensionPagePane.java  # 挂载已打开的 Mod 视图及按所有者分组的设置，不添加导航固定项
    │  │  │  ├─ PlatformFrame.java  # 承载安全控件及独立所属 Mod 视图的平台桌面
-   │  │  │  ├─ PlatformNavigationShell.java  # 保留页面实例的侧栏、标题及设置分类外壳
-   │  │  │  └─ TaskInteractionPresenter.java  # 在平台隐私窗口所属对话框内呈现完整任务审核
+   │  │  │  └─ PlatformNavigationShell.java  # 围绕已有页面实例的常驻桌面导航
    │  │  └─ resources/  # 随附运行资源
-   │  │     ├─ component/  # 组件事实
+   │  │     ├─ control/  # 通用界面控件
    │  │     │  └─ icons/  # 界面图标
    │  │     │     ├─ archive.svg  # 当前模块的随附运行资源
    │  │     │     ├─ arrow-right.svg  # 当前模块的随附运行资源
@@ -350,16 +375,22 @@ WindowsToLinux/
    │  │     │     ├─ settings.svg  # 当前模块的随附运行资源
    │  │     │     ├─ shield-alert.svg  # 当前模块的随附运行资源
    │  │     │     └─ shield.svg  # 当前模块的随附运行资源
-   │  │     └─ i18n/  # 双语文本
+   │  │     └─ language/  # 语言资源与切换
    │  │        └─ messages/  # 双语消息
    │  │           ├─ Messages.properties  # 提供桌面界面的英文基准消息目录
    │  │           └─ Messages_zh_CN.properties  # 提供与英文消息键一致的简体中文界面映射
-   │  └─ windows/  # Windows原生能力
+   │  └─ windows/  # Windows 原生适配
    │     ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │     ├─ filesystem/  # 受管文件系统
+   │     ├─ file/  # 文件能力与取材
    │     │  ├─ WindowsFileIdentity.java  # 不跟随末级重解析点，读取卷及原生文件身份
-   │     │  └─ WindowsFilePublication.java  # 按明确原生重命名规则发布已验证文件或整个目录
-   │     ├─ security/  # 安全与授权
+   │     │  ├─ WindowsFilePublication.java  # 按明确原生重命名规则发布已验证文件或整个目录
+   │     │  ├─ WindowsLinks.java  # 不跟随地识别 Windows 符号链接及目录联接点
+   │     │  ├─ WindowsRecycle.java  # 使用原生回收回执，绝不回退永久删除
+   │     │  ├─ WindowsRecycleInformation.java  # 校验有界 Windows 回收元数据，不根据缺失推断可恢复性
+   │     │  ├─ WindowsRecycleNative.java  # 在一个平台线程 COM 单元内完整持有原生 Shell 对象
+   │     │  ├─ WindowsRecycleReceipt.java  # 已观测 Windows 回收对象的内部证明
+   │     │  └─ WindowsRecycleSink.java  # 接收实际 PostDeleteItem 结果，并保留完整 COM 回调表
+   │     ├─ security/  # 安全认证与保护
    │     │  └─ CurrentUserProtection.java  # 使用 Windows 当前用户 DPAPI 保护引导材料
    │     ├─ uninstall/  # Mod卸载更新
    │     │  ├─ DesktopUninstallCoordinator.java  # 在已验证本地应用边界内执行显式选择的卸载
@@ -395,18 +426,18 @@ WindowsToLinux/
    │     │  ├─ DesktopUpdateTrustPolicy.java  # 固定发布信任根及本地更新策略
    │     │  ├─ DesktopUpdateVerification.java  # 完整的软件包完整性、信任、版本及架构证据
    │     │  └─ DesktopUpdateVerifier.java  # 使用单个固定 Ed25519 发布信任根验证已暂存软件包
-   │     ├─ window/  # 所属窗口隐私
+   │     ├─ window/  # 窗口装配与生命周期
    │     │  └─ WindowPrivacy.java  # 仅隐藏当前应用所属子进程的原生窗口
    │     ├─ workspace/  # 受管工作区
    │     │  ├─ DesktopHandoffEnvelopeCodec.java  # 独立传输桌面交接共用的认证二进制信封
    │     │  ├─ WindowsWorkspaceException.java  # 桌面持有的 Windows 工作区结构化受检失败
    │     │  └─ WindowsWorkspaceFailureType.java  # 桌面工作区边界持有的失败类型
    │     └─ resources/  # 随附运行资源
-   │        └─ window/  # 所属窗口隐私
+   │        └─ window/  # 窗口装配与生命周期
    │           └─ window-privacy.ps1  # 当前模块的随附运行资源
    ├─ appapi/  # 公开 Mod API
    │  ├─ pom.xml  # 当前 Maven 模块与依赖声明
-   │  ├─ ai/  # 模型协议与传输
+   │  ├─ ai/  # AI 配置及调用
    │  │  ├─ AiImage.java  # 视觉请求使用的不可变图像字节
    │  │  ├─ AiMessage.java  # 包含独立图像附件列表的有序模型消息
    │  │  ├─ AiPurpose.java  # 平台调用选用的配置模型组
@@ -414,15 +445,37 @@ WindowsToLinux/
    │  │  ├─ AiResponse.java  # 不暴露提供方实现类型的模型响应及用量
    │  │  ├─ AiRole.java  # 有序模型对话中的消息角色
    │  │  ├─ AiService.java  # 绑定调用方并校验任务授权及预算的模型能力
-   │  │  └─ AiUsage.java  # 提供方可选报告的非负令牌用量
+   │  │  ├─ AiUsage.java  # 提供方可选报告的非负令牌用量
+   │  │  ├─ VoiceEvent.java  # 一个转写观测；增量追加，最终文字替换本片段所有增量
+   │  │  ├─ VoiceListener.java  # 在传输线程串行投递的有界转写回调，应及时返回，不得等待会话完成
+   │  │  ├─ VoiceOptions.java  # 实时输入为单声道小端 PCM16、24 kHz，最多 30 分钟
+   │  │  ├─ VoiceRequest.java  # 完整 WAV 输入：小端 PCM16、单声道、24 kHz，最多 25 MB
+   │  │  ├─ VoiceResponse.java  # 已确认最终文字及有序片段；实时失败结果可以保留已确认片段
+   │  │  └─ VoiceSession.java  # 原任务实时会话；不切换模型或重放未知音频
    │  ├─ db/  # 数据库实现
+   │  │  ├─ CheckResult.java  # 作者对数据结构作出接受或拒绝判断的证据
    │  │  ├─ ModDatabase.java  # 绑定任务并访问当前所有者数据代次的连接能力
    │  │  ├─ ModSchemaLifecycle.java  # 业务启动前由作者实现的初始化和只读验证
    │  │  ├─ SchemaAccess.java  # 初始化与迁移期间绑定操作的连接能力
    │  │  ├─ SchemaIdentity.java  # 与唯一代次绑定的数据所有者及版本
-   │  │  ├─ SchemaMigration.java  # 从受保护来源到独立目标的作者迁移逻辑
-   │  │  └─ ValidationReport.java  # 作者对数据结构作出接受或拒绝判断的证据
-   │  ├─ linux/  # Linux能力
+   │  │  └─ SchemaMigration.java  # 从受保护来源到独立目标的作者迁移逻辑
+   │  ├─ file/  # 文件能力与取材
+   │  │  ├─ DeleteEffect.java  # 删除效果不得静默升级
+   │  │  ├─ FileActions.java  # 普通及前置授权文件操作的精确平台意图
+   │  │  ├─ FileChoice.java  # 分开的目录/文件决定，未指定层级仍需交互
+   │  │  ├─ FileContent.java  # 从已授权来源取得的独立字节及摘要
+   │  │  ├─ FileEntry.java  # 不跟随链接、不套用业务排除规则观察到的一个直接子项
+   │  │  ├─ FileInfo.java  # 实际对象及解析链，观测不授予权限
+   │  │  ├─ FileOperation.java  # 原持久操作依据，不恢复旧授权
+   │  │  ├─ FilePath.java  # 带明确主机身份的绝对位置
+   │  │  ├─ FileReadRequest.java  # 限制在已选来源根目录内的有界读取
+   │  │  ├─ FileReport.java  # 包含部分进度和不确定性的逐项真实结果
+   │  │  ├─ FileSelection.java  # 用户批准的不透明来源选择
+   │  │  ├─ FileService.java  # 任务限定的本机与准入服务器文件操作、有界读取及所属快照
+   │  │  ├─ FileSnapshot.java  # 实际关闭后释放的受管不可变来源目录
+   │  │  ├─ FileWorkspace.java  # 保留至实际清理的任务所属可写暂存文件
+   │  │  └─ SnapshotRequest.java  # 明确的相对文件集合及总复制容量预算
+   │  ├─ linux/  # Linux 与受管远程能力
    │  │  ├─ CommandRequest.java  # 带独立输入及输出上限的精确远端脚本
    │  │  ├─ CommandResult.java  # 不推断未观察退出状态的远端输出
    │  │  ├─ LinuxService.java  # 绑定任务授权及主机信任校验的 SSH 能力
@@ -437,7 +490,7 @@ WindowsToLinux/
    │  │  ├─ TransferResult.java  # 已观察的传输大小及内容摘要
    │  │  ├─ TransferStall.java  # 原文件操作在配置时长内无有效字节进展后已停止
    │  │  └─ TransferStallChoice.java  # 原物理传输停止后的明确选择
-   │  ├─ mod/  # 官方 Mod 分组
+   │  ├─ mod/  # Mod 安装与生命周期
    │  │  ├─ ModContext.java  # 绑定真实启动插件身份的平台能力集合
    │  │  ├─ ModEntrypoint.java  # 作者生命周期入口及部分启动失败的清理责任
    │  │  ├─ ModIdentity.java  # 独立于显示名和包文件名的稳定插件身份
@@ -448,35 +501,26 @@ WindowsToLinux/
    │  │  ├─ ServiceRegistration.java  # 仅在实际释放后撤销的服务注册
    │  │  ├─ StopContext.java  # 后台幂等停止所使用的原因上下文
    │  │  └─ StopReason.java  # 不代表资源已经释放的明确生命周期停止原因
-   │  ├─ secret/  # 秘密引用
+   │  ├─ secret/  # 秘密存储及授权
    │  │  ├─ SecretConsumer.java  # 输入在使用后清零的短期秘密回调
    │  │  ├─ SecretRef.java  # 绑定授权用途的不透明秘密引用
    │  │  ├─ SecretReference.java  # 保护共享凭据的持久业务引用
    │  │  └─ SecretService.java  # 仅经授权临时回调提供所属秘密的服务
-   │  ├─ server/  # 服务器引用
+   │  ├─ server/  # 服务器配置及引用
    │  │  ├─ ReferenceResolution.java  # 业务提交已经核实或仍然未知的结果
    │  │  ├─ ReferenceState.java  # 持续保护未知引用的预留状态
    │  │  ├─ ServerInfo.java  # 不含秘密的服务器配置与已观察信任信息
    │  │  ├─ ServerRef.java  # 平台管理服务器的稳定引用
    │  │  ├─ ServerReference.java  # 保护共享服务器的业务归属预留
    │  │  └─ ServerService.java  # 绑定任务的服务器查询及持久引用管理
-   │  ├─ source/  # 受管取材
-   │  │  ├─ SnapshotRequest.java  # 明确的相对文件集合及总复制容量预算
-   │  │  ├─ SourceDirectoryEntry.java  # 不跟随链接、不套用业务排除规则观察到的一个直接子项
-   │  │  ├─ SourceFile.java  # 从已授权来源取得的独立字节及摘要
-   │  │  ├─ SourceReadRequest.java  # 限制在已选来源根目录内的有界读取
-   │  │  ├─ SourceSelection.java  # 用户批准的不透明来源选择
-   │  │  ├─ SourceService.java  # 用户选定来源的有界读取及受管不可变快照
-   │  │  ├─ SourceSnapshot.java  # 实际关闭后释放的受管不可变来源目录
-   │  │  └─ SourceWorkspace.java  # 保留至实际清理的任务所属可写暂存文件
-   │  ├─ task/  # 任务与资源账本
+   │  ├─ task/  # 任务执行与资源收尾
    │  │  ├─ ActionIntent.java  # 绑定任务资源的精确待审核副作用与修订
    │  │  ├─ ActionSemantics.java  # 绑定精确副作用的、经业务校验的操作含义及实际目标
    │  │  ├─ ActionTarget.java  # 准入服务器上已解析的业务目标，不是本地化标签或按钮名称
    │  │  ├─ ApiException.java  # 报告未接纳的请求或失败的本地能力访问
    │  │  ├─ ApprovalGrant.java  # 授权效力由宿主核实的不透明审批标识
    │  │  ├─ AuthorizationMode.java  # 为一个用户启动流程捕获的平台权限策略，独立于 AI 审批
-   │  │  ├─ CancellationToken.java  # 不强制中断执行的协作取消请求
+   │  │  ├─ CancelToken.java  # 不强制中断执行的协作取消请求
    │  │  ├─ InteractionService.java  # 绑定已接纳任务的宿主审核及输入交互
    │  │  ├─ LogCategory.java  # 包含可选作者日志表的所属诊断类别
    │  │  ├─ LogEvent.java  # 不得包含凭据材料的诊断事件
@@ -484,7 +528,7 @@ WindowsToLinux/
    │  │  ├─ LogService.java  # 明确返回存储结果的所属结构化诊断服务
    │  │  ├─ LogStorage.java  # 不猜测持久化成功的实际诊断存储结果
    │  │  ├─ LogTarget.java  # 当前日志所有者的不透明已登记目的地
-   │  │  ├─ LogWriteResult.java  # 已观察的诊断持久化与截断结果。 Disabled DEBUG events return NOT_SAVED without a problem; this is intentional filtering. / 未启用 DEBUG 时返回 NOT_SAVED 且没有 problem，表示主动过滤
+   │  │  ├─ LogWriteResult.java  # 已观察的诊断持久化与截断结果
    │  │  ├─ ManagedProcess.java  # 直到实际退出前持续保留占用的协议进程
    │  │  ├─ OperationResult.java  # 失败或不确定时具有明确证据的业务结果
    │  │  ├─ Outcome.java  # 独立于尚待完成资源清理的业务结果
@@ -505,7 +549,7 @@ WindowsToLinux/
    │  │  ├─ TaskSnapshot.java  # 终态结果保持一致的不可变任务状态
    │  │  ├─ TaskState.java  # 区分取消请求与业务结果的任务进度状态
    │  │  └─ TaskWork.java  # 观察取消并保留未完成资源的作者任务逻辑
-   │  ├─ ui/  # Swing页面
+   │  ├─ ui/  # Swing 界面
    │  │  ├─ ModPage.java  # 在事件分发线程创建和释放的作者 Swing 视图
    │  │  ├─ PageFactory.java  # 页面重新打开时创建新视图的惰性工厂
    │  │  ├─ PageRegistration.java  # 关闭时释放已打开视图的所属页面注册
@@ -518,7 +562,7 @@ WindowsToLinux/
       ├─ pom.xml  # 当前 Maven 模块与依赖声明
       └─ deployment/  # 官方部署 Mod
          ├─ pom.xml  # 当前 Maven 模块与依赖声明
-         ├─ ai/  # 模型协议与传输
+         ├─ ai/  # 部署模型策略与协议
          │  ├─ DeploymentAgentPatch.java  # 仅用于任务所属源码、与修订绑定的结构化补丁
          │  ├─ DeploymentAgentPlan.java  # 自主模型提出、由证据支持的中立应用图
          │  ├─ DeploymentAgentPlanProtocol.java  # 将严格自主图转换为既有类型化部署值
@@ -528,7 +572,7 @@ WindowsToLinux/
          ├─ api/  # 公开契约
          │  ├─ ApplicationRunState.java  # 已验证的应用运行状态或明确未知
          │  ├─ DeploymentActivation.java  # 已验证目标激活与清理结果
-         │  ├─ DeploymentApi.java  # 公开部署快照、生命周期与备份交接服务。 <p>The original caller must retain its own root checkpoint across the complete handoff sequence, close it only after FINISHED, and retain it on UNKNOWN for original-task reconciliation. The provider never acquires another task or uses the caller's checkpoint capability. / 原调用方必须用自己的根检查点贯穿完整交接，仅在FINISHED后关闭；UNKNOWN时保留供原任务核对。 提供方不创建另一任务，也不使用调用方的检查点能力
+         │  ├─ DeploymentApi.java  # 公开部署快照、生命周期与备份交接服务
          │  ├─ DeploymentApplicationRef.java  # 稳定部署应用与精确服务器身份
          │  ├─ DeploymentApplicationSnapshot.java  # 应用事实副本；只有检查会刷新远端状态
          │  ├─ DeploymentArtifact.java  # 一次采集所属的已验证远端产物
@@ -542,7 +586,7 @@ WindowsToLinux/
          │  ├─ DeploymentRestoreRequest.java  # 经验证备份归档生成的已审阅目标候选
          │  ├─ RestoreFile.java  # 备份已验证并用于目标准备的本地文件
          │  └─ VersionedRuntime.java  # 可供归档转交的不透明版本化运行字节
-         ├─ db/  # 数据库实现
+         ├─ db/  # 部署业务数据
          │  ├─ DeploymentAssistedBuildIntent.java  # 任一固定环境恢复效果前的持久类型化恢复同意
          │  ├─ DeploymentAssistedBuildReview.java  # 一次实际已知失败审阅，绝非重放发布权限
          │  ├─ DeploymentAssistedBuildReviewCodec.java  # 持久化完整非秘密构建审阅，检查点仅持有有界指针
@@ -590,7 +634,27 @@ WindowsToLinux/
          │  ├─ DeploymentUnitCommit.java  # 一个已验证组件发布的精确存储输入，绝不是远端命令
          │  ├─ DeploymentUnitRuntimeCodec.java  # 不推测服务对外范围的精确激活与清单状态
          │  └─ DeploymentWorkloadCodec.java  # 持久化与发布身份共用的有界执行载荷
-         ├─ linux/  # Linux能力
+         ├─ file/  # 部署文件取材与 Git
+         │  ├─ DeploymentSourceArchive.java  # 带实际压缩字节摘要的冻结部署归档
+         │  ├─ DeploymentSourceArchiver.java  # 仅使用平台所属暂存及快照构建确定性归档
+         │  ├─ DeploymentSourceBrowser.java  # 供辅助与自主部署共用的所属冻结源码只读分页访问
+         │  ├─ DeploymentSourceMaterial.java  # 供后续分析及部署步骤共用的纯源码冻结素材
+         │  ├─ DeploymentSourcePolicy.java  # 从原源码归档规则迁入的部署专用排除策略
+         │  ├─ DeploymentSourcePreparer.java  # 通过公开能力筛选部署文件，并在分析前冻结
+         │  ├─ DeploymentSourceTar.java  # 从冻结素材写入原确定性纯源码 ustar/gzip 格式
+         │  └─ git/  # Git取材
+         │     ├─ DeploymentGitCheckout.java  # 抓取一个精确引用、验证树特性并检出不可变提交
+         │     ├─ DeploymentGitCommands.java  # 在 worker 内运行固定 Git 参数并等待原进程、已观察后代及管道退出
+         │     ├─ DeploymentGitLaunch.java  # 仅为 worker 解析本 Mod 代码、私有 JSON 库及公开 API
+         │     ├─ DeploymentGitMaterial.java  # 不可变解析 Git 身份及分别所属的分析素材和归档
+         │     ├─ DeploymentGitMessages.java  # 一次 Git 准备请求的精确业务消息及退出凭据
+         │     ├─ DeploymentGitPreparer.java  # 经原平台进程及来源归属准备固定 Git 素材
+         │     ├─ DeploymentGitProtocol.java  # 符合公开进程契约的作者侧第一版 Git worker 帧
+         │     ├─ DeploymentGitReference.java  # 用户选择的可变或不可变 Git 引用；分析前会将其解析为 Commit
+         │     ├─ DeploymentGitRemote.java  # 解析后的 Git 远端；其位置绝不嵌入凭据
+         │     ├─ DeploymentGitRequest.java  # 只读 Git 分析快照的有界输入；凭据始终位于此值之外
+         │     └─ DeploymentGitWorker.java  # 仅使用公开标准流进程协议的单操作 Git worker
+         ├─ linux/  # Linux 与受管远程能力
          │  ├─ DeploymentBuildBudget.java  # 仅将实际远端命令执行计入同一已审阅构建预算；人工审核期间暂停
          │  ├─ DeploymentBuildCommandChannel.java  # 仅通过借用且经宿主审核的会话发送固定 helper 构建动作
          │  ├─ DeploymentBuildOutputProtocol.java  # 将不超过已审阅构建输出限制的流转换成固定短回执
@@ -615,12 +679,12 @@ WindowsToLinux/
          │  ├─ DeploymentSendGuard.java  # 在远端发送紧前核对调用方持有的绑定
          │  └─ DeploymentWorkloadArguments.java  # 以 Base64 封装的有界 UTF-8 字段
          ├─ Mod.java  # 持有官方部署初始化及绑定平台的生命周期
-         ├─ mod.json  # 官方部署 Mod 的身份、版本与公开能力声明
-         ├─ secret/  # 秘密引用
+         ├─ mod.json  # CLASS 模式的实际 Mod 描述
+         ├─ secret/  # 秘密存储及授权
          │  ├─ DeploymentSecretProvisionFlow.java  # 在原任务下创建一次凭据及不可变修订，此后仅核对持久依据
          │  ├─ DeploymentSecretProvisionJournal.java  # 一项新建凭据与不可变业务修订的有界原任务依据
          │  └─ SecretValueSource.java  # 仅在已接纳原任务内提供明文；具体提交契约决定数组所有权
-         ├─ service/  # 用例服务
+         ├─ service/  # 部署用例服务
          │  ├─ agent/  # 自主部署编排
          │  │  ├─ DeploymentAgentControl.java  # 仅在动作已结清边界与一项所属工作线程协作
          │  │  ├─ DeploymentAgentDeliveryPort.java  # 供独立自主引擎使用的窄真实远端工具与共用受管发布能力
@@ -636,7 +700,7 @@ WindowsToLinux/
          │  │  ├─ DeploymentAgentSession.java  # 独立于标准分析的串行证据驱动部署循环
          │  │  └─ DeploymentAgentWorkflow.java  # 持有一项独立自主任务并仅核对其原持久效果
          │  ├─ core/  # 公共业务事实
-         │  │  ├─ config/  # 配置值与编解码
+         │  │  ├─ config/  # 类型化配置
          │  │  │  ├─ DeploymentConfigurationEntry.java  # 不可变配置快照中的一个经过类型检查的非秘密值
          │  │  │  ├─ DeploymentConfigurationInput.java  # 解析桌面端有界构建/运行配置记法
          │  │  │  ├─ DeploymentConfigurationScopeType.java  # 非秘密配置值被使用的受限时点
@@ -679,7 +743,7 @@ WindowsToLinux/
          │  │  │  ├─ DeploymentRestoreSteps.java  # 原恢复命令身份及持久步骤回执
          │  │  │  ├─ DeploymentRestoreTransfers.java  # 在提供方自身权限下明确清理原上传暂存
          │  │  │  └─ DeploymentRetainedReleases.java  # 以原任务依据切换完整保留应用发布
-         │  │  └─ model/  # 模型事实
+         │  │  └─ model/  # 多个部署引擎共用纯值
          │  │     ├─ analysis/  # 分析事实
          │  │     │  ├─ AnalysisEvidence.java  # 单个确定性项目事实的紧凑、非秘密来源
          │  │     │  ├─ DeploymentAdmissionStatus.java  # 项目进入部署计划前的确定性部署准入结果
@@ -693,7 +757,7 @@ WindowsToLinux/
          │  │     │  ├─ DeploymentEcosystemToolType.java  # 可用观测版本约束部署的固定语言或构建工具能力
          │  │     │  ├─ DeploymentHostCapabilityStatus.java  # 将实时主机证据与部署矩阵匹配后的保守结果
          │  │     │  └─ DeploymentLinuxCapabilityFacts.java  # 仅用于决定能否提供部署计划的实时、非秘密主机事实
-         │  │     ├─ DeploymentAccessUrl.java  # 用户声明的已部署应用 HTTP(S) 访问 URL。它被刻意设计为与目标机本地健康端点相互独立
+         │  │     ├─ DeploymentAccessUrl.java  # 用户声明的已部署应用 HTTP(S) 访问 URL
          │  │     ├─ DeploymentApplicationGraph.java  # 完整审阅的应用拓扑，不含秘密或平台实现类型
          │  │     ├─ DeploymentBuildEnvironment.java  # 一次固定远端构建的已审阅非秘密值
          │  │     ├─ DeploymentBuildLimits.java  # 全部固定受管部署构建入口经过审阅的明确限制
@@ -724,7 +788,7 @@ WindowsToLinux/
          │  │     ├─ DeploymentToolchainType.java  # 与支持清单无关的生态版本身份和分支精度
          │  │     ├─ DeploymentToolchainVersion.java  # 数字发布身份，解析不查询构建支持目录
          │  │     ├─ DeploymentUnitIdentity.java  # 由 WindowsToLinux 拥有的应用不可变身份
-         │  │     ├─ DeploymentUnitRuntimeConfiguration.java  # 某个受管应用最后一次成功部署的运行时契约。与应用资源归属身份本身不同，它会随成功部署而变化
+         │  │     ├─ DeploymentUnitRuntimeConfiguration.java  # 某个受管应用最后一次成功部署的运行时契约
          │  │     ├─ DeploymentWorker.java  # 共享主服务运行时、身份与存储的前台工作进程
          │  │     ├─ DeploymentWorkload.java  # 共享的经审阅执行、对外服务与交付契约
          │  │     ├─ ecosystem/  # 语言工具生态
@@ -733,13 +797,13 @@ WindowsToLinux/
          │  │     │     ├─ DatabaseSchemaReview.java  # 与源码绑定的验证结果，来自已验证初始化或单独获批的现有模式操作
          │  │     │     ├─ DatabaseVersionRequirement.java  # 显式数据库版本约束，较新版本兼容最低版本要求
          │  │     │     └─ DeploymentNativeDatabaseFacts.java  # 从固定 helper 观察到的不含秘密的原生数据库库存与目标事实
-         │  │     ├─ language/  # 语言事实
+         │  │     ├─ language/  # 语言资源与切换
          │  │     │  ├─ LanguageEcosystemType.java  # 不含主要语言排序的确定性语言生态观测
          │  │     │  ├─ LanguageFactKind.java  # 可用于预填审阅表单的稳定确定性语言相关值
          │  │     │  ├─ ProjectLanguageFacts.java  # 在不执行源码且不选择主要语言的情况下收集的确定性语言事实
          │  │     │  └─ SourceLanguageType.java  # 由有界文件路径或元数据条目证实的源码语言
          │  │     ├─ message/  # 消息值
-         │  │     │  └─ DeploymentLocalizedMessage.java  # 校验并绑定本地化消息所需输入
+         │  │     │  └─ DeploymentLocalizedMessage.java  # 不将领域代码与显示语言耦合的用户可见消息
          │  │     ├─ project/  # 项目事实
          │  │     │  ├─ component/  # 组件事实
          │  │     │  │  ├─ ComponentIsolationSpecification.java  # 一个组件显式请求的不安全执行能力
@@ -752,10 +816,10 @@ WindowsToLinux/
          │  │     │  ├─ DeploymentSupportLevel.java  # 由证据支撑并由分析、计划和结果公开的支持等级
          │  │     │  ├─ DeploymentSupportProfile.java  # 一个已分析路径的精确语言、架构、框架、支持等级、验证矩阵、证据与限制
          │  │     │  └─ ValidatedDeploymentTarget.java  # 由真实产品入口验收证据支撑的一个精确目标组合
-         │  │     ├─ server/  # 服务器引用
+         │  │     ├─ server/  # 服务器配置及引用
          │  │     │  ├─ DeploymentCpuMicroarchitectureLevel.java  # 目标运行时链接器确认的最高累积 x86-64 微架构级别
          │  │     │  ├─ LinuxDistroType.java  # 部署为其保留独立证据和兼容性决策的发行版系列
-         │  │     │  └─ security/  # 安全与授权
+         │  │     │  └─ security/  # 安全认证与保护
          │  │     │     ├─ DeploymentLinuxFirewallKind.java  # 只读探测观测到的主机防火墙管理器
          │  │     │     ├─ DeploymentLinuxFirewallState.java  # 观测到的主机防火墙服务状态
          │  │     │     ├─ DeploymentLinuxSecurityModuleType.java  # 在不修改状态的情况下观测到的主机强制访问控制实现
@@ -882,7 +946,7 @@ WindowsToLinux/
          │     │  ├─ preview/  # 只读预览
          │     │  │  ├─ PreviewInspector.java  # 生成无法进入归档准备或部署的静态识别结果
          │     │  │  └─ PreviewLanguageMarkerCatalog.java  # 仅收集尚无独立生态检查器的语言标记，不求值文件内容
-         │     │  ├─ service/  # 用例服务
+         │     │  ├─ service/  # 平台业务服务
          │     │  │  ├─ ServiceInspectionAssembler.java  # 组装语言无关的服务事实与运行时建议
          │     │  │  ├─ ServiceMetadataInspector.java  # 不包含语言特定规则的公共有界元数据操作
          │     │  │  └─ ServiceProjectFacts.java  # 单个语言检查器返回的公共有界服务元数据
@@ -1050,34 +1114,14 @@ WindowsToLinux/
          │     ├─ DeploymentStaticTaskRecovery.java  # 本机清理前核对原发布前素材及原生数据库回执；正式执行仍由原恢复处理
          │     ├─ DeploymentStaticUnitResolver.java  # 解析原受管所有者，首次发布则生成尚未持久化的随机所有者
          │     └─ DeploymentStaticWorkflow.java  # 协调一项本地或 Git 静态审阅与发布原任务，不另造来源授权
-         ├─ source/  # 受管取材
-         │  ├─ DeploymentSourceArchive.java  # 带实际压缩字节摘要的冻结部署归档
-         │  ├─ DeploymentSourceArchiver.java  # 仅使用平台所属暂存及快照构建确定性归档
-         │  ├─ DeploymentSourceBrowser.java  # 供辅助与自主部署共用的所属冻结源码只读分页访问
-         │  ├─ DeploymentSourceMaterial.java  # 供后续分析及部署步骤共用的纯源码冻结素材
-         │  ├─ DeploymentSourcePolicy.java  # 从原源码归档规则迁入的部署专用排除策略
-         │  ├─ DeploymentSourcePreparer.java  # 通过公开能力筛选部署文件，并在分析前冻结
-         │  ├─ DeploymentSourceTar.java  # 从冻结素材写入原确定性纯源码 ustar/gzip 格式
-         │  └─ git/  # Git取材
-         │     ├─ DeploymentGitCheckout.java  # 抓取一个精确引用、验证树特性并检出不可变提交
-         │     ├─ DeploymentGitCommands.java  # 在 worker 内运行固定 Git 参数并等待原进程、已观察后代及管道退出
-         │     ├─ DeploymentGitLaunch.java  # 仅为 worker 解析本 Mod 代码、私有 JSON 库及公开 API
-         │     ├─ DeploymentGitMaterial.java  # 不可变解析 Git 身份及分别所属的分析素材和归档
-         │     ├─ DeploymentGitMessages.java  # 一次 Git 准备请求的精确业务消息及退出凭据
-         │     ├─ DeploymentGitPreparer.java  # 经原平台进程及来源归属准备固定 Git 素材
-         │     ├─ DeploymentGitProtocol.java  # 符合公开进程契约的作者侧第一版 Git worker 帧
-         │     ├─ DeploymentGitReference.java  # 用户选择的可变或不可变 Git 引用；分析前会将其解析为 Commit
-         │     ├─ DeploymentGitRemote.java  # 解析后的 Git 远端；其位置绝不嵌入凭据
-         │     ├─ DeploymentGitRequest.java  # 只读 Git 分析快照的有界输入；凭据始终位于此值之外
-         │     └─ DeploymentGitWorker.java  # 仅使用公开标准流进程协议的单操作 Git worker
-         ├─ ui/  # Swing页面
+         ├─ ui/  # Swing 界面
          │  ├─ DeploymentAgentEvidencePanel.java  # 展示原依据及明确安全边界控件，不持有任务能力
          │  ├─ DeploymentAgentGitForm.java  # 持有实际不含凭据的固定Git输入控件
          │  ├─ DeploymentAgentPage.java  # 用于本地或固定 Git 任务的自主专属所属页面
          │  ├─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
          │  ├─ DeploymentGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
+         │  ├─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
          │  ├─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
-         │  ├─ DeploymentPageStyle.java  # 使用 Swing 主题值的 Mod 本地卡片及从属高级窗口
          │  ├─ DeploymentRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
          │  ├─ DeploymentSecretReferenceField.java  # 将既有精确业务修订添加到高级无秘密引用字段
          │  ├─ DeploymentStaticPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
@@ -1092,7 +1136,7 @@ WindowsToLinux/
             │  ├─ validation-v1.sql  # 当前模块的数据库结构与权限脚本
             │  ├─ validation-v2.sql  # 当前模块的数据库结构与权限脚本
             │  └─ validation-v3.sql  # 当前模块的数据库结构与权限脚本
-            ├─ linux/  # Linux能力
+            ├─ linux/  # Linux 与受管远程能力
             │  ├─ distro/  # 发行版识别
             │  │  └─ dnf/  # DNF软件源
             │  │     └─ centos-source-repositories.py  # CentOS 9/10 源码依赖事务 CRB 选择
@@ -1172,11 +1216,11 @@ WindowsToLinux/
             │  │  └─ 40-binding-protocol.py  # 密封精确绑定、验证和跨机恢复定位
             │  └─ workspace/  # 受管工作区
             │     └─ source-operations.py  # 模块资源与配置
-            ├─ service/  # 用例服务
+            ├─ service/  # 平台业务服务
             │  └─ core/  # 公共业务事实
             │     └─ execution/  # 执行协议
             │        └─ external-applications.py  # 按已认证会话执行固定外部应用扫描与身份复核
-            └─ ui/  # Swing页面
+            └─ ui/  # Swing 界面
                ├─ deployment-agent-page_en.properties  # 当前模块的固定配置或语言资源
                ├─ deployment-agent-page_zh.properties  # 当前模块的固定配置或语言资源
                ├─ deployment-applications-page.properties  # 当前模块的固定配置或语言资源

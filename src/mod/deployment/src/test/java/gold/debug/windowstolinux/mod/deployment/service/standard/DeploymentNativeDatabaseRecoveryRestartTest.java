@@ -117,7 +117,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }
@@ -169,7 +169,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }
@@ -222,7 +222,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }

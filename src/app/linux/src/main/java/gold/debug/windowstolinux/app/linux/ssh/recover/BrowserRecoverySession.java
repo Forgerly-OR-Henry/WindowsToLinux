@@ -372,8 +372,10 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
             change(CANCELLED, "cancelled");
         } catch (Exception failure) {
             recordFailure(failure, ProblemCode.IO_FAILURE, "linux.browser.operation-failed");
-            change(Thread.currentThread().isInterrupted() ? CANCELLED : FAILED,
-                state.unknown ? "resultUnknown" : "browserUnavailable");
+            boolean cancelled = Thread.currentThread().isInterrupted()
+                || state.failure.code() == ProblemCode.CANCELLED;
+            change(cancelled ? CANCELLED : FAILED,
+                state.unknown ? "resultUnknown" : cancelled ? "cancelled" : "browserUnavailable");
         } finally {
             requests.clear();
             state.revoke();
@@ -655,17 +657,17 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param event safe fallback event / 安全后备事件 */
     private void recordFailure(Throwable exception, ProblemCode code, String event) {
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Problem browserProblem = null;
         for (Throwable cause = exception; cause != null && visited.add(cause); cause = cause.getCause()) {
             if (cause instanceof ApiException api) {
                 state.failure = api.problem();
                 return;
             }
-            if (cause instanceof BrowserRecoveryException browserFailure) {
-                state.failure = browserFailure.problem();
-                return;
-            }
+            if (browserProblem == null && cause instanceof BrowserRecoveryException browserFailure)
+                browserProblem = browserFailure.problem();
         }
-        state.failure = new Problem(code, event, "Recovery stage failed without verified completion", Map.of(),
+        state.failure = browserProblem != null ? browserProblem
+            : new Problem(code, event, "Recovery stage failed without verified completion", Map.of(),
             Optional.of(UUID.fromString(state.id)));
     }
 }

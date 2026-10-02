@@ -41,7 +41,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Shares actual source-backed publication input, never lifecycle assertions. / 共用真实来源发布输入，不替代生命周期断言。 */
 abstract class DeploymentPublicationAcceptanceFixture extends DeploymentRuntimeFixture {
     /** Waits only for host refusal before any reconciliation dispatch, within the original bound. / 仅等待未派发的宿主拒绝结束，不扩大原限时。 */
-    protected TaskSnapshot reconcileReady(PlatformRuntime runtime, TaskHandle<?> handle) throws Exception {
+    protected static TaskSnapshot reconcileReady(PlatformRuntime runtime, TaskHandle<?> handle) throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (true) {
             long remaining = until - System.nanoTime();

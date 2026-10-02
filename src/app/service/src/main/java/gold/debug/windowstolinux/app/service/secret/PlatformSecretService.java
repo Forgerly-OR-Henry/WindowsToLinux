@@ -17,7 +17,6 @@ import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;
 import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
 
-
 /** Provides owner-bound protected bytes and generation-owned references through accepted tasks. / 经已接纳任务提供所有者绑定的受保护字节及代次所属引用。 */
 public final class PlatformSecretService implements SecretService, AutoCloseable {
     /** Maximum plaintext bytes accepted for one secret. / 单个秘密接受的最大明文字节数。 */
@@ -208,7 +207,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      */
     private <T> T credentials(TaskContext task, SecretWork<T> work) throws ApiException, SQLException {
         try {
-            return tasks.authorized(task, owner, version, () -> {
+            return tasks.callbacks().authorized(task, owner, version, () -> {
                 try (var store = security.openCredentials()) {
                     return work.run(store);
                 }

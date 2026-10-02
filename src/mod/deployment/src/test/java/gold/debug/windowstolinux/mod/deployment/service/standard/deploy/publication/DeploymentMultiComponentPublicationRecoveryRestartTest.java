@@ -198,7 +198,7 @@ class DeploymentMultiComponentPublicationRecoveryRestartTest extends DeploymentR
                     commands.toString());
                 if (mode != RecoveryModeType.LOCAL_ONLY)
                     assertEquals(Map.of("api", false, "web", false), candidates);
-                runtime.releaseModRecovery();
+                runtime.modRecovery().release();
             }
         }
     }

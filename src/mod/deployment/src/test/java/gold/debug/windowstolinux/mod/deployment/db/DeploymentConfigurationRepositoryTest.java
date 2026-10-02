@@ -23,7 +23,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 
-
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.*;
 import org.junit.jupiter.api.Test;

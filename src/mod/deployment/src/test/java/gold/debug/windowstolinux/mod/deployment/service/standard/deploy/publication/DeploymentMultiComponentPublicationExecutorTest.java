@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.task.Problem;
 import gold.debug.windowstolinux.appapi.task.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.appapi.task.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.TaskService;
 import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.TaskState;
 
@@ -635,6 +636,12 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             var peer = peer(scenario, actions, archiveSha, archiveBytes, archivePath, callbackEnded);
             var real = runtime.modContexts().get(OWNER).context();
             var bound = withSession(real, peer);
+            var localCleanupObserved = new AtomicBoolean();
+            if (scenario == ScenarioType.CLOSE_UNKNOWN) {
+                assertTrue(interruptedHost && recoveryPort != 22,
+                    "Local cleanup requires the actual child-owned loopback connection");
+                bound = withRetainedConnectionAtCommit(bound, runtime, localCleanupObserved);
+            }
             var executor = new DeploymentMultiComponentPublicationExecutor(bound, new DeploymentReferenceFlow(bound));
             var reference = new DeploymentSecretReference("password-id", 1);
             boolean purposeCase = scenario == ScenarioType.PURPOSE_UNKNOWN || scenario == ScenarioType.PURPOSE_MISMATCH;
@@ -667,10 +674,10 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                                     "Original preparation cancelled", Map.of(), Optional.empty())));
                     if (recoveryPort != 22)
                         real.linux().connect(server, original);
-                    var selection = real.source().selectDirectory("Source", original);
-                    var material = new DeploymentSourcePreparer(real.source()).prepare(selection, 65536, 100,
+                    var selection = real.file().selectDirectory("Source", original);
+                    var material = new DeploymentSourcePreparer(real.file()).prepare(selection, 65536, 100,
                         original);
-                    var archive = new DeploymentSourceArchiver(real.source()).prepare(material, 65536, original);
+                    var archive = new DeploymentSourceArchiver(real.file()).prepare(material, 65536, original);
                     archiveSha.set(archive.sha256());
                     archiveBytes.set(archive.byteCount());
                     archivePath.set(archive.path());
@@ -761,6 +768,9 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                 for (int attempt = 0; attempt < 200 && task.snapshot().state() != TaskState.UNKNOWN; attempt++)
                     Thread.sleep(10);
                 assertEquals(TaskState.UNKNOWN, task.snapshot().state(), task.snapshot().toString());
+                if (scenario == ScenarioType.CLOSE_UNKNOWN)
+                    assertTrue(localCleanupObserved.get(),
+                        "Unknown must follow the committed release and actual connection observation");
                 assertEquals(scenario == ScenarioType.ORIGINAL_CLEANUP_REFUSED || scenario == ScenarioType.CLOSE_UNKNOWN
                     ? 1
                     : 0, countMod(runtime, "deployment_release"));
@@ -906,6 +916,44 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
             });
     }
 
+    /** Observes the actual unclosed connection only after the formal release commit. / 仅在正式 release 提交后观察真实未闭连接。
+     * @param real original controlled context retaining actual task capabilities / 保留真实任务能力的原受控上下文
+     * @param runtime actual platform and business database / 实际平台及业务数据库
+     * @param observed proof that the post-commit resource predicate was reached / 已到达提交后资源判据的证明
+     * @return context delegating every task operation to the actual host / 所有任务操作均委托实际宿主的上下文 */
+    private ModContext withRetainedConnectionAtCommit(ModContext real, PlatformRuntime runtime,
+                                                      AtomicBoolean observed) {
+        var originalTasks = real.tasks();
+        var tasks = (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(),
+            new Class<?>[]{TaskService.class}, (proxy, method, args) -> {
+                try {
+                    var result = method.invoke(originalTasks, args);
+                    if (method.getName().equals("resourcesReleased")) {
+                        assertEquals(1, countMod(runtime, "deployment_release"));
+                        assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
+                            + " WHERE task_id='" + ((TaskContext) args[0]).id()
+                            + "' AND resource_kind='CONNECTION' AND released_at IS NULL"));
+                        assertEquals(Boolean.FALSE, result,
+                            "The actual unclosed SSH connection must prevent local finalization");
+                        observed.set(true);
+                    }
+                    return result;
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
+        return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals("tasks"))
+                    return tasks;
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
+    }
+
     /** Returns bounded original helper receipts for both reviewed components. / 为两个审阅组件返回有界原helper回执。 */
     private RemoteSession peer(ScenarioType scenario, List<String> actions, AtomicReference<String> sha,
                                AtomicLong bytes, AtomicReference<Path> path, CountDownLatch callbackEnded) {
@@ -917,8 +965,6 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                     return new RemoteFacts("", "", "SHA256:fixture-host");
                 if (method.getName().equals("close")) {
                     callbackEnded.countDown();
-                    if (scenario == ScenarioType.CLOSE_UNKNOWN)
-                        throw new java.io.IOException("Controlled session close acknowledgement lost");
                     return null;
                 }
                 assertTrue(grants.containsKey(args[1]), "Original host grant must be passed unchanged");
@@ -933,7 +979,8 @@ class DeploymentMultiComponentPublicationExecutorTest extends DeploymentRuntimeF
                 String script = ((CommandRequest) args[0]).script();
                 if (script.contains("managed-helper' probe")) {
                     actions.add("helper-probe");
-                    return reply("HELPER=1\nPROTOCOL=13\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
+                    return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                        + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256
                         + "\n");
                 }
                 if (script.contains("DISTRO_ID=")) {

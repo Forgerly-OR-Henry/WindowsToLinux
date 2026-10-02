@@ -35,6 +35,35 @@ public final class TaskInteractionPresenter
         this.messages = java.util.Objects.requireNonNull(messages);
     }
 
+    /** Shows the distinct directory or file collision choices. / 显示分别对应目录或文件的冲突选择。
+     * @param source actual source / 实际源
+     * @param target actual target / 实际目标
+     * @param directory directory layer / 目录层
+     * @param task original task / 原任务
+     * @param cancellation original cancellation / 原取消
+     * @return explicit choice or skip on dismissal / 明确选择，关闭时不处理 */
+    @Override
+    public int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
+                            gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory,
+                            TaskSnapshot task, CancelToken cancellation) {
+        return onEdt(() -> {
+            var description = new JTextArea(messages.text(directory ? "file.conflict.directory" : "file.conflict.file") + "\n\n"
+                + messages.text("file.source") + ": " + source.actual().key() + "\n" + messages.text("file.target") + ": " + target.actual().key()
+                + "\n" + messages.text("transfer.incomingBytes") + ": " + source.bytes() + "\n" + messages.text("transfer.existingBytes") + ": " + target.bytes());
+            description.setEditable(false);
+            description.setLineWrap(true);
+            description.setWrapStyleWord(true);
+            description.setName("file.conflict.details");
+            var scroll = new JScrollPane(description);
+            scroll.setPreferredSize(new Dimension(680, 280));
+            String[] options = {messages.text("file.copy"), messages.text(directory ? "file.merge" : "transfer.overwrite"), messages.text("file.skip")};
+            var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll}, JOptionPane.QUESTION_MESSAGE,
+                JOptionPane.DEFAULT_OPTION, null, options, options[2]);
+            Object result = show(pane, messages.text("file.conflict.title"), cancellation);
+            return options[0].equals(result) ? 0 : options[1].equals(result) ? 1 : 2;
+        });
+    }
+
     /** Shows the three file-conflict choices, with termination selected initially. / 显示三个文件冲突选项，初始选择终止。
      * @param conflict exact observed conflict / 精确已观察冲突
      * @param server selected server / 选定服务器
@@ -59,7 +88,7 @@ public final class TaskInteractionPresenter
             var scroll = new JScrollPane(description);
             scroll.setPreferredSize(new Dimension(680, 280));
             String[] options = {messages.text("transfer.overwrite"), messages.text("transfer.keepBoth"),
-                messages.text("transfer.terminate")};
+                messages.text("file.skip")};
             var pane = new JOptionPane(new Object[]{task.ownerId() + " @ " + task.ownerVersion(), scroll},
                 JOptionPane.QUESTION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[2]);
             Object result = show(pane, messages.text("transfer.conflict.title"), cancellation);
@@ -168,7 +197,7 @@ public final class TaskInteractionPresenter
                 .map(target -> target.serverId() + " / " + target.kind() + " / " + target.id())
                 .sorted().collect(java.util.stream.Collectors.joining("\n"))
                 + "\n\n").orElse("")
-                + intent.effectSummary() + "\n\n" + intent.exactAction());
+                + deletionWarning(intent) + intent.effectSummary() + "\n\n" + intent.exactAction());
             text.setName("task.review.exactAction");
             text.setEditable(false);
             text.setCaretPosition(0);
@@ -179,6 +208,20 @@ public final class TaskInteractionPresenter
                 options[1]);
             return options[0].equals(show(pane, messages.text("task.review.title"), cancellation));
         });
+    }
+
+    /** Shows localized recovery and File/Link facts without changing the reviewed intent. / 显示本地化恢复及 File/Link 事实，不改变审核意图。
+     * @param intent complete immutable review / 完整不可变审核
+     * @return localized warning for a canonical deletion, otherwise empty / 规范删除的本地化提示，否则为空 */
+    private String deletionWarning(ActionIntent intent) {
+        if (!intent.type().equals("file-delete")) return "";
+        String operation = intent.exactAction().split("\n", 2)[0];
+        if (!operation.matches("delete (File|Link) (RECYCLE|PERMANENT)")) return "";
+        String semantics = messages.text(operation.startsWith("delete Link ")
+            ? "task.review.delete.link" : "task.review.delete.file");
+        String recovery = messages.text(operation.endsWith(" RECYCLE")
+            ? "task.review.delete.recycle" : "task.review.delete.permanent");
+        return semantics + "\n" + recovery + "\n\n";
     }
 
     /**

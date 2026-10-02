@@ -13,7 +13,6 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 
-
 /** Owns registered standard log tables and atomic insertion/retention. / 持有登记标准日志表及原子写入和保留。 */
 public final class LogRepository {
     /** Protected platform database. / 受保护平台数据库。 */

@@ -8,11 +8,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.net.*;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import javax.swing.SwingUtilities;
-
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,6 +20,23 @@ import org.junit.jupiter.api.io.TempDir;
 class SshConnectorTest {
     @TempDir
     Path root;
+
+    @Test
+    void everyRealConnectionDrainsPendingReadsBeforeReleasingItsOwner() throws Exception {
+        try (var server = new LinuxLoopbackSshServer(root, ssh -> {
+        }); var connector = new SshConnector()) {
+            for (int attempt = 0; attempt < 6; attempt++) {
+                var connection = connector.connect(endpoint(server.server().getPort()), "fixture".toCharArray(),
+                    (e, key) -> true, Duration.ofSeconds(3), () -> false);
+                var workers = clientIoWorkers();
+                assertTrue(workers.size() >= 3, "Actual IOCP and connection waiter workers must exist");
+                connection.close();
+                assertEquals(0, connector.retainedConnections());
+                assertTrue(workers.stream().noneMatch(Thread::isAlive),
+                    "Connection ownership cannot end while an actual I/O worker remains");
+            }
+        }
+    }
 
     @Test
     void selectedPasswordAndExplicitWireKeyTrustOwnOneActualConnection() throws Exception {
@@ -192,10 +209,14 @@ class SshConnectorTest {
                 return failure;
             });
             assertTrue(accepted.await(2, TimeUnit.SECONDS));
+            var workers = clientIoWorkers();
+            assertTrue(workers.size() >= 3);
             cancelled.set(true);
             assertEquals(ProblemCode.CANCELLED, connecting.get(4, TimeUnit.SECONDS).problem().code());
             assertTrue(peer.get(4, TimeUnit.SECONDS));
             assertEquals(0, connector.retainedConnections());
+            assertTrue(workers.stream().noneMatch(Thread::isAlive),
+                "Cancelled handshake must physically release its client workers");
         }
     }
 
@@ -219,5 +240,10 @@ class SshConnectorTest {
 
     static SshEndpoint endpoint(int port) {
         return new SshEndpoint("fixture", "127.0.0.1", port, "fixture");
+    }
+
+    static List<Thread> clientIoWorkers() {
+        return Thread.getAllStackTraces().keySet().stream()
+            .filter(thread -> thread.getName().startsWith("platform-ssh-")).toList();
     }
 }

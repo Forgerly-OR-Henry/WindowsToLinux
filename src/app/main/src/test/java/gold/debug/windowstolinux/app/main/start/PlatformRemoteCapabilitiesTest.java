@@ -418,8 +418,12 @@ class PlatformRemoteCapabilitiesTest {
                                 .approve(RemoteActions.transfer(SERVER, "revision", request, digest, true), task)
                                 .value().orElseThrow();
                             var transferred = session.upload(request, grant);
-                            assertEquals(i == 2 ? Outcome.CANCELLED : Outcome.SUCCEEDED, transferred.outcome(),
+                            assertEquals(i == 2 ? Outcome.FAILED : Outcome.SUCCEEDED, transferred.outcome(),
                                 transferred.toString());
+                            if (i == 2) {
+                                assertEquals("SFTP_CONFLICT_SKIPPED", transferred.problem().orElseThrow().eventCode());
+                                assertFalse(task.cancelToken().requested());
+                            }
                             if (i == 0)
                                 assertEquals("/file (1).txt", transferred.value().orElseThrow().remoteAbsolutePath());
                         }

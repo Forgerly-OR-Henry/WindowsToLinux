@@ -46,94 +46,452 @@ import gold.debug.windowstolinux.appapi.task.CancelToken;
 
 /** Binds user-selected files and owned snapshots to the original Mod task. / 将用户所选文件及所属快照绑定到原 Mod 任务。 */
 public final class PlatformFileAccess implements FileService, AutoCloseable {
-    private PlatformFileOperations operations;
+    /** Actual installed activation-bound file coordinator. / 实际安装的启用绑定文件协调器。
+     */
+    private PlatformFileCoordinator operations;
 
-    /** Installs the actual common file operations once for this activation. / 为本次启用一次装配实际通用文件操作。 */
-    public synchronized void installOperations(PlatformFileOperations value) {
-        if (operations != null || closed) throw new IllegalStateException("File operations already installed or closed");
+    /** Activation-owned host capabilities, closed together with file admission. / 与文件准入一同关闭的启用所属宿主能力。 */
+    private final List<AutoCloseable> operationOwners = new ArrayList<>();
+
+    /** Retains actual dependency lifecycle for this file activation. / 为文件启用保留实际依赖生命周期。
+     * @param owners owned dependencies / 所属依赖 */
+    public synchronized void ownOperations(AutoCloseable... owners) {
+        if (closed) throw new IllegalStateException("File capability is closed");
+        for (var resource : owners) operationOwners.add(Objects.requireNonNull(resource));
+    }
+
+    /** Installs the actual common file operations once for this activation. / 为本次启用一次装配实际通用文件操作。
+     * @param value content whose exact digest is required / 需要精确摘要的内容
+     */
+    public synchronized void installOperations(PlatformFileCoordinator value) {
+        if (operations != null || closed)
+            throw new IllegalStateException("File operations already installed or closed");
         operations = Objects.requireNonNull(value);
     }
-    private synchronized PlatformFileOperations operations() throws ApiException {
-        if (operations == null || closed) throw error(ProblemCode.UNAVAILABLE,"FILE_OPERATIONS_UNAVAILABLE","Common file operations are unavailable");
+
+    /** Returns the installed genuine activation-bound file coordinator. / 返回已安装的真实启用绑定文件协调器。
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    private synchronized PlatformFileCoordinator operations() throws ApiException {
+        if (operations == null || closed)
+            throw error(ProblemCode.UNAVAILABLE, "FILE_OPERATIONS_UNAVAILABLE", "Common file operations are unavailable");
         return operations;
     }
-    /** Registers a known directory with the original physical and task checks. / 按原物理及任务检查登记已知目录。 */
-    @Override public FileSelection selectDirectory(Path path, TaskContext task) throws ApiException {
-        if(path==null||!path.isAbsolute())throw error(ProblemCode.INVALID_INPUT,"FILE_DIRECTORY_PATH","An absolute local directory is required");
-        return access(task,()->{
+
+    /** Registers a known directory with the original physical and task checks. / 按原物理及任务检查登记已知目录。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileSelection selectDirectory(Path path, TaskContext task) throws ApiException {
+        if (path == null || !path.isAbsolute())
+            throw error(ProblemCode.INVALID_INPUT, "FILE_DIRECTORY_PATH", "An absolute local directory is required");
+        return access(task, () -> {
             security.requireUnlocked();
-            var directory=new SelectedDirectory(path);
-            directory.list("",100000,cancelToken(task));
-            tasks.requireExecuting(task,owner,version);
-            var name=directory.root().getFileName();
-            var grant=new FileSelection(UUID.randomUUID(),name==null?directory.root().toString():name.toString());
-            synchronized(this){selections.put(grant,new Selection(task,directory,null));}
+            var directory = new SelectedDirectory(path);
+            directory.list("", 100000, cancelToken(task));
+            tasks.requireExecuting(task, owner, version);
+            var name = directory.root().getFileName();
+            var grant = new FileSelection(UUID.randomUUID(), name == null ? directory.root().toString() : name.toString());
+            synchronized (this) {
+                selections.put(grant, new Selection(task, directory, null));
+            }
             return grant;
         });
     }
-    /** Observes the actual File. / 观测实际 File。 */
-    @Override public FileInfo getFile(FilePath path,TaskContext task)throws ApiException{return operations().inspect(path,false,task);}
-    /** Observes Link itself. / 观测 Link 自身。 */
-    @Override public FileInfo readLink(FilePath path,TaskContext task)throws ApiException{return operations().inspect(path,true,task);}
-    /** Reads bounded File content. / 读取有界 File 内容。 */
-    @Override public byte[] readFile(FilePath path,int maxBytes,TaskContext task)throws ApiException{return operations().read(path,maxBytes,task);}
-    /** Lists sorted immediate entries. / 列举已排序直接子项。 */
-    @Override public List<FileInfo> list(FilePath directory,int limit,TaskContext task)throws ApiException{return list(directory,limit,Optional.empty(),"",task);}
-    /** Lists explicit type/name filtered entries. / 按明确类型/名称条件列举。 */
-    @Override public List<FileInfo> list(FilePath directory,int limit,Optional<FileInfo.Kind> kind,String nameContains,TaskContext task)throws ApiException{return operations().list(directory,limit,kind,nameContains,task);}
-    /** Creates an empty user file. / 创建空用户文件。 */
-    @Override public FileReport createFile(FilePath path,TaskContext task)throws ApiException{return operations().write(path,new byte[0],false,true,task);}
-    /** Creates a directory. / 创建目录。 */
-    @Override public FileReport createDirectory(FilePath path,TaskContext task)throws ApiException{return operations().write(path,new byte[0],true,true,task);}
-    /** Writes bounded content with replacement authorization. / 经替换授权写入有界内容。 */
-    @Override public FileReport writeFile(FilePath path,byte[] content,TaskContext task)throws ApiException{return operations().write(path,content,false,false,task);}
-    /** Creates and registers a link. / 创建并登记链接。 */
-    @Override public FileReport createLink(FilePath path,String target,TaskContext task)throws ApiException{return operations().createLink(path,target,task);}
-    /** Registers a link's observed identity. / 登记链接观测身份。 */
-    @Override public void registerLink(FilePath path,TaskContext task)throws ApiException{operations().registerLink(path,task);}
-    /** Unregisters caller-owned metadata. / 解除调用方所属元数据。 */
-    @Override public void unregisterLink(FilePath path,TaskContext task)throws ApiException{operations().unregisterLink(path,task);}
-    /** Copies a File with interactive collisions. / 交互处理冲突并复制 File。 */
-    @Override public FileReport copyFile(FilePath from,FilePath to,TaskContext task)throws ApiException{return copyFile(from,to,task,FileChoice.ask());}
-    /** Copies a File with explicit collision layers. / 按明确冲突层复制 File。 */
-    @Override public FileReport copyFile(FilePath from,FilePath to,TaskContext task,FileChoice choice)throws ApiException{return operations().copy(from,to,false,false,choice,task);}
-    /** Copies Link itself. / 复制 Link 自身。 */
-    @Override public FileReport copyLink(FilePath from,FilePath to,TaskContext task)throws ApiException{return copyLink(from,to,task,FileChoice.ask());}
-    /** Copies Link with an explicit choice. / 按明确选择复制 Link。 */
-    @Override public FileReport copyLink(FilePath from,FilePath to,TaskContext task,FileChoice choice)throws ApiException{return operations().copy(from,to,true,false,choice,task);}
-    /** Moves the actual File. / 移动实际 File。 */
-    @Override public FileReport moveFile(FilePath from,FilePath to,TaskContext task)throws ApiException{return moveFile(from,to,task,FileChoice.ask());}
-    /** Moves File with explicit collision layers. / 按明确冲突层移动 File。 */
-    @Override public FileReport moveFile(FilePath from,FilePath to,TaskContext task,FileChoice choice)throws ApiException{return operations().copy(from,to,false,true,choice,task);}
-    /** Moves Link itself. / 移动 Link 自身。 */
-    @Override public FileReport moveLink(FilePath from,FilePath to,TaskContext task)throws ApiException{return moveLink(from,to,task,FileChoice.ask());}
-    /** Moves Link with an explicit choice. / 按明确选择移动 Link。 */
-    @Override public FileReport moveLink(FilePath from,FilePath to,TaskContext task,FileChoice choice)throws ApiException{return operations().copy(from,to,true,true,choice,task);}
-    /** Renames File through the common move implementation. / 通过统一移动实现重命名 File。 */
-    @Override public FileReport renameFile(FilePath from,String name,TaskContext task)throws ApiException{return moveFile(from,from.parent().child(name),task);}
-    /** Renames Link through the common move implementation. / 通过统一移动实现重命名 Link。 */
-    @Override public FileReport renameLink(FilePath from,String name,TaskContext task)throws ApiException{return moveLink(from,from.parent().child(name),task);}
-    /** Confirms ordinary File deletion. / 确认常规 File 删除。 */
-    @Override public FileReport deleteFile(FilePath path,TaskContext task)throws ApiException{return operations().delete(path,false,Optional.empty(),task);}
-    /** Validates and consumes a true platform File deletion permit. / 校验并消费真实平台 File 删除许可。 */
-    @Override public FileReport deleteFile(FilePath path,TaskContext task,ApprovalGrant permit)throws ApiException{return operations().delete(path,false,Optional.of(Objects.requireNonNull(permit)),task);}
-    /** Confirms ordinary Link deletion. / 确认常规 Link 删除。 */
-    @Override public FileReport deleteLink(FilePath path,TaskContext task)throws ApiException{return operations().delete(path,true,Optional.empty(),task);}
-    /** Validates and consumes a true platform Link deletion permit. / 校验并消费真实平台 Link 删除许可。 */
-    @Override public FileReport deleteLink(FilePath path,TaskContext task,ApprovalGrant permit)throws ApiException{return operations().delete(path,true,Optional.of(Objects.requireNonNull(permit)),task);}
-    /** Uploads using interactive collision layers. / 使用交互冲突层上传。 */
-    @Override public FileReport uploadFile(FilePath local,FilePath remote,TaskContext task)throws ApiException{return uploadFile(local,remote,task,FileChoice.ask());}
-    /** Uploads using explicit collision layers and the original transfer journal. / 使用明确冲突层及原传输记录上传。 */
-    @Override public FileReport uploadFile(FilePath local,FilePath remote,TaskContext task,FileChoice choice)throws ApiException{transferEndpoints(local,remote);return copyFile(local,remote,task,choice);}
-    /** Downloads using interactive collision layers. / 使用交互冲突层下载。 */
-    @Override public FileReport downloadFile(FilePath remote,FilePath local,TaskContext task)throws ApiException{return downloadFile(remote,local,task,FileChoice.ask());}
-    /** Downloads using explicit collision layers and the original transfer journal. / 使用明确冲突层及原传输记录下载。 */
-    @Override public FileReport downloadFile(FilePath remote,FilePath local,TaskContext task,FileChoice choice)throws ApiException{transferEndpoints(local,remote);return copyFile(remote,local,task,choice);}
-    private static void transferEndpoints(FilePath local,FilePath remote)throws ApiException{if(local==null||remote==null||local.server().isPresent()||remote.server().isEmpty())throw error(ProblemCode.INVALID_INPUT,"FILE_TRANSFER_ENDPOINTS","One local and one server location are required");}
-    /** Reads durable original operations. / 读取持久原操作。 */
-    @Override public List<FileOperation> operations(TaskContext task)throws ApiException{return operations().operations(task);}
-    /** Checks retained evidence without replay. / 核对保留依据而不重放。 */
-    @Override public FileReport checkOperation(UUID operation,TaskContext task)throws ApiException{return operations().checkOperation(operation,task);}
+
+    /** Observes the actual File. / 观测实际 File。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileInfo getFile(FilePath path, TaskContext task) throws ApiException {
+        return operations().inspect(path, false, task);
+    }
+
+    /** Observes Link itself. / 观测 Link 自身。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileInfo readLink(FilePath path, TaskContext task) throws ApiException {
+        return operations().inspect(path, true, task);
+    }
+
+    /** Reads bounded File content. / 读取有界 File 内容。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param maxBytes maximum copied content bytes / 复制内容字节上限
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public byte[] readFile(FilePath path, int maxBytes, TaskContext task) throws ApiException {
+        return operations().read(path, maxBytes, task);
+    }
+
+    /** Lists sorted immediate entries. / 列举已排序直接子项。
+     * @param directory whether to create a directory / 是否创建目录
+     * @param limit maximum accepted immediate entries or bytes / 允许的直接子项或字节上限
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public List<FileInfo> list(FilePath directory, int limit, TaskContext task) throws ApiException {
+        return list(directory, limit, Optional.empty(), "", task);
+    }
+
+    /** Lists explicit type/name filtered entries. / 按明确类型/名称条件列举。
+     * @param directory whether to create a directory / 是否创建目录
+     * @param limit maximum accepted immediate entries or bytes / 允许的直接子项或字节上限
+     * @param kind optional object type filter / 可选对象类型筛选
+     * @param nameContains case-sensitive name filter / 区分大小写的名称筛选
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public List<FileInfo> list(FilePath directory, int limit, Optional<FileInfo.Kind> kind, String nameContains, TaskContext task) throws ApiException {
+        return operations().list(directory, limit, kind, nameContains, task);
+    }
+
+    /** Creates an empty user file. / 创建空用户文件。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport createFile(FilePath path, TaskContext task) throws ApiException {
+        return operations().write(path, new byte[0], false, true, task);
+    }
+
+    /** Creates a directory. / 创建目录。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport createDirectory(FilePath path, TaskContext task) throws ApiException {
+        return operations().write(path, new byte[0], true, true, task);
+    }
+
+    /** Writes bounded content with replacement authorization. / 经替换授权写入有界内容。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param content copied content to publish / 待发布独立内容
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport writeFile(FilePath path, byte[] content, TaskContext task) throws ApiException {
+        return operations().write(path, content, false, false, task);
+    }
+
+    /** Creates and registers a link. / 创建并登记链接。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param target exact planned destination or link target / 精确预定位置或链接目标
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport createLink(FilePath path, String target, TaskContext task) throws ApiException {
+        return operations().createLink(path, target, task);
+    }
+
+    /** Registers a link's observed identity. / 登记链接观测身份。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public void registerLink(FilePath path, TaskContext task) throws ApiException {
+        operations().registerLink(path, task);
+    }
+
+    /** Unregisters caller-owned metadata. / 解除调用方所属元数据。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public void unregisterLink(FilePath path, TaskContext task) throws ApiException {
+        operations().unregisterLink(path, task);
+    }
+
+    /** Copies a File with interactive collisions. / 交互处理冲突并复制 File。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport copyFile(FilePath from, FilePath to, TaskContext task) throws ApiException {
+        return copyFile(from, to, task, FileChoice.ask());
+    }
+
+    /** Copies a File with explicit collision layers. / 按明确冲突层复制 File。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport copyFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException {
+        return operations().copy(from, to, false, false, choice, task);
+    }
+
+    /** Copies Link itself. / 复制 Link 自身。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport copyLink(FilePath from, FilePath to, TaskContext task) throws ApiException {
+        return copyLink(from, to, task, FileChoice.ask());
+    }
+
+    /** Copies Link with an explicit choice. / 按明确选择复制 Link。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport copyLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException {
+        return operations().copy(from, to, true, false, choice, task);
+    }
+
+    /** Moves the actual File. / 移动实际 File。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport moveFile(FilePath from, FilePath to, TaskContext task) throws ApiException {
+        return moveFile(from, to, task, FileChoice.ask());
+    }
+
+    /** Moves File with explicit collision layers. / 按明确冲突层移动 File。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport moveFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException {
+        return operations().copy(from, to, false, true, choice, task);
+    }
+
+    /** Moves Link itself. / 移动 Link 自身。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport moveLink(FilePath from, FilePath to, TaskContext task) throws ApiException {
+        return moveLink(from, to, task, FileChoice.ask());
+    }
+
+    /** Moves Link with an explicit choice. / 按明确选择移动 Link。
+     * @param from original source position / 原来源位置
+     * @param to requested destination position / 请求目标位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport moveLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException {
+        return operations().copy(from, to, true, true, choice, task);
+    }
+
+    /** Renames File through the common move implementation. / 通过统一移动实现重命名 File。
+     * @param from original source position / 原来源位置
+     * @param name single validated child name / 已校验单个子项名称
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport renameFile(FilePath from, String name, TaskContext task) throws ApiException {
+        return moveFile(from, from.parent().child(name), task);
+    }
+
+    /** Renames Link through the common move implementation. / 通过统一移动实现重命名 Link。
+     * @param from original source position / 原来源位置
+     * @param name single validated child name / 已校验单个子项名称
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport renameLink(FilePath from, String name, TaskContext task) throws ApiException {
+        return moveLink(from, from.parent().child(name), task);
+    }
+
+    /** Confirms ordinary File deletion. / 确认常规 File 删除。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport deleteFile(FilePath path, TaskContext task) throws ApiException {
+        return operations().delete(path, false, Optional.empty(), task);
+    }
+
+    /** Validates and consumes a true platform File deletion permit. / 校验并消费真实平台 File 删除许可。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param permit genuine exact single-use deletion permit / 真实精确单次删除许可
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport deleteFile(FilePath path, TaskContext task, ApprovalGrant permit) throws ApiException {
+        return operations().delete(path, false, Optional.of(Objects.requireNonNull(permit)), task);
+    }
+
+    /** Confirms ordinary Link deletion. / 确认常规 Link 删除。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport deleteLink(FilePath path, TaskContext task) throws ApiException {
+        return operations().delete(path, true, Optional.empty(), task);
+    }
+
+    /** Validates and consumes a true platform Link deletion permit. / 校验并消费真实平台 Link 删除许可。
+     * @param path exact host-qualified position / 精确带主机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param permit genuine exact single-use deletion permit / 真实精确单次删除许可
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport deleteLink(FilePath path, TaskContext task, ApprovalGrant permit) throws ApiException {
+        return operations().delete(path, true, Optional.of(Objects.requireNonNull(permit)), task);
+    }
+
+    /** Uploads using interactive collision layers. / 使用交互冲突层上传。
+     * @param local absolute current-account local location / 当前账户绝对本机位置
+     * @param remote absolute location on the admitted authenticated server / 准入认证服务器的绝对位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport uploadFile(FilePath local, FilePath remote, TaskContext task) throws ApiException {
+        return uploadFile(local, remote, task, FileChoice.ask());
+    }
+
+    /** Uploads using explicit collision layers and the original transfer journal. / 使用明确冲突层及原传输记录上传。
+     * @param local absolute current-account local location / 当前账户绝对本机位置
+     * @param remote absolute location on the admitted authenticated server / 准入认证服务器的绝对位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport uploadFile(FilePath local, FilePath remote, TaskContext task, FileChoice choice) throws ApiException {
+        transferEndpoints(local, remote);
+        return copyFile(local, remote, task, choice);
+    }
+
+    /** Downloads using interactive collision layers. / 使用交互冲突层下载。
+     * @param remote absolute location on the admitted authenticated server / 准入认证服务器的绝对位置
+     * @param local absolute current-account local location / 当前账户绝对本机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport downloadFile(FilePath remote, FilePath local, TaskContext task) throws ApiException {
+        return downloadFile(remote, local, task, FileChoice.ask());
+    }
+
+    /** Downloads using explicit collision layers and the original transfer journal. / 使用明确冲突层及原传输记录下载。
+     * @param remote absolute location on the admitted authenticated server / 准入认证服务器的绝对位置
+     * @param local absolute current-account local location / 当前账户绝对本机位置
+     * @param task authentic original executing task / 真实原执行任务
+     * @param choice explicit collision strategy / 明确冲突策略
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport downloadFile(FilePath remote, FilePath local, TaskContext task, FileChoice choice) throws ApiException {
+        transferEndpoints(local, remote);
+        return copyFile(remote, local, task, choice);
+    }
+
+    /** Rejects endpoints that do not describe one local and one admitted remote host. / 拒绝不表示单个本机及单个准入远端主机的端点。
+     * @param local absolute current-account local location / 当前账户绝对本机位置
+     * @param remote absolute location on the admitted authenticated server / 准入认证服务器的绝对位置
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    private static void transferEndpoints(FilePath local, FilePath remote) throws ApiException {
+        if (local == null || remote == null || local.server().isPresent() || remote.server().isEmpty())
+            throw error(ProblemCode.INVALID_INPUT, "FILE_TRANSFER_ENDPOINTS", "One local and one server location are required");
+    }
+
+    /** Reads durable original operations. / 读取持久原操作。
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public List<FileOperation> operations(TaskContext task) throws ApiException {
+        return operations().operations(task);
+    }
+
+    /** Checks retained evidence without replay. / 核对保留依据而不重放。
+     * @param operation original durable operation identity / 原持久操作身份
+     * @param task authentic original executing task / 真实原执行任务
+     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
+     */
+    @Override
+    public FileReport checkOperation(UUID operation, TaskContext task) throws ApiException {
+        return operations().checkOperation(operation, task);
+    }
+
+    /** Requests fresh authority for original unfinished links only. / 仅为原未完成链接请求新授权。
+     * @param operation original same-caller and same-release move identity / 原同调用方及同发布移动身份
+     * @param task current ordinary authorized task, never a recovery callback / 当前普通授权任务，不得为恢复回调
+     * @return actual link-only continuation report / 真实仅链接续作报告
+     * @throws ApiException if original facts or new authorization fail / 原事实或新授权失败时 */
+    @Override
+    public FileReport continueOperation(UUID operation, TaskContext task) throws ApiException {
+        return operations().continueOperation(operation, task);
+    }
+
     /** Durable identity prefix for owned source work. / 所属来源工作的持久身份前缀。 */
     private static final String PREFIX = "source-snapshot-v1:";
 
@@ -197,7 +555,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
      * @param version exact loaded version / 精确加载版本
      * @param picker platform-owned directory selector / 平台持有的目录选择器 */
     public PlatformFileAccess(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
-                                String owner, String version, FileDirectoryPicker picker) {
+                              String owner, String version, FileDirectoryPicker picker) {
         this.database = Objects.requireNonNull(database);
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
@@ -260,7 +618,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
      * @throws ApiException if authorization, path, budget or reading fails / 授权、路径、预算或读取失败时 */
     @Override
     public List<FileEntry> list(FileSelection selection, String relativeDirectory, int maxEntries,
-                                           TaskContext task) throws ApiException {
+                                TaskContext task) throws ApiException {
         return access(task, () -> selection(selection, task).list(relativeDirectory, maxEntries, cancelToken(task)));
     }
 
@@ -540,6 +898,17 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
     public void close() throws ApiException {
         closed = true;
         if (operations != null) operations.close();
+        for (var resource : List.copyOf(operationOwners)) {
+            try {
+                resource.close();
+                operationOwners.remove(resource);
+            } catch (ApiException failure) {
+                throw failure;
+            } catch (Exception failure) {
+                throw error(ProblemCode.BUSY, "FILE_OWNER_CLEANUP", "File dependencies still require cleanup");
+            }
+        }
+
         scope.close();
         synchronized (this) {
             selections.clear();

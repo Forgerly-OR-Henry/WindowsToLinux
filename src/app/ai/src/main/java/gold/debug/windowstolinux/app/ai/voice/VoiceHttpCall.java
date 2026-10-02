@@ -7,19 +7,39 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+
 import gold.debug.windowstolinux.app.ai.http.*;
 import gold.debug.windowstolinux.appapi.ai.*;
 import gold.debug.windowstolinux.appapi.task.*;
 
 /** One real multipart transcription request, never replayed after uncertainty. / 一个真实 multipart 转写请求，未知状态后不重放。 */
 public final class VoiceHttpCall implements AutoCloseable {
+    /** Dedicated transport retained through actual termination. / 持有至实际终止的专用传输。 */
     private final HttpClient client;
+
+    /** Immutable destination, authorization and multipart publisher. / 不可变目的地、授权及 multipart 发布器。 */
     private final HttpRequest request;
+
+    /** Owned multipart bytes cleared only after the publisher stops. / 发布器停止后才清除的所属 multipart 字节。 */
     private final byte[] body;
+
+    /** Selected non-secret platform model identity. / 所选的不含秘密平台模型身份。 */
     private final String modelId;
-    private final long start = System.nanoTime(), budget;
+
+    /** Original monotonic start before multipart and client construction. / multipart 及客户端构造前的原单调起点。 */
+    private final long start = System.nanoTime();
+
+    /** Remaining host time budget captured in nanoseconds. / 按纳秒捕获的剩余宿主时间预算。 */
+    private final long budget;
+
+    /** Single actual request future, also used for cancellation. / 唯一实际请求 future，同时用于取消。 */
     private volatile CompletableFuture<HttpResponse<byte[]>> response;
-    private boolean started, closed;
+
+    /** One-send admission state protected by this call's monitor. / 由调用监视器保护的单次发送准入状态。 */
+    private boolean started;
+
+    /** Closed-admission state protected by this call's monitor. / 由调用监视器保护的关闭准入状态。 */
+    private boolean closed;
 
     /** Captures validated audio and exact configured destination. / 捕获已校验音频和精确配置目的地。
      * @param endpoint exact configured file endpoint / 精确配置文件端点
@@ -41,7 +61,8 @@ public final class VoiceHttpCall implements AutoCloseable {
     public VoiceHttpCall(URI endpoint, char[] key, String model, String modelId, VoiceRequest input, Duration timeout) {
         ModelHttpCall.validateEndpoint(endpoint);
         VoiceRequest.validateTimeout(timeout);
-        if (key == null || key.length == 0 || model == null || !model.matches("[A-Za-z0-9._:/-]{1,128}"))
+        VoiceProtocol.validateKey(key);
+        if (model == null || !model.matches("[A-Za-z0-9._:/-]{1,128}"))
             throw new IllegalArgumentException("Invalid transcription configuration");
         this.modelId = Objects.requireNonNull(modelId);
         budget = timeout.toNanos();
@@ -57,7 +78,9 @@ public final class VoiceHttpCall implements AutoCloseable {
             body = bytes.toByteArray();
         } catch (IOException impossible) {
             throw new IllegalStateException("In-memory multipart encoding failed", impossible);
-        } finally { Arrays.fill(audio, (byte) 0); }
+        } finally {
+            Arrays.fill(audio, (byte) 0);
+        }
         request = HttpRequest.newBuilder(endpoint).timeout(timeout)
             .header("Authorization", "Bearer " + new String(key))
             .header("Content-Type", "multipart/form-data; boundary=" + boundary)
@@ -67,6 +90,12 @@ public final class VoiceHttpCall implements AutoCloseable {
             .version(HttpClient.Version.HTTP_1_1).build();
     }
 
+    /** Writes one bounded multipart text field. / 写入一项有界 multipart 文本字段。
+     * @param bytes owned multipart sink / 所属 multipart 接收端
+     * @param boundary unique delimiter / 唯一分隔符
+     * @param name fixed field identity / 固定字段标识
+     * @param value validated field value / 已校验字段值
+     * @throws IOException if the sink cannot accept bytes / 接收端无法接受字节时 */
     private static void field(OutputStream bytes, String boundary, String name, String value) throws IOException {
         bytes.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name
             + "\"\r\n\r\n" + value + "\r\n").getBytes(StandardCharsets.UTF_8));
@@ -86,7 +115,7 @@ public final class VoiceHttpCall implements AutoCloseable {
             return failure(Outcome.FAILED, ProblemCode.TIMEOUT, "VOICE_BEFORE_SEND_TIMEOUT", "Voice deadline ended before sending");
         try {
             response = client.sendAsync(request, ignored -> new LimitedHttpBodySubscriber(VoiceProtocol.MAX_RESPONSE_BYTES));
-            for (;;) {
+            for (; ; ) {
                 if (cancellation.requested() || Thread.currentThread().isInterrupted()) {
                     response.cancel(true);
                     return failure(Outcome.UNKNOWN, ProblemCode.CANCELLED, "VOICE_CANCELLED_AFTER_SEND", "The provider may have processed the cancelled audio");
@@ -106,7 +135,8 @@ public final class VoiceHttpCall implements AutoCloseable {
                                 try {
                                     var error = VoiceProtocol.JSON.readTree(bytes);
                                     unsupported = error != null && VoiceProtocol.unsupported(error.path("error"));
-                                } catch (IOException invalidError) { /* Known HTTP rejection still applies. / 仍按已知 HTTP 拒绝处理。 */ }
+                                } catch (
+                                    IOException invalidError) { /* Known HTTP rejection still applies. / 仍按已知 HTTP 拒绝处理。 */ }
                             }
                             return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
                                 unsupported ? ProblemCode.INCOMPATIBLE : result.statusCode() == 401 || result.statusCode() == 403
@@ -117,7 +147,9 @@ public final class VoiceHttpCall implements AutoCloseable {
                         return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(VoiceProtocol.decode(bytes, modelId)), Optional.empty());
                     } catch (IOException invalid) {
                         return failure(Outcome.FAILED, ProblemCode.CONTRACT_VIOLATION, "VOICE_RESPONSE_INVALID", "The transcription response is invalid");
-                    } finally { Arrays.fill(bytes, (byte) 0); }
+                    } finally {
+                        Arrays.fill(bytes, (byte) 0);
+                    }
                 } catch (TimeoutException waiting) { /* Recheck cancellation and deadline. / 重核取消及期限。 */ }
             }
         } catch (InterruptedException interrupted) {
@@ -129,22 +161,35 @@ public final class VoiceHttpCall implements AutoCloseable {
         }
     }
 
+    /** Classifies a request failure without retaining provider content. / 分类请求失败，不保留提供方内容。
+     * @param outcome actual send outcome / 实际发送结果
+     * @param code stable failure category / 稳定失败类别
+     * @param event safe event identity / 安全事件标识
+     * @param message safe explanation / 安全说明
+     * @return classified operation result / 已分类操作结果 */
     private OperationResult<VoiceResponse> failure(Outcome outcome, ProblemCode code, String event, String message) {
         return VoiceProtocol.failure(outcome, code, event, message, modelId, Optional.empty());
     }
 
     /** Confirms actual client termination before releasing audio. / 确认实际客户端终止后释放音频。
      * @throws IOException if the client remains alive / 客户端仍活动时 */
-    @Override public void close() throws IOException {
-        synchronized (this) { closed = true; }
+    @Override
+    public void close() throws IOException {
+        synchronized (this) {
+            closed = true;
+        }
         if (response != null && !response.isDone()) response.cancel(true);
         boolean interrupted = Thread.interrupted();
         try {
             client.shutdownNow();
-            if (!client.awaitTermination(Duration.ofSeconds(2))) throw new IOException("Voice client is still terminating");
+            if (!client.awaitTermination(Duration.ofSeconds(2)))
+                throw new IOException("Voice client is still terminating");
             Arrays.fill(body, (byte) 0);
         } catch (InterruptedException failure) {
-            interrupted = true; throw new IOException("Voice client termination interrupted");
-        } finally { if (interrupted) Thread.currentThread().interrupt(); }
+            interrupted = true;
+            throw new IOException("Voice client termination interrupted");
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
     }
 }

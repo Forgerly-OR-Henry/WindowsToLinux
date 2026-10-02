@@ -142,7 +142,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                 new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
-                    if (method.getName().equals("source"))
+                    if (method.getName().equals("file"))
                         return source;
                     if (method.getName().equals("linux"))
                         return linux;
@@ -264,7 +264,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                 new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
-                    if (method.getName().equals("source"))
+                    if (method.getName().equals("file"))
                         return source;
                     try {
                         return method.invoke(original, arguments);

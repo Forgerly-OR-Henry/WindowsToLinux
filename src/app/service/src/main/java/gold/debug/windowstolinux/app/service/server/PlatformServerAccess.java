@@ -21,7 +21,6 @@ import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.*;
 
-
 /** Exposes task-admitted server observations and exact-generation persistent references. / 提供任务已准入服务器观测及精确代次持久引用。 */
 public final class PlatformServerAccess implements ServerService, AutoCloseable {
     /** Current task and callback identity authority. / 当前任务及回调身份授权方。 */

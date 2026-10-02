@@ -232,7 +232,7 @@ final class DeploymentApiCallerFixture {
         import java.nio.file.*;
         import java.time.Instant;
         import gold.debug.windowstolinux.appapi.mod.*;
-        import gold.debug.windowstolinux.appapi.task.CancelToken;
+        import gold.debug.windowstolinux.appapi.task.*;
         import gold.debug.windowstolinux.appapi.server.*;
         import gold.debug.windowstolinux.mod.deployment.api.*;
         public final class Mod implements ModEntrypoint {

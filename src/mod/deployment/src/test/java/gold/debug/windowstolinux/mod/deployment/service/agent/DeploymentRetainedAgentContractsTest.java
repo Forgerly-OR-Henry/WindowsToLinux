@@ -140,7 +140,7 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                 new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
                     return switch (method.getName()) {
-                        case "source" -> source;
+                        case "file" -> source;
                         case "linux" -> linux;
                         case "ai" -> ai;
                         default -> invoke(actual, method, arguments);

@@ -14,7 +14,6 @@ import gold.debug.windowstolinux.app.mod.load.ModEntryFactory;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.appapi.mod.*;
 
-
 /** Activates one prepared Mod and preserves partial-stop ownership until actual cleanup. / 启用一个已准备的 Mod，并保留部分停止归属直至实际清理。 */
 public final class ModRuntimeSession {
     /** Prepared loader owned until the final cleanup step. / 持有到最终清理步骤的已准备加载器。 */

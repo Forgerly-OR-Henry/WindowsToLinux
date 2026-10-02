@@ -22,7 +22,6 @@ import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
 
-
 /** Shared actual service registry, with activation publication and per-call task ownership. / 具有启用发布及逐调用任务归属的共用实际服务登记器。 */
 public final class PlatformModServices implements AutoCloseable {
     /** Current authoritative database. / 当前权威数据库。 */
@@ -337,7 +336,7 @@ public final class PlatformModServices implements AutoCloseable {
                 registration.active++;
             }
             try {
-                return tasks.dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
+                return tasks.callbacks().dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
                     provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
                     connection -> claims(connection, provider, task), () -> {
                         if (tasks.reconciling(task)) {

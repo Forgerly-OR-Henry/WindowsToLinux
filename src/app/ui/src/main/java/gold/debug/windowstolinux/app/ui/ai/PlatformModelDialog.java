@@ -1,7 +1,6 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
 import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
 import gold.debug.windowstolinux.appapi.task.TaskHandle;
 import gold.debug.windowstolinux.appapi.task.TaskState;
 import gold.debug.windowstolinux.appapi.ai.VoiceRequest;
@@ -30,32 +29,46 @@ import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 final class PlatformModelDialog extends JDialog {
     /** Actual service or isolated preview absence. / 实际服务或隔离预览空值。 */
     private final Optional<PlatformModelService> service;
+
     /** Safe localized messages. / 安全本地化消息。 */
     private final PageMessagePresenter messages;
+
     /** Inventory refresh callback. / 清单刷新回调。 */
     private final Runnable saved;
+
     /** Stable model identity. / 稳定模型标识。 */
     private final String id;
+
     /** Current protected credential reference. / 当前受保护凭据引用。 */
     private String credential;
+
     /** Original editable configuration controls. / 原可编辑配置控件。 */
     private final ModelFields fields = new ModelFields();
+
     /** Independently chosen verification mode. / 独立选择的验证方式。 */
     private final JComboBox<AiCapabilityType> capability = new JComboBox<>(AiCapabilityType.values());
+
     /** Safe operation feedback. / 安全操作反馈。 */
     private final JTextArea status = DesktopComponentFactory.outputArea();
+
     /** Independent configuration action. / 独立配置操作。 */
     private final JButton save;
+
     /** Explicit verification action. / 明确验证操作。 */
     private final JButton verify;
+
     /** Input layout frozen during accepted work. / 已接纳工作期间冻结的输入布局。 */
     private final JPanel form;
+
     /** Last saved form, used to reject unsaved verification drafts. / 最近保存表单，用于拒绝验证未保存草稿。 */
     private SavedDraft stored;
+
     /** Exact central task handle. / 精确中央任务句柄。 */
     private TaskHandle<Void> task;
+
     /** Admission, closing and retained-uncertainty flags. / 准入、关闭及保留不确定状态标志。 */
     private boolean busy, closing, unknown;
+
     /** Observer of the actual task state. / 实际任务状态观察器。 */
     private final javax.swing.Timer timer;
 
@@ -104,6 +117,7 @@ final class PlatformModelDialog extends JDialog {
         verify = messages.bind(components.secondaryButton(""), "ai.models.verify");
         verify.setName("model.verify");
         verify.addActionListener(event -> verifyCapability());
+        capability.addActionListener(event -> updateVerification());
         var cancel = messages.bind(components.secondaryButton(""), "button.cancel");
         cancel.setName("model.cancel");
         cancel.addActionListener(event -> closeEditor());
@@ -130,7 +144,10 @@ final class PlatformModelDialog extends JDialog {
         addWindowListener(new WindowAdapter() {
             /** Closes through the original cancellation path. / 通过原取消路径关闭。
              * @param event close event / 关闭事件 */
-            @Override public void windowClosing(WindowEvent event) { closeEditor(); }
+            @Override
+            public void windowClosing(WindowEvent event) {
+                closeEditor();
+            }
         });
         timer = new javax.swing.Timer(250, event -> observe());
         timer.start();
@@ -161,7 +178,8 @@ final class PlatformModelDialog extends JDialog {
      * @param messages localized display / 本地化显示
      * @return editor with real effects unavailable / 真实副作用不可用的编辑器 */
     static JDialog preview(Window owner, DesktopComponentFactory components, PageMessagePresenter messages) {
-        var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096), () -> {});
+        var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096), () -> {
+        });
         dialog.fields.name.setText(messages.text("debug.sample.model"));
         dialog.fields.endpoint.setText(messages.text("debug.sample.endpoint"));
         dialog.fields.model.setText(messages.text("debug.sample.modelId"));
@@ -187,13 +205,15 @@ final class PlatformModelDialog extends JDialog {
                     modelService.save(draft.profile(), draft.name(), input, draft.limit());
                     return modelService.listAiConfigurations().stream().filter(row -> row.profile().id().equals(id))
                         .findFirst().orElseThrow();
-                } finally { Arrays.fill(input, '\0'); }
+                } finally {
+                    Arrays.fill(input, '\0');
+                }
             }, row -> {
                 credential = row.profile().credentialKey();
                 stored = new SavedDraft(row.profile(), row.name(), draft.limit());
                 setBusy(false);
                 saved.run();
-                status.setText(messages.text("ai.models.savedConfiguration"));
+                status.setText(messages.text("ai.models.savedConfiguration") + "\n\n" + messages.text("platform.models.probeHint"));
                 if (closing) dispose();
             }, this::failed);
         } catch (Exception failure) {
@@ -217,9 +237,14 @@ final class PlatformModelDialog extends JDialog {
                 if (!Files.isRegularFile(file) || Files.size(file) > VoiceRequest.MAX_BYTES)
                     throw new IllegalArgumentException("Invalid voice sample");
                 byte[] bytes;
-                try (var input = Files.newInputStream(file)) { bytes = input.readNBytes(VoiceRequest.MAX_BYTES + 1); }
-                try { audio = new VoiceRequest(bytes, "verification.wav", Duration.ofSeconds(30)); }
-                finally { Arrays.fill(bytes, (byte) 0); }
+                try (var input = Files.newInputStream(file)) {
+                    bytes = input.readNBytes(VoiceRequest.MAX_BYTES + 1);
+                }
+                try {
+                    audio = new VoiceRequest(bytes, "verification.wav", Duration.ofSeconds(30));
+                } finally {
+                    Arrays.fill(bytes, (byte) 0);
+                }
             }
             return service.orElseThrow().verify(id, selected, audio, expected);
         }, handle -> {
@@ -232,7 +257,7 @@ final class PlatformModelDialog extends JDialog {
                 saved.run();
                 if (failure != null) status.setText(messages.text("platform.models.failed"));
                 else if (result.outcome() == Outcome.SUCCEEDED) dispose();
-                else status.setText(result.problem().map(Problem::message).orElse(messages.text("button.cancel")));
+                else status.setText(result.problem().map(messages::safe).orElse(messages.text("button.cancel")));
                 if (closing) dispose();
             }));
         }, this::failed);
@@ -240,7 +265,7 @@ final class PlatformModelDialog extends JDialog {
 
     /** Restores editor controls after a safe admission or storage failure. / 安全准入或存储失败后恢复编辑器控件。
      * @param failure actual failure / 实际失败 */
-    private void failed(Throwable failure) {
+    private void failed(Exception failure) {
         setBusy(false);
         status.setText(messages.safe(failure));
         if (closing) dispose();
@@ -251,16 +276,26 @@ final class PlatformModelDialog extends JDialog {
     private SavedDraft draft() {
         var profile = new AiProviderProfile(id, uri(fields.endpoint.getText()), fields.model.getText().strip(), credential,
             uri(fields.fileEndpoint.getText()), uri(fields.realtimeEndpoint.getText()));
-        int limit = Integer.parseInt(fields.limit.getText().strip());
+        String configuredLimit = fields.limit.getText().strip();
+        int limit = profile.chatCompletionsEndpoint() == null && configuredLimit.isEmpty()
+            ? (stored == null ? 128 : stored.limit()) : Integer.parseInt(configuredLimit);
         if (limit < 1 || fields.name.getText().isBlank()) throw new IllegalArgumentException("Invalid model form");
         return new SavedDraft(profile, fields.name.getText().strip(), limit);
     }
 
-    /** Permits checks only against the current saved fields. / 仅允许检查当前保存字段。 */
+    /** Permits checks only against a saved configured protocol. / 仅允许检查已保存且配置地址的协议。 */
     private void updateVerification() {
         boolean clean = false;
-        try { clean = stored != null && stored.equals(draft()) && fields.key.getDocument().getLength() == 0; }
-        catch (IllegalArgumentException invalid) { clean = false; }
+        try {
+            clean = stored != null && stored.equals(draft()) && fields.key.getDocument().getLength() == 0
+                && switch ((AiCapabilityType) capability.getSelectedItem()) {
+                case TEXT, VISION -> stored.profile().chatCompletionsEndpoint() != null;
+                case VOICE_FILE -> stored.profile().fileTranscriptionEndpoint() != null;
+                case VOICE_REALTIME -> stored.profile().realtimeTranscriptionEndpoint() != null;
+            };
+        } catch (IllegalArgumentException invalid) {
+            clean = false;
+        }
         verify.setEnabled(!busy && service.isPresent() && clean);
     }
 
@@ -276,13 +311,20 @@ final class PlatformModelDialog extends JDialog {
     /** Cancels the real task without interrupting the UI worker. / 取消真实任务，不中断界面工作线程。 */
     private void cancelTask() {
         var current = task;
-        if (current != null) DesktopTaskExecutor.run(() -> { current.requestCancel(); return true; }, ignored -> {},
+        if (current != null) DesktopTaskExecutor.run(() -> {
+                current.requestCancel();
+                return true;
+            }, ignored -> {
+            },
             failure -> status.setText(messages.safe(failure)));
     }
 
     /** Lets unknown work remain in the permanent recovery list. / 允许未知工作保留在常驻恢复列表。 */
     private void closeEditor() {
-        if (!busy || unknown) { dispose(); return; }
+        if (!busy || unknown) {
+            dispose();
+            return;
+        }
         closing = true;
         cancelTask();
         status.setText(messages.text("ai.models.cancelling"));
@@ -300,15 +342,20 @@ final class PlatformModelDialog extends JDialog {
     /** Returns an empty display for an unconfigured protocol. / 未配置协议返回空显示。
      * @param value optional address / 可选地址
      * @return editable address / 可编辑地址 */
-    private static String address(URI value) { return value == null ? "" : value.toString(); }
+    private static String address(URI value) {
+        return value == null ? "" : value.toString();
+    }
 
     /** Parses only explicitly supplied addresses. / 仅解析明确提供的地址。
      * @param value visible address / 可见地址
      * @return address or absent / 地址或空 */
-    private static URI uri(String value) { return value.isBlank() ? null : URI.create(value.strip()); }
+    private static URI uri(String value) {
+        return value.isBlank() ? null : URI.create(value.strip());
+    }
 
     /** Stops observation and clears the credential control. / 停止观察并清空凭据控件。 */
-    @Override public void dispose() {
+    @Override
+    public void dispose() {
         if (timer != null) timer.stop();
         fields.key.setText("");
         super.dispose();
@@ -318,7 +365,8 @@ final class PlatformModelDialog extends JDialog {
      * @param profile protocol configuration / 协议配置
      * @param name display name / 显示名
      * @param limit text output ceiling / 文字输出上限 */
-    private record SavedDraft(AiProviderProfile profile, String name, int limit) {}
+    private record SavedDraft(AiProviderProfile profile, String name, int limit) {
+    }
 
     /** Owns the editable configuration and caller-provided verification sample controls. / 持有可编辑配置及调用者提供的验证样本控件。 */
     private static final class ModelFields {
@@ -326,6 +374,7 @@ final class PlatformModelDialog extends JDialog {
         private final JTextField name = new JTextField(28), endpoint = new JTextField(28), fileEndpoint = new JTextField(28),
             realtimeEndpoint = new JTextField(28), model = new JTextField(28), limit = new JTextField(12),
             audio = new JTextField(28), expected = new JTextField(28);
+
         /** Temporary credential input. / 临时凭据输入。 */
         private final JPasswordField key = new JPasswordField(28);
 
@@ -351,13 +400,24 @@ final class PlatformModelDialog extends JDialog {
             var listener = new DocumentListener() {
                 /** Refreshes after insertion. / 插入后刷新。
                  * @param event edit event / 编辑事件 */
-                @Override public void insertUpdate(DocumentEvent event) { changed.run(); }
+                @Override
+                public void insertUpdate(DocumentEvent event) {
+                    changed.run();
+                }
+
                 /** Refreshes after removal. / 删除后刷新。
                  * @param event edit event / 编辑事件 */
-                @Override public void removeUpdate(DocumentEvent event) { changed.run(); }
+                @Override
+                public void removeUpdate(DocumentEvent event) {
+                    changed.run();
+                }
+
                 /** Refreshes after style changes. / 样式变化后刷新。
                  * @param event edit event / 编辑事件 */
-                @Override public void changedUpdate(DocumentEvent event) { changed.run(); }
+                @Override
+                public void changedUpdate(DocumentEvent event) {
+                    changed.run();
+                }
             };
             for (var field : new JTextField[]{name, endpoint, fileEndpoint, realtimeEndpoint, model, limit, key})
                 field.getDocument().addDocumentListener(listener);

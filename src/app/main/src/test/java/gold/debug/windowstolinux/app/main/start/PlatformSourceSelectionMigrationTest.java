@@ -33,6 +33,7 @@ class PlatformSourceSelectionMigrationTest {
             runtime.security().setupAndUnlock(PlatformTaskAdmissionIntegrationTest.PASSWORD.toCharArray(), PlatformTaskAdmissionIntegrationTest.PASSWORD.toCharArray());
             runtime.setSourcePicker((title, task, cancel) -> selectedPath.get());
             runtime.started();
+            PlatformSourceServiceTest.rejectUnexpectedFileApproval(runtime);
             var source = runtime.capabilities().source(PlatformTaskAdmission.PLATFORM_OWNER, runtime.version());
             var binding = runtime.tasks().bind(PlatformTaskAdmission.PLATFORM_OWNER, runtime.version(), false);
             var original = binding.submit(new TaskRequest("platform.source.selection.migration", "Actual directory consent", List.of(), true), task -> {

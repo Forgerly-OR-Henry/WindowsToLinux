@@ -38,68 +38,69 @@ class PlatformModContextTest {
     Path root;
 
     static final String SOURCE = """
-        package example.admission;
-        import java.util.*;
-        import java.util.concurrent.*;
-        import javax.swing.*;
-        import gold.debug.windowstolinux.appapi.mod.*;
-        
-        import gold.debug.windowstolinux.appapi.ui.*;
-        import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
-        public final class Mod implements ModEntrypoint, example.admission.api.Echo {
-            public static ModContext context;
-            public static TaskHandle<String> task;
-            public static boolean failStart;
-            public static int instances, stops, pageCloses;
-            public static String blockedStartup;
-            public static final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
-            public static java.nio.file.Path snapshotPath;
-            private PageRegistration page;
-            private ServiceRegistration service;
-            private LogTarget logs;
-            public Mod(){instances++;}
-            public void start(ModContext supplied) throws Exception {
-                context=supplied;
-                List.of(context.identity(),context.launchMode(),context.ui(),context.tasks(),context.interaction(),context.servers(),context.linux(),context.ai(),context.db(),context.secrets(),context.file(),context.logs(),context.processes(),context.services());
-                try { context.tasks().submit(new TaskRequest("wrong","Wrong",List.of(),false), t->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));throw new AssertionError("Startup admitted work"); }
-                catch(ApiException denied) { blockedStartup=denied.problem().code().name(); }
-                context.tasks().registerRecovery("fixture",(before,t)->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));
-                logs=context.logs().register(new LogCategory("runtime","Runtime",Optional.empty()));
-                service=context.services().register(example.admission.api.Echo.class,this);
-                page=context.ui().register(new PageSpec("main","fixture.main","本机 CLASS 验收",false),()->new ModPage(){
-                    public JComponent create(UiEnvironment environment) {
-                        if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT required");
-                        var panel=new JPanel();var button=new JButton("运行本机任务");button.setName("fixture.run");panel.add(button);
-                        var result=new JLabel("等待运行");result.setName("fixture.result");panel.add(result);
-                        button.addActionListener(event->{try{ task=context.tasks().submit(new TaskRequest("fixture","CLASS capability flow",List.of("server"),true), t->work(t));
-                            task.completion().whenComplete((value,error)->SwingUtilities.invokeLater(()->result.setText(error==null?value.outcome()+": "+value.value().orElse(""):"任务失败"))); }
-                            catch(ApiException failure){throw new IllegalStateException(failure);}});return panel;
+                package example.admission;
+                import java.util.*;
+                import java.util.concurrent.*;
+                import javax.swing.*;
+                import gold.debug.windowstolinux.appapi.mod.*;
+                import gold.debug.windowstolinux.appapi.task.*;
+
+                import gold.debug.windowstolinux.appapi.ui.*;
+                import gold.debug.windowstolinux.appapi.file.FileReadRequest;
+        import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
+                public final class Mod implements ModEntrypoint, example.admission.api.Echo {
+                    public static ModContext context;
+                    public static TaskHandle<String> task;
+                    public static boolean failStart;
+                    public static int instances, stops, pageCloses;
+                    public static String blockedStartup;
+                    public static final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
+                    public static java.nio.file.Path snapshotPath;
+                    private PageRegistration page;
+                    private ServiceRegistration service;
+                    private LogTarget logs;
+                    public Mod(){instances++;}
+                    public void start(ModContext supplied) throws Exception {
+                        context=supplied;
+                        List.of(context.identity(),context.launchMode(),context.ui(),context.tasks(),context.interaction(),context.servers(),context.linux(),context.ai(),context.db(),context.secrets(),context.file(),context.logs(),context.processes(),context.services());
+                        try { context.tasks().submit(new TaskRequest("wrong","Wrong",List.of(),false), t->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));throw new AssertionError("Startup admitted work"); }
+                        catch(ApiException denied) { blockedStartup=denied.problem().code().name(); }
+                        context.tasks().registerRecovery("fixture",(before,t)->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));
+                        logs=context.logs().register(new LogCategory("runtime","Runtime",Optional.empty()));
+                        service=context.services().register(example.admission.api.Echo.class,this);
+                        page=context.ui().register(new PageSpec("main","fixture.main","本机 CLASS 验收",false),()->new ModPage(){
+                            public JComponent create(UiEnvironment environment) {
+                                if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT required");
+                                var panel=new JPanel();var button=new JButton("运行本机任务");button.setName("fixture.run");panel.add(button);
+                                var result=new JLabel("等待运行");result.setName("fixture.result");panel.add(result);
+                                button.addActionListener(event->{try{ task=context.tasks().submit(new TaskRequest("fixture","CLASS capability flow",List.of("server"),true), t->work(t));
+                                    task.completion().whenComplete((value,error)->SwingUtilities.invokeLater(()->result.setText(error==null?value.outcome()+": "+value.value().orElse(""):"任务失败"))); }
+                                    catch(ApiException failure){throw new IllegalStateException(failure);}});return panel;
+                            }
+                            public void environmentChanged(UiEnvironment environment){}
+                            public void close(){if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT close required");pageCloses++;}
+                        });
+                        if(failStart)throw new IllegalStateException("Intentional partial startup failure");
                     }
-                    public void environmentChanged(UiEnvironment environment){}
-                    public void close(){if(!SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT close required");pageCloses++;}
-                });
-                if(failStart)throw new IllegalStateException("Intentional partial startup failure");
-            }
-            private OperationResult<String> work(TaskContext task) throws Exception {
-                try(var c=context.db().openConnection(task);var s=c.createStatement()){s.executeUpdate("INSERT INTO items VALUES(42)");}
-                if(context.servers().list(Optional.empty(),10,task).items().size()!=1)throw new AssertionError("Original server admission");
-                var secret=context.secrets().create("fixture",new byte[]{1,2,3},task);
-                if(context.secrets().use(secret,"fixture",task,bytes->bytes.length)!=3)throw new AssertionError("Secret scope");
-                var selection=context.file().selectDirectory("选择验收目录",task);
-                var read=context.file().read(selection,new FileReadRequest("sample.txt",1024),task);
-                String text=new String(read.content(),java.nio.charset.StandardCharsets.UTF_8);
-                try(var snapshot=context.file().snapshot(selection,new SnapshotRequest(List.of("sample.txt"),1024),task)) {
-                    snapshotPath=snapshot.directory();entered.countDown();
-                    if(!release.await(12,TimeUnit.SECONDS))throw new AssertionError("Release timed out");
+                    private OperationResult<String> work(TaskContext task) throws Exception {
+                        try(var c=context.db().openConnection(task);var s=c.createStatement()){s.executeUpdate("INSERT INTO items VALUES(42)");}
+                        if(context.servers().list(Optional.empty(),10,task).items().size()!=1)throw new AssertionError("Original server admission");
+                        var secret=context.secrets().create("fixture",new byte[]{1,2,3},task);
+                        if(context.secrets().use(secret,"fixture",task,bytes->bytes.length)!=3)throw new AssertionError("Secret scope");
+                        var selection=context.file().selectDirectory("选择验收目录",task);
+                        var read=context.file().read(selection,new FileReadRequest("sample.txt",1024),task);
+                        String text=new String(read.content(),java.nio.charset.StandardCharsets.UTF_8);
+                        try(var snapshot=context.file().snapshot(selection,new SnapshotRequest(List.of("sample.txt"),1024),task)) {
+                            snapshotPath=snapshot.directory();entered.countDown();
+                            if(!release.await(12,TimeUnit.SECONDS))throw new AssertionError("Release timed out");
+                        }
+                        var result=context.logs().write(logs,new LogEvent(LogLevel.INFO,"CONTEXT_FLOW","Local capability flow completed",Optional.empty(),Optional.of(task.id()),Optional.empty(),Optional.of(Outcome.SUCCEEDED)));
+                        if(result.storage()!=LogStorage.DATABASE)throw new AssertionError("Real log persistence");
+                        return new OperationResult<>(Outcome.SUCCEEDED,Optional.of(text),Optional.empty());
+                    }
+                    public String value(){return "actual-provider";}
+                    public void stop(StopContext reason) throws Exception {stops++;if(page!=null)page.close();if(service!=null)service.close();}
                 }
-                var result=context.logs().write(logs,new LogEvent(LogLevel.INFO,"CONTEXT_FLOW","Local capability flow completed",Optional.empty(),Optional.of(task.id()),Optional.empty(),Optional.of(Outcome.SUCCEEDED)));
-                if(result.storage()!=LogStorage.DATABASE)throw new AssertionError("Real log persistence");
-                return new OperationResult<>(Outcome.SUCCEEDED,Optional.of(text),Optional.empty());
-            }
-            public String value(){return "actual-provider";}
-            public void stop(StopContext reason) throws Exception {stops++;if(page!=null)page.close();if(service!=null)service.close();}
-        }
         """;
 
     ModClassLoader loader(boolean schema) throws Exception {
